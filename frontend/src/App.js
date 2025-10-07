@@ -19,6 +19,7 @@ function App() {
   const [headers, setHeaders] = useState([{ name: '', value: '' }]);
   const [responseHeaders, setResponseHeaders] = useState(null);
   const [requestBody, setRequestBody] = useState('');
+  const [statusCode, setStatusCode] = useState(null);
 
   const addHeader = () => {
     setHeaders([...headers, { name: '', value: '' }]);
@@ -64,6 +65,9 @@ function App() {
 
       const res = await fetch(url, fetchOptions);
       
+      // Extract response status code
+      setStatusCode(res.status);
+      
       // Extract response headers
       const resHeaders = {};
       res.headers.forEach((value, key) => {
@@ -98,6 +102,7 @@ function App() {
       setResponse(`Error: ${error.message}`);
       setResponseType('text');
       setResponseHeaders(null);
+      setStatusCode(null);
     } finally {
       setLoading(false);
     }
@@ -211,6 +216,16 @@ function App() {
         {response && (
           <div className="ResponseViewer">
             <h3>Response:</h3>
+            {statusCode && (
+              <div className="StatusCodeSection">
+                <h4>Status Code</h4>
+                <div className="StatusCodeValue">
+                  <span className={`StatusCode status-${Math.floor(statusCode / 100)}xx`}>
+                    {statusCode}
+                  </span>
+                </div>
+              </div>
+            )}
             {responseHeaders && (
               <div className="ResponseHeadersSection">
                 <h4>Headers</h4>
