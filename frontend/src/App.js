@@ -66,72 +66,87 @@ const getStatusText = (statusCode) => {
   return statusTexts[statusCode] || 'Unknown Status';
 };
 
+const createNewTab = () => ({
+  id: Date.now(),
+  title: 'New Request',
+  url: '',
+  method: 'GET',
+  loading: false,
+  response: null,
+  responseType: '',
+  headers: [{ name: '', value: '' }],
+  responseHeaders: null,
+  requestBody: '',
+  statusCode: null,
+});
+
 function App() {
-  const [url, setUrl] = useState('');
-  const [method, setMethod] = useState('GET');
-  const [loading, setLoading] = useState(false);
-  const [response, setResponse] = useState(null);
-  const [responseType, setResponseType] = useState('');
-  const [headers, setHeaders] = useState([{ name: '', value: '' }]);
-  const [responseHeaders, setResponseHeaders] = useState(null);
-  const [requestBody, setRequestBody] = useState('');
-  const [statusCode, setStatusCode] = useState(null);
+  const [tabs, setTabs] = useState([createNewTab()]);
   const [currentTab, setCurrentTab] = useState(0);
-  const [tabTitle, setTabTitle] = useState('New Request');
+
+  const currentTabData = tabs[currentTab];
+
+  const updateTabData = (updates) => {
+    const newTabs = [...tabs];
+    newTabs[currentTab] = { ...newTabs[currentTab], ...updates };
+    setTabs(newTabs);
+  };
+
+  const addNewTab = () => {
+    const newTab = createNewTab();
+    setTabs([...tabs, newTab]);
+    setCurrentTab(tabs.length);
+  };
 
   const addHeader = () => {
-    setHeaders([...headers, { name: '', value: '' }]);
+    const newHeaders = [...currentTabData.headers, { name: '', value: '' }];
+    updateTabData({ headers: newHeaders });
   };
 
   const updateHeader = (index, field, value) => {
-    const newHeaders = [...headers];
+    const newHeaders = [...currentTabData.headers];
     newHeaders[index][field] = value;
-    setHeaders(newHeaders);
+    updateTabData({ headers: newHeaders });
   };
 
   const removeHeader = (index) => {
-    const newHeaders = headers.filter((_, i) => i !== index);
-    setHeaders(newHeaders.length > 0 ? newHeaders : [{ name: '', value: '' }]);
+    const newHeaders = currentTabData.headers.filter((_, i) => i !== index);
+    updateTabData({ headers: newHeaders.length > 0 ? newHeaders : [{ name: '', value: '' }] });
   };
 
   const handleMakeRequest = async () => {
-    if (!url) {
+    if (!currentTabData.url) {
       alert('Please enter a URL');
       return;
     }
 
-    setLoading(true);
-    setResponse(null);
+    updateTabData({ loading: true, response: null });
     try {
       // Build headers object from the headers array
       const requestHeaders = {};
-      headers.forEach(header => {
+      currentTabData.headers.forEach(header => {
         if (header.name && header.value) {
           requestHeaders[header.name] = header.value;
         }
       });
 
       const fetchOptions = {
-        method: method,
+        method: currentTabData.method,
         headers: requestHeaders
       };
 
       // Add body to request if it exists and method supports it
-      if (requestBody && (method === 'POST' || method === 'PUT' || method === 'PATCH')) {
-        fetchOptions.body = requestBody;
+      if (currentTabData.requestBody && (currentTabData.method === 'POST' || currentTabData.method === 'PUT' || currentTabData.method === 'PATCH')) {
+        fetchOptions.body = currentTabData.requestBody;
       }
 
-      const res = await fetch(url, fetchOptions);
-
-      // Extract response status code
-      setStatusCode(res.status);
+      const res = await fetch(currentTabData.url, fetchOptions);
 
       // Extract response headers
       const resHeaders = {};
       res.headers.forEach((value, key) => {
         resHeaders[key] = value;
       });
-      setResponseHeaders(resHeaders);
 
       const contentType = res.headers.get('content-type');
       let data;
@@ -152,50 +167,61 @@ function App() {
         type = 'text';
       }
 
-      setResponse(data);
-      setResponseType(type);
+      updateTabData({
+        response: data,
+        responseType: type,
+        statusCode: res.status,
+        responseHeaders: resHeaders,
+        loading: false
+      });
       console.log('Response:', data);
     } catch (error) {
       console.error('Error:', error);
-      setResponse(`Error: ${error.message}`);
-      setResponseType('text');
-      setResponseHeaders(null);
-      setStatusCode(null);
-    } finally {
-      setLoading(false);
+      updateTabData({
+        response: `Error: ${error.message}`,
+        responseType: 'text',
+        responseHeaders: null,
+        statusCode: null,
+        loading: false
+      });
     }
   };
 
   useEffect(() => {
-    if (response) {
+    if (currentTabData.response) {
       document.querySelectorAll('pre code').forEach((block) => {
         hljs.highlightElement(block);
       });
     }
-  }, [response]);
+  }, [currentTabData.response]);
 
   useEffect(() => {
-    if (url) {
+    let newTitle = 'New Request';
+    if (currentTabData.url) {
       try {
-        const urlObj = new URL(url);
+        const urlObj = new URL(currentTabData.url);
         const pathname = urlObj.pathname || '/';
-        setTabTitle(`${method} ${pathname}`);
+        newTitle = `${currentTabData.method} ${pathname}`;
       } catch (error) {
-        // If URL is invalid, just show method
-        setTabTitle('New Request');
+        // If URL is invalid, keep 'New Request'
       }
-    } else {
-      setTabTitle('New Request');
     }
-  }, [url, method]);
+    
+    // Only update if title has changed
+    if (newTitle !== currentTabData.title) {
+      updateTabData({ title: newTitle });
+    }
+  }, [currentTabData.url, currentTabData.method, currentTabData.title]);
 
   return (
     <div className="App">
       <div className="TabsContainer">
         <Tabs value={currentTab} onChange={(e, newValue) => setCurrentTab(newValue)} aria-label="request tabs">
-          <Tab label={tabTitle} />
+          {tabs.map((tab, index) => (
+            <Tab key={tab.id} label={tab.title} />
+          ))}
         </Tabs>
-        <IconButton color="primary" aria-label="add new tab" className="AddTabButton">
+        <IconButton color="primary" aria-label="add new tab" className="AddTabButton" onClick={addNewTab}>
           <AddIcon />
         </IconButton>
       </div>
@@ -206,9 +232,9 @@ function App() {
             <Select
               labelId="method-select-label"
               id="method-select"
-              value={method}
+              value={currentTabData.method}
               label="Method"
-              onChange={(e) => setMethod(e.target.value)}
+              onChange={(e) => updateTabData({ method: e.target.value })}
             >
               <MenuItem value="GET">GET</MenuItem>
               <MenuItem value="POST">POST</MenuItem>
@@ -225,8 +251,8 @@ function App() {
               id="outlined-basic"
               label="URL"
               variant="outlined"
-              value={url}
-              onChange={(e) => setUrl(e.target.value)}
+              value={currentTabData.url}
+              onChange={(e) => updateTabData({ url: e.target.value })}
             />
           </div>
           <div className='ButtonContainer'>
@@ -234,15 +260,15 @@ function App() {
               size='large'
               variant="contained"
               onClick={handleMakeRequest}
-              disabled={loading}
+              disabled={currentTabData.loading}
             >
-              {loading ? 'Loading...' : 'Make Request'}
+              {currentTabData.loading ? 'Loading...' : 'Make Request'}
             </Button>
           </div>
         </div>
         <div className="HeadersSection">
           <h3>Headers</h3>
-          {headers.map((header, index) => (
+          {currentTabData.headers.map((header, index) => (
             <div key={index} className="HeaderRow">
               <TextField
                 label="Header Name"
@@ -260,7 +286,7 @@ function App() {
                 onChange={(e) => updateHeader(index, 'value', e.target.value)}
                 className="HeaderInput"
               />
-              {headers.length > 1 && (
+              {currentTabData.headers.length > 1 && (
                 <Button
                   variant="outlined"
                   color="error"
@@ -280,7 +306,7 @@ function App() {
             Add Header
           </Button>
         </div>
-        {(method === 'POST' || method === 'PUT' || method === 'PATCH') && (
+        {(currentTabData.method === 'POST' || currentTabData.method === 'PUT' || currentTabData.method === 'PATCH') && (
           <div className="BodySection">
             <h3>Body</h3>
             <TextField
@@ -289,32 +315,32 @@ function App() {
               rows={8}
               variant="outlined"
               placeholder="Enter request body here..."
-              value={requestBody}
-              onChange={(e) => setRequestBody(e.target.value)}
+              value={currentTabData.requestBody}
+              onChange={(e) => updateTabData({ requestBody: e.target.value })}
             />
           </div>
         )}
-        {response && (
+        {currentTabData.response && (
           <div className="ResponseViewer">
             <h3>Response:</h3>
-            {statusCode && (
+            {currentTabData.statusCode && (
               <div className="StatusCodeSection">
                 <h4>Status Code</h4>
                 <div className="StatusCodeValue">
-                  <span className={`StatusCode status-${Math.floor(statusCode / 100)}xx`}>
-                    {statusCode}
+                  <span className={`StatusCode status-${Math.floor(currentTabData.statusCode / 100)}xx`}>
+                    {currentTabData.statusCode}
                   </span>
                   <span className="StatusCodeText">
-                    {getStatusText(statusCode)}
+                    {getStatusText(currentTabData.statusCode)}
                   </span>
                 </div>
               </div>
             )}
-            {responseHeaders && (
+            {currentTabData.responseHeaders && (
               <div className="ResponseHeadersSection">
                 <h4>Headers</h4>
                 <div className="ResponseHeadersList">
-                  {Object.entries(responseHeaders).map(([key, value]) => (
+                  {Object.entries(currentTabData.responseHeaders).map(([key, value]) => (
                     <div key={key} className="ResponseHeaderItem">
                       <span className="ResponseHeaderKey">{key}:</span>
                       <span className="ResponseHeaderValue">{value}</span>
@@ -324,8 +350,8 @@ function App() {
               </div>
             )}
             <pre>
-              <code className={`language-${responseType}`}>
-                {response}
+              <code className={`language-${currentTabData.responseType}`}>
+                {currentTabData.response}
               </code>
             </pre>
           </div>
