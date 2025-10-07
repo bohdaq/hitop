@@ -11,12 +11,17 @@ import Tab from '@mui/material/Tab';
 import IconButton from '@mui/material/IconButton';
 import AddIcon from '@mui/icons-material/Add';
 import CloseIcon from '@mui/icons-material/Close';
+import EditIcon from '@mui/icons-material/Edit';
 import Drawer from '@mui/material/Drawer';
 import MenuList from '@mui/material/MenuList';
 import ListItemText from '@mui/material/ListItemText';
 import ListItemIcon from '@mui/material/ListItemIcon';
 import FolderIcon from '@mui/icons-material/Folder';
 import CodeIcon from '@mui/icons-material/Code';
+import Dialog from '@mui/material/Dialog';
+import DialogTitle from '@mui/material/DialogTitle';
+import DialogContent from '@mui/material/DialogContent';
+import DialogActions from '@mui/material/DialogActions';
 import hljs from 'highlight.js';
 import 'highlight.js/styles/github-dark.css';
 import styles from './App.css'
@@ -90,6 +95,9 @@ const createNewTab = () => ({
 function App() {
   const [tabs, setTabs] = useState([createNewTab()]);
   const [currentTab, setCurrentTab] = useState(0);
+  const [collectionName, setCollectionName] = useState('Default');
+  const [isRenameModalOpen, setIsRenameModalOpen] = useState(false);
+  const [newCollectionName, setNewCollectionName] = useState('');
 
   const currentTabData = tabs[currentTab];
 
@@ -103,6 +111,24 @@ function App() {
     const newTab = createNewTab();
     setTabs([...tabs, newTab]);
     setCurrentTab(tabs.length);
+  };
+
+  const handleOpenRenameModal = (event) => {
+    event.stopPropagation();
+    setNewCollectionName(collectionName);
+    setIsRenameModalOpen(true);
+  };
+
+  const handleCloseRenameModal = () => {
+    setIsRenameModalOpen(false);
+    setNewCollectionName('');
+  };
+
+  const handleSaveCollectionName = () => {
+    if (newCollectionName.trim()) {
+      setCollectionName(newCollectionName.trim());
+    }
+    handleCloseRenameModal();
   };
 
   const closeTab = (event, indexToClose) => {
@@ -260,6 +286,17 @@ function App() {
               <FolderIcon fontSize="small" />
             </ListItemIcon>
             <ListItemText>Collections</ListItemText>
+          </MenuItem>
+          <MenuItem className="SubMenuItem">
+            <ListItemText inset>{collectionName}</ListItemText>
+            <IconButton
+              size="small"
+              className="EditCollectionButton"
+              onClick={handleOpenRenameModal}
+              aria-label="edit collection"
+            >
+              <EditIcon fontSize="small" />
+            </IconButton>
           </MenuItem>
         </MenuList>
       </Drawer>
@@ -424,6 +461,30 @@ function App() {
         )}
       </div>
     </div>
+    <Dialog open={isRenameModalOpen} onClose={handleCloseRenameModal}>
+      <DialogTitle>Rename Collection</DialogTitle>
+      <DialogContent>
+        <TextField
+          autoFocus
+          margin="dense"
+          label="Collection Name"
+          type="text"
+          fullWidth
+          variant="outlined"
+          value={newCollectionName}
+          onChange={(e) => setNewCollectionName(e.target.value)}
+          onKeyPress={(e) => {
+            if (e.key === 'Enter') {
+              handleSaveCollectionName();
+            }
+          }}
+        />
+      </DialogContent>
+      <DialogActions>
+        <Button onClick={handleCloseRenameModal}>Cancel</Button>
+        <Button onClick={handleSaveCollectionName} variant="contained">Save</Button>
+      </DialogActions>
+    </Dialog>
     </div>
   );
 }
