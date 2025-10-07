@@ -2,12 +2,17 @@ import './App.css';
 import { useState, useEffect } from 'react';
 import Button from '@mui/material/Button';
 import TextField from '@mui/material/TextField';
+import Select from '@mui/material/Select';
+import MenuItem from '@mui/material/MenuItem';
+import FormControl from '@mui/material/FormControl';
+import InputLabel from '@mui/material/InputLabel';
 import hljs from 'highlight.js';
 import 'highlight.js/styles/github-dark.css';
 import styles from './App.css'
 
 function App() {
   const [url, setUrl] = useState('');
+  const [method, setMethod] = useState('GET');
   const [loading, setLoading] = useState(false);
   const [response, setResponse] = useState(null);
   const [responseType, setResponseType] = useState('');
@@ -48,12 +53,12 @@ function App() {
       });
 
       const fetchOptions = {
+        method: method,
         headers: requestHeaders
       };
 
-      // Add body to request if it exists
-      if (requestBody) {
-        fetchOptions.method = 'POST';
+      // Add body to request if it exists and method supports it
+      if (requestBody && (method === 'POST' || method === 'PUT' || method === 'PATCH')) {
         fetchOptions.body = requestBody;
       }
 
@@ -110,6 +115,24 @@ function App() {
     <div className="App">
       <div className="AppContainer">
         <div className="ControlsContainer">
+          <FormControl className='MethodSelect'>
+            <InputLabel id="method-select-label">Method</InputLabel>
+            <Select
+              labelId="method-select-label"
+              id="method-select"
+              value={method}
+              label="Method"
+              onChange={(e) => setMethod(e.target.value)}
+            >
+              <MenuItem value="GET">GET</MenuItem>
+              <MenuItem value="POST">POST</MenuItem>
+              <MenuItem value="PUT">PUT</MenuItem>
+              <MenuItem value="PATCH">PATCH</MenuItem>
+              <MenuItem value="DELETE">DELETE</MenuItem>
+              <MenuItem value="HEAD">HEAD</MenuItem>
+              <MenuItem value="OPTIONS">OPTIONS</MenuItem>
+            </Select>
+          </FormControl>
           <div className='UrlContainer'>
             <TextField
               fullWidth
@@ -171,18 +194,20 @@ function App() {
             Add Header
           </Button>
         </div>
-        <div className="BodySection">
-          <h3>Body</h3>
-          <TextField
-            fullWidth
-            multiline
-            rows={8}
-            variant="outlined"
-            placeholder="Enter request body here..."
-            value={requestBody}
-            onChange={(e) => setRequestBody(e.target.value)}
-          />
-        </div>
+        {(method === 'POST' || method === 'PUT' || method === 'PATCH') && (
+          <div className="BodySection">
+            <h3>Body</h3>
+            <TextField
+              fullWidth
+              multiline
+              rows={8}
+              variant="outlined"
+              placeholder="Enter request body here..."
+              value={requestBody}
+              onChange={(e) => setRequestBody(e.target.value)}
+            />
+          </div>
+        )}
         {response && (
           <div className="ResponseViewer">
             <h3>Response:</h3>
