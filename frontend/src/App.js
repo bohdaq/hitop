@@ -11,6 +11,12 @@ import Tab from '@mui/material/Tab';
 import IconButton from '@mui/material/IconButton';
 import AddIcon from '@mui/icons-material/Add';
 import CloseIcon from '@mui/icons-material/Close';
+import Drawer from '@mui/material/Drawer';
+import MenuList from '@mui/material/MenuList';
+import ListItemText from '@mui/material/ListItemText';
+import ListItemIcon from '@mui/material/ListItemIcon';
+import FolderIcon from '@mui/icons-material/Folder';
+import CodeIcon from '@mui/icons-material/Code';
 import hljs from 'highlight.js';
 import 'highlight.js/styles/github-dark.css';
 import styles from './App.css'
@@ -234,7 +240,30 @@ function App() {
   }, [currentTabData.url, currentTabData.method, currentTabData.title]);
 
   return (
-    <div className="App">
+    <div className="AppWrapper">
+      <Drawer
+        variant="permanent"
+        className="Sidebar"
+        classes={{
+          paper: 'SidebarPaper',
+        }}
+      >
+        <MenuList>
+          <MenuItem>
+            <ListItemIcon>
+              <CodeIcon fontSize="small" />
+            </ListItemIcon>
+            <ListItemText>Variables</ListItemText>
+          </MenuItem>
+          <MenuItem>
+            <ListItemIcon>
+              <FolderIcon fontSize="small" />
+            </ListItemIcon>
+            <ListItemText>Collections</ListItemText>
+          </MenuItem>
+        </MenuList>
+      </Drawer>
+      <div className="App">
       <div className="TabsContainer">
         <Tabs value={currentTab} onChange={(e, newValue) => setCurrentTab(newValue)} aria-label="request tabs">
           {tabs.map((tab, index) => (
@@ -394,6 +423,7 @@ function App() {
           </div>
         )}
       </div>
+    </div>
     </div>
   );
 }

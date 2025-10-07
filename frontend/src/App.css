@@ -1,6 +1,23 @@
+.AppWrapper {
+  display: flex;
+  height: 100%;
+}
+
+.Sidebar {
+  width: 240px;
+  flex-shrink: 0;
+}
+
+.SidebarPaper {
+  width: 240px;
+  border-right: 1px solid #ddd;
+  position: relative !important;
+  height: 100%;
+  background-color: #fafafa !important;
+}
+
 .App {
-  margin: 3em;
-  margin-top: 0;
+  margin: 0 3em 3em 3em;
   display: flex;
   flex-direction: column;
   flex: 1;
