@@ -12,6 +12,8 @@ function App() {
   const [response, setResponse] = useState(null);
   const [responseType, setResponseType] = useState('');
   const [headers, setHeaders] = useState([{ name: '', value: '' }]);
+  const [responseHeaders, setResponseHeaders] = useState(null);
+  const [requestBody, setRequestBody] = useState('');
 
   const addHeader = () => {
     setHeaders([...headers, { name: '', value: '' }]);
@@ -45,9 +47,25 @@ function App() {
         }
       });
 
-      const res = await fetch(url, {
+      const fetchOptions = {
         headers: requestHeaders
+      };
+
+      // Add body to request if it exists
+      if (requestBody) {
+        fetchOptions.method = 'POST';
+        fetchOptions.body = requestBody;
+      }
+
+      const res = await fetch(url, fetchOptions);
+      
+      // Extract response headers
+      const resHeaders = {};
+      res.headers.forEach((value, key) => {
+        resHeaders[key] = value;
       });
+      setResponseHeaders(resHeaders);
+
       const contentType = res.headers.get('content-type');
       let data;
       let type = 'text';
@@ -74,6 +92,7 @@ function App() {
       console.error('Error:', error);
       setResponse(`Error: ${error.message}`);
       setResponseType('text');
+      setResponseHeaders(null);
     } finally {
       setLoading(false);
     }
@@ -152,9 +171,34 @@ function App() {
             Add Header
           </Button>
         </div>
+        <div className="BodySection">
+          <h3>Body</h3>
+          <TextField
+            fullWidth
+            multiline
+            rows={8}
+            variant="outlined"
+            placeholder="Enter request body here..."
+            value={requestBody}
+            onChange={(e) => setRequestBody(e.target.value)}
+          />
+        </div>
         {response && (
           <div className="ResponseViewer">
             <h3>Response:</h3>
+            {responseHeaders && (
+              <div className="ResponseHeadersSection">
+                <h4>Headers</h4>
+                <div className="ResponseHeadersList">
+                  {Object.entries(responseHeaders).map(([key, value]) => (
+                    <div key={key} className="ResponseHeaderItem">
+                      <span className="ResponseHeaderKey">{key}:</span>
+                      <span className="ResponseHeaderValue">{value}</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
             <pre>
               <code className={`language-${responseType}`}>
                 {response}
