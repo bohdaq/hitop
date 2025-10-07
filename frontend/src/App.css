@@ -25,6 +25,35 @@
   min-width: 200px;
 }
 
+.HeadersSection {
+  margin-bottom: 2em;
+  padding: 1.5em;
+  border: 1px solid #ddd;
+  border-radius: 8px;
+  background-color: #f9f9f9;
+}
+
+.HeadersSection h3 {
+  margin-top: 0;
+  margin-bottom: 1em;
+  font-size: 1.2em;
+}
+
+.HeaderRow {
+  display: flex;
+  gap: 1em;
+  margin-bottom: 1em;
+  align-items: center;
+}
+
+.HeaderInput {
+  flex: 1;
+}
+
+.AddHeaderButton {
+  margin-top: 0.5em;
+}
+
 .ResponseViewer {
   margin-top: 1em;
   width: 100%;

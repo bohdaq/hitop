@@ -11,6 +11,22 @@ function App() {
   const [loading, setLoading] = useState(false);
   const [response, setResponse] = useState(null);
   const [responseType, setResponseType] = useState('');
+  const [headers, setHeaders] = useState([{ name: '', value: '' }]);
+
+  const addHeader = () => {
+    setHeaders([...headers, { name: '', value: '' }]);
+  };
+
+  const updateHeader = (index, field, value) => {
+    const newHeaders = [...headers];
+    newHeaders[index][field] = value;
+    setHeaders(newHeaders);
+  };
+
+  const removeHeader = (index) => {
+    const newHeaders = headers.filter((_, i) => i !== index);
+    setHeaders(newHeaders.length > 0 ? newHeaders : [{ name: '', value: '' }]);
+  };
 
   const handleMakeRequest = async () => {
     if (!url) {
@@ -21,7 +37,17 @@ function App() {
     setLoading(true);
     setResponse(null);
     try {
-      const res = await fetch(url);
+      // Build headers object from the headers array
+      const requestHeaders = {};
+      headers.forEach(header => {
+        if (header.name && header.value) {
+          requestHeaders[header.name] = header.value;
+        }
+      });
+
+      const res = await fetch(url, {
+        headers: requestHeaders
+      });
       const contentType = res.headers.get('content-type');
       let data;
       let type = 'text';
@@ -85,6 +111,46 @@ function App() {
               {loading ? 'Loading...' : 'Make Request'}
             </Button>
           </div>
+        </div>
+        <div className="HeadersSection">
+          <h3>Headers</h3>
+          {headers.map((header, index) => (
+            <div key={index} className="HeaderRow">
+              <TextField
+                label="Header Name"
+                variant="outlined"
+                size="small"
+                value={header.name}
+                onChange={(e) => updateHeader(index, 'name', e.target.value)}
+                className="HeaderInput"
+              />
+              <TextField
+                label="Header Value"
+                variant="outlined"
+                size="small"
+                value={header.value}
+                onChange={(e) => updateHeader(index, 'value', e.target.value)}
+                className="HeaderInput"
+              />
+              {headers.length > 1 && (
+                <Button
+                  variant="outlined"
+                  color="error"
+                  size="small"
+                  onClick={() => removeHeader(index)}
+                >
+                  Remove
+                </Button>
+              )}
+            </div>
+          ))}
+          <Button
+            variant="outlined"
+            onClick={addHeader}
+            className="AddHeaderButton"
+          >
+            Add Header
+          </Button>
         </div>
         {response && (
           <div className="ResponseViewer">
