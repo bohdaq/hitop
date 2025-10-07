@@ -6,6 +6,10 @@ import Select from '@mui/material/Select';
 import MenuItem from '@mui/material/MenuItem';
 import FormControl from '@mui/material/FormControl';
 import InputLabel from '@mui/material/InputLabel';
+import Tabs from '@mui/material/Tabs';
+import Tab from '@mui/material/Tab';
+import IconButton from '@mui/material/IconButton';
+import AddIcon from '@mui/icons-material/Add';
 import hljs from 'highlight.js';
 import 'highlight.js/styles/github-dark.css';
 import styles from './App.css'
@@ -72,6 +76,7 @@ function App() {
   const [responseHeaders, setResponseHeaders] = useState(null);
   const [requestBody, setRequestBody] = useState('');
   const [statusCode, setStatusCode] = useState(null);
+  const [currentTab, setCurrentTab] = useState(0);
 
   const addHeader = () => {
     setHeaders([...headers, { name: '', value: '' }]);
@@ -170,6 +175,14 @@ function App() {
 
   return (
     <div className="App">
+      <div className="TabsContainer">
+        <Tabs value={currentTab} onChange={(e, newValue) => setCurrentTab(newValue)} aria-label="request tabs">
+          <Tab label="New Request" />
+        </Tabs>
+        <IconButton color="primary" aria-label="add new tab" className="AddTabButton">
+          <AddIcon />
+        </IconButton>
+      </div>
       <div className="AppContainer">
         <div className="ControlsContainer">
           <FormControl className='MethodSelect'>

@@ -1,8 +1,20 @@
 .App {
   margin: 3em;
+  margin-top: 0;
   display: flex;
   flex-direction: column;
   flex: 1;
+}
+
+.TabsContainer {
+  display: flex;
+  align-items: center;
+  margin-bottom: 2em;
+  border-bottom: 1px solid #ddd;
+}
+
+.AddTabButton {
+  margin-left: 0.5em !important;
 }
 
 .AppContainer {
