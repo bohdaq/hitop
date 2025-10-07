@@ -2,6 +2,7 @@
   margin: 3em;
   display: flex;
   flex-direction: column;
+  flex: 1;
 }
 
 .AppContainer {
