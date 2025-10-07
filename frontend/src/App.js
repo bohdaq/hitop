@@ -62,7 +62,7 @@ const getStatusText = (statusCode) => {
     504: 'Gateway Timeout',
     505: 'HTTP Version Not Supported',
   };
-  
+
   return statusTexts[statusCode] || 'Unknown Status';
 };
 
@@ -77,6 +77,7 @@ function App() {
   const [requestBody, setRequestBody] = useState('');
   const [statusCode, setStatusCode] = useState(null);
   const [currentTab, setCurrentTab] = useState(0);
+  const [tabTitle, setTabTitle] = useState('New Request');
 
   const addHeader = () => {
     setHeaders([...headers, { name: '', value: '' }]);
@@ -121,10 +122,10 @@ function App() {
       }
 
       const res = await fetch(url, fetchOptions);
-      
+
       // Extract response status code
       setStatusCode(res.status);
-      
+
       // Extract response headers
       const resHeaders = {};
       res.headers.forEach((value, key) => {
@@ -173,11 +174,26 @@ function App() {
     }
   }, [response]);
 
+  useEffect(() => {
+    if (url) {
+      try {
+        const urlObj = new URL(url);
+        const pathname = urlObj.pathname || '/';
+        setTabTitle(`${method} ${pathname}`);
+      } catch (error) {
+        // If URL is invalid, just show method
+        setTabTitle('New Request');
+      }
+    } else {
+      setTabTitle('New Request');
+    }
+  }, [url, method]);
+
   return (
     <div className="App">
       <div className="TabsContainer">
         <Tabs value={currentTab} onChange={(e, newValue) => setCurrentTab(newValue)} aria-label="request tabs">
-          <Tab label="New Request" />
+          <Tab label={tabTitle} />
         </Tabs>
         <IconButton color="primary" aria-label="add new tab" className="AddTabButton">
           <AddIcon />
