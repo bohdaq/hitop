@@ -10,6 +10,7 @@ import Tabs from '@mui/material/Tabs';
 import Tab from '@mui/material/Tab';
 import IconButton from '@mui/material/IconButton';
 import AddIcon from '@mui/icons-material/Add';
+import CloseIcon from '@mui/icons-material/Close';
 import hljs from 'highlight.js';
 import 'highlight.js/styles/github-dark.css';
 import styles from './App.css'
@@ -96,6 +97,25 @@ function App() {
     const newTab = createNewTab();
     setTabs([...tabs, newTab]);
     setCurrentTab(tabs.length);
+  };
+
+  const closeTab = (event, indexToClose) => {
+    event.stopPropagation();
+    
+    // Don't close if it's the only tab
+    if (tabs.length === 1) {
+      return;
+    }
+
+    const newTabs = tabs.filter((_, index) => index !== indexToClose);
+    setTabs(newTabs);
+
+    // Adjust current tab if necessary
+    if (currentTab >= newTabs.length) {
+      setCurrentTab(newTabs.length - 1);
+    } else if (currentTab === indexToClose && currentTab > 0) {
+      setCurrentTab(currentTab - 1);
+    }
   };
 
   const addHeader = () => {
@@ -218,7 +238,24 @@ function App() {
       <div className="TabsContainer">
         <Tabs value={currentTab} onChange={(e, newValue) => setCurrentTab(newValue)} aria-label="request tabs">
           {tabs.map((tab, index) => (
-            <Tab key={tab.id} label={tab.title} />
+            <Tab 
+              key={tab.id} 
+              label={
+                <div className="TabLabel">
+                  <span>{tab.title}</span>
+                  {tabs.length > 1 && (
+                    <IconButton
+                      size="small"
+                      className="TabCloseButton"
+                      onClick={(e) => closeTab(e, index)}
+                      aria-label="close tab"
+                    >
+                      <CloseIcon fontSize="small" />
+                    </IconButton>
+                  )}
+                </div>
+              }
+            />
           ))}
         </Tabs>
         <IconButton color="primary" aria-label="add new tab" className="AddTabButton" onClick={addNewTab}>

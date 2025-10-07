@@ -17,6 +17,28 @@
   margin-left: 0.5em !important;
 }
 
+.TabLabel {
+  display: flex;
+  align-items: center;
+  gap: 0.5em;
+  text-transform: none;
+}
+
+.TabCloseButton {
+  opacity: 0;
+  transition: opacity 0.2s;
+  padding: 2px !important;
+  margin-left: 4px !important;
+}
+
+.MuiTab-root:hover .TabCloseButton {
+  opacity: 1;
+}
+
+.TabCloseButton:hover {
+  background-color: rgba(0, 0, 0, 0.1);
+}
+
 .AppContainer {
   display: flex;
   flex-direction: column;
