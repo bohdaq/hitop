@@ -1,0 +1,9 @@
+.App {
+  margin: 3em;
+  display: flex;
+}
+
+.UrlContainer {
+  width: 300px;
+  margin-right: 1em;
+}
