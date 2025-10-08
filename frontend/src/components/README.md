@@ -21,6 +21,18 @@ This directory contains all reusable components used in the HITOP application.
   - `onOpenExport`: function
   - `onOpenImport`: function
 
+### RequestPanel
+- **Purpose**: Main request form and response viewer
+- **Props**:
+  - `tabData`: object (current tab data)
+  - `onUpdateTabData`: function
+  - `onMakeRequest`: function
+  - `onSaveRequest`: function
+  - `onAddHeader`: function
+  - `onUpdateHeader`: function
+  - `onRemoveHeader`: function
+  - `getStatusText`: function
+
 ## Modal Components
 
 ### AddCollectionModal
@@ -108,8 +120,10 @@ This directory contains all reusable components used in the HITOP application.
 
 ## Benefits of Component Extraction
 
-1. **Maintainability**: Each modal is in its own file, making it easier to find and update
+1. **Maintainability**: Each component is in its own file, making it easier to find and update
 2. **Reusability**: Components can be reused across different parts of the application
 3. **Testability**: Each component can be tested independently
 4. **Readability**: Main App.js is cleaner and more focused on business logic
 5. **Performance**: Potential for better code splitting and lazy loading
+6. **Separation of Concerns**: UI components separated from business logic
+7. **Easier Collaboration**: Multiple developers can work on different components simultaneously

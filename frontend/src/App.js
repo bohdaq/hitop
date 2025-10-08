@@ -1,22 +1,16 @@
 import './App.css';
 import { useState, useEffect } from 'react';
-import Button from '@mui/material/Button';
-import TextField from '@mui/material/TextField';
-import Select from '@mui/material/Select';
-import MenuItem from '@mui/material/MenuItem';
-import FormControl from '@mui/material/FormControl';
-import InputLabel from '@mui/material/InputLabel';
 import Tabs from '@mui/material/Tabs';
 import Tab from '@mui/material/Tab';
 import IconButton from '@mui/material/IconButton';
 import AddIcon from '@mui/icons-material/Add';
 import CloseIcon from '@mui/icons-material/Close';
-import SaveIcon from '@mui/icons-material/Save';
 import hljs from 'highlight.js';
 import 'highlight.js/styles/github-dark.css';
 
 // Components
 import Sidebar from './components/Sidebar';
+import RequestPanel from './components/RequestPanel';
 
 // Modal Components
 import AddCollectionModal from './components/AddCollectionModal';
@@ -1028,172 +1022,16 @@ function App() {
           <AddIcon />
         </IconButton>
       </div>
-      <div className="AppContainer">
-        <div className="ControlsContainer">
-          <FormControl className='MethodSelect'>
-            <InputLabel id="method-select-label">Method</InputLabel>
-            <Select
-              labelId="method-select-label"
-              id="method-select"
-              value={currentTabData.method}
-              label="Method"
-              onChange={(e) => updateTabData({ method: e.target.value })}
-            >
-              <MenuItem value="GET">GET</MenuItem>
-              <MenuItem value="POST">POST</MenuItem>
-              <MenuItem value="PUT">PUT</MenuItem>
-              <MenuItem value="PATCH">PATCH</MenuItem>
-              <MenuItem value="DELETE">DELETE</MenuItem>
-              <MenuItem value="HEAD">HEAD</MenuItem>
-              <MenuItem value="OPTIONS">OPTIONS</MenuItem>
-            </Select>
-          </FormControl>
-          <div className='UrlContainer'>
-            <TextField
-              fullWidth
-              id="outlined-basic"
-              label="URL"
-              variant="outlined"
-              value={currentTabData.url}
-              onChange={(e) => updateTabData({ url: e.target.value })}
-            />
-          </div>
-          <div className='ButtonContainer'>
-            <Button
-              size='large'
-              variant="contained"
-              onClick={makeRequest}
-              disabled={currentTabData.loading}
-            >
-              {currentTabData.loading ? 'Loading...' : 'Make Request'}
-            </Button>
-            <IconButton
-              color="primary"
-              onClick={handleOpenSaveRequestModal}
-              aria-label="save request"
-              disabled={!currentTabData.url}
-            >
-              <SaveIcon />
-            </IconButton>
-          </div>
-        </div>
-        <div className="HeadersSection">
-          <h3>Headers</h3>
-          {currentTabData.headers.map((header, index) => (
-            <div key={index} className="HeaderRow">
-              <TextField
-                label="Header Name"
-                variant="outlined"
-                size="small"
-                value={header.name}
-                onChange={(e) => updateHeader(index, 'name', e.target.value)}
-                className="HeaderInput"
-              />
-              <TextField
-                label="Header Value"
-                variant="outlined"
-                size="small"
-                value={header.value}
-                onChange={(e) => updateHeader(index, 'value', e.target.value)}
-                className="HeaderInput"
-              />
-              {currentTabData.headers.length > 1 && (
-                <Button
-                  variant="outlined"
-                  color="error"
-                  size="small"
-                  onClick={() => removeHeader(index)}
-                >
-                  Remove
-                </Button>
-              )}
-            </div>
-          ))}
-          <Button
-            variant="outlined"
-            onClick={addHeader}
-            className="AddHeaderButton"
-          >
-            Add Header
-          </Button>
-        </div>
-        {(currentTabData.method === 'POST' || currentTabData.method === 'PUT' || currentTabData.method === 'PATCH') && (
-          <div className="BodySection">
-            <h3>Body</h3>
-            <TextField
-              fullWidth
-              multiline
-              rows={8}
-              variant="outlined"
-              placeholder="Enter request body here..."
-              value={currentTabData.requestBody}
-              onChange={(e) => updateTabData({ requestBody: e.target.value })}
-            />
-          </div>
-        )}
-        <div className="PreRequestScriptSection">
-          <h3>Pre-Request Script</h3>
-          <TextField
-            fullWidth
-            multiline
-            rows={6}
-            variant="outlined"
-            placeholder="// JavaScript code to run before request&#10;// Available functions:&#10;// setHeader(name, value) - Add/update header&#10;// setUrl(url) - Modify URL&#10;// setBody(body) - Modify request body&#10;// setContext(key, value) - Store data for next request&#10;// getContext(key) - Retrieve stored data&#10;&#10;// Example:&#10;// setContext('token', 'abc123');&#10;// setHeader('Authorization', 'Bearer ' + getContext('token'));"
-            value={currentTabData.preRequestScript}
-            onChange={(e) => updateTabData({ preRequestScript: e.target.value })}
-            sx={{ fontFamily: 'monospace' }}
-          />
-        </div>
-        <div className="PostRequestScriptSection">
-          <h3>Post-Request Script</h3>
-          <TextField
-            fullWidth
-            multiline
-            rows={6}
-            variant="outlined"
-            placeholder="// JavaScript code to run after request completes&#10;// Available variables and functions:&#10;// response - Parsed JSON response (or responseText if not JSON)&#10;// responseText - Raw response text&#10;// responseHeaders - Response headers object&#10;// statusCode - HTTP status code&#10;// setContext(key, value) - Store data for next request&#10;// getContext(key) - Retrieve stored data&#10;// getResponseValue('path.to.value') - Get value from JSON response&#10;// getResponseHeader('header-name') - Get response header value&#10;&#10;// Example:&#10;// const token = getResponseValue('data.token');&#10;// setContext('authToken', token);&#10;// const userId = response.user.id;&#10;// setContext('userId', userId);"
-            value={currentTabData.postRequestScript}
-            onChange={(e) => updateTabData({ postRequestScript: e.target.value })}
-            sx={{ fontFamily: 'monospace' }}
-          />
-        </div>
-        {currentTabData.response && (
-          <div className="ResponseViewer">
-            <h3>Response:</h3>
-            {currentTabData.statusCode && (
-              <div className="StatusCodeSection">
-                <h4>Status Code</h4>
-                <div className="StatusCodeValue">
-                  <span className={`StatusCode status-${Math.floor(currentTabData.statusCode / 100)}xx`}>
-                    {currentTabData.statusCode}
-                  </span>
-                  <span className="StatusCodeText">
-                    {getStatusText(currentTabData.statusCode)}
-                  </span>
-                </div>
-              </div>
-            )}
-            {currentTabData.responseHeaders && (
-              <div className="ResponseHeadersSection">
-                <h4>Headers</h4>
-                <div className="ResponseHeadersList">
-                  {Object.entries(currentTabData.responseHeaders).map(([key, value]) => (
-                    <div key={key} className="ResponseHeaderItem">
-                      <span className="ResponseHeaderKey">{key}:</span>
-                      <span className="ResponseHeaderValue">{value}</span>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            )}
-            <pre>
-              <code className={`language-${currentTabData.responseType}`}>
-                {currentTabData.response}
-              </code>
-            </pre>
-          </div>
-        )}
-      </div>
+      <RequestPanel
+        tabData={currentTabData}
+        onUpdateTabData={updateTabData}
+        onMakeRequest={makeRequest}
+        onSaveRequest={handleOpenSaveRequestModal}
+        onAddHeader={addHeader}
+        onUpdateHeader={updateHeader}
+        onRemoveHeader={removeHeader}
+        getStatusText={getStatusText}
+      />
     </div>
     
     {/* Modals */}
