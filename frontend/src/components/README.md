@@ -22,7 +22,9 @@ This directory contains all reusable components used in the HITOP application.
   - `onOpenImport`: function
   - `onOpenVariables`: function
 - **Features**:
+  - Branded header with HITOP logo and title
   - Each collection has a "Variables" menu item to manage collection-specific variables
+  - Gradient background header for visual appeal
 
 ### RequestPanel
 - **Purpose**: Main request form and response viewer

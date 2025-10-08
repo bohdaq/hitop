@@ -39,7 +39,17 @@ const Sidebar = ({
         paper: 'SidebarPaper',
       }}
     >
-      <MenuList sx={{ height: '100%', display: 'flex', flexDirection: 'column' }}>
+      <MenuList sx={{ height: '100%', display: 'flex', flexDirection: 'column', padding: 0 }}>
+        <MenuItem className="SidebarHeader" disabled>
+          <img 
+            src="/logo192.png" 
+            alt="HITOP Logo" 
+            className="SidebarLogo"
+          />
+          <span className="SidebarTitle">
+            HITOP
+          </span>
+        </MenuItem>
         <MenuItem className="CollectionsMenuItem">
           <ListItemText>Collections</ListItemText>
           <IconButton
