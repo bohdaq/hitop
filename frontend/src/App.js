@@ -15,11 +15,13 @@ import EditIcon from '@mui/icons-material/Edit';
 import SaveIcon from '@mui/icons-material/Save';
 import ContentCopyIcon from '@mui/icons-material/ContentCopy';
 import FileDownloadIcon from '@mui/icons-material/FileDownload';
+import FileUploadIcon from '@mui/icons-material/FileUpload';
 import Drawer from '@mui/material/Drawer';
 import MenuList from '@mui/material/MenuList';
 import ListItemText from '@mui/material/ListItemText';
 import ListItemIcon from '@mui/material/ListItemIcon';
 import FolderIcon from '@mui/icons-material/Folder';
+import HttpIcon from '@mui/icons-material/Http';
 import Dialog from '@mui/material/Dialog';
 import DialogTitle from '@mui/material/DialogTitle';
 import DialogContent from '@mui/material/DialogContent';
@@ -106,12 +108,14 @@ function App() {
   const [isDeleteRequestModalOpen, setIsDeleteRequestModalOpen] = useState(false);
   const [isDeleteCollectionModalOpen, setIsDeleteCollectionModalOpen] = useState(false);
   const [isExportModalOpen, setIsExportModalOpen] = useState(false);
+  const [isImportModalOpen, setIsImportModalOpen] = useState(false);
   const [newCollectionName, setNewCollectionName] = useState('');
   const [editingCollectionId, setEditingCollectionId] = useState(null);
   const [selectedCollectionId, setSelectedCollectionId] = useState(null);
   const [requestName, setRequestName] = useState('');  const [isOverwriting, setIsOverwriting] = useState(false);
   const [requestToDelete, setRequestToDelete] = useState(null);
   const [collectionToDelete, setCollectionToDelete] = useState(null);
+  const [importJson, setImportJson] = useState('');
 
   const currentTabData = tabs[currentTab];
 
@@ -363,6 +367,43 @@ function App() {
     });
   };
 
+  const handleOpenImportModal = () => {
+    setImportJson('');
+    setIsImportModalOpen(true);
+  };
+
+  const handleCloseImportModal = () => {
+    setIsImportModalOpen(false);
+    setImportJson('');
+  };
+
+  const handleImportCollections = () => {
+    try {
+      const importedCollections = JSON.parse(importJson);
+      
+      // Validate that it's an array
+      if (!Array.isArray(importedCollections)) {
+        alert('Invalid format: Expected an array of collections');
+        return;
+      }
+      
+      // Overwrite existing collections
+      setCollections(importedCollections);
+      
+      // Clear all tabs' loaded request tracking since collections changed
+      const newTabs = tabs.map(tab => ({
+        ...tab,
+        loadedRequestId: null,
+        loadedCollectionId: null
+      }));
+      setTabs(newTabs);
+      
+      handleCloseImportModal();
+    } catch (error) {
+      alert('Invalid JSON format: ' + error.message);
+    }
+  };
+
   useEffect(() => {
     if (isExportModalOpen) {
       // Highlight the JSON after modal opens
@@ -519,9 +560,6 @@ function App() {
       >
         <MenuList sx={{ height: '100%', display: 'flex', flexDirection: 'column' }}>
           <MenuItem className="CollectionsMenuItem">
-            <ListItemIcon>
-              <FolderIcon fontSize="small" />
-            </ListItemIcon>
             <ListItemText>Collections</ListItemText>
             <IconButton
               size="small"
@@ -535,7 +573,10 @@ function App() {
           {collections.map((collection) => (
             <div key={collection.id}>
               <MenuItem className="SubMenuItem">
-                <ListItemText inset>{collection.name}</ListItemText>
+                <ListItemIcon sx={{ minWidth: '32px' }}>
+                  <FolderIcon fontSize="small" />
+                </ListItemIcon>
+                <ListItemText>{collection.name}</ListItemText>
                 <IconButton
                   size="small"
                   className="EditCollectionButton"
@@ -551,7 +592,10 @@ function App() {
                   className="RequestMenuItem"
                   onClick={() => handleLoadRequest(request, collection.id)}
                 >
-                  <ListItemText inset>{request.name}</ListItemText>
+                  <ListItemIcon sx={{ minWidth: '32px' }}>
+                    <HttpIcon fontSize="small" />
+                  </ListItemIcon>
+                  <ListItemText>{request.name}</ListItemText>
                   <IconButton
                     size="small"
                     className="DeleteRequestButton"
@@ -569,6 +613,12 @@ function App() {
               <FileDownloadIcon fontSize="small" />
             </ListItemIcon>
             <ListItemText>Export</ListItemText>
+          </MenuItem>
+          <MenuItem onClick={handleOpenImportModal}>
+            <ListItemIcon>
+              <FileUploadIcon fontSize="small" />
+            </ListItemIcon>
+            <ListItemText>Import</ListItemText>
           </MenuItem>
         </MenuList>
       </Drawer>
@@ -880,6 +930,29 @@ function App() {
           Copy to Clipboard
         </Button>
         <Button onClick={handleCloseExportModal}>Close</Button>
+      </DialogActions>
+    </Dialog>
+    <Dialog open={isImportModalOpen} onClose={handleCloseImportModal} maxWidth="md" fullWidth>
+      <DialogTitle>Import Collections</DialogTitle>
+      <DialogContent>
+        <TextField
+          autoFocus
+          margin="dense"
+          label="Paste JSON here"
+          multiline
+          rows={15}
+          fullWidth
+          variant="outlined"
+          value={importJson}
+          onChange={(e) => setImportJson(e.target.value)}
+          placeholder='Paste exported collections JSON here...'
+        />
+      </DialogContent>
+      <DialogActions>
+        <Button onClick={handleCloseImportModal}>Cancel</Button>
+        <Button onClick={handleImportCollections} variant="contained" color="warning">
+          Import (Overwrite All)
+        </Button>
       </DialogActions>
     </Dialog>
     </div>

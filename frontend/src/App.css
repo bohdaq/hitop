@@ -39,11 +39,19 @@
 }
 
 .SubMenuItem {
-  padding-left: 2em !important;
+  padding-left: 1em !important;
   font-size: 0.9em !important;
   display: flex !important;
   justify-content: space-between !important;
   align-items: center !important;
+}
+
+.SubMenuItem .MuiListItemText-root {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  flex: 1;
+  min-width: 0;
 }
 
 .EditCollectionButton {
@@ -61,12 +69,20 @@
 }
 
 .RequestMenuItem {
-  padding-left: 4em !important;
+  padding-left: 2em !important;
   font-size: 0.85em !important;
   cursor: pointer !important;
   display: flex !important;
   justify-content: space-between !important;
   align-items: center !important;
+}
+
+.RequestMenuItem .MuiListItemText-root {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  flex: 1;
+  min-width: 0;
 }
 
 .RequestMenuItem:hover {

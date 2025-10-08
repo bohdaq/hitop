@@ -53,83 +53,10 @@
       margin: 0;
     }
 
-    body {
-      display: flex;
-      flex-direction: column;
-    }
-
     #root {
-      flex: 1;
+      height: 100%;
       display: flex;
       flex-direction: column;
-    }
-
-    .Footer {
-      margin-top: auto;
-      padding: 2em 0;
-      background-color: #f5f5f5;
-      border-top: 2px solid #ddd;
-    }
-
-    .FooterContent {
-      display: flex;
-      gap: 3em;
-      max-width: 1200px;
-      margin: 0 auto;
-      padding: 0 2em;
-    }
-
-    .FooterSection {
-      flex: 1;
-    }
-
-    .FooterSection h4 {
-      margin-top: 0;
-      margin-bottom: 1em;
-      font-size: 1.1em;
-      color: #333;
-    }
-
-    .FooterSection p {
-      line-height: 1.6;
-      color: #666;
-      margin: 0;
-    }
-
-    .FooterKeywords {
-      display: flex;
-      flex-wrap: wrap;
-      gap: 0.5em;
-    }
-
-    .Keyword {
-      display: inline-block;
-      padding: 0.4em 0.8em;
-      background-color: #1976d2;
-      color: white;
-      border-radius: 4px;
-      font-size: 0.85em;
-      font-weight: 500;
-    }
-
-    .FooterBottom {
-      margin-top: 2em;
-      padding-top: 1.5em;
-      border-top: 1px solid #ddd;
-      text-align: center;
-    }
-
-    .FooterBottom p {
-      margin: 0;
-      color: #666;
-      font-size: 0.9em;
-    }
-
-    @media (max-width: 768px) {
-      .FooterContent {
-        flex-direction: column;
-        gap: 2em;
-      }
     }
   </style>
 </head>
@@ -137,34 +64,6 @@
 <body>
   <noscript>You need to enable JavaScript to run this app.</noscript>
   <div id="root"></div>
-  
-  <footer class="Footer">
-    <div class="FooterContent">
-      <div class="FooterSection">
-        <h4>About HITOP</h4>
-        <p>
-          HITOP is a powerful web-based HTTP client for testing REST APIs. Send GET, POST, PUT, DELETE requests with
-          custom headers and body. View formatted responses with syntax highlighting.
-        </p>
-      </div>
-      <div class="FooterSection">
-        <h4>Features</h4>
-        <div class="FooterKeywords">
-          <span class="Keyword">HTTP Client</span>
-          <span class="Keyword">REST API Testing</span>
-          <span class="Keyword">API Client</span>
-          <span class="Keyword">HTTP Request Tool</span>
-          <span class="Keyword">REST Client</span>
-          <span class="Keyword">API Testing</span>
-          <span class="Keyword">Web Development</span>
-          <span class="Keyword">Developer Tools</span>
-        </div>
-      </div>
-    </div>
-    <div class="FooterBottom">
-      <p>&copy; 2025 HITOP. Open source HTTP client for developers.</p>
-    </div>
-  </footer>
 </body>
 
 </html>
