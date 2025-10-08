@@ -11,19 +11,12 @@ import Tab from '@mui/material/Tab';
 import IconButton from '@mui/material/IconButton';
 import AddIcon from '@mui/icons-material/Add';
 import CloseIcon from '@mui/icons-material/Close';
-import EditIcon from '@mui/icons-material/Edit';
 import SaveIcon from '@mui/icons-material/Save';
-import FileDownloadIcon from '@mui/icons-material/FileDownload';
-import FileUploadIcon from '@mui/icons-material/FileUpload';
-import HistoryIcon from '@mui/icons-material/History';
-import Drawer from '@mui/material/Drawer';
-import MenuList from '@mui/material/MenuList';
-import ListItemText from '@mui/material/ListItemText';
-import ListItemIcon from '@mui/material/ListItemIcon';
-import FolderIcon from '@mui/icons-material/Folder';
-import HttpIcon from '@mui/icons-material/Http';
 import hljs from 'highlight.js';
 import 'highlight.js/styles/github-dark.css';
+
+// Components
+import Sidebar from './components/Sidebar';
 
 // Modal Components
 import AddCollectionModal from './components/AddCollectionModal';
@@ -992,101 +985,21 @@ function App() {
 
   return (
     <div className="AppWrapper">
-      <Drawer
-        variant="permanent"
-        className="Sidebar"
-        classes={{
-          paper: 'SidebarPaper',
-        }}
-      >
-        <MenuList sx={{ height: '100%', display: 'flex', flexDirection: 'column' }}>
-          <MenuItem className="CollectionsMenuItem">
-            <ListItemText>Collections</ListItemText>
-            <IconButton
-              size="small"
-              className="AddCollectionButton"
-              onClick={handleOpenAddCollectionModal}
-              aria-label="add collection"
-            >
-              <AddIcon fontSize="small" />
-            </IconButton>
-          </MenuItem>
-          {collections.map((collection) => (
-            <div key={collection.id}>
-              <MenuItem 
-                className="SubMenuItem"
-                onClick={(e) => {
-                  if (collection.requests.length > 0) {
-                    handleOpenRunCollectionModal(e, collection);
-                  }
-                }}
-              >
-                <ListItemIcon sx={{ minWidth: '32px' }}>
-                  <FolderIcon fontSize="small" />
-                </ListItemIcon>
-                <ListItemText>{collection.name}</ListItemText>
-                <IconButton
-                  size="small"
-                  className="EditCollectionButton"
-                  onClick={(e) => handleOpenRenameModal(e, collection.id, collection.name)}
-                  aria-label="edit collection"
-                >
-                  <EditIcon fontSize="small" />
-                </IconButton>
-              </MenuItem>
-              {collection.requests.map((request) => (
-                <MenuItem 
-                  key={request.id} 
-                  className="RequestMenuItem"
-                  onClick={() => handleLoadRequest(request, collection.id)}
-                  draggable
-                  onDragStart={(e) => handleDragStart(e, request, collection.id)}
-                  onDragOver={handleDragOver}
-                  onDrop={(e) => handleDrop(e, request, collection.id)}
-                  onDragEnd={handleDragEnd}
-                  sx={{
-                    cursor: 'grab',
-                    '&:active': {
-                      cursor: 'grabbing'
-                    }
-                  }}
-                >
-                  <ListItemIcon sx={{ minWidth: '32px' }}>
-                    <HttpIcon fontSize="small" />
-                  </ListItemIcon>
-                  <ListItemText>{request.name}</ListItemText>
-                  <IconButton
-                    size="small"
-                    className="DeleteRequestButton"
-                    onClick={(e) => handleOpenDeleteRequestModal(e, request, collection.id)}
-                    aria-label="delete request"
-                  >
-                    <CloseIcon fontSize="small" />
-                  </IconButton>
-                </MenuItem>
-              ))}
-            </div>
-          ))}
-          <MenuItem onClick={handleOpenHistoryModal} sx={{ marginTop: 'auto', borderTop: '1px solid #ddd' }}>
-            <ListItemIcon>
-              <HistoryIcon fontSize="small" />
-            </ListItemIcon>
-            <ListItemText>History</ListItemText>
-          </MenuItem>
-          <MenuItem onClick={handleOpenExportModal}>
-            <ListItemIcon>
-              <FileDownloadIcon fontSize="small" />
-            </ListItemIcon>
-            <ListItemText>Export</ListItemText>
-          </MenuItem>
-          <MenuItem onClick={handleOpenImportModal}>
-            <ListItemIcon>
-              <FileUploadIcon fontSize="small" />
-            </ListItemIcon>
-            <ListItemText>Import</ListItemText>
-          </MenuItem>
-        </MenuList>
-      </Drawer>
+      <Sidebar
+        collections={collections}
+        onAddCollection={handleOpenAddCollectionModal}
+        onRenameCollection={handleOpenRenameModal}
+        onRunCollection={handleOpenRunCollectionModal}
+        onLoadRequest={handleLoadRequest}
+        onDeleteRequest={handleOpenDeleteRequestModal}
+        onDragStart={handleDragStart}
+        onDragOver={handleDragOver}
+        onDrop={handleDrop}
+        onDragEnd={handleDragEnd}
+        onOpenHistory={handleOpenHistoryModal}
+        onOpenExport={handleOpenExportModal}
+        onOpenImport={handleOpenImportModal}
+      />
       <div className="App">
       <div className="TabsContainer">
         <Tabs value={currentTab} onChange={(e, newValue) => setCurrentTab(newValue)} aria-label="request tabs">

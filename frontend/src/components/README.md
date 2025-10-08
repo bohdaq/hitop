@@ -1,8 +1,27 @@
-# Modal Components
+# Components
 
-This directory contains all modal dialog components used in the HITOP application.
+This directory contains all reusable components used in the HITOP application.
 
-## Components
+## Main Components
+
+### Sidebar
+- **Purpose**: Navigation sidebar with collections, requests, and actions
+- **Props**:
+  - `collections`: array
+  - `onAddCollection`: function
+  - `onRenameCollection`: function
+  - `onRunCollection`: function
+  - `onLoadRequest`: function
+  - `onDeleteRequest`: function
+  - `onDragStart`: function
+  - `onDragOver`: function
+  - `onDrop`: function
+  - `onDragEnd`: function
+  - `onOpenHistory`: function
+  - `onOpenExport`: function
+  - `onOpenImport`: function
+
+## Modal Components
 
 ### AddCollectionModal
 - **Purpose**: Add a new collection
