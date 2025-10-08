@@ -100,6 +100,8 @@ const createNewTab = () => ({
   statusCode: null,
   loadedRequestId: null,
   loadedCollectionId: null,
+  preRequestScript: '',
+  postRequestScript: '',
 });
 
 function App() {
@@ -128,6 +130,7 @@ function App() {
   const [draggedRequest, setDraggedRequest] = useState(null);
   const [draggedCollectionId, setDraggedCollectionId] = useState(null);
   const [requestHistory, setRequestHistory] = useState([]);
+  const [collectionContext, setCollectionContext] = useState({});
 
   const currentTabData = tabs[currentTab];
 
@@ -237,7 +240,9 @@ function App() {
                       url: currentTabData.url,
                       method: currentTabData.method,
                       headers: currentTabData.headers,
-                      body: currentTabData.requestBody
+                      body: currentTabData.requestBody,
+                      preRequestScript: currentTabData.preRequestScript,
+                      postRequestScript: currentTabData.postRequestScript
                     }
                   : req
               )
@@ -259,7 +264,9 @@ function App() {
           url: currentTabData.url,
           method: currentTabData.method,
           headers: currentTabData.headers,
-          body: currentTabData.requestBody
+          body: currentTabData.requestBody,
+          preRequestScript: currentTabData.preRequestScript,
+          postRequestScript: currentTabData.postRequestScript
         };
         
         setCollections(collections.map(col => 
@@ -289,7 +296,9 @@ function App() {
       statusCode: null,
       responseType: '',
       loadedRequestId: request.id,
-      loadedCollectionId: collectionId
+      loadedCollectionId: collectionId,
+      preRequestScript: request.preRequestScript || '',
+      postRequestScript: request.postRequestScript || ''
     });
   };
 
@@ -507,14 +516,71 @@ function App() {
 
     setIsRunning(true);
     const results = [];
+    const sharedContext = {}; // Shared context for all requests in collection
 
     for (let i = 0; i < runningCollection.requests.length; i++) {
       const request = runningCollection.requests[i];
       
       try {
+        // Execute pre-request script if exists
+        let requestData = {
+          url: request.url,
+          headers: request.headers || [],
+          body: request.body
+        };
+
+        if (request.preRequestScript && request.preRequestScript.trim()) {
+          const scriptContext = {
+            url: request.url,
+            method: request.method,
+            headers: [...(request.headers || [])],
+            body: request.body,
+            context: { ...sharedContext },
+            setContext: (key, value) => {
+              sharedContext[key] = value;
+            },
+            getContext: (key) => {
+              return sharedContext[key];
+            },
+            setHeader: (name, value) => {
+              const existingIndex = scriptContext.headers.findIndex(h => h.name === name);
+              if (existingIndex >= 0) {
+                scriptContext.headers[existingIndex].value = value;
+              } else {
+                scriptContext.headers.push({ name, value });
+              }
+            },
+            setUrl: (newUrl) => {
+              scriptContext.url = newUrl;
+            },
+            setBody: (newBody) => {
+              scriptContext.body = newBody;
+            }
+          };
+
+          try {
+            const func = new Function('ctx', `with(ctx) { ${request.preRequestScript} }`);
+            func(scriptContext);
+            requestData = {
+              url: scriptContext.url,
+              headers: scriptContext.headers,
+              body: scriptContext.body
+            };
+          } catch (scriptError) {
+            results.push({
+              name: request.name,
+              status: 'Script Error',
+              success: false,
+              response: scriptError.message
+            });
+            setRunResults([...results]);
+            break;
+          }
+        }
+
         // Prepare headers
         const headers = {};
-        request.headers.forEach(header => {
+        requestData.headers.forEach(header => {
           if (header.name && header.value) {
             headers[header.name] = header.value;
           }
@@ -525,12 +591,64 @@ function App() {
           headers: headers,
         };
 
-        if (request.body && (request.method === 'POST' || request.method === 'PUT' || request.method === 'PATCH')) {
-          options.body = request.body;
+        if (requestData.body && (request.method === 'POST' || request.method === 'PUT' || request.method === 'PATCH')) {
+          options.body = requestData.body;
         }
 
-        const response = await fetch(request.url, options);
+        const response = await fetch(requestData.url, options);
         const responseText = await response.text();
+        
+        // Extract response headers
+        const resHeaders = {};
+        response.headers.forEach((value, key) => {
+          resHeaders[key] = value;
+        });
+
+        // Execute post-request script if exists
+        if (request.postRequestScript && request.postRequestScript.trim()) {
+          try {
+            let parsedResponse = responseText;
+            try {
+              parsedResponse = JSON.parse(responseText);
+            } catch (e) {
+              // Not JSON, use as is
+            }
+
+            const postScriptContext = {
+              response: parsedResponse,
+              responseText: responseText,
+              responseHeaders: resHeaders,
+              statusCode: response.status,
+              context: { ...sharedContext },
+              setContext: (key, value) => {
+                sharedContext[key] = value;
+              },
+              getContext: (key) => {
+                return sharedContext[key];
+              },
+              getResponseValue: (path) => {
+                const keys = path.split('.');
+                let value = parsedResponse;
+                for (const key of keys) {
+                  if (value && typeof value === 'object') {
+                    value = value[key];
+                  } else {
+                    return undefined;
+                  }
+                }
+                return value;
+              },
+              getResponseHeader: (name) => {
+                return resHeaders[name.toLowerCase()];
+              }
+            };
+
+            const postFunc = new Function('ctx', `with(ctx) { ${request.postRequestScript} }`);
+            postFunc(postScriptContext);
+          } catch (postScriptError) {
+            console.error('Post-request script error:', postScriptError);
+          }
+        }
         
         const result = {
           name: request.name,
@@ -621,17 +739,127 @@ function App() {
     setRequestHistory(prev => [...prev, historyItem].slice(-50)); // Keep last 50 requests
   };
 
+  const executePostRequestScript = (script, context, response, responseHeaders, statusCode) => {
+    if (!script || !script.trim()) {
+      return;
+    }
+
+    try {
+      // Parse response if it's JSON
+      let parsedResponse = response;
+      try {
+        parsedResponse = JSON.parse(response);
+      } catch (e) {
+        // Not JSON, use as is
+      }
+
+      const scriptContext = {
+        response: parsedResponse,
+        responseText: response,
+        responseHeaders: responseHeaders,
+        statusCode: statusCode,
+        context: { ...context },
+        setContext: (key, value) => {
+          context[key] = value;
+        },
+        getContext: (key) => {
+          return context[key];
+        },
+        // Helper to get value from JSON response
+        getResponseValue: (path) => {
+          const keys = path.split('.');
+          let value = parsedResponse;
+          for (const key of keys) {
+            if (value && typeof value === 'object') {
+              value = value[key];
+            } else {
+              return undefined;
+            }
+          }
+          return value;
+        },
+        // Helper to get header value
+        getResponseHeader: (name) => {
+          return responseHeaders[name.toLowerCase()];
+        }
+      };
+
+      const func = new Function('ctx', `with(ctx) { ${script} }`);
+      func(scriptContext);
+    } catch (error) {
+      console.error('Post-request script error:', error);
+      alert(`Post-request script error: ${error.message}`);
+    }
+  };
+
+  const executePreRequestScript = (script, context) => {
+    if (!script || !script.trim()) {
+      return { url: currentTabData.url, headers: currentTabData.headers, body: currentTabData.requestBody };
+    }
+
+    try {
+      // Create a safe execution context
+      const scriptContext = {
+        url: currentTabData.url,
+        method: currentTabData.method,
+        headers: [...currentTabData.headers],
+        body: currentTabData.requestBody,
+        context: { ...context },
+        setContext: (key, value) => {
+          context[key] = value;
+        },
+        getContext: (key) => {
+          return context[key];
+        },
+        setHeader: (name, value) => {
+          const existingIndex = scriptContext.headers.findIndex(h => h.name === name);
+          if (existingIndex >= 0) {
+            scriptContext.headers[existingIndex].value = value;
+          } else {
+            scriptContext.headers.push({ name, value });
+          }
+        },
+        setUrl: (newUrl) => {
+          scriptContext.url = newUrl;
+        },
+        setBody: (newBody) => {
+          scriptContext.body = newBody;
+        }
+      };
+
+      // Execute the script
+      const func = new Function('ctx', `with(ctx) { ${script} }`);
+      func(scriptContext);
+
+      return {
+        url: scriptContext.url,
+        headers: scriptContext.headers,
+        body: scriptContext.body
+      };
+    } catch (error) {
+      console.error('Pre-request script error:', error);
+      alert(`Pre-request script error: ${error.message}`);
+      return null;
+    }
+  };
+
   const makeRequest = async () => {
     if (!currentTabData.url) {
       alert('Please enter a URL');
       return;
     }
 
+    // Execute pre-request script
+    const scriptResult = executePreRequestScript(currentTabData.preRequestScript, collectionContext);
+    if (!scriptResult) {
+      return; // Script failed
+    }
+
     updateTabData({ loading: true, response: null });
     try {
-      // Build headers object from the headers array
+      // Build headers object from the headers array (use script-modified headers)
       const requestHeaders = {};
-      currentTabData.headers.forEach(header => {
+      scriptResult.headers.forEach(header => {
         if (header.name && header.value) {
           requestHeaders[header.name] = header.value;
         }
@@ -642,12 +870,12 @@ function App() {
         headers: requestHeaders
       };
 
-      // Add body to request if it exists and method supports it
-      if (currentTabData.requestBody && (currentTabData.method === 'POST' || currentTabData.method === 'PUT' || currentTabData.method === 'PATCH')) {
-        fetchOptions.body = currentTabData.requestBody;
+      // Add body to request if it exists and method supports it (use script-modified body)
+      if (scriptResult.body && (currentTabData.method === 'POST' || currentTabData.method === 'PUT' || currentTabData.method === 'PATCH')) {
+        fetchOptions.body = scriptResult.body;
       }
 
-      const res = await fetch(currentTabData.url, fetchOptions);
+      const res = await fetch(scriptResult.url, fetchOptions);
 
       // Extract response headers
       const resHeaders = {};
@@ -680,6 +908,15 @@ function App() {
         responseHeaders: resHeaders,
         loading: false
       });
+
+      // Execute post-request script
+      executePostRequestScript(
+        currentTabData.postRequestScript,
+        collectionContext,
+        data,
+        resHeaders,
+        res.status
+      );
 
       // Add to history
       addToHistory({
@@ -954,6 +1191,32 @@ function App() {
             />
           </div>
         )}
+        <div className="PreRequestScriptSection">
+          <h3>Pre-Request Script</h3>
+          <TextField
+            fullWidth
+            multiline
+            rows={6}
+            variant="outlined"
+            placeholder="// JavaScript code to run before request&#10;// Available functions:&#10;// setHeader(name, value) - Add/update header&#10;// setUrl(url) - Modify URL&#10;// setBody(body) - Modify request body&#10;// setContext(key, value) - Store data for next request&#10;// getContext(key) - Retrieve stored data&#10;&#10;// Example:&#10;// setContext('token', 'abc123');&#10;// setHeader('Authorization', 'Bearer ' + getContext('token'));"
+            value={currentTabData.preRequestScript}
+            onChange={(e) => updateTabData({ preRequestScript: e.target.value })}
+            sx={{ fontFamily: 'monospace' }}
+          />
+        </div>
+        <div className="PostRequestScriptSection">
+          <h3>Post-Request Script</h3>
+          <TextField
+            fullWidth
+            multiline
+            rows={6}
+            variant="outlined"
+            placeholder="// JavaScript code to run after request completes&#10;// Available variables and functions:&#10;// response - Parsed JSON response (or responseText if not JSON)&#10;// responseText - Raw response text&#10;// responseHeaders - Response headers object&#10;// statusCode - HTTP status code&#10;// setContext(key, value) - Store data for next request&#10;// getContext(key) - Retrieve stored data&#10;// getResponseValue('path.to.value') - Get value from JSON response&#10;// getResponseHeader('header-name') - Get response header value&#10;&#10;// Example:&#10;// const token = getResponseValue('data.token');&#10;// setContext('authToken', token);&#10;// const userId = response.user.id;&#10;// setContext('userId', userId);"
+            value={currentTabData.postRequestScript}
+            onChange={(e) => updateTabData({ postRequestScript: e.target.value })}
+            sx={{ fontFamily: 'monospace' }}
+          />
+        </div>
         {currentTabData.response && (
           <div className="ResponseViewer">
             <h3>Response:</h3>

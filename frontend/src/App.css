@@ -123,6 +123,28 @@
   color: #f44336 !important;
 }
 
+.PreRequestScriptSection {
+  margin-top: 2em;
+  margin-bottom: 2em;
+}
+
+.PreRequestScriptSection h3 {
+  margin-bottom: 0.5em;
+  color: #333;
+  font-size: 1.1em;
+}
+
+.PostRequestScriptSection {
+  margin-top: 2em;
+  margin-bottom: 2em;
+}
+
+.PostRequestScriptSection h3 {
+  margin-bottom: 0.5em;
+  color: #333;
+  font-size: 1.1em;
+}
+
 .export-json pre {
   background-color: #0d1117;
   border-radius: 6px;
