@@ -130,7 +130,7 @@ function App() {
   const [draggedRequest, setDraggedRequest] = useState(null);
   const [draggedCollectionId, setDraggedCollectionId] = useState(null);
   const [requestHistory, setRequestHistory] = useState([]);
-  const [collectionContext, setCollectionContext] = useState({});
+  const [collectionContexts, setCollectionContexts] = useState({}); // { collectionId: context }
 
   const currentTabData = tabs[currentTab];
 
@@ -516,7 +516,10 @@ function App() {
 
     setIsRunning(true);
     const results = [];
-    const sharedContext = {}; // Shared context for all requests in collection
+    
+    // Get or initialize collection-specific context
+    const collectionId = runningCollection.id;
+    const context = getCollectionContext(collectionId);
 
     for (let i = 0; i < runningCollection.requests.length; i++) {
       const request = runningCollection.requests[i];
@@ -535,12 +538,13 @@ function App() {
             method: request.method,
             headers: [...(request.headers || [])],
             body: request.body,
-            context: { ...sharedContext },
+            context: { ...context },
             setContext: (key, value) => {
-              sharedContext[key] = value;
+              updateCollectionContext(collectionId, key, value);
+              context[key] = value; // Update local copy for this run
             },
             getContext: (key) => {
-              return sharedContext[key];
+              return context[key];
             },
             setHeader: (name, value) => {
               const existingIndex = scriptContext.headers.findIndex(h => h.name === name);
@@ -619,12 +623,13 @@ function App() {
               responseText: responseText,
               responseHeaders: resHeaders,
               statusCode: response.status,
-              context: { ...sharedContext },
+              context: { ...context },
               setContext: (key, value) => {
-                sharedContext[key] = value;
+                updateCollectionContext(collectionId, key, value);
+                context[key] = value; // Update local copy for this run
               },
               getContext: (key) => {
-                return sharedContext[key];
+                return context[key];
               },
               getResponseValue: (path) => {
                 const keys = path.split('.');
@@ -739,7 +744,23 @@ function App() {
     setRequestHistory(prev => [...prev, historyItem].slice(-50)); // Keep last 50 requests
   };
 
-  const executePostRequestScript = (script, context, response, responseHeaders, statusCode) => {
+  const getCollectionContext = (collectionId) => {
+    if (!collectionId) return {};
+    return collectionContexts[collectionId] || {};
+  };
+
+  const updateCollectionContext = (collectionId, key, value) => {
+    if (!collectionId) return;
+    setCollectionContexts(prev => ({
+      ...prev,
+      [collectionId]: {
+        ...(prev[collectionId] || {}),
+        [key]: value
+      }
+    }));
+  };
+
+  const executePostRequestScript = (script, collectionId, response, responseHeaders, statusCode) => {
     if (!script || !script.trim()) {
       return;
     }
@@ -753,6 +774,8 @@ function App() {
         // Not JSON, use as is
       }
 
+      const context = getCollectionContext(collectionId);
+
       const scriptContext = {
         response: parsedResponse,
         responseText: response,
@@ -760,7 +783,7 @@ function App() {
         statusCode: statusCode,
         context: { ...context },
         setContext: (key, value) => {
-          context[key] = value;
+          updateCollectionContext(collectionId, key, value);
         },
         getContext: (key) => {
           return context[key];
@@ -792,12 +815,14 @@ function App() {
     }
   };
 
-  const executePreRequestScript = (script, context) => {
+  const executePreRequestScript = (script, collectionId) => {
     if (!script || !script.trim()) {
       return { url: currentTabData.url, headers: currentTabData.headers, body: currentTabData.requestBody };
     }
 
     try {
+      const context = getCollectionContext(collectionId);
+
       // Create a safe execution context
       const scriptContext = {
         url: currentTabData.url,
@@ -806,7 +831,7 @@ function App() {
         body: currentTabData.requestBody,
         context: { ...context },
         setContext: (key, value) => {
-          context[key] = value;
+          updateCollectionContext(collectionId, key, value);
         },
         getContext: (key) => {
           return context[key];
@@ -849,8 +874,8 @@ function App() {
       return;
     }
 
-    // Execute pre-request script
-    const scriptResult = executePreRequestScript(currentTabData.preRequestScript, collectionContext);
+    // Execute pre-request script with collection-specific context
+    const scriptResult = executePreRequestScript(currentTabData.preRequestScript, currentTabData.loadedCollectionId);
     if (!scriptResult) {
       return; // Script failed
     }
@@ -909,10 +934,10 @@ function App() {
         loading: false
       });
 
-      // Execute post-request script
+      // Execute post-request script with collection-specific context
       executePostRequestScript(
         currentTabData.postRequestScript,
-        collectionContext,
+        currentTabData.loadedCollectionId,
         data,
         resHeaders,
         res.status
