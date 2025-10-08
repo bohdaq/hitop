@@ -101,11 +101,15 @@ function App() {
   const [isRenameModalOpen, setIsRenameModalOpen] = useState(false);
   const [isAddCollectionModalOpen, setIsAddCollectionModalOpen] = useState(false);
   const [isSaveRequestModalOpen, setIsSaveRequestModalOpen] = useState(false);
+  const [isDeleteRequestModalOpen, setIsDeleteRequestModalOpen] = useState(false);
+  const [isDeleteCollectionModalOpen, setIsDeleteCollectionModalOpen] = useState(false);
   const [newCollectionName, setNewCollectionName] = useState('');
   const [editingCollectionId, setEditingCollectionId] = useState(null);
   const [selectedCollectionId, setSelectedCollectionId] = useState(null);
   const [requestName, setRequestName] = useState('');
   const [isOverwriting, setIsOverwriting] = useState(false);
+  const [requestToDelete, setRequestToDelete] = useState(null);
+  const [collectionToDelete, setCollectionToDelete] = useState(null);
 
   const currentTabData = tabs[currentTab];
 
@@ -269,6 +273,74 @@ function App() {
       loadedRequestId: request.id,
       loadedCollectionId: collectionId
     });
+  };
+
+  const handleOpenDeleteRequestModal = (event, request, collectionId) => {
+    event.stopPropagation();
+    setRequestToDelete({ request, collectionId });
+    setIsDeleteRequestModalOpen(true);
+  };
+
+  const handleCloseDeleteRequestModal = () => {
+    setIsDeleteRequestModalOpen(false);
+    setRequestToDelete(null);
+  };
+
+  const handleDeleteRequest = () => {
+    if (requestToDelete) {
+      setCollections(collections.map(col => {
+        if (col.id === requestToDelete.collectionId) {
+          return {
+            ...col,
+            requests: col.requests.filter(req => req.id !== requestToDelete.request.id)
+          };
+        }
+        return col;
+      }));
+      
+      // If the deleted request is currently loaded, clear the loaded request tracking
+      if (currentTabData.loadedRequestId === requestToDelete.request.id) {
+        updateTabData({
+          loadedRequestId: null,
+          loadedCollectionId: null
+        });
+      }
+    }
+    handleCloseDeleteRequestModal();
+  };
+
+  const handleOpenDeleteCollectionModal = () => {
+    // Store the collection to delete
+    const collection = collections.find(col => col.id === editingCollectionId);
+    setCollectionToDelete(collection);
+    // Close rename modal and open delete confirmation
+    setIsRenameModalOpen(false);
+    setIsDeleteCollectionModalOpen(true);
+  };
+
+  const handleCloseDeleteCollectionModal = () => {
+    setIsDeleteCollectionModalOpen(false);
+    setCollectionToDelete(null);
+  };
+
+  const handleDeleteCollection = () => {
+    if (collectionToDelete) {
+      setCollections(collections.filter(col => col.id !== collectionToDelete.id));
+      
+      // If any tab has a request from this collection loaded, clear the tracking
+      const newTabs = tabs.map(tab => {
+        if (tab.loadedCollectionId === collectionToDelete.id) {
+          return {
+            ...tab,
+            loadedRequestId: null,
+            loadedCollectionId: null
+          };
+        }
+        return tab;
+      });
+      setTabs(newTabs);
+    }
+    handleCloseDeleteCollectionModal();
   };
 
   const closeTab = (event, indexToClose) => {
@@ -449,6 +521,14 @@ function App() {
                   onClick={() => handleLoadRequest(request, collection.id)}
                 >
                   <ListItemText inset>{request.name}</ListItemText>
+                  <IconButton
+                    size="small"
+                    className="DeleteRequestButton"
+                    onClick={(e) => handleOpenDeleteRequestModal(e, request, collection.id)}
+                    aria-label="delete request"
+                  >
+                    <CloseIcon fontSize="small" />
+                  </IconButton>
                 </MenuItem>
               ))}
             </div>
@@ -644,6 +724,9 @@ function App() {
         />
       </DialogContent>
       <DialogActions>
+        <Button onClick={handleOpenDeleteCollectionModal} color="error" sx={{ marginRight: 'auto' }}>
+          Delete Collection
+        </Button>
         <Button onClick={handleCloseRenameModal}>Cancel</Button>
         <Button onClick={handleSaveCollectionName} variant="contained">Save</Button>
       </DialogActions>
@@ -713,6 +796,34 @@ function App() {
         <Button onClick={handleCloseSaveRequestModal}>Cancel</Button>
         <Button onClick={handleSaveRequest} variant="contained">
           {isOverwriting ? 'Update' : 'Save'}
+        </Button>
+      </DialogActions>
+    </Dialog>
+    <Dialog open={isDeleteRequestModalOpen} onClose={handleCloseDeleteRequestModal}>
+      <DialogTitle>Delete Request</DialogTitle>
+      <DialogContent>
+        Are you sure you want to delete "{requestToDelete?.request.name}"? This action cannot be undone.
+      </DialogContent>
+      <DialogActions>
+        <Button onClick={handleCloseDeleteRequestModal}>Cancel</Button>
+        <Button onClick={handleDeleteRequest} variant="contained" color="error">
+          Delete
+        </Button>
+      </DialogActions>
+    </Dialog>
+    <Dialog open={isDeleteCollectionModalOpen} onClose={handleCloseDeleteCollectionModal}>
+      <DialogTitle>Confirm Collection Deletion</DialogTitle>
+      <DialogContent>
+        Are you sure you want to delete the collection "{collectionToDelete?.name}"? 
+        {collectionToDelete?.requests.length > 0 && (
+          <span> This will also delete {collectionToDelete.requests.length} saved request(s).</span>
+        )}
+        {' '}This action cannot be undone.
+      </DialogContent>
+      <DialogActions>
+        <Button onClick={handleCloseDeleteCollectionModal}>Cancel</Button>
+        <Button onClick={handleDeleteCollection} variant="contained" color="error">
+          Delete Collection
         </Button>
       </DialogActions>
     </Dialog>

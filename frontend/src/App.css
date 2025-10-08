@@ -62,10 +62,28 @@
   padding-left: 4em !important;
   font-size: 0.85em !important;
   cursor: pointer !important;
+  display: flex !important;
+  justify-content: space-between !important;
+  align-items: center !important;
 }
 
 .RequestMenuItem:hover {
   background-color: rgba(25, 118, 210, 0.08) !important;
+}
+
+.DeleteRequestButton {
+  opacity: 0;
+  transition: opacity 0.2s;
+  padding: 4px !important;
+}
+
+.RequestMenuItem:hover .DeleteRequestButton {
+  opacity: 1;
+}
+
+.DeleteRequestButton:hover {
+  background-color: rgba(244, 67, 54, 0.1) !important;
+  color: #f44336 !important;
 }
 
 .App {
