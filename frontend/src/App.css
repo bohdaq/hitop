@@ -1,21 +1,28 @@
 .AppWrapper {
   display: flex;
-  height: 100%;
+  height: 100vh;
+  overflow: hidden;
 }
 
 .Sidebar {
   width: 240px;
   flex-shrink: 0;
+  height: 100vh;
+  position: fixed;
+  left: 0;
+  top: 0;
+  z-index: 1000;
 }
 
 .SidebarPaper {
   width: 240px;
   border-right: 1px solid #ddd;
   position: relative !important;
-  height: 100%;
+  height: 100vh;
   background-color: #fafafa !important;
   display: flex;
   flex-direction: column;
+  overflow-y: auto;
 }
 
 .CollectionsMenuItem {
@@ -121,10 +128,14 @@
 }
 
 .App {
-  margin: 0 3em 3em 3em;
+  padding-left: 3em;
+  padding-right: 3em;
+  margin-left: 240px;
   display: flex;
   flex-direction: column;
   flex: 1;
+  height: 100vh;
+  overflow-y: auto;
 }
 
 .TabsContainer {
