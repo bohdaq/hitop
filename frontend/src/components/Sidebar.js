@@ -13,6 +13,7 @@ import HttpIcon from '@mui/icons-material/Http';
 import HistoryIcon from '@mui/icons-material/History';
 import FileDownloadIcon from '@mui/icons-material/FileDownload';
 import FileUploadIcon from '@mui/icons-material/FileUpload';
+import SettingsIcon from '@mui/icons-material/Settings';
 
 const Sidebar = ({
   collections,
@@ -27,7 +28,8 @@ const Sidebar = ({
   onDragEnd,
   onOpenHistory,
   onOpenExport,
-  onOpenImport
+  onOpenImport,
+  onOpenVariables
 }) => {
   return (
     <Drawer
@@ -71,6 +73,19 @@ const Sidebar = ({
               >
                 <EditIcon fontSize="small" />
               </IconButton>
+            </MenuItem>
+            <MenuItem 
+              className="RequestMenuItem"
+              onClick={(e) => {
+                e.stopPropagation();
+                onOpenVariables(collection);
+              }}
+              sx={{ paddingLeft: '48px' }}
+            >
+              <ListItemIcon sx={{ minWidth: '32px' }}>
+                <SettingsIcon fontSize="small" />
+              </ListItemIcon>
+              <ListItemText>Variables</ListItemText>
             </MenuItem>
             {collection.requests.map((request) => (
               <MenuItem 

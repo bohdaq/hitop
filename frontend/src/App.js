@@ -22,6 +22,10 @@ import ExportModal from './components/ExportModal';
 import ImportModal from './components/ImportModal';
 import RunCollectionModal from './components/RunCollectionModal';
 import HistoryModal from './components/HistoryModal';
+import CollectionVariablesModal from './components/CollectionVariablesModal';
+
+// Services
+import { interpolateVariables } from './services/variableInterpolation';
 
 const getStatusText = (statusCode) => {
   const statusTexts = {
@@ -120,6 +124,8 @@ function App() {
   const [draggedCollectionId, setDraggedCollectionId] = useState(null);
   const [requestHistory, setRequestHistory] = useState([]);
   const [collectionContexts, setCollectionContexts] = useState({}); // { collectionId: context }
+  const [isVariablesModalOpen, setIsVariablesModalOpen] = useState(false);
+  const [selectedVariablesCollection, setSelectedVariablesCollection] = useState(null);
 
   const currentTabData = tabs[currentTab];
 
@@ -452,6 +458,26 @@ function App() {
     setIsRunning(false);
   };
 
+  const handleOpenVariablesModal = (collection) => {
+    setSelectedVariablesCollection(collection);
+    setIsVariablesModalOpen(true);
+  };
+
+  const handleCloseVariablesModal = () => {
+    setIsVariablesModalOpen(false);
+    setSelectedVariablesCollection(null);
+  };
+
+  const handleSaveVariables = (variables) => {
+    if (selectedVariablesCollection) {
+      setCollections(collections.map(col =>
+        col.id === selectedVariablesCollection.id
+          ? { ...col, variables }
+          : col
+      ));
+    }
+  };
+
   const handleDragStart = (e, request, collectionId) => {
     setDraggedRequest(request);
     setDraggedCollectionId(collectionId);
@@ -506,27 +532,56 @@ function App() {
     setIsRunning(true);
     const results = [];
     
-    // Get or initialize collection-specific context
+    // Get or initialize collection-specific context and variables
     const collectionId = runningCollection.id;
     const context = getCollectionContext(collectionId);
+    const variables = runningCollection.variables || {};
 
     for (let i = 0; i < runningCollection.requests.length; i++) {
       const request = runningCollection.requests[i];
       
       try {
+        // Interpolate variables in URL, headers, and body
+        let interpolatedUrl = request.url;
+        let interpolatedHeaders = request.headers || [];
+        let interpolatedBody = request.body;
+
+        try {
+          interpolatedUrl = interpolateVariables(request.url, variables);
+          
+          interpolatedHeaders = (request.headers || []).map(header => ({
+            name: header.name ? interpolateVariables(header.name, variables) : '',
+            value: header.value ? interpolateVariables(header.value, variables) : ''
+          }));
+
+          if (interpolatedBody) {
+            interpolatedBody = interpolateVariables(interpolatedBody, variables);
+          }
+        } catch (varError) {
+          results.push({
+            name: request.name,
+            status: 'Variable Error',
+            success: false,
+            response: varError.message
+          });
+          setRunResults([...results]);
+          break;
+        }
+
         // Execute pre-request script if exists
         let requestData = {
-          url: request.url,
-          headers: request.headers || [],
-          body: request.body
+          url: interpolatedUrl,
+          headers: interpolatedHeaders,
+          body: interpolatedBody
         };
 
         if (request.preRequestScript && request.preRequestScript.trim()) {
           const scriptContext = {
-            url: request.url,
+            url: interpolatedUrl,
             method: request.method,
-            headers: [...(request.headers || [])],
-            body: request.body,
+            headers: [...interpolatedHeaders],
+            body: interpolatedBody,
+            variables: { ...variables },
             context: { ...context },
             setContext: (key, value) => {
               updateCollectionContext(collectionId, key, value);
@@ -534,6 +589,9 @@ function App() {
             },
             getContext: (key) => {
               return context[key];
+            },
+            getVariable: (key) => {
+              return variables[key];
             },
             setHeader: (name, value) => {
               const existingIndex = scriptContext.headers.findIndex(h => h.name === name);
@@ -612,6 +670,7 @@ function App() {
               responseText: responseText,
               responseHeaders: resHeaders,
               statusCode: response.status,
+              variables: { ...variables },
               context: { ...context },
               setContext: (key, value) => {
                 updateCollectionContext(collectionId, key, value);
@@ -619,6 +678,9 @@ function App() {
               },
               getContext: (key) => {
                 return context[key];
+              },
+              getVariable: (key) => {
+                return variables[key];
               },
               getResponseValue: (path) => {
                 const keys = path.split('.');
@@ -804,26 +866,31 @@ function App() {
     }
   };
 
-  const executePreRequestScript = (script, collectionId) => {
+  const executePreRequestScript = (script, collectionId, interpolatedUrl, interpolatedHeaders, interpolatedBody) => {
     if (!script || !script.trim()) {
-      return { url: currentTabData.url, headers: currentTabData.headers, body: currentTabData.requestBody };
+      return { url: interpolatedUrl, headers: interpolatedHeaders, body: interpolatedBody };
     }
 
     try {
       const context = getCollectionContext(collectionId);
+      const variables = getCollectionVariables(collectionId);
 
       // Create a safe execution context
       const scriptContext = {
-        url: currentTabData.url,
+        url: interpolatedUrl,
         method: currentTabData.method,
-        headers: [...currentTabData.headers],
-        body: currentTabData.requestBody,
+        headers: [...interpolatedHeaders],
+        body: interpolatedBody,
+        variables: { ...variables },
         context: { ...context },
         setContext: (key, value) => {
           updateCollectionContext(collectionId, key, value);
         },
         getContext: (key) => {
           return context[key];
+        },
+        getVariable: (key) => {
+          return variables[key];
         },
         setHeader: (name, value) => {
           const existingIndex = scriptContext.headers.findIndex(h => h.name === name);
@@ -857,14 +924,50 @@ function App() {
     }
   };
 
+  const getCollectionVariables = (collectionId) => {
+    if (!collectionId) return {};
+    const collection = collections.find(col => col.id === collectionId);
+    return collection?.variables || {};
+  };
+
   const makeRequest = async () => {
     if (!currentTabData.url) {
       alert('Please enter a URL');
       return;
     }
 
-    // Execute pre-request script with collection-specific context
-    const scriptResult = executePreRequestScript(currentTabData.preRequestScript, currentTabData.loadedCollectionId);
+    // Get collection variables
+    const variables = getCollectionVariables(currentTabData.loadedCollectionId);
+
+    // Interpolate variables in URL, headers, and body
+    let interpolatedUrl = currentTabData.url;
+    let interpolatedHeaders = [...currentTabData.headers];
+    let interpolatedBody = currentTabData.requestBody;
+
+    try {
+      interpolatedUrl = interpolateVariables(currentTabData.url, variables);
+      
+      interpolatedHeaders = currentTabData.headers.map(header => ({
+        name: header.name ? interpolateVariables(header.name, variables) : '',
+        value: header.value ? interpolateVariables(header.value, variables) : ''
+      }));
+
+      if (interpolatedBody) {
+        interpolatedBody = interpolateVariables(interpolatedBody, variables);
+      }
+    } catch (error) {
+      alert(`Variable interpolation error: ${error.message}`);
+      return;
+    }
+
+    // Execute pre-request script with collection-specific context and interpolated values
+    const scriptResult = executePreRequestScript(
+      currentTabData.preRequestScript, 
+      currentTabData.loadedCollectionId,
+      interpolatedUrl,
+      interpolatedHeaders,
+      interpolatedBody
+    );
     if (!scriptResult) {
       return; // Script failed
     }
@@ -993,6 +1096,7 @@ function App() {
         onOpenHistory={handleOpenHistoryModal}
         onOpenExport={handleOpenExportModal}
         onOpenImport={handleOpenImportModal}
+        onOpenVariables={handleOpenVariablesModal}
       />
       <div className="App">
       <div className="TabsContainer">
@@ -1107,6 +1211,13 @@ function App() {
       onClose={handleCloseHistoryModal}
       requestHistory={requestHistory}
       onLoadHistoryItem={handleLoadHistoryItem}
+    />
+    
+    <CollectionVariablesModal
+      open={isVariablesModalOpen}
+      onClose={handleCloseVariablesModal}
+      collection={selectedVariablesCollection}
+      onSave={handleSaveVariables}
     />
     </div>
   );

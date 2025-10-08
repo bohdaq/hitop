@@ -20,6 +20,9 @@ This directory contains all reusable components used in the HITOP application.
   - `onOpenHistory`: function
   - `onOpenExport`: function
   - `onOpenImport`: function
+  - `onOpenVariables`: function
+- **Features**:
+  - Each collection has a "Variables" menu item to manage collection-specific variables
 
 ### RequestPanel
 - **Purpose**: Main request form and response viewer
@@ -117,6 +120,17 @@ This directory contains all reusable components used in the HITOP application.
   - `onClose`: function
   - `requestHistory`: array
   - `onLoadHistoryItem`: function
+
+### CollectionVariablesModal
+- **Purpose**: Define and manage collection-level variables
+- **Props**:
+  - `open`: boolean
+  - `onClose`: function
+  - `collection`: object
+  - `onSave`: function
+- **Features**:
+  - Add/remove variable key-value pairs
+  - Variables can be used in URLs, headers, body, and scripts using `${variableName}` syntax
 
 ## Benefits of Component Extraction
 
