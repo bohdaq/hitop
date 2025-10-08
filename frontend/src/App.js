@@ -16,7 +16,10 @@ import SaveIcon from '@mui/icons-material/Save';
 import ContentCopyIcon from '@mui/icons-material/ContentCopy';
 import FileDownloadIcon from '@mui/icons-material/FileDownload';
 import FileUploadIcon from '@mui/icons-material/FileUpload';
+import PlayArrowIcon from '@mui/icons-material/PlayArrow';
 import Drawer from '@mui/material/Drawer';
+import List from '@mui/material/List';
+import ListItem from '@mui/material/ListItem';
 import MenuList from '@mui/material/MenuList';
 import ListItemText from '@mui/material/ListItemText';
 import ListItemIcon from '@mui/material/ListItemIcon';
@@ -109,6 +112,7 @@ function App() {
   const [isDeleteCollectionModalOpen, setIsDeleteCollectionModalOpen] = useState(false);
   const [isExportModalOpen, setIsExportModalOpen] = useState(false);
   const [isImportModalOpen, setIsImportModalOpen] = useState(false);
+  const [isRunCollectionModalOpen, setIsRunCollectionModalOpen] = useState(false);
   const [newCollectionName, setNewCollectionName] = useState('');
   const [editingCollectionId, setEditingCollectionId] = useState(null);
   const [selectedCollectionId, setSelectedCollectionId] = useState(null);
@@ -116,6 +120,9 @@ function App() {
   const [requestToDelete, setRequestToDelete] = useState(null);
   const [collectionToDelete, setCollectionToDelete] = useState(null);
   const [importJson, setImportJson] = useState('');
+  const [runningCollection, setRunningCollection] = useState(null);
+  const [runResults, setRunResults] = useState([]);
+  const [isRunning, setIsRunning] = useState(false);
 
   const currentTabData = tabs[currentTab];
 
@@ -404,6 +411,81 @@ function App() {
     }
   };
 
+  const handleOpenRunCollectionModal = (event, collection) => {
+    event.stopPropagation();
+    setRunningCollection(collection);
+    setRunResults([]);
+    setIsRunCollectionModalOpen(true);
+  };
+
+  const handleCloseRunCollectionModal = () => {
+    setIsRunCollectionModalOpen(false);
+    setRunningCollection(null);
+    setRunResults([]);
+    setIsRunning(false);
+  };
+
+  const handleRunCollection = async () => {
+    if (!runningCollection || runningCollection.requests.length === 0) {
+      return;
+    }
+
+    setIsRunning(true);
+    const results = [];
+
+    for (let i = 0; i < runningCollection.requests.length; i++) {
+      const request = runningCollection.requests[i];
+      
+      try {
+        // Prepare headers
+        const headers = {};
+        request.headers.forEach(header => {
+          if (header.name && header.value) {
+            headers[header.name] = header.value;
+          }
+        });
+
+        const options = {
+          method: request.method,
+          headers: headers,
+        };
+
+        if (request.body && (request.method === 'POST' || request.method === 'PUT' || request.method === 'PATCH')) {
+          options.body = request.body;
+        }
+
+        const response = await fetch(request.url, options);
+        const responseText = await response.text();
+        
+        const result = {
+          name: request.name,
+          status: response.status,
+          success: response.ok,
+          response: responseText.substring(0, 200) // Truncate for display
+        };
+        
+        results.push(result);
+        setRunResults([...results]);
+
+        // Stop if error response
+        if (!response.ok) {
+          break;
+        }
+      } catch (error) {
+        results.push({
+          name: request.name,
+          status: 'Error',
+          success: false,
+          response: error.message
+        });
+        setRunResults([...results]);
+        break;
+      }
+    }
+
+    setIsRunning(false);
+  };
+
   useEffect(() => {
     if (isExportModalOpen) {
       // Highlight the JSON after modal opens
@@ -572,7 +654,14 @@ function App() {
           </MenuItem>
           {collections.map((collection) => (
             <div key={collection.id}>
-              <MenuItem className="SubMenuItem">
+              <MenuItem 
+                className="SubMenuItem"
+                onClick={(e) => {
+                  if (collection.requests.length > 0) {
+                    handleOpenRunCollectionModal(e, collection);
+                  }
+                }}
+              >
                 <ListItemIcon sx={{ minWidth: '32px' }}>
                   <FolderIcon fontSize="small" />
                 </ListItemIcon>
@@ -952,6 +1041,55 @@ function App() {
         <Button onClick={handleCloseImportModal}>Cancel</Button>
         <Button onClick={handleImportCollections} variant="contained" color="warning">
           Import (Overwrite All)
+        </Button>
+      </DialogActions>
+    </Dialog>
+    <Dialog open={isRunCollectionModalOpen} onClose={handleCloseRunCollectionModal} maxWidth="md" fullWidth>
+      <DialogTitle>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '0.5em' }}>
+          <PlayArrowIcon />
+          Run Collection: {runningCollection?.name}
+        </div>
+      </DialogTitle>
+      <DialogContent>
+        <List>
+          {runningCollection?.requests.map((request, index) => {
+            const result = runResults[index];
+            return (
+              <ListItem 
+                key={request.id}
+                sx={{
+                  borderLeft: result ? (result.success ? '4px solid #4caf50' : '4px solid #f44336') : '4px solid #ddd',
+                  marginBottom: '0.5em',
+                  backgroundColor: result ? (result.success ? '#f1f8f4' : '#fef1f1') : '#fafafa',
+                  borderRadius: '4px'
+                }}
+              >
+                <ListItemIcon>
+                  <HttpIcon fontSize="small" />
+                </ListItemIcon>
+                <ListItemText
+                  primary={request.name}
+                  secondary={
+                    result 
+                      ? `Status: ${result.status} - ${result.response.substring(0, 50)}${result.response.length > 50 ? '...' : ''}`
+                      : `${request.method} ${request.url}`
+                  }
+                />
+              </ListItem>
+            );
+          })}
+        </List>
+      </DialogContent>
+      <DialogActions>
+        <Button onClick={handleCloseRunCollectionModal}>Close</Button>
+        <Button 
+          onClick={handleRunCollection} 
+          variant="contained" 
+          startIcon={<PlayArrowIcon />}
+          disabled={isRunning || !runningCollection?.requests.length}
+        >
+          {isRunning ? 'Running...' : 'Run'}
         </Button>
       </DialogActions>
     </Dialog>
