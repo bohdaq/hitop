@@ -12,12 +12,12 @@ import IconButton from '@mui/material/IconButton';
 import AddIcon from '@mui/icons-material/Add';
 import CloseIcon from '@mui/icons-material/Close';
 import EditIcon from '@mui/icons-material/Edit';
+import SaveIcon from '@mui/icons-material/Save';
 import Drawer from '@mui/material/Drawer';
 import MenuList from '@mui/material/MenuList';
 import ListItemText from '@mui/material/ListItemText';
 import ListItemIcon from '@mui/material/ListItemIcon';
 import FolderIcon from '@mui/icons-material/Folder';
-import CodeIcon from '@mui/icons-material/Code';
 import Dialog from '@mui/material/Dialog';
 import DialogTitle from '@mui/material/DialogTitle';
 import DialogContent from '@mui/material/DialogContent';
@@ -90,16 +90,22 @@ const createNewTab = () => ({
   responseHeaders: null,
   requestBody: '',
   statusCode: null,
+  loadedRequestId: null,
+  loadedCollectionId: null,
 });
 
 function App() {
   const [tabs, setTabs] = useState([createNewTab()]);
   const [currentTab, setCurrentTab] = useState(0);
-  const [collections, setCollections] = useState([{ id: 1, name: 'Default' }]);
+  const [collections, setCollections] = useState([{ id: 1, name: 'Default', requests: [] }]);
   const [isRenameModalOpen, setIsRenameModalOpen] = useState(false);
   const [isAddCollectionModalOpen, setIsAddCollectionModalOpen] = useState(false);
+  const [isSaveRequestModalOpen, setIsSaveRequestModalOpen] = useState(false);
   const [newCollectionName, setNewCollectionName] = useState('');
   const [editingCollectionId, setEditingCollectionId] = useState(null);
+  const [selectedCollectionId, setSelectedCollectionId] = useState(null);
+  const [requestName, setRequestName] = useState('');
+  const [isOverwriting, setIsOverwriting] = useState(false);
 
   const currentTabData = tabs[currentTab];
 
@@ -154,11 +160,115 @@ function App() {
     if (newCollectionName.trim()) {
       const newCollection = {
         id: Date.now(),
-        name: newCollectionName.trim()
+        name: newCollectionName.trim(),
+        requests: []
       };
       setCollections([...collections, newCollection]);
     }
     handleCloseAddCollectionModal();
+  };
+
+  const handleOpenSaveRequestModal = () => {
+    // Check if this is a loaded request
+    if (currentTabData.loadedRequestId && currentTabData.loadedCollectionId) {
+      // Find the loaded request to get its name
+      const collection = collections.find(col => col.id === currentTabData.loadedCollectionId);
+      const request = collection?.requests.find(req => req.id === currentTabData.loadedRequestId);
+      
+      if (request) {
+        setRequestName(request.name);
+        setSelectedCollectionId(currentTabData.loadedCollectionId);
+        setIsOverwriting(true);
+      } else {
+        setRequestName('');
+        setSelectedCollectionId(collections.length > 0 ? collections[0].id : null);
+        setIsOverwriting(false);
+      }
+    } else {
+      setRequestName('');
+      setSelectedCollectionId(collections.length > 0 ? collections[0].id : null);
+      setIsOverwriting(false);
+    }
+    setIsSaveRequestModalOpen(true);
+  };
+
+  const handleCloseSaveRequestModal = () => {
+    setIsSaveRequestModalOpen(false);
+    setRequestName('');
+    setSelectedCollectionId(null);
+    setIsOverwriting(false);
+  };
+
+  const handleSaveRequest = () => {
+    if (requestName.trim() && selectedCollectionId) {
+      if (isOverwriting && currentTabData.loadedRequestId) {
+        // Update existing request
+        setCollections(collections.map(col => {
+          if (col.id === selectedCollectionId) {
+            return {
+              ...col,
+              requests: col.requests.map(req => 
+                req.id === currentTabData.loadedRequestId
+                  ? {
+                      ...req,
+                      name: requestName.trim(),
+                      url: currentTabData.url,
+                      method: currentTabData.method,
+                      headers: currentTabData.headers,
+                      body: currentTabData.requestBody
+                    }
+                  : req
+              )
+            };
+          }
+          return col;
+        }));
+        
+        // Update tab to reflect new name if changed
+        updateTabData({
+          loadedRequestId: currentTabData.loadedRequestId,
+          loadedCollectionId: selectedCollectionId
+        });
+      } else {
+        // Create new request
+        const newRequest = {
+          id: Date.now(),
+          name: requestName.trim(),
+          url: currentTabData.url,
+          method: currentTabData.method,
+          headers: currentTabData.headers,
+          body: currentTabData.requestBody
+        };
+        
+        setCollections(collections.map(col => 
+          col.id === selectedCollectionId
+            ? { ...col, requests: [...col.requests, newRequest] }
+            : col
+        ));
+        
+        // Update tab to track this as a loaded request
+        updateTabData({
+          loadedRequestId: newRequest.id,
+          loadedCollectionId: selectedCollectionId
+        });
+      }
+    }
+    handleCloseSaveRequestModal();
+  };
+
+  const handleLoadRequest = (request, collectionId) => {
+    updateTabData({
+      url: request.url,
+      method: request.method,
+      headers: request.headers,
+      requestBody: request.body,
+      response: null,
+      responseHeaders: null,
+      statusCode: null,
+      responseType: '',
+      loadedRequestId: request.id,
+      loadedCollectionId: collectionId
+    });
   };
 
   const closeTab = (event, indexToClose) => {
@@ -305,12 +415,6 @@ function App() {
         }}
       >
         <MenuList>
-          <MenuItem>
-            <ListItemIcon>
-              <CodeIcon fontSize="small" />
-            </ListItemIcon>
-            <ListItemText>Variables</ListItemText>
-          </MenuItem>
           <MenuItem className="CollectionsMenuItem">
             <ListItemIcon>
               <FolderIcon fontSize="small" />
@@ -326,17 +430,28 @@ function App() {
             </IconButton>
           </MenuItem>
           {collections.map((collection) => (
-            <MenuItem key={collection.id} className="SubMenuItem">
-              <ListItemText inset>{collection.name}</ListItemText>
-              <IconButton
-                size="small"
-                className="EditCollectionButton"
-                onClick={(e) => handleOpenRenameModal(e, collection.id, collection.name)}
-                aria-label="edit collection"
-              >
-                <EditIcon fontSize="small" />
-              </IconButton>
-            </MenuItem>
+            <div key={collection.id}>
+              <MenuItem className="SubMenuItem">
+                <ListItemText inset>{collection.name}</ListItemText>
+                <IconButton
+                  size="small"
+                  className="EditCollectionButton"
+                  onClick={(e) => handleOpenRenameModal(e, collection.id, collection.name)}
+                  aria-label="edit collection"
+                >
+                  <EditIcon fontSize="small" />
+                </IconButton>
+              </MenuItem>
+              {collection.requests.map((request) => (
+                <MenuItem 
+                  key={request.id} 
+                  className="RequestMenuItem"
+                  onClick={() => handleLoadRequest(request, collection.id)}
+                >
+                  <ListItemText inset>{request.name}</ListItemText>
+                </MenuItem>
+              ))}
+            </div>
           ))}
         </MenuList>
       </Drawer>
@@ -407,6 +522,14 @@ function App() {
             >
               {currentTabData.loading ? 'Loading...' : 'Make Request'}
             </Button>
+            <IconButton
+              color="primary"
+              onClick={handleOpenSaveRequestModal}
+              aria-label="save request"
+              disabled={!currentTabData.url}
+            >
+              <SaveIcon />
+            </IconButton>
           </div>
         </div>
         <div className="HeadersSection">
@@ -547,6 +670,50 @@ function App() {
       <DialogActions>
         <Button onClick={handleCloseAddCollectionModal}>Cancel</Button>
         <Button onClick={handleAddCollection} variant="contained">Add</Button>
+      </DialogActions>
+    </Dialog>
+    <Dialog open={isSaveRequestModalOpen} onClose={handleCloseSaveRequestModal}>
+      <DialogTitle>{isOverwriting ? 'Update Request' : 'Save Request'}</DialogTitle>
+      <DialogContent>
+        <TextField
+          autoFocus
+          margin="dense"
+          label="Request Name"
+          type="text"
+          fullWidth
+          variant="outlined"
+          value={requestName}
+          onChange={(e) => setRequestName(e.target.value)}
+          onKeyPress={(e) => {
+            if (e.key === 'Enter') {
+              handleSaveRequest();
+            }
+          }}
+          sx={{ marginBottom: isOverwriting ? 0 : 2 }}
+        />
+        {!isOverwriting && (
+          <FormControl fullWidth>
+            <InputLabel id="collection-select-label">Collection</InputLabel>
+            <Select
+              labelId="collection-select-label"
+              value={selectedCollectionId || ''}
+              label="Collection"
+              onChange={(e) => setSelectedCollectionId(e.target.value)}
+            >
+              {collections.map((collection) => (
+                <MenuItem key={collection.id} value={collection.id}>
+                  {collection.name}
+                </MenuItem>
+              ))}
+            </Select>
+          </FormControl>
+        )}
+      </DialogContent>
+      <DialogActions>
+        <Button onClick={handleCloseSaveRequestModal}>Cancel</Button>
+        <Button onClick={handleSaveRequest} variant="contained">
+          {isOverwriting ? 'Update' : 'Save'}
+        </Button>
       </DialogActions>
     </Dialog>
     </div>

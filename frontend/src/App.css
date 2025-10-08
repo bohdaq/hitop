@@ -58,6 +58,16 @@
   background-color: rgba(0, 0, 0, 0.1);
 }
 
+.RequestMenuItem {
+  padding-left: 4em !important;
+  font-size: 0.85em !important;
+  cursor: pointer !important;
+}
+
+.RequestMenuItem:hover {
+  background-color: rgba(25, 118, 210, 0.08) !important;
+}
+
 .App {
   margin: 0 3em 3em 3em;
   display: flex;
