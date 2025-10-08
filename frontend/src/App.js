@@ -123,6 +123,8 @@ function App() {
   const [runningCollection, setRunningCollection] = useState(null);
   const [runResults, setRunResults] = useState([]);
   const [isRunning, setIsRunning] = useState(false);
+  const [draggedRequest, setDraggedRequest] = useState(null);
+  const [draggedCollectionId, setDraggedCollectionId] = useState(null);
 
   const currentTabData = tabs[currentTab];
 
@@ -425,6 +427,52 @@ function App() {
     setIsRunning(false);
   };
 
+  const handleDragStart = (e, request, collectionId) => {
+    setDraggedRequest(request);
+    setDraggedCollectionId(collectionId);
+    e.dataTransfer.effectAllowed = 'move';
+  };
+
+  const handleDragOver = (e) => {
+    e.preventDefault();
+    e.dataTransfer.dropEffect = 'move';
+  };
+
+  const handleDrop = (e, targetRequest, targetCollectionId) => {
+    e.preventDefault();
+    e.stopPropagation();
+
+    if (!draggedRequest || draggedCollectionId !== targetCollectionId || draggedRequest.id === targetRequest.id) {
+      return;
+    }
+
+    setCollections(collections.map(col => {
+      if (col.id === targetCollectionId) {
+        const requests = [...col.requests];
+        const draggedIndex = requests.findIndex(r => r.id === draggedRequest.id);
+        const targetIndex = requests.findIndex(r => r.id === targetRequest.id);
+
+        if (draggedIndex !== -1 && targetIndex !== -1) {
+          // Remove dragged item
+          const [removed] = requests.splice(draggedIndex, 1);
+          // Insert at target position
+          requests.splice(targetIndex, 0, removed);
+        }
+
+        return { ...col, requests };
+      }
+      return col;
+    }));
+
+    setDraggedRequest(null);
+    setDraggedCollectionId(null);
+  };
+
+  const handleDragEnd = () => {
+    setDraggedRequest(null);
+    setDraggedCollectionId(null);
+  };
+
   const handleRunCollection = async () => {
     if (!runningCollection || runningCollection.requests.length === 0) {
       return;
@@ -680,6 +728,17 @@ function App() {
                   key={request.id} 
                   className="RequestMenuItem"
                   onClick={() => handleLoadRequest(request, collection.id)}
+                  draggable
+                  onDragStart={(e) => handleDragStart(e, request, collection.id)}
+                  onDragOver={handleDragOver}
+                  onDrop={(e) => handleDrop(e, request, collection.id)}
+                  onDragEnd={handleDragEnd}
+                  sx={{
+                    cursor: 'grab',
+                    '&:active': {
+                      cursor: 'grabbing'
+                    }
+                  }}
                 >
                   <ListItemIcon sx={{ minWidth: '32px' }}>
                     <HttpIcon fontSize="small" />

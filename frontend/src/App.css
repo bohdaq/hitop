@@ -78,10 +78,22 @@
 .RequestMenuItem {
   padding-left: 2em !important;
   font-size: 0.85em !important;
-  cursor: pointer !important;
+  cursor: grab !important;
   display: flex !important;
   justify-content: space-between !important;
   align-items: center !important;
+  transition: background-color 0.2s, transform 0.1s, opacity 0.2s;
+  user-select: none;
+}
+
+.RequestMenuItem:active {
+  cursor: grabbing !important;
+  opacity: 0.5;
+}
+
+.RequestMenuItem[draggable="true"]:hover {
+  transform: translateX(2px);
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
 }
 
 .RequestMenuItem .MuiListItemText-root {
