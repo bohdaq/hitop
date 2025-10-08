@@ -10,6 +10,7 @@ import ListItemIcon from '@mui/material/ListItemIcon';
 import ListItemText from '@mui/material/ListItemText';
 import HistoryIcon from '@mui/icons-material/History';
 import HttpIcon from '@mui/icons-material/Http';
+import FolderIcon from '@mui/icons-material/Folder';
 
 const HistoryModal = ({ open, onClose, requestHistory, onLoadHistoryItem }) => {
   return (
@@ -30,6 +31,8 @@ const HistoryModal = ({ open, onClose, requestHistory, onLoadHistoryItem }) => {
             {requestHistory.map((item) => {
               const date = new Date(item.timestamp);
               const timeStr = date.toLocaleTimeString();
+              const isCollectionRun = item.isCollectionRun;
+              
               return (
                 <ListItem 
                   key={item.id}
@@ -48,11 +51,23 @@ const HistoryModal = ({ open, onClose, requestHistory, onLoadHistoryItem }) => {
                   }}
                 >
                   <ListItemIcon>
-                    <HttpIcon fontSize="small" />
+                    {isCollectionRun ? (
+                      <FolderIcon fontSize="small" sx={{ color: '#1976d2' }} />
+                    ) : (
+                      <HttpIcon fontSize="small" />
+                    )}
                   </ListItemIcon>
                   <ListItemText
-                    primary={`${item.method} ${item.url}`}
-                    secondary={`${timeStr} - Status: ${item.statusCode || 'Error'}`}
+                    primary={
+                      isCollectionRun 
+                        ? `${item.collectionName} → ${item.requestName}`
+                        : `${item.method} ${item.url}`
+                    }
+                    secondary={
+                      isCollectionRun
+                        ? `${timeStr} - ${item.method} ${item.url} - Status: ${item.statusCode || 'Error'}`
+                        : `${timeStr} - Status: ${item.statusCode || 'Error'}`
+                    }
                   />
                 </ListItem>
               );

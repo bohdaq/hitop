@@ -415,7 +415,12 @@ function App() {
       statusCode: null,
       responseType: '',
       loadedRequestId: null,
-      loadedCollectionId: null
+      loadedCollectionId: null,
+      preRequestScript: historyItem.preRequestScript || '',
+      postRequestScript: historyItem.postRequestScript || '',
+      title: historyItem.isCollectionRun 
+        ? `${historyItem.collectionName} → ${historyItem.requestName}`
+        : `${historyItem.method} ${historyItem.url}`
     });
     handleCloseHistoryModal();
   };
@@ -719,6 +724,24 @@ function App() {
         results.push(result);
         setRunResults([...results]);
 
+        // Add to history
+        const historyItem = {
+          id: Date.now() + i, // Unique ID for each request in collection run
+          timestamp: new Date().toISOString(),
+          url: requestData.url,
+          method: request.method,
+          headers: requestData.headers,
+          body: requestData.body,
+          statusCode: response.status,
+          success: response.ok,
+          collectionName: runningCollection.name,
+          requestName: request.name,
+          isCollectionRun: true,
+          preRequestScript: request.preRequestScript || '',
+          postRequestScript: request.postRequestScript || ''
+        };
+        setRequestHistory(prev => [...prev, historyItem].slice(-50));
+
         // Stop if error response
         if (!response.ok) {
           break;
@@ -793,7 +816,9 @@ function App() {
       headers: requestData.headers,
       body: requestData.requestBody,
       statusCode: requestData.statusCode,
-      success: requestData.statusCode >= 200 && requestData.statusCode < 300
+      success: requestData.statusCode >= 200 && requestData.statusCode < 300,
+      preRequestScript: requestData.preRequestScript || '',
+      postRequestScript: requestData.postRequestScript || ''
     };
     setRequestHistory(prev => [...prev, historyItem].slice(-50)); // Keep last 50 requests
   };
@@ -1044,7 +1069,9 @@ function App() {
         method: currentTabData.method,
         headers: currentTabData.headers,
         requestBody: currentTabData.requestBody,
-        statusCode: res.status
+        statusCode: res.status,
+        preRequestScript: currentTabData.preRequestScript,
+        postRequestScript: currentTabData.postRequestScript
       });
     } catch (error) {
       updateTabData({

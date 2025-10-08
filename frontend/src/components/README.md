@@ -122,6 +122,11 @@ This directory contains all reusable components used in the HITOP application.
   - `onClose`: function
   - `requestHistory`: array
   - `onLoadHistoryItem`: function
+- **Features**:
+  - Shows individual requests and collection runs
+  - Collection runs display with folder icon and format: "Collection Name → Request Name"
+  - Color-coded by success/failure status
+  - Displays timestamp, method, URL, and status code
 
 ### CollectionVariablesModal
 - **Purpose**: Define and manage collection-level variables
