@@ -13,26 +13,28 @@ import AddIcon from '@mui/icons-material/Add';
 import CloseIcon from '@mui/icons-material/Close';
 import EditIcon from '@mui/icons-material/Edit';
 import SaveIcon from '@mui/icons-material/Save';
-import ContentCopyIcon from '@mui/icons-material/ContentCopy';
 import FileDownloadIcon from '@mui/icons-material/FileDownload';
 import FileUploadIcon from '@mui/icons-material/FileUpload';
-import PlayArrowIcon from '@mui/icons-material/PlayArrow';
 import HistoryIcon from '@mui/icons-material/History';
 import Drawer from '@mui/material/Drawer';
-import List from '@mui/material/List';
-import ListItem from '@mui/material/ListItem';
 import MenuList from '@mui/material/MenuList';
 import ListItemText from '@mui/material/ListItemText';
 import ListItemIcon from '@mui/material/ListItemIcon';
 import FolderIcon from '@mui/icons-material/Folder';
 import HttpIcon from '@mui/icons-material/Http';
-import Dialog from '@mui/material/Dialog';
-import DialogTitle from '@mui/material/DialogTitle';
-import DialogContent from '@mui/material/DialogContent';
-import DialogActions from '@mui/material/DialogActions';
 import hljs from 'highlight.js';
 import 'highlight.js/styles/github-dark.css';
-import styles from './App.css'
+
+// Modal Components
+import AddCollectionModal from './components/AddCollectionModal';
+import RenameCollectionModal from './components/RenameCollectionModal';
+import SaveRequestModal from './components/SaveRequestModal';
+import DeleteRequestModal from './components/DeleteRequestModal';
+import DeleteCollectionModal from './components/DeleteCollectionModal';
+import ExportModal from './components/ExportModal';
+import ImportModal from './components/ImportModal';
+import RunCollectionModal from './components/RunCollectionModal';
+import HistoryModal from './components/HistoryModal';
 
 const getStatusText = (statusCode) => {
   const statusTexts = {
@@ -1280,270 +1282,81 @@ function App() {
         )}
       </div>
     </div>
-    <Dialog open={isRenameModalOpen} onClose={handleCloseRenameModal}>
-      <DialogTitle>Rename Collection</DialogTitle>
-      <DialogContent>
-        <TextField
-          autoFocus
-          margin="dense"
-          label="Collection Name"
-          type="text"
-          fullWidth
-          variant="outlined"
-          value={newCollectionName}
-          onChange={(e) => setNewCollectionName(e.target.value)}
-          onKeyPress={(e) => {
-            if (e.key === 'Enter') {
-              handleSaveCollectionName();
-            }
-          }}
-        />
-      </DialogContent>
-      <DialogActions>
-        <Button onClick={handleOpenDeleteCollectionModal} color="error" sx={{ marginRight: 'auto' }}>
-          Delete Collection
-        </Button>
-        <Button onClick={handleCloseRenameModal}>Cancel</Button>
-        <Button onClick={handleSaveCollectionName} variant="contained">Save</Button>
-      </DialogActions>
-    </Dialog>
-    <Dialog open={isAddCollectionModalOpen} onClose={handleCloseAddCollectionModal}>
-      <DialogTitle>Add New Collection</DialogTitle>
-      <DialogContent>
-        <TextField
-          autoFocus
-          margin="dense"
-          label="Collection Name"
-          type="text"
-          fullWidth
-          variant="outlined"
-          value={newCollectionName}
-          onChange={(e) => setNewCollectionName(e.target.value)}
-          onKeyPress={(e) => {
-            if (e.key === 'Enter') {
-              handleAddCollection();
-            }
-          }}
-        />
-      </DialogContent>
-      <DialogActions>
-        <Button onClick={handleCloseAddCollectionModal}>Cancel</Button>
-        <Button onClick={handleAddCollection} variant="contained">Add</Button>
-      </DialogActions>
-    </Dialog>
-    <Dialog open={isSaveRequestModalOpen} onClose={handleCloseSaveRequestModal}>
-      <DialogTitle>{isOverwriting ? 'Update Request' : 'Save Request'}</DialogTitle>
-      <DialogContent>
-        <TextField
-          autoFocus
-          margin="dense"
-          label="Request Name"
-          type="text"
-          fullWidth
-          variant="outlined"
-          value={requestName}
-          onChange={(e) => setRequestName(e.target.value)}
-          onKeyPress={(e) => {
-            if (e.key === 'Enter') {
-              handleSaveRequest();
-            }
-          }}
-          sx={{ marginBottom: isOverwriting ? 0 : 2 }}
-        />
-        {!isOverwriting && (
-          <FormControl fullWidth>
-            <InputLabel id="collection-select-label">Collection</InputLabel>
-            <Select
-              labelId="collection-select-label"
-              value={selectedCollectionId || ''}
-              label="Collection"
-              onChange={(e) => setSelectedCollectionId(e.target.value)}
-            >
-              {collections.map((collection) => (
-                <MenuItem key={collection.id} value={collection.id}>
-                  {collection.name}
-                </MenuItem>
-              ))}
-            </Select>
-          </FormControl>
-        )}
-      </DialogContent>
-      <DialogActions>
-        <Button onClick={handleCloseSaveRequestModal}>Cancel</Button>
-        <Button onClick={handleSaveRequest} variant="contained">
-          {isOverwriting ? 'Update' : 'Save'}
-        </Button>
-      </DialogActions>
-    </Dialog>
-    <Dialog open={isDeleteRequestModalOpen} onClose={handleCloseDeleteRequestModal}>
-      <DialogTitle>Delete Request</DialogTitle>
-      <DialogContent>
-        Are you sure you want to delete "{requestToDelete?.request.name}"? This action cannot be undone.
-      </DialogContent>
-      <DialogActions>
-        <Button onClick={handleCloseDeleteRequestModal}>Cancel</Button>
-        <Button onClick={handleDeleteRequest} variant="contained" color="error">
-          Delete
-        </Button>
-      </DialogActions>
-    </Dialog>
-    <Dialog open={isDeleteCollectionModalOpen} onClose={handleCloseDeleteCollectionModal}>
-      <DialogTitle>Confirm Collection Deletion</DialogTitle>
-      <DialogContent>
-        Are you sure you want to delete the collection "{collectionToDelete?.name}"? 
-        {collectionToDelete?.requests.length > 0 && (
-          <span> This will also delete {collectionToDelete.requests.length} saved request(s).</span>
-        )}
-        {' '}This action cannot be undone.
-      </DialogContent>
-      <DialogActions>
-        <Button onClick={handleCloseDeleteCollectionModal}>Cancel</Button>
-        <Button onClick={handleDeleteCollection} variant="contained" color="error">
-          Delete Collection
-        </Button>
-      </DialogActions>
-    </Dialog>
-    <Dialog open={isExportModalOpen} onClose={handleCloseExportModal} maxWidth="md" fullWidth>
-      <DialogTitle>Export Collections</DialogTitle>
-      <DialogContent>
-        <div className="export-json">
-          <pre>
-            <code className="language-json">
-              {JSON.stringify(collections, null, 2)}
-            </code>
-          </pre>
-        </div>
-      </DialogContent>
-      <DialogActions>
-        <Button onClick={handleCopyToClipboard} startIcon={<ContentCopyIcon />}>
-          Copy to Clipboard
-        </Button>
-        <Button onClick={handleCloseExportModal}>Close</Button>
-      </DialogActions>
-    </Dialog>
-    <Dialog open={isImportModalOpen} onClose={handleCloseImportModal} maxWidth="md" fullWidth>
-      <DialogTitle>Import Collections</DialogTitle>
-      <DialogContent>
-        <TextField
-          autoFocus
-          margin="dense"
-          label="Paste JSON here"
-          multiline
-          rows={15}
-          fullWidth
-          variant="outlined"
-          value={importJson}
-          onChange={(e) => setImportJson(e.target.value)}
-          placeholder='Paste exported collections JSON here...'
-        />
-      </DialogContent>
-      <DialogActions>
-        <Button onClick={handleCloseImportModal}>Cancel</Button>
-        <Button onClick={handleImportCollections} variant="contained" color="warning">
-          Import (Overwrite All)
-        </Button>
-      </DialogActions>
-    </Dialog>
-    <Dialog open={isRunCollectionModalOpen} onClose={handleCloseRunCollectionModal} maxWidth="md" fullWidth>
-      <DialogTitle>
-        <div style={{ display: 'flex', alignItems: 'center', gap: '0.5em' }}>
-          <PlayArrowIcon />
-          Run Collection: {runningCollection?.name}
-        </div>
-      </DialogTitle>
-      <DialogContent>
-        <List>
-          {runningCollection?.requests.map((request, index) => {
-            const result = runResults[index];
-            return (
-              <ListItem 
-                key={request.id}
-                sx={{
-                  borderLeft: result ? (result.success ? '4px solid #4caf50' : '4px solid #f44336') : '4px solid #ddd',
-                  marginBottom: '0.5em',
-                  backgroundColor: result ? (result.success ? '#f1f8f4' : '#fef1f1') : '#fafafa',
-                  borderRadius: '4px'
-                }}
-              >
-                <ListItemIcon>
-                  <HttpIcon fontSize="small" />
-                </ListItemIcon>
-                <ListItemText
-                  primary={request.name}
-                  secondary={
-                    result 
-                      ? `Status: ${result.status} - ${result.response.substring(0, 50)}${result.response.length > 50 ? '...' : ''}`
-                      : `${request.method} ${request.url}`
-                  }
-                />
-              </ListItem>
-            );
-          })}
-        </List>
-      </DialogContent>
-      <DialogActions>
-        <Button onClick={handleCloseRunCollectionModal}>Close</Button>
-        <Button 
-          onClick={handleRunCollection} 
-          variant="contained" 
-          startIcon={<PlayArrowIcon />}
-          disabled={isRunning || !runningCollection?.requests.length}
-        >
-          {isRunning ? 'Running...' : 'Run'}
-        </Button>
-      </DialogActions>
-    </Dialog>
-    <Dialog open={isHistoryModalOpen} onClose={handleCloseHistoryModal} maxWidth="md" fullWidth>
-      <DialogTitle>
-        <div style={{ display: 'flex', alignItems: 'center', gap: '0.5em' }}>
-          <HistoryIcon />
-          Request History
-        </div>
-      </DialogTitle>
-      <DialogContent>
-        {requestHistory.length === 0 ? (
-          <div style={{ textAlign: 'center', padding: '2em', color: '#666' }}>
-            No requests in history yet. Make a request to see it here.
-          </div>
-        ) : (
-          <List>
-            {requestHistory.map((item) => {
-              const date = new Date(item.timestamp);
-              const timeStr = date.toLocaleTimeString();
-              return (
-                <ListItem 
-                  key={item.id}
-                  onClick={() => handleLoadHistoryItem(item)}
-                  sx={{
-                    borderLeft: item.success ? '4px solid #4caf50' : '4px solid #f44336',
-                    marginBottom: '0.5em',
-                    backgroundColor: item.success ? '#f1f8f4' : '#fef1f1',
-                    borderRadius: '4px',
-                    cursor: 'pointer',
-                    '&:hover': {
-                      backgroundColor: item.success ? '#e8f5e9' : '#ffebee',
-                      transform: 'translateX(4px)',
-                      transition: 'all 0.2s'
-                    }
-                  }}
-                >
-                  <ListItemIcon>
-                    <HttpIcon fontSize="small" />
-                  </ListItemIcon>
-                  <ListItemText
-                    primary={`${item.method} ${item.url}`}
-                    secondary={`${timeStr} - Status: ${item.statusCode || 'Error'}`}
-                  />
-                </ListItem>
-              );
-            })}
-          </List>
-        )}
-      </DialogContent>
-      <DialogActions>
-        <Button onClick={handleCloseHistoryModal}>Close</Button>
-      </DialogActions>
-    </Dialog>
+    
+    {/* Modals */}
+    <RenameCollectionModal
+      open={isRenameModalOpen}
+      onClose={handleCloseRenameModal}
+      collectionName={newCollectionName}
+      onNameChange={setNewCollectionName}
+      onRename={handleSaveCollectionName}
+      onDelete={handleOpenDeleteCollectionModal}
+    />
+    
+    <AddCollectionModal
+      open={isAddCollectionModalOpen}
+      onClose={handleCloseAddCollectionModal}
+      collectionName={newCollectionName}
+      onNameChange={setNewCollectionName}
+      onAdd={handleAddCollection}
+    />
+    
+    <SaveRequestModal
+      open={isSaveRequestModalOpen}
+      onClose={handleCloseSaveRequestModal}
+      requestName={requestName}
+      onNameChange={setRequestName}
+      collections={collections}
+      selectedCollectionId={selectedCollectionId}
+      onCollectionChange={setSelectedCollectionId}
+      onSave={handleSaveRequest}
+      isOverwriting={isOverwriting}
+    />
+    
+    <DeleteRequestModal
+      open={isDeleteRequestModalOpen}
+      onClose={handleCloseDeleteRequestModal}
+      requestName={requestToDelete?.request.name}
+      onDelete={handleDeleteRequest}
+    />
+    
+    <DeleteCollectionModal
+      open={isDeleteCollectionModalOpen}
+      onClose={handleCloseDeleteCollectionModal}
+      collection={collectionToDelete}
+      onDelete={handleDeleteCollection}
+    />
+    
+    <ExportModal
+      open={isExportModalOpen}
+      onClose={handleCloseExportModal}
+      collections={collections}
+      onCopyToClipboard={handleCopyToClipboard}
+    />
+    
+    <ImportModal
+      open={isImportModalOpen}
+      onClose={handleCloseImportModal}
+      importJson={importJson}
+      onJsonChange={setImportJson}
+      onImport={handleImportCollections}
+    />
+    
+    <RunCollectionModal
+      open={isRunCollectionModalOpen}
+      onClose={handleCloseRunCollectionModal}
+      collection={runningCollection}
+      runResults={runResults}
+      isRunning={isRunning}
+      onRun={handleRunCollection}
+    />
+    
+    <HistoryModal
+      open={isHistoryModalOpen}
+      onClose={handleCloseHistoryModal}
+      requestHistory={requestHistory}
+      onLoadHistoryItem={handleLoadHistoryItem}
+    />
     </div>
   );
 }
