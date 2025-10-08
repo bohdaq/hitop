@@ -17,6 +17,7 @@ import ContentCopyIcon from '@mui/icons-material/ContentCopy';
 import FileDownloadIcon from '@mui/icons-material/FileDownload';
 import FileUploadIcon from '@mui/icons-material/FileUpload';
 import PlayArrowIcon from '@mui/icons-material/PlayArrow';
+import HistoryIcon from '@mui/icons-material/History';
 import Drawer from '@mui/material/Drawer';
 import List from '@mui/material/List';
 import ListItem from '@mui/material/ListItem';
@@ -113,6 +114,7 @@ function App() {
   const [isExportModalOpen, setIsExportModalOpen] = useState(false);
   const [isImportModalOpen, setIsImportModalOpen] = useState(false);
   const [isRunCollectionModalOpen, setIsRunCollectionModalOpen] = useState(false);
+  const [isHistoryModalOpen, setIsHistoryModalOpen] = useState(false);
   const [newCollectionName, setNewCollectionName] = useState('');
   const [editingCollectionId, setEditingCollectionId] = useState(null);
   const [selectedCollectionId, setSelectedCollectionId] = useState(null);
@@ -125,6 +127,7 @@ function App() {
   const [isRunning, setIsRunning] = useState(false);
   const [draggedRequest, setDraggedRequest] = useState(null);
   const [draggedCollectionId, setDraggedCollectionId] = useState(null);
+  const [requestHistory, setRequestHistory] = useState([]);
 
   const currentTabData = tabs[currentTab];
 
@@ -386,6 +389,30 @@ function App() {
     setImportJson('');
   };
 
+  const handleOpenHistoryModal = () => {
+    setIsHistoryModalOpen(true);
+  };
+
+  const handleCloseHistoryModal = () => {
+    setIsHistoryModalOpen(false);
+  };
+
+  const handleLoadHistoryItem = (historyItem) => {
+    updateTabData({
+      url: historyItem.url,
+      method: historyItem.method,
+      headers: historyItem.headers,
+      requestBody: historyItem.body,
+      response: null,
+      responseHeaders: null,
+      statusCode: null,
+      responseType: '',
+      loadedRequestId: null,
+      loadedCollectionId: null
+    });
+    handleCloseHistoryModal();
+  };
+
   const handleImportCollections = () => {
     try {
       const importedCollections = JSON.parse(importJson);
@@ -580,7 +607,21 @@ function App() {
     updateTabData({ headers: newHeaders.length > 0 ? newHeaders : [{ name: '', value: '' }] });
   };
 
-  const handleMakeRequest = async () => {
+  const addToHistory = (requestData) => {
+    const historyItem = {
+      id: Date.now(),
+      timestamp: new Date().toISOString(),
+      url: requestData.url,
+      method: requestData.method,
+      headers: requestData.headers,
+      body: requestData.requestBody,
+      statusCode: requestData.statusCode,
+      success: requestData.statusCode >= 200 && requestData.statusCode < 300
+    };
+    setRequestHistory(prev => [...prev, historyItem].slice(-50)); // Keep last 50 requests
+  };
+
+  const makeRequest = async () => {
     if (!currentTabData.url) {
       alert('Please enter a URL');
       return;
@@ -614,18 +655,17 @@ function App() {
         resHeaders[key] = value;
       });
 
-      const contentType = res.headers.get('content-type');
       let data;
       let type = 'text';
 
-      if (contentType && contentType.includes('application/json')) {
+      if (res.headers.get('content-type') && res.headers.get('content-type').includes('application/json')) {
         data = await res.json();
         data = JSON.stringify(data, null, 2);
         type = 'json';
-      } else if (contentType && contentType.includes('text/html')) {
+      } else if (res.headers.get('content-type') && res.headers.get('content-type').includes('text/html')) {
         data = await res.text();
         type = 'html';
-      } else if (contentType && contentType.includes('text/xml')) {
+      } else if (res.headers.get('content-type') && res.headers.get('content-type').includes('text/xml')) {
         data = await res.text();
         type = 'xml';
       } else {
@@ -640,9 +680,16 @@ function App() {
         responseHeaders: resHeaders,
         loading: false
       });
-      console.log('Response:', data);
+
+      // Add to history
+      addToHistory({
+        url: currentTabData.url,
+        method: currentTabData.method,
+        headers: currentTabData.headers,
+        requestBody: currentTabData.requestBody,
+        statusCode: res.status
+      });
     } catch (error) {
-      console.error('Error:', error);
       updateTabData({
         response: `Error: ${error.message}`,
         responseType: 'text',
@@ -756,7 +803,13 @@ function App() {
               ))}
             </div>
           ))}
-          <MenuItem onClick={handleOpenExportModal} sx={{ marginTop: 'auto', borderTop: '1px solid #ddd' }}>
+          <MenuItem onClick={handleOpenHistoryModal} sx={{ marginTop: 'auto', borderTop: '1px solid #ddd' }}>
+            <ListItemIcon>
+              <HistoryIcon fontSize="small" />
+            </ListItemIcon>
+            <ListItemText>History</ListItemText>
+          </MenuItem>
+          <MenuItem onClick={handleOpenExportModal}>
             <ListItemIcon>
               <FileDownloadIcon fontSize="small" />
             </ListItemIcon>
@@ -832,7 +885,7 @@ function App() {
             <Button
               size='large'
               variant="contained"
-              onClick={handleMakeRequest}
+              onClick={makeRequest}
               disabled={currentTabData.loading}
             >
               {currentTabData.loading ? 'Loading...' : 'Make Request'}
@@ -1150,6 +1203,57 @@ function App() {
         >
           {isRunning ? 'Running...' : 'Run'}
         </Button>
+      </DialogActions>
+    </Dialog>
+    <Dialog open={isHistoryModalOpen} onClose={handleCloseHistoryModal} maxWidth="md" fullWidth>
+      <DialogTitle>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '0.5em' }}>
+          <HistoryIcon />
+          Request History
+        </div>
+      </DialogTitle>
+      <DialogContent>
+        {requestHistory.length === 0 ? (
+          <div style={{ textAlign: 'center', padding: '2em', color: '#666' }}>
+            No requests in history yet. Make a request to see it here.
+          </div>
+        ) : (
+          <List>
+            {requestHistory.map((item) => {
+              const date = new Date(item.timestamp);
+              const timeStr = date.toLocaleTimeString();
+              return (
+                <ListItem 
+                  key={item.id}
+                  onClick={() => handleLoadHistoryItem(item)}
+                  sx={{
+                    borderLeft: item.success ? '4px solid #4caf50' : '4px solid #f44336',
+                    marginBottom: '0.5em',
+                    backgroundColor: item.success ? '#f1f8f4' : '#fef1f1',
+                    borderRadius: '4px',
+                    cursor: 'pointer',
+                    '&:hover': {
+                      backgroundColor: item.success ? '#e8f5e9' : '#ffebee',
+                      transform: 'translateX(4px)',
+                      transition: 'all 0.2s'
+                    }
+                  }}
+                >
+                  <ListItemIcon>
+                    <HttpIcon fontSize="small" />
+                  </ListItemIcon>
+                  <ListItemText
+                    primary={`${item.method} ${item.url}`}
+                    secondary={`${timeStr} - Status: ${item.statusCode || 'Error'}`}
+                  />
+                </ListItem>
+              );
+            })}
+          </List>
+        )}
+      </DialogContent>
+      <DialogActions>
+        <Button onClick={handleCloseHistoryModal}>Close</Button>
       </DialogActions>
     </Dialog>
     </div>
