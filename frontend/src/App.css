@@ -16,6 +16,26 @@
   background-color: #fafafa !important;
 }
 
+.CollectionsMenuItem {
+  display: flex !important;
+  justify-content: space-between !important;
+  align-items: center !important;
+}
+
+.AddCollectionButton {
+  opacity: 0;
+  transition: opacity 0.2s;
+  padding: 4px !important;
+}
+
+.CollectionsMenuItem:hover .AddCollectionButton {
+  opacity: 1;
+}
+
+.AddCollectionButton:hover {
+  background-color: rgba(0, 0, 0, 0.1);
+}
+
 .SubMenuItem {
   padding-left: 2em !important;
   font-size: 0.9em !important;

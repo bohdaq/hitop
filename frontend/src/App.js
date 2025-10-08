@@ -95,9 +95,11 @@ const createNewTab = () => ({
 function App() {
   const [tabs, setTabs] = useState([createNewTab()]);
   const [currentTab, setCurrentTab] = useState(0);
-  const [collectionName, setCollectionName] = useState('Default');
+  const [collections, setCollections] = useState([{ id: 1, name: 'Default' }]);
   const [isRenameModalOpen, setIsRenameModalOpen] = useState(false);
+  const [isAddCollectionModalOpen, setIsAddCollectionModalOpen] = useState(false);
   const [newCollectionName, setNewCollectionName] = useState('');
+  const [editingCollectionId, setEditingCollectionId] = useState(null);
 
   const currentTabData = tabs[currentTab];
 
@@ -113,22 +115,50 @@ function App() {
     setCurrentTab(tabs.length);
   };
 
-  const handleOpenRenameModal = (event) => {
+  const handleOpenRenameModal = (event, collectionId, currentName) => {
     event.stopPropagation();
-    setNewCollectionName(collectionName);
+    setEditingCollectionId(collectionId);
+    setNewCollectionName(currentName);
     setIsRenameModalOpen(true);
   };
 
   const handleCloseRenameModal = () => {
     setIsRenameModalOpen(false);
     setNewCollectionName('');
+    setEditingCollectionId(null);
   };
 
   const handleSaveCollectionName = () => {
-    if (newCollectionName.trim()) {
-      setCollectionName(newCollectionName.trim());
+    if (newCollectionName.trim() && editingCollectionId) {
+      setCollections(collections.map(col => 
+        col.id === editingCollectionId 
+          ? { ...col, name: newCollectionName.trim() } 
+          : col
+      ));
     }
     handleCloseRenameModal();
+  };
+
+  const handleOpenAddCollectionModal = (event) => {
+    event.stopPropagation();
+    setNewCollectionName('');
+    setIsAddCollectionModalOpen(true);
+  };
+
+  const handleCloseAddCollectionModal = () => {
+    setIsAddCollectionModalOpen(false);
+    setNewCollectionName('');
+  };
+
+  const handleAddCollection = () => {
+    if (newCollectionName.trim()) {
+      const newCollection = {
+        id: Date.now(),
+        name: newCollectionName.trim()
+      };
+      setCollections([...collections, newCollection]);
+    }
+    handleCloseAddCollectionModal();
   };
 
   const closeTab = (event, indexToClose) => {
@@ -281,23 +311,33 @@ function App() {
             </ListItemIcon>
             <ListItemText>Variables</ListItemText>
           </MenuItem>
-          <MenuItem>
+          <MenuItem className="CollectionsMenuItem">
             <ListItemIcon>
               <FolderIcon fontSize="small" />
             </ListItemIcon>
             <ListItemText>Collections</ListItemText>
-          </MenuItem>
-          <MenuItem className="SubMenuItem">
-            <ListItemText inset>{collectionName}</ListItemText>
             <IconButton
               size="small"
-              className="EditCollectionButton"
-              onClick={handleOpenRenameModal}
-              aria-label="edit collection"
+              className="AddCollectionButton"
+              onClick={handleOpenAddCollectionModal}
+              aria-label="add collection"
             >
-              <EditIcon fontSize="small" />
+              <AddIcon fontSize="small" />
             </IconButton>
           </MenuItem>
+          {collections.map((collection) => (
+            <MenuItem key={collection.id} className="SubMenuItem">
+              <ListItemText inset>{collection.name}</ListItemText>
+              <IconButton
+                size="small"
+                className="EditCollectionButton"
+                onClick={(e) => handleOpenRenameModal(e, collection.id, collection.name)}
+                aria-label="edit collection"
+              >
+                <EditIcon fontSize="small" />
+              </IconButton>
+            </MenuItem>
+          ))}
         </MenuList>
       </Drawer>
       <div className="App">
@@ -483,6 +523,30 @@ function App() {
       <DialogActions>
         <Button onClick={handleCloseRenameModal}>Cancel</Button>
         <Button onClick={handleSaveCollectionName} variant="contained">Save</Button>
+      </DialogActions>
+    </Dialog>
+    <Dialog open={isAddCollectionModalOpen} onClose={handleCloseAddCollectionModal}>
+      <DialogTitle>Add New Collection</DialogTitle>
+      <DialogContent>
+        <TextField
+          autoFocus
+          margin="dense"
+          label="Collection Name"
+          type="text"
+          fullWidth
+          variant="outlined"
+          value={newCollectionName}
+          onChange={(e) => setNewCollectionName(e.target.value)}
+          onKeyPress={(e) => {
+            if (e.key === 'Enter') {
+              handleAddCollection();
+            }
+          }}
+        />
+      </DialogContent>
+      <DialogActions>
+        <Button onClick={handleCloseAddCollectionModal}>Cancel</Button>
+        <Button onClick={handleAddCollection} variant="contained">Add</Button>
       </DialogActions>
     </Dialog>
     </div>
