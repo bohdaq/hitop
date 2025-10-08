@@ -249,7 +249,8 @@ function App() {
         // Update tab to reflect new name if changed
         updateTabData({
           loadedRequestId: currentTabData.loadedRequestId,
-          loadedCollectionId: selectedCollectionId
+          loadedCollectionId: selectedCollectionId,
+          title: requestName.trim() // Update tab title to new request name
         });
       } else {
         // Create new request
@@ -273,7 +274,8 @@ function App() {
         // Update tab to track this as a loaded request
         updateTabData({
           loadedRequestId: newRequest.id,
-          loadedCollectionId: selectedCollectionId
+          loadedCollectionId: selectedCollectionId,
+          title: requestName.trim() // Set tab title to request name
         });
       }
     }
@@ -293,7 +295,8 @@ function App() {
       loadedRequestId: request.id,
       loadedCollectionId: collectionId,
       preRequestScript: request.preRequestScript || '',
-      postRequestScript: request.postRequestScript || ''
+      postRequestScript: request.postRequestScript || '',
+      title: request.name // Set tab title to request name
     });
   };
 
@@ -1063,6 +1066,11 @@ function App() {
   }, [currentTabData.response]);
 
   useEffect(() => {
+    // Don't auto-generate title if request was loaded from collection (has loadedRequestId)
+    if (currentTabData.loadedRequestId) {
+      return;
+    }
+
     let newTitle = 'New Request';
     if (currentTabData.url) {
       try {
@@ -1078,7 +1086,7 @@ function App() {
     if (newTitle !== currentTabData.title) {
       updateTabData({ title: newTitle });
     }
-  }, [currentTabData.url, currentTabData.method, currentTabData.title]);
+  }, [currentTabData.url, currentTabData.method, currentTabData.title, currentTabData.loadedRequestId]);
 
   return (
     <div className="AppWrapper">
