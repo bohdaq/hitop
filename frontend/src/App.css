@@ -86,6 +86,22 @@
   color: #f44336 !important;
 }
 
+.export-json pre {
+  background-color: #0d1117;
+  border-radius: 6px;
+  padding: 1em;
+  overflow-x: auto;
+  max-height: 500px;
+  overflow-y: auto;
+  margin: 0;
+}
+
+.export-json code {
+  font-family: 'Courier New', Courier, monospace;
+  font-size: 14px;
+  line-height: 1.5;
+}
+
 .App {
   margin: 0 3em 3em 3em;
   display: flex;

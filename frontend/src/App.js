@@ -103,11 +103,11 @@ function App() {
   const [isSaveRequestModalOpen, setIsSaveRequestModalOpen] = useState(false);
   const [isDeleteRequestModalOpen, setIsDeleteRequestModalOpen] = useState(false);
   const [isDeleteCollectionModalOpen, setIsDeleteCollectionModalOpen] = useState(false);
+  const [isExportModalOpen, setIsExportModalOpen] = useState(false);
   const [newCollectionName, setNewCollectionName] = useState('');
   const [editingCollectionId, setEditingCollectionId] = useState(null);
   const [selectedCollectionId, setSelectedCollectionId] = useState(null);
-  const [requestName, setRequestName] = useState('');
-  const [isOverwriting, setIsOverwriting] = useState(false);
+  const [requestName, setRequestName] = useState('');  const [isOverwriting, setIsOverwriting] = useState(false);
   const [requestToDelete, setRequestToDelete] = useState(null);
   const [collectionToDelete, setCollectionToDelete] = useState(null);
 
@@ -343,6 +343,25 @@ function App() {
     handleCloseDeleteCollectionModal();
   };
 
+  const handleOpenExportModal = () => {
+    setIsExportModalOpen(true);
+  };
+
+  const handleCloseExportModal = () => {
+    setIsExportModalOpen(false);
+  };
+
+  useEffect(() => {
+    if (isExportModalOpen) {
+      // Highlight the JSON after modal opens
+      setTimeout(() => {
+        document.querySelectorAll('.export-json code').forEach((block) => {
+          hljs.highlightElement(block);
+        });
+      }, 100);
+    }
+  }, [isExportModalOpen]);
+
   const closeTab = (event, indexToClose) => {
     event.stopPropagation();
     
@@ -533,6 +552,9 @@ function App() {
               ))}
             </div>
           ))}
+          <MenuItem onClick={handleOpenExportModal} sx={{ marginTop: 'auto', borderTop: '1px solid #ddd' }}>
+            <ListItemText>Export</ListItemText>
+          </MenuItem>
         </MenuList>
       </Drawer>
       <div className="App">
@@ -825,6 +847,21 @@ function App() {
         <Button onClick={handleDeleteCollection} variant="contained" color="error">
           Delete Collection
         </Button>
+      </DialogActions>
+    </Dialog>
+    <Dialog open={isExportModalOpen} onClose={handleCloseExportModal} maxWidth="md" fullWidth>
+      <DialogTitle>Export Collections</DialogTitle>
+      <DialogContent>
+        <div className="export-json">
+          <pre>
+            <code className="language-json">
+              {JSON.stringify(collections, null, 2)}
+            </code>
+          </pre>
+        </div>
+      </DialogContent>
+      <DialogActions>
+        <Button onClick={handleCloseExportModal}>Close</Button>
       </DialogActions>
     </Dialog>
     </div>
