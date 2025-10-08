@@ -13,6 +13,8 @@ import AddIcon from '@mui/icons-material/Add';
 import CloseIcon from '@mui/icons-material/Close';
 import EditIcon from '@mui/icons-material/Edit';
 import SaveIcon from '@mui/icons-material/Save';
+import ContentCopyIcon from '@mui/icons-material/ContentCopy';
+import FileDownloadIcon from '@mui/icons-material/FileDownload';
 import Drawer from '@mui/material/Drawer';
 import MenuList from '@mui/material/MenuList';
 import ListItemText from '@mui/material/ListItemText';
@@ -351,6 +353,16 @@ function App() {
     setIsExportModalOpen(false);
   };
 
+  const handleCopyToClipboard = () => {
+    const jsonString = JSON.stringify(collections, null, 2);
+    navigator.clipboard.writeText(jsonString).then(() => {
+      // Could add a snackbar notification here
+      console.log('Copied to clipboard!');
+    }).catch(err => {
+      console.error('Failed to copy:', err);
+    });
+  };
+
   useEffect(() => {
     if (isExportModalOpen) {
       // Highlight the JSON after modal opens
@@ -505,7 +517,7 @@ function App() {
           paper: 'SidebarPaper',
         }}
       >
-        <MenuList>
+        <MenuList sx={{ height: '100%', display: 'flex', flexDirection: 'column' }}>
           <MenuItem className="CollectionsMenuItem">
             <ListItemIcon>
               <FolderIcon fontSize="small" />
@@ -553,6 +565,9 @@ function App() {
             </div>
           ))}
           <MenuItem onClick={handleOpenExportModal} sx={{ marginTop: 'auto', borderTop: '1px solid #ddd' }}>
+            <ListItemIcon>
+              <FileDownloadIcon fontSize="small" />
+            </ListItemIcon>
             <ListItemText>Export</ListItemText>
           </MenuItem>
         </MenuList>
@@ -861,6 +876,9 @@ function App() {
         </div>
       </DialogContent>
       <DialogActions>
+        <Button onClick={handleCopyToClipboard} startIcon={<ContentCopyIcon />}>
+          Copy to Clipboard
+        </Button>
         <Button onClick={handleCloseExportModal}>Close</Button>
       </DialogActions>
     </Dialog>
