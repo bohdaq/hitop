@@ -2,6 +2,34 @@
 
 This directory contains utility services and business logic functions used throughout the HITOP application.
 
+## Service Overview
+
+### collectionService.js
+Manages collection operations including creation, modification, import/export, and request management.
+
+### contextService.js
+Manages collection-specific runtime contexts for sharing data between requests.
+
+### historyService.js
+Handles request history tracking, creation, and filtering.
+
+### httpService.js
+Handles HTTP request execution, response processing, and status code utilities.
+
+### scriptExecutionService.js
+Executes pre-request and post-request scripts in a sandboxed environment.
+
+### storageService.js
+Manages localStorage operations for persisting collections, tabs, history, and contexts.
+
+### tabService.js
+Manages tab creation, updates, and lifecycle operations.
+
+### variableInterpolation.js
+Provides variable interpolation functionality for dynamic request values.
+
+---
+
 ## Variable Interpolation Service
 
 **File**: `variableInterpolation.js`

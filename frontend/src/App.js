@@ -26,79 +26,16 @@ import CollectionVariablesModal from './components/CollectionVariablesModal';
 
 // Services
 import { interpolateVariables } from './services/variableInterpolation';
-
-const getStatusText = (statusCode) => {
-  const statusTexts = {
-    // 2xx Success
-    200: 'OK',
-    201: 'Created',
-    202: 'Accepted',
-    203: 'Non-Authoritative Information',
-    204: 'No Content',
-    205: 'Reset Content',
-    206: 'Partial Content',
-    // 3xx Redirection
-    300: 'Multiple Choices',
-    301: 'Moved Permanently',
-    302: 'Found',
-    303: 'See Other',
-    304: 'Not Modified',
-    307: 'Temporary Redirect',
-    308: 'Permanent Redirect',
-    // 4xx Client Errors
-    400: 'Bad Request',
-    401: 'Unauthorized',
-    402: 'Payment Required',
-    403: 'Forbidden',
-    404: 'Not Found',
-    405: 'Method Not Allowed',
-    406: 'Not Acceptable',
-    407: 'Proxy Authentication Required',
-    408: 'Request Timeout',
-    409: 'Conflict',
-    410: 'Gone',
-    411: 'Length Required',
-    412: 'Precondition Failed',
-    413: 'Payload Too Large',
-    414: 'URI Too Long',
-    415: 'Unsupported Media Type',
-    416: 'Range Not Satisfiable',
-    417: 'Expectation Failed',
-    418: "I'm a teapot",
-    422: 'Unprocessable Entity',
-    429: 'Too Many Requests',
-    // 5xx Server Errors
-    500: 'Internal Server Error',
-    501: 'Not Implemented',
-    502: 'Bad Gateway',
-    503: 'Service Unavailable',
-    504: 'Gateway Timeout',
-    505: 'HTTP Version Not Supported',
-  };
-
-  return statusTexts[statusCode] || 'Unknown Status';
-};
-
-const createNewTab = () => ({
-  id: Date.now(),
-  title: 'New Request',
-  url: '',
-  method: 'GET',
-  loading: false,
-  response: null,
-  responseType: '',
-  headers: [{ name: '', value: '' }],
-  responseHeaders: null,
-  requestBody: '',
-  statusCode: null,
-  loadedRequestId: null,
-  loadedCollectionId: null,
-  preRequestScript: '',
-  postRequestScript: '',
-});
+import * as historyService from './services/historyService';
+import * as collectionService from './services/collectionService';
+import * as contextService from './services/contextService';
+import * as scriptExecutionService from './services/scriptExecutionService';
+import * as tabService from './services/tabService';
+import * as storageService from './services/storageService';
+import * as httpService from './services/httpService';
 
 function App() {
-  const [tabs, setTabs] = useState([createNewTab()]);
+  const [tabs, setTabs] = useState([tabService.createNewTab()]);
   const [currentTab, setCurrentTab] = useState(0);
   const [collections, setCollections] = useState([{ id: 1, name: 'Default', requests: [] }]);
   const [isRenameModalOpen, setIsRenameModalOpen] = useState(false);
@@ -130,15 +67,14 @@ function App() {
   const currentTabData = tabs[currentTab];
 
   const updateTabData = (updates) => {
-    const newTabs = [...tabs];
-    newTabs[currentTab] = { ...newTabs[currentTab], ...updates };
+    const newTabs = tabService.updateTab(tabs, currentTab, updates);
     setTabs(newTabs);
   };
 
   const addNewTab = () => {
-    const newTab = createNewTab();
-    setTabs([...tabs, newTab]);
-    setCurrentTab(tabs.length);
+    const { tabs: newTabs, newTabIndex } = tabService.addNewTab(tabs);
+    setTabs(newTabs);
+    setCurrentTab(newTabIndex);
   };
 
   const handleOpenRenameModal = (event, collectionId, currentName) => {
@@ -150,24 +86,16 @@ function App() {
 
   const handleCloseRenameModal = () => {
     setIsRenameModalOpen(false);
-    setNewCollectionName('');
     setEditingCollectionId(null);
+    setNewCollectionName('');
   };
 
   const handleSaveCollectionName = () => {
-    if (newCollectionName.trim() && editingCollectionId) {
-      setCollections(collections.map(col => 
-        col.id === editingCollectionId 
-          ? { ...col, name: newCollectionName.trim() } 
-          : col
-      ));
-    }
+    setCollections(collectionService.renameCollection(collections, editingCollectionId, newCollectionName));
     handleCloseRenameModal();
   };
 
-  const handleOpenAddCollectionModal = (event) => {
-    event.stopPropagation();
-    setNewCollectionName('');
+  const handleOpenAddCollectionModal = () => {
     setIsAddCollectionModalOpen(true);
   };
 
@@ -177,14 +105,8 @@ function App() {
   };
 
   const handleAddCollection = () => {
-    if (newCollectionName.trim()) {
-      const newCollection = {
-        id: Date.now(),
-        name: newCollectionName.trim(),
-        requests: []
-      };
-      setCollections([...collections, newCollection]);
-    }
+    const newCollection = collectionService.createCollection(newCollectionName);
+    setCollections([...collections, newCollection]);
     handleCloseAddCollectionModal();
   };
 
@@ -223,39 +145,7 @@ function App() {
     if (requestName.trim() && selectedCollectionId) {
       if (isOverwriting && currentTabData.loadedRequestId) {
         // Update existing request
-        setCollections(collections.map(col => {
-          if (col.id === selectedCollectionId) {
-            return {
-              ...col,
-              requests: col.requests.map(req => 
-                req.id === currentTabData.loadedRequestId
-                  ? {
-                      ...req,
-                      name: requestName.trim(),
-                      url: currentTabData.url,
-                      method: currentTabData.method,
-                      headers: currentTabData.headers,
-                      body: currentTabData.requestBody,
-                      preRequestScript: currentTabData.preRequestScript,
-                      postRequestScript: currentTabData.postRequestScript
-                    }
-                  : req
-              )
-            };
-          }
-          return col;
-        }));
-        
-        // Update tab to reflect new name if changed
-        updateTabData({
-          loadedRequestId: currentTabData.loadedRequestId,
-          loadedCollectionId: selectedCollectionId,
-          title: requestName.trim() // Update tab title to new request name
-        });
-      } else {
-        // Create new request
-        const newRequest = {
-          id: Date.now(),
+        const updatedRequest = {
           name: requestName.trim(),
           url: currentTabData.url,
           method: currentTabData.method,
@@ -265,17 +155,41 @@ function App() {
           postRequestScript: currentTabData.postRequestScript
         };
         
-        setCollections(collections.map(col => 
-          col.id === selectedCollectionId
-            ? { ...col, requests: [...col.requests, newRequest] }
-            : col
+        setCollections(collectionService.updateRequestInCollection(
+          collections,
+          selectedCollectionId,
+          currentTabData.loadedRequestId,
+          updatedRequest
+        ));
+        
+        // Update tab to reflect new name if changed
+        updateTabData({
+          loadedRequestId: currentTabData.loadedRequestId,
+          loadedCollectionId: selectedCollectionId,
+          title: requestName.trim()
+        });
+      } else {
+        // Create new request
+        const newRequest = collectionService.createRequest(requestName, {
+          url: currentTabData.url,
+          method: currentTabData.method,
+          headers: currentTabData.headers,
+          body: currentTabData.requestBody,
+          preRequestScript: currentTabData.preRequestScript,
+          postRequestScript: currentTabData.postRequestScript
+        });
+        
+        setCollections(collectionService.addRequestToCollection(
+          collections,
+          selectedCollectionId,
+          newRequest
         ));
         
         // Update tab to track this as a loaded request
         updateTabData({
           loadedRequestId: newRequest.id,
           loadedCollectionId: selectedCollectionId,
-          title: requestName.trim() // Set tab title to request name
+          title: requestName.trim()
         });
       }
     }
@@ -313,15 +227,11 @@ function App() {
 
   const handleDeleteRequest = () => {
     if (requestToDelete) {
-      setCollections(collections.map(col => {
-        if (col.id === requestToDelete.collectionId) {
-          return {
-            ...col,
-            requests: col.requests.filter(req => req.id !== requestToDelete.request.id)
-          };
-        }
-        return col;
-      }));
+      setCollections(collectionService.deleteRequestFromCollection(
+        collections,
+        requestToDelete.collectionId,
+        requestToDelete.request.id
+      ));
       
       // If the deleted request is currently loaded, clear the loaded request tracking
       if (currentTabData.loadedRequestId === requestToDelete.request.id) {
@@ -350,9 +260,9 @@ function App() {
 
   const handleDeleteCollection = () => {
     if (collectionToDelete) {
-      setCollections(collections.filter(col => col.id !== collectionToDelete.id));
+      setCollections(collectionService.deleteCollection(collections, collectionToDelete.id));
       
-      // If any tab has a request from this collection loaded, clear the tracking
+      // If any tab has a request from this collection, clear the loaded request tracking
       const newTabs = tabs.map(tab => {
         if (tab.loadedCollectionId === collectionToDelete.id) {
           return {
@@ -427,13 +337,7 @@ function App() {
 
   const handleImportCollections = () => {
     try {
-      const importedCollections = JSON.parse(importJson);
-      
-      // Validate that it's an array
-      if (!Array.isArray(importedCollections)) {
-        alert('Invalid format: Expected an array of collections');
-        return;
-      }
+      const importedCollections = collectionService.importCollections(importJson);
       
       // Overwrite existing collections
       setCollections(importedCollections);
@@ -478,10 +382,10 @@ function App() {
 
   const handleSaveVariables = (variables) => {
     if (selectedVariablesCollection) {
-      setCollections(collections.map(col =>
-        col.id === selectedVariablesCollection.id
-          ? { ...col, variables }
-          : col
+      setCollections(collectionService.updateCollectionVariables(
+        collections,
+        selectedVariablesCollection.id,
+        variables
       ));
     }
   };
@@ -505,23 +409,13 @@ function App() {
       return;
     }
 
-    setCollections(collections.map(col => {
-      if (col.id === targetCollectionId) {
-        const requests = [...col.requests];
-        const draggedIndex = requests.findIndex(r => r.id === draggedRequest.id);
-        const targetIndex = requests.findIndex(r => r.id === targetRequest.id);
-
-        if (draggedIndex !== -1 && targetIndex !== -1) {
-          // Remove dragged item
-          const [removed] = requests.splice(draggedIndex, 1);
-          // Insert at target position
-          requests.splice(targetIndex, 0, removed);
-        }
-
-        return { ...col, requests };
-      }
-      return col;
-    }));
+    setCollections(collectionService.reorderRequest(
+      collections,
+      draggedCollectionId,
+      targetCollectionId,
+      draggedRequest,
+      targetRequest.id
+    ));
 
     setDraggedRequest(null);
     setDraggedCollectionId(null);
@@ -725,22 +619,14 @@ function App() {
         setRunResults([...results]);
 
         // Add to history
-        const historyItem = {
-          id: Date.now() + i, // Unique ID for each request in collection run
-          timestamp: new Date().toISOString(),
-          url: requestData.url,
-          method: request.method,
-          headers: requestData.headers,
-          body: requestData.body,
-          statusCode: response.status,
-          success: response.ok,
-          collectionName: runningCollection.name,
-          requestName: request.name,
-          isCollectionRun: true,
-          preRequestScript: request.preRequestScript || '',
-          postRequestScript: request.postRequestScript || ''
-        };
-        setRequestHistory(prev => [...prev, historyItem].slice(-50));
+        const historyItem = historyService.createCollectionRunHistoryItem(
+          request,
+          requestData,
+          response,
+          runningCollection.name,
+          i
+        );
+        setRequestHistory(prev => historyService.addToHistory(prev, historyItem));
 
         // Stop if error response
         if (!response.ok) {
@@ -772,22 +658,11 @@ function App() {
     }
   }, [isExportModalOpen]);
 
-  const closeTab = (event, indexToClose) => {
-    event.stopPropagation();
-    
-    // Don't close if it's the only tab
-    if (tabs.length === 1) {
-      return;
-    }
-
-    const newTabs = tabs.filter((_, index) => index !== indexToClose);
+  const closeTab = (indexToClose) => {
+    const { tabs: newTabs, newCurrentTab } = tabService.closeTab(tabs, indexToClose, currentTab);
     setTabs(newTabs);
-
-    // Adjust current tab if necessary
-    if (currentTab >= newTabs.length) {
-      setCurrentTab(newTabs.length - 1);
-    } else if (currentTab === indexToClose && currentTab > 0) {
-      setCurrentTab(currentTab - 1);
+    if (newCurrentTab !== currentTab) {
+      setCurrentTab(newCurrentTab);
     }
   };
 
@@ -808,35 +683,17 @@ function App() {
   };
 
   const addToHistory = (requestData) => {
-    const historyItem = {
-      id: Date.now(),
-      timestamp: new Date().toISOString(),
-      url: requestData.url,
-      method: requestData.method,
-      headers: requestData.headers,
-      body: requestData.requestBody,
-      statusCode: requestData.statusCode,
-      success: requestData.statusCode >= 200 && requestData.statusCode < 300,
-      preRequestScript: requestData.preRequestScript || '',
-      postRequestScript: requestData.postRequestScript || ''
-    };
-    setRequestHistory(prev => [...prev, historyItem].slice(-50)); // Keep last 50 requests
+    const historyItem = historyService.createHistoryItem(requestData);
+    setRequestHistory(prev => historyService.addToHistory(prev, historyItem));
   };
 
   const getCollectionContext = (collectionId) => {
-    if (!collectionId) return {};
-    return collectionContexts[collectionId] || {};
+    return contextService.getCollectionContext(collectionContexts, collectionId);
   };
 
   const updateCollectionContext = (collectionId, key, value) => {
-    if (!collectionId) return;
-    setCollectionContexts(prev => ({
-      ...prev,
-      [collectionId]: {
-        ...(prev[collectionId] || {}),
-        [key]: value
-      }
-    }));
+    const newContexts = contextService.updateCollectionContext(collectionContexts, collectionId, key, value);
+    setCollectionContexts(newContexts);
   };
 
   const executePostRequestScript = (script, collectionId, response, responseHeaders, statusCode) => {
@@ -953,9 +810,7 @@ function App() {
   };
 
   const getCollectionVariables = (collectionId) => {
-    if (!collectionId) return {};
-    const collection = collections.find(col => col.id === collectionId);
-    return collection?.variables || {};
+    return collectionService.getCollectionVariables(collections, collectionId);
   };
 
   const makeRequest = async () => {
@@ -1169,7 +1024,7 @@ function App() {
         onAddHeader={addHeader}
         onUpdateHeader={updateHeader}
         onRemoveHeader={removeHeader}
-        getStatusText={getStatusText}
+        getStatusText={httpService.getStatusText}
       />
     </div>
     
