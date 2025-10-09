@@ -48,7 +48,7 @@ The HITOP Firefox Extension brings the full power of HITOP API testing tool dire
 
 ### Prerequisites
 - Node.js and npm installed
-- Firefox browser (version 57+)
+- Firefox browser (version 58.0 or higher)
 
 ### Important Configuration
 

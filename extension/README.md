@@ -14,6 +14,9 @@ A Firefox extension for the HITOP HTTP API Testing Tool.
 
 ### Development Installation
 
+**Requirements:**
+- Firefox 58.0 or higher
+
 1. **Build the extension:**
    ```bash
    ./build-extension.sh
