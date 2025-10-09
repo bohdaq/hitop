@@ -49,3 +49,6 @@ Thumbs.db
 extension/app/
 hitop-firefox-extension.zip
 hitop-firefox-extension.xpi
+
+# GitHub Pages - Keep docs/app for deployment
+# (docs/app is intentionally tracked)
