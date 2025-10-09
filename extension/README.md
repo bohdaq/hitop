@@ -163,7 +163,9 @@ Contributions are welcome! Please see the main project README for guidelines.
 
 ## License
 
-MIT License - See LICENSE file for details
+This project is licensed under the MIT License - see the [LICENSE](../LICENSE) file for details.
+
+Copyright (c) 2025 Bohdan Tsap
 
 ## Support
 

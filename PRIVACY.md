@@ -55,7 +55,7 @@ Required to make HTTP requests to any API endpoint you want to test. This is the
 
 ## Data Security
 
-- All data is stored locally using Chrome's secure storage API
+- All data is stored locally using secure storage API
 - No data is transmitted to external servers
 - You have full control over your data
 - You can delete all data by removing the extension
@@ -83,9 +83,14 @@ For privacy concerns or questions, please open an issue on our GitHub repository
 ## Compliance
 
 This extension complies with:
+- Firefox Add-ons Policies
 - Chrome Web Store Developer Program Policies
 - General Data Protection Regulation (GDPR)
 - California Consumer Privacy Act (CCPA)
+
+## License
+
+HITOP is open source software licensed under the MIT License. See [LICENSE](LICENSE) for details.
 
 ## Summary
 

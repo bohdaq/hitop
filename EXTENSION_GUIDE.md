@@ -399,4 +399,21 @@ Contributions welcome! To contribute:
 
 ## License
 
-MIT License - see LICENSE file for details
+This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
+
+Copyright (c) 2025 Bohdan Tsap
+
+### What MIT License Means
+
+✅ **You can:**
+- Use commercially
+- Modify the code
+- Distribute
+- Use privately
+- Sublicense
+
+⚠️ **You must:**
+- Include the license and copyright notice
+
+❌ **No warranty:**
+- Software provided "as is"
