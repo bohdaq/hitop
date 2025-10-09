@@ -1001,7 +1001,10 @@ function App() {
                     <IconButton
                       size="small"
                       className="TabCloseButton"
-                      onClick={(e) => closeTab(e, index)}
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        closeTab(index);
+                      }}
                       aria-label="close tab"
                     >
                       <CloseIcon fontSize="small" />
