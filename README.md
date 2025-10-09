@@ -3,7 +3,8 @@
 A powerful, modern HTTP API testing tool built with React. Test APIs, manage collections, automate workflows with custom scripts, and use variables for dynamic requests.
 
 **Available as:**
-- 🌐 Web Application
+- 🌐 Web Application ([Launch Online](https://bohdaq.github.io/hitop/app/))
+- 🖥️ Desktop App - macOS, Windows, Linux ([Download Guide](./ELECTRON_GUIDE.md))
 - 🦊 Firefox Extension ([Installation Guide](./EXTENSION_GUIDE.md))
 
 ## Features

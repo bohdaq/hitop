@@ -52,3 +52,11 @@ hitop-firefox-extension.xpi
 
 # GitHub Pages - Keep docs/app for deployment
 # (docs/app is intentionally tracked)
+
+# Electron
+dist/
+*.dmg
+*.exe
+*.AppImage
+*.deb
+*.rpm

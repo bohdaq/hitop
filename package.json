@@ -1,9 +1,76 @@
 {
+  "name": "hitop",
+  "version": "1.0.0",
+  "description": "HTTP API Testing Tool - Desktop Application",
+  "main": "electron/main.js",
+  "author": "Bohdan Tsap",
+  "license": "MIT",
+  "homepage": "https://github.com/bohdaq/hitop",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/bohdaq/hitop.git"
+  },
+  "scripts": {
+    "electron": "electron .",
+    "electron:dev": "concurrently \"cd frontend && npm start\" \"wait-on http://localhost:3000 && cross-env ELECTRON_START_URL=http://localhost:3000 NODE_ENV=development electron .\"",
+    "electron:build": "cd frontend && npm run build && cd .. && npx electron-builder",
+    "electron:build:mac": "cd frontend && npm run build && cd .. && npx electron-builder --mac",
+    "electron:build:win": "cd frontend && npm run build && cd .. && npx electron-builder --win",
+    "electron:build:linux": "cd frontend && npm run build && cd .. && npx electron-builder --linux",
+    "postinstall": "cd frontend && npm install"
+  },
   "dependencies": {
     "@emotion/react": "^11.14.0",
     "@emotion/styled": "^11.14.1",
     "@fontsource/roboto": "^5.2.8",
     "@mui/icons-material": "^7.3.4",
     "@mui/material": "^7.3.4"
+  },
+  "devDependencies": {
+    "electron": "^28.0.0",
+    "electron-builder": "^24.9.1",
+    "concurrently": "^8.2.2",
+    "wait-on": "^7.2.0",
+    "cross-env": "^7.0.3"
+  },
+  "build": {
+    "appId": "com.hitop.app",
+    "productName": "HITOP",
+    "directories": {
+      "buildResources": "electron/build",
+      "output": "dist"
+    },
+    "files": [
+      "electron/**/*",
+      "frontend/build/**/*",
+      "package.json"
+    ],
+    "mac": {
+      "category": "public.app-category.developer-tools",
+      "icon": "frontend/public/logo512.png",
+      "target": [
+        "dmg",
+        "zip"
+      ]
+    },
+    "win": {
+      "icon": "frontend/public/logo512.png",
+      "target": [
+        "nsis",
+        "portable"
+      ]
+    },
+    "linux": {
+      "icon": "frontend/public/logo512.png",
+      "category": "Development",
+      "target": [
+        "AppImage",
+        "deb"
+      ]
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true
+    }
   }
 }
