@@ -1,0 +1,32 @@
+{
+  "manifest_version": 2,
+  "name": "HITOP - HTTP API Testing Tool",
+  "version": "1.0.0",
+  "description": "A powerful HTTP API testing tool with collections, variables, and custom scripting support",
+  "icons": {
+    "48": "icons/icon-48.png",
+    "96": "icons/icon-96.png"
+  },
+  "browser_action": {
+    "default_icon": {
+      "48": "icons/icon-48.png"
+    },
+    "default_title": "HITOP API Tester",
+    "default_popup": "popup/popup.html"
+  },
+  "permissions": [
+    "storage",
+    "activeTab",
+    "<all_urls>"
+  ],
+  "background": {
+    "scripts": ["background.js"]
+  },
+  "content_security_policy": "script-src 'self' 'unsafe-eval'; object-src 'self'",
+  "browser_specific_settings": {
+    "gecko": {
+      "id": "hitop@example.com",
+      "strict_min_version": "57.0"
+    }
+  }
+}

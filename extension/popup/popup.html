@@ -1,0 +1,161 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>HITOP - API Tester</title>
+  <style>
+    body {
+      width: 400px;
+      min-height: 500px;
+      margin: 0;
+      padding: 16px;
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', 'Oxygen', 'Ubuntu', 'Cantarell', 'Fira Sans', 'Droid Sans', 'Helvetica Neue', sans-serif;
+      background: #f5f5f5;
+    }
+
+    .header {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      padding: 12px;
+      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+      border-radius: 8px;
+      margin-bottom: 16px;
+      color: white;
+    }
+
+    .header img {
+      width: 32px;
+      height: 32px;
+      border-radius: 4px;
+    }
+
+    .header h1 {
+      margin: 0;
+      font-size: 20px;
+      font-weight: bold;
+    }
+
+    .button-group {
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+    }
+
+    .btn {
+      padding: 12px 16px;
+      border: none;
+      border-radius: 6px;
+      font-size: 14px;
+      font-weight: 500;
+      cursor: pointer;
+      transition: all 0.2s;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      text-decoration: none;
+      color: white;
+    }
+
+    .btn-primary {
+      background: #1976d2;
+    }
+
+    .btn-primary:hover {
+      background: #1565c0;
+      transform: translateY(-1px);
+      box-shadow: 0 4px 8px rgba(25, 118, 210, 0.3);
+    }
+
+    .btn-secondary {
+      background: #424242;
+    }
+
+    .btn-secondary:hover {
+      background: #616161;
+      transform: translateY(-1px);
+      box-shadow: 0 4px 8px rgba(0, 0, 0, 0.2);
+    }
+
+    .info {
+      margin-top: 16px;
+      padding: 12px;
+      background: white;
+      border-radius: 6px;
+      font-size: 13px;
+      color: #666;
+      line-height: 1.5;
+    }
+
+    .info strong {
+      color: #333;
+    }
+
+    .features {
+      margin-top: 16px;
+      padding: 12px;
+      background: white;
+      border-radius: 6px;
+    }
+
+    .features h3 {
+      margin: 0 0 8px 0;
+      font-size: 14px;
+      color: #333;
+    }
+
+    .features ul {
+      margin: 0;
+      padding-left: 20px;
+      font-size: 12px;
+      color: #666;
+    }
+
+    .features li {
+      margin-bottom: 4px;
+    }
+
+    .icon {
+      font-size: 18px;
+    }
+  </style>
+</head>
+<body>
+  <div class="header">
+    <img src="../icons/icon-48.png" alt="HITOP Logo">
+    <h1>HITOP</h1>
+  </div>
+
+  <div class="button-group">
+    <button class="btn btn-primary" id="openFullApp">
+      <span class="icon">🚀</span>
+      Open HITOP
+    </button>
+    
+    <button class="btn btn-secondary" id="openInNewTab">
+      <span class="icon">🔗</span>
+      Open in Background Tab
+    </button>
+  </div>
+
+  <div class="info">
+    <strong>HITOP</strong> is a powerful HTTP API testing tool with support for collections, variables, custom scripting, and more.
+  </div>
+
+  <div class="features">
+    <h3>✨ Features</h3>
+    <ul>
+      <li>Multiple HTTP methods (GET, POST, PUT, etc.)</li>
+      <li>Request collections & organization</li>
+      <li>Collection variables with ${} syntax</li>
+      <li>Pre & post-request scripts</li>
+      <li>Request history tracking</li>
+      <li>Import/Export collections</li>
+      <li>Multiple tabs support</li>
+    </ul>
+  </div>
+
+  <script src="popup.js"></script>
+</body>
+</html>

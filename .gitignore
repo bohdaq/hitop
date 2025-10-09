@@ -44,3 +44,8 @@ lerna-debug.log*
 
 # Windows files
 Thumbs.db
+
+# Extension build artifacts
+extension/app/
+hitop-firefox-extension.zip
+hitop-firefox-extension.xpi

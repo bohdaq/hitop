@@ -2,6 +2,10 @@
 
 A powerful, modern HTTP API testing tool built with React. Test APIs, manage collections, automate workflows with custom scripts, and use variables for dynamic requests.
 
+**Available as:**
+- 🌐 Web Application
+- 🦊 Firefox Extension ([Installation Guide](./EXTENSION_GUIDE.md))
+
 ## Features
 
 ### 🚀 Core Features
@@ -39,11 +43,13 @@ A powerful, modern HTTP API testing tool built with React. Test APIs, manage col
 
 ## Getting Started
 
-### Prerequisites
+### Web Application
+
+#### Prerequisites
 - Node.js (v14 or higher)
 - npm or yarn
 
-### Installation
+#### Installation
 
 1. Clone the repository:
 ```bash
@@ -53,6 +59,7 @@ cd hitop
 
 2. Install dependencies:
 ```bash
+cd frontend
 npm install
 ```
 
@@ -63,11 +70,26 @@ npm start
 
 4. Open [http://localhost:3000](http://localhost:3000) in your browser
 
-### Building for Production
+#### Building for Production
 
 ```bash
 npm run build
 ```
+
+### Firefox Extension
+
+1. Build the extension:
+```bash
+./build-extension.sh
+```
+
+2. Install in Firefox:
+   - Open `about:debugging`
+   - Click "This Firefox"
+   - Click "Load Temporary Add-on"
+   - Select `extension/manifest.json`
+
+See [EXTENSION_GUIDE.md](./EXTENSION_GUIDE.md) for detailed instructions.
 
 ## Quick Start Guide
 
