@@ -1,0 +1,404 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="description" content="HITOP - A powerful HTTP API testing tool with collections, variables, and custom scripting support">
+  <meta name="keywords" content="API testing, HTTP client, REST client, API tool, developer tools, Postman alternative">
+  <title>HITOP - HTTP API Testing Tool</title>
+  <style>
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+    }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', 'Oxygen', 'Ubuntu', 'Cantarell', 'Fira Sans', 'Droid Sans', 'Helvetica Neue', sans-serif;
+      line-height: 1.6;
+      color: #333;
+      background: #f5f5f5;
+    }
+
+    .header {
+      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+      color: white;
+      padding: 80px 20px;
+      text-align: center;
+    }
+
+    .header h1 {
+      font-size: 3.5em;
+      margin-bottom: 20px;
+      font-weight: bold;
+      text-shadow: 0 2px 4px rgba(0,0,0,0.2);
+    }
+
+    .header p {
+      font-size: 1.3em;
+      margin-bottom: 30px;
+      opacity: 0.95;
+    }
+
+    .header .buttons {
+      display: flex;
+      gap: 20px;
+      justify-content: center;
+      flex-wrap: wrap;
+    }
+
+    .btn {
+      padding: 15px 35px;
+      border: none;
+      border-radius: 8px;
+      font-size: 1.1em;
+      font-weight: 600;
+      cursor: pointer;
+      text-decoration: none;
+      display: inline-flex;
+      align-items: center;
+      gap: 10px;
+      transition: all 0.3s;
+    }
+
+    .btn-primary {
+      background: white;
+      color: #667eea;
+    }
+
+    .btn-primary:hover {
+      transform: translateY(-2px);
+      box-shadow: 0 8px 20px rgba(0,0,0,0.2);
+    }
+
+    .btn-secondary {
+      background: rgba(255,255,255,0.2);
+      color: white;
+      border: 2px solid white;
+    }
+
+    .btn-secondary:hover {
+      background: rgba(255,255,255,0.3);
+      transform: translateY(-2px);
+    }
+
+    .container {
+      max-width: 1200px;
+      margin: 0 auto;
+      padding: 20px;
+    }
+
+    .section {
+      background: white;
+      margin: 40px 0;
+      padding: 60px 40px;
+      border-radius: 12px;
+      box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+    }
+
+    .section h2 {
+      font-size: 2.5em;
+      margin-bottom: 30px;
+      color: #667eea;
+      text-align: center;
+    }
+
+    .features {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+      gap: 30px;
+      margin-top: 40px;
+    }
+
+    .feature {
+      padding: 30px;
+      border-radius: 8px;
+      background: #f9f9f9;
+      border-left: 4px solid #667eea;
+    }
+
+    .feature h3 {
+      font-size: 1.5em;
+      margin-bottom: 15px;
+      color: #333;
+    }
+
+    .feature p {
+      color: #666;
+      line-height: 1.8;
+    }
+
+    .feature-icon {
+      font-size: 2.5em;
+      margin-bottom: 15px;
+    }
+
+    .stats {
+      display: flex;
+      justify-content: space-around;
+      flex-wrap: wrap;
+      gap: 30px;
+      margin: 40px 0;
+    }
+
+    .stat {
+      text-align: center;
+    }
+
+    .stat-number {
+      font-size: 3em;
+      font-weight: bold;
+      color: #667eea;
+    }
+
+    .stat-label {
+      font-size: 1.1em;
+      color: #666;
+      margin-top: 10px;
+    }
+
+    .screenshot {
+      margin: 40px 0;
+      text-align: center;
+    }
+
+    .screenshot img {
+      max-width: 100%;
+      border-radius: 12px;
+      box-shadow: 0 8px 20px rgba(0,0,0,0.15);
+    }
+
+    .cta {
+      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+      color: white;
+      text-align: center;
+      padding: 80px 40px;
+      margin: 40px 0;
+      border-radius: 12px;
+    }
+
+    .cta h2 {
+      font-size: 2.5em;
+      margin-bottom: 20px;
+      color: white;
+    }
+
+    .cta p {
+      font-size: 1.2em;
+      margin-bottom: 30px;
+      opacity: 0.95;
+    }
+
+    .footer {
+      background: #333;
+      color: white;
+      text-align: center;
+      padding: 40px 20px;
+      margin-top: 60px;
+    }
+
+    .footer a {
+      color: #667eea;
+      text-decoration: none;
+    }
+
+    .footer a:hover {
+      text-decoration: underline;
+    }
+
+    .badges {
+      display: flex;
+      justify-content: center;
+      gap: 15px;
+      flex-wrap: wrap;
+      margin: 30px 0;
+    }
+
+    .badge {
+      background: rgba(255,255,255,0.2);
+      padding: 8px 16px;
+      border-radius: 20px;
+      font-size: 0.9em;
+    }
+
+    @media (max-width: 768px) {
+      .header h1 {
+        font-size: 2.5em;
+      }
+
+      .header p {
+        font-size: 1.1em;
+      }
+
+      .section {
+        padding: 40px 20px;
+      }
+
+      .features {
+        grid-template-columns: 1fr;
+      }
+    }
+  </style>
+</head>
+<body>
+  <div class="header">
+    <h1>🚀 HITOP</h1>
+    <p>A powerful HTTP API testing tool with collections, variables, and custom scripting</p>
+    
+    <div class="badges">
+      <span class="badge">✅ Open Source</span>
+      <span class="badge">🔒 Privacy First</span>
+      <span class="badge">⚡ Fast & Lightweight</span>
+      <span class="badge">🎯 Developer Friendly</span>
+    </div>
+
+    <div class="buttons">
+      <a href="https://github.com/bohdaq/hitop" class="btn btn-primary" target="_blank">
+        📦 View on GitHub
+      </a>
+      <a href="https://addons.mozilla.org/firefox/addon/hitop/" class="btn btn-secondary" target="_blank">
+        🦊 Get Firefox Extension
+      </a>
+    </div>
+  </div>
+
+  <div class="container">
+    <div class="section">
+      <h2>Why HITOP?</h2>
+      <div class="stats">
+        <div class="stat">
+          <div class="stat-number">100%</div>
+          <div class="stat-label">Privacy Focused</div>
+        </div>
+        <div class="stat">
+          <div class="stat-number">0</div>
+          <div class="stat-label">External Servers</div>
+        </div>
+        <div class="stat">
+          <div class="stat-number">∞</div>
+          <div class="stat-label">API Requests</div>
+        </div>
+      </div>
+    </div>
+
+    <div class="section">
+      <h2>Features</h2>
+      <div class="features">
+        <div class="feature">
+          <div class="feature-icon">🌐</div>
+          <h3>Complete HTTP Support</h3>
+          <p>All HTTP methods (GET, POST, PUT, PATCH, DELETE, HEAD, OPTIONS) with custom headers and request bodies.</p>
+        </div>
+
+        <div class="feature">
+          <div class="feature-icon">📁</div>
+          <h3>Collections</h3>
+          <p>Organize requests into collections, run them sequentially, and share with your team via JSON export.</p>
+        </div>
+
+        <div class="feature">
+          <div class="feature-icon">🔧</div>
+          <h3>Variables</h3>
+          <p>Define collection-level variables and use ${variableName} syntax for dynamic values across requests.</p>
+        </div>
+
+        <div class="feature">
+          <div class="feature-icon">⚡</div>
+          <h3>Custom Scripts</h3>
+          <p>Write pre-request and post-request scripts to automate workflows and extract response data.</p>
+        </div>
+
+        <div class="feature">
+          <div class="feature-icon">📊</div>
+          <h3>Request History</h3>
+          <p>Track all requests and collection runs. Filter by success/failure and reload previous requests.</p>
+        </div>
+
+        <div class="feature">
+          <div class="feature-icon">🎯</div>
+          <h3>Multiple Tabs</h3>
+          <p>Work on multiple API requests simultaneously with full tab support and state management.</p>
+        </div>
+
+        <div class="feature">
+          <div class="feature-icon">🔒</div>
+          <h3>Privacy First</h3>
+          <p>All data stored locally. No external servers, no tracking, no analytics. You control your data.</p>
+        </div>
+
+        <div class="feature">
+          <div class="feature-icon">🎨</div>
+          <h3>Syntax Highlighting</h3>
+          <p>Beautiful syntax highlighting for JSON, XML, HTML responses with automatic formatting.</p>
+        </div>
+
+        <div class="feature">
+          <div class="feature-icon">📤</div>
+          <h3>Import/Export</h3>
+          <p>Share collections as JSON files. Easy backup and team collaboration.</p>
+        </div>
+      </div>
+    </div>
+
+    <div class="section">
+      <h2>Perfect For</h2>
+      <div class="features">
+        <div class="feature">
+          <h3>👨‍💻 API Developers</h3>
+          <p>Test your endpoints during development with all HTTP methods and custom configurations.</p>
+        </div>
+
+        <div class="feature">
+          <h3>🧪 QA Engineers</h3>
+          <p>Validate API responses, automate test workflows, and track request history.</p>
+        </div>
+
+        <div class="feature">
+          <h3>🔧 DevOps Teams</h3>
+          <p>Monitor services, run health checks, and automate API testing in your workflow.</p>
+        </div>
+
+        <div class="feature">
+          <h3>👥 Development Teams</h3>
+          <p>Share API collections, collaborate on testing, and maintain consistent workflows.</p>
+        </div>
+      </div>
+    </div>
+
+    <div class="cta">
+      <h2>Get Started Today</h2>
+      <p>Start testing your APIs with HITOP - free, open source, and privacy-focused</p>
+      <div class="buttons">
+        <a href="https://github.com/bohdaq/hitop" class="btn btn-primary" target="_blank">
+          📦 View on GitHub
+        </a>
+        <a href="https://github.com/bohdaq/hitop#getting-started" class="btn btn-secondary" target="_blank">
+          📖 Read Documentation
+        </a>
+      </div>
+    </div>
+
+    <div class="section">
+      <h2>Open Source</h2>
+      <p style="text-align: center; font-size: 1.2em; color: #666; margin-bottom: 30px;">
+        HITOP is free and open source under the MIT License. Contributions are welcome!
+      </p>
+      <div style="text-align: center;">
+        <a href="https://github.com/bohdaq/hitop" class="btn btn-primary" target="_blank">
+          ⭐ Star on GitHub
+        </a>
+      </div>
+    </div>
+  </div>
+
+  <div class="footer">
+    <p>&copy; 2025 HITOP. Licensed under the <a href="https://github.com/bohdaq/hitop/blob/main/LICENSE">MIT License</a>.</p>
+    <p style="margin-top: 10px;">
+      <a href="https://github.com/bohdaq/hitop">GitHub</a> • 
+      <a href="https://github.com/bohdaq/hitop/blob/main/PRIVACY.md">Privacy</a> • 
+      <a href="https://github.com/bohdaq/hitop/blob/main/SCRIPTING_GUIDE.md">Docs</a> • 
+      <a href="https://github.com/bohdaq/hitop/issues">Support</a>
+    </p>
+  </div>
+</body>
+</html>
