@@ -137,6 +137,15 @@
   background-color: rgba(25, 118, 210, 0.08) !important;
 }
 
+.VariablesMenuItem {
+  cursor: pointer !important;
+}
+
+.VariablesMenuItem:active {
+  cursor: pointer !important;
+  opacity: 1;
+}
+
 .DeleteRequestButton {
   opacity: 0;
   transition: opacity 0.2s;

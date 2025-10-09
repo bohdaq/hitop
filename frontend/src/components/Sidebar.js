@@ -85,12 +85,15 @@ const Sidebar = ({
               </IconButton>
             </MenuItem>
             <MenuItem 
-              className="RequestMenuItem"
+              className="RequestMenuItem VariablesMenuItem"
               onClick={(e) => {
                 e.stopPropagation();
                 onOpenVariables(collection);
               }}
-              sx={{ paddingLeft: '48px' }}
+              sx={{ 
+                paddingLeft: '48px',
+                cursor: 'pointer !important'
+              }}
             >
               <ListItemIcon sx={{ minWidth: '32px' }}>
                 <SettingsIcon fontSize="small" />
