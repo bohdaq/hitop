@@ -3,7 +3,10 @@
   "version": "1.0.0",
   "description": "HTTP API Testing Tool - Desktop Application",
   "main": "electron/main.js",
-  "author": "Bohdan Tsap",
+  "author": {
+    "name": "Bohdan Tsap",
+    "email": "bohdaq@gmail.com"
+  },
   "license": "MIT",
   "homepage": "https://github.com/bohdaq/hitop",
   "repository": {
