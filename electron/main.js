@@ -4,6 +4,15 @@ const fs = require('fs');
 
 let mainWindow;
 
+// Disable hardware acceleration to avoid FFmpeg/codec issues on Windows
+app.disableHardwareAcceleration();
+
+// Add command line switches for better Windows compatibility
+app.commandLine.appendSwitch('disable-gpu');
+app.commandLine.appendSwitch('disable-software-rasterizer');
+app.commandLine.appendSwitch('disable-gpu-compositing');
+app.commandLine.appendSwitch('no-sandbox');
+
 // User data path for storing app data
 const userDataPath = app.getPath('userData');
 const storageFilePath = path.join(userDataPath, 'hitop-data.json');

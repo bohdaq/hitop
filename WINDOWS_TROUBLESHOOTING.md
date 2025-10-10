@@ -2,6 +2,43 @@
 
 ## Common Errors and Solutions
 
+### ❌ Error: FFmpeg error when opening app
+
+**Error Message:**
+```
+Error loading ffmpeg
+Failed to load library
+```
+
+**Cause:** Electron hardware acceleration issues on Windows.
+
+**Solution:** This has been fixed in the latest version. Rebuild or download new version.
+
+#### Quick Fix for Existing Build:
+
+```powershell
+# Run with GPU disabled
+.\HITOP.exe --disable-gpu --no-sandbox
+```
+
+Or set environment variable:
+```powershell
+$env:ELECTRON_DISABLE_HARDWARE_ACCELERATION = 1
+.\HITOP.exe
+```
+
+#### Permanent Fix:
+
+Rebuild with latest code (fix already applied):
+```powershell
+git pull
+npm run electron:build:win
+```
+
+See [WINDOWS_FFMPEG_FIX.md](./WINDOWS_FFMPEG_FIX.md) for detailed information.
+
+---
+
 ### ❌ Error: "windows-build-tools" process.env descriptor
 
 **Error Message:**
