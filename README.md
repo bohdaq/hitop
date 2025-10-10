@@ -4,7 +4,6 @@ A powerful, modern HTTP API testing tool built with React. Test APIs, manage col
 
 **Available as:**
 - 🌐 Web Application ([Launch Online](https://bohdaq.github.io/hitop/app/))
-- 🖥️ Desktop App - macOS ARM64 ([Download Guide](./ELECTRON_GUIDE.md))
 - 🦊 Firefox Extension ([Installation Guide](./EXTENSION_GUIDE.md))
 
 ## Features
