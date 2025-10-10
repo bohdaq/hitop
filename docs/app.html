@@ -1,6 +1,17 @@
 <!DOCTYPE html>
 <html lang="en">
+
 <head>
+  <!-- Google tag (gtag.js) -->
+  <script async src="https://www.googletagmanager.com/gtag/js?id=G-TYQC208YN0"></script>
+  <script>
+    window.dataLayer = window.dataLayer || [];
+    function gtag() { dataLayer.push(arguments); }
+    gtag('js', new Date());
+
+    gtag('config', 'G-TYQC208YN0');
+  </script>
+
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <meta http-equiv="refresh" content="0; url=./app/index.html">
@@ -16,11 +27,13 @@
       background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
       color: white;
     }
+
     .loader {
       text-align: center;
     }
+
     .spinner {
-      border: 4px solid rgba(255,255,255,0.3);
+      border: 4px solid rgba(255, 255, 255, 0.3);
       border-top: 4px solid white;
       border-radius: 50%;
       width: 50px;
@@ -28,12 +41,19 @@
       animation: spin 1s linear infinite;
       margin: 0 auto 20px;
     }
+
     @keyframes spin {
-      0% { transform: rotate(0deg); }
-      100% { transform: rotate(360deg); }
+      0% {
+        transform: rotate(0deg);
+      }
+
+      100% {
+        transform: rotate(360deg);
+      }
     }
   </style>
 </head>
+
 <body>
   <div class="loader">
     <div class="spinner"></div>
@@ -42,4 +62,5 @@
     <p><a href="./app/index.html" style="color: white;">Click here if not redirected automatically</a></p>
   </div>
 </body>
+
 </html>
