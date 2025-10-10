@@ -2,7 +2,7 @@
 
 ## What is it?
 
-HITOP Desktop is a native desktop application for macOS, Windows, and Linux that brings all HITOP features to your desktop without browser limitations.
+HITOP Desktop is a native desktop application for macOS (Apple Silicon) that brings all HITOP features to your desktop without browser limitations.
 
 ## Quick Start
 
@@ -23,13 +23,11 @@ This starts the React dev server and launches Electron with hot reload.
 ### Build for Distribution
 
 ```bash
-# Build for current platform
+# Build for macOS ARM64
 ./build-electron.sh
 
-# Or build for specific platform
-npm run electron:build:mac     # macOS
-npm run electron:build:win     # Windows
-npm run electron:build:linux   # Linux
+# Or build directly
+npm run electron:build:mac
 ```
 
 Built apps will be in `dist/` directory.
@@ -59,17 +57,12 @@ package.json     # Electron configuration
 
 - `npm run electron` - Run built app
 - `npm run electron:dev` - Development mode with hot reload
-- `npm run electron:build` - Build for current platform
-- `npm run electron:build:mac` - Build for macOS
-- `npm run electron:build:win` - Build for Windows
-- `npm run electron:build:linux` - Build for Linux
+- `npm run electron:build:mac` - Build for macOS ARM64
 
 ## Storage Location
 
 App data is stored in:
 - **macOS**: `~/Library/Application Support/hitop/`
-- **Windows**: `%APPDATA%/hitop/`
-- **Linux**: `~/.config/hitop/`
 
 ## Documentation
 
@@ -84,9 +77,7 @@ npm install
 ```
 
 ### App won't start?
-- macOS: Right-click → Open
-- Windows: Click "More info" → "Run anyway"
-- Linux: `chmod +x HITOP-*.AppImage`
+- macOS: Right-click → Open (if unsigned)
 
 ## Support
 

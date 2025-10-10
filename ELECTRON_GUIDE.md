@@ -2,7 +2,7 @@
 
 ## Overview
 
-HITOP is now available as a native desktop application for macOS, Windows, and Linux using Electron!
+HITOP is now available as a native desktop application for macOS (Apple Silicon) using Electron!
 
 ## Features
 
@@ -42,27 +42,7 @@ HITOP is now available as a native desktop application for macOS, Windows, and L
 - Right-click → Open (if unsigned)
 - Go to System Preferences → Security & Privacy → Allow
 
-#### Windows
-
-1. Download `HITOP-Setup-1.0.0.exe` from releases
-2. Run the installer
-3. Follow installation wizard
-4. Launch HITOP from Start Menu or Desktop
-
-#### Linux
-
-**AppImage:**
-```bash
-# Download HITOP-1.0.0.AppImage
-chmod +x HITOP-1.0.0.AppImage
-./HITOP-1.0.0.AppImage
-```
-
-**Debian/Ubuntu:**
-```bash
-sudo dpkg -i HITOP_1.0.0_amd64.deb
-hitop
-```
+**Note**: Windows and Linux builds are available on [GitHub Releases](https://github.com/bohdaq/hitop/releases/latest) but are not officially supported in this version.
 
 ## Development
 
@@ -98,36 +78,19 @@ This will:
 
 ### Building
 
-#### Build for Current Platform
-
 ```bash
 # Quick build script
 ./build-electron.sh
 
-# Or use npm
-npm run electron:build
-```
-
-#### Build for Specific Platform
-
-```bash
-# macOS
+# Or build directly
 npm run electron:build:mac
-
-# Windows
-npm run electron:build:win
-
-# Linux
-npm run electron:build:linux
 ```
 
 #### Build Output
 
 Built applications will be in `dist/` directory:
 
-- **macOS**: `HITOP-1.0.0.dmg`, `HITOP-1.0.0-mac.zip`
-- **Windows**: `HITOP Setup 1.0.0.exe`, `HITOP 1.0.0.exe` (portable)
-- **Linux**: `HITOP-1.0.0.AppImage`, `hitop_1.0.0_amd64.deb`
+- **macOS ARM64**: `HITOP-1.0.0-arm64.dmg`, `HITOP-1.0.0-arm64-mac.zip`
 
 ## Architecture
 
@@ -160,8 +123,6 @@ Renderer Process (React App)
 
 Data is stored in:
 - **macOS**: `~/Library/Application Support/hitop/hitop-data.json`
-- **Windows**: `%APPDATA%/hitop/hitop-data.json`
-- **Linux**: `~/.config/hitop/hitop-data.json`
 
 ### IPC Communication
 
@@ -246,17 +207,6 @@ export CSC_KEY_PASSWORD=your_password
 npm run electron:build:mac
 ```
 
-### Windows Code Signing
-
-```bash
-# Get code signing certificate
-# Set environment variables
-export CSC_LINK=/path/to/certificate.pfx
-export CSC_KEY_PASSWORD=your_password
-
-# Build with signing
-npm run electron:build:win
-```
 
 ### Auto-Updates
 
@@ -308,8 +258,6 @@ npm run build
 
 Clear app data:
 - **macOS**: `rm -rf ~/Library/Application\ Support/hitop/`
-- **Windows**: Delete `%APPDATA%\hitop\`
-- **Linux**: `rm -rf ~/.config/hitop/`
 
 ### DevTools Not Opening
 
@@ -367,12 +315,11 @@ Create tests in `test/` directory.
 
 ### GitHub Releases
 
-1. Build for all platforms
+1. Build for macOS ARM64
 2. Create GitHub release
 3. Upload built files:
-   - `HITOP-1.0.0.dmg` (macOS)
-   - `HITOP-Setup-1.0.0.exe` (Windows)
-   - `HITOP-1.0.0.AppImage` (Linux)
+   - `HITOP-1.0.0-arm64.dmg` (macOS ARM64)
+   - `HITOP-1.0.0-arm64-mac.zip` (macOS ARM64 zip)
 
 ### Homebrew (macOS)
 
@@ -391,13 +338,6 @@ cask "hitop" do
 end
 ```
 
-### Snap (Linux)
-
-Create `snap/snapcraft.yaml` for Snap Store distribution.
-
-### Microsoft Store (Windows)
-
-Use `electron-builder` with `appx` target for Microsoft Store.
 
 ## Updates
 
@@ -421,7 +361,7 @@ Maintain `CHANGELOG.md` with version history.
 
 ### Q: Why Electron?
 
-A: Cross-platform desktop app with single codebase, no CORS issues, native features.
+A: Native desktop app with no CORS issues and offline support.
 
 ### Q: App size?
 
