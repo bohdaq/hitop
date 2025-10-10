@@ -4,14 +4,11 @@ const fs = require('fs');
 
 let mainWindow;
 
-// Disable hardware acceleration to avoid FFmpeg/codec issues on Windows
-app.disableHardwareAcceleration();
-
-// Add command line switches for better Windows compatibility
-app.commandLine.appendSwitch('disable-gpu');
-app.commandLine.appendSwitch('disable-software-rasterizer');
-app.commandLine.appendSwitch('disable-gpu-compositing');
-app.commandLine.appendSwitch('no-sandbox');
+// Windows compatibility - only disable problematic features
+if (process.platform === 'win32') {
+  app.commandLine.appendSwitch('no-sandbox');
+  app.commandLine.appendSwitch('disable-gpu-sandbox');
+}
 
 // User data path for storing app data
 const userDataPath = app.getPath('userData');
@@ -38,12 +35,32 @@ function createWindow() {
   const startUrl = process.env.ELECTRON_START_URL || 
     `file://${path.join(__dirname, '../frontend/build/index.html')}`;
   
-  mainWindow.loadURL(startUrl);
+  console.log('Loading URL:', startUrl);
+  
+  mainWindow.loadURL(startUrl).catch(err => {
+    console.error('Failed to load URL:', err);
+  });
 
-  // Open DevTools in development
+  // Log when page finishes loading
+  mainWindow.webContents.on('did-finish-load', () => {
+    console.log('Page loaded successfully');
+  });
+
+  // Log any console messages from renderer
+  mainWindow.webContents.on('console-message', (event, level, message, line, sourceId) => {
+    console.log(`Renderer console [${level}]:`, message);
+  });
+
+  // Open DevTools in development or on error
   if (process.env.NODE_ENV === 'development') {
     mainWindow.webContents.openDevTools();
   }
+
+  // Open DevTools on crash
+  mainWindow.webContents.on('crashed', () => {
+    console.error('Renderer process crashed');
+    mainWindow.webContents.openDevTools();
+  });
 
   // Handle window close
   mainWindow.on('closed', () => {
