@@ -33,9 +33,10 @@ function createWindow() {
 
   // Load the React app
   const startUrl = process.env.ELECTRON_START_URL || 
-    `file://${path.join(__dirname, '../frontend/build/index.html')}`;
+    `file://${path.join(__dirname, '../frontend/build/index.html').replace(/\\/g, '/')}`;
   
   console.log('Loading URL:', startUrl);
+  console.log('Build path:', path.join(__dirname, '../frontend/build'));
   
   mainWindow.loadURL(startUrl).catch(err => {
     console.error('Failed to load URL:', err);
@@ -72,9 +73,14 @@ function createWindow() {
     callback({
       responseHeaders: {
         ...details.responseHeaders,
-        'Content-Security-Policy': ["script-src 'self' 'unsafe-eval'"]
+        'Content-Security-Policy': ["default-src 'self' 'unsafe-inline' 'unsafe-eval'; script-src 'self' 'unsafe-inline' 'unsafe-eval'; style-src 'self' 'unsafe-inline'"]
       }
     });
+  });
+
+  // Handle load failures
+  mainWindow.webContents.on('did-fail-load', (event, errorCode, errorDescription) => {
+    console.error('Failed to load:', errorCode, errorDescription);
   });
 }
 
