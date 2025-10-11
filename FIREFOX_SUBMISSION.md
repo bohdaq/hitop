@@ -184,9 +184,8 @@ Test APIs like a pro! HITOP brings powerful API testing to Firefox with collecti
 This extension packages a React application that provides API testing functionality. Key technical aspects:
 
 1. **Permissions Justification:**
-   - `storage`: Required to save collections, variables, and history locally
-   - `activeTab`: Required for tab interaction
    - `<all_urls>`: Required to make HTTP requests to any API endpoint for testing purposes
+   - Data is saved using localStorage (no storage permission required)
 
 2. **Content Security Policy:**
    - Uses `'unsafe-eval'` to enable custom JavaScript scripting feature
@@ -195,7 +194,7 @@ This extension packages a React application that provides API testing functional
 
 3. **Privacy:**
    - No external network requests except user-initiated API tests
-   - All data stored in browser.storage.local
+   - All data stored in localStorage
    - No analytics, tracking, or telemetry
    - Open source: https://github.com/bohdaq/hitop
 

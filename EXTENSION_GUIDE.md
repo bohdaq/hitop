@@ -148,7 +148,7 @@ extension/
 #### manifest.json
 Defines extension metadata, permissions, and configuration:
 - **manifest_version**: 2 (Firefox standard)
-- **permissions**: storage, activeTab, <all_urls>
+- **permissions**: <all_urls> (for API requests)
 - **browser_action**: Toolbar button configuration
 - **content_security_policy**: Allows script execution
 
@@ -191,29 +191,22 @@ Firefox storage limits:
 
 From browser console:
 ```javascript
-// View all stored data
-browser.storage.local.get(null).then(console.log);
+// View all stored data in console
+Object.keys(localStorage).forEach(key => {
+  console.log(key, localStorage.getItem(key));
+});
 
 // Clear all data
-browser.storage.local.clear();
+localStorage.clear();
 ```
 
 ## Permissions Explained
-
-### storage
-- **Why**: Save collections, history, and settings
-- **Access**: Local browser storage only
-- **Privacy**: Data never leaves your browser
-
-### activeTab
-- **Why**: Interact with current tab if needed
-- **Access**: Only when extension is active
-- **Privacy**: No background tab access
 
 ### <all_urls>
 - **Why**: Make HTTP requests to any API
 - **Access**: Only when you initiate requests
 - **Privacy**: No automatic requests
+- **Storage**: Data saved in localStorage (no storage permission needed)
 
 ## Troubleshooting
 
@@ -241,8 +234,8 @@ browser.storage.local.clear();
 **Problem**: Collections/history not persisting
 
 **Solutions**:
-1. Check storage permissions granted
-2. Verify storage quota not exceeded
+1. Verify localStorage is enabled in browser
+2. Check storage quota not exceeded
 3. Check browser console for errors
 4. Try clearing and re-saving
 

@@ -7,31 +7,7 @@
 browser.runtime.onInstalled.addListener((details) => {
   if (details.reason === 'install') {
     console.log('HITOP extension installed');
-    
-    // Initialize default storage
-    browser.storage.local.set({
-      collections: [{ id: 1, name: 'Default', requests: [], variables: {} }],
-      tabs: [{
-        id: Date.now(),
-        title: 'New Request',
-        url: '',
-        method: 'GET',
-        headers: [{ name: '', value: '' }],
-        requestBody: '',
-        response: null,
-        responseHeaders: null,
-        statusCode: null,
-        responseType: '',
-        loading: false,
-        loadedRequestId: null,
-        loadedCollectionId: null,
-        preRequestScript: '',
-        postRequestScript: ''
-      }],
-      currentTab: 0,
-      requestHistory: [],
-      collectionContexts: {}
-    });
+    // Storage is handled by localStorage in the popup
   }
 });
 

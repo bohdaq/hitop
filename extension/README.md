@@ -100,9 +100,9 @@ extension/
 
 The extension requires the following permissions:
 
-- **`storage`**: To save collections, history, and settings
-- **`activeTab`**: To interact with the current tab
 - **`<all_urls>`**: To make HTTP requests to any URL for API testing
+
+Data is saved using localStorage (no storage permission required).
 
 ## Development
 
@@ -126,7 +126,7 @@ cd ..
 
 ## Storage
 
-The extension uses Firefox's `browser.storage.local` API to persist:
+The extension uses browser's `localStorage` API to persist:
 - Collections and requests
 - Variables and contexts
 - Request history
@@ -147,8 +147,8 @@ Data is stored locally in the browser and is not synced across devices.
 - Check network tab in browser DevTools
 
 ### Data not persisting
-- Check browser storage permissions
-- Verify storage quota is not exceeded
+- Verify localStorage is enabled in browser
+- Check storage quota is not exceeded
 - Check for browser storage errors in console
 
 ## Known Limitations

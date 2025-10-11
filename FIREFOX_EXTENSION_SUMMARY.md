@@ -10,7 +10,7 @@ Successfully created a complete Firefox extension for HITOP that packages the Re
 
 1. **`extension/manifest.json`**
    - Extension metadata and configuration
-   - Permissions: storage, activeTab, <all_urls>
+   - Permissions: <all_urls>
    - Browser action configuration
    - Content Security Policy for script execution
 
@@ -148,8 +148,6 @@ browser.storage.local {
 ### 🔧 Configuration
 
 **Permissions:**
-- `storage` - Save data locally
-- `activeTab` - Interact with current tab
 - `<all_urls>` - Make HTTP requests to any URL
 
 **Content Security Policy:**
@@ -310,9 +308,7 @@ React app runs in extension context:
 - No data collection
 
 ### Permissions Justified
-- **storage**: Required for saving collections
-- **activeTab**: Required for tab interaction
-- **<all_urls>**: Required for API testing
+- **<all_urls>**: Required for API testing (data stored in localStorage)
 
 ### Content Security
 - CSP restricts script sources
