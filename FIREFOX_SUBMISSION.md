@@ -186,6 +186,7 @@ This extension packages a React application that provides API testing functional
 1. **Permissions Justification:**
    - `<all_urls>`: Required to make HTTP requests to any API endpoint for testing purposes
    - Data is saved using localStorage (no storage permission required)
+   - Note: `tabs.create()` doesn't require tabs permission (only needed for reading tab data)
 
 2. **Content Security Policy:**
    - Uses `'unsafe-eval'` to enable custom JavaScript scripting feature

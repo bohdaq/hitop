@@ -147,10 +147,11 @@ extension/
 
 #### manifest.json
 Defines extension metadata, permissions, and configuration:
-- **manifest_version**: 2 (Firefox standard)
-- **permissions**: <all_urls> (for API requests)
-- **browser_action**: Toolbar button configuration
+- **manifest_version**: 3 (Modern standard)
+- **host_permissions**: <all_urls> (for API requests)
+- **action**: Toolbar button (no popup - opens app directly)
 - **content_security_policy**: Allows script execution
+- Note: tabs.create() doesn't require tabs permission
 
 #### background.js
 Background service worker that:
@@ -159,7 +160,7 @@ Background service worker that:
 - Manages extension lifecycle
 
 #### popup/
-Small popup UI that appears when clicking toolbar icon:
+(No longer used - app opens directly in new tab)
 - Quick access buttons
 - Feature overview
 - Links to full app
@@ -207,6 +208,7 @@ localStorage.clear();
 - **Access**: Only when you initiate requests
 - **Privacy**: No automatic requests
 - **Storage**: Data saved in localStorage (no storage permission needed)
+- **Note**: `tabs.create()` doesn't require tabs permission (only needed for reading tab data)
 
 ## Troubleshooting
 

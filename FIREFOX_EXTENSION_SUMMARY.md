@@ -309,6 +309,7 @@ React app runs in extension context:
 
 ### Permissions Justified
 - **<all_urls>**: Required for API testing (data stored in localStorage)
+- `tabs.create()` doesn't require tabs permission (only needed for reading tab data)
 
 ### Content Security
 - CSP restricts script sources

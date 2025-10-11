@@ -1,18 +1,28 @@
 /**
- * Background script for HITOP Firefox Extension
+ * Background script for HITOP Extension
  * Handles extension lifecycle and message passing
+ * Compatible with both Firefox (browser) and Chrome (chrome)
  */
 
+// Use chrome API if available, otherwise fall back to browser (Firefox)
+const extensionAPI = typeof chrome !== 'undefined' ? chrome : browser;
+
 // Listen for extension installation
-browser.runtime.onInstalled.addListener((details) => {
+extensionAPI.runtime.onInstalled.addListener((details) => {
   if (details.reason === 'install') {
     console.log('HITOP extension installed');
     // Storage is handled by localStorage in the popup
   }
 });
 
+// Handle toolbar icon click - open app in new tab
+extensionAPI.action.onClicked.addListener(() => {
+  const appUrl = extensionAPI.runtime.getURL('app/index.html');
+  extensionAPI.tabs.create({ url: appUrl });
+});
+
 // Listen for messages from popup
-browser.runtime.onMessage.addListener((message, sender, sendResponse) => {
+extensionAPI.runtime.onMessage.addListener((message, sender, sendResponse) => {
   if (message.type === 'MAKE_REQUEST') {
     makeHttpRequest(message.data)
       .then(response => sendResponse({ success: true, data: response }))

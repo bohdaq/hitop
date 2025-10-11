@@ -1,21 +1,19 @@
 /**
- * Popup script for HITOP Firefox Extension
+ * Popup script for HITOP Extension
+ * Compatible with both Firefox (browser) and Chrome (chrome)
  */
+
+// Use chrome API if available, otherwise fall back to browser (Firefox)
+const extensionAPI = typeof chrome !== 'undefined' ? chrome : browser;
 
 // Get the full app URL
 const getAppUrl = () => {
-  return browser.runtime.getURL('app/index.html');
+  return extensionAPI.runtime.getURL('app/index.html');
 };
 
-// Open full application in new tab (default behavior)
+// Open full application in new tab
 document.getElementById('openFullApp').addEventListener('click', () => {
-  browser.tabs.create({ url: getAppUrl(), active: true });
-  window.close();
-});
-
-// Open in background tab (doesn't switch to it)
-document.getElementById('openInNewTab').addEventListener('click', () => {
-  browser.tabs.create({ url: getAppUrl(), active: false });
+  window.open(getAppUrl(), '_blank');
   window.close();
 });
 

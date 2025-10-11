@@ -1,50 +1,31 @@
-# HITOP Firefox Extension
+## Overview
 
-A Firefox extension for the HITOP HTTP API Testing Tool.
+HITOP Extension packages the HITOP web application as a browser extension for Chrome and Firefox.
 
 ## Features
 
 - 🚀 Quick access to HITOP from browser toolbar
 - 📦 Full-featured API testing tool
-- 💾 Data persistence using browser storage
-- 🔒 Secure cross-origin requests
-- 📝 All features from the web app
+{{ ... }}
+   - Navigate to `chrome://extensions/`
+   - Enable "Developer mode"
+   - Click "Load unpacked"
+   - Select the extracted extension folder
 
-## Installation
+### Firefox
 
-### Development Installation
-
-**Requirements:**
-- Firefox 58.0 or higher
-
-1. **Build the extension:**
-   ```bash
-   ./build-extension.sh
-   ```
-
-2. **Load in Firefox:**
-   - Open Firefox
-   - Navigate to `about:debugging`
-   - Click "This Firefox"
-   - Click "Load Temporary Add-on"
-   - Select `extension/manifest.json`
-
-### Production Installation
-
-1. **Install from file:**
-   - Open Firefox
-   - Navigate to `about:addons`
-   - Click the gear icon ⚙️
-   - Select "Install Add-on From File"
-   - Choose `hitop-firefox-extension.zip`
+1. Download the latest release `.zip` file
+2. Open Firefox
+3. Go to `about:addons`
+4. Click the gear icon
+5. Select "Install Add-on From File"
+6. Choose the downloaded `.xpi` filefox-extension.zip`
 
 ## Usage
 
 ### Quick Access
-1. Click the HITOP icon in the Firefox toolbar
-2. Choose:
-   - **"Open HITOP"** - Opens in a new tab and switches to it
-   - **"Open in Background Tab"** - Opens in a new tab without switching
+1. Click the HITOP icon in the browser toolbar
+2. The full application opens directly in a new tab
 
 ### Features Available
 
@@ -103,6 +84,8 @@ The extension requires the following permissions:
 - **`<all_urls>`**: To make HTTP requests to any URL for API testing
 
 Data is saved using localStorage (no storage permission required).
+
+Note: `tabs.create()` doesn't require the tabs permission - it's only needed for reading tab data.
 
 ## Development
 
