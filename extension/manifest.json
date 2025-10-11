@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "HITOP - HTTP API Testing Tool",
-  "version": "1.0.0",
+  "version": "2.0.0",
   "description": "A powerful HTTP API testing tool with collections, variables, and custom scripting support",
   "icons": {
     "48": "icons/icon-48.png",

@@ -41,7 +41,11 @@ fi
 
 # Step 5: Update manifest for extension compatibility
 echo "🔧 Updating manifest..."
-# The manifest.json is already configured
+# Remove React's manifest.json to avoid conflict with extension manifest
+if [ -f "extension/app/manifest.json" ]; then
+  rm extension/app/manifest.json
+  echo "✓ Removed conflicting React manifest.json"
+fi
 
 # Step 6: Create zip package
 echo "📦 Creating extension package..."
