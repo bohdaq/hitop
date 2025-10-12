@@ -1,6 +1,6 @@
 {
   "manifest_version": 3,
-  "name": "HITOP - HTTP Client",
+  "name": "HITOP - HTTP API Testing Tool",
   "version": "3.0.0",
   "description": "HITOP is a powerful HTTP client for testing REST APIs. Send GET, POST, PUT, DELETE requests with custom headers and body.",
   "icons": {
@@ -17,7 +17,13 @@
     "default_title": "HITOP - HTTP Client"
   },
   "background": {
-    "service_worker": "background.js"
+    "scripts": ["background.js"]
+  },
+  "browser_specific_settings": {
+    "gecko": {
+      "id": "hitop@example.com",
+      "strict_min_version": "109.0"
+    }
   },
   "permissions": [
     "storage",
