@@ -25,7 +25,8 @@ export const createNewTab = () => {
     loadedRequestId: null,
     loadedCollectionId: null,
     preRequestScript: '',
-    postRequestScript: ''
+    postRequestScript: '',
+    showExtra: false
   };
 };
 

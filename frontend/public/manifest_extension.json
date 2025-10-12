@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "HITOP - HTTP Client",
-  "version": "1.0.0",
+  "version": "3.0.0",
   "description": "HITOP is a powerful HTTP client for testing REST APIs. Send GET, POST, PUT, DELETE requests with custom headers and body.",
   "icons": {
     "16": "favicon.ico",
