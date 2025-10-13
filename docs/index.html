@@ -19,6 +19,24 @@
             });
         }
     </script>
+    <!-- Google tag (gtag.js) event - delayed navigation helper -->
+    <script>
+        // Helper function to delay opening a URL until a gtag event is sent.
+        // Call it in response to an action that should navigate to a URL.
+        function gtagSendEvent(url) {
+            var callback = function () {
+                if (typeof url === 'string') {
+                    window.location = url;
+                }
+            };
+            gtag('event', 'conversion_event_default', {
+                'event_callback': callback,
+                'event_timeout': 2000,
+                // <event_parameters>
+            });
+            return false;
+        }
+    </script>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <meta name="description"
@@ -287,16 +305,16 @@
         </div>
 
         <div class="buttons">
-            <a href="./app.html" class="btn btn-primary" onclick="trackEvent('Navigation', 'click_web_app', 'Header - Launch Web App')">
+            <a href="./app.html" class="btn btn-primary" onclick="trackEvent('Navigation', 'click_web_app', 'Header - Launch Web App'); return gtagSendEvent('./app.html');">
                 🚀 Launch Web App
             </a>
-            <a href="https://addons.mozilla.org/addon/hitop/" class="btn btn-primary" target="_blank" onclick="trackEvent('Navigation', 'click_firefox_extension', 'Header - Firefox Extension')">
+            <a href="https://addons.mozilla.org/addon/hitop/" class="btn btn-primary" target="_blank" onclick="trackEvent('Navigation', 'click_firefox_extension', 'Header - Firefox Extension'); gtagSendEvent('https://addons.mozilla.org/addon/hitop/');">
                 🦊 Firefox Extension
             </a>
-            <a href="https://chromewebstore.google.com/detail/hitop-http-api-testing-to/mmbpagencfjfgeicmeobbmeocdpeokdk" class="btn btn-primary" target="_blank" onclick="trackEvent('Navigation', 'click_chrome_extension', 'Header - Chrome Extension')">
+            <a href="https://chromewebstore.google.com/detail/hitop-http-api-testing-to/mmbpagencfjfgeicmeobbmeocdpeokdk" class="btn btn-primary" target="_blank" onclick="trackEvent('Navigation', 'click_chrome_extension', 'Header - Chrome Extension'); gtagSendEvent('https://chromewebstore.google.com/detail/hitop-http-api-testing-to/mmbpagencfjfgeicmeobbmeocdpeokdk');">
                 🔵 Chrome Extension
             </a>
-            <a href="https://github.com/bohdaq/hitop" class="btn btn-secondary" target="_blank" onclick="trackEvent('Navigation', 'click_github', 'Header - View on GitHub')">
+            <a href="https://github.com/bohdaq/hitop" class="btn btn-secondary" target="_blank" onclick="trackEvent('Navigation', 'click_github', 'Header - View on GitHub'); gtagSendEvent('https://github.com/bohdaq/hitop');">
                 📦 View on GitHub
             </a>
         </div>
@@ -310,7 +328,7 @@
             </p>
 
             <div style="text-align: center;">
-                <a href="./app.html" class="btn btn-primary" style="font-size: 1.3em; padding: 20px 50px;" onclick="trackEvent('Navigation', 'click_web_app', 'Get Started Section - Launch Web App')">
+                <a href="./app.html" class="btn btn-primary" style="font-size: 1.3em; padding: 20px 50px;" onclick="trackEvent('Navigation', 'click_web_app', 'Get Started Section - Launch Web App'); return gtagSendEvent('./app.html');">
                     🚀 Launch Web App
                 </a>
                 <p style="margin-top: 20px; font-size: 1.1em; color: #888;">
@@ -430,16 +448,16 @@
             <h2>Get Started Today</h2>
             <p>Start testing your APIs with HITOP - free, open source, and privacy-focused</p>
             <div class="buttons">
-                <a href="./app.html" class="btn btn-primary" onclick="trackEvent('Navigation', 'click_web_app', 'CTA Section - Launch Web App')">
+                <a href="./app.html" class="btn btn-primary" onclick="trackEvent('Navigation', 'click_web_app', 'CTA Section - Launch Web App'); return gtagSendEvent('./app.html');">
                     🚀 Launch Web App
                 </a>
-                <a href="https://addons.mozilla.org/addon/hitop/" class="btn btn-primary" target="_blank" onclick="trackEvent('Navigation', 'click_firefox_extension', 'CTA Section - Firefox Extension')">
+                <a href="https://addons.mozilla.org/addon/hitop/" class="btn btn-primary" target="_blank" onclick="trackEvent('Navigation', 'click_firefox_extension', 'CTA Section - Firefox Extension'); gtagSendEvent('https://addons.mozilla.org/addon/hitop/');">
                     🦊 Firefox Extension
                 </a>
-                <a href="https://chromewebstore.google.com/detail/hitop-http-api-testing-to/mmbpagencfjfgeicmeobbmeocdpeokdk" class="btn btn-primary" target="_blank" onclick="trackEvent('Navigation', 'click_chrome_extension', 'CTA Section - Chrome Extension')">
+                <a href="https://chromewebstore.google.com/detail/hitop-http-api-testing-to/mmbpagencfjfgeicmeobbmeocdpeokdk" class="btn btn-primary" target="_blank" onclick="trackEvent('Navigation', 'click_chrome_extension', 'CTA Section - Chrome Extension'); gtagSendEvent('https://chromewebstore.google.com/detail/hitop-http-api-testing-to/mmbpagencfjfgeicmeobbmeocdpeokdk');">
                     🔵 Chrome Extension
                 </a>
-                <a href="https://github.com/bohdaq/hitop#getting-started" class="btn btn-secondary" target="_blank" onclick="trackEvent('Navigation', 'click_documentation', 'CTA Section - Read Documentation')">
+                <a href="https://github.com/bohdaq/hitop#getting-started" class="btn btn-secondary" target="_blank" onclick="trackEvent('Navigation', 'click_documentation', 'CTA Section - Read Documentation'); gtagSendEvent('https://github.com/bohdaq/hitop#getting-started');">
                     📖 Read Documentation
                 </a>
             </div>
@@ -451,7 +469,7 @@
                 HITOP is free and open source under the MIT License. Contributions are welcome!
             </p>
             <div style="text-align: center;">
-                <a href="https://github.com/bohdaq/hitop" class="btn btn-primary" target="_blank" onclick="trackEvent('Navigation', 'click_github_star', 'Open Source Section - Star on GitHub')">
+                <a href="https://github.com/bohdaq/hitop" class="btn btn-primary" target="_blank" onclick="trackEvent('Navigation', 'click_github_star', 'Open Source Section - Star on GitHub'); gtagSendEvent('https://github.com/bohdaq/hitop');">
                     ⭐ Star on GitHub
                 </a>
             </div>
