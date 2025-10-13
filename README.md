@@ -5,6 +5,7 @@ A powerful, modern HTTP API testing tool built with React. Test APIs, manage col
 **Available as:**
 - 🌐 Web Application ([Launch Online](https://bohdaq.github.io/hitop/app/))
 - 🦊 Firefox Extension ([Install from Mozilla Add-ons](https://addons.mozilla.org/addon/hitop/) | [Installation Guide](./EXTENSION_GUIDE.md))
+- 🔵 Chrome Extension ([Install from Chrome Web Store](https://chromewebstore.google.com/detail/hitop-http-api-testing-to/mmbpagencfjfgeicmeobbmeocdpeokdk))
 
 ## Features
 
