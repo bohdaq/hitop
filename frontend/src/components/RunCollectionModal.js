@@ -34,11 +34,17 @@ const RunCollectionModal = ({
             return (
               <ListItem 
                 key={request.id}
+                className={
+                  result 
+                    ? (result.success ? 'request-success' : 'request-failed')
+                    : 'request-pending'
+                }
                 sx={{
                   borderLeft: result ? (result.success ? '4px solid #4caf50' : '4px solid #f44336') : '4px solid #ddd',
                   marginBottom: '0.5em',
                   backgroundColor: result ? (result.success ? '#f1f8f4' : '#fef1f1') : '#fafafa',
-                  borderRadius: '4px'
+                  borderRadius: '4px',
+                  transition: 'all 0.3s ease'
                 }}
               >
                 <ListItemIcon>

@@ -1,5 +1,8 @@
 import './App.css';
 import { useState, useEffect } from 'react';
+import { ThemeProvider, createTheme } from '@mui/material/styles';
+import CssBaseline from '@mui/material/CssBaseline';
+import useMediaQuery from '@mui/material/useMediaQuery';
 import Tabs from '@mui/material/Tabs';
 import Tab from '@mui/material/Tab';
 import IconButton from '@mui/material/IconButton';
@@ -35,9 +38,30 @@ import * as storageService from './services/storageService';
 import * as httpService from './services/httpService';
 
 function App() {
+  const prefersDarkMode = useMediaQuery('(prefers-color-scheme: dark)');
   const [tabs, setTabs] = useState([tabService.createNewTab()]);
   const [currentTab, setCurrentTab] = useState(0);
   const [collections, setCollections] = useState([{ id: 1, name: 'Default', requests: [] }]);
+
+  const theme = createTheme({
+    palette: {
+      mode: prefersDarkMode ? 'dark' : 'light',
+      primary: {
+        main: prefersDarkMode ? '#8b9dff' : '#667eea',
+      },
+      secondary: {
+        main: prefersDarkMode ? '#9d6ec5' : '#764ba2',
+      },
+      background: {
+        default: prefersDarkMode ? '#0d1117' : '#f5f5f5',
+        paper: prefersDarkMode ? '#161b22' : '#ffffff',
+      },
+    },
+  });
+
+  useEffect(() => {
+    document.body.className = prefersDarkMode ? 'dark-theme' : 'light-theme';
+  }, [prefersDarkMode]);
   const [isRenameModalOpen, setIsRenameModalOpen] = useState(false);
   const [isAddCollectionModalOpen, setIsAddCollectionModalOpen] = useState(false);
   const [isSaveRequestModalOpen, setIsSaveRequestModalOpen] = useState(false);
@@ -971,6 +995,8 @@ function App() {
   }, [currentTabData.url, currentTabData.method, currentTabData.title, currentTabData.loadedRequestId]);
 
   return (
+    <ThemeProvider theme={theme}>
+      <CssBaseline />
     <div className="AppWrapper">
       <Sidebar
         collections={collections}
@@ -1113,6 +1139,7 @@ function App() {
       onSave={handleSaveVariables}
     />
     </div>
+    </ThemeProvider>
   );
 }
 

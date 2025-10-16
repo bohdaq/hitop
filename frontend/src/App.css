@@ -31,19 +31,21 @@
   gap: 12px;
   padding: 16px;
   border-bottom: 1px solid #e0e0e0;
-  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  background: linear-gradient(135deg, #059669 0%, #047857 100%);
   cursor: default;
+  opacity: 1 !important;
 }
 
 .SidebarHeader:hover {
-  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%) !important;
+  background: linear-gradient(135deg, #059669 0%, #047857 100%) !important;
+  opacity: 1 !important;
 }
 
 .SidebarLogo {
   width: 32px;
   height: 32px;
   border-radius: 4px;
-  box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
 }
 
 .SidebarTitle {
@@ -51,7 +53,7 @@
   font-weight: bold;
   color: #ffffff;
   letter-spacing: 0.5px;
-  text-shadow: 0 1px 2px rgba(0,0,0,0.2);
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.2);
 }
 
 .CollectionsMenuItem {
@@ -202,6 +204,7 @@
 .App {
   padding-left: 3em;
   padding-right: 3em;
+  padding-top: 100px;
   margin-left: 240px;
   display: flex;
   flex-direction: column;
@@ -211,11 +214,20 @@
 }
 
 .TabsContainer {
+  position: fixed;
+  top: 0;
+  left: 240px;
+  right: 0;
+  z-index: 100;
   display: flex;
   align-items: center;
-  margin-bottom: 2em;
+  padding-left: 3em;
+  padding-right: 3em;
+  padding-top: 1em;
+  padding-bottom: 1em;
   border-bottom: 1px solid #ddd;
   overflow: hidden;
+  background-color: #f5f5f5;
 }
 
 .TabsContainer .MuiTabs-root {
@@ -226,12 +238,15 @@
 .TabsContainer .MuiTabs-scroller {
   overflow-x: auto !important;
   overflow-y: hidden;
-  scrollbar-width: none; /* Firefox */
-  -ms-overflow-style: none; /* IE and Edge */
+  scrollbar-width: none;
+  /* Firefox */
+  -ms-overflow-style: none;
+  /* IE and Edge */
 }
 
 .TabsContainer .MuiTabs-scroller::-webkit-scrollbar {
-  display: none; /* Chrome, Safari, Opera */
+  display: none;
+  /* Chrome, Safari, Opera */
 }
 
 .AddTabButton {
@@ -445,4 +460,266 @@
   font-family: 'Courier New', Courier, monospace;
   font-size: 14px;
   line-height: 1.5;
+}
+
+/* Dark Theme Styles */
+.dark-theme {
+  background-color: #0d1117;
+}
+
+.dark-theme .SidebarPaper {
+  background-color: #161b22 !important;
+  border-right: 1px solid #30363d;
+}
+
+.dark-theme .SidebarHeader {
+  background: linear-gradient(135deg, #047857 0%, #065f46 100%);
+  border-bottom: 1px solid #30363d;
+}
+
+.dark-theme .SidebarHeader:hover {
+  background: linear-gradient(135deg, #047857 0%, #065f46 100%) !important;
+}
+
+.dark-theme .SidebarTitle {
+  color: #ffffff;
+}
+
+.dark-theme .App {
+  background-color: #0d1117;
+  color: #e6edf3;
+}
+
+.dark-theme .TabsContainer {
+  border-bottom: 1px solid #30363d;
+  background-color: #0d1117 !important;
+}
+
+.dark-theme .HeadersSection,
+.dark-theme .BodySection {
+  background-color: #161b22;
+  border: 1px solid #30363d;
+  color: #e6edf3;
+}
+
+.dark-theme .HeadersSection h3,
+.dark-theme .BodySection h3,
+.dark-theme .PreRequestScriptSection h3,
+.dark-theme .PostRequestScriptSection h3 {
+  color: #e6edf3;
+}
+
+.dark-theme .StatusCodeSection {
+  background-color: #161b22;
+  border: 1px solid #30363d;
+}
+
+.dark-theme .StatusCodeSection h4 {
+  color: #e6edf3;
+}
+
+.dark-theme .StatusCodeText {
+  color: #e6edf3;
+}
+
+.dark-theme .StatusCode.status-2xx {
+  color: #3fb950;
+  background-color: rgba(63, 185, 80, 0.15);
+}
+
+.dark-theme .StatusCode.status-3xx {
+  color: #58a6ff;
+  background-color: rgba(88, 166, 255, 0.15);
+}
+
+.dark-theme .StatusCode.status-4xx {
+  color: #d29922;
+  background-color: rgba(210, 153, 34, 0.15);
+}
+
+.dark-theme .StatusCode.status-5xx {
+  color: #f85149;
+  background-color: rgba(248, 81, 73, 0.15);
+}
+
+.dark-theme .ResponseHeadersSection {
+  background-color: #161b22;
+  border: 1px solid #30363d;
+}
+
+.dark-theme .ResponseHeadersSection h4 {
+  color: #e6edf3;
+}
+
+.dark-theme .ResponseHeaderKey {
+  color: #79c0ff;
+}
+
+.dark-theme .ResponseHeaderValue {
+  color: #e6edf3;
+}
+
+.dark-theme .ResponseViewer pre {
+  background-color: #0d1117;
+  border: 1px solid #30363d;
+}
+
+.dark-theme .ResponseViewer h3 {
+  color: #e6edf3;
+}
+
+.dark-theme .export-json pre {
+  background-color: #0d1117;
+  border: 1px solid #30363d;
+}
+
+/* Dark theme for MUI components */
+.dark-theme .MuiTab-root {
+  color: #8b949e !important;
+}
+
+.dark-theme .MuiTab-root.Mui-selected {
+  color: #58a6ff !important;
+}
+
+.dark-theme .MuiTabs-indicator {
+  background-color: #58a6ff !important;
+}
+
+/* Dark theme for modals */
+.dark-theme .MuiDialog-paper {
+  background-color: #0d1117 !important;
+  color: #e6edf3 !important;
+  border: 1px solid #30363d;
+}
+
+.dark-theme .MuiDialogTitle-root {
+  color: #ffffff !important;
+  background-color: #161b22 !important;
+  border-bottom: 1px solid #30363d;
+  font-weight: 600 !important;
+}
+
+.dark-theme .MuiDialogContent-root {
+  color: #e6edf3 !important;
+  background-color: #0d1117 !important;
+}
+
+.dark-theme .MuiDialogActions-root {
+  background-color: #161b22 !important;
+  border-top: 1px solid #30363d;
+}
+
+/* Dark theme for buttons in modals */
+.dark-theme .MuiButton-root {
+  color: #58a6ff !important;
+}
+
+.dark-theme .MuiButton-contained {
+  background-color: #238636 !important;
+  color: #ffffff !important;
+}
+
+.dark-theme .MuiButton-contained:hover {
+  background-color: #2ea043 !important;
+}
+
+.dark-theme .MuiButton-contained:disabled {
+  background-color: #21262d !important;
+  color: #6e7681 !important;
+}
+
+/* Dark theme for run collection modal list items */
+.dark-theme .MuiListItem-root {
+  color: #e6edf3 !important;
+  background-color: #161b22 !important;
+  border: 1px solid #30363d !important;
+}
+
+.dark-theme .MuiListItemText-primary {
+  color: #ffffff !important;
+  font-weight: 500 !important;
+}
+
+.dark-theme .MuiListItemText-secondary {
+  color: #8b949e !important;
+}
+
+/* Dark theme for input fields */
+.dark-theme .MuiTextField-root input,
+.dark-theme .MuiTextField-root textarea,
+.dark-theme .MuiOutlinedInput-root {
+  color: #e6edf3 !important;
+  background-color: #0d1117 !important;
+}
+
+.dark-theme .MuiOutlinedInput-notchedOutline {
+  border-color: #30363d !important;
+}
+
+.dark-theme .MuiOutlinedInput-root:hover .MuiOutlinedInput-notchedOutline {
+  border-color: #58a6ff !important;
+}
+
+.dark-theme .MuiOutlinedInput-root.Mui-focused .MuiOutlinedInput-notchedOutline {
+  border-color: #58a6ff !important;
+}
+
+.dark-theme .MuiInputLabel-root {
+  color: #8b949e !important;
+}
+
+.dark-theme .MuiInputLabel-root.Mui-focused {
+  color: #58a6ff !important;
+}
+
+/* Dark theme for select dropdowns */
+.dark-theme .MuiSelect-select {
+  color: #e6edf3 !important;
+  background-color: #0d1117 !important;
+}
+
+.dark-theme .MuiMenuItem-root {
+  color: #e6edf3 !important;
+  background-color: #161b22 !important;
+}
+
+.dark-theme .MuiMenuItem-root:hover {
+  background-color: #21262d !important;
+}
+
+.dark-theme .MuiMenuItem-root.Mui-selected {
+  background-color: #1f6feb !important;
+}
+
+.dark-theme .MuiPaper-root.MuiMenu-paper {
+  background-color: #161b22 !important;
+  border: 1px solid #30363d !important;
+}
+
+/* Visual indicators for successful and failed requests */
+.dark-theme .request-success {
+  background-color: rgba(46, 160, 67, 0.15) !important;
+  border-left: 4px solid #3fb950 !important;
+  box-shadow: 0 0 10px rgba(46, 160, 67, 0.2) !important;
+}
+
+.dark-theme .request-failed {
+  background-color: rgba(248, 81, 73, 0.15) !important;
+  border-left: 4px solid #f85149 !important;
+  box-shadow: 0 0 10px rgba(248, 81, 73, 0.2) !important;
+}
+
+.dark-theme .request-pending {
+  background-color: #161b22 !important;
+  border-left: 4px solid #30363d !important;
+}
+
+/* Light theme request indicators */
+.request-success {
+  box-shadow: 0 2px 4px rgba(76, 175, 80, 0.2);
+}
+
+.request-failed {
+  box-shadow: 0 2px 4px rgba(244, 67, 54, 0.2);
 }
