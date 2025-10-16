@@ -215,6 +215,23 @@
   align-items: center;
   margin-bottom: 2em;
   border-bottom: 1px solid #ddd;
+  overflow: hidden;
+}
+
+.TabsContainer .MuiTabs-root {
+  flex: 1;
+  overflow: hidden;
+}
+
+.TabsContainer .MuiTabs-scroller {
+  overflow-x: auto !important;
+  overflow-y: hidden;
+  scrollbar-width: none; /* Firefox */
+  -ms-overflow-style: none; /* IE and Edge */
+}
+
+.TabsContainer .MuiTabs-scroller::-webkit-scrollbar {
+  display: none; /* Chrome, Safari, Opera */
 }
 
 .AddTabButton {
