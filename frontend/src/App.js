@@ -310,8 +310,7 @@ function App() {
     setIsExportModalOpen(false);
   };
 
-  const handleCopyToClipboard = () => {
-    const jsonString = JSON.stringify(collections, null, 2);
+  const handleCopyToClipboard = (jsonString) => {
     navigator.clipboard.writeText(jsonString).then(() => {
       // Could add a snackbar notification here
       console.log('Copied to clipboard!');
