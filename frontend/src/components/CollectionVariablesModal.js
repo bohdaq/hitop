@@ -59,10 +59,10 @@ const CollectionVariablesModal = ({ open, onClose, collection, onSave }) => {
         Collection Variables: {collection?.name}
       </DialogTitle>
       <DialogContent>
-        <div style={{ marginBottom: '1em', color: '#666', fontSize: '0.9em' }}>
-          Define variables that can be used in URLs, headers, body, and scripts using ${'{'}variableName{'}'} syntax.
-        </div>
-        <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5em' }}>
+        <p style={{ marginBottom: '15px', color: '#666' }}>
+          Define variables that can be used in URLs, headers, body, and scripts using <code>{'${variableName}'}</code> syntax.
+        </p>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '1em' }}>
           {variables.map((variable, index) => (
             <div key={index} style={{ display: 'flex', gap: '0.5em', alignItems: 'center' }}>
               <TextField
