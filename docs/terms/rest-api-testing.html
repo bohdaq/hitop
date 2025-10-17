@@ -1,0 +1,296 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <script async src="https://www.googletagmanager.com/gtag/js?id=G-TYQC208YN0"></script>
+    <script>
+        window.dataLayer = window.dataLayer || [];
+        function gtag() { dataLayer.push(arguments); }
+        gtag('js', new Date());
+        gtag('config', 'G-TYQC208YN0');
+    </script>
+
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="description" content="Complete guide to REST API testing with HITOP. Learn how to test RESTful APIs, validate responses, and automate API workflows.">
+    <meta name="keywords" content="REST API testing, RESTful API testing, API validation, HTTP testing, REST client">
+    <title>REST API Testing - HITOP | Test RESTful APIs Efficiently</title>
+    <link rel="icon" type="image/png" href="../favicon.png">
+    <link rel="canonical" href="https://hitop.bohdaq.com/terms/rest-api-testing.html">
+    
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', sans-serif;
+            line-height: 1.6;
+            color: #333;
+            background: #f5f5f5;
+        }
+        .header {
+            background: linear-gradient(135deg, #059669 0%, #047857 100%);
+            color: white;
+            padding: 60px 20px;
+            text-align: center;
+        }
+        .header h1 { font-size: 2.5em; margin-bottom: 15px; }
+        .container { max-width: 900px; margin: 0 auto; padding: 20px; }
+        .content {
+            background: white;
+            padding: 40px;
+            margin: 40px 0;
+            border-radius: 12px;
+            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+        }
+        .content h2 { color: #059669; margin-top: 30px; margin-bottom: 15px; font-size: 1.8em; }
+        .content h3 { color: #047857; margin-top: 25px; margin-bottom: 12px; font-size: 1.4em; }
+        .content p { margin-bottom: 15px; line-height: 1.8; font-size: 1.1em; }
+        .content ul, .content ol { margin: 20px 0 20px 30px; }
+        .content li { margin-bottom: 10px; line-height: 1.7; }
+        .code-block {
+            background: #f4f4f4;
+            padding: 20px;
+            border-radius: 8px;
+            font-family: 'Courier New', monospace;
+            overflow-x: auto;
+            margin: 20px 0;
+        }
+        .btn {
+            display: inline-block;
+            padding: 15px 35px;
+            background: #059669;
+            color: white;
+            text-decoration: none;
+            border-radius: 8px;
+            font-weight: 600;
+            margin: 10px;
+            transition: all 0.3s;
+        }
+        .btn:hover { background: #047857; transform: translateY(-2px); }
+        .cta { text-align: center; margin: 40px 0; }
+        .highlight-box {
+            background: #f0fdf4;
+            border-left: 4px solid #059669;
+            padding: 20px;
+            margin: 25px 0;
+            border-radius: 8px;
+        }
+        .footer {
+            background: #333;
+            color: white;
+            text-align: center;
+            padding: 30px 20px;
+            margin-top: 60px;
+        }
+        .footer a { color: #059669; text-decoration: none; }
+    </style>
+</head>
+<body>
+    <div class="header">
+        <h1>🌐 REST API Testing</h1>
+        <p>Complete Guide to Testing RESTful APIs</p>
+    </div>
+
+    <div class="container">
+        <div class="content">
+            <h2>What is REST API Testing?</h2>
+            <p>REST API testing is the process of validating RESTful web services to ensure they function correctly, return expected responses, and handle errors appropriately. It involves sending HTTP requests to API endpoints and verifying the responses.</p>
+
+            <h2>Understanding REST APIs</h2>
+            <p>REST (Representational State Transfer) is an architectural style for designing networked applications. RESTful APIs use HTTP methods to perform operations on resources:</p>
+
+            <ul>
+                <li><strong>GET:</strong> Retrieve data from the server</li>
+                <li><strong>POST:</strong> Create new resources</li>
+                <li><strong>PUT:</strong> Update existing resources</li>
+                <li><strong>PATCH:</strong> Partially update resources</li>
+                <li><strong>DELETE:</strong> Remove resources</li>
+                <li><strong>HEAD:</strong> Retrieve headers only</li>
+                <li><strong>OPTIONS:</strong> Get supported methods</li>
+            </ul>
+
+            <h2>Why Test REST APIs?</h2>
+            <p>REST API testing is crucial for:</p>
+            <ul>
+                <li><strong>Functionality Validation:</strong> Ensure endpoints work as expected</li>
+                <li><strong>Data Integrity:</strong> Verify correct data is returned</li>
+                <li><strong>Error Handling:</strong> Test how APIs handle invalid inputs</li>
+                <li><strong>Performance:</strong> Check response times and throughput</li>
+                <li><strong>Security:</strong> Validate authentication and authorization</li>
+                <li><strong>Integration:</strong> Ensure APIs work with other systems</li>
+            </ul>
+
+            <h2>REST API Testing with HITOP</h2>
+            <p>HITOP provides a comprehensive environment for testing REST APIs with features designed specifically for RESTful services.</p>
+
+            <h3>Testing GET Requests</h3>
+            <p>GET requests retrieve data from the server. With HITOP, you can:</p>
+            <div class="code-block">
+GET https://api.example.com/users/123
+Headers:
+  Authorization: Bearer your-token-here
+  Accept: application/json
+            </div>
+
+            <h3>Testing POST Requests</h3>
+            <p>POST requests create new resources. HITOP supports JSON, form data, and raw body formats:</p>
+            <div class="code-block">
+POST https://api.example.com/users
+Headers:
+  Content-Type: application/json
+  Authorization: Bearer your-token-here
+Body:
+{
+  "name": "John Doe",
+  "email": "john@example.com"
+}
+            </div>
+
+            <h3>Testing PUT/PATCH Requests</h3>
+            <p>Update existing resources with PUT (full update) or PATCH (partial update):</p>
+            <div class="code-block">
+PATCH https://api.example.com/users/123
+Headers:
+  Content-Type: application/json
+Body:
+{
+  "email": "newemail@example.com"
+}
+            </div>
+
+            <h3>Testing DELETE Requests</h3>
+            <p>Remove resources from the server:</p>
+            <div class="code-block">
+DELETE https://api.example.com/users/123
+Headers:
+  Authorization: Bearer your-token-here
+            </div>
+
+            <h2>Key Aspects of REST API Testing</h2>
+
+            <h3>1. Status Code Validation</h3>
+            <p>Verify the API returns appropriate HTTP status codes:</p>
+            <ul>
+                <li><strong>200 OK:</strong> Successful GET, PUT, PATCH</li>
+                <li><strong>201 Created:</strong> Successful POST</li>
+                <li><strong>204 No Content:</strong> Successful DELETE</li>
+                <li><strong>400 Bad Request:</strong> Invalid input</li>
+                <li><strong>401 Unauthorized:</strong> Authentication required</li>
+                <li><strong>404 Not Found:</strong> Resource doesn't exist</li>
+                <li><strong>500 Internal Server Error:</strong> Server error</li>
+            </ul>
+
+            <h3>2. Response Body Validation</h3>
+            <p>Check that the response contains expected data structure and values. HITOP's syntax highlighting makes it easy to inspect JSON responses.</p>
+
+            <h3>3. Header Validation</h3>
+            <p>Verify response headers including Content-Type, Cache-Control, and custom headers.</p>
+
+            <h3>4. Authentication Testing</h3>
+            <p>Test various authentication methods:</p>
+            <ul>
+                <li>Bearer Token authentication</li>
+                <li>Basic Authentication</li>
+                <li>API Key authentication</li>
+                <li>OAuth 2.0 flows</li>
+            </ul>
+
+            <h2>Advanced REST API Testing</h2>
+
+            <h3>Environment Variables</h3>
+            <p>Use variables to test across different environments:</p>
+            <div class="code-block">
+{{base_url}}/users/{{user_id}}
+
+Variables:
+  base_url: https://api.staging.example.com
+  user_id: 123
+            </div>
+
+            <h3>Pre-Request Scripts</h3>
+            <p>Execute JavaScript before sending requests to set up authentication, generate timestamps, or modify request data.</p>
+
+            <h3>Post-Request Scripts</h3>
+            <p>Validate responses, extract data for subsequent requests, or perform assertions.</p>
+
+            <h3>Collection Runner</h3>
+            <p>Run multiple API tests sequentially to test complete workflows:</p>
+            <ol>
+                <li>Create user (POST)</li>
+                <li>Retrieve user (GET)</li>
+                <li>Update user (PATCH)</li>
+                <li>Delete user (DELETE)</li>
+            </ol>
+
+            <div class="highlight-box">
+                <h3>💡 Best Practice</h3>
+                <p>Organize your REST API tests into collections by resource or feature. This makes it easy to run related tests together and share with team members.</p>
+            </div>
+
+            <h2>Common REST API Testing Scenarios</h2>
+
+            <h3>CRUD Operations Testing</h3>
+            <p>Test Create, Read, Update, Delete operations for each resource in your API.</p>
+
+            <h3>Query Parameters</h3>
+            <p>Test filtering, sorting, and pagination:</p>
+            <div class="code-block">
+GET https://api.example.com/users?page=2&limit=10&sort=name
+            </div>
+
+            <h3>Error Handling</h3>
+            <p>Verify your API handles errors gracefully:</p>
+            <ul>
+                <li>Invalid data formats</li>
+                <li>Missing required fields</li>
+                <li>Unauthorized access</li>
+                <li>Resource not found</li>
+            </ul>
+
+            <h3>Edge Cases</h3>
+            <p>Test boundary conditions, empty responses, large payloads, and special characters.</p>
+
+            <h2>REST API Testing Checklist</h2>
+            <ul>
+                <li>✓ Test all HTTP methods (GET, POST, PUT, PATCH, DELETE)</li>
+                <li>✓ Verify status codes for success and error cases</li>
+                <li>✓ Validate response body structure and data</li>
+                <li>✓ Check response headers</li>
+                <li>✓ Test authentication and authorization</li>
+                <li>✓ Verify error messages are helpful</li>
+                <li>✓ Test query parameters and filters</li>
+                <li>✓ Validate pagination</li>
+                <li>✓ Test with invalid/malformed data</li>
+                <li>✓ Check response times</li>
+            </ul>
+
+            <h2>Why Use HITOP for REST API Testing?</h2>
+            <ul>
+                <li><strong>Complete HTTP Support:</strong> All REST methods supported</li>
+                <li><strong>JSON Formatting:</strong> Beautiful syntax highlighting</li>
+                <li><strong>Collections:</strong> Organize tests by resource</li>
+                <li><strong>Variables:</strong> Test across environments</li>
+                <li><strong>Scripting:</strong> Automate complex workflows</li>
+                <li><strong>Privacy:</strong> Test internal APIs securely</li>
+                <li><strong>No Account:</strong> Start testing immediately</li>
+                <li><strong>History:</strong> Track all your requests</li>
+            </ul>
+
+            <div class="cta">
+                <h3>Start Testing REST APIs</h3>
+                <p>Try HITOP now - no installation required</p>
+                <a href="../app.html" class="btn">🚀 Launch HITOP</a>
+                <a href="../index.html" class="btn">Learn More</a>
+            </div>
+        </div>
+    </div>
+
+    <div class="footer">
+        <p>&copy; 2025 HITOP - REST API Testing Tool</p>
+        <p style="margin-top: 10px;">
+            <a href="../index.html">Home</a> •
+            <a href="../pricing.html">Pricing</a> •
+            <a href="index.html">All Topics</a> •
+            <a href="https://github.com/bohdaq/hitop">GitHub</a>
+        </p>
+    </div>
+</body>
+</html>
