@@ -6,21 +6,21 @@
 
     <!-- Main Pages -->
     <url>
-        <loc>https://hitop.bohdaq.com/</loc>
+        <loc>https://hitop.rws8.tech/</loc>
         <lastmod>2025-01-17</lastmod>
         <changefreq>weekly</changefreq>
         <priority>1.0</priority>
     </url>
 
     <url>
-        <loc>https://hitop.bohdaq.com/app.html</loc>
+        <loc>https://hitop.rws8.tech/app.html</loc>
         <lastmod>2025-01-17</lastmod>
         <changefreq>monthly</changefreq>
         <priority>0.9</priority>
     </url>
 
     <url>
-        <loc>https://hitop.bohdaq.com/pricing.html</loc>
+        <loc>https://hitop.rws8.tech/pricing.html</loc>
         <lastmod>2025-01-17</lastmod>
         <changefreq>monthly</changefreq>
         <priority>0.8</priority>
@@ -28,7 +28,7 @@
 
     <!-- Terms/Guides Index -->
     <url>
-        <loc>https://hitop.bohdaq.com/terms/</loc>
+        <loc>https://hitop.rws8.tech/terms/</loc>
         <lastmod>2025-01-17</lastmod>
         <changefreq>weekly</changefreq>
         <priority>0.8</priority>
@@ -36,63 +36,63 @@
 
     <!-- Individual Term Pages -->
     <url>
-        <loc>https://hitop.bohdaq.com/terms/api-testing-tool.html</loc>
+        <loc>https://hitop.rws8.tech/terms/api-testing-tool.html</loc>
         <lastmod>2025-01-17</lastmod>
         <changefreq>monthly</changefreq>
         <priority>0.7</priority>
     </url>
 
     <url>
-        <loc>https://hitop.bohdaq.com/terms/postman-alternative.html</loc>
+        <loc>https://hitop.rws8.tech/terms/postman-alternative.html</loc>
         <lastmod>2025-01-17</lastmod>
         <changefreq>monthly</changefreq>
         <priority>0.7</priority>
     </url>
 
     <url>
-        <loc>https://hitop.bohdaq.com/terms/rest-api-testing.html</loc>
+        <loc>https://hitop.rws8.tech/terms/rest-api-testing.html</loc>
         <lastmod>2025-01-17</lastmod>
         <changefreq>monthly</changefreq>
         <priority>0.7</priority>
     </url>
 
     <url>
-        <loc>https://hitop.bohdaq.com/terms/http-client.html</loc>
+        <loc>https://hitop.rws8.tech/terms/http-client.html</loc>
         <lastmod>2025-01-17</lastmod>
         <changefreq>monthly</changefreq>
         <priority>0.6</priority>
     </url>
 
     <url>
-        <loc>https://hitop.bohdaq.com/terms/privacy-focused-api-testing.html</loc>
+        <loc>https://hitop.rws8.tech/terms/privacy-focused-api-testing.html</loc>
         <lastmod>2025-01-17</lastmod>
         <changefreq>monthly</changefreq>
         <priority>0.6</priority>
     </url>
 
     <url>
-        <loc>https://hitop.bohdaq.com/terms/browser-api-testing.html</loc>
+        <loc>https://hitop.rws8.tech/terms/browser-api-testing.html</loc>
         <lastmod>2025-01-17</lastmod>
         <changefreq>monthly</changefreq>
         <priority>0.6</priority>
     </url>
 
     <url>
-        <loc>https://hitop.bohdaq.com/terms/api-collection-management.html</loc>
+        <loc>https://hitop.rws8.tech/terms/api-collection-management.html</loc>
         <lastmod>2025-01-17</lastmod>
         <changefreq>monthly</changefreq>
         <priority>0.6</priority>
     </url>
 
     <url>
-        <loc>https://hitop.bohdaq.com/terms/api-automation.html</loc>
+        <loc>https://hitop.rws8.tech/terms/api-automation.html</loc>
         <lastmod>2025-01-17</lastmod>
         <changefreq>monthly</changefreq>
         <priority>0.6</priority>
     </url>
 
     <url>
-        <loc>https://hitop.bohdaq.com/terms/offline-api-client.html</loc>
+        <loc>https://hitop.rws8.tech/terms/offline-api-client.html</loc>
         <lastmod>2025-01-17</lastmod>
         <changefreq>monthly</changefreq>
         <priority>0.6</priority>

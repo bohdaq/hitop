@@ -1,4 +1,4 @@
 User-agent: *
 Allow: /
 
-Sitemap: https://hitop.bohdaq.com/sitemap.xml
+Sitemap: https://hitop.rws8.tech/sitemap.xml
