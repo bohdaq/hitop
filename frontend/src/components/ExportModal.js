@@ -53,6 +53,9 @@ const ExportModal = ({ open, onClose, collections, onCopyToClipboard }) => {
             <ToggleButton value="postman" aria-label="postman format">
               Postman v2.1
             </ToggleButton>
+            <ToggleButton value="bruno" aria-label="bruno format">
+              Bruno
+            </ToggleButton>
             <ToggleButton value="hitop" aria-label="hitop format">
               HITOP Native
             </ToggleButton>
@@ -60,6 +63,8 @@ const ExportModal = ({ open, onClose, collections, onCopyToClipboard }) => {
           <p style={{ marginTop: '10px', color: '#666', fontSize: '0.9em' }}>
             {format === 'postman' 
               ? 'Postman v2.1 format - Compatible with Postman and other tools'
+              : format === 'bruno'
+              ? 'Bruno format - Compatible with Bruno API client'
               : 'HITOP native format - Optimized for HITOP import'}
           </p>
         </div>

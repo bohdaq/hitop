@@ -5,6 +5,50 @@
  */
 
 /**
+ * Converts HITOP collection to Bruno format
+ * 
+ * @param {object} collection - HITOP collection
+ * @returns {object} - Bruno collection
+ */
+const convertToBrunoFormat = (collection) => {
+  return {
+    version: "1",
+    name: collection.name,
+    type: "collection",
+    items: collection.requests.map(req => ({
+      uid: `hitop-${req.id}`,
+      name: req.name,
+      type: "http-request",
+      request: {
+        url: req.url,
+        method: req.method,
+        headers: req.headers.map(h => ({
+          name: h.key,
+          value: h.value,
+          enabled: true
+        })),
+        body: req.body ? {
+          mode: "json",
+          json: req.body
+        } : undefined,
+        script: {
+          req: req.preRequestScript || "",
+          res: req.postRequestScript || ""
+        }
+      }
+    })),
+    environments: Object.keys(collection.variables || {}).length > 0 ? [{
+      name: "Default",
+      variables: Object.entries(collection.variables || {}).map(([key, value]) => ({
+        name: key,
+        value: value,
+        enabled: true
+      }))
+    }] : []
+  };
+};
+
+/**
  * Converts HITOP collection to Postman v2.1 format
  * 
  * @param {object} collection - HITOP collection
@@ -69,10 +113,10 @@ const convertToPostmanFormat = (collection) => {
 };
 
 /**
- * Exports collections to Postman v2.1 format
+ * Exports collections to specified format
  * 
  * @param {array} collections - Collections array
- * @param {string} format - Export format ('postman' or 'hitop')
+ * @param {string} format - Export format ('postman', 'bruno', or 'hitop')
  * @returns {string} - JSON string in specified format
  */
 export const exportCollections = (collections, format = 'postman') => {
@@ -80,8 +124,56 @@ export const exportCollections = (collections, format = 'postman') => {
     const postmanCollections = collections.map(convertToPostmanFormat);
     return JSON.stringify(postmanCollections, null, 2);
   }
+  if (format === 'bruno') {
+    const brunoCollections = collections.map(convertToBrunoFormat);
+    return JSON.stringify(brunoCollections, null, 2);
+  }
   // HITOP native format
   return JSON.stringify(collections, null, 2);
+};
+
+/**
+ * Converts Bruno collection to HITOP format
+ * 
+ * @param {object} brunoCollection - Bruno collection
+ * @returns {object} - HITOP collection
+ */
+const convertFromBrunoFormat = (brunoCollection) => {
+  // Check if it's a Bruno collection
+  if (brunoCollection.type === 'collection' && brunoCollection.items) {
+    const variables = {};
+    if (brunoCollection.environments && brunoCollection.environments.length > 0) {
+      brunoCollection.environments[0].variables?.forEach(v => {
+        variables[v.name] = v.value;
+      });
+    }
+
+    return {
+      id: Date.now() + Math.random(),
+      name: brunoCollection.name || 'Imported Collection',
+      requests: brunoCollection.items.map((item, index) => {
+        const request = item.request || {};
+        
+        return {
+          id: Date.now() + index,
+          name: item.name || 'Untitled Request',
+          url: request.url || '',
+          method: request.method || 'GET',
+          headers: (request.headers || []).map(h => ({
+            key: h.name,
+            value: h.value
+          })),
+          body: request.body?.json || request.body?.text || '',
+          preRequestScript: request.script?.req || '',
+          postRequestScript: request.script?.res || ''
+        };
+      }),
+      variables
+    };
+  }
+  
+  // If not Bruno format, return as-is
+  return brunoCollection;
 };
 
 /**
@@ -148,7 +240,7 @@ const convertFromPostmanFormat = (postmanCollection) => {
 };
 
 /**
- * Imports collections from JSON string (supports both HITOP and Postman formats)
+ * Imports collections from JSON string (supports HITOP, Postman, and Bruno formats)
  * 
  * @param {string} jsonString - JSON string to parse
  * @returns {array} - Parsed collections array in HITOP format
@@ -159,12 +251,34 @@ export const importCollections = (jsonString) => {
   
   // Handle array of collections
   if (Array.isArray(parsed)) {
-    return parsed.map(convertFromPostmanFormat);
+    return parsed.map(col => {
+      // Try Bruno format first
+      if (col.type === 'collection') {
+        return convertFromBrunoFormat(col);
+      }
+      // Then Postman format
+      if (col.info) {
+        return convertFromPostmanFormat(col);
+      }
+      // Otherwise assume HITOP format
+      return col;
+    });
   }
   
-  // Handle single collection
-  if (parsed.info || parsed.id) {
+  // Handle single collection - detect format
+  if (parsed.type === 'collection') {
+    // Bruno format
+    return [convertFromBrunoFormat(parsed)];
+  }
+  
+  if (parsed.info) {
+    // Postman format
     return [convertFromPostmanFormat(parsed)];
+  }
+  
+  if (parsed.id || parsed.name) {
+    // HITOP format
+    return [parsed];
   }
   
   throw new Error('Invalid format: Expected a collection or array of collections');

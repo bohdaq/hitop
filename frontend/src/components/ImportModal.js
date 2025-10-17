@@ -20,10 +20,12 @@ const ImportModal = ({ open, onClose, importJson, onJsonChange, onImport }) => {
   const getPlaceholder = () => {
     if (formatHint === 'postman') {
       return 'Paste Postman collection JSON here (v2.1 format)...';
+    } else if (formatHint === 'bruno') {
+      return 'Paste Bruno collection JSON here...';
     } else if (formatHint === 'hitop') {
       return 'Paste HITOP collection JSON here...';
     }
-    return 'Paste Postman or HITOP collection JSON here (auto-detected)...';
+    return 'Paste Postman, Bruno, or HITOP collection JSON here (auto-detected)...';
   };
 
   return (
@@ -42,10 +44,13 @@ const ImportModal = ({ open, onClose, importJson, onJsonChange, onImport }) => {
               Auto-Detect
             </ToggleButton>
             <ToggleButton value="postman" aria-label="postman format">
-              Postman v2.1
+              Postman
+            </ToggleButton>
+            <ToggleButton value="bruno" aria-label="bruno format">
+              Bruno
             </ToggleButton>
             <ToggleButton value="hitop" aria-label="hitop format">
-              HITOP Native
+              HITOP
             </ToggleButton>
           </ToggleButtonGroup>
           <p style={{ marginTop: '10px', color: '#666', fontSize: '0.9em' }}>
@@ -53,6 +58,8 @@ const ImportModal = ({ open, onClose, importJson, onJsonChange, onImport }) => {
               ? 'Format will be automatically detected from the JSON structure'
               : formatHint === 'postman'
               ? 'Expecting Postman v2.1 collection format'
+              : formatHint === 'bruno'
+              ? 'Expecting Bruno collection format'
               : 'Expecting HITOP native collection format'}
           </p>
         </div>
