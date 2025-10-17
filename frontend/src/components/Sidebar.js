@@ -66,7 +66,7 @@ const Sidebar = ({
             <MenuItem 
               className="SubMenuItem"
               onClick={(e) => {
-                if (collection.requests.length > 0) {
+                if (collection.requests && collection.requests.length > 0) {
                   onRunCollection(e, collection);
                 }
               }}
@@ -100,7 +100,7 @@ const Sidebar = ({
               </ListItemIcon>
               <ListItemText>Variables</ListItemText>
             </MenuItem>
-            {collection.requests.map((request) => (
+            {(collection.requests || []).map((request) => (
               <MenuItem 
                 key={request.id} 
                 className="RequestMenuItem"

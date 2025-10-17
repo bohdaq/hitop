@@ -273,6 +273,20 @@ const convertFromPostmanFormat = (postmanCollection) => {
 };
 
 /**
+ * Ensures collection has all required fields
+ * 
+ * @param {object} collection - Collection to normalize
+ * @returns {object} - Normalized collection
+ */
+const normalizeCollection = (collection) => {
+  return {
+    ...collection,
+    requests: collection.requests || [],
+    variables: collection.variables || {}
+  };
+};
+
+/**
  * Imports collections from JSON string (supports HITOP, Postman, and Bruno formats)
  * 
  * @param {string} jsonString - JSON string to parse
@@ -287,31 +301,31 @@ export const importCollections = (jsonString) => {
     return parsed.map(col => {
       // Try Bruno format first (has items and brunoConfig or version)
       if (col.items && (col.brunoConfig || col.version)) {
-        return convertFromBrunoFormat(col);
+        return normalizeCollection(convertFromBrunoFormat(col));
       }
       // Then Postman format
       if (col.info) {
-        return convertFromPostmanFormat(col);
+        return normalizeCollection(convertFromPostmanFormat(col));
       }
       // Otherwise assume HITOP format
-      return col;
+      return normalizeCollection(col);
     });
   }
   
   // Handle single collection - detect format
   // Bruno format (has items array and brunoConfig or version)
   if (parsed.items && (parsed.brunoConfig || parsed.version)) {
-    return [convertFromBrunoFormat(parsed)];
+    return [normalizeCollection(convertFromBrunoFormat(parsed))];
   }
   
   // Postman format (has info object)
   if (parsed.info) {
-    return [convertFromPostmanFormat(parsed)];
+    return [normalizeCollection(convertFromPostmanFormat(parsed))];
   }
   
   // HITOP format (has id or name with requests array)
   if (parsed.id || (parsed.name && parsed.requests)) {
-    return [parsed];
+    return [normalizeCollection(parsed)];
   }
   
   throw new Error('Invalid format: Expected a collection or array of collections');
