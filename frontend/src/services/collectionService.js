@@ -14,11 +14,10 @@ const convertToBrunoFormat = (collection) => {
   return {
     version: "1",
     name: collection.name,
-    type: "collection",
     items: collection.requests.map(req => ({
-      uid: `hitop-${req.id}`,
+      type: "http",
       name: req.name,
-      type: "http-request",
+      seq: 1,
       request: {
         url: req.url,
         method: req.method,
@@ -27,24 +26,33 @@ const convertToBrunoFormat = (collection) => {
           value: h.value,
           enabled: true
         })),
+        params: [],
         body: req.body ? {
           mode: "json",
-          json: req.body
-        } : undefined,
+          json: req.body,
+          formUrlEncoded: [],
+          multipartForm: []
+        } : {
+          mode: "none",
+          formUrlEncoded: [],
+          multipartForm: []
+        },
         script: {
           req: req.preRequestScript || "",
           res: req.postRequestScript || ""
+        },
+        tests: req.postRequestScript || "",
+        auth: {
+          mode: "none"
         }
       }
     })),
-    environments: Object.keys(collection.variables || {}).length > 0 ? [{
-      name: "Default",
-      variables: Object.entries(collection.variables || {}).map(([key, value]) => ({
-        name: key,
-        value: value,
-        enabled: true
-      }))
-    }] : []
+    environments: [],
+    brunoConfig: {
+      version: "1",
+      name: collection.name,
+      type: "collection"
+    }
   };
 };
 
@@ -125,7 +133,13 @@ export const exportCollections = (collections, format = 'postman') => {
     return JSON.stringify(postmanCollections, null, 2);
   }
   if (format === 'bruno') {
+    // Bruno exports each collection separately (not as an array)
+    // If multiple collections, export as array, but typically one at a time
     const brunoCollections = collections.map(convertToBrunoFormat);
+    // If only one collection, export it directly (not in array)
+    if (brunoCollections.length === 1) {
+      return JSON.stringify(brunoCollections[0], null, 2);
+    }
     return JSON.stringify(brunoCollections, null, 2);
   }
   // HITOP native format
