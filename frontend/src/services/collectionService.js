@@ -133,41 +133,74 @@ export const exportCollections = (collections, format = 'postman') => {
 };
 
 /**
+ * Flattens Bruno nested folder structure to extract all requests
+ * 
+ * @param {array} items - Bruno items array
+ * @returns {array} - Flattened array of requests
+ */
+const flattenBrunoItems = (items) => {
+  const requests = [];
+  
+  const processItems = (itemsArray, prefix = '') => {
+    itemsArray.forEach(item => {
+      if (item.type === 'http') {
+        // It's a request
+        const request = item.request || {};
+        requests.push({
+          name: prefix ? `${prefix} / ${item.name}` : item.name,
+          url: request.url || '',
+          method: request.method || 'GET',
+          headers: (request.headers || []).map(h => ({
+            key: h.name || h.key,
+            value: h.value
+          })),
+          body: request.body?.json || request.body?.text || request.body?.raw || '',
+          preRequestScript: request.script?.req || '',
+          postRequestScript: request.script?.res || request.tests || ''
+        });
+      } else if (item.type === 'folder' && item.items) {
+        // It's a folder, recurse into it
+        const folderPrefix = prefix ? `${prefix} / ${item.name}` : item.name;
+        processItems(item.items, folderPrefix);
+      }
+    });
+  };
+  
+  processItems(items);
+  return requests;
+};
+
+/**
  * Converts Bruno collection to HITOP format
  * 
  * @param {object} brunoCollection - Bruno collection
  * @returns {object} - HITOP collection
  */
 const convertFromBrunoFormat = (brunoCollection) => {
-  // Check if it's a Bruno collection
-  if (brunoCollection.type === 'collection' && brunoCollection.items) {
+  // Check if it's a Bruno collection (has items array and either brunoConfig or version)
+  if (brunoCollection.items && (brunoCollection.brunoConfig || brunoCollection.version)) {
     const variables = {};
+    
+    // Extract environment variables
     if (brunoCollection.environments && brunoCollection.environments.length > 0) {
-      brunoCollection.environments[0].variables?.forEach(v => {
-        variables[v.name] = v.value;
-      });
+      const env = brunoCollection.environments[0];
+      if (env.variables) {
+        env.variables.forEach(v => {
+          variables[v.name || v.key] = v.value;
+        });
+      }
     }
+
+    // Flatten nested folder structure to get all requests
+    const flattenedRequests = flattenBrunoItems(brunoCollection.items);
 
     return {
       id: Date.now() + Math.random(),
-      name: brunoCollection.name || 'Imported Collection',
-      requests: brunoCollection.items.map((item, index) => {
-        const request = item.request || {};
-        
-        return {
-          id: Date.now() + index,
-          name: item.name || 'Untitled Request',
-          url: request.url || '',
-          method: request.method || 'GET',
-          headers: (request.headers || []).map(h => ({
-            key: h.name,
-            value: h.value
-          })),
-          body: request.body?.json || request.body?.text || '',
-          preRequestScript: request.script?.req || '',
-          postRequestScript: request.script?.res || ''
-        };
-      }),
+      name: brunoCollection.name || brunoCollection.brunoConfig?.name || 'Imported Collection',
+      requests: flattenedRequests.map((req, index) => ({
+        id: Date.now() + index,
+        ...req
+      })),
       variables
     };
   }
@@ -252,8 +285,8 @@ export const importCollections = (jsonString) => {
   // Handle array of collections
   if (Array.isArray(parsed)) {
     return parsed.map(col => {
-      // Try Bruno format first
-      if (col.type === 'collection') {
+      // Try Bruno format first (has items and brunoConfig or version)
+      if (col.items && (col.brunoConfig || col.version)) {
         return convertFromBrunoFormat(col);
       }
       // Then Postman format
@@ -266,18 +299,18 @@ export const importCollections = (jsonString) => {
   }
   
   // Handle single collection - detect format
-  if (parsed.type === 'collection') {
-    // Bruno format
+  // Bruno format (has items array and brunoConfig or version)
+  if (parsed.items && (parsed.brunoConfig || parsed.version)) {
     return [convertFromBrunoFormat(parsed)];
   }
   
+  // Postman format (has info object)
   if (parsed.info) {
-    // Postman format
     return [convertFromPostmanFormat(parsed)];
   }
   
-  if (parsed.id || parsed.name) {
-    // HITOP format
+  // HITOP format (has id or name with requests array)
+  if (parsed.id || (parsed.name && parsed.requests)) {
     return [parsed];
   }
   
