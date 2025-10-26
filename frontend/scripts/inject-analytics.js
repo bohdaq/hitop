@@ -22,6 +22,7 @@ const GA_SCRIPT = `
     gtag('js', new Date());
     gtag('config', '${GA_ID}');
     gtag('config', '${ADS_ID}');
+    gtag('event', 'conversion', {'send_to': 'AW-17667429231/i0_dCO6fprQbEO-mvuhB'});
   </script>
 `;
 
