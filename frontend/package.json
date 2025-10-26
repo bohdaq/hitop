@@ -21,6 +21,7 @@
   "scripts": {
     "start": "react-scripts start",
     "build": "react-scripts build",
+    "build:production": "react-scripts build && node scripts/inject-analytics.js",
     "build:extension": "react-scripts build && cp public/manifest_extension.json build/manifest.json",
     "test": "react-scripts test",
     "eject": "react-scripts eject"

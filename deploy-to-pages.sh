@@ -4,10 +4,10 @@
 
 echo "🚀 Deploying HITOP to GitHub Pages..."
 
-# Step 1: Build React app
-echo "📦 Building React application..."
+# Step 1: Build React app with Google Analytics
+echo "📦 Building React application with Google Analytics..."
 cd frontend
-npm run build
+npm run build:production
 cd ..
 
 # Step 2: Copy build to docs/app
