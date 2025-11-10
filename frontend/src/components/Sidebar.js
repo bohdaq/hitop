@@ -30,7 +30,8 @@ const Sidebar = ({
   onOpenExport,
   onOpenImport,
   onOpenVariables,
-  onShowCollections
+  onShowCollections,
+  onShowCollectionDetail
 }) => {
   return (
     <Drawer
@@ -74,9 +75,8 @@ const Sidebar = ({
             <MenuItem 
               className="SubMenuItem"
               onClick={(e) => {
-                if (collection.requests && collection.requests.length > 0) {
-                  onRunCollection(e, collection);
-                }
+                e.stopPropagation();
+                onShowCollectionDetail(collection);
               }}
             >
               <ListItemIcon sx={{ minWidth: '32px' }}>

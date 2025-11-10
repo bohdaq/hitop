@@ -15,6 +15,7 @@ import 'highlight.js/styles/github-dark.css';
 import Sidebar from './components/Sidebar';
 import RequestPanel from './components/RequestPanel';
 import CollectionsView from './components/CollectionsView';
+import CollectionDetailView from './components/CollectionDetailView';
 
 // Modal Components
 import AddCollectionModal from './components/AddCollectionModal';
@@ -123,6 +124,7 @@ function App() {
   const [isVariablesModalOpen, setIsVariablesModalOpen] = useState(false);
   const [selectedVariablesCollection, setSelectedVariablesCollection] = useState(null);
   const [showCollectionsView, setShowCollectionsView] = useState(false);
+  const [selectedCollectionView, setSelectedCollectionView] = useState(null);
   const [tabContextMenu, setTabContextMenu] = useState(null);
   const [contextMenuTabIndex, setContextMenuTabIndex] = useState(null);
   const [isRenameRequestModalOpen, setIsRenameRequestModalOpen] = useState(false);
@@ -329,10 +331,17 @@ function App() {
 
   const handleShowCollections = () => {
     setShowCollectionsView(true);
+    setSelectedCollectionView(null);
+  };
+
+  const handleShowCollectionDetail = (collection) => {
+    setShowCollectionsView(false);
+    setSelectedCollectionView(collection);
   };
 
   const handleLoadRequest = (request, collectionId) => {
     setShowCollectionsView(false);
+    setSelectedCollectionView(null);
     updateTabData({
       url: request.url,
       method: request.method,
@@ -491,11 +500,13 @@ function App() {
     }
   };
 
-  const handleOpenRunCollectionModal = (event, collection) => {
+  const handleOpenRunCollectionModal = async (event, collection) => {
     event.stopPropagation();
     setRunningCollection(collection);
     setRunResults([]);
-    setIsRunCollectionModalOpen(true);
+    
+    // Run the collection directly without opening modal
+    await runCollection(collection);
   };
 
   const handleCloseRunCollectionModal = () => {
@@ -561,8 +572,8 @@ function App() {
     setDraggedCollectionId(null);
   };
 
-  const handleRunCollection = async () => {
-    if (!runningCollection || runningCollection.requests.length === 0) {
+  const runCollection = async (collection) => {
+    if (!collection || collection.requests.length === 0) {
       return;
     }
 
@@ -570,12 +581,12 @@ function App() {
     const results = [];
 
     // Get or initialize collection-specific context and variables
-    const collectionId = runningCollection.id;
+    const collectionId = collection.id;
     const context = getCollectionContext(collectionId);
-    const variables = runningCollection.variables || {};
+    const variables = collection.variables || {};
 
-    for (let i = 0; i < runningCollection.requests.length; i++) {
-      const request = runningCollection.requests[i];
+    for (let i = 0; i < collection.requests.length; i++) {
+      const request = collection.requests[i];
 
       try {
         // Interpolate variables in URL, headers, and body
@@ -596,8 +607,10 @@ function App() {
           }
         } catch (varError) {
           results.push({
-            name: request.name,
-            status: 'Variable Error',
+            requestName: request.name,
+            method: request.method,
+            url: request.url,
+            statusCode: 'Variable Error',
             success: false,
             response: varError.message
           });
@@ -656,8 +669,10 @@ function App() {
             };
           } catch (scriptError) {
             results.push({
-              name: request.name,
-              status: 'Script Error',
+              requestName: request.name,
+              method: request.method,
+              url: request.url,
+              statusCode: 'Script Error',
               success: false,
               response: scriptError.message
             });
@@ -683,7 +698,11 @@ function App() {
           options.body = requestData.body;
         }
 
+        const startTime = Date.now();
         const response = await fetch(requestData.url, options);
+        const endTime = Date.now();
+        const duration = endTime - startTime;
+        
         const responseText = await response.text();
 
         // Extract response headers
@@ -744,10 +763,13 @@ function App() {
         }
 
         const result = {
-          name: request.name,
-          status: response.status,
+          requestName: request.name,
+          method: request.method,
+          url: requestData.url,
+          statusCode: response.status,
           success: response.ok,
-          response: responseText.substring(0, 200) // Truncate for display
+          response: responseText.substring(0, 200), // Truncate for display
+          duration: duration
         };
 
         results.push(result);
@@ -758,7 +780,7 @@ function App() {
           request,
           requestData,
           response,
-          runningCollection.name,
+          collection.name,
           i
         );
         setRequestHistory(prev => historyService.addToHistory(prev, historyItem));
@@ -769,8 +791,10 @@ function App() {
         }
       } catch (error) {
         results.push({
-          name: request.name,
-          status: 'Error',
+          requestName: request.name,
+          method: request.method,
+          url: request.url,
+          statusCode: 'Error',
           success: false,
           response: error.message
         });
@@ -780,6 +804,12 @@ function App() {
     }
 
     setIsRunning(false);
+  };
+
+  const handleRunCollection = async () => {
+    if (runningCollection) {
+      await runCollection(runningCollection);
+    }
   };
 
   useEffect(() => {
@@ -1257,9 +1287,10 @@ function App() {
           onOpenImport={handleOpenImportModal}
           onOpenVariables={handleOpenVariablesModal}
           onShowCollections={handleShowCollections}
+          onShowCollectionDetail={handleShowCollectionDetail}
         />
-        <div className={`App ${showCollectionsView ? 'no-tabs' : ''}`}>
-          {!showCollectionsView && (
+        <div className={`App ${showCollectionsView || selectedCollectionView ? 'no-tabs' : ''}`}>
+          {!showCollectionsView && !selectedCollectionView && (
             <div className="TabsContainer">
               <Tabs value={currentTab} onChange={(e, newValue) => {
                 setShowCollectionsView(false);
@@ -1300,6 +1331,17 @@ function App() {
               collections={collections}
               onRenameCollection={handleOpenRenameModal}
               onRunCollection={handleOpenRunCollectionModal}
+            />
+          ) : selectedCollectionView ? (
+            <CollectionDetailView
+              collection={selectedCollectionView}
+              onRenameCollection={handleOpenRenameModal}
+              onRunCollection={handleOpenRunCollectionModal}
+              onLoadRequest={handleLoadRequest}
+              onDeleteRequest={handleOpenDeleteRequestModal}
+              onOpenVariables={handleOpenVariablesModal}
+              runResults={runningCollection?.id === selectedCollectionView.id ? runResults : []}
+              isRunning={isRunning && runningCollection?.id === selectedCollectionView.id}
             />
           ) : (
             <RequestPanel
