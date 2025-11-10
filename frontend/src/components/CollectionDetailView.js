@@ -26,6 +26,7 @@ const CollectionDetailView = ({
   onRunCollection,
   onLoadRequest,
   onDeleteRequest,
+  onDeleteCollection,
   onOpenVariables,
   runResults,
   isRunning
@@ -63,6 +64,14 @@ const CollectionDetailView = ({
             onClick={onOpenVariables}
           >
             Variables
+          </Button>
+          <Button
+            variant="outlined"
+            color="error"
+            startIcon={<DeleteIcon />}
+            onClick={(e) => onDeleteCollection(e, collection)}
+          >
+            Delete
           </Button>
           <Button
             variant="contained"

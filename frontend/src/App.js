@@ -410,6 +410,12 @@ function App() {
     setIsDeleteCollectionModalOpen(true);
   };
 
+  const handleOpenDeleteCollectionModalFromDetail = (event, collection) => {
+    event.stopPropagation();
+    setCollectionToDelete(collection);
+    setIsDeleteCollectionModalOpen(true);
+  };
+
   const handleCloseDeleteCollectionModal = () => {
     setIsDeleteCollectionModalOpen(false);
     setCollectionToDelete(null);
@@ -418,6 +424,12 @@ function App() {
   const handleDeleteCollection = () => {
     if (collectionToDelete) {
       setCollections(collectionService.deleteCollection(collections, collectionToDelete.id));
+
+      // If this collection is currently being viewed, clear it
+      if (selectedCollectionView?.id === collectionToDelete.id) {
+        setSelectedCollectionView(null);
+        setShowVariablesView(false);
+      }
 
       // If any tab has a request from this collection, clear the loaded request tracking
       const newTabs = tabs.map(tab => {
@@ -1379,6 +1391,7 @@ function App() {
               onRunCollection={handleOpenRunCollectionModal}
               onLoadRequest={handleLoadRequest}
               onDeleteRequest={handleOpenDeleteRequestModal}
+              onDeleteCollection={handleOpenDeleteCollectionModalFromDetail}
               onOpenVariables={handleShowVariables}
               runResults={runningCollection?.id === selectedCollectionView.id ? runResults : []}
               isRunning={isRunning && runningCollection?.id === selectedCollectionView.id}
@@ -1404,7 +1417,6 @@ function App() {
           collectionName={newCollectionName}
           onNameChange={setNewCollectionName}
           onRename={handleSaveCollectionName}
-          onDelete={handleOpenDeleteCollectionModal}
         />
 
         <AddCollectionModal

@@ -11,8 +11,7 @@ const RenameCollectionModal = ({
   onClose, 
   collectionName, 
   onNameChange, 
-  onRename, 
-  onDelete 
+  onRename
 }) => {
   return (
     <Dialog open={open} onClose={onClose}>
@@ -29,10 +28,6 @@ const RenameCollectionModal = ({
         />
       </DialogContent>
       <DialogActions>
-        <Button onClick={onDelete} color="error">
-          Delete Collection
-        </Button>
-        <div style={{ flex: 1 }} />
         <Button onClick={onClose}>Cancel</Button>
         <Button onClick={onRename} variant="contained">
           Rename
