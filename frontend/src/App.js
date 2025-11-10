@@ -478,6 +478,12 @@ function App() {
     handleCloseDeleteCollectionModal();
   };
 
+  const handleDuplicateCollection = (event, collection) => {
+    event.stopPropagation();
+    const updatedCollections = collectionService.duplicateCollection(collections, collection.id);
+    setCollections(updatedCollections);
+  };
+
   const handleOpenExportModal = () => {
     setIsExportModalOpen(true);
   };
@@ -1484,6 +1490,7 @@ function App() {
               onLoadRequest={handleLoadRequest}
               onDeleteRequest={handleOpenDeleteRequestModal}
               onDeleteCollection={handleOpenDeleteCollectionModalFromDetail}
+              onDuplicateCollection={handleDuplicateCollection}
               onOpenVariables={handleShowVariables}
               runResults={runningCollection?.id === selectedCollectionView.id ? runResults : []}
               isRunning={isRunning && runningCollection?.id === selectedCollectionView.id}

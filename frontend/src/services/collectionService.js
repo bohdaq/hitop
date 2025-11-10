@@ -474,6 +474,34 @@ export const renameCollection = (collections, collectionId, newName) => {
 };
 
 /**
+ * Duplicates a collection
+ * 
+ * @param {array} collections - Collections array
+ * @param {number} collectionId - Collection ID to duplicate
+ * @returns {array} - Updated collections array with duplicated collection
+ */
+export const duplicateCollection = (collections, collectionId) => {
+  const collectionToDuplicate = collections.find(col => col.id === collectionId);
+  if (!collectionToDuplicate) {
+    return collections;
+  }
+
+  // Create a deep copy with new IDs
+  const duplicatedCollection = {
+    ...collectionToDuplicate,
+    id: generateUniqueId(),
+    name: `${collectionToDuplicate.name} (Copy)`,
+    requests: collectionToDuplicate.requests.map(req => ({
+      ...req,
+      id: generateUniqueId()
+    })),
+    variables: { ...collectionToDuplicate.variables }
+  };
+
+  return [...collections, duplicatedCollection];
+};
+
+/**
  * Deletes a collection
  * 
  * @param {array} collections - Collections array
@@ -574,6 +602,7 @@ export default {
   updateRequestInCollection,
   deleteRequestFromCollection,
   renameCollection,
+  duplicateCollection,
   deleteCollection,
   updateCollectionVariables,
   getCollectionById,

@@ -15,6 +15,7 @@ import HttpIcon from '@mui/icons-material/Http';
 import DeleteIcon from '@mui/icons-material/Delete';
 import FolderIcon from '@mui/icons-material/Folder';
 import SettingsIcon from '@mui/icons-material/Settings';
+import ContentCopyIcon from '@mui/icons-material/ContentCopy';
 import CheckCircleIcon from '@mui/icons-material/CheckCircle';
 import ErrorIcon from '@mui/icons-material/Error';
 import CircularProgress from '@mui/material/CircularProgress';
@@ -27,6 +28,7 @@ const CollectionDetailView = ({
   onLoadRequest,
   onDeleteRequest,
   onDeleteCollection,
+  onDuplicateCollection,
   onOpenVariables,
   runResults,
   isRunning
@@ -64,6 +66,13 @@ const CollectionDetailView = ({
             onClick={onOpenVariables}
           >
             Variables
+          </Button>
+          <Button
+            variant="outlined"
+            startIcon={<ContentCopyIcon />}
+            onClick={(e) => onDuplicateCollection(e, collection)}
+          >
+            Duplicate
           </Button>
           <Button
             variant="outlined"
