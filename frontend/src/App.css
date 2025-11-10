@@ -213,6 +213,10 @@
   overflow-y: auto;
 }
 
+.App.no-tabs {
+  padding-top: 0;
+}
+
 .TabsContainer {
   position: fixed;
   top: 0;

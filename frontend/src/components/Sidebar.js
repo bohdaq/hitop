@@ -29,7 +29,8 @@ const Sidebar = ({
   onOpenHistory,
   onOpenExport,
   onOpenImport,
-  onOpenVariables
+  onOpenVariables,
+  onShowCollections
 }) => {
   return (
     <Drawer
@@ -50,12 +51,19 @@ const Sidebar = ({
             HITOP
           </span>
         </MenuItem>
-        <MenuItem className="CollectionsMenuItem">
+        <MenuItem 
+          className="CollectionsMenuItem"
+          onClick={onShowCollections}
+          sx={{ cursor: 'pointer' }}
+        >
           <ListItemText>Collections</ListItemText>
           <IconButton
             size="small"
             className="AddCollectionButton"
-            onClick={onAddCollection}
+            onClick={(e) => {
+              e.stopPropagation();
+              onAddCollection();
+            }}
             aria-label="add collection"
           >
             <AddIcon fontSize="small" />

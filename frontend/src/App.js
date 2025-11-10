@@ -14,6 +14,7 @@ import 'highlight.js/styles/github-dark.css';
 // Components
 import Sidebar from './components/Sidebar';
 import RequestPanel from './components/RequestPanel';
+import CollectionsView from './components/CollectionsView';
 
 // Modal Components
 import AddCollectionModal from './components/AddCollectionModal';
@@ -119,6 +120,7 @@ function App() {
   const [collectionContexts, setCollectionContexts] = useState({}); // { collectionId: context }
   const [isVariablesModalOpen, setIsVariablesModalOpen] = useState(false);
   const [selectedVariablesCollection, setSelectedVariablesCollection] = useState(null);
+  const [showCollectionsView, setShowCollectionsView] = useState(false);
 
   const currentTabData = tabs[currentTab];
 
@@ -128,6 +130,7 @@ function App() {
   };
 
   const addNewTab = () => {
+    setShowCollectionsView(false);
     const { tabs: newTabs, newTabIndex } = tabService.addNewTab(tabs);
     setTabs(newTabs);
     setCurrentTab(newTabIndex);
@@ -282,7 +285,12 @@ function App() {
     handleCloseSaveRequestModal();
   };
 
+  const handleShowCollections = () => {
+    setShowCollectionsView(true);
+  };
+
   const handleLoadRequest = (request, collectionId) => {
+    setShowCollectionsView(false);
     updateTabData({
       url: request.url,
       method: request.method,
@@ -1074,48 +1082,62 @@ function App() {
           onOpenExport={handleOpenExportModal}
           onOpenImport={handleOpenImportModal}
           onOpenVariables={handleOpenVariablesModal}
+          onShowCollections={handleShowCollections}
         />
-        <div className="App">
-          <div className="TabsContainer">
-            <Tabs value={currentTab} onChange={(e, newValue) => setCurrentTab(newValue)} aria-label="request tabs">
-              {tabs.map((tab, index) => (
-                <Tab
-                  key={tab.id}
-                  label={
-                    <div className="TabLabel">
-                      <span>{tab.title}</span>
-                      {tabs.length > 1 && (
-                        <IconButton
-                          size="small"
-                          className="TabCloseButton"
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            closeTab(index);
-                          }}
-                          aria-label="close tab"
-                        >
-                          <CloseIcon fontSize="small" />
-                        </IconButton>
-                      )}
-                    </div>
-                  }
-                />
-              ))}
-            </Tabs>
-            <IconButton color="primary" aria-label="add new tab" className="AddTabButton" onClick={addNewTab}>
-              <AddIcon />
-            </IconButton>
-          </div>
-          <RequestPanel
-            tabData={currentTabData}
-            onUpdateTabData={updateTabData}
-            onMakeRequest={makeRequest}
-            onSaveRequest={handleOpenSaveRequestModal}
-            onAddHeader={addHeader}
-            onUpdateHeader={updateHeader}
-            onRemoveHeader={removeHeader}
-            getStatusText={httpService.getStatusText}
-          />
+        <div className={`App ${showCollectionsView ? 'no-tabs' : ''}`}>
+          {!showCollectionsView && (
+            <div className="TabsContainer">
+              <Tabs value={currentTab} onChange={(e, newValue) => {
+                setShowCollectionsView(false);
+                setCurrentTab(newValue);
+              }} aria-label="request tabs">
+                {tabs.map((tab, index) => (
+                  <Tab
+                    key={tab.id}
+                    label={
+                      <div className="TabLabel">
+                        <span>{tab.title}</span>
+                        {tabs.length > 1 && (
+                          <IconButton
+                            size="small"
+                            className="TabCloseButton"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              closeTab(index);
+                            }}
+                            aria-label="close tab"
+                          >
+                            <CloseIcon fontSize="small" />
+                          </IconButton>
+                        )}
+                      </div>
+                    }
+                  />
+                ))}
+              </Tabs>
+              <IconButton color="primary" aria-label="add new tab" className="AddTabButton" onClick={addNewTab}>
+                <AddIcon />
+              </IconButton>
+            </div>
+          )}
+          {showCollectionsView ? (
+            <CollectionsView
+              collections={collections}
+              onRenameCollection={handleOpenRenameModal}
+              onRunCollection={handleOpenRunCollectionModal}
+            />
+          ) : (
+            <RequestPanel
+              tabData={currentTabData}
+              onUpdateTabData={updateTabData}
+              onMakeRequest={makeRequest}
+              onSaveRequest={handleOpenSaveRequestModal}
+              onAddHeader={addHeader}
+              onUpdateHeader={updateHeader}
+              onRemoveHeader={removeHeader}
+              getStatusText={httpService.getStatusText}
+            />
+          )}
         </div>
 
         {/* Modals */}
