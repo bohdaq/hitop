@@ -4,6 +4,8 @@
  * Manages collection import, export, and manipulation
  */
 
+import { generateUniqueId } from '../utils/idGenerator';
+
 /**
  * Converts HITOP collection to Bruno format
  * 
@@ -209,10 +211,10 @@ const convertFromBrunoFormat = (brunoCollection) => {
     const flattenedRequests = flattenBrunoItems(brunoCollection.items);
 
     return {
-      id: Date.now() + Math.random(),
+      id: generateUniqueId(),
       name: brunoCollection.name || brunoCollection.brunoConfig?.name || 'Imported Collection',
-      requests: flattenedRequests.map((req, index) => ({
-        id: Date.now() + index,
+      requests: flattenedRequests.map((req) => ({
+        id: generateUniqueId(),
         ...req
       })),
       variables
@@ -240,9 +242,9 @@ const convertFromPostmanFormat = (postmanCollection) => {
     }
 
     return {
-      id: Date.now() + Math.random(),
+      id: generateUniqueId(),
       name: postmanCollection.info.name || 'Imported Collection',
-      requests: postmanCollection.item.map((item, index) => {
+      requests: postmanCollection.item.map((item) => {
         const request = item.request || {};
         const url = typeof request.url === 'string' ? request.url : (request.url?.raw || '');
         
@@ -265,7 +267,7 @@ const convertFromPostmanFormat = (postmanCollection) => {
         }
 
         return {
-          id: Date.now() + index,
+          id: generateUniqueId(),
           name: item.name || 'Untitled Request',
           url: url,
           method: request.method || 'GET',
@@ -375,7 +377,7 @@ export const validateCollection = (collection) => {
  */
 export const createCollection = (name) => {
   return {
-    id: Date.now(),
+    id: generateUniqueId(),
     name: name.trim(),
     requests: [],
     variables: {}
@@ -391,7 +393,7 @@ export const createCollection = (name) => {
  */
 export const createRequest = (name, requestData) => {
   return {
-    id: Date.now(),
+    id: generateUniqueId(),
     name: name.trim(),
     url: requestData.url,
     method: requestData.method,

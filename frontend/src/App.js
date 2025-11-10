@@ -39,9 +39,41 @@ import * as httpService from './services/httpService';
 
 function App() {
   const prefersDarkMode = useMediaQuery('(prefers-color-scheme: dark)');
-  const [tabs, setTabs] = useState([tabService.createNewTab()]);
+  
+  // Initialize with a default request in the Default collection
+  const initializeDefaultState = () => {
+    const defaultCollectionId = 1;
+    const defaultRequest = collectionService.createRequest('New Request', {
+      url: '',
+      method: 'GET',
+      headers: [{ name: '', value: '' }],
+      body: '',
+      preRequestScript: '',
+      postRequestScript: ''
+    });
+    
+    const defaultCollection = {
+      id: defaultCollectionId,
+      name: 'Default',
+      requests: [defaultRequest]
+    };
+    
+    const initialTab = {
+      ...tabService.createNewTab(),
+      loadedRequestId: defaultRequest.id,
+      loadedCollectionId: defaultCollectionId
+    };
+    
+    return {
+      collections: [defaultCollection],
+      tabs: [initialTab]
+    };
+  };
+  
+  const initialState = initializeDefaultState();
+  const [tabs, setTabs] = useState(initialState.tabs);
   const [currentTab, setCurrentTab] = useState(0);
-  const [collections, setCollections] = useState([{ id: 1, name: 'Default', requests: [] }]);
+  const [collections, setCollections] = useState(initialState.collections);
 
   const theme = createTheme({
     palette: {
@@ -74,7 +106,7 @@ function App() {
   const [newCollectionName, setNewCollectionName] = useState('');
   const [editingCollectionId, setEditingCollectionId] = useState(null);
   const [selectedCollectionId, setSelectedCollectionId] = useState(null);
-  const [requestName, setRequestName] = useState('');  const [isOverwriting, setIsOverwriting] = useState(false);
+  const [requestName, setRequestName] = useState(''); const [isOverwriting, setIsOverwriting] = useState(false);
   const [requestToDelete, setRequestToDelete] = useState(null);
   const [collectionToDelete, setCollectionToDelete] = useState(null);
   const [importJson, setImportJson] = useState('');
@@ -147,12 +179,12 @@ function App() {
         setIsOverwriting(true);
       } else {
         setRequestName('');
-        setSelectedCollectionId(collections.length > 0 ? collections[0].id : null);
+        setSelectedCollectionId(null);
         setIsOverwriting(false);
       }
     } else {
       setRequestName('');
-      setSelectedCollectionId(collections.length > 0 ? collections[0].id : null);
+      setSelectedCollectionId(null);
       setIsOverwriting(false);
     }
     setIsSaveRequestModalOpen(true);
@@ -166,7 +198,7 @@ function App() {
   };
 
   const handleSaveRequest = () => {
-    if (requestName.trim() && selectedCollectionId) {
+    if (requestName.trim()) {
       if (isOverwriting && currentTabData.loadedRequestId) {
         // Update existing request
         const updatedRequest = {
@@ -179,42 +211,72 @@ function App() {
           postRequestScript: currentTabData.postRequestScript
         };
         
-        setCollections(collectionService.updateRequestInCollection(
-          collections,
-          selectedCollectionId,
-          currentTabData.loadedRequestId,
-          updatedRequest
-        ));
+        // Check if collection has changed
+        if (selectedCollectionId !== currentTabData.loadedCollectionId) {
+          // Move request to different collection
+          // 1. Remove from old collection
+          let updatedCollections = collectionService.deleteRequestFromCollection(
+            collections,
+            currentTabData.loadedCollectionId,
+            currentTabData.loadedRequestId
+          );
+          
+          // 2. Add to new collection with updated data
+          const requestWithId = {
+            id: currentTabData.loadedRequestId,
+            ...updatedRequest
+          };
+          updatedCollections = collectionService.addRequestToCollection(
+            updatedCollections,
+            selectedCollectionId,
+            requestWithId
+          );
+          
+          setCollections(updatedCollections);
+        } else {
+          // Update in same collection
+          setCollections(collectionService.updateRequestInCollection(
+            collections,
+            selectedCollectionId,
+            currentTabData.loadedRequestId,
+            updatedRequest
+          ));
+        }
         
-        // Update tab to reflect new name if changed
+        // Update tab to reflect new name and collection if changed
         updateTabData({
           loadedRequestId: currentTabData.loadedRequestId,
           loadedCollectionId: selectedCollectionId,
           title: requestName.trim()
         });
       } else {
-        // Create new request
-        const newRequest = collectionService.createRequest(requestName, {
-          url: currentTabData.url,
-          method: currentTabData.method,
-          headers: currentTabData.headers,
-          body: currentTabData.requestBody,
-          preRequestScript: currentTabData.preRequestScript,
-          postRequestScript: currentTabData.postRequestScript
-        });
+        // Create new request - automatically add to Default collection
+        const defaultCollection = collections.find(col => col.name === 'Default');
+        const targetCollectionId = defaultCollection ? defaultCollection.id : (collections.length > 0 ? collections[0].id : null);
         
-        setCollections(collectionService.addRequestToCollection(
-          collections,
-          selectedCollectionId,
-          newRequest
-        ));
-        
-        // Update tab to track this as a loaded request
-        updateTabData({
-          loadedRequestId: newRequest.id,
-          loadedCollectionId: selectedCollectionId,
-          title: requestName.trim()
-        });
+        if (targetCollectionId) {
+          const newRequest = collectionService.createRequest(requestName, {
+            url: currentTabData.url,
+            method: currentTabData.method,
+            headers: currentTabData.headers,
+            body: currentTabData.requestBody,
+            preRequestScript: currentTabData.preRequestScript,
+            postRequestScript: currentTabData.postRequestScript
+          });
+          
+          setCollections(collectionService.addRequestToCollection(
+            collections,
+            targetCollectionId,
+            newRequest
+          ));
+          
+          // Update tab to track this as a loaded request
+          updateTabData({
+            loadedRequestId: newRequest.id,
+            loadedCollectionId: targetCollectionId,
+            title: requestName.trim()
+          });
+        }
       }
     }
     handleCloseSaveRequestModal();
@@ -256,7 +318,7 @@ function App() {
         requestToDelete.collectionId,
         requestToDelete.request.id
       ));
-      
+
       // If the deleted request is currently loaded, clear the loaded request tracking
       if (currentTabData.loadedRequestId === requestToDelete.request.id) {
         updateTabData({
@@ -285,7 +347,7 @@ function App() {
   const handleDeleteCollection = () => {
     if (collectionToDelete) {
       setCollections(collectionService.deleteCollection(collections, collectionToDelete.id));
-      
+
       // If any tab has a request from this collection, clear the loaded request tracking
       const newTabs = tabs.map(tab => {
         if (tab.loadedCollectionId === collectionToDelete.id) {
@@ -351,7 +413,7 @@ function App() {
       loadedCollectionId: null,
       preRequestScript: historyItem.preRequestScript || '',
       postRequestScript: historyItem.postRequestScript || '',
-      title: historyItem.isCollectionRun 
+      title: historyItem.isCollectionRun
         ? `${historyItem.collectionName} → ${historyItem.requestName}`
         : `${historyItem.method} ${historyItem.url}`
     });
@@ -361,10 +423,10 @@ function App() {
   const handleImportCollections = () => {
     try {
       const importedCollections = collectionService.importCollections(importJson);
-      
+
       // Overwrite existing collections
       setCollections(importedCollections);
-      
+
       // Clear all tabs' loaded request tracking since collections changed
       const newTabs = tabs.map(tab => ({
         ...tab,
@@ -372,7 +434,7 @@ function App() {
         loadedCollectionId: null
       }));
       setTabs(newTabs);
-      
+
       handleCloseImportModal();
     } catch (error) {
       alert('Invalid JSON format: ' + error.message);
@@ -456,7 +518,7 @@ function App() {
 
     setIsRunning(true);
     const results = [];
-    
+
     // Get or initialize collection-specific context and variables
     const collectionId = runningCollection.id;
     const context = getCollectionContext(collectionId);
@@ -464,7 +526,7 @@ function App() {
 
     for (let i = 0; i < runningCollection.requests.length; i++) {
       const request = runningCollection.requests[i];
-      
+
       try {
         // Interpolate variables in URL, headers, and body
         let interpolatedUrl = request.url;
@@ -473,7 +535,7 @@ function App() {
 
         try {
           interpolatedUrl = interpolateVariables(request.url, variables);
-          
+
           interpolatedHeaders = (request.headers || []).map(header => ({
             name: header.name ? interpolateVariables(header.name, variables) : '',
             value: header.value ? interpolateVariables(header.value, variables) : ''
@@ -573,7 +635,7 @@ function App() {
 
         const response = await fetch(requestData.url, options);
         const responseText = await response.text();
-        
+
         // Extract response headers
         const resHeaders = {};
         response.headers.forEach((value, key) => {
@@ -630,14 +692,14 @@ function App() {
             console.error('Post-request script error:', postScriptError);
           }
         }
-        
+
         const result = {
           name: request.name,
           status: response.status,
           success: response.ok,
           response: responseText.substring(0, 200) // Truncate for display
         };
-        
+
         results.push(result);
         setRunResults([...results]);
 
@@ -852,7 +914,7 @@ function App() {
 
     try {
       interpolatedUrl = interpolateVariables(currentTabData.url, variables);
-      
+
       interpolatedHeaders = currentTabData.headers.map(header => ({
         name: header.name ? interpolateVariables(header.name, variables) : '',
         value: header.value ? interpolateVariables(header.value, variables) : ''
@@ -868,7 +930,7 @@ function App() {
 
     // Execute pre-request script with collection-specific context and interpolated values
     const scriptResult = executePreRequestScript(
-      currentTabData.preRequestScript, 
+      currentTabData.preRequestScript,
       currentTabData.loadedCollectionId,
       interpolatedUrl,
       interpolatedHeaders,
@@ -986,7 +1048,7 @@ function App() {
         // If URL is invalid, keep 'New Request'
       }
     }
-    
+
     // Only update if title has changed
     if (newTitle !== currentTabData.title) {
       updateTabData({ title: newTitle });
@@ -996,148 +1058,148 @@ function App() {
   return (
     <ThemeProvider theme={theme}>
       <CssBaseline />
-    <div className="AppWrapper">
-      <Sidebar
-        collections={collections}
-        onAddCollection={handleOpenAddCollectionModal}
-        onRenameCollection={handleOpenRenameModal}
-        onRunCollection={handleOpenRunCollectionModal}
-        onLoadRequest={handleLoadRequest}
-        onDeleteRequest={handleOpenDeleteRequestModal}
-        onDragStart={handleDragStart}
-        onDragOver={handleDragOver}
-        onDrop={handleDrop}
-        onDragEnd={handleDragEnd}
-        onOpenHistory={handleOpenHistoryModal}
-        onOpenExport={handleOpenExportModal}
-        onOpenImport={handleOpenImportModal}
-        onOpenVariables={handleOpenVariablesModal}
-      />
-      <div className="App">
-      <div className="TabsContainer">
-        <Tabs value={currentTab} onChange={(e, newValue) => setCurrentTab(newValue)} aria-label="request tabs">
-          {tabs.map((tab, index) => (
-            <Tab 
-              key={tab.id} 
-              label={
-                <div className="TabLabel">
-                  <span>{tab.title}</span>
-                  {tabs.length > 1 && (
-                    <IconButton
-                      size="small"
-                      className="TabCloseButton"
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        closeTab(index);
-                      }}
-                      aria-label="close tab"
-                    >
-                      <CloseIcon fontSize="small" />
-                    </IconButton>
-                  )}
-                </div>
-              }
-            />
-          ))}
-        </Tabs>
-        <IconButton color="primary" aria-label="add new tab" className="AddTabButton" onClick={addNewTab}>
-          <AddIcon />
-        </IconButton>
+      <div className="AppWrapper">
+        <Sidebar
+          collections={collections}
+          onAddCollection={handleOpenAddCollectionModal}
+          onRenameCollection={handleOpenRenameModal}
+          onRunCollection={handleOpenRunCollectionModal}
+          onLoadRequest={handleLoadRequest}
+          onDeleteRequest={handleOpenDeleteRequestModal}
+          onDragStart={handleDragStart}
+          onDragOver={handleDragOver}
+          onDrop={handleDrop}
+          onDragEnd={handleDragEnd}
+          onOpenHistory={handleOpenHistoryModal}
+          onOpenExport={handleOpenExportModal}
+          onOpenImport={handleOpenImportModal}
+          onOpenVariables={handleOpenVariablesModal}
+        />
+        <div className="App">
+          <div className="TabsContainer">
+            <Tabs value={currentTab} onChange={(e, newValue) => setCurrentTab(newValue)} aria-label="request tabs">
+              {tabs.map((tab, index) => (
+                <Tab
+                  key={tab.id}
+                  label={
+                    <div className="TabLabel">
+                      <span>{tab.title}</span>
+                      {tabs.length > 1 && (
+                        <IconButton
+                          size="small"
+                          className="TabCloseButton"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            closeTab(index);
+                          }}
+                          aria-label="close tab"
+                        >
+                          <CloseIcon fontSize="small" />
+                        </IconButton>
+                      )}
+                    </div>
+                  }
+                />
+              ))}
+            </Tabs>
+            <IconButton color="primary" aria-label="add new tab" className="AddTabButton" onClick={addNewTab}>
+              <AddIcon />
+            </IconButton>
+          </div>
+          <RequestPanel
+            tabData={currentTabData}
+            onUpdateTabData={updateTabData}
+            onMakeRequest={makeRequest}
+            onSaveRequest={handleOpenSaveRequestModal}
+            onAddHeader={addHeader}
+            onUpdateHeader={updateHeader}
+            onRemoveHeader={removeHeader}
+            getStatusText={httpService.getStatusText}
+          />
+        </div>
+
+        {/* Modals */}
+        <RenameCollectionModal
+          open={isRenameModalOpen}
+          onClose={handleCloseRenameModal}
+          collectionName={newCollectionName}
+          onNameChange={setNewCollectionName}
+          onRename={handleSaveCollectionName}
+          onDelete={handleOpenDeleteCollectionModal}
+        />
+
+        <AddCollectionModal
+          open={isAddCollectionModalOpen}
+          onClose={handleCloseAddCollectionModal}
+          collectionName={newCollectionName}
+          onNameChange={setNewCollectionName}
+          onAdd={handleAddCollection}
+        />
+
+        <SaveRequestModal
+          open={isSaveRequestModalOpen}
+          onClose={handleCloseSaveRequestModal}
+          requestName={requestName}
+          onNameChange={setRequestName}
+          collections={collections}
+          selectedCollectionId={selectedCollectionId}
+          onCollectionChange={setSelectedCollectionId}
+          onSave={handleSaveRequest}
+          isOverwriting={isOverwriting}
+        />
+
+        <DeleteRequestModal
+          open={isDeleteRequestModalOpen}
+          onClose={handleCloseDeleteRequestModal}
+          requestName={requestToDelete?.request.name}
+          onDelete={handleDeleteRequest}
+        />
+
+        <DeleteCollectionModal
+          open={isDeleteCollectionModalOpen}
+          onClose={handleCloseDeleteCollectionModal}
+          collection={collectionToDelete}
+          onDelete={handleDeleteCollection}
+        />
+
+        <ExportModal
+          open={isExportModalOpen}
+          onClose={handleCloseExportModal}
+          collections={collections}
+          onCopyToClipboard={handleCopyToClipboard}
+        />
+
+        <ImportModal
+          open={isImportModalOpen}
+          onClose={handleCloseImportModal}
+          importJson={importJson}
+          onJsonChange={setImportJson}
+          onImport={handleImportCollections}
+        />
+
+        <RunCollectionModal
+          open={isRunCollectionModalOpen}
+          onClose={handleCloseRunCollectionModal}
+          collection={runningCollection}
+          runResults={runResults}
+          isRunning={isRunning}
+          onRun={handleRunCollection}
+        />
+
+        <HistoryModal
+          open={isHistoryModalOpen}
+          onClose={handleCloseHistoryModal}
+          requestHistory={requestHistory}
+          onLoadHistoryItem={handleLoadHistoryItem}
+        />
+
+        <CollectionVariablesModal
+          open={isVariablesModalOpen}
+          onClose={handleCloseVariablesModal}
+          collection={selectedVariablesCollection}
+          onSave={handleSaveVariables}
+        />
       </div>
-      <RequestPanel
-        tabData={currentTabData}
-        onUpdateTabData={updateTabData}
-        onMakeRequest={makeRequest}
-        onSaveRequest={handleOpenSaveRequestModal}
-        onAddHeader={addHeader}
-        onUpdateHeader={updateHeader}
-        onRemoveHeader={removeHeader}
-        getStatusText={httpService.getStatusText}
-      />
-    </div>
-    
-    {/* Modals */}
-    <RenameCollectionModal
-      open={isRenameModalOpen}
-      onClose={handleCloseRenameModal}
-      collectionName={newCollectionName}
-      onNameChange={setNewCollectionName}
-      onRename={handleSaveCollectionName}
-      onDelete={handleOpenDeleteCollectionModal}
-    />
-    
-    <AddCollectionModal
-      open={isAddCollectionModalOpen}
-      onClose={handleCloseAddCollectionModal}
-      collectionName={newCollectionName}
-      onNameChange={setNewCollectionName}
-      onAdd={handleAddCollection}
-    />
-    
-    <SaveRequestModal
-      open={isSaveRequestModalOpen}
-      onClose={handleCloseSaveRequestModal}
-      requestName={requestName}
-      onNameChange={setRequestName}
-      collections={collections}
-      selectedCollectionId={selectedCollectionId}
-      onCollectionChange={setSelectedCollectionId}
-      onSave={handleSaveRequest}
-      isOverwriting={isOverwriting}
-    />
-    
-    <DeleteRequestModal
-      open={isDeleteRequestModalOpen}
-      onClose={handleCloseDeleteRequestModal}
-      requestName={requestToDelete?.request.name}
-      onDelete={handleDeleteRequest}
-    />
-    
-    <DeleteCollectionModal
-      open={isDeleteCollectionModalOpen}
-      onClose={handleCloseDeleteCollectionModal}
-      collection={collectionToDelete}
-      onDelete={handleDeleteCollection}
-    />
-    
-    <ExportModal
-      open={isExportModalOpen}
-      onClose={handleCloseExportModal}
-      collections={collections}
-      onCopyToClipboard={handleCopyToClipboard}
-    />
-    
-    <ImportModal
-      open={isImportModalOpen}
-      onClose={handleCloseImportModal}
-      importJson={importJson}
-      onJsonChange={setImportJson}
-      onImport={handleImportCollections}
-    />
-    
-    <RunCollectionModal
-      open={isRunCollectionModalOpen}
-      onClose={handleCloseRunCollectionModal}
-      collection={runningCollection}
-      runResults={runResults}
-      isRunning={isRunning}
-      onRun={handleRunCollection}
-    />
-    
-    <HistoryModal
-      open={isHistoryModalOpen}
-      onClose={handleCloseHistoryModal}
-      requestHistory={requestHistory}
-      onLoadHistoryItem={handleLoadHistoryItem}
-    />
-    
-    <CollectionVariablesModal
-      open={isVariablesModalOpen}
-      onClose={handleCloseVariablesModal}
-      collection={selectedVariablesCollection}
-      onSave={handleSaveVariables}
-    />
-    </div>
     </ThemeProvider>
   );
 }

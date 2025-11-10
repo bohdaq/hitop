@@ -34,20 +34,22 @@ const SaveRequestModal = ({
           value={requestName}
           onChange={(e) => onNameChange(e.target.value)}
         />
-        <FormControl fullWidth margin="dense">
-          <InputLabel>Collection</InputLabel>
-          <Select
-            value={selectedCollectionId || ''}
-            onChange={(e) => onCollectionChange(e.target.value)}
-            label="Collection"
-          >
-            {collections.map((collection) => (
-              <MenuItem key={collection.id} value={collection.id}>
-                {collection.name}
-              </MenuItem>
-            ))}
-          </Select>
-        </FormControl>
+        {isOverwriting && (
+          <FormControl fullWidth margin="dense">
+            <InputLabel>Collection</InputLabel>
+            <Select
+              value={selectedCollectionId || ''}
+              onChange={(e) => onCollectionChange(e.target.value)}
+              label="Collection"
+            >
+              {collections.map((collection) => (
+                <MenuItem key={collection.id} value={collection.id}>
+                  {collection.name}
+                </MenuItem>
+              ))}
+            </Select>
+          </FormControl>
+        )}
       </DialogContent>
       <DialogActions>
         <Button onClick={onClose}>Cancel</Button>

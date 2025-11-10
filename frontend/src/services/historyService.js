@@ -4,6 +4,8 @@
  * Manages request history tracking and retrieval
  */
 
+import { generateUniqueId } from '../utils/idGenerator';
+
 /**
  * Creates a history item from request data
  * 
@@ -12,7 +14,7 @@
  */
 export const createHistoryItem = (requestData) => {
   return {
-    id: Date.now(),
+    id: generateUniqueId(),
     timestamp: new Date().toISOString(),
     url: requestData.url,
     method: requestData.method,
@@ -37,7 +39,7 @@ export const createHistoryItem = (requestData) => {
  */
 export const createCollectionRunHistoryItem = (request, requestData, response, collectionName, index) => {
   return {
-    id: Date.now() + index,
+    id: generateUniqueId(),
     timestamp: new Date().toISOString(),
     url: requestData.url,
     method: request.method,

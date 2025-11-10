@@ -4,6 +4,8 @@
  * Manages tab creation and manipulation
  */
 
+import { generateUniqueId } from '../utils/idGenerator';
+
 /**
  * Creates a new tab with default values
  * 
@@ -11,7 +13,7 @@
  */
 export const createNewTab = () => {
   return {
-    id: Date.now(),
+    id: generateUniqueId(),
     title: 'New Request',
     url: '',
     method: 'GET',
