@@ -532,6 +532,13 @@ function App() {
       }));
       setTabs(newTabs);
 
+      // Load the first request from the first collection if available
+      if (importedCollections.length > 0 && importedCollections[0].requests.length > 0) {
+        const firstCollection = importedCollections[0];
+        const firstRequest = firstCollection.requests[0];
+        handleLoadRequest(firstRequest, firstCollection.id);
+      }
+
       handleCloseImportModal();
     } catch (error) {
       alert('Invalid JSON format: ' + error.message);
