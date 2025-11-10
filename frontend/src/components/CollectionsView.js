@@ -6,20 +6,31 @@ import Typography from '@mui/material/Typography';
 import Button from '@mui/material/Button';
 import IconButton from '@mui/material/IconButton';
 import EditIcon from '@mui/icons-material/Edit';
-import PlayArrowIcon from '@mui/icons-material/PlayArrow';
+import VisibilityIcon from '@mui/icons-material/Visibility';
 import FolderIcon from '@mui/icons-material/Folder';
+import AddIcon from '@mui/icons-material/Add';
 import Box from '@mui/material/Box';
 
 const CollectionsView = ({
     collections,
     onRenameCollection,
-    onRunCollection
+    onViewCollection,
+    onAddCollection
 }) => {
     return (
         <Box sx={{ padding: 3 }}>
-            <Typography variant="h4" gutterBottom sx={{ marginBottom: 3 }}>
-                Collections
-            </Typography>
+            <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 3 }}>
+                <Typography variant="h4">
+                    Collections
+                </Typography>
+                <Button
+                    variant="contained"
+                    startIcon={<AddIcon />}
+                    onClick={onAddCollection}
+                >
+                    Add New Collection
+                </Button>
+            </Box>
             <Box sx={{
                 display: 'grid',
                 gridTemplateColumns: 'repeat(auto-fill, minmax(300px, 1fr))',
@@ -65,11 +76,10 @@ const CollectionsView = ({
                             <Button
                                 size="small"
                                 variant="contained"
-                                startIcon={<PlayArrowIcon />}
-                                onClick={(e) => onRunCollection(e, collection)}
-                                disabled={!collection.requests || collection.requests.length === 0}
+                                startIcon={<VisibilityIcon />}
+                                onClick={() => onViewCollection(collection)}
                             >
-                                Run
+                                View
                             </Button>
                         </CardActions>
                     </Card>

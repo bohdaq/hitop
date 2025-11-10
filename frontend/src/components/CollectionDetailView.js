@@ -13,8 +13,8 @@ import EditIcon from '@mui/icons-material/Edit';
 import PlayArrowIcon from '@mui/icons-material/PlayArrow';
 import HttpIcon from '@mui/icons-material/Http';
 import DeleteIcon from '@mui/icons-material/Delete';
-import SettingsIcon from '@mui/icons-material/Settings';
 import FolderIcon from '@mui/icons-material/Folder';
+import SettingsIcon from '@mui/icons-material/Settings';
 import CheckCircleIcon from '@mui/icons-material/CheckCircle';
 import ErrorIcon from '@mui/icons-material/Error';
 import CircularProgress from '@mui/material/CircularProgress';
@@ -60,7 +60,7 @@ const CollectionDetailView = ({
           <Button
             variant="outlined"
             startIcon={<SettingsIcon />}
-            onClick={() => onOpenVariables(collection)}
+            onClick={onOpenVariables}
           >
             Variables
           </Button>
@@ -74,22 +74,6 @@ const CollectionDetailView = ({
           </Button>
         </Box>
       </Box>
-
-      <Card sx={{ marginBottom: 3 }}>
-        <CardContent>
-          <Typography variant="h6" gutterBottom>
-            Collection Info
-          </Typography>
-          <Typography variant="body2" color="text.secondary">
-            {collection.requests?.length || 0} request{collection.requests?.length !== 1 ? 's' : ''}
-          </Typography>
-          {collection.variables && Object.keys(collection.variables).length > 0 && (
-            <Typography variant="body2" color="text.secondary" sx={{ marginTop: 1 }}>
-              {Object.keys(collection.variables).length} variable{Object.keys(collection.variables).length !== 1 ? 's' : ''}
-            </Typography>
-          )}
-        </CardContent>
-      </Card>
 
       {runResults && runResults.length > 0 && (
         <Card sx={{ marginBottom: 3 }}>

@@ -16,6 +16,7 @@ import Sidebar from './components/Sidebar';
 import RequestPanel from './components/RequestPanel';
 import CollectionsView from './components/CollectionsView';
 import CollectionDetailView from './components/CollectionDetailView';
+import VariablesView from './components/VariablesView';
 
 // Modal Components
 import AddCollectionModal from './components/AddCollectionModal';
@@ -125,6 +126,7 @@ function App() {
   const [selectedVariablesCollection, setSelectedVariablesCollection] = useState(null);
   const [showCollectionsView, setShowCollectionsView] = useState(false);
   const [selectedCollectionView, setSelectedCollectionView] = useState(null);
+  const [showVariablesView, setShowVariablesView] = useState(false);
   const [tabContextMenu, setTabContextMenu] = useState(null);
   const [contextMenuTabIndex, setContextMenuTabIndex] = useState(null);
   const [isRenameRequestModalOpen, setIsRenameRequestModalOpen] = useState(false);
@@ -336,12 +338,22 @@ function App() {
 
   const handleShowCollectionDetail = (collection) => {
     setShowCollectionsView(false);
+    setShowVariablesView(false);
     setSelectedCollectionView(collection);
+  };
+
+  const handleShowVariables = () => {
+    setShowVariablesView(true);
+  };
+
+  const handleBackFromVariables = () => {
+    setShowVariablesView(false);
   };
 
   const handleLoadRequest = (request, collectionId) => {
     setShowCollectionsView(false);
     setSelectedCollectionView(null);
+    setShowVariablesView(false);
     updateTabData({
       url: request.url,
       method: request.method,
@@ -517,8 +529,10 @@ function App() {
   };
 
   const handleOpenVariablesModal = (collection) => {
-    setSelectedVariablesCollection(collection);
-    setIsVariablesModalOpen(true);
+    // Show collection detail view with variables view
+    setShowCollectionsView(false);
+    setSelectedCollectionView(collection);
+    setShowVariablesView(true);
   };
 
   const handleCloseVariablesModal = () => {
@@ -531,6 +545,16 @@ function App() {
       setCollections(collectionService.updateCollectionVariables(
         collections,
         selectedVariablesCollection.id,
+        variables
+      ));
+    }
+  };
+
+  const handleSaveCollectionVariables = (variables) => {
+    if (selectedCollectionView) {
+      setCollections(collectionService.updateCollectionVariables(
+        collections,
+        selectedCollectionView.id,
         variables
       ));
     }
@@ -822,6 +846,16 @@ function App() {
       }, 100);
     }
   }, [isExportModalOpen]);
+
+  // Update selectedCollectionView when collections change (e.g., after rename)
+  useEffect(() => {
+    if (selectedCollectionView) {
+      const updatedCollection = collections.find(col => col.id === selectedCollectionView.id);
+      if (updatedCollection) {
+        setSelectedCollectionView(updatedCollection);
+      }
+    }
+  }, [collections]);
 
   const closeTab = (indexToClose) => {
     const { tabs: newTabs, newCurrentTab } = tabService.closeTab(tabs, indexToClose, currentTab);
@@ -1289,8 +1323,8 @@ function App() {
           onShowCollections={handleShowCollections}
           onShowCollectionDetail={handleShowCollectionDetail}
         />
-        <div className={`App ${showCollectionsView || selectedCollectionView ? 'no-tabs' : ''}`}>
-          {!showCollectionsView && !selectedCollectionView && (
+        <div className={`App ${showCollectionsView || selectedCollectionView || showVariablesView ? 'no-tabs' : ''}`}>
+          {!showCollectionsView && !selectedCollectionView && !showVariablesView && (
             <div className="TabsContainer">
               <Tabs value={currentTab} onChange={(e, newValue) => {
                 setShowCollectionsView(false);
@@ -1330,7 +1364,13 @@ function App() {
             <CollectionsView
               collections={collections}
               onRenameCollection={handleOpenRenameModal}
-              onRunCollection={handleOpenRunCollectionModal}
+              onViewCollection={handleShowCollectionDetail}
+              onAddCollection={handleOpenAddCollectionModal}
+            />
+          ) : showVariablesView && selectedCollectionView ? (
+            <VariablesView
+              collection={selectedCollectionView}
+              onSaveVariables={handleSaveCollectionVariables}
             />
           ) : selectedCollectionView ? (
             <CollectionDetailView
@@ -1339,7 +1379,7 @@ function App() {
               onRunCollection={handleOpenRunCollectionModal}
               onLoadRequest={handleLoadRequest}
               onDeleteRequest={handleOpenDeleteRequestModal}
-              onOpenVariables={handleOpenVariablesModal}
+              onOpenVariables={handleShowVariables}
               runResults={runningCollection?.id === selectedCollectionView.id ? runResults : []}
               isRunning={isRunning && runningCollection?.id === selectedCollectionView.id}
             />
