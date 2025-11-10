@@ -27,6 +27,8 @@ import ImportModal from './components/ImportModal';
 import RunCollectionModal from './components/RunCollectionModal';
 import HistoryModal from './components/HistoryModal';
 import CollectionVariablesModal from './components/CollectionVariablesModal';
+import TabContextMenu from './components/TabContextMenu';
+import RenameRequestModal from './components/RenameRequestModal';
 
 // Services
 import { interpolateVariables } from './services/variableInterpolation';
@@ -121,6 +123,10 @@ function App() {
   const [isVariablesModalOpen, setIsVariablesModalOpen] = useState(false);
   const [selectedVariablesCollection, setSelectedVariablesCollection] = useState(null);
   const [showCollectionsView, setShowCollectionsView] = useState(false);
+  const [tabContextMenu, setTabContextMenu] = useState(null);
+  const [contextMenuTabIndex, setContextMenuTabIndex] = useState(null);
+  const [isRenameRequestModalOpen, setIsRenameRequestModalOpen] = useState(false);
+  const [renameRequestName, setRenameRequestName] = useState('');
 
   const currentTabData = tabs[currentTab];
 
@@ -131,9 +137,45 @@ function App() {
 
   const addNewTab = () => {
     setShowCollectionsView(false);
-    const { tabs: newTabs, newTabIndex } = tabService.addNewTab(tabs);
+    
+    // Find or create Default collection
+    let defaultCollection = collections.find(col => col.name === 'Default');
+    let updatedCollections = collections;
+    
+    if (!defaultCollection) {
+      defaultCollection = collectionService.createCollection('Default');
+      updatedCollections = [...collections, defaultCollection];
+      setCollections(updatedCollections);
+    }
+    
+    // Create a new request in the Default collection
+    const newRequest = collectionService.createRequest('New Request', {
+      url: '',
+      method: 'GET',
+      headers: [{ name: '', value: '' }],
+      body: '',
+      preRequestScript: '',
+      postRequestScript: ''
+    });
+    
+    // Add request to Default collection
+    updatedCollections = collectionService.addRequestToCollection(
+      updatedCollections,
+      defaultCollection.id,
+      newRequest
+    );
+    setCollections(updatedCollections);
+    
+    // Create new tab linked to the request
+    const newTab = {
+      ...tabService.createNewTab(),
+      loadedRequestId: newRequest.id,
+      loadedCollectionId: defaultCollection.id
+    };
+    
+    const newTabs = [...tabs, newTab];
     setTabs(newTabs);
-    setCurrentTab(newTabIndex);
+    setCurrentTab(newTabs.length - 1);
   };
 
   const handleOpenRenameModal = (event, collectionId, currentName) => {
@@ -759,6 +801,138 @@ function App() {
     }
   };
 
+  const handleTabContextMenu = (event, index) => {
+    event.preventDefault();
+    setTabContextMenu({
+      mouseX: event.clientX - 2,
+      mouseY: event.clientY - 4,
+    });
+    setContextMenuTabIndex(index);
+  };
+
+  const handleCloseTabContextMenu = () => {
+    setTabContextMenu(null);
+    setContextMenuTabIndex(null);
+  };
+
+  const handleOpenRenameRequestModal = () => {
+    if (contextMenuTabIndex !== null) {
+      const tab = tabs[contextMenuTabIndex];
+      setRenameRequestName(tab.title || 'New Request');
+      setIsRenameRequestModalOpen(true);
+      handleCloseTabContextMenu();
+    }
+  };
+
+  const handleCloseRenameRequestModal = () => {
+    setIsRenameRequestModalOpen(false);
+    setRenameRequestName('');
+  };
+
+  const handleRenameRequest = () => {
+    if (contextMenuTabIndex !== null && renameRequestName.trim()) {
+      const tab = tabs[contextMenuTabIndex];
+      
+      // Update tab title
+      const newTabs = tabService.updateTab(tabs, contextMenuTabIndex, {
+        title: renameRequestName.trim()
+      });
+      setTabs(newTabs);
+      
+      // If this tab is linked to a request in a collection, update the request name
+      if (tab.loadedRequestId && tab.loadedCollectionId) {
+        const updatedRequest = {
+          name: renameRequestName.trim()
+        };
+        setCollections(collectionService.updateRequestInCollection(
+          collections,
+          tab.loadedCollectionId,
+          tab.loadedRequestId,
+          updatedRequest
+        ));
+      }
+    }
+    handleCloseRenameRequestModal();
+  };
+
+  const handleDuplicateTab = () => {
+    if (contextMenuTabIndex !== null) {
+      const tabToDuplicate = tabs[contextMenuTabIndex];
+      
+      // Create a new request in the same collection or Default
+      let targetCollectionId = tabToDuplicate.loadedCollectionId;
+      
+      if (!targetCollectionId) {
+        // If tab is not linked to a collection, use Default
+        let defaultCollection = collections.find(col => col.name === 'Default');
+        if (!defaultCollection) {
+          defaultCollection = collectionService.createCollection('Default');
+          setCollections([...collections, defaultCollection]);
+        }
+        targetCollectionId = defaultCollection.id;
+      }
+      
+      // Create new request with duplicated data
+      const newRequest = collectionService.createRequest(
+        `${tabToDuplicate.title} (Copy)`,
+        {
+          url: tabToDuplicate.url,
+          method: tabToDuplicate.method,
+          headers: tabToDuplicate.headers,
+          body: tabToDuplicate.requestBody,
+          preRequestScript: tabToDuplicate.preRequestScript,
+          postRequestScript: tabToDuplicate.postRequestScript
+        }
+      );
+      
+      // Add to collection
+      const updatedCollections = collectionService.addRequestToCollection(
+        collections,
+        targetCollectionId,
+        newRequest
+      );
+      setCollections(updatedCollections);
+      
+      // Create new tab
+      const newTab = {
+        ...tabService.createNewTab(),
+        title: `${tabToDuplicate.title} (Copy)`,
+        url: tabToDuplicate.url,
+        method: tabToDuplicate.method,
+        headers: [...tabToDuplicate.headers],
+        requestBody: tabToDuplicate.requestBody,
+        preRequestScript: tabToDuplicate.preRequestScript,
+        postRequestScript: tabToDuplicate.postRequestScript,
+        loadedRequestId: newRequest.id,
+        loadedCollectionId: targetCollectionId
+      };
+      
+      const newTabs = [...tabs, newTab];
+      setTabs(newTabs);
+      setCurrentTab(newTabs.length - 1);
+    }
+    handleCloseTabContextMenu();
+  };
+
+  const handleDeleteTabRequest = () => {
+    if (contextMenuTabIndex !== null) {
+      const tab = tabs[contextMenuTabIndex];
+      
+      // If tab is linked to a request, delete it from collection
+      if (tab.loadedRequestId && tab.loadedCollectionId) {
+        setCollections(collectionService.deleteRequestFromCollection(
+          collections,
+          tab.loadedCollectionId,
+          tab.loadedRequestId
+        ));
+      }
+      
+      // Close the tab
+      closeTab(contextMenuTabIndex);
+    }
+    handleCloseTabContextMenu();
+  };
+
   const addHeader = () => {
     const newHeaders = [...currentTabData.headers, { name: '', value: '' }];
     updateTabData({ headers: newHeaders });
@@ -1094,6 +1268,7 @@ function App() {
                 {tabs.map((tab, index) => (
                   <Tab
                     key={tab.id}
+                    onContextMenu={(e) => handleTabContextMenu(e, index)}
                     label={
                       <div className="TabLabel">
                         <span>{tab.title}</span>
@@ -1220,6 +1395,23 @@ function App() {
           onClose={handleCloseVariablesModal}
           collection={selectedVariablesCollection}
           onSave={handleSaveVariables}
+        />
+
+        <TabContextMenu
+          anchorPosition={tabContextMenu}
+          open={Boolean(tabContextMenu)}
+          onClose={handleCloseTabContextMenu}
+          onRename={handleOpenRenameRequestModal}
+          onDuplicate={handleDuplicateTab}
+          onDelete={handleDeleteTabRequest}
+        />
+
+        <RenameRequestModal
+          open={isRenameRequestModalOpen}
+          onClose={handleCloseRenameRequestModal}
+          requestName={renameRequestName}
+          onNameChange={setRenameRequestName}
+          onRename={handleRenameRequest}
         />
       </div>
     </ThemeProvider>
