@@ -99,6 +99,20 @@ function App() {
   useEffect(() => {
     document.body.className = prefersDarkMode ? 'dark-theme' : 'light-theme';
   }, [prefersDarkMode]);
+
+  // Load collections from localStorage on mount
+  useEffect(() => {
+    const savedCollections = storageService.loadCollections();
+    if (savedCollections && savedCollections.length > 0) {
+      setCollections(savedCollections);
+    }
+  }, []);
+
+  // Save collections to localStorage whenever they change
+  useEffect(() => {
+    storageService.saveCollections(collections);
+  }, [collections]);
+
   const [isRenameModalOpen, setIsRenameModalOpen] = useState(false);
   const [isAddCollectionModalOpen, setIsAddCollectionModalOpen] = useState(false);
   const [isSaveRequestModalOpen, setIsSaveRequestModalOpen] = useState(false);
@@ -888,7 +902,8 @@ function App() {
 
   const handleCloseTabContextMenu = () => {
     setTabContextMenu(null);
-    setContextMenuTabIndex(null);
+    // Don't reset contextMenuTabIndex here - it's needed for rename modal
+    // It will be reset after the rename operation completes
   };
 
   const handleOpenRenameRequestModal = () => {
@@ -896,40 +911,73 @@ function App() {
       const tab = tabs[contextMenuTabIndex];
       setRenameRequestName(tab.title || 'New Request');
       setIsRenameRequestModalOpen(true);
-      handleCloseTabContextMenu();
+      // Only close the context menu UI, keep the index for rename
+      setTabContextMenu(null);
     }
   };
 
   const handleCloseRenameRequestModal = () => {
     setIsRenameRequestModalOpen(false);
     setRenameRequestName('');
+    setContextMenuTabIndex(null);
   };
 
   const handleRenameRequest = () => {
+    console.log('=== RENAME REQUEST START ===');
+    console.log('contextMenuTabIndex:', contextMenuTabIndex);
+    console.log('renameRequestName:', renameRequestName);
+    
     if (contextMenuTabIndex !== null && renameRequestName.trim()) {
       const tab = tabs[contextMenuTabIndex];
+      console.log('Tab:', tab);
+      console.log('loadedRequestId:', tab.loadedRequestId);
+      console.log('loadedCollectionId:', tab.loadedCollectionId);
+      
+      // If this tab is linked to a request in a collection, update the request name first
+      if (tab.loadedRequestId && tab.loadedCollectionId) {
+        // Find the collection and request
+        const collection = collections.find(col => col.id === tab.loadedCollectionId);
+        console.log('Found collection:', collection);
+        
+        if (collection) {
+          const request = collection.requests.find(req => req.id === tab.loadedRequestId);
+          console.log('Found request:', request);
+          
+          if (request) {
+            // Update the request with all fields plus new name
+            const updatedRequest = {
+              ...request,
+              name: renameRequestName.trim()
+            };
+            console.log('Updated request:', updatedRequest);
+            
+            const updatedCollections = collectionService.updateRequestInCollection(
+              collections,
+              tab.loadedCollectionId,
+              tab.loadedRequestId,
+              updatedRequest
+            );
+            console.log('Updated collections:', updatedCollections);
+            setCollections(updatedCollections);
+          } else {
+            console.log('ERROR: Request not found!');
+          }
+        } else {
+          console.log('ERROR: Collection not found!');
+        }
+      } else {
+        console.log('Tab not linked to collection');
+      }
       
       // Update tab title
       const newTabs = tabService.updateTab(tabs, contextMenuTabIndex, {
         title: renameRequestName.trim()
       });
+      console.log('Updated tabs:', newTabs);
       setTabs(newTabs);
-      
-      // If this tab is linked to a request in a collection, update the request name
-      if (tab.loadedRequestId && tab.loadedCollectionId) {
-        const updatedRequest = {
-          name: renameRequestName.trim()
-        };
-        setCollections(collectionService.updateRequestInCollection(
-          collections,
-          tab.loadedCollectionId,
-          tab.loadedRequestId,
-          updatedRequest
-        ));
-      }
     }
-    setContextMenuTabIndex(null);
     handleCloseRenameRequestModal();
+    console.log('=== RENAME REQUEST END ===');
   };
 
   const handleDuplicateTab = () => {
@@ -989,6 +1037,7 @@ function App() {
       setCurrentTab(newTabs.length - 1);
     }
     handleCloseTabContextMenu();
+    setContextMenuTabIndex(null);
   };
 
   const handleDeleteTabRequest = () => {
@@ -1008,6 +1057,7 @@ function App() {
       closeTab(contextMenuTabIndex);
     }
     handleCloseTabContextMenu();
+    setContextMenuTabIndex(null);
   };
 
   const addHeader = () => {
@@ -1319,6 +1369,7 @@ function App() {
       <CssBaseline />
       <div className="AppWrapper">
         <Sidebar
+          key={JSON.stringify(collections.map(c => ({ id: c.id, requests: c.requests.map(r => ({ id: r.id, name: r.name })) })))}
           collections={collections}
           onAddCollection={handleOpenAddCollectionModal}
           onRenameCollection={handleOpenRenameModal}
