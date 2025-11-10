@@ -541,19 +541,35 @@ function App() {
       // Overwrite existing collections
       setCollections(importedCollections);
 
-      // Clear all tabs' loaded request tracking since collections changed
-      const newTabs = tabs.map(tab => ({
-        ...tab,
-        loadedRequestId: null,
-        loadedCollectionId: null
-      }));
-      setTabs(newTabs);
-
-      // Load the first request from the first collection if available
+      // Close all existing tabs and create a new tab with the first request
       if (importedCollections.length > 0 && importedCollections[0].requests.length > 0) {
         const firstCollection = importedCollections[0];
         const firstRequest = firstCollection.requests[0];
-        handleLoadRequest(firstRequest, firstCollection.id);
+        
+        // Create a single new tab with the first request
+        const newTab = {
+          ...tabService.createNewTab(),
+          url: firstRequest.url,
+          method: firstRequest.method,
+          headers: firstRequest.headers,
+          requestBody: firstRequest.body,
+          response: null,
+          responseHeaders: null,
+          statusCode: null,
+          responseType: '',
+          loadedRequestId: firstRequest.id,
+          loadedCollectionId: firstCollection.id,
+          preRequestScript: firstRequest.preRequestScript || '',
+          postRequestScript: firstRequest.postRequestScript || '',
+          title: firstRequest.name
+        };
+        
+        setTabs([newTab]);
+        setCurrentTab(0);
+      } else {
+        // No requests in imported collections, create an empty tab
+        setTabs([tabService.createNewTab()]);
+        setCurrentTab(0);
       }
 
       handleCloseImportModal();
