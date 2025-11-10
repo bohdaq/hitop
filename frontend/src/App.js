@@ -368,21 +368,38 @@ function App() {
     setShowCollectionsView(false);
     setSelectedCollectionView(null);
     setShowVariablesView(false);
-    updateTabData({
-      url: request.url,
-      method: request.method,
-      headers: request.headers,
-      requestBody: request.body,
-      response: null,
-      responseHeaders: null,
-      statusCode: null,
-      responseType: '',
-      loadedRequestId: request.id,
-      loadedCollectionId: collectionId,
-      preRequestScript: request.preRequestScript || '',
-      postRequestScript: request.postRequestScript || '',
-      title: request.name // Set tab title to request name
-    });
+    
+    // Check if this request is already open in a tab
+    const existingTabIndex = tabs.findIndex(
+      tab => tab.loadedRequestId === request.id && tab.loadedCollectionId === collectionId
+    );
+    
+    if (existingTabIndex !== -1) {
+      // Request is already open, just focus that tab
+      setCurrentTab(existingTabIndex);
+    } else {
+      // Request is not open, create a new tab for it
+      const newTab = {
+        ...tabService.createNewTab(),
+        url: request.url,
+        method: request.method,
+        headers: request.headers,
+        requestBody: request.body,
+        response: null,
+        responseHeaders: null,
+        statusCode: null,
+        responseType: '',
+        loadedRequestId: request.id,
+        loadedCollectionId: collectionId,
+        preRequestScript: request.preRequestScript || '',
+        postRequestScript: request.postRequestScript || '',
+        title: request.name
+      };
+      
+      const newTabs = [...tabs, newTab];
+      setTabs(newTabs);
+      setCurrentTab(newTabs.length - 1);
+    }
   };
 
   const handleOpenDeleteRequestModal = (event, request, collectionId) => {
