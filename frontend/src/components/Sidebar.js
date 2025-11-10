@@ -4,10 +4,6 @@ import MenuList from '@mui/material/MenuList';
 import MenuItem from '@mui/material/MenuItem';
 import ListItemText from '@mui/material/ListItemText';
 import ListItemIcon from '@mui/material/ListItemIcon';
-import IconButton from '@mui/material/IconButton';
-import AddIcon from '@mui/icons-material/Add';
-import EditIcon from '@mui/icons-material/Edit';
-import CloseIcon from '@mui/icons-material/Close';
 import FolderIcon from '@mui/icons-material/Folder';
 import HttpIcon from '@mui/icons-material/Http';
 import HistoryIcon from '@mui/icons-material/History';
@@ -17,11 +13,8 @@ import SettingsIcon from '@mui/icons-material/Settings';
 
 const Sidebar = ({
   collections,
-  onAddCollection,
-  onRenameCollection,
   onRunCollection,
   onLoadRequest,
-  onDeleteRequest,
   onDragStart,
   onDragOver,
   onDrop,
@@ -58,17 +51,6 @@ const Sidebar = ({
           sx={{ cursor: 'pointer' }}
         >
           <ListItemText>Collections</ListItemText>
-          <IconButton
-            size="small"
-            className="AddCollectionButton"
-            onClick={(e) => {
-              e.stopPropagation();
-              onAddCollection();
-            }}
-            aria-label="add collection"
-          >
-            <AddIcon fontSize="small" />
-          </IconButton>
         </MenuItem>
         {collections.map((collection) => (
           <div key={collection.id}>
@@ -83,14 +65,6 @@ const Sidebar = ({
                 <FolderIcon fontSize="small" />
               </ListItemIcon>
               <ListItemText>{collection.name}</ListItemText>
-              <IconButton
-                size="small"
-                className="EditCollectionButton"
-                onClick={(e) => onRenameCollection(e, collection.id, collection.name)}
-                aria-label="edit collection"
-              >
-                <EditIcon fontSize="small" />
-              </IconButton>
             </MenuItem>
             <MenuItem 
               className="RequestMenuItem VariablesMenuItem"
@@ -129,14 +103,6 @@ const Sidebar = ({
                   <HttpIcon fontSize="small" />
                 </ListItemIcon>
                 <ListItemText>{request.name}</ListItemText>
-                <IconButton
-                  size="small"
-                  className="DeleteRequestButton"
-                  onClick={(e) => onDeleteRequest(e, request, collection.id)}
-                  aria-label="delete request"
-                >
-                  <CloseIcon fontSize="small" />
-                </IconButton>
               </MenuItem>
             ))}
           </div>
