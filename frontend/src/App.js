@@ -928,6 +928,7 @@ function App() {
         ));
       }
     }
+    setContextMenuTabIndex(null);
     handleCloseRenameRequestModal();
   };
 
