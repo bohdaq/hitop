@@ -1,3 +1,5 @@
+/chrome-extension
+*.zip
 # Dependencies
 node_modules/
 /.pnp

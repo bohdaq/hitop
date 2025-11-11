@@ -76,10 +76,31 @@ function App() {
     };
   };
   
-  const initialState = initializeDefaultState();
+  // Load from localStorage or use default state
+  const getInitialState = () => {
+    const savedCollections = storageService.loadCollections();
+    const savedTabs = storageService.loadTabs();
+    const savedCurrentTab = storageService.loadCurrentTab();
+    const savedHistory = storageService.loadHistory();
+    const savedContexts = storageService.loadContexts();
+    
+    const defaultState = initializeDefaultState();
+    
+    return {
+      collections: savedCollections && savedCollections.length > 0 ? savedCollections : defaultState.collections,
+      tabs: savedTabs && savedTabs.length > 0 ? savedTabs : defaultState.tabs,
+      currentTab: savedCurrentTab !== null && savedCurrentTab >= 0 ? savedCurrentTab : 0,
+      history: savedHistory || [],
+      contexts: savedContexts || {}
+    };
+  };
+  
+  const initialState = getInitialState();
   const [tabs, setTabs] = useState(initialState.tabs);
-  const [currentTab, setCurrentTab] = useState(0);
+  const [currentTab, setCurrentTab] = useState(initialState.currentTab);
   const [collections, setCollections] = useState(initialState.collections);
+  const [requestHistory, setRequestHistory] = useState(initialState.history);
+  const [collectionContexts, setCollectionContexts] = useState(initialState.contexts);
 
   const theme = createTheme({
     palette: {
@@ -101,18 +122,30 @@ function App() {
     document.body.className = prefersDarkMode ? 'dark-theme' : 'light-theme';
   }, [prefersDarkMode]);
 
-  // Load collections from localStorage on mount
-  useEffect(() => {
-    const savedCollections = storageService.loadCollections();
-    if (savedCollections && savedCollections.length > 0) {
-      setCollections(savedCollections);
-    }
-  }, []);
-
   // Save collections to localStorage whenever they change
   useEffect(() => {
     storageService.saveCollections(collections);
   }, [collections]);
+
+  // Save tabs to localStorage whenever they change
+  useEffect(() => {
+    storageService.saveTabs(tabs);
+  }, [tabs]);
+
+  // Save current tab to localStorage whenever it changes
+  useEffect(() => {
+    storageService.saveCurrentTab(currentTab);
+  }, [currentTab]);
+
+  // Save history to localStorage whenever it changes
+  useEffect(() => {
+    storageService.saveHistory(requestHistory);
+  }, [requestHistory]);
+
+  // Save contexts to localStorage whenever they change
+  useEffect(() => {
+    storageService.saveContexts(collectionContexts);
+  }, [collectionContexts]);
 
   const [isRenameModalOpen, setIsRenameModalOpen] = useState(false);
   const [isAddCollectionModalOpen, setIsAddCollectionModalOpen] = useState(false);
@@ -138,8 +171,6 @@ function App() {
   const [draggedRequest, setDraggedRequest] = useState(null);
   const [draggedCollectionId, setDraggedCollectionId] = useState(null);
   const [draggedCollection, setDraggedCollection] = useState(null);
-  const [requestHistory, setRequestHistory] = useState([]);
-  const [collectionContexts, setCollectionContexts] = useState({}); // { collectionId: context }
   const [isVariablesModalOpen, setIsVariablesModalOpen] = useState(false);
   const [selectedVariablesCollection, setSelectedVariablesCollection] = useState(null);
   const [showCollectionsView, setShowCollectionsView] = useState(false);
