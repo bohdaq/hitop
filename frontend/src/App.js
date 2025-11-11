@@ -1265,16 +1265,19 @@ function App() {
 
   const getCollectionContext = (collectionId) => {
     // Use ref for synchronous access to latest context
-    return contextService.getCollectionContext(collectionContextsRef.current, collectionId);
+    const context = contextService.getCollectionContext(collectionContextsRef.current, collectionId);
+    console.log(`getCollectionContext(${collectionId}):`, context);
+    return context;
   };
 
   const updateCollectionContext = (collectionId, key, value) => {
-    setCollectionContexts(prevContexts => {
-      const newContexts = contextService.updateCollectionContext(prevContexts, collectionId, key, value);
-      // Update ref immediately for synchronous access
-      collectionContextsRef.current = newContexts;
-      return newContexts;
-    });
+    console.log(`updateCollectionContext(${collectionId}, ${key}, ${value})`);
+    // Update ref immediately BEFORE setState for synchronous access
+    const newContexts = contextService.updateCollectionContext(collectionContextsRef.current, collectionId, key, value);
+    collectionContextsRef.current = newContexts;
+    console.log('Updated ref:', collectionContextsRef.current);
+    // Then update state for React rendering
+    setCollectionContexts(newContexts);
   };
 
   const executePostRequestScript = async (script, collectionId, response, responseHeaders, statusCode) => {
