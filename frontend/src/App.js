@@ -41,6 +41,7 @@ import * as scriptExecutionService from './services/scriptExecutionService';
 import * as tabService from './services/tabService';
 import * as storageService from './services/storageService';
 import * as httpService from './services/httpService';
+import { generateUniqueId } from './utils/idGenerator';
 
 function App() {
   const prefersDarkMode = useMediaQuery('(prefers-color-scheme: dark)');
@@ -388,26 +389,83 @@ function App() {
     } else {
       // Request is not open, create a new tab for it
       const newTab = {
-        ...tabService.createNewTab(),
+        id: generateUniqueId(),
+        title: request.name,
         url: request.url,
         method: request.method,
-        headers: request.headers,
-        requestBody: request.body,
-        response: null,
+        headers: request.headers || [],
+        requestBody: request.body || '',
+        response: '',
+        responseType: 'text',
         responseHeaders: null,
         statusCode: null,
-        responseType: '',
-        loadedRequestId: request.id,
-        loadedCollectionId: collectionId,
+        loading: false,
         preRequestScript: request.preRequestScript || '',
         postRequestScript: request.postRequestScript || '',
-        title: request.name
+        loadedRequestId: request.id,
+        loadedCollectionId: collectionId
       };
       
       const newTabs = [...tabs, newTab];
       setTabs(newTabs);
       setCurrentTab(newTabs.length - 1);
     }
+  };
+
+  const handleCreateNewRequestInFirstCollection = () => {
+    // Close collections/detail views to show request view
+    setShowCollectionsView(false);
+    setSelectedCollectionView(null);
+    setShowVariablesView(false);
+
+    if (collections.length === 0) {
+      // If no collections exist, just create a new tab
+      addNewTab();
+      return;
+    }
+
+    const firstCollection = collections[0];
+    
+    // Create a new request in the first collection
+    const newRequest = collectionService.createRequest('New Request', {
+      url: '',
+      method: 'GET',
+      headers: [],
+      body: '',
+      preRequestScript: '',
+      postRequestScript: ''
+    });
+    
+    // Add the request to the first collection
+    const updatedCollections = collectionService.addRequestToCollection(
+      collections,
+      firstCollection.id,
+      newRequest
+    );
+    setCollections(updatedCollections);
+    
+    // Create a new tab for this request
+    const newTab = {
+      id: generateUniqueId(),
+      title: newRequest.name,
+      url: newRequest.url,
+      method: newRequest.method,
+      headers: newRequest.headers || [],
+      requestBody: newRequest.body || '',
+      response: '',
+      responseType: 'text',
+      responseHeaders: null,
+      statusCode: null,
+      loading: false,
+      preRequestScript: newRequest.preRequestScript || '',
+      postRequestScript: newRequest.postRequestScript || '',
+      loadedRequestId: newRequest.id,
+      loadedCollectionId: firstCollection.id
+    };
+    
+    const newTabs = [...tabs, newTab];
+    setTabs(newTabs);
+    setCurrentTab(newTabs.length - 1);
   };
 
   const handleOpenDeleteRequestModal = (event, request, collectionId) => {
@@ -1531,6 +1589,7 @@ function App() {
           onOpenVariables={handleOpenVariablesModal}
           onShowCollections={handleShowCollections}
           onShowCollectionDetail={handleShowCollectionDetail}
+          onCreateNewRequest={handleCreateNewRequestInFirstCollection}
         />
         <div className={`App ${showCollectionsView || selectedCollectionView || showVariablesView ? 'no-tabs' : ''}`}>
           {!showCollectionsView && !selectedCollectionView && !showVariablesView && (

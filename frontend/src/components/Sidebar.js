@@ -7,6 +7,7 @@ import ListItemIcon from '@mui/material/ListItemIcon';
 import FolderIcon from '@mui/icons-material/Folder';
 import HttpIcon from '@mui/icons-material/Http';
 import HistoryIcon from '@mui/icons-material/History';
+import AddIcon from '@mui/icons-material/Add';
 import FileDownloadIcon from '@mui/icons-material/FileDownload';
 import FileUploadIcon from '@mui/icons-material/FileUpload';
 import SettingsIcon from '@mui/icons-material/Settings';
@@ -24,7 +25,8 @@ const Sidebar = ({
   onOpenImport,
   onOpenVariables,
   onShowCollections,
-  onShowCollectionDetail
+  onShowCollectionDetail,
+  onCreateNewRequest
 }) => {
   return (
     <Drawer
@@ -44,6 +46,22 @@ const Sidebar = ({
           <span className="SidebarTitle">
             HITOP
           </span>
+        </MenuItem>
+        <MenuItem 
+          className="NewRequestMenuItem"
+          onClick={onCreateNewRequest}
+          sx={{ 
+            cursor: 'pointer',
+            backgroundColor: 'action.hover',
+            '&:hover': {
+              backgroundColor: 'action.selected'
+            }
+          }}
+        >
+          <ListItemIcon sx={{ minWidth: '32px' }}>
+            <AddIcon fontSize="small" />
+          </ListItemIcon>
+          <ListItemText>New Request</ListItemText>
         </MenuItem>
         <MenuItem 
           className="CollectionsMenuItem"
