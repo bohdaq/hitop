@@ -27,7 +27,11 @@ const CollectionsView = ({
     isRunningAll,
     runningCollectionId,
     completedCollections,
-    runAllResults
+    runAllResults,
+    onCollectionDragStart,
+    onCollectionDragOver,
+    onCollectionDrop,
+    onCollectionDragEnd
 }) => {
     return (
         <Box sx={{ padding: 3 }}>
@@ -101,11 +105,16 @@ const CollectionsView = ({
                 gridTemplateColumns: 'repeat(auto-fill, minmax(300px, 1fr))',
                 gap: 3
             }}>
-                {collections.map((collection) => {
+                {collections.map((collection, index) => {
                     const isRunning = runningCollectionId === collection.id;
                     return (
                     <Card
                         key={collection.id}
+                        draggable
+                        onDragStart={(e) => onCollectionDragStart(e, collection, index)}
+                        onDragOver={onCollectionDragOver}
+                        onDrop={(e) => onCollectionDrop(e, index)}
+                        onDragEnd={onCollectionDragEnd}
                         sx={{
                             display: 'flex',
                             flexDirection: 'column',
@@ -113,6 +122,10 @@ const CollectionsView = ({
                             border: isRunning ? '2px solid' : '1px solid',
                             borderColor: isRunning ? 'primary.main' : 'divider',
                             backgroundColor: isRunning ? 'action.selected' : 'background.paper',
+                            cursor: 'grab',
+                            '&:active': {
+                                cursor: 'grabbing'
+                            },
                             '&:hover': {
                                 transform: 'translateY(-4px)',
                                 boxShadow: 4

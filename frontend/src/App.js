@@ -136,6 +136,7 @@ function App() {
   const [runAllResults, setRunAllResults] = useState(null);
   const [draggedRequest, setDraggedRequest] = useState(null);
   const [draggedCollectionId, setDraggedCollectionId] = useState(null);
+  const [draggedCollection, setDraggedCollection] = useState(null);
   const [requestHistory, setRequestHistory] = useState([]);
   const [collectionContexts, setCollectionContexts] = useState({}); // { collectionId: context }
   const [isVariablesModalOpen, setIsVariablesModalOpen] = useState(false);
@@ -731,6 +732,38 @@ function App() {
   const handleDragEnd = () => {
     setDraggedRequest(null);
     setDraggedCollectionId(null);
+  };
+
+  // Collection drag and drop handlers
+  const handleCollectionDragStart = (e, collection, index) => {
+    setDraggedCollection({ collection, index });
+    e.dataTransfer.effectAllowed = 'move';
+  };
+
+  const handleCollectionDragOver = (e) => {
+    e.preventDefault();
+    e.dataTransfer.dropEffect = 'move';
+  };
+
+  const handleCollectionDrop = (e, targetIndex) => {
+    e.preventDefault();
+    e.stopPropagation();
+
+    if (!draggedCollection || draggedCollection.index === targetIndex) {
+      return;
+    }
+
+    const reorderedCollections = collectionService.reorderCollections(
+      collections,
+      draggedCollection.index,
+      targetIndex
+    );
+    setCollections(reorderedCollections);
+    setDraggedCollection(null);
+  };
+
+  const handleCollectionDragEnd = () => {
+    setDraggedCollection(null);
   };
 
   const runCollection = async (collection) => {
@@ -1547,6 +1580,10 @@ function App() {
               runningCollectionId={runningCollection?.id}
               completedCollections={completedCollectionsCount}
               runAllResults={runAllResults}
+              onCollectionDragStart={handleCollectionDragStart}
+              onCollectionDragOver={handleCollectionDragOver}
+              onCollectionDrop={handleCollectionDrop}
+              onCollectionDragEnd={handleCollectionDragEnd}
             />
           ) : showVariablesView && selectedCollectionView ? (
             <VariablesView

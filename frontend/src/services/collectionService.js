@@ -592,6 +592,21 @@ export const reorderRequest = (collections, sourceCollectionId, targetCollection
   return updatedCollections;
 };
 
+/**
+ * Reorders collections in the array
+ * 
+ * @param {array} collections - Collections array
+ * @param {number} sourceIndex - Source collection index
+ * @param {number} targetIndex - Target collection index
+ * @returns {array} - Updated collections array with reordered collections
+ */
+export const reorderCollections = (collections, sourceIndex, targetIndex) => {
+  const result = [...collections];
+  const [removed] = result.splice(sourceIndex, 1);
+  result.splice(targetIndex, 0, removed);
+  return result;
+};
+
 export default {
   exportCollections,
   importCollections,
@@ -607,5 +622,6 @@ export default {
   updateCollectionVariables,
   getCollectionById,
   getCollectionVariables,
-  reorderRequest
+  reorderRequest,
+  reorderCollections
 };
