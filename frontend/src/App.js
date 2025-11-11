@@ -132,6 +132,8 @@ function App() {
   const [runningCollection, setRunningCollection] = useState(null);
   const [runResults, setRunResults] = useState([]);
   const [isRunning, setIsRunning] = useState(false);
+  const [completedCollectionsCount, setCompletedCollectionsCount] = useState(0);
+  const [runAllResults, setRunAllResults] = useState(null);
   const [draggedRequest, setDraggedRequest] = useState(null);
   const [draggedCollectionId, setDraggedCollectionId] = useState(null);
   const [requestHistory, setRequestHistory] = useState([]);
@@ -348,6 +350,11 @@ function App() {
   const handleShowCollections = () => {
     setShowCollectionsView(true);
     setSelectedCollectionView(null);
+    // Clear running state when navigating back to collections view
+    if (!isRunning) {
+      setRunningCollection(null);
+      setRunResults([]);
+    }
   };
 
   const handleShowCollectionDetail = (collection) => {
@@ -591,6 +598,64 @@ function App() {
     
     // Run the collection directly without opening modal
     await runCollection(collection);
+  };
+
+  const handleRunAllCollections = async () => {
+    if (collections.length === 0) return;
+
+    setIsRunning(true);
+    setCompletedCollectionsCount(0);
+    setRunAllResults(null);
+
+    const startTime = Date.now();
+    let totalRequests = 0;
+    let successCount = 0;
+    let failedCount = 0;
+    let collectionsRun = 0;
+
+    // Run each collection sequentially
+    let completed = 0;
+    for (const collection of collections) {
+      if (collection.requests && collection.requests.length > 0) {
+        setRunningCollection(collection);
+        setRunResults([]);
+        
+        collectionsRun++;
+        
+        // Run the collection and collect results
+        const currentResults = await runCollection(collection);
+        
+        // Count results
+        if (currentResults && currentResults.length > 0) {
+          totalRequests += currentResults.length;
+          successCount += currentResults.filter(r => r.success).length;
+          failedCount += currentResults.filter(r => !r.success).length;
+        }
+        
+        // Update completed count
+        completed++;
+        setCompletedCollectionsCount(completed);
+        
+        // Add a small delay between collections for better UX
+        await new Promise(resolve => setTimeout(resolve, 500));
+      }
+    }
+
+    const endTime = Date.now();
+    const duration = endTime - startTime;
+
+    // Set final results summary
+    setRunAllResults({
+      totalCollections: collectionsRun,
+      totalRequests,
+      successCount,
+      failedCount,
+      duration
+    });
+
+    setIsRunning(false);
+    setRunningCollection(null);
+    setCompletedCollectionsCount(0);
   };
 
   const handleCloseRunCollectionModal = () => {
@@ -900,6 +965,7 @@ function App() {
     }
 
     setIsRunning(false);
+    return results;
   };
 
   const handleRunCollection = async () => {
@@ -1476,6 +1542,11 @@ function App() {
               onRenameCollection={handleOpenRenameModal}
               onViewCollection={handleShowCollectionDetail}
               onAddCollection={handleOpenAddCollectionModal}
+              onRunAll={handleRunAllCollections}
+              isRunningAll={isRunning}
+              runningCollectionId={runningCollection?.id}
+              completedCollections={completedCollectionsCount}
+              runAllResults={runAllResults}
             />
           ) : showVariablesView && selectedCollectionView ? (
             <VariablesView
