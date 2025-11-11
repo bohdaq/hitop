@@ -1,5 +1,5 @@
 import './App.css';
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { ThemeProvider, createTheme } from '@mui/material/styles';
 import CssBaseline from '@mui/material/CssBaseline';
 import useMediaQuery from '@mui/material/useMediaQuery';
@@ -103,6 +103,14 @@ function App() {
   const [collections, setCollections] = useState(initialState.collections);
   const [requestHistory, setRequestHistory] = useState(initialState.history);
   const [collectionContexts, setCollectionContexts] = useState(initialState.contexts);
+  
+  // Use ref to maintain synchronous access to latest context
+  const collectionContextsRef = useRef(initialState.contexts);
+  
+  // Keep ref in sync with state
+  useEffect(() => {
+    collectionContextsRef.current = collectionContexts;
+  }, [collectionContexts]);
 
   const theme = createTheme({
     palette: {
@@ -865,9 +873,8 @@ function App() {
     setIsRunning(true);
     const results = [];
 
-    // Get or initialize collection-specific context and variables
+    // Get collection ID and variables
     const collectionId = collection.id;
-    const context = getCollectionContext(collectionId);
     const variables = collection.variables || {};
 
     for (let i = 0; i < collection.requests.length; i++) {
@@ -1257,12 +1264,17 @@ function App() {
   };
 
   const getCollectionContext = (collectionId) => {
-    return contextService.getCollectionContext(collectionContexts, collectionId);
+    // Use ref for synchronous access to latest context
+    return contextService.getCollectionContext(collectionContextsRef.current, collectionId);
   };
 
   const updateCollectionContext = (collectionId, key, value) => {
-    const newContexts = contextService.updateCollectionContext(collectionContexts, collectionId, key, value);
-    setCollectionContexts(newContexts);
+    setCollectionContexts(prevContexts => {
+      const newContexts = contextService.updateCollectionContext(prevContexts, collectionId, key, value);
+      // Update ref immediately for synchronous access
+      collectionContextsRef.current = newContexts;
+      return newContexts;
+    });
   };
 
   const executePostRequestScript = async (script, collectionId, response, responseHeaders, statusCode) => {
