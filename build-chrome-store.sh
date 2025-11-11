@@ -62,7 +62,13 @@ cat > chrome-store-package/manifest.json << 'EOF'
   ],
   "host_permissions": [
     "<all_urls>"
-  ]
+  ],
+  "sandbox": {
+    "pages": ["sandbox.html"]
+  },
+  "content_security_policy": {
+    "sandbox": "sandbox allow-scripts"
+  }
 }
 EOF
 
@@ -147,11 +153,15 @@ FEATURES:
 - Create and organize requests in collections
 - Support for GET, POST, PUT, DELETE, PATCH, and more
 - Collection variables for dynamic values
-- Pre-request and post-request scripts
 - Request history
 - Import/Export collections
 - Drag and drop to reorder requests
 - Dark mode support
+
+LIMITATIONS IN CHROME EXTENSION:
+- Pre-request and post-request scripts are NOT supported due to Chrome's Content Security Policy
+- For script functionality, please use the web version at: https://bohdaq.github.io/hitop/
+- You can still use collection variables for dynamic values
 
 USAGE:
 Click the HITOP icon in your Chrome toolbar to open the HTTP client in a new tab.

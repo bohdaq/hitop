@@ -70,7 +70,16 @@ else
   ],
   "host_permissions": [
     "<all_urls>"
-  ]
+  ],
+  "web_accessible_resources": [
+    {
+      "resources": ["app/sandbox.html"],
+      "matches": ["<all_urls>"]
+    }
+  ],
+  "sandbox": {
+    "pages": ["app/sandbox.html"]
+  }
 }
 EOF
 fi

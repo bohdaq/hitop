@@ -1,0 +1,97 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <title>Script Sandbox</title>
+</head>
+<body>
+  <script>
+    // Sandboxed script execution environment for Chrome extension
+    window.addEventListener('message', function(event) {
+      try {
+        const { type, script, contextData, callbackId } = event.data;
+        
+        if (type === 'executeScript') {
+          // Reconstruct the execution context with helper functions
+          const contextUpdates = {};
+          
+          const scriptContext = {
+            // Copy all serializable data
+            ...contextData,
+            
+            // Recreate helper functions
+            setContext: (key, value) => {
+              contextUpdates[key] = value;
+            },
+            getContext: (key) => {
+              return contextUpdates[key] !== undefined ? contextUpdates[key] : contextData.context[key];
+            },
+            getVariable: (key) => {
+              return contextData.variables ? contextData.variables[key] : undefined;
+            },
+            setHeader: (name, value) => {
+              const existingIndex = scriptContext.headers.findIndex(h => h.name === name);
+              if (existingIndex >= 0) {
+                scriptContext.headers[existingIndex].value = value;
+              } else {
+                scriptContext.headers.push({ name, value });
+              }
+            },
+            setUrl: (newUrl) => {
+              scriptContext.url = newUrl;
+            },
+            setBody: (newBody) => {
+              scriptContext.body = newBody;
+            },
+            getResponseValue: (path) => {
+              const keys = path.split('.');
+              let value = scriptContext.response;
+              for (const key of keys) {
+                if (value && typeof value === 'object') {
+                  value = value[key];
+                } else {
+                  return undefined;
+                }
+              }
+              return value;
+            },
+            getResponseHeader: (name) => {
+              return scriptContext.responseHeaders ? scriptContext.responseHeaders[name.toLowerCase()] : undefined;
+            }
+          };
+          
+          // Execute the script using Function constructor (allowed in sandbox)
+          const func = new Function('ctx', `with(ctx) { ${script} }`);
+          func(scriptContext);
+          
+          // Send result back with only serializable data
+          event.source.postMessage({
+            type: 'scriptResult',
+            callbackId: callbackId,
+            success: true,
+            result: {
+              url: scriptContext.url,
+              headers: scriptContext.headers,
+              body: scriptContext.body,
+              contextUpdates: contextUpdates
+            }
+          }, event.origin);
+        }
+      } catch (error) {
+        // Send error back with callbackId
+        event.source.postMessage({
+          type: 'scriptResult',
+          callbackId: event.data.callbackId,
+          success: false,
+          error: error.message
+        }, event.origin);
+      }
+    });
+    
+    // Signal that sandbox is ready
+    if (window.parent !== window) {
+      window.parent.postMessage({ type: 'sandboxReady' }, '*');
+    }
+  </script>
+</body>
+</html>

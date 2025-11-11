@@ -4,6 +4,23 @@
  * Handles execution of pre-request and post-request scripts
  */
 
+// Check if running in Chrome extension
+const isExtension = () => {
+  // eslint-disable-next-line no-undef
+  return typeof chrome !== 'undefined' && chrome.runtime && chrome.runtime.id;
+};
+
+// Check if scripts can be executed safely
+const canExecuteScripts = () => {
+  try {
+    // Try to create a Function to test CSP
+    new Function('return true')();
+    return true;
+  } catch (e) {
+    return false;
+  }
+};
+
 /**
  * Executes a pre-request script
  * 
@@ -21,6 +38,14 @@ export const executePreRequestScript = (script, requestData, context, variables,
       headers: requestData.headers,
       body: requestData.body
     };
+  }
+
+  // Check if we can execute scripts
+  if (!canExecuteScripts()) {
+    throw new Error(
+      'Pre/Post request scripts are not supported in the Chrome extension due to Content Security Policy restrictions. ' +
+      'Please use the web version at https://bohdaq.github.io/hitop/ for script functionality, or use collection variables instead.'
+    );
   }
 
   try {
@@ -88,6 +113,14 @@ export const executePreRequestScript = (script, requestData, context, variables,
 export const executePostRequestScript = (script, response, responseText, responseHeaders, statusCode, context, variables, updateContext) => {
   if (!script || !script.trim()) {
     return;
+  }
+
+  // Check if we can execute scripts
+  if (!canExecuteScripts()) {
+    throw new Error(
+      'Pre/Post request scripts are not supported in the Chrome extension due to Content Security Policy restrictions. ' +
+      'Please use the web version at https://bohdaq.github.io/hitop/ for script functionality, or use collection variables instead.'
+    );
   }
 
   try {

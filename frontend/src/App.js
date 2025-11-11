@@ -34,13 +34,15 @@ import RenameRequestModal from './components/RenameRequestModal';
 
 // Services
 import { interpolateVariables } from './services/variableInterpolation';
-import * as historyService from './services/historyService';
-import * as collectionService from './services/collectionService';
-import * as contextService from './services/contextService';
-import * as scriptExecutionService from './services/scriptExecutionService';
-import * as tabService from './services/tabService';
-import * as storageService from './services/storageService';
-import * as httpService from './services/httpService';
+import collectionService from './services/collectionService';
+import tabService from './services/tabService';
+import historyService from './services/historyService';
+import contextService from './services/contextService';
+import storageService from './services/storageService';
+import scriptExecutionService from './services/scriptExecutionService';
+import variableInterpolation from './services/variableInterpolation';
+import sandboxExecutor from './services/sandboxScriptExecutor';
+import httpService from './services/httpService';
 import { generateUniqueId } from './utils/idGenerator';
 
 function App() {
@@ -909,47 +911,22 @@ function App() {
         };
 
         if (request.preRequestScript && request.preRequestScript.trim()) {
-          const scriptContext = {
-            url: interpolatedUrl,
-            method: request.method,
-            headers: [...interpolatedHeaders],
-            body: interpolatedBody,
-            variables: { ...variables },
-            context: { ...context },
-            setContext: (key, value) => {
-              updateCollectionContext(collectionId, key, value);
-              context[key] = value; // Update local copy for this run
-            },
-            getContext: (key) => {
-              return context[key];
-            },
-            getVariable: (key) => {
-              return variables[key];
-            },
-            setHeader: (name, value) => {
-              const existingIndex = scriptContext.headers.findIndex(h => h.name === name);
-              if (existingIndex >= 0) {
-                scriptContext.headers[existingIndex].value = value;
-              } else {
-                scriptContext.headers.push({ name, value });
-              }
-            },
-            setUrl: (newUrl) => {
-              scriptContext.url = newUrl;
-            },
-            setBody: (newBody) => {
-              scriptContext.body = newBody;
-            }
-          };
-
           try {
-            const func = new Function('ctx', `with(ctx) { ${request.preRequestScript} }`);
-            func(scriptContext);
-            requestData = {
-              url: scriptContext.url,
-              headers: scriptContext.headers,
-              body: scriptContext.body
-            };
+            const scriptResult = await executePreRequestScript(
+              request.preRequestScript,
+              collectionId,
+              interpolatedUrl,
+              interpolatedHeaders,
+              interpolatedBody
+            );
+            
+            if (scriptResult) {
+              requestData = {
+                url: scriptResult.url,
+                headers: scriptResult.headers,
+                body: scriptResult.body
+              };
+            }
           } catch (scriptError) {
             results.push({
               requestName: request.name,
@@ -997,49 +974,13 @@ function App() {
         // Execute post-request script if exists
         if (request.postRequestScript && request.postRequestScript.trim()) {
           try {
-            let parsedResponse = responseText;
-            try {
-              parsedResponse = JSON.parse(responseText);
-            } catch (e) {
-              // Not JSON, use as is
-            }
-
-            const postScriptContext = {
-              response: parsedResponse,
-              responseText: responseText,
-              responseHeaders: resHeaders,
-              statusCode: response.status,
-              variables: { ...variables },
-              context: { ...context },
-              setContext: (key, value) => {
-                updateCollectionContext(collectionId, key, value);
-                context[key] = value; // Update local copy for this run
-              },
-              getContext: (key) => {
-                return context[key];
-              },
-              getVariable: (key) => {
-                return variables[key];
-              },
-              getResponseValue: (path) => {
-                const keys = path.split('.');
-                let value = parsedResponse;
-                for (const key of keys) {
-                  if (value && typeof value === 'object') {
-                    value = value[key];
-                  } else {
-                    return undefined;
-                  }
-                }
-                return value;
-              },
-              getResponseHeader: (name) => {
-                return resHeaders[name.toLowerCase()];
-              }
-            };
-
-            const postFunc = new Function('ctx', `with(ctx) { ${request.postRequestScript} }`);
-            postFunc(postScriptContext);
+            await executePostRequestScript(
+              request.postRequestScript,
+              collectionId,
+              responseText,
+              resHeaders,
+              response.status
+            );
           } catch (postScriptError) {
             console.error('Post-request script error:', postScriptError);
           }
@@ -1324,10 +1265,20 @@ function App() {
     setCollectionContexts(newContexts);
   };
 
-  const executePostRequestScript = (script, collectionId, response, responseHeaders, statusCode) => {
+  const executePostRequestScript = async (script, collectionId, response, responseHeaders, statusCode) => {
     if (!script || !script.trim()) {
       return;
     }
+
+    // Check if we're in a Chrome extension environment
+    const isExtension = () => {
+      try {
+        // eslint-disable-next-line no-undef
+        return typeof chrome !== 'undefined' && chrome.runtime && chrome.runtime.id;
+      } catch (e) {
+        return false;
+      }
+    };
 
     try {
       // Parse response if it's JSON
@@ -1339,6 +1290,7 @@ function App() {
       }
 
       const context = getCollectionContext(collectionId);
+      const contextUpdates = {};
 
       const scriptContext = {
         response: parsedResponse,
@@ -1347,10 +1299,10 @@ function App() {
         statusCode: statusCode,
         context: { ...context },
         setContext: (key, value) => {
-          updateCollectionContext(collectionId, key, value);
+          contextUpdates[key] = value;
         },
         getContext: (key) => {
-          return context[key];
+          return contextUpdates[key] !== undefined ? contextUpdates[key] : context[key];
         },
         // Helper to get value from JSON response
         getResponseValue: (path) => {
@@ -1371,22 +1323,55 @@ function App() {
         }
       };
 
-      const func = new Function('ctx', `with(ctx) { ${script} }`);
-      func(scriptContext);
+      if (isExtension()) {
+        // Always use sandboxed execution in Chrome extension
+        console.log('Using sandbox for post-request script execution');
+        try {
+          const result = await sandboxExecutor.executeScript(script, scriptContext);
+          console.log('Sandbox execution result:', result);
+          // Extract context updates from result
+          if (result && result.contextUpdates) {
+            Object.assign(contextUpdates, result.contextUpdates);
+          }
+        } catch (sandboxError) {
+          console.error('Sandbox execution failed:', sandboxError);
+          throw sandboxError;
+        }
+      } else {
+        // Execute directly in web version
+        const func = new Function('ctx', `with(ctx) { ${script} }`);
+        func(scriptContext);
+      }
+
+      // Apply context updates
+      Object.keys(contextUpdates).forEach(key => {
+        updateCollectionContext(collectionId, key, contextUpdates[key]);
+      });
     } catch (error) {
       console.error('Post-request script error:', error);
       alert(`Post-request script error: ${error.message}`);
     }
   };
 
-  const executePreRequestScript = (script, collectionId, interpolatedUrl, interpolatedHeaders, interpolatedBody) => {
+  const executePreRequestScript = async (script, collectionId, interpolatedUrl, interpolatedHeaders, interpolatedBody) => {
     if (!script || !script.trim()) {
       return { url: interpolatedUrl, headers: interpolatedHeaders, body: interpolatedBody };
     }
 
+    // Check if we're in a Chrome extension environment
+    const isExtension = () => {
+      try {
+        // eslint-disable-next-line no-undef
+        return typeof chrome !== 'undefined' && chrome.runtime && chrome.runtime.id;
+      } catch (e) {
+        return false;
+      }
+    };
+
     try {
       const context = getCollectionContext(collectionId);
       const variables = getCollectionVariables(collectionId);
+      const contextUpdates = {};
 
       // Create a safe execution context
       const scriptContext = {
@@ -1397,10 +1382,10 @@ function App() {
         variables: { ...variables },
         context: { ...context },
         setContext: (key, value) => {
-          updateCollectionContext(collectionId, key, value);
+          contextUpdates[key] = value;
         },
         getContext: (key) => {
-          return context[key];
+          return contextUpdates[key] !== undefined ? contextUpdates[key] : context[key];
         },
         getVariable: (key) => {
           return variables[key];
@@ -1421,9 +1406,35 @@ function App() {
         }
       };
 
-      // Execute the script
-      const func = new Function('ctx', `with(ctx) { ${script} }`);
-      func(scriptContext);
+      if (isExtension()) {
+        // Always use sandboxed execution in Chrome extension
+        console.log('Using sandbox for pre-request script execution');
+        try {
+          const result = await sandboxExecutor.executeScript(script, scriptContext);
+          console.log('Sandbox execution result:', result);
+          // Update scriptContext with results
+          if (result) {
+            scriptContext.url = result.url;
+            scriptContext.headers = result.headers;
+            scriptContext.body = result.body;
+            if (result.contextUpdates) {
+              Object.assign(contextUpdates, result.contextUpdates);
+            }
+          }
+        } catch (sandboxError) {
+          console.error('Sandbox execution failed:', sandboxError);
+          throw sandboxError;
+        }
+      } else {
+        // Execute directly in web version
+        const func = new Function('ctx', `with(ctx) { ${script} }`);
+        func(scriptContext);
+      }
+
+      // Apply context updates
+      Object.keys(contextUpdates).forEach(key => {
+        updateCollectionContext(collectionId, key, contextUpdates[key]);
+      });
 
       return {
         url: scriptContext.url,
@@ -1472,7 +1483,7 @@ function App() {
     }
 
     // Execute pre-request script with collection-specific context and interpolated values
-    const scriptResult = executePreRequestScript(
+    const scriptResult = await executePreRequestScript(
       currentTabData.preRequestScript,
       currentTabData.loadedCollectionId,
       interpolatedUrl,
