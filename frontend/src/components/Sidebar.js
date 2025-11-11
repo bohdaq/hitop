@@ -78,6 +78,9 @@ const Sidebar = ({
                 e.stopPropagation();
                 onShowCollectionDetail(collection);
               }}
+              sx={{ 
+                paddingLeft: '32px !important'
+              }}
             >
               <ListItemIcon sx={{ minWidth: '32px' }}>
                 <FolderIcon fontSize="small" />
@@ -91,7 +94,7 @@ const Sidebar = ({
                 onOpenVariables(collection);
               }}
               sx={{ 
-                paddingLeft: '48px',
+                paddingLeft: '64px !important',
                 cursor: 'pointer !important'
               }}
             >
@@ -111,6 +114,7 @@ const Sidebar = ({
                 onDrop={(e) => onDrop(e, request, collection.id)}
                 onDragEnd={onDragEnd}
                 sx={{
+                  paddingLeft: '64px !important',
                   cursor: 'grab',
                   '&:active': {
                     cursor: 'grabbing'

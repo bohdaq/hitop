@@ -5,7 +5,7 @@
 }
 
 .Sidebar {
-  width: 240px;
+  width: 480px;
   flex-shrink: 0;
   height: 100vh;
   position: fixed;
@@ -15,7 +15,7 @@
 }
 
 .SidebarPaper {
-  width: 240px;
+  width: 480px;
   border-right: 1px solid #ddd;
   position: relative !important;
   height: 100vh;
@@ -205,7 +205,7 @@
   padding-left: 3em;
   padding-right: 3em;
   padding-top: 100px;
-  margin-left: 240px;
+  margin-left: 480px;
   display: flex;
   flex-direction: column;
   flex: 1;
@@ -220,7 +220,7 @@
 .TabsContainer {
   position: fixed;
   top: 0;
-  left: 240px;
+  left: 480px;
   right: 0;
   z-index: 100;
   display: flex;
