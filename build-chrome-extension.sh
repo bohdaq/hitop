@@ -51,7 +51,7 @@ else
 {
   "manifest_version": 3,
   "name": "HITOP - HTTP Client",
-  "version": "3.0.0",
+  "version": "4.0.0",
   "description": "A powerful HTTP client for testing APIs",
   "action": {
     "default_title": "HITOP HTTP Client"
@@ -64,10 +64,6 @@ else
   "background": {
     "service_worker": "background.js"
   },
-  "permissions": [
-    "storage",
-    "tabs"
-  ],
   "host_permissions": [
     "<all_urls>"
   ],

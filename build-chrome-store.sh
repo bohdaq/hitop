@@ -43,8 +43,8 @@ cat > chrome-store-package/manifest.json << 'EOF'
 {
   "manifest_version": 3,
   "name": "HITOP - HTTP Client",
-  "version": "3.0.0",
-  "description": "A powerful HTTP client for testing and debugging APIs. Features include collections, variables, pre/post request scripts, and request history.",
+  "version": "4.0.0",
+  "description": "Powerful HTTP client for testing APIs with collections, variables, pre/post request scripts, and request history.",
   "author": "HITOP Team",
   "action": {
     "default_title": "Open HITOP HTTP Client"
@@ -57,9 +57,6 @@ cat > chrome-store-package/manifest.json << 'EOF'
   "background": {
     "service_worker": "background.js"
   },
-  "permissions": [
-    "storage"
-  ],
   "host_permissions": [
     "<all_urls>"
   ],
@@ -132,10 +129,9 @@ HITOP HTTP Client does NOT collect, transmit, or share any personal data. All da
 
 ### Permissions Explained:
 
-**storage**: Used to save your collections and requests locally in Chrome's storage
 **host_permissions (<all_urls>)**: Required to make HTTP requests to any API endpoint you specify
 
-All data remains on your device and is never transmitted to our servers or any third party.
+All data remains on your device (using localStorage) and is never transmitted to our servers or any third party.
 
 ## Contact
 
@@ -167,11 +163,10 @@ USAGE:
 Click the HITOP icon in your Chrome toolbar to open the HTTP client in a new tab.
 
 PRIVACY:
-All data is stored locally in your browser. No data is sent to external servers.
+All data is stored locally in your browser using localStorage. No data is sent to external servers.
 
 PERMISSIONS:
-- storage: To save your collections locally
-- host_permissions: To make HTTP requests to APIs
+- host_permissions: To make HTTP requests to APIs you specify
 
 For more information, visit: https://github.com/bohdaq/hitop
 EOF

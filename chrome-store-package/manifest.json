@@ -1,0 +1,27 @@
+{
+  "manifest_version": 3,
+  "name": "HITOP - HTTP Client",
+  "version": "4.0.0",
+  "description": "Powerful HTTP client for testing APIs with collections, variables, pre/post request scripts, and request history.",
+  "author": "HITOP Team",
+  "action": {
+    "default_title": "Open HITOP HTTP Client"
+  },
+  "icons": {
+    "16": "icons/icon-16.png",
+    "48": "icons/icon-48.png",
+    "128": "icons/icon-128.png"
+  },
+  "background": {
+    "service_worker": "background.js"
+  },
+  "host_permissions": [
+    "<all_urls>"
+  ],
+  "sandbox": {
+    "pages": ["sandbox.html"]
+  },
+  "content_security_policy": {
+    "sandbox": "sandbox allow-scripts"
+  }
+}

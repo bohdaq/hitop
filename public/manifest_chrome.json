@@ -1,0 +1,29 @@
+{
+  "manifest_version": 3,
+  "name": "HITOP - HTTP API Testing Tool",
+  "version": "4.0.0",
+  "description": "A powerful HTTP API testing tool with collections, variables, and custom scripting support",
+  "action": {
+    "default_title": "HITOP API Tester"
+  },
+  "icons": {
+    "16": "icons/icon-16.png",
+    "48": "icons/icon-48.png",
+    "128": "icons/icon-128.png"
+  },
+  "background": {
+    "service_worker": "background.js"
+  },
+  "host_permissions": [
+    "<all_urls>"
+  ],
+  "web_accessible_resources": [
+    {
+      "resources": ["app/sandbox.html"],
+      "matches": ["<all_urls>"]
+    }
+  ],
+  "sandbox": {
+    "pages": ["app/sandbox.html"]
+  }
+}
