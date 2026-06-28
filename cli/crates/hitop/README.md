@@ -2,7 +2,7 @@
 
 HTTP API client CLI — send requests, run collections, and script with JavaScript from the terminal.
 
-Same feature set as the [hitop web app](https://github.com/bohdantsap/hitop), but from your shell.
+Same feature set as the [hitop desktop app](https://github.com/bohdaq/hitop), but from your shell.
 
 ## Install
 
@@ -10,7 +10,7 @@ Same feature set as the [hitop web app](https://github.com/bohdantsap/hitop), bu
 cargo install hitop
 ```
 
-Or download a pre-built binary from [GitHub Releases](https://github.com/bohdantsap/hitop/releases).
+Or download a pre-built binary from [GitHub Releases](https://github.com/bohdaq/hitop/releases).
 
 ## Quick start
 
