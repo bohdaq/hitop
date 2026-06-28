@@ -1,4 +1,5 @@
 import React from 'react';
+import hitopLogo from '../logo192.png';
 import Drawer from '@mui/material/Drawer';
 import MenuList from '@mui/material/MenuList';
 import MenuItem from '@mui/material/MenuItem';
@@ -39,7 +40,7 @@ const Sidebar = ({
       <MenuList sx={{ height: '100%', display: 'flex', flexDirection: 'column', padding: 0 }}>
         <MenuItem className="SidebarHeader" disabled>
           <img 
-            src={`${process.env.PUBLIC_URL}/logo192.png`}
+            src={hitopLogo}
             alt="HITOP Logo" 
             className="SidebarLogo"
           />

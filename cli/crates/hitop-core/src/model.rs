@@ -75,6 +75,7 @@ pub struct Collection {
     pub id: u64,
     pub name: String,
     pub requests: Vec<Request>,
+    #[serde(default)]
     pub variables: HashMap<String, String>,
 }
 

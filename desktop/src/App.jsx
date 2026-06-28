@@ -100,7 +100,7 @@ function App() {
   const [collectionContexts, setCollectionContexts] = useState(syncState.contexts);
   
   // Use ref to maintain synchronous access to latest context
-  const collectionContextsRef = useRef(initialState.contexts);
+  const collectionContextsRef = useRef(syncState.contexts);
   
   // Keep ref in sync with state
   useEffect(() => {
