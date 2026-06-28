@@ -45,14 +45,14 @@ const CollectionDetailView = ({
 
   return (
     <Box sx={{ padding: 3 }}>
-      <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 3 }}>
-        <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
+      <Box sx={{ marginBottom: 3 }}>
+        <Box sx={{ display: 'flex', alignItems: 'center', gap: 2, marginBottom: 1.5 }}>
           <FolderIcon sx={{ fontSize: 40, color: 'primary.main' }} />
           <Typography variant="h4">
             {collection.name}
           </Typography>
         </Box>
-        <Box sx={{ display: 'flex', gap: 1 }}>
+        <Box sx={{ display: 'flex', gap: 1, flexWrap: 'wrap' }}>
           <Button
             variant="outlined"
             startIcon={<EditIcon />}
