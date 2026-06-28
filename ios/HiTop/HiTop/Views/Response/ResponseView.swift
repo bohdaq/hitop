@@ -44,7 +44,7 @@ struct ResponseView: View {
                     Divider()
 
                     if selectedTab == 0 {
-                        ResponseBodyView(body: response.body, contentType: response.contentType)
+                        ResponseBodyView(responseBody: response.body, contentType: response.contentType)
                     } else {
                         ResponseHeadersView(headers: response.headers)
                     }
@@ -83,18 +83,18 @@ struct StatusBadge: View {
 }
 
 struct ResponseBodyView: View {
-    let body: String
+    let responseBody: String
     let contentType: ResponseContentType
 
     private var displayBody: String {
         if contentType == .json,
-           let data = body.data(using: .utf8),
+           let data = responseBody.data(using: .utf8),
            let obj = try? JSONSerialization.jsonObject(with: data),
            let pretty = try? JSONSerialization.data(withJSONObject: obj, options: .prettyPrinted),
            let str = String(data: pretty, encoding: .utf8) {
             return str
         }
-        return body
+        return responseBody
     }
 
     var body: some View {

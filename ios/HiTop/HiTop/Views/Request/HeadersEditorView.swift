@@ -4,6 +4,7 @@ struct HeadersEditorView: View {
     @Environment(AppViewModel.self) private var vm
 
     var body: some View {
+        @Bindable var vm = vm
         List {
             ForEach($vm.activeHeaders) { $header in
                 HStack(spacing: 8) {
