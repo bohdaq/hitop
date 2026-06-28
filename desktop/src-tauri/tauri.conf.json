@@ -33,6 +33,18 @@
       "icons/128x128@2x.png",
       "icons/icon.icns",
       "icons/icon.ico"
-    ]
+    ],
+    "category": "Developer Tools",
+    "copyright": "© 2025 Bohdan Tsap",
+    "shortDescription": "HTTP API testing tool",
+    "longDescription": "HITOP is a native HTTP API testing tool. Send requests, manage collections, use variables, and run pre/post request scripts — all stored locally.",
+    "macOS": {
+      "minimumSystemVersion": "10.15",
+      "entitlements": "./Entitlements.mas.plist",
+      "exceptionDomain": "",
+      "frameworks": [],
+      "providerShortName": null,
+      "signingIdentity": null
+    }
   }
 }
