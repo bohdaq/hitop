@@ -1,8 +1,7 @@
 <!DOCTYPE html>
 <html lang="en">
-
 <head>
-    <!-- Google tag (gtag.js) - Analytics & Ads Conversion Tracking -->
+    <!-- Google tag (gtag.js) -->
     <script async src="https://www.googletagmanager.com/gtag/js?id=G-TYQC208YN0"></script>
     <script>
         window.dataLayer = window.dataLayer || [];
@@ -10,309 +9,569 @@
         gtag('js', new Date());
         gtag('config', 'G-TYQC208YN0');
         gtag('config', 'AW-17667429231');
+        function trackEvent(category, action, label) {
+            gtag('event', action, { 'event_category': category, 'event_label': label });
+        }
+        function gtagSendEvent(url) {
+            var callback = function () { if (typeof url === 'string') window.location = url; };
+            gtag('event', 'conversion_event_default', { 'event_callback': callback, 'event_timeout': 2000 });
+            return false;
+        }
     </script>
 
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <meta name="description" content="HITOP is 100% free and open source under MIT License. No cost, no payment, no account required. Use it anywhere without restrictions.">
-    <title>HITOP Pricing - Free & Open Source API Testing Tool</title>
+    <meta name="description" content="HITOP is 100% free and open source under the MIT License. No cost, no payment, no account required. Use it anywhere without restrictions.">
+    <title>HITOP Pricing — Free & Open Source API Testing Tool</title>
 
-    <!-- Favicons -->
     <link rel="icon" type="image/png" sizes="192x192" href="favicon.png">
     <link rel="icon" type="image/png" sizes="32x32" href="favicon-32x32.png">
     <link rel="icon" type="image/png" sizes="16x16" href="favicon-16x16.png">
     <link rel="apple-touch-icon" sizes="180x180" href="apple-touch-icon.png">
     <link rel="shortcut icon" href="favicon.png">
-
-    <!-- Canonical URL -->
-    <link rel="canonical" href="https://hitop.rws8.tech/pricing.html" />
+    <link rel="canonical" href="https://hitop.rws8.tech/pricing.html">
 
     <style>
-        * {
-            margin: 0;
-            padding: 0;
-            box-sizing: border-box;
+        :root {
+            --bg: #050911;
+            --surface: rgba(255,255,255,0.04);
+            --surface-h: rgba(255,255,255,0.07);
+            --border: rgba(255,255,255,0.07);
+            --border-h: rgba(255,255,255,0.16);
+            --text: #F1F5F9;
+            --text-2: #94A3B8;
+            --text-3: #475569;
+            --purple: #8B5CF6;
+            --violet: #7C3AED;
+            --indigo: #6366F1;
+            --cyan: #06B6D4;
+            --green: #10B981;
         }
+
+        *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+        html { scroll-behavior: smooth; }
 
         body {
-            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', 'Oxygen', 'Ubuntu', 'Cantarell', 'Fira Sans', 'Droid Sans', 'Helvetica Neue', sans-serif;
-            line-height: 1.6;
-            color: #333;
-            background: #f5f5f5;
+            font-family: -apple-system, BlinkMacSystemFont, 'SF Pro Display', 'Segoe UI', sans-serif;
+            background: var(--bg);
+            color: var(--text);
+            overflow-x: hidden;
+            -webkit-font-smoothing: antialiased;
         }
 
-        .header {
-            background: linear-gradient(135deg, #059669 0%, #047857 100%);
+        body::after {
+            content: '';
+            position: fixed;
+            inset: 0;
+            pointer-events: none;
+            z-index: 9999;
+            opacity: 0.03;
+            background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 200 200' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
+            background-size: 100px;
+        }
+
+        nav {
+            position: fixed;
+            top: 0; left: 0; right: 0;
+            z-index: 200;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 0 48px;
+            height: 64px;
+            backdrop-filter: blur(24px) saturate(180%);
+            -webkit-backdrop-filter: blur(24px) saturate(180%);
+            background: rgba(5,9,17,0.75);
+            border-bottom: 1px solid var(--border);
+        }
+
+        .nav-logo {
+            font-size: 1.1rem;
+            font-weight: 800;
+            text-decoration: none;
+            background: linear-gradient(120deg, #A78BFA, var(--cyan));
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+        }
+
+        .nav-links {
+            display: flex;
+            list-style: none;
+            gap: 36px;
+        }
+        .nav-links a {
+            color: var(--text-2);
+            text-decoration: none;
+            font-size: 0.875rem;
+            font-weight: 500;
+            transition: color 0.2s;
+        }
+        .nav-links a:hover { color: var(--text); }
+
+        .nav-cta {
+            padding: 8px 20px;
+            background: linear-gradient(135deg, var(--violet), var(--indigo));
             color: white;
-            padding: 60px 20px;
-            text-align: center;
+            border-radius: 8px;
+            text-decoration: none;
+            font-size: 0.875rem;
+            font-weight: 600;
+            transition: opacity 0.2s, transform 0.2s, box-shadow 0.2s;
+            box-shadow: 0 4px 16px rgba(124,58,237,0.35);
         }
-
-        .header h1 {
-            font-size: 3em;
-            margin-bottom: 15px;
-            font-weight: bold;
-        }
-
-        .header p {
-            font-size: 1.3em;
-            opacity: 0.95;
+        .nav-cta:hover {
+            opacity: 0.9;
+            transform: translateY(-1px);
+            box-shadow: 0 8px 24px rgba(124,58,237,0.45);
         }
 
         .container {
             max-width: 900px;
             margin: 0 auto;
-            padding: 20px;
+            padding: 0 40px;
         }
 
-        .section {
-            background: white;
-            margin: 40px 0;
-            padding: 60px 40px;
-            border-radius: 12px;
-            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
-        }
-
-        .section h2 {
-            font-size: 2.2em;
-            margin-bottom: 25px;
-            color: #059669;
+        .hero {
+            padding: 140px 40px 80px;
             text-align: center;
-        }
-
-        .section h3 {
-            font-size: 1.5em;
-            margin-top: 30px;
-            margin-bottom: 15px;
-            color: #047857;
-        }
-
-        .section p {
-            font-size: 1.1em;
-            line-height: 1.8;
-            margin-bottom: 15px;
-            color: #555;
-        }
-
-        .highlight-box {
-            background: #f0fdf4;
-            border-left: 4px solid #059669;
-            padding: 25px;
-            margin: 30px 0;
-            border-radius: 8px;
-        }
-
-        .highlight-box h3 {
-            color: #059669;
-            margin-top: 0;
-        }
-
-        .feature-list {
-            list-style: none;
-            padding: 0;
-            margin: 20px 0;
-        }
-
-        .feature-list li {
-            padding: 12px 0;
-            padding-left: 30px;
             position: relative;
-            font-size: 1.1em;
+            overflow: hidden;
         }
 
-        .feature-list li:before {
-            content: "✓";
+        .orb1 {
             position: absolute;
-            left: 0;
-            color: #059669;
-            font-weight: bold;
-            font-size: 1.3em;
+            top: -20%; left: -10%;
+            width: 60vw; height: 60vw;
+            max-width: 600px; max-height: 600px;
+            background: radial-gradient(ellipse, rgba(16,185,129,0.14) 0%, transparent 65%);
+            pointer-events: none;
+        }
+        .orb2 {
+            position: absolute;
+            top: -10%; right: -10%;
+            width: 50vw; height: 50vw;
+            max-width: 500px; max-height: 500px;
+            background: radial-gradient(ellipse, rgba(124,58,237,0.12) 0%, transparent 65%);
+            pointer-events: none;
+        }
+
+        .hero-inner { position: relative; z-index: 1; }
+
+        .hero-badge {
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+            padding: 5px 14px;
+            border-radius: 999px;
+            background: rgba(16,185,129,0.12);
+            border: 1px solid rgba(16,185,129,0.28);
+            font-size: 0.75rem;
+            font-weight: 700;
+            letter-spacing: 0.8px;
+            text-transform: uppercase;
+            color: #6EE7B7;
+            margin-bottom: 28px;
+        }
+
+        h1 {
+            font-size: clamp(2.2rem, 5vw, 3.8rem);
+            font-weight: 900;
+            letter-spacing: -2px;
+            line-height: 1.08;
+            margin-bottom: 20px;
+        }
+
+        .grad {
+            background: linear-gradient(135deg, #F8FAFC 0%, #6EE7B7 50%, #67E8F9 100%);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+        }
+
+        .hero-sub {
+            font-size: 1.1rem;
+            color: var(--text-2);
+            max-width: 520px;
+            margin: 0 auto 40px;
+            line-height: 1.7;
         }
 
         .btn {
-            display: inline-block;
-            padding: 15px 35px;
-            background: #059669;
-            color: white;
-            text-decoration: none;
-            border-radius: 8px;
-            font-size: 1.1em;
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+            padding: 13px 24px;
+            border-radius: 10px;
+            font-size: 0.9rem;
             font-weight: 600;
-            transition: all 0.3s;
-            margin: 10px;
-        }
-
-        .btn:hover {
-            background: #047857;
-            transform: translateY(-2px);
-            box-shadow: 0 8px 20px rgba(0, 0, 0, 0.2);
-        }
-
-        .cta-section {
-            text-align: center;
-            margin: 40px 0;
-        }
-
-        .footer {
-            background: #333;
-            color: white;
-            text-align: center;
-            padding: 40px 20px;
-            margin-top: 60px;
-        }
-
-        .footer a {
-            color: #059669;
             text-decoration: none;
+            transition: all 0.22s;
+            cursor: pointer;
+            border: none;
         }
 
-        .footer a:hover {
-            text-decoration: underline;
+        .btn-primary {
+            background: linear-gradient(135deg, var(--violet), var(--indigo));
+            color: white;
+            box-shadow: 0 4px 20px rgba(124,58,237,0.38);
+        }
+        .btn-primary:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 8px 32px rgba(124,58,237,0.52);
         }
 
-        code {
-            background: #f4f4f4;
-            padding: 2px 6px;
-            border-radius: 3px;
-            font-family: 'Courier New', monospace;
+        .btn-outline {
+            background: var(--surface);
+            border: 1px solid var(--border-h);
+            color: var(--text);
+        }
+        .btn-outline:hover {
+            background: var(--surface-h);
+            transform: translateY(-2px);
+        }
+
+        .btn-ghost {
+            background: rgba(255,255,255,0.05);
+            border: 1px solid var(--border);
+            color: var(--text-2);
+        }
+        .btn-ghost:hover {
+            background: rgba(255,255,255,0.09);
+            color: var(--text);
+            transform: translateY(-2px);
+        }
+
+        main { padding: 0 0 80px; }
+
+        .card {
+            background: var(--surface);
+            border: 1px solid var(--border);
+            border-radius: 20px;
+            padding: 40px;
+            margin-bottom: 20px;
+        }
+
+        .card h2 {
+            font-size: 1.4rem;
+            font-weight: 700;
+            margin-bottom: 24px;
+            color: var(--text);
+        }
+
+        .card h3 {
+            font-size: 1rem;
+            font-weight: 600;
+            margin: 28px 0 12px;
+            color: var(--text);
+        }
+
+        .card h3:first-of-type { margin-top: 0; }
+
+        .card p {
+            font-size: 0.9rem;
+            color: var(--text-2);
+            line-height: 1.72;
+            margin-bottom: 12px;
+        }
+
+        .price-hero {
+            background: linear-gradient(140deg, rgba(16,185,129,0.12), rgba(6,182,212,0.06));
+            border-color: rgba(16,185,129,0.2);
+            text-align: center;
+            padding: 56px 40px;
+        }
+
+        .price-hero .price {
+            font-size: 5rem;
+            font-weight: 900;
+            letter-spacing: -3px;
+            line-height: 1;
+            margin-bottom: 12px;
+            background: linear-gradient(135deg, #6EE7B7, #67E8F9);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+        }
+
+        .price-hero .price-sub {
+            font-size: 1rem;
+            color: var(--text-2);
+            margin-bottom: 32px;
+        }
+
+        .checklist {
+            list-style: none;
+            padding: 0;
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+            gap: 10px 24px;
+            margin: 16px 0 0;
+            text-align: left;
+        }
+
+        .checklist li {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            font-size: 0.875rem;
+            color: var(--text-2);
+            padding: 6px 0;
+        }
+
+        .checklist li::before {
+            content: '✓';
+            color: var(--green);
+            font-weight: 700;
+            font-size: 0.9rem;
+            flex-shrink: 0;
+        }
+
+        .cmp {
+            width: 100%;
+            border-collapse: separate;
+            border-spacing: 0;
+            border: 1px solid var(--border);
+            border-radius: 14px;
+            overflow: hidden;
+            margin-top: 8px;
+        }
+        .cmp th {
+            padding: 16px 20px;
+            font-size: 0.82rem;
+            font-weight: 700;
+            text-align: left;
+            color: var(--text-2);
+            background: rgba(255,255,255,0.03);
+            border-bottom: 1px solid var(--border);
+        }
+        .cmp th.h {
+            background: rgba(16,185,129,0.1);
+            color: #6EE7B7;
+            border-left: 1px solid rgba(16,185,129,0.2);
+            border-right: 1px solid rgba(16,185,129,0.2);
+        }
+        .cmp td {
+            padding: 13px 20px;
+            font-size: 0.84rem;
+            color: var(--text-2);
+            border-bottom: 1px solid rgba(255,255,255,0.035);
+        }
+        .cmp tr:last-child td { border-bottom: none; }
+        .cmp td:first-child { color: var(--text); font-weight: 500; }
+        .cmp td.h {
+            background: rgba(16,185,129,0.05);
+            border-left: 1px solid rgba(16,185,129,0.1);
+            border-right: 1px solid rgba(16,185,129,0.1);
+            font-weight: 600;
+            color: var(--text);
+        }
+        .cmp tr:hover td { background: rgba(255,255,255,0.02); }
+        .ok { color: var(--green); }
+        .no { color: var(--text-3); }
+
+        a.inline { color: #67E8F9; text-decoration: none; }
+        a.inline:hover { text-decoration: underline; }
+
+        .cta-card {
+            text-align: center;
+            background: linear-gradient(140deg, rgba(124,58,237,0.12), rgba(99,102,241,0.06));
+            border-color: rgba(139,92,246,0.22);
+        }
+
+        .btn-row {
+            display: flex;
+            gap: 12px;
+            justify-content: center;
+            flex-wrap: wrap;
+            margin-top: 28px;
+        }
+
+        footer {
+            border-top: 1px solid var(--border);
+            padding: 44px 0;
+        }
+        .foot {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 24px;
+            flex-wrap: wrap;
+        }
+        .foot-logo {
+            font-size: 1rem;
+            font-weight: 800;
+            text-decoration: none;
+            background: linear-gradient(120deg, #A78BFA, var(--cyan));
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+        }
+        .foot-links { display: flex; gap: 28px; flex-wrap: wrap; }
+        .foot-links a {
+            color: var(--text-3);
+            text-decoration: none;
+            font-size: 0.83rem;
+            transition: color 0.2s;
+        }
+        .foot-links a:hover { color: var(--text-2); }
+        .foot-copy { font-size: 0.8rem; color: var(--text-3); }
+
+        @media (max-width: 900px) {
+            nav { padding: 0 24px; }
+            .nav-links { display: none; }
+            .container { padding: 0 24px; }
+            .hero { padding: 100px 24px 60px; }
+            .card, .price-hero { padding: 28px 24px; }
+            .checklist { grid-template-columns: 1fr; }
         }
     </style>
 </head>
-
 <body>
-    <div class="header">
-        <h1>🚀 HITOP Pricing & License</h1>
-        <p>Open Source Software - No Cost, No Restrictions</p>
+
+<nav>
+    <a href="/" class="nav-logo">HITOP</a>
+    <ul class="nav-links">
+        <li><a href="/">Home</a></li>
+        <li><a href="/#compare">Compare</a></li>
+        <li><a href="./pricing.html" style="color:var(--text);">Pricing</a></li>
+        <li><a href="https://github.com/bohdaq/hitop" rel="noopener noreferrer">GitHub</a></li>
+    </ul>
+    <a href="./app.html" class="nav-cta"
+        onclick="trackEvent('Navigation','click_web_app','Pricing Navbar'); return gtagSendEvent('./app.html');">
+        Launch App →
+    </a>
+</nav>
+
+<div class="hero">
+    <div class="orb1"></div>
+    <div class="orb2"></div>
+    <div class="hero-inner">
+        <div class="hero-badge">Free & Open Source</div>
+        <h1><span class="grad">$0 Forever.</span><br>No Catch.</h1>
+        <p class="hero-sub">HITOP is MIT-licensed open source software. No subscriptions, no premium tiers, no paywalls — ever.</p>
     </div>
+</div>
 
+<main>
     <div class="container">
-        <div class="section">
-            <h2>Pricing Information</h2>
-            
-            <div class="highlight-box">
-                <h3>💰 Cost: $0 (Zero Dollars)</h3>
-                <p><strong>HITOP is completely open source software.</strong> There is no cost to download, use, modify, or distribute HITOP. No payment is required now or in the future.</p>
-            </div>
 
-            <h3>What Does This Mean?</h3>
-            <ul class="feature-list">
+        <div class="card price-hero">
+            <div class="price">$0</div>
+            <div class="price-sub">Every feature. Every platform. Forever free.</div>
+            <ul class="checklist">
                 <li>No purchase necessary</li>
                 <li>No subscription fees</li>
                 <li>No hidden costs</li>
                 <li>No premium tiers or paid features</li>
                 <li>No credit card required</li>
-                <li>No account registration required</li>
+                <li>No account registration</li>
                 <li>Unlimited usage</li>
                 <li>Commercial use allowed</li>
             </ul>
-
-            <h3>MIT License</h3>
-            <p>HITOP is licensed under the <strong>MIT License</strong>, one of the most permissive open source licenses. This means:</p>
-            
-            <ul class="feature-list">
-                <li>You can use HITOP for personal projects</li>
-                <li>You can use HITOP for commercial projects</li>
-                <li>You can modify the source code</li>
-                <li>You can distribute your modifications</li>
-                <li>You can include it in proprietary software</li>
-                <li>No attribution required (though appreciated)</li>
-            </ul>
-
-            <div class="highlight-box">
-                <h3>📄 Full License Text</h3>
-                <p>The MIT License grants you permission to use, copy, modify, merge, publish, distribute, sublicense, and/or sell copies of the software without restriction.</p>
-                <p style="margin-top: 15px;">View the complete license: <a href="https://github.com/bohdaq/hitop/blob/main/LICENSE" target="_blank" rel="nofollow noopener" style="color: #059669; font-weight: bold;">MIT License on GitHub</a></p>
-            </div>
         </div>
 
-        <div class="section">
+        <div class="card">
+            <h2>MIT License</h2>
+            <p>HITOP is released under the <strong style="color:var(--text);">MIT License</strong> — one of the most permissive open source licenses available. You have complete freedom to use, modify, and distribute it.</p>
+            <ul class="checklist" style="grid-template-columns: 1fr;">
+                <li>Use for personal projects</li>
+                <li>Use for commercial projects</li>
+                <li>Modify the source code</li>
+                <li>Distribute your modifications</li>
+                <li>Include in proprietary software</li>
+            </ul>
+            <p style="margin-top:20px;">View the full license: <a href="https://github.com/bohdaq/hitop/blob/main/LICENSE" target="_blank" rel="noopener noreferrer" class="inline">MIT License on GitHub →</a></p>
+        </div>
+
+        <div class="card">
             <h2>How HITOP is Maintained</h2>
-            
             <h3>Community-Driven Development</h3>
-            <p>HITOP is maintained by the open source community. Development is funded through:</p>
-            
-            <ul class="feature-list">
-                <li>Volunteer contributions from developers worldwide</li>
-                <li>Community support and bug reports</li>
-                <li>Open source collaboration on GitHub</li>
-            </ul>
-
-            <h3>No Monetization</h3>
-            <p>HITOP does not:</p>
-            <ul class="feature-list">
-                <li>Collect or sell user data</li>
-                <li>Display advertisements</li>
-                <li>Require paid upgrades</li>
-                <li>Offer paid support plans</li>
-                <li>Have enterprise pricing</li>
+            <p>HITOP is maintained through volunteer contributions, community feedback, and open collaboration on GitHub.</p>
+            <h3>No Monetization, Ever</h3>
+            <ul class="checklist" style="grid-template-columns: 1fr;">
+                <li>No user data collection or sales</li>
+                <li>No advertising</li>
+                <li>No paid upgrades</li>
+                <li>No paid support plans</li>
+                <li>No enterprise pricing</li>
             </ul>
         </div>
 
-        <div class="section">
-            <h2>Comparison with Other Tools</h2>
-            
-            <table style="width: 100%; border-collapse: collapse; margin: 30px 0;">
+        <div class="card">
+            <h2>Cost Comparison</h2>
+            <table class="cmp">
                 <thead>
-                    <tr style="background: #059669; color: white;">
-                        <th style="padding: 15px; text-align: left;">Feature</th>
-                        <th style="padding: 15px; text-align: center;">HITOP</th>
-                        <th style="padding: 15px; text-align: center;">Postman</th>
-                        <th style="padding: 15px; text-align: center;">Insomnia</th>
+                    <tr>
+                        <th>Feature</th>
+                        <th class="h">HITOP</th>
+                        <th>Postman</th>
+                        <th>Insomnia</th>
                     </tr>
                 </thead>
                 <tbody>
-                    <tr style="border-bottom: 1px solid #ddd;">
-                        <td style="padding: 15px; font-weight: 500;">Cost</td>
-                        <td style="padding: 15px; text-align: center; color: #059669; font-weight: bold;">$0</td>
-                        <td style="padding: 15px; text-align: center;">$0-$49/user/month</td>
-                        <td style="padding: 15px; text-align: center;">$0-$8/user/month</td>
+                    <tr>
+                        <td>Cost</td>
+                        <td class="h"><span class="ok">✓</span> $0 forever</td>
+                        <td>$0–$49/user/mo</td>
+                        <td>$0–$8/user/mo</td>
                     </tr>
-                    <tr style="border-bottom: 1px solid #ddd; background: #f9f9f9;">
-                        <td style="padding: 15px; font-weight: 500;">License</td>
-                        <td style="padding: 15px; text-align: center; color: #059669; font-weight: bold;">MIT (Open Source)</td>
-                        <td style="padding: 15px; text-align: center;">Proprietary</td>
-                        <td style="padding: 15px; text-align: center;">Apache 2.0</td>
+                    <tr>
+                        <td>License</td>
+                        <td class="h"><span class="ok">✓</span> MIT Open Source</td>
+                        <td><span class="no">—</span> Proprietary</td>
+                        <td>Apache 2.0</td>
                     </tr>
-                    <tr style="border-bottom: 1px solid #ddd;">
-                        <td style="padding: 15px; font-weight: 500;">Account Required</td>
-                        <td style="padding: 15px; text-align: center; color: #059669; font-weight: bold;">No</td>
-                        <td style="padding: 15px; text-align: center;">Yes</td>
-                        <td style="padding: 15px; text-align: center;">Yes</td>
+                    <tr>
+                        <td>Account required</td>
+                        <td class="h"><span class="ok">✓</span> No</td>
+                        <td><span class="no">✗</span> Yes</td>
+                        <td><span class="no">✗</span> Yes</td>
                     </tr>
-                    <tr style="border-bottom: 1px solid #ddd; background: #f9f9f9;">
-                        <td style="padding: 15px; font-weight: 500;">Data Privacy</td>
-                        <td style="padding: 15px; text-align: center; color: #059669; font-weight: bold;">100% Local</td>
-                        <td style="padding: 15px; text-align: center;">Cloud Sync</td>
-                        <td style="padding: 15px; text-align: center;">Cloud Sync</td>
+                    <tr>
+                        <td>Data privacy</td>
+                        <td class="h"><span class="ok">✓</span> 100% local</td>
+                        <td>Cloud sync</td>
+                        <td>Cloud sync</td>
                     </tr>
                 </tbody>
             </table>
         </div>
 
-        <div class="section cta-section">
-            <h2>Get Started with HITOP</h2>
-            <p style="font-size: 1.2em; margin-bottom: 30px;">No payment required. No account needed. Start testing APIs now.</p>
-            
-            <div>
-                <a href="./app.html" class="btn">🚀 Launch Web App</a>
-                <a href="https://github.com/bohdaq/hitop" class="btn" target="_blank" rel="nofollow noopener">📦 View on GitHub</a>
+        <div class="card cta-card">
+            <h2>Start Testing APIs Now</h2>
+            <p style="max-width:500px;margin:0 auto;">No payment, no account, no setup. Open the app and go.</p>
+            <div class="btn-row">
+                <a href="./app.html" class="btn btn-primary"
+                    onclick="trackEvent('Navigation','click_web_app','Pricing CTA'); return gtagSendEvent('./app.html');">
+                    Launch Web App →
+                </a>
+                <a href="https://github.com/bohdaq/hitop" class="btn btn-ghost" target="_blank" rel="noopener noreferrer"
+                    onclick="trackEvent('Navigation','click_github','Pricing CTA');">
+                    ★ View on GitHub
+                </a>
             </div>
+            <p style="margin-top:24px;font-size:0.82rem;">Questions? <a href="https://github.com/bohdaq/hitop/issues" rel="noopener noreferrer" class="inline">Open a GitHub issue →</a></p>
+        </div>
 
-            <p style="margin-top: 30px; color: #666;">
-                Questions? Visit our <a href="https://github.com/bohdaq/hitop/issues" rel="nofollow noopener" style="color: #059669; font-weight: bold;">GitHub Issues</a> page.
-            </p>
+    </div>
+</main>
+
+<footer>
+    <div class="container">
+        <div class="foot">
+            <a href="/" class="foot-logo">HITOP</a>
+            <div class="foot-links">
+                <a href="/">Home</a>
+                <a href="./terms/">Guides</a>
+                <a href="./privacy.html">Privacy</a>
+                <a href="https://github.com/bohdaq/hitop" rel="noopener noreferrer">GitHub</a>
+                <a href="https://github.com/bohdaq/hitop/issues" rel="noopener noreferrer">Support</a>
+            </div>
+            <span class="foot-copy">© 2025 HITOP · MIT License</span>
         </div>
     </div>
+</footer>
 
-    <div class="footer">
-        <p>&copy; 2025 HITOP. Licensed under the <a href="https://github.com/bohdaq/hitop/blob/main/LICENSE" rel="nofollow noopener">MIT License</a>.</p>
-        <p style="margin-top: 10px;">
-            <a href="./index.html">Home</a> •
-            <a href="https://github.com/bohdaq/hitop" rel="nofollow noopener">GitHub</a> •
-            <a href="https://github.com/bohdaq/hitop/blob/main/PRIVACY.md" rel="nofollow noopener">Privacy</a> •
-            <a href="https://github.com/bohdaq/hitop/blob/main/SCRIPTING_GUIDE.md" rel="nofollow noopener">Docs</a>
-        </p>
-    </div>
 </body>
-
 </html>

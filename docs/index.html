@@ -1,720 +1,929 @@
 <!DOCTYPE html>
 <html lang="en">
-
 <head>
-    <!-- Google tag (gtag.js) - Analytics & Ads Conversion Tracking -->
+    <!-- Google tag (gtag.js) -->
     <script async src="https://www.googletagmanager.com/gtag/js?id=G-TYQC208YN0"></script>
     <script>
         window.dataLayer = window.dataLayer || [];
         function gtag() { dataLayer.push(arguments); }
         gtag('js', new Date());
-
         gtag('config', 'G-TYQC208YN0');
         gtag('config', 'AW-17667429231');
-
-        // Track button clicks
         function trackEvent(category, action, label) {
-            gtag('event', action, {
-                'event_category': category,
-                'event_label': label
-            });
+            gtag('event', action, { 'event_category': category, 'event_label': label });
         }
-    </script>
-    <!-- Google tag (gtag.js) event - delayed navigation helper -->
-    <script>
-        // Helper function to delay opening a URL until a gtag event is sent.
-        // Call it in response to an action that should navigate to a URL.
         function gtagSendEvent(url) {
-            var callback = function () {
-                if (typeof url === 'string') {
-                    window.location = url;
-                }
-            };
-            gtag('event', 'conversion_event_default', {
-                'event_callback': callback,
-                'event_timeout': 2000,
-                // <event_parameters>
-            });
+            var callback = function () { if (typeof url === 'string') window.location = url; };
+            gtag('event', 'conversion_event_default', { 'event_callback': callback, 'event_timeout': 2000 });
             return false;
         }
     </script>
+
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <meta name="description"
-        content="Privacy-focused HTTP API testing tool and Postman alternative. Test REST APIs in your browser with collections, variables, and custom scripts. No account needed, works offline, 100% free and open source.">
-    <meta name="keywords"
-        content="API testing, HTTP client, REST client, Postman alternative, API testing tool, REST API tester, Insomnia alternative, browser API testing, privacy-focused API testing, offline API client, API collection runner, Thunder Client alternative, web-based API tester, online REST client, developer tools, API automation, HTTP request tool, test API endpoints, JSON API testing">
-    <title>HITOP - Postman Alternative | HTTP API Client</title>
+    <meta name="description" content="Privacy-focused HTTP API testing tool and Postman alternative. Test REST APIs in your browser with collections, variables, and custom scripts. No account needed, works offline, 100% free and open source.">
+    <meta name="keywords" content="API testing, HTTP client, REST client, Postman alternative, API testing tool, REST API tester, Insomnia alternative, browser API testing, privacy-focused API testing, offline API client, API collection runner, Thunder Client alternative, web-based API tester, online REST client, developer tools, API automation, HTTP request tool, test API endpoints, JSON API testing">
+    <title>HITOP — HTTP API Client | Postman Alternative</title>
 
-    <!-- Favicons -->
     <link rel="icon" type="image/png" sizes="192x192" href="favicon.png">
     <link rel="icon" type="image/png" sizes="32x32" href="favicon-32x32.png">
     <link rel="icon" type="image/png" sizes="16x16" href="favicon-16x16.png">
     <link rel="apple-touch-icon" sizes="180x180" href="apple-touch-icon.png">
     <link rel="shortcut icon" href="favicon.png">
-
-    <!-- Canonical URL -->
-    <link rel="canonical" href="https://hitop.rws8.tech/" />
+    <link rel="canonical" href="https://hitop.rws8.tech/">
 
     <style>
-        * {
-            margin: 0;
-            padding: 0;
-            box-sizing: border-box;
+        :root {
+            --bg: #050911;
+            --surface: rgba(255,255,255,0.04);
+            --surface-h: rgba(255,255,255,0.07);
+            --border: rgba(255,255,255,0.07);
+            --border-h: rgba(255,255,255,0.16);
+            --text: #F1F5F9;
+            --text-2: #94A3B8;
+            --text-3: #475569;
+            --purple: #8B5CF6;
+            --violet: #7C3AED;
+            --indigo: #6366F1;
+            --cyan: #06B6D4;
+            --green: #10B981;
         }
 
-        html {
-            scroll-behavior: smooth;
-        }
+        *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+        html { scroll-behavior: smooth; }
 
         body {
-            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', 'Oxygen', 'Ubuntu', 'Cantarell', 'Fira Sans', 'Droid Sans', 'Helvetica Neue', sans-serif;
-            line-height: 1.6;
-            color: #333;
-            background: #f5f5f5;
+            font-family: -apple-system, BlinkMacSystemFont, 'SF Pro Display', 'Segoe UI', sans-serif;
+            background: var(--bg);
+            color: var(--text);
+            overflow-x: hidden;
+            -webkit-font-smoothing: antialiased;
         }
 
-        .header {
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-            color: white;
-            padding: 80px 20px;
-            text-align: center;
+        body::after {
+            content: '';
+            position: fixed;
+            inset: 0;
+            pointer-events: none;
+            z-index: 9999;
+            opacity: 0.03;
+            background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 200 200' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
+            background-size: 100px;
         }
 
-        .header h1 {
-            font-size: 3.5em;
-            margin-bottom: 20px;
-            font-weight: bold;
-            text-shadow: 0 2px 4px rgba(0, 0, 0, 0.2);
-        }
-
-        .header p {
-            font-size: 1.3em;
-            margin-bottom: 30px;
-            opacity: 0.95;
-        }
-
-        .header .buttons {
+        /* NAV */
+        nav {
+            position: fixed;
+            top: 0; left: 0; right: 0;
+            z-index: 200;
             display: flex;
-            gap: 20px;
+            align-items: center;
+            justify-content: space-between;
+            padding: 0 48px;
+            height: 64px;
+            backdrop-filter: blur(24px) saturate(180%);
+            -webkit-backdrop-filter: blur(24px) saturate(180%);
+            background: rgba(5,9,17,0.75);
+            border-bottom: 1px solid var(--border);
+        }
+
+        .nav-logo {
+            font-size: 1.1rem;
+            font-weight: 800;
+            text-decoration: none;
+            background: linear-gradient(120deg, #A78BFA, var(--cyan));
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+        }
+
+        .nav-links {
+            display: flex;
+            list-style: none;
+            gap: 36px;
+        }
+
+        .nav-links a {
+            color: var(--text-2);
+            text-decoration: none;
+            font-size: 0.875rem;
+            font-weight: 500;
+            transition: color 0.2s;
+        }
+        .nav-links a:hover { color: var(--text); }
+
+        .nav-cta {
+            padding: 8px 20px;
+            background: linear-gradient(135deg, var(--violet), var(--indigo));
+            color: white;
+            border-radius: 8px;
+            text-decoration: none;
+            font-size: 0.875rem;
+            font-weight: 600;
+            transition: opacity 0.2s, transform 0.2s, box-shadow 0.2s;
+            box-shadow: 0 4px 16px rgba(124,58,237,0.35);
+        }
+        .nav-cta:hover {
+            opacity: 0.9;
+            transform: translateY(-1px);
+            box-shadow: 0 8px 24px rgba(124,58,237,0.45);
+        }
+
+        /* HERO */
+        .hero {
+            min-height: 100vh;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            text-align: center;
+            padding: 120px 40px 80px;
+            position: relative;
+            overflow: hidden;
+        }
+
+        .orb1 {
+            position: absolute;
+            top: -10%; left: -10%;
+            width: 70vw; height: 70vw;
+            max-width: 800px; max-height: 800px;
+            background: radial-gradient(ellipse, rgba(124,58,237,0.22) 0%, transparent 65%);
+            animation: o1 14s ease-in-out infinite alternate;
+            pointer-events: none;
+        }
+        .orb2 {
+            position: absolute;
+            bottom: -15%; right: -10%;
+            width: 60vw; height: 60vw;
+            max-width: 700px; max-height: 700px;
+            background: radial-gradient(ellipse, rgba(6,182,212,0.14) 0%, transparent 65%);
+            animation: o2 18s ease-in-out infinite alternate;
+            pointer-events: none;
+        }
+        .orb3 {
+            position: absolute;
+            top: 45%; left: 45%;
+            transform: translate(-50%,-50%);
+            width: 50vw; height: 50vw;
+            max-width: 600px; max-height: 600px;
+            background: radial-gradient(circle, rgba(99,102,241,0.08) 0%, transparent 60%);
+            pointer-events: none;
+        }
+        @keyframes o1 {
+            from { transform: translate(0,0) scale(1); }
+            to   { transform: translate(8%,5%) scale(1.12); }
+        }
+        @keyframes o2 {
+            from { transform: translate(0,0) scale(1); }
+            to   { transform: translate(-6%,-8%) scale(1.08); }
+        }
+
+        .hero-inner { position: relative; z-index: 1; max-width: 860px; }
+
+        .hero-badge {
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+            padding: 5px 14px;
+            border-radius: 999px;
+            background: rgba(139,92,246,0.12);
+            border: 1px solid rgba(139,92,246,0.28);
+            font-size: 0.75rem;
+            font-weight: 700;
+            letter-spacing: 0.8px;
+            text-transform: uppercase;
+            color: #C4B5FD;
+            margin-bottom: 32px;
+        }
+
+        .badge-pulse {
+            width: 7px; height: 7px;
+            border-radius: 50%;
+            background: var(--purple);
+            animation: bp 2.4s ease-in-out infinite;
+        }
+        @keyframes bp {
+            0%,100% { opacity: 1; }
+            50%      { opacity: 0.3; }
+        }
+
+        h1 {
+            font-size: clamp(2.6rem, 6.5vw, 5.2rem);
+            font-weight: 900;
+            letter-spacing: -2.5px;
+            line-height: 1.04;
+            margin-bottom: 28px;
+        }
+
+        .grad {
+            background: linear-gradient(135deg, #F8FAFC 0%, #C4B5FD 45%, #67E8F9 100%);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+        }
+
+        .hero-sub {
+            font-size: 1.15rem;
+            color: var(--text-2);
+            max-width: 580px;
+            margin: 0 auto 52px;
+            line-height: 1.7;
+        }
+
+        .btn-row {
+            display: flex;
+            gap: 12px;
             justify-content: center;
             flex-wrap: wrap;
+            margin-bottom: 52px;
         }
 
         .btn {
-            padding: 15px 35px;
-            border: none;
-            border-radius: 8px;
-            font-size: 1.1em;
-            font-weight: 600;
-            cursor: pointer;
-            text-decoration: none;
             display: inline-flex;
             align-items: center;
-            gap: 10px;
-            transition: all 0.3s;
+            gap: 8px;
+            padding: 13px 24px;
+            border-radius: 10px;
+            font-size: 0.9rem;
+            font-weight: 600;
+            text-decoration: none;
+            transition: all 0.22s;
+            cursor: pointer;
+            border: none;
+            white-space: nowrap;
         }
 
         .btn-primary {
-            background: white;
-            color: #667eea;
+            background: linear-gradient(135deg, var(--violet), var(--indigo));
+            color: white;
+            box-shadow: 0 4px 20px rgba(124,58,237,0.38);
         }
-
         .btn-primary:hover {
             transform: translateY(-2px);
-            box-shadow: 0 8px 20px rgba(0, 0, 0, 0.2);
+            box-shadow: 0 8px 32px rgba(124,58,237,0.52);
         }
 
-        .btn-secondary {
-            background: rgba(255, 255, 255, 0.2);
-            color: white;
-            border: 2px solid white;
+        .btn-outline {
+            background: var(--surface);
+            border: 1px solid var(--border-h);
+            color: var(--text);
+            backdrop-filter: blur(8px);
         }
-
-        .btn-secondary:hover {
-            background: rgba(255, 255, 255, 0.3);
+        .btn-outline:hover {
+            background: var(--surface-h);
+            border-color: rgba(255,255,255,0.22);
             transform: translateY(-2px);
         }
 
-        .container {
-            max-width: 1200px;
-            margin: 0 auto;
-            padding: 20px;
+        .btn-ghost {
+            background: rgba(255,255,255,0.05);
+            border: 1px solid var(--border);
+            color: var(--text-2);
+        }
+        .btn-ghost:hover {
+            background: rgba(255,255,255,0.09);
+            color: var(--text);
+            transform: translateY(-2px);
         }
 
-        .section {
-            background: white;
-            margin: 40px 0;
-            padding: 60px 40px;
-            border-radius: 12px;
-            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
-        }
-
-        .section h2 {
-            font-size: 2.5em;
-            margin-bottom: 30px;
-            color: #667eea;
-            text-align: center;
-        }
-
-        .features {
-            display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
-            gap: 30px;
-            margin-top: 40px;
-        }
-
-        .feature {
-            padding: 30px;
-            border-radius: 8px;
-            background: #f9f9f9;
-            border-left: 4px solid #667eea;
-        }
-
-        .feature h3 {
-            font-size: 1.5em;
-            margin-bottom: 15px;
-            color: #333;
-        }
-
-        .feature p {
-            color: #666;
-            line-height: 1.8;
-        }
-
-        .feature-icon {
-            font-size: 2.5em;
-            margin-bottom: 15px;
-        }
-
-        .stats {
+        .pills {
             display: flex;
-            justify-content: space-around;
-            flex-wrap: wrap;
-            gap: 30px;
-            margin: 40px 0;
-        }
-
-        .stat {
-            text-align: center;
-        }
-
-        .stat-number {
-            font-size: 3em;
-            font-weight: bold;
-            color: #667eea;
-        }
-
-        .stat-label {
-            font-size: 1.1em;
-            color: #666;
-            margin-top: 10px;
-        }
-
-        .screenshot {
-            margin: 40px 0;
-            text-align: center;
-        }
-
-        .screenshot img {
-            max-width: 100%;
-            border-radius: 12px;
-            box-shadow: 0 8px 20px rgba(0, 0, 0, 0.15);
-        }
-
-        .cta {
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-            color: white;
-            text-align: center;
-            padding: 80px 40px;
-            margin: 40px 0;
-            border-radius: 12px;
-        }
-
-        .cta h2 {
-            font-size: 2.5em;
-            margin-bottom: 20px;
-            color: white;
-        }
-
-        .cta p {
-            font-size: 1.2em;
-            margin-bottom: 30px;
-            opacity: 0.95;
-        }
-
-        .footer {
-            background: #333;
-            color: white;
-            text-align: center;
-            padding: 40px 20px;
-            margin-top: 60px;
-        }
-
-        .footer a {
-            color: #667eea;
-            text-decoration: none;
-        }
-
-        .footer a:hover {
-            text-decoration: underline;
-        }
-
-        .badges {
-            display: flex;
+            gap: 10px;
             justify-content: center;
-            gap: 15px;
             flex-wrap: wrap;
-            margin: 30px 0;
+        }
+        .pill {
+            padding: 5px 14px;
+            background: rgba(255,255,255,0.04);
+            border: 1px solid var(--border);
+            border-radius: 999px;
+            font-size: 0.78rem;
+            color: var(--text-3);
         }
 
-        .badge {
-            background: rgba(255, 255, 255, 0.2);
-            padding: 8px 16px;
+        /* LAYOUT */
+        .container {
+            max-width: 1160px;
+            margin: 0 auto;
+            padding: 0 40px;
+        }
+
+        /* STATS */
+        .stats-bar {
+            border-top: 1px solid var(--border);
+            border-bottom: 1px solid var(--border);
+        }
+        .stats-inner {
+            display: grid;
+            grid-template-columns: repeat(4, 1fr);
+        }
+        .stat {
+            padding: 44px 32px;
+            text-align: center;
+            border-right: 1px solid var(--border);
+        }
+        .stat:last-child { border-right: none; }
+        .stat-val {
+            font-size: 2.8rem;
+            font-weight: 900;
+            letter-spacing: -2px;
+            line-height: 1;
+            margin-bottom: 10px;
+            background: linear-gradient(135deg, #F1F5F9, #A78BFA);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+        }
+        .stat-lbl {
+            font-size: 0.82rem;
+            color: var(--text-3);
+            font-weight: 500;
+        }
+
+        /* SECTIONS */
+        section { padding: 96px 0; }
+
+        .tag {
+            display: inline-flex;
+            align-items: center;
+            gap: 10px;
+            font-size: 0.72rem;
+            font-weight: 700;
+            letter-spacing: 1.6px;
+            text-transform: uppercase;
+            color: var(--purple);
+            margin-bottom: 16px;
+        }
+        .tag::before {
+            content: '';
+            display: block;
+            width: 18px; height: 1px;
+            background: var(--purple);
+        }
+
+        h2 {
+            font-size: clamp(1.8rem, 3.5vw, 2.75rem);
+            font-weight: 800;
+            letter-spacing: -1.2px;
+            line-height: 1.12;
+            margin-bottom: 16px;
+        }
+
+        .sec-desc {
+            font-size: 1rem;
+            color: var(--text-2);
+            max-width: 520px;
+            line-height: 1.7;
+            margin-bottom: 56px;
+        }
+
+        /* BENTO */
+        .bento {
+            display: grid;
+            grid-template-columns: repeat(3, 1fr);
+            gap: 14px;
+        }
+
+        .card {
+            background: var(--surface);
+            border: 1px solid var(--border);
             border-radius: 20px;
-            font-size: 0.9em;
+            padding: 32px;
+            position: relative;
+            overflow: hidden;
+            transition: border-color 0.3s, background 0.3s, transform 0.25s;
+        }
+        .card:hover {
+            border-color: rgba(139,92,246,0.35);
+            background: var(--surface-h);
+            transform: translateY(-3px);
+        }
+        .card::before {
+            content: '';
+            position: absolute;
+            inset: 0;
+            background: radial-gradient(circle at 15% 20%, rgba(139,92,246,0.07), transparent 55%);
+            pointer-events: none;
+        }
+        .card.w2 { grid-column: span 2; }
+        .card.cv {
+            background: linear-gradient(140deg, rgba(124,58,237,0.13), rgba(99,102,241,0.06));
+            border-color: rgba(139,92,246,0.22);
+        }
+        .card.cv::before {
+            background: radial-gradient(circle at 20% 40%, rgba(139,92,246,0.14), transparent 55%);
+        }
+        .card.cc {
+            background: linear-gradient(140deg, rgba(6,182,212,0.1), rgba(16,185,129,0.04));
+            border-color: rgba(6,182,212,0.18);
+        }
+        .card.cc::before {
+            background: radial-gradient(circle at 80% 20%, rgba(6,182,212,0.1), transparent 55%);
         }
 
-        @media (max-width: 768px) {
-            .header h1 {
-                font-size: 2.5em;
-            }
+        .ci {
+            width: 44px; height: 44px;
+            border-radius: 12px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 1.3rem;
+            margin-bottom: 20px;
+            background: rgba(139,92,246,0.14);
+        }
+        .ci.c { background: rgba(6,182,212,0.14); }
+        .ci.g { background: rgba(16,185,129,0.14); }
+        .ci.p { background: rgba(236,72,153,0.14); }
 
-            .header p {
-                font-size: 1.1em;
-            }
+        .card h3 {
+            font-size: 1.1rem;
+            font-weight: 700;
+            margin-bottom: 10px;
+            color: var(--text);
+        }
+        .card p {
+            font-size: 0.875rem;
+            color: var(--text-2);
+            line-height: 1.72;
+        }
 
-            .section {
-                padding: 40px 20px;
-            }
+        /* TERMINAL */
+        .terminal {
+            background: #0d1117;
+            border: 1px solid rgba(255,255,255,0.09);
+            border-radius: 18px;
+            overflow: hidden;
+            box-shadow: 0 48px 120px rgba(0,0,0,0.55), 0 0 0 1px rgba(255,255,255,0.04);
+            max-width: 800px;
+            margin: 0 auto;
+        }
+        .tbar {
+            display: flex;
+            align-items: center;
+            gap: 7px;
+            padding: 13px 20px;
+            background: rgba(255,255,255,0.035);
+            border-bottom: 1px solid rgba(255,255,255,0.07);
+        }
+        .dot { width: 12px; height: 12px; border-radius: 50%; }
+        .dr { background: #FF5F56; }
+        .dy { background: #FFBD2E; }
+        .dg { background: #27C93F; }
+        .ttitle {
+            flex: 1;
+            text-align: center;
+            font-size: 0.78rem;
+            color: var(--text-3);
+            font-family: monospace;
+        }
+        .tbody {
+            padding: 28px 32px;
+            font-family: 'SF Mono', 'Fira Code', 'JetBrains Mono', monospace;
+            font-size: 0.84rem;
+            line-height: 1.85;
+            overflow-x: auto;
+        }
+        .tc { color: #484f58; }
+        .tm { color: #FF7B72; font-weight: 700; }
+        .tu { color: #79C0FF; }
+        .th { color: #D2A8FF; }
+        .tv { color: #A5D6FF; }
+        .tb { color: #E6EDF3; }
+        .tk { color: #7EE787; }
+        .ts { color: #A5D6FF; }
+        .tst { color: #3FB950; font-weight: 700; }
+        .tdv { color: #21262d; }
 
-            .features {
-                grid-template-columns: 1fr;
-            }
+        /* COMPARE */
+        .cmp {
+            width: 100%;
+            border-collapse: separate;
+            border-spacing: 0;
+            border: 1px solid var(--border);
+            border-radius: 16px;
+            overflow: hidden;
+        }
+        .cmp th {
+            padding: 18px 24px;
+            font-size: 0.85rem;
+            font-weight: 700;
+            text-align: left;
+            color: var(--text-2);
+            background: rgba(255,255,255,0.03);
+            border-bottom: 1px solid var(--border);
+        }
+        .cmp th.h {
+            background: rgba(139,92,246,0.1);
+            color: #C4B5FD;
+            border-left: 1px solid rgba(139,92,246,0.22);
+            border-right: 1px solid rgba(139,92,246,0.22);
+        }
+        .cmp td {
+            padding: 15px 24px;
+            font-size: 0.85rem;
+            color: var(--text-2);
+            border-bottom: 1px solid rgba(255,255,255,0.035);
+        }
+        .cmp tr:last-child td { border-bottom: none; }
+        .cmp td:first-child { color: var(--text); font-weight: 500; }
+        .cmp td.h {
+            background: rgba(139,92,246,0.05);
+            border-left: 1px solid rgba(139,92,246,0.12);
+            border-right: 1px solid rgba(139,92,246,0.12);
+            font-weight: 600;
+            color: var(--text);
+        }
+        .cmp tr:hover td { background: rgba(255,255,255,0.02); }
+        .cmp tr:hover td.h { background: rgba(139,92,246,0.09); }
+        .ok { color: var(--green); }
+        .no { color: var(--text-3); }
+
+        /* CTA */
+        .cta-section {
+            text-align: center;
+            padding: 120px 0;
+            position: relative;
+            overflow: hidden;
+        }
+        .cta-section::before {
+            content: '';
+            position: absolute;
+            top: 50%; left: 50%;
+            transform: translate(-50%,-50%);
+            width: 900px; height: 500px;
+            background: radial-gradient(ellipse, rgba(124,58,237,0.18) 0%, transparent 68%);
+            pointer-events: none;
+        }
+        .cta-section > .container > * { position: relative; }
+
+        /* FOOTER */
+        footer {
+            border-top: 1px solid var(--border);
+            padding: 44px 0;
+        }
+        .foot {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 24px;
+            flex-wrap: wrap;
+        }
+        .foot-logo {
+            font-size: 1rem;
+            font-weight: 800;
+            text-decoration: none;
+            background: linear-gradient(120deg, #A78BFA, var(--cyan));
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+        }
+        .foot-links { display: flex; gap: 28px; flex-wrap: wrap; }
+        .foot-links a {
+            color: var(--text-3);
+            text-decoration: none;
+            font-size: 0.83rem;
+            transition: color 0.2s;
+        }
+        .foot-links a:hover { color: var(--text-2); }
+        .foot-copy { font-size: 0.8rem; color: var(--text-3); }
+
+        /* SCROLL REVEAL */
+        .r {
+            opacity: 0;
+            transform: translateY(22px);
+            transition: opacity 0.65s ease, transform 0.65s ease;
+        }
+        .r.in { opacity: 1; transform: translateY(0); }
+        .r.d1 { transition-delay: 0.1s; }
+        .r.d2 { transition-delay: 0.2s; }
+        .r.d3 { transition-delay: 0.3s; }
+
+        /* RESPONSIVE */
+        @media (max-width: 900px) {
+            nav { padding: 0 24px; }
+            .nav-links { display: none; }
+            .bento { grid-template-columns: 1fr; }
+            .card.w2 { grid-column: span 1; }
+            .stats-inner { grid-template-columns: repeat(2, 1fr); }
+            .stat:nth-child(2) { border-right: none; }
+            .stat:nth-child(3) { border-top: 1px solid var(--border); }
+            .stat:nth-child(4) { border-top: 1px solid var(--border); }
+            .container { padding: 0 24px; }
+            h1 { letter-spacing: -1.5px; }
+        }
+        @media (max-width: 560px) {
+            .hero { padding: 100px 20px 64px; }
+            section { padding: 64px 0; }
+            .stat { padding: 32px 16px; }
         }
     </style>
 </head>
-
 <body>
-    <div class="header">
-        <h1>🚀 HITOP - HTTP API Testing Tool & Postman Alternative</h1>
-        <p>Privacy-Focused REST API Testing in Your Browser</p>
-        <p style="font-size: 1.1em; margin-top: 10px; opacity: 0.9;">Test REST APIs in your browser • No account
-            required • Works offline • Open source</p>
 
-        <div class="badges">
-            <span class="badge">v3.0.0</span>
-            <span class="badge">✅ Open Source</span>
-            <span class="badge">🔒 Privacy First</span>
-            <span class="badge">⚡ Fast & Lightweight</span>
-            <span class="badge">🎯 Developer Friendly</span>
+<nav>
+    <a href="/" class="nav-logo">HITOP</a>
+    <ul class="nav-links">
+        <li><a href="#features">Features</a></li>
+        <li><a href="#compare">Compare</a></li>
+        <li><a href="./pricing.html">Pricing</a></li>
+        <li><a href="https://github.com/bohdaq/hitop" rel="noopener noreferrer">GitHub</a></li>
+    </ul>
+    <a href="./app.html" class="nav-cta"
+        onclick="trackEvent('Navigation','click_web_app','Navbar'); return gtagSendEvent('./app.html');">
+        Launch App →
+    </a>
+</nav>
+
+<section class="hero">
+    <div class="orb1"></div>
+    <div class="orb2"></div>
+    <div class="orb3"></div>
+    <div class="hero-inner">
+        <div class="hero-badge">
+            <span class="badge-pulse"></span>
+            v4.0.0 &nbsp;·&nbsp; Open Source &nbsp;·&nbsp; MIT License
         </div>
-
-        <div class="buttons">
+        <h1>HTTP API Testing<br><span class="grad">Without Compromise</span></h1>
+        <p class="hero-sub">Privacy-first REST client. Runs in your browser. No account, no cloud sync, no tracking — just fast, focused API testing.</p>
+        <div class="btn-row">
             <a href="./app.html" class="btn btn-primary"
-                onclick="trackEvent('Navigation', 'click_web_app', 'Header - Launch Web App'); return gtagSendEvent('./app.html');">
-                🚀 Launch Web App
+                onclick="trackEvent('Navigation','click_web_app','Hero'); return gtagSendEvent('./app.html');">
+                Launch Web App →
             </a>
-            <a href="https://addons.mozilla.org/addon/hitop/" class="btn btn-primary" target="_blank"
-                rel="nofollow noopener"
-                onclick="trackEvent('Navigation', 'click_firefox_extension', 'Header - Firefox Extension'); gtagSendEvent('https://addons.mozilla.org/addon/hitop/');">
-                🦊 Firefox Extension
+            <a href="https://addons.mozilla.org/addon/hitop/" class="btn btn-outline" target="_blank" rel="noopener noreferrer"
+                onclick="trackEvent('Navigation','click_firefox_extension','Hero');">
+                Firefox Extension
             </a>
             <a href="https://chromewebstore.google.com/detail/hitop-http-api-testing-to/mmbpagencfjfgeicmeobbmeocdpeokdk"
-                class="btn btn-primary" target="_blank" rel="nofollow noopener"
-                onclick="trackEvent('Navigation', 'click_chrome_extension', 'Header - Chrome Extension'); gtagSendEvent('https://chromewebstore.google.com/detail/hitop-http-api-testing-to/mmbpagencfjfgeicmeobbmeocdpeokdk');">
-                🔵 Chrome Extension
+                class="btn btn-outline" target="_blank" rel="noopener noreferrer"
+                onclick="trackEvent('Navigation','click_chrome_extension','Hero');">
+                Chrome Extension
             </a>
-            <a href="https://github.com/bohdaq/hitop" class="btn btn-secondary" target="_blank" rel="nofollow noopener"
-                onclick="trackEvent('Navigation', 'click_github', 'Header - View on GitHub'); gtagSendEvent('https://github.com/bohdaq/hitop');">
-                📦 View on GitHub
+            <a href="https://github.com/bohdaq/hitop" class="btn btn-ghost" target="_blank" rel="noopener noreferrer"
+                onclick="trackEvent('Navigation','click_github','Hero');">
+                ★ GitHub
             </a>
         </div>
+        <div class="pills">
+            <span class="pill">Works offline</span>
+            <span class="pill">Local storage only</span>
+            <span class="pill">No account</span>
+            <span class="pill">Chrome · Firefox · Safari · Edge</span>
+            <span class="pill">CLI available</span>
+        </div>
     </div>
+</section>
 
+<div class="stats-bar">
     <div class="container">
-        <div class="section">
-            <h2>🚀 Get Started with HTTP API Testing</h2>
-            <p style="text-align: center; font-size: 1.2em; color: #666; margin-bottom: 40px;">
-                Launch our HTTP client directly in your browser - no installation required
-            </p>
-
-            <div style="text-align: center;">
-                <a href="./app.html" class="btn btn-primary" style="font-size: 1.3em; padding: 20px 50px;"
-                    onclick="trackEvent('Navigation', 'click_web_app', 'Get Started Section - Launch Web App'); return gtagSendEvent('./app.html');">
-                    🚀 Launch Web App
-                </a>
-                <p style="margin-top: 20px; font-size: 1.1em; color: #888;">
-                    Works in Chrome, Firefox, Safari, Edge
-                </p>
+        <div class="stats-inner">
+            <div class="stat">
+                <div class="stat-val">100%</div>
+                <div class="stat-lbl">Local storage</div>
             </div>
-        </div>
-
-        <div class="section">
-            <h2>Why Choose HITOP Over Postman?</h2>
-            <p style="text-align: center; font-size: 1.2em; color: #666; margin-bottom: 40px;">
-                A powerful alternative to Postman and Insomnia with complete privacy control
-            </p>
-            <div class="stats">
-                <div class="stat">
-                    <div class="stat-number">100%</div>
-                    <div class="stat-label">Privacy Focused</div>
-                </div>
-                <div class="stat">
-                    <div class="stat-number">0</div>
-                    <div class="stat-label">External Servers</div>
-                </div>
-                <div class="stat">
-                    <div class="stat-number">∞</div>
-                    <div class="stat-label">API Requests</div>
-                </div>
-                <div class="stat">
-                    <div class="stat-number">0</div>
-                    <div class="stat-label">Account Required</div>
-                </div>
+            <div class="stat">
+                <div class="stat-val">0</div>
+                <div class="stat-lbl">External servers</div>
             </div>
-        </div>
-
-        <div class="section">
-            <h2>API Testing Features</h2>
-            <div class="features">
-                <div class="feature">
-                    <div class="feature-icon">🌐</div>
-                    <h3>Complete HTTP Support</h3>
-                    <p>All HTTP methods (GET, POST, PUT, PATCH, DELETE, HEAD, OPTIONS) with custom headers and request
-                        bodies.</p>
-                </div>
-
-                <div class="feature">
-                    <div class="feature-icon">📁</div>
-                    <h3>Collections</h3>
-                    <p>Organize requests into collections, run them sequentially, and share with your team via JSON
-                        export.</p>
-                </div>
-
-                <div class="feature">
-                    <div class="feature-icon">🔧</div>
-                    <h3>Variables</h3>
-                    <p>Define collection-level variables and use ${variableName} syntax for dynamic values across
-                        requests.</p>
-                </div>
-
-                <div class="feature">
-                    <div class="feature-icon">⚡</div>
-                    <h3>Custom Scripts</h3>
-                    <p>Write pre-request and post-request scripts to automate workflows and extract response data.</p>
-                </div>
-
-                <div class="feature">
-                    <div class="feature-icon">📊</div>
-                    <h3>Request History</h3>
-                    <p>Track all requests and collection runs. Filter by success/failure and reload previous requests.
-                    </p>
-                </div>
-
-                <div class="feature">
-                    <div class="feature-icon">🎯</div>
-                    <h3>Multiple Tabs</h3>
-                    <p>Work on multiple API requests simultaneously with full tab support and state management.</p>
-                </div>
-
-                <div class="feature">
-                    <div class="feature-icon">🔒</div>
-                    <h3>Privacy First - Works Offline</h3>
-                    <p>All data stored locally in your browser. No external servers, no account required, no tracking.
-                        Test APIs completely offline. You control your data.
-                    </p>
-                </div>
-
-                <div class="feature">
-                    <div class="feature-icon">🎨</div>
-                    <h3>Syntax Highlighting</h3>
-                    <p>Beautiful syntax highlighting for JSON, XML, HTML responses with automatic formatting.</p>
-                </div>
-
-                <div class="feature">
-                    <div class="feature-icon">📤</div>
-                    <h3>Import/Export</h3>
-                    <p>Share collections as JSON files. Easy backup and team collaboration.</p>
-                </div>
+            <div class="stat">
+                <div class="stat-val">∞</div>
+                <div class="stat-lbl">API requests</div>
             </div>
-        </div>
-
-        <div class="section" style="background: #f9f9f9;">
-            <h2>🆚 HITOP vs Postman vs Insomnia</h2>
-            <div style="overflow-x: auto; margin: 40px 0;">
-                <table
-                    style="width: 100%; border-collapse: collapse; background: white; border-radius: 8px; overflow: hidden;">
-                    <thead>
-                        <tr style="background: #667eea; color: white;">
-                            <th style="padding: 15px; text-align: left; font-size: 1.1em;">Feature</th>
-                            <th style="padding: 15px; text-align: center; font-size: 1.1em;">HITOP</th>
-                            <th style="padding: 15px; text-align: center; font-size: 1.1em;">Postman</th>
-                            <th style="padding: 15px; text-align: center; font-size: 1.1em;">Insomnia</th>
-                        </tr>
-                    </thead>
-                    <tbody>
-                        <tr style="border-bottom: 1px solid #eee;">
-                            <td style="padding: 15px; font-weight: 500;">License</td>
-                            <td style="padding: 15px; text-align: center; color: #4caf50; font-weight: bold;">✅ MIT
-                                (Open Source)</td>
-                            <td style="padding: 15px; text-align: center;">Proprietary</td>
-                            <td style="padding: 15px; text-align: center;">Open Source</td>
-                        </tr>
-                        <tr style="border-bottom: 1px solid #eee; background: #f9f9f9;">
-                            <td style="padding: 15px; font-weight: 500;">Account Required</td>
-                            <td style="padding: 15px; text-align: center; color: #4caf50; font-weight: bold;">✅ No</td>
-                            <td style="padding: 15px; text-align: center; color: #f44336;">❌ Yes</td>
-                            <td style="padding: 15px; text-align: center; color: #f44336;">❌ Yes</td>
-                        </tr>
-                        <tr style="border-bottom: 1px solid #eee;">
-                            <td style="padding: 15px; font-weight: 500;">Works Offline</td>
-                            <td style="padding: 15px; text-align: center; color: #4caf50; font-weight: bold;">✅ Yes</td>
-                            <td style="padding: 15px; text-align: center;">Partial</td>
-                            <td style="padding: 15px; text-align: center;">Partial</td>
-                        </tr>
-                        <tr style="border-bottom: 1px solid #eee; background: #f9f9f9;">
-                            <td style="padding: 15px; font-weight: 500;">Data Storage</td>
-                            <td style="padding: 15px; text-align: center; color: #4caf50; font-weight: bold;">✅ 100%
-                                Local</td>
-                            <td style="padding: 15px; text-align: center;">Cloud Sync</td>
-                            <td style="padding: 15px; text-align: center;">Cloud Sync</td>
-                        </tr>
-                        <tr style="border-bottom: 1px solid #eee;">
-                            <td style="padding: 15px; font-weight: 500;">Open Source</td>
-                            <td style="padding: 15px; text-align: center; color: #4caf50; font-weight: bold;">✅ MIT
-                                License</td>
-                            <td style="padding: 15px; text-align: center; color: #f44336;">❌ No</td>
-                            <td style="padding: 15px; text-align: center;">✅ Yes</td>
-                        </tr>
-                        <tr style="border-bottom: 1px solid #eee; background: #f9f9f9;">
-                            <td style="padding: 15px; font-weight: 500;">Browser Extension</td>
-                            <td style="padding: 15px; text-align: center; color: #4caf50; font-weight: bold;">✅ Chrome &
-                                Firefox</td>
-                            <td style="padding: 15px; text-align: center;">Desktop App</td>
-                            <td style="padding: 15px; text-align: center;">Desktop App</td>
-                        </tr>
-                        <tr style="border-bottom: 1px solid #eee;">
-                            <td style="padding: 15px; font-weight: 500;">Collections & Variables</td>
-                            <td style="padding: 15px; text-align: center; color: #4caf50;">✅</td>
-                            <td style="padding: 15px; text-align: center; color: #4caf50;">✅</td>
-                            <td style="padding: 15px; text-align: center; color: #4caf50;">✅</td>
-                        </tr>
-                        <tr style="background: #f9f9f9;">
-                            <td style="padding: 15px; font-weight: 500;">Custom Scripts</td>
-                            <td style="padding: 15px; text-align: center; color: #4caf50;">✅</td>
-                            <td style="padding: 15px; text-align: center; color: #4caf50;">✅</td>
-                            <td style="padding: 15px; text-align: center; color: #4caf50;">✅</td>
-                        </tr>
-                    </tbody>
-                </table>
-            </div>
-        </div>
-
-        <div class="section">
-            <h2>Perfect For REST API Testing</h2>
-            <div class="features">
-                <div class="feature">
-                    <h3>👨‍💻 API Developers</h3>
-                    <p>Test REST endpoints during development with all HTTP methods (GET, POST, PUT, DELETE) and custom
-                        configurations. Perfect Postman alternative for local development. Build and debug APIs faster
-                        with instant feedback, syntax highlighting, and organized collections. Whether you're developing
-                        microservices, RESTful APIs, or GraphQL endpoints, HITOP provides all the tools you need without
-                        the overhead of desktop applications.</p>
-                </div>
-
-                <div class="feature">
-                    <h3>🧪 QA Engineers</h3>
-                    <p>Validate API responses, automate test workflows with pre/post-request scripts, and track request
-                        history. No account needed to start testing. Create comprehensive test suites with collection
-                        runners, verify response data with custom scripts, and maintain detailed request history for
-                        debugging. Perfect for regression testing, integration testing, and continuous quality assurance
-                        workflows.</p>
-                </div>
-
-                <div class="feature">
-                    <h3>🔧 DevOps Teams</h3>
-                    <p>Monitor services, run health checks, and automate API testing. Works completely offline for
-                        secure environments. Deploy HITOP in air-gapped networks, test internal APIs without internet
-                        connectivity, and maintain full control over your testing infrastructure. Ideal for enterprise
-                        environments with strict security requirements and compliance needs.</p>
-                </div>
-
-                <div class="feature">
-                    <h3>🔐 Privacy-Conscious Users</h3>
-                    <p>Test APIs without sending data to external servers. All collections and variables stored locally
-                        in your browser. Perfect for sensitive projects. Unlike cloud-based alternatives, HITOP never
-                        transmits your API keys, authentication tokens, or request data to external servers. Your
-                        sensitive information stays on your machine, giving you complete privacy and security control.
-                    </p>
-                </div>
-            </div>
-        </div>
-
-        <div class="section" style="background: linear-gradient(135deg, #f5f7fa 0%, #c3cfe2 100%);">
-            <h2>How Our HTTP Client Works</h2>
-            <p
-                style="text-align: center; font-size: 1.2em; color: #333; margin-bottom: 40px; max-width: 800px; margin-left: auto; margin-right: auto;">
-                HITOP is a modern, browser-based HTTP client for REST API testing that runs entirely in your web
-                browser. No installation, no account creation, no data sent to external servers. Simply open the app and
-                start testing your APIs immediately.
-            </p>
-            <div class="features">
-                <div class="feature" style="background: white;">
-                    <h3>1️⃣ Launch in Your Browser</h3>
-                    <p>Click the "Launch Web App" button and HITOP opens instantly in your browser. Works on Chrome,
-                        Firefox, Safari, and Edge. No downloads, no installations, no setup required. You can also
-                        install it as a browser extension for even faster access.</p>
-                </div>
-
-                <div class="feature" style="background: white;">
-                    <h3>2️⃣ Create Your First Request</h3>
-                    <p>Enter your API endpoint URL, select the HTTP method (GET, POST, PUT, DELETE, PATCH, HEAD,
-                        OPTIONS), add custom headers if needed, and include a request body for POST/PUT requests. HITOP
-                        supports JSON, XML, form data, and plain text formats.</p>
-                </div>
-
-                <div class="feature" style="background: white;">
-                    <h3>3️⃣ Organize with Collections</h3>
-                    <p>Group related API requests into collections for better organization. Create collections for
-                        different projects, environments, or API versions. Save requests for reuse, export collections
-                        as JSON files for backup or team sharing, and import collections from teammates.</p>
-                </div>
-
-                <div class="feature" style="background: white;">
-                    <h3>4️⃣ Automate with Scripts</h3>
-                    <p>Write JavaScript pre-request scripts to generate dynamic data, set authentication tokens, or
-                        modify headers before sending. Use post-request scripts to validate responses, extract data, or
-                        chain multiple requests together. Perfect for complex API testing workflows and automation.</p>
-                </div>
-
-                <div class="feature" style="background: white;">
-                    <h3>5️⃣ Use Variables for Flexibility</h3>
-                    <p>Define collection-level variables for API keys, base URLs, or any reusable values. Reference
-                        variables using ${variableName} syntax in URLs, headers, or request bodies. Change environments
-                        easily by updating variable values without modifying individual requests.</p>
-                </div>
-
-                <div class="feature" style="background: white;">
-                    <h3>6️⃣ Run Collection Tests</h3>
-                    <p>Execute entire collections sequentially with the collection runner. Automate regression testing,
-                        run health checks, or validate API workflows. View detailed results for each request, including
-                        status codes, response times, and any script errors. Perfect for continuous integration and
-                        automated testing.</p>
-                </div>
-            </div>
-        </div>
-
-        <div class="section">
-            <h2>Why Developers Choose This API Testing Tool</h2>
-            <p
-                style="text-align: center; font-size: 1.2em; color: #666; margin-bottom: 40px; max-width: 900px; margin-left: auto; margin-right: auto;">
-                HITOP was built by developers, for developers, with a focus on privacy, simplicity, and productivity.
-                Here's what makes this HTTP client different from Postman and other API testing tools.
-            </p>
-            <div class="features">
-                <div class="feature">
-                    <h3>🚀 Instant Access</h3>
-                    <p>No account creation, no email verification, no credit card required. Just click and start
-                        testing. Unlike Postman which requires account registration and login, HITOP lets you start
-                        working immediately. Perfect for quick API tests, debugging, or when you need to test an API
-                        right now without any setup delays.</p>
-                </div>
-
-                <div class="feature">
-                    <h3>🔒 Complete Privacy</h3>
-                    <p>Your API keys, authentication tokens, and request data never leave your browser. Everything is
-                        stored locally using browser storage. No cloud sync, no external servers, no data collection.
-                        This makes HITOP ideal for testing internal APIs, working with sensitive data, or complying with
-                        strict security policies.</p>
-                </div>
-
-                <div class="feature">
-                    <h3>✈️ Works Offline</h3>
-                    <p>Once loaded, HITOP works completely offline. Test localhost APIs, work on airplanes, or in secure
-                        environments without internet access. Your collections and request history are always available,
-                        even without connectivity. Perfect for developers who work in restricted networks or need
-                        reliable offline functionality.</p>
-                </div>
-
-                <div class="feature">
-                    <h3>⚡ Lightweight & Fast</h3>
-                    <p>No heavy desktop application to download or update. HITOP runs directly in your browser with
-                        minimal resource usage. Fast startup, instant response, and smooth performance even on older
-                        machines. The entire application is optimized for speed and efficiency.</p>
-                </div>
-
-                <div class="feature">
-                    <h3>🎯 Developer-Friendly</h3>
-                    <p>Clean, intuitive interface designed for productivity. Syntax highlighting for JSON, XML, and HTML
-                        responses. Multiple tabs for working on several requests simultaneously. Keyboard shortcuts for
-                        common actions. Everything you need, nothing you don't.</p>
-                </div>
-
-                <div class="feature">
-                    <h3>🆓 100% Free Forever</h3>
-                    <p>HITOP is open source under the MIT License. No premium tiers, no feature limitations, no usage
-                        restrictions. Use it for personal projects, commercial work, or enterprise applications. Fork
-                        it, modify it, or contribute improvements. Completely free, forever.</p>
-                </div>
-            </div>
-        </div>
-
-        <div class="cta">
-            <h2>Ready to Switch from Postman?</h2>
-            <p>Start testing your APIs with HITOP - no account required, complete privacy control</p>
-            <div class="buttons">
-                <a href="./app.html" class="btn btn-primary"
-                    onclick="trackEvent('Navigation', 'click_web_app', 'CTA Section - Launch Web App'); return gtagSendEvent('./app.html');">
-                    🚀 Launch Web App
-                </a>
-                <a href="https://addons.mozilla.org/addon/hitop/" class="btn btn-primary" target="_blank"
-                    rel="nofollow noopener"
-                    onclick="trackEvent('Navigation', 'click_firefox_extension', 'CTA Section - Firefox Extension'); gtagSendEvent('https://addons.mozilla.org/addon/hitop/');">
-                    🦊 Firefox Extension
-                </a>
-                <a href="https://chromewebstore.google.com/detail/hitop-http-api-testing-to/mmbpagencfjfgeicmeobbmeocdpeokdk"
-                    class="btn btn-primary" target="_blank" rel="nofollow noopener"
-                    onclick="trackEvent('Navigation', 'click_chrome_extension', 'CTA Section - Chrome Extension'); gtagSendEvent('https://chromewebstore.google.com/detail/hitop-http-api-testing-to/mmbpagencfjfgeicmeobbmeocdpeokdk');">
-                    🔵 Chrome Extension
-                </a>
-                <a href="https://github.com/bohdaq/hitop#getting-started" class="btn btn-secondary" target="_blank"
-                    rel="nofollow noopener"
-                    onclick="trackEvent('Navigation', 'click_documentation', 'CTA Section - Read Documentation'); gtagSendEvent('https://github.com/bohdaq/hitop#getting-started');">
-                    📖 Read Documentation
-                </a>
-            </div>
-        </div>
-
-        <div class="section">
-            <h2>Open Source API Testing Tool</h2>
-            <p style="text-align: center; font-size: 1.2em; color: #666; margin-bottom: 30px;">
-                HITOP is an open source HTTP client and REST API testing tool under the MIT License. No cost, no
-                restrictions. Contributions are welcome!
-            </p>
-            <div style="text-align: center;">
-                <a href="https://github.com/bohdaq/hitop" class="btn btn-primary" target="_blank"
-                    rel="nofollow noopener"
-                    onclick="trackEvent('Navigation', 'click_github_star', 'Open Source Section - Star on GitHub'); gtagSendEvent('https://github.com/bohdaq/hitop');">
-                    ⭐ Star on GitHub
-                </a>
+            <div class="stat">
+                <div class="stat-val">MIT</div>
+                <div class="stat-lbl">Open source</div>
             </div>
         </div>
     </div>
+</div>
 
-    <div class="footer">
-        <p>&copy; 2025 HITOP. Licensed under the <a href="https://github.com/bohdaq/hitop/blob/main/LICENSE"
-                rel="nofollow noopener">MIT
-                License</a>.</p>
-        <p style="margin-top: 10px;">
-            <a href="./pricing.html">Pricing & License</a> •
-            <a href="./terms/">Guides & Resources</a> •
-            <a href="https://github.com/bohdaq/hitop" rel="nofollow noopener">GitHub</a> •
-            <a href="https://github.com/bohdaq/hitop/blob/main/PRIVACY.md" rel="nofollow noopener">Privacy</a> •
-            <a href="https://github.com/bohdaq/hitop/blob/main/SCRIPTING_GUIDE.md" rel="nofollow noopener">Docs</a> •
-            <a href="https://github.com/bohdaq/hitop/issues" rel="nofollow noopener">Support</a>
-        </p>
+<section id="features">
+    <div class="container">
+        <div class="r">
+            <div class="tag">Features</div>
+            <h2>Everything you need.<br><span class="grad">Nothing you don't.</span></h2>
+            <p class="sec-desc">Designed for developers who value speed, privacy, and simplicity over enterprise bloat.</p>
+        </div>
+        <div class="bento">
+            <div class="card cv w2 r d1">
+                <div class="ci">🔒</div>
+                <h3>Radical Privacy</h3>
+                <p>Every request, header, API key, and response stays on your machine. No cloud sync, no telemetry, no account creation. HITOP makes zero network calls beyond the ones you explicitly configure — your data is completely yours.</p>
+            </div>
+            <div class="card cc r d1">
+                <div class="ci c">⚡</div>
+                <h3>Works Offline</h3>
+                <p>Fully functional with no internet. Test localhost, internal services, and air-gapped environments without any connectivity.</p>
+            </div>
+            <div class="card r d2">
+                <div class="ci">📁</div>
+                <h3>Collections</h3>
+                <p>Organize requests into collections. Run them sequentially. Export as JSON to share with your team or back up your work.</p>
+            </div>
+            <div class="card r d2">
+                <div class="ci g">🔧</div>
+                <h3>Variables</h3>
+                <p>Define collection-level variables and reference them with <code style="background:rgba(255,255,255,0.08);padding:1px 6px;border-radius:4px;font-size:0.82em;">${varName}</code> across URLs, headers, and bodies.</p>
+            </div>
+            <div class="card r d2">
+                <div class="ci p">⚙️</div>
+                <h3>Custom Scripts</h3>
+                <p>JavaScript pre/post-request hooks for dynamic tokens, response extraction, validation, and chained workflows.</p>
+            </div>
+            <div class="card cc r d2">
+                <div class="ci c">📊</div>
+                <h3>Request History</h3>
+                <p>Full history with status codes and timings. One-click reload. Filter by success or failure at a glance.</p>
+            </div>
+            <div class="card r d3">
+                <div class="ci">🎨</div>
+                <h3>Syntax Highlighting</h3>
+                <p>Auto-formatted JSON, XML, and HTML responses with beautiful color-coded highlighting.</p>
+            </div>
+            <div class="card cv w2 r d3">
+                <div class="ci">🌐</div>
+                <h3>Complete HTTP Support</h3>
+                <p>All HTTP methods — GET, POST, PUT, PATCH, DELETE, HEAD, OPTIONS — with custom headers, request bodies (JSON, XML, form data, plain text), and auth flows. Everything Postman does, in your browser, without an account or cloud dependency.</p>
+            </div>
+        </div>
     </div>
+</section>
+
+<section>
+    <div class="container">
+        <div class="r" style="text-align:center;">
+            <div class="tag" style="justify-content:center;">CLI</div>
+            <h2>Works from the <span class="grad">command line</span>, too.</h2>
+            <p class="sec-desc" style="margin:0 auto 48px;">Run your collections in CI/CD pipelines, shell scripts, or anywhere you need headless HTTP testing.</p>
+        </div>
+        <div class="terminal r d1">
+            <div class="tbar">
+                <span class="dot dr"></span>
+                <span class="dot dy"></span>
+                <span class="dot dg"></span>
+                <span class="ttitle">hitop — CLI</span>
+            </div>
+            <div class="tbody"><span class="tc"># Install via Cargo</span>
+<span class="tm">$</span> <span class="tu">cargo install hitop</span>
+
+<span class="tc"># Send a request with variables</span>
+<span class="tm">POST</span> <span class="tu">https://api.example.com/users</span>
+<span class="th">Content-Type</span><span class="tb">: </span><span class="tv">application/json</span>
+<span class="th">Authorization</span><span class="tb">: </span><span class="tv">Bearer ${token}</span>
+
+<span class="tb">{</span>
+  <span class="tk">"name"</span><span class="tb">: </span><span class="ts">"Jane Doe"</span><span class="tb">,</span>
+  <span class="tk">"email"</span><span class="tb">: </span><span class="ts">"jane@example.com"</span>
+<span class="tb">}</span>
+
+<span class="tdv">──────────────────────────────────────────</span>
+<span class="tst">201 Created</span> <span class="tc">· 83ms · 312B</span>
+<span class="tb">{</span>
+  <span class="tk">"id"</span><span class="tb">: </span><span class="ts">"usr_9f8k2j"</span><span class="tb">,</span>
+  <span class="tk">"name"</span><span class="tb">: </span><span class="ts">"Jane Doe"</span><span class="tb">,</span>
+  <span class="tk">"created_at"</span><span class="tb">: </span><span class="ts">"2025-06-28T10:23:41Z"</span>
+<span class="tb">}</span></div>
+        </div>
+        <div style="text-align:center; margin-top:28px;" class="r d2">
+            <a href="https://crates.io/crates/hitop" class="btn btn-outline" target="_blank" rel="noopener noreferrer"
+                onclick="trackEvent('Navigation','click_cli','Terminal');">
+                Install via cargo →
+            </a>
+        </div>
+    </div>
+</section>
+
+<section id="compare">
+    <div class="container">
+        <div class="r">
+            <div class="tag">Compare</div>
+            <h2>Why choose <span class="grad">HITOP</span>?</h2>
+            <p class="sec-desc">No paywalls. No cloud lock-in. No data harvesting. Ever.</p>
+        </div>
+        <div style="overflow-x:auto;" class="r d1">
+            <table class="cmp">
+                <thead>
+                    <tr>
+                        <th>Feature</th>
+                        <th class="h">HITOP</th>
+                        <th>Postman</th>
+                        <th>Insomnia</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <tr>
+                        <td>License</td>
+                        <td class="h"><span class="ok">✓</span> MIT — Open Source</td>
+                        <td><span class="no">—</span> Proprietary</td>
+                        <td>Open Source</td>
+                    </tr>
+                    <tr>
+                        <td>Account required</td>
+                        <td class="h"><span class="ok">✓</span> No account</td>
+                        <td><span class="no">✗</span> Required</td>
+                        <td><span class="no">✗</span> Required</td>
+                    </tr>
+                    <tr>
+                        <td>Cost</td>
+                        <td class="h"><span class="ok">✓</span> $0 forever</td>
+                        <td>$0–$49/user/mo</td>
+                        <td>$0–$8/user/mo</td>
+                    </tr>
+                    <tr>
+                        <td>Works offline</td>
+                        <td class="h"><span class="ok">✓</span> Full offline</td>
+                        <td>Partial</td>
+                        <td>Partial</td>
+                    </tr>
+                    <tr>
+                        <td>Data storage</td>
+                        <td class="h"><span class="ok">✓</span> 100% local</td>
+                        <td>Cloud sync</td>
+                        <td>Cloud sync</td>
+                    </tr>
+                    <tr>
+                        <td>Browser extension</td>
+                        <td class="h"><span class="ok">✓</span> Chrome & Firefox</td>
+                        <td><span class="no">—</span> Desktop only</td>
+                        <td><span class="no">—</span> Desktop only</td>
+                    </tr>
+                    <tr>
+                        <td>Collections & Variables</td>
+                        <td class="h"><span class="ok">✓</span></td>
+                        <td><span class="ok">✓</span></td>
+                        <td><span class="ok">✓</span></td>
+                    </tr>
+                    <tr>
+                        <td>Custom scripts</td>
+                        <td class="h"><span class="ok">✓</span></td>
+                        <td><span class="ok">✓</span></td>
+                        <td><span class="ok">✓</span></td>
+                    </tr>
+                    <tr>
+                        <td>CLI tool</td>
+                        <td class="h"><span class="ok">✓</span> Rust CLI</td>
+                        <td>Partial</td>
+                        <td><span class="no">—</span></td>
+                    </tr>
+                </tbody>
+            </table>
+        </div>
+    </div>
+</section>
+
+<section class="cta-section">
+    <div class="container">
+        <div class="tag r" style="justify-content:center;">Get Started</div>
+        <h2 class="r">Ready to switch?<br><span class="grad">No setup required.</span></h2>
+        <p class="hero-sub r" style="margin:0 auto 48px;">Open the web app and start testing in seconds. Or install the browser extension for one-click access from anywhere.</p>
+        <div class="btn-row r">
+            <a href="./app.html" class="btn btn-primary"
+                onclick="trackEvent('Navigation','click_web_app','CTA'); return gtagSendEvent('./app.html');">
+                Launch Web App →
+            </a>
+            <a href="https://addons.mozilla.org/addon/hitop/" class="btn btn-outline" target="_blank" rel="noopener noreferrer"
+                onclick="trackEvent('Navigation','click_firefox_extension','CTA');">
+                Firefox Extension
+            </a>
+            <a href="https://chromewebstore.google.com/detail/hitop-http-api-testing-to/mmbpagencfjfgeicmeobbmeocdpeokdk"
+                class="btn btn-outline" target="_blank" rel="noopener noreferrer"
+                onclick="trackEvent('Navigation','click_chrome_extension','CTA');">
+                Chrome Extension
+            </a>
+            <a href="https://github.com/bohdaq/hitop" class="btn btn-ghost" target="_blank" rel="noopener noreferrer"
+                onclick="trackEvent('Navigation','click_github','CTA');">
+                ★ Star on GitHub
+            </a>
+        </div>
+    </div>
+</section>
+
+<footer>
+    <div class="container">
+        <div class="foot">
+            <a href="/" class="foot-logo">HITOP</a>
+            <div class="foot-links">
+                <a href="./pricing.html">Pricing</a>
+                <a href="./terms/">Guides</a>
+                <a href="./privacy.html">Privacy</a>
+                <a href="https://github.com/bohdaq/hitop" rel="noopener noreferrer">GitHub</a>
+                <a href="https://github.com/bohdaq/hitop/issues" rel="noopener noreferrer">Support</a>
+            </div>
+            <span class="foot-copy">© 2025 HITOP · MIT License</span>
+        </div>
+    </div>
+</footer>
+
+<script>
+    const obs = new IntersectionObserver((entries) => {
+        entries.forEach(e => {
+            if (e.isIntersecting) {
+                e.target.classList.add('in');
+                obs.unobserve(e.target);
+            }
+        });
+    }, { threshold: 0.08, rootMargin: '0px 0px -32px 0px' });
+    document.querySelectorAll('.r').forEach(el => obs.observe(el));
+</script>
+
 </body>
-
 </html>
