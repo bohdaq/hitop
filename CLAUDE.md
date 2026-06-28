@@ -117,7 +117,7 @@ PATH="$HOME/.cargo/bin:$PATH" RUSTC="$HOME/.cargo/bin/rustc" ~/.cargo/bin/cargo 
 - Apple Developer account: active (renewed June 2025)
 - Bundle ID `com.bohdaq.hitop` — needs to be registered at developer.apple.com
 - Entitlements and icon set ready
-- Privacy policy: `https://bohdaq.github.io/hitop/privacy`
+- Privacy policy: `https://bohdaq.github.io/hitop/privacy.html`
 - Next step: register App ID → create certificates → sign and build → upload via Transporter
 
 ---
