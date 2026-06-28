@@ -1,0 +1,33 @@
+[package]
+name = "hitop"
+description = "HTTP API client CLI — send requests, run collections, and script with JS from the terminal"
+keywords = ["http", "api", "client", "rest", "cli"]
+categories = ["command-line-utilities", "web-programming::http-client"]
+readme = "README.md"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+repository.workspace = true
+homepage.workspace = true
+
+[[bin]]
+name = "hitop"
+path = "src/main.rs"
+
+[dependencies]
+hitop-core = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+anyhow = { workspace = true }
+clap = { version = "4", features = ["derive"] }
+clap_complete = "4"
+colored = "2"
+indicatif = "0.17"
+syntect = { version = "5", default-features = false, features = ["default-syntaxes", "default-themes", "html", "regex-fancy"] }
+atty = "0.2"
+
+[dev-dependencies]
+assert_cmd = "2"
+predicates = "3"
+tempfile = "3"
