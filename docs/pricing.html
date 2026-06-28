@@ -21,8 +21,8 @@
 
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <meta name="description" content="HITOP is 100% free and open source under the MIT License. No cost, no payment, no account required. Use it anywhere without restrictions.">
-    <title>HITOP Pricing — Free & Open Source API Testing Tool</title>
+    <meta name="description" content="HITOP web app and browser extensions are free and open source. The macOS desktop app is available on the Mac App Store for $4.99.">
+    <title>HITOP Pricing — Free Web App, $4.99 Mac Desktop App</title>
 
     <link rel="icon" type="image/png" sizes="192x192" href="favicon.png">
     <link rel="icon" type="image/png" sizes="32x32" href="favicon-32x32.png">
@@ -424,6 +424,7 @@
             .hero { padding: 100px 24px 60px; }
             .card, .price-hero { padding: 28px 24px; }
             .checklist { grid-template-columns: 1fr; }
+            .plan-grid { grid-template-columns: 1fr !important; }
         }
     </style>
 </head>
@@ -447,100 +448,128 @@
     <div class="orb1"></div>
     <div class="orb2"></div>
     <div class="hero-inner">
-        <div class="hero-badge">Free & Open Source</div>
-        <h1><span class="grad">$0 Forever.</span><br>No Catch.</h1>
-        <p class="hero-sub">HITOP is MIT-licensed open source software. No subscriptions, no premium tiers, no paywalls — ever.</p>
+        <div class="hero-badge">Pricing</div>
+        <h1><span class="grad">Simple Pricing.</span><br>No Subscriptions.</h1>
+        <p class="hero-sub">The web app and browser extensions are free forever. The native macOS desktop app is a one-time purchase.</p>
     </div>
 </div>
 
 <main>
     <div class="container">
 
-        <div class="card price-hero">
-            <div class="price">$0</div>
-            <div class="price-sub">Every feature. Every platform. Forever free.</div>
+        <!-- Pricing cards -->
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-bottom:20px;" class="plan-grid">
+
+            <div class="card price-hero" style="text-align:center;padding:48px 32px;">
+                <div style="font-size:0.72rem;font-weight:700;letter-spacing:1.4px;text-transform:uppercase;color:var(--cyan);margin-bottom:16px;">Web App · Browser Extensions · CLI</div>
+                <div class="price" style="background:linear-gradient(135deg,#6EE7B7,#67E8F9);-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text;">$0</div>
+                <div class="price-sub">Free forever. No account required.</div>
+                <ul class="checklist" style="grid-template-columns:1fr;text-align:left;margin-top:24px;">
+                    <li>Web app — launch in any browser</li>
+                    <li>Firefox Extension</li>
+                    <li>Chrome Extension</li>
+                    <li>CLI via cargo install hitop</li>
+                    <li>Full feature set included</li>
+                    <li>MIT open source license</li>
+                </ul>
+                <div class="btn-row" style="margin-top:28px;">
+                    <a href="./app.html" class="btn btn-primary"
+                        onclick="trackEvent('Navigation','click_web_app','Pricing Free CTA'); return gtagSendEvent('./app.html');">
+                        Launch Web App →
+                    </a>
+                </div>
+            </div>
+
+            <div class="card" style="text-align:center;padding:48px 32px;background:linear-gradient(140deg,rgba(139,92,246,0.13),rgba(99,102,241,0.06));border-color:rgba(139,92,246,0.25);">
+                <div style="font-size:0.72rem;font-weight:700;letter-spacing:1.4px;text-transform:uppercase;color:var(--purple);margin-bottom:16px;">macOS Desktop App</div>
+                <div class="price" style="background:linear-gradient(135deg,#C4B5FD,#A78BFA);-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text;">$4.99</div>
+                <div class="price-sub">One-time purchase. No subscription.</div>
+                <ul class="checklist" style="grid-template-columns:1fr;text-align:left;margin-top:24px;">
+                    <li>Native macOS desktop app</li>
+                    <li>Full feature set</li>
+                    <li>Local file storage</li>
+                    <li>Works fully offline</li>
+                    <li>Free updates included</li>
+                    <li>Mac App Store distribution</li>
+                </ul>
+                <div class="btn-row" style="margin-top:28px;">
+                    <a href="#" class="btn btn-primary" style="background:linear-gradient(135deg,var(--violet),var(--indigo));opacity:0.5;cursor:default;">
+                        Coming Soon
+                    </a>
+                </div>
+            </div>
+
+        </div>
+
+        <div class="card">
+            <h2>What is included in every plan</h2>
             <ul class="checklist">
-                <li>No purchase necessary</li>
-                <li>No subscription fees</li>
-                <li>No hidden costs</li>
-                <li>No premium tiers or paid features</li>
-                <li>No credit card required</li>
-                <li>No account registration</li>
-                <li>Unlimited usage</li>
-                <li>Commercial use allowed</li>
+                <li>All HTTP methods — GET, POST, PUT, PATCH, DELETE, HEAD, OPTIONS</li>
+                <li>Collections with sequential runner</li>
+                <li>Collection-level variables</li>
+                <li>Pre-request and post-request JavaScript scripts</li>
+                <li>Request history with status codes and timings</li>
+                <li>Syntax highlighting for JSON, XML, and HTML</li>
+                <li>Import and export collections as JSON</li>
+                <li>Zero external servers — all data stays on your device</li>
+                <li>No account or registration required</li>
             </ul>
         </div>
 
         <div class="card">
-            <h2>MIT License</h2>
-            <p>HITOP is released under the <strong style="color:var(--text);">MIT License</strong> — one of the most permissive open source licenses available. You have complete freedom to use, modify, and distribute it.</p>
-            <ul class="checklist" style="grid-template-columns: 1fr;">
-                <li>Use for personal projects</li>
-                <li>Use for commercial projects</li>
-                <li>Modify the source code</li>
-                <li>Distribute your modifications</li>
-                <li>Include in proprietary software</li>
-            </ul>
-            <p style="margin-top:20px;">View the full license: <a href="https://github.com/bohdaq/hitop/blob/main/LICENSE" target="_blank" rel="noopener noreferrer" class="inline">MIT License on GitHub →</a></p>
-        </div>
-
-        <div class="card">
-            <h2>How HITOP is Maintained</h2>
-            <h3>Community-Driven Development</h3>
-            <p>HITOP is maintained through volunteer contributions, community feedback, and open collaboration on GitHub.</p>
-            <h3>No Monetization, Ever</h3>
-            <ul class="checklist" style="grid-template-columns: 1fr;">
-                <li>No user data collection or sales</li>
-                <li>No advertising</li>
-                <li>No paid upgrades</li>
-                <li>No paid support plans</li>
-                <li>No enterprise pricing</li>
-            </ul>
-        </div>
-
-        <div class="card">
-            <h2>Cost Comparison</h2>
+            <h2>Comparison</h2>
             <table class="cmp">
                 <thead>
                     <tr>
-                        <th>Feature</th>
-                        <th class="h">HITOP</th>
-                        <th>Postman</th>
-                        <th>Insomnia</th>
+                        <th>Tool</th>
+                        <th>Cost</th>
+                        <th>Account</th>
+                        <th>Data Storage</th>
+                        <th>Offline</th>
                     </tr>
                 </thead>
                 <tbody>
                     <tr>
-                        <td>Cost</td>
-                        <td class="h"><span class="ok">✓</span> $0 forever</td>
+                        <td>HITOP Web App</td>
+                        <td><span class="ok">$0</span></td>
+                        <td><span class="ok">Not required</span></td>
+                        <td><span class="ok">100% local</span></td>
+                        <td><span class="ok">Yes</span></td>
+                    </tr>
+                    <tr>
+                        <td>HITOP Desktop</td>
+                        <td><span class="ok">$4.99 one-time</span></td>
+                        <td><span class="ok">Not required</span></td>
+                        <td><span class="ok">100% local</span></td>
+                        <td><span class="ok">Yes</span></td>
+                    </tr>
+                    <tr>
+                        <td>Postman</td>
                         <td>$0–$49/user/mo</td>
+                        <td><span class="no">Required</span></td>
+                        <td>Cloud sync</td>
+                        <td>Partial</td>
+                    </tr>
+                    <tr>
+                        <td>Insomnia</td>
                         <td>$0–$8/user/mo</td>
-                    </tr>
-                    <tr>
-                        <td>License</td>
-                        <td class="h"><span class="ok">✓</span> MIT Open Source</td>
-                        <td><span class="no">—</span> Proprietary</td>
-                        <td>Apache 2.0</td>
-                    </tr>
-                    <tr>
-                        <td>Account required</td>
-                        <td class="h"><span class="ok">✓</span> No</td>
-                        <td><span class="no">✗</span> Yes</td>
-                        <td><span class="no">✗</span> Yes</td>
-                    </tr>
-                    <tr>
-                        <td>Data privacy</td>
-                        <td class="h"><span class="ok">✓</span> 100% local</td>
+                        <td><span class="no">Required</span></td>
                         <td>Cloud sync</td>
-                        <td>Cloud sync</td>
+                        <td>Partial</td>
                     </tr>
                 </tbody>
             </table>
         </div>
 
-        <div class="card cta-card">
-            <h2>Start Testing APIs Now</h2>
-            <p style="max-width:500px;margin:0 auto;">No payment, no account, no setup. Open the app and go.</p>
+        <div class="card" style="background:linear-gradient(140deg,rgba(16,185,129,0.08),rgba(6,182,212,0.04));border-color:rgba(16,185,129,0.18);">
+            <h2>Open Source</h2>
+            <p>HITOP is released under the MIT License. The source code is available on GitHub. You are free to use, modify, and distribute it for personal and commercial projects.</p>
+            <p style="margin-top:12px;"><a href="https://github.com/bohdaq/hitop/blob/main/LICENSE" target="_blank" rel="noopener noreferrer" class="inline">View MIT License on GitHub →</a></p>
+        </div>
+
+        <div class="card cta-card" style="text-align:center;">
+            <h2>Start for free today</h2>
+            <p style="max-width:480px;margin:0 auto;">No payment, no account, no setup. The full feature set is available in your browser right now.</p>
             <div class="btn-row">
                 <a href="./app.html" class="btn btn-primary"
                     onclick="trackEvent('Navigation','click_web_app','Pricing CTA'); return gtagSendEvent('./app.html');">
