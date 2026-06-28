@@ -734,7 +734,7 @@ dependencies = [
 
 [[package]]
 name = "hitop"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "anyhow",
  "assert_cmd",
@@ -753,7 +753,7 @@ dependencies = [
 
 [[package]]
 name = "hitop-core"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "anyhow",
  "boa_engine",
