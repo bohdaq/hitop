@@ -1,9 +1,9 @@
 # HITOP - HTTP API Testing Tool
 
-A powerful, modern HTTP API testing tool built with React. Test APIs, manage collections, automate workflows with custom scripts, and use variables for dynamic requests.
+A powerful, modern HTTP API testing tool. Test APIs, manage collections, automate workflows with custom scripts, and use variables for dynamic requests.
 
 **Available as:**
-- 🌐 Web Application ([Launch Online](https://bohdaq.github.io/hitop/app/))
+- 💻 CLI ([Install from crates.io](https://crates.io/crates/hitop) | [CLI Guide](#cli))
 - 🦊 Firefox Extension ([Install from Mozilla Add-ons](https://addons.mozilla.org/addon/hitop/) | [Installation Guide](./EXTENSION_GUIDE.md))
 - 🔵 Chrome Extension ([Install from Chrome Web Store](https://chromewebstore.google.com/detail/hitop-http-api-testing-to/mmbpagencfjfgeicmeobbmeocdpeokdk))
 
@@ -21,61 +21,106 @@ A powerful, modern HTTP API testing tool built with React. Test APIs, manage col
 - **Save & Load**: Save requests to collections for reuse
 - **Run Collections**: Execute all requests in a collection sequentially
 - **Drag & Drop**: Reorder requests within collections
-- **Import/Export**: Share collections as JSON
+- **Import/Export**: Share collections as JSON (HITOP and Postman v2.1 formats)
 
 ### 🔧 Variables
 - **Collection Variables**: Define reusable variables per collection
 - **Dynamic Interpolation**: Use `${variableName}` syntax in URLs, headers, and body
-- **Variable Management**: Easy-to-use modal for managing variables
+- **Variable Management**: Easy-to-use interface for managing variables
 - See [VARIABLES_GUIDE.md](./VARIABLES_GUIDE.md) for detailed documentation
 
 ### 📝 Custom Scripting
 - **Pre-Request Scripts**: Modify requests before they're sent
 - **Post-Request Scripts**: Extract data from responses
-- **Context Sharing**: Pass data between requests
+- **Context Sharing**: Pass data between requests in a collection run
 - **Variable Access**: Use collection variables in scripts
 - See [SCRIPTING_GUIDE.md](./SCRIPTING_GUIDE.md) for detailed documentation
 
 ### 📊 Additional Features
-- **Multiple Tabs**: Work on multiple requests simultaneously
 - **Request History**: Track and reload recent requests
-- **Syntax Highlighting**: Beautiful code highlighting for responses
-- **Auto-Save**: Collections saved to browser localStorage
+- **Syntax Highlighting**: Code highlighting for responses
+- **Auto-Save**: Collections persisted to disk (CLI) or browser localStorage (extensions)
 
-## Getting Started
+---
 
-### Web Application
+## CLI
 
-#### Prerequisites
-- Node.js (v14 or higher)
-- npm or yarn
-
-#### Installation
-
-1. Clone the repository:
-```bash
-git clone https://github.com/yourusername/hitop.git
-cd hitop
-```
-
-2. Install dependencies:
-```bash
-cd frontend
-npm install
-```
-
-3. Start the development server:
-```bash
-npm start
-```
-
-4. Open [http://localhost:3000](http://localhost:3000) in your browser
-
-#### Building for Production
+Install the CLI with Cargo:
 
 ```bash
-npm run build
+cargo install hitop
 ```
+
+Or download a pre-built binary from [GitHub Releases](https://github.com/bohdaq/hitop/releases).
+
+### Quick start
+
+```bash
+# Send a one-off request
+hitop send https://jsonplaceholder.typicode.com/todos/1
+
+# With method, headers, and body
+hitop send https://api.example.com/users \
+  -X POST \
+  -H "Content-Type: application/json" \
+  -b '{"name":"Alice"}'
+
+# Create a collection and set variables
+hitop collections add MyAPI
+hitop variables set MyAPI hostname https://api.example.com
+
+# Add a request and send it
+hitop requests add MyAPI --name "Get user" --url '${hostname}/users/1'
+hitop requests send MyAPI "Get user"
+
+# Run the whole collection (pre/post scripts + context passing)
+hitop run MyAPI
+
+# View history
+hitop history --limit 10
+
+# Import from Postman
+hitop import my-collection.json --format postman
+
+# Export to HITOP format (compatible with the browser extensions)
+hitop export MyAPI -o my-collection.json
+```
+
+### Commands
+
+| Command | Description |
+|---|---|
+| `hitop send <url>` | Send a one-off request |
+| `hitop run <collection>` | Run all requests in a collection sequentially |
+| `hitop run --all` | Run every collection |
+| `hitop collections list/add/delete/rename/duplicate` | Manage collections |
+| `hitop requests list/add/show/delete/rename/send` | Manage requests |
+| `hitop variables list/set/delete` | Manage collection variables |
+| `hitop history` | View request history |
+| `hitop import <file>` | Import collections (HITOP or Postman format) |
+| `hitop export <collection>` | Export a collection |
+| `hitop completions <shell>` | Generate shell completions |
+
+### Shell completions
+
+```bash
+hitop completions bash >> ~/.bash_completion
+hitop completions zsh > ~/.zfunc/_hitop
+hitop completions fish > ~/.config/fish/completions/hitop.fish
+```
+
+### Storage
+
+Collections, history, and runtime context are stored in:
+- **Linux**: `~/.config/hitop/`
+- **macOS**: `~/Library/Application Support/hitop/`
+- **Windows**: `%APPDATA%\hitop\`
+
+The JSON format is identical to the browser extensions — collections exported from the extension can be imported into the CLI and vice versa.
+
+---
+
+## Browser Extensions
 
 ### Firefox Extension
 
@@ -92,70 +137,32 @@ npm run build
 
 See [EXTENSION_GUIDE.md](./EXTENSION_GUIDE.md) for detailed instructions.
 
-## Quick Start Guide
+### Chrome Extension
 
-### 1. Make Your First Request
+Install directly from the [Chrome Web Store](https://chromewebstore.google.com/detail/hitop-http-api-testing-to/mmbpagencfjfgeicmeobbmeocdpeokdk).
 
-1. Enter a URL in the URL field (e.g., `https://jsonplaceholder.typicode.com/todos/1`)
-2. Select HTTP method (GET, POST, etc.)
-3. Click "Make Request"
-4. View the response below
+---
 
-### 2. Add Headers
+## Building from source
 
-1. Click "Add Header" in the Headers section
-2. Enter header name and value
-3. Headers are automatically included in the request
+### Frontend (React)
 
-### 3. Save to Collection
-
-1. Click the save icon next to "Make Request"
-2. Enter a request name
-3. Select or create a collection
-4. Click "Save"
-
-### 4. Use Variables
-
-1. Click "Variables" under a collection name
-2. Add variable key-value pairs (e.g., `apiUrl = https://api.example.com`)
-3. Use in requests: `${apiUrl}/users`
-4. See [VARIABLES_GUIDE.md](./VARIABLES_GUIDE.md) for more
-
-### 5. Add Scripts
-
-1. Scroll to "Pre-Request Script" or "Post-Request Script" sections
-2. Write JavaScript code to modify requests or extract data
-3. See [SCRIPTING_GUIDE.md](./SCRIPTING_GUIDE.md) for examples
-
-## Documentation
-
-- **[Variables Guide](./VARIABLES_GUIDE.md)** - Complete guide to using collection variables
-- **[Scripting Guide](./SCRIPTING_GUIDE.md)** - Custom scripting documentation with examples
-- **[Components README](./frontend/src/components/README.md)** - Component architecture
-- **[Services README](./frontend/src/services/README.md)** - Service layer documentation
-
-## Project Structure
-
+```bash
+cd frontend
+npm install
+npm start          # development server at http://localhost:3000
+npm run build      # production build
 ```
-hitop/
-├── frontend/
-│   ├── public/
-│   └── src/
-│       ├── components/          # React components
-│       │   ├── Sidebar.js
-│       │   ├── RequestPanel.js
-│       │   ├── *Modal.js        # Various modal components
-│       │   └── README.md
-│       ├── services/            # Business logic services
-│       │   ├── variableInterpolation.js
-│       │   └── README.md
-│       ├── App.js               # Main application component
-│       ├── App.css              # Styles
-│       └── index.js             # Entry point
-├── VARIABLES_GUIDE.md           # Variables documentation
-├── SCRIPTING_GUIDE.md           # Scripting documentation
-└── README.md                    # This file
+
+### CLI (Rust)
+
+```bash
+cd cli
+cargo build --release
+./target/release/hitop --help
 ```
+
+---
 
 ## Key Concepts
 
@@ -175,53 +182,67 @@ Variables are key-value pairs defined at the collection level. They can be used 
 ### Context
 Context is runtime data shared between requests in a collection:
 - Set in post-request scripts: `setContext('userId', 123)`
-- Use in pre-request scripts: `getContext('userId')`
-- Persists across requests in the same session
+- Read in pre-request scripts: `getContext('userId')`
+- Persists across requests in the same run
 
 ### Scripts
 Custom JavaScript code that runs before or after requests:
-- **Pre-Request**: Modify URL, headers, body before sending
-- **Post-Request**: Extract data from response, store in context
+- **Pre-Request**: Modify URL, headers, body before sending (`setUrl`, `setHeader`, `setBody`)
+- **Post-Request**: Extract data from response, store in context (`response`, `getResponseValue`, `setContext`)
 
 ## Use Cases
 
-### 1. API Development & Testing
-Test your APIs during development with different methods, headers, and payloads.
-
-### 2. Authentication Workflows
+### Authentication workflows
 ```javascript
-// Login request (post-request script)
+// Login request — post-request script
 const token = getResponseValue('token');
 setContext('authToken', token);
 
-// Authenticated request (pre-request script)
+// Authenticated request — pre-request script
 const token = getContext('authToken');
 setHeader('Authorization', `Bearer ${token}`);
 ```
 
-### 3. Multi-Environment Testing
+### Multi-environment testing
 Create collections for different environments:
-- Dev: `apiUrl = https://dev-api.example.com`
-- Staging: `apiUrl = https://staging-api.example.com`
-- Production: `apiUrl = https://api.example.com`
+- Dev: `hostname = https://dev-api.example.com`
+- Staging: `hostname = https://staging-api.example.com`
+- Production: `hostname = https://api.example.com`
 
-### 4. Data Extraction & Chaining
+### Request chaining
 ```javascript
-// Request 1: Create user (post-request)
+// Request 1: Create user — post-request script
 const userId = getResponseValue('id');
 setContext('userId', userId);
 
-// Request 2: Get user (pre-request)
-const userId = getContext('userId');
-setUrl(`${getVariable('apiUrl')}/users/${userId}`);
+// Request 2: Get user — pre-request script
+const id = getContext('userId');
+setUrl(`${getVariable('hostname')}/users/${id}`);
 ```
 
-## Browser Support
+## Project Structure
 
-- Chrome (recommended)
-- Firefox
-- Safari
-- Edge
+```
+hitop/
+├── cli/                         # Rust CLI
+│   ├── crates/
+│   │   ├── hitop-core/          # Core library (published to crates.io)
+│   │   └── hitop/               # CLI binary (published to crates.io)
+│   └── Cargo.toml
+├── frontend/                    # React web app (used by extensions)
+│   └── src/
+├── extension/                   # Firefox extension
+├── chrome-extension/            # Chrome extension
+├── VARIABLES_GUIDE.md
+├── SCRIPTING_GUIDE.md
+└── README.md
+```
+
+## Documentation
+
+- **[Variables Guide](./VARIABLES_GUIDE.md)** — Complete guide to collection variables
+- **[Scripting Guide](./SCRIPTING_GUIDE.md)** — Custom scripting with examples
+- **[Extension Guide](./EXTENSION_GUIDE.md)** — Browser extension installation
 
 ## Contributing
 
@@ -229,14 +250,4 @@ Contributions are welcome! Please feel free to submit a Pull Request.
 
 ## License
 
-This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
-
-## Acknowledgments
-
-- Built with [React](https://reactjs.org/)
-- UI components from [Material-UI](https://mui.com/)
-- Syntax highlighting by [highlight.js](https://highlightjs.org/)
-
-## Support
-
-For issues, questions, or suggestions, please open an issue on GitHub.
+MIT — see the [LICENSE](LICENSE) file for details.
