@@ -55,7 +55,7 @@ hitop-firefox-extension.xpi
 # GitHub Pages - Keep docs/app for deployment
 # (docs/app is intentionally tracked)
 
-# Electron
+# Build artifacts
 dist/
 *.dmg
 *.exe
