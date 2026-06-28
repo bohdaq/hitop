@@ -1,22 +1,9 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-    <!-- Google tag (gtag.js) -->
-    <script async src="https://www.googletagmanager.com/gtag/js?id=G-TYQC208YN0"></script>
     <script>
-        window.dataLayer = window.dataLayer || [];
-        function gtag() { dataLayer.push(arguments); }
-        gtag('js', new Date());
-        gtag('config', 'G-TYQC208YN0');
-        gtag('config', 'AW-17667429231');
-        function trackEvent(category, action, label) {
-            gtag('event', action, { 'event_category': category, 'event_label': label });
-        }
-        function gtagSendEvent(url) {
-            var callback = function () { if (typeof url === 'string') window.location = url; };
-            gtag('event', 'conversion_event_default', { 'event_callback': callback, 'event_timeout': 2000 });
-            return false;
-        }
+        function trackEvent() {}
+        function gtagSendEvent(url) { if (typeof url === 'string') window.location = url; return false; }
     </script>
 
     <meta charset="UTF-8">

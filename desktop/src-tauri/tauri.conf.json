@@ -1,7 +1,7 @@
 {
   "productName": "HITOP",
   "version": "0.1.0",
-  "identifier": "com.bohdaq.hitop",
+  "identifier": "tech.rws8.hitop",
   "build": {
     "beforeDevCommand": "npm run dev",
     "beforeBuildCommand": "npm run build",
@@ -39,12 +39,12 @@
     "shortDescription": "HTTP API testing tool",
     "longDescription": "HITOP is a native HTTP API testing tool. Send requests, manage collections, use variables, and run pre/post request scripts — all stored locally.",
     "macOS": {
-      "minimumSystemVersion": "10.15",
+      "minimumSystemVersion": "12.0",
       "entitlements": "./Entitlements.mas.plist",
       "exceptionDomain": "",
       "frameworks": [],
-      "providerShortName": null,
-      "signingIdentity": null
+      "providerShortName": "XD7JHZ5DB3",
+      "signingIdentity": "3rd Party Mac Developer Application: Bogdan Tsap (XD7JHZ5DB3)"
     }
   }
 }
