@@ -356,6 +356,8 @@
         .cmp tr:hover td { background: rgba(255,255,255,0.02); }
         .ok { color: var(--green); }
         .no { color: var(--text-3); }
+        .warn-li::before { display: none; }
+        .warn-li { color: #FB923C; }
 
         a.inline { color: #67E8F9; text-decoration: none; }
         a.inline:hover { text-decoration: underline; }
@@ -459,7 +461,7 @@
                     <li>CLI via cargo install hitop</li>
                     <li>Full feature set included</li>
                     <li>MIT open source license</li>
-                    <li style="color:#FB923C;"><span style="color:#FB923C;font-weight:700;">⚠</span>&nbsp; Subject to browser CORS policy</li>
+                    <li class="warn-li">⚠ Subject to browser CORS policy</li>
                 </ul>
                 <div class="btn-row" style="margin-top:28px;">
                     <a href="./app.html" class="btn btn-primary"
@@ -480,7 +482,7 @@
                     <li>Works fully offline</li>
                     <li>Free updates included</li>
                     <li>Mac App Store</li>
-                    <li><span style="color:var(--green);font-weight:700;">✓</span>&nbsp; No CORS restrictions</li>
+                    <li>No CORS restrictions</li>
                 </ul>
                 <div class="btn-row" style="margin-top:28px;">
                     <a href="#" class="btn btn-primary" style="background:linear-gradient(135deg,var(--violet),var(--indigo));opacity:0.5;cursor:default;">
@@ -500,7 +502,7 @@
                     <li>Works fully offline</li>
                     <li>Free updates included</li>
                     <li>App Store distribution</li>
-                    <li><span style="color:var(--green);font-weight:700;">✓</span>&nbsp; No CORS restrictions</li>
+                    <li>No CORS restrictions</li>
                 </ul>
                 <div class="btn-row" style="margin-top:28px;">
                     <a href="#" class="btn btn-primary" style="background:linear-gradient(135deg,var(--cyan),var(--indigo));opacity:0.5;cursor:default;">
