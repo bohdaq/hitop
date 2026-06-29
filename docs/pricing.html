@@ -438,7 +438,7 @@
     <div class="hero-inner">
         <div class="hero-badge">Pricing</div>
         <h1><span class="grad">Simple Pricing.</span><br>No Subscriptions.</h1>
-        <p class="hero-sub">The web app and browser extensions are free forever. Native apps for macOS and iOS are one-time purchases.</p>
+        <p class="hero-sub">Browser tools are free — with standard browser CORS restrictions. Native apps for macOS and iOS are one-time purchases with no CORS limits.</p>
     </div>
 </div>
 
@@ -451,7 +451,7 @@
             <div class="card price-hero" style="text-align:center;padding:48px 32px;">
                 <div style="font-size:0.72rem;font-weight:700;letter-spacing:1.4px;text-transform:uppercase;color:var(--cyan);margin-bottom:16px;">Web App · Extensions · CLI</div>
                 <div class="price" style="background:linear-gradient(135deg,#6EE7B7,#67E8F9);-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text;">$0</div>
-                <div class="price-sub">Free forever. No account required.</div>
+                <div class="price-sub">Free. No account required.</div>
                 <ul class="checklist" style="grid-template-columns:1fr;text-align:left;margin-top:24px;">
                     <li>Web app — any browser</li>
                     <li>Firefox Extension</li>
@@ -459,6 +459,7 @@
                     <li>CLI via cargo install hitop</li>
                     <li>Full feature set included</li>
                     <li>MIT open source license</li>
+                    <li style="color:#FB923C;"><span style="color:#FB923C;font-weight:700;">⚠</span>&nbsp; Subject to browser CORS policy</li>
                 </ul>
                 <div class="btn-row" style="margin-top:28px;">
                     <a href="./app.html" class="btn btn-primary"
@@ -479,6 +480,7 @@
                     <li>Works fully offline</li>
                     <li>Free updates included</li>
                     <li>Mac App Store</li>
+                    <li><span style="color:var(--green);font-weight:700;">✓</span>&nbsp; No CORS restrictions</li>
                 </ul>
                 <div class="btn-row" style="margin-top:28px;">
                     <a href="#" class="btn btn-primary" style="background:linear-gradient(135deg,var(--violet),var(--indigo));opacity:0.5;cursor:default;">
@@ -498,6 +500,7 @@
                     <li>Works fully offline</li>
                     <li>Free updates included</li>
                     <li>App Store distribution</li>
+                    <li><span style="color:var(--green);font-weight:700;">✓</span>&nbsp; No CORS restrictions</li>
                 </ul>
                 <div class="btn-row" style="margin-top:28px;">
                     <a href="#" class="btn btn-primary" style="background:linear-gradient(135deg,var(--cyan),var(--indigo));opacity:0.5;cursor:default;">
@@ -532,15 +535,17 @@
                         <th>Cost</th>
                         <th>Account</th>
                         <th>Data Storage</th>
+                        <th>CORS-Free</th>
                         <th>Offline</th>
                     </tr>
                 </thead>
                 <tbody>
                     <tr>
-                        <td>HITOP Web App</td>
+                        <td>HITOP Web App / Extensions</td>
                         <td><span class="ok">$0</span></td>
                         <td><span class="ok">Not required</span></td>
                         <td><span class="ok">100% local</span></td>
+                        <td><span style="color:#FB923C;">⚠ Browser CORS applies</span></td>
                         <td><span class="ok">Yes</span></td>
                     </tr>
                     <tr>
@@ -548,6 +553,7 @@
                         <td><span class="ok">$4.99 one-time</span></td>
                         <td><span class="ok">Not required</span></td>
                         <td><span class="ok">100% local</span></td>
+                        <td><span class="ok">✓ No CORS</span></td>
                         <td><span class="ok">Yes</span></td>
                     </tr>
                     <tr>
@@ -555,6 +561,7 @@
                         <td><span class="ok">$2.99 one-time</span></td>
                         <td><span class="ok">Not required</span></td>
                         <td><span class="ok">100% local</span></td>
+                        <td><span class="ok">✓ No CORS</span></td>
                         <td><span class="ok">Yes</span></td>
                     </tr>
                     <tr>
@@ -562,6 +569,7 @@
                         <td>$0–$49/user/mo</td>
                         <td><span class="no">Required</span></td>
                         <td>Cloud sync</td>
+                        <td><span class="ok">✓ Native desktop</span></td>
                         <td>Partial</td>
                     </tr>
                     <tr>
@@ -569,6 +577,7 @@
                         <td>$0–$8/user/mo</td>
                         <td><span class="no">Required</span></td>
                         <td>Cloud sync</td>
+                        <td><span class="ok">✓ Native desktop</span></td>
                         <td>Partial</td>
                     </tr>
                 </tbody>
@@ -582,12 +591,12 @@
         </div>
 
         <div class="card cta-card" style="text-align:center;">
-            <h2>Start for free today</h2>
-            <p style="max-width:480px;margin:0 auto;">No payment, no account, no setup. The full feature set is available in your browser right now.</p>
+            <h2>Pick your platform</h2>
+            <p style="max-width:540px;margin:0 auto;">Start free in your browser. Upgrade to the native Mac or iOS app when you need to bypass CORS or want a dedicated desktop experience.</p>
             <div class="btn-row">
                 <a href="./app.html" class="btn btn-primary"
                     onclick="trackEvent('Navigation','click_web_app','Pricing CTA'); return gtagSendEvent('./app.html');">
-                    Launch Web App →
+                    Launch Web App — Free →
                 </a>
                 <a href="https://github.com/bohdaq/hitop" class="btn btn-ghost" target="_blank" rel="noopener noreferrer"
                     onclick="trackEvent('Navigation','click_github','Pricing CTA');">

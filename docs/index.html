@@ -8,7 +8,7 @@
 
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <meta name="description" content="Privacy-focused HTTP API testing tool and Postman alternative. Test REST APIs in your browser with collections, variables, and custom scripts. No account needed, works offline, 100% free and open source.">
+    <meta name="description" content="Privacy-focused HTTP API testing tool and Postman alternative. Free web app and browser extensions — or native macOS ($4.99) and iOS ($2.99) apps that bypass CORS entirely. No account, no cloud sync.">
     <meta name="keywords" content="API testing, HTTP client, REST client, Postman alternative, API testing tool, REST API tester, Insomnia alternative, browser API testing, privacy-focused API testing, offline API client, API collection runner, Thunder Client alternative, web-based API tester, online REST client, developer tools, API automation, HTTP request tool, test API endpoints, JSON API testing">
     <title>HITOP — HTTP API Client | Postman Alternative</title>
 
@@ -603,6 +603,67 @@
             section { padding: 64px 0; }
             .stat { padding: 32px 16px; }
         }
+
+        /* PRICING */
+        .price-grid {
+            display: grid;
+            grid-template-columns: repeat(3, 1fr);
+            gap: 16px;
+        }
+        .price-card {
+            background: var(--surface);
+            border: 1px solid var(--border);
+            border-radius: 20px;
+            padding: 32px;
+            display: flex;
+            flex-direction: column;
+        }
+        .price-feat {
+            background: linear-gradient(140deg, rgba(124,58,237,0.13), rgba(99,102,241,0.06));
+            border-color: rgba(139,92,246,0.3);
+            box-shadow: 0 0 0 1px rgba(139,92,246,0.1), 0 16px 40px rgba(124,58,237,0.12);
+        }
+        .price-tier {
+            font-size: 0.72rem;
+            font-weight: 700;
+            letter-spacing: 1.6px;
+            text-transform: uppercase;
+            color: var(--text-3);
+            margin-bottom: 8px;
+        }
+        .price-val {
+            font-size: 3rem;
+            font-weight: 900;
+            letter-spacing: -2px;
+            line-height: 1;
+            color: var(--text);
+            margin-bottom: 6px;
+        }
+        .price-desc {
+            font-size: 0.85rem;
+            color: var(--text-2);
+            margin-bottom: 20px;
+        }
+        .price-feats {
+            list-style: none;
+            padding: 0;
+            margin: 0 0 24px;
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+        }
+        .price-feats li {
+            font-size: 0.875rem;
+            color: var(--text-2);
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+        .price-feats .warn { color: #FB923C; }
+        @media (max-width: 900px) {
+            .price-grid { grid-template-columns: 1fr; }
+        }
     </style>
 </head>
 <body>
@@ -631,7 +692,7 @@
             v4.0.0 &nbsp;·&nbsp; Open Source &nbsp;·&nbsp; MIT License
         </div>
         <h1>HTTP API Testing<br><span class="grad">Without Compromise</span></h1>
-        <p class="hero-sub">Privacy-first REST client. Runs in your browser. No account, no cloud sync, no tracking — just fast, focused API testing.</p>
+        <p class="hero-sub">Privacy-first HTTP API testing. No account, no cloud sync, no tracking. Free in your browser — or go native on <strong style="color:var(--text);">macOS</strong> and <strong style="color:var(--text);">iOS</strong> for OS-level requests without CORS restrictions.</p>
         <div class="btn-row">
             <a href="./app.html" class="btn btn-primary"
                 onclick="trackEvent('Navigation','click_web_app','Hero'); return gtagSendEvent('./app.html');">
@@ -646,17 +707,23 @@
                 onclick="trackEvent('Navigation','click_chrome_extension','Hero');">
                 Chrome Extension
             </a>
+            <a href="./pricing.html" class="btn btn-outline" style="border-color:rgba(167,139,250,0.4);color:#C4B5FD;">
+                macOS App — $4.99
+            </a>
+            <a href="./pricing.html" class="btn btn-outline" style="border-color:rgba(6,182,212,0.4);color:#67E8F9;">
+                iOS App — $2.99
+            </a>
             <a href="https://github.com/bohdaq/hitop" class="btn btn-ghost" target="_blank" rel="noopener noreferrer"
                 onclick="trackEvent('Navigation','click_github','Hero');">
                 ★ GitHub
             </a>
         </div>
         <div class="pills">
-            <span class="pill">Works offline</span>
-            <span class="pill">Local storage only</span>
+            <span class="pill">Browser — free, CORS applies</span>
+            <span class="pill">macOS — $4.99, no CORS</span>
+            <span class="pill">iOS — $2.99, no CORS</span>
+            <span class="pill">CLI — free</span>
             <span class="pill">No account</span>
-            <span class="pill">Chrome · Firefox · Safari · Edge</span>
-            <span class="pill">CLI available</span>
         </div>
     </div>
 </section>
@@ -673,8 +740,8 @@
                 <div class="stat-lbl">External servers</div>
             </div>
             <div class="stat">
-                <div class="stat-val">∞</div>
-                <div class="stat-lbl">API requests</div>
+                <div class="stat-val">$0</div>
+                <div class="stat-lbl">Browser &amp; CLI</div>
             </div>
             <div class="stat">
                 <div class="stat-val">MIT</div>
@@ -730,7 +797,12 @@
             <div class="card cv w2 r d3">
                 <div class="ci">🌐</div>
                 <h3>Complete HTTP Support</h3>
-                <p>All HTTP methods — GET, POST, PUT, PATCH, DELETE, HEAD, OPTIONS — with custom headers, request bodies (JSON, XML, form data, plain text), and auth flows. Everything Postman does, in your browser, without an account or cloud dependency.</p>
+                <p>All HTTP methods — GET, POST, PUT, PATCH, DELETE, HEAD, OPTIONS — with custom headers, request bodies (JSON, XML, form data, plain text), and auth flows. Everything Postman does, without an account or cloud dependency.</p>
+            </div>
+            <div class="card r d3" style="border-color:rgba(6,182,212,0.22);background:linear-gradient(140deg,rgba(6,182,212,0.08),rgba(16,185,129,0.03));">
+                <div class="ci c">🚫</div>
+                <h3>No CORS on Native Apps</h3>
+                <p>Browser extensions must obey browser CORS policies — some APIs simply won't respond to browser origins. The <strong style="color:var(--text);">macOS ($4.99)</strong> and <strong style="color:var(--text);">iOS ($2.99)</strong> native apps send requests at the OS level, bypassing CORS entirely. Test any endpoint, anywhere.</p>
             </div>
         </div>
     </div>
@@ -785,7 +857,7 @@
         <div class="r">
             <div class="tag">Compare</div>
             <h2>Why choose <span class="grad">HITOP</span>?</h2>
-            <p class="sec-desc">No paywalls. No cloud lock-in. No data harvesting. Ever.</p>
+            <p class="sec-desc">Local-first. No cloud lock-in. No data harvesting. Native apps bypass CORS — browsers don't.</p>
         </div>
         <div style="overflow-x:auto;" class="r d1">
             <table class="cmp">
@@ -812,7 +884,7 @@
                     </tr>
                     <tr>
                         <td>Cost</td>
-                        <td class="h"><span class="ok">✓</span> $0 forever</td>
+                        <td class="h"><span class="ok">✓</span> From $0 <a href="./pricing.html" style="color:var(--purple);font-size:0.8em;">see pricing</a></td>
                         <td>$0–$49/user/mo</td>
                         <td>$0–$8/user/mo</td>
                     </tr>
@@ -830,9 +902,15 @@
                     </tr>
                     <tr>
                         <td>Browser extension</td>
-                        <td class="h"><span class="ok">✓</span> Chrome & Firefox</td>
+                        <td class="h"><span class="ok">✓</span> Chrome &amp; Firefox</td>
                         <td><span class="no">—</span> Desktop only</td>
                         <td><span class="no">—</span> Desktop only</td>
+                    </tr>
+                    <tr>
+                        <td>No CORS restrictions</td>
+                        <td class="h"><span style="color:#FB923C;">⚠</span> Web/ext: CORS applies<br><span class="ok">✓</span> macOS &amp; iOS: none</td>
+                        <td><span class="ok">✓</span> Desktop native</td>
+                        <td><span class="ok">✓</span> Desktop native</td>
                     </tr>
                     <tr>
                         <td>Collections & Variables</td>
@@ -858,24 +936,71 @@
     </div>
 </section>
 
+<section id="pricing">
+    <div class="container">
+        <div class="r" style="text-align:center;">
+            <div class="tag" style="justify-content:center;">Pricing</div>
+            <h2>Simple, honest <span class="grad">pricing</span></h2>
+            <p class="sec-desc" style="margin:0 auto 56px;">Free where it works. Native where it matters — no CORS, no limits.</p>
+        </div>
+        <div class="price-grid r d1">
+            <div class="price-card">
+                <div class="price-tier">Free</div>
+                <div class="price-val">$0</div>
+                <div class="price-desc">Web App · Extensions · CLI</div>
+                <ul class="price-feats">
+                    <li><span class="ok">✓</span> All core features</li>
+                    <li><span class="ok">✓</span> Collections &amp; variables</li>
+                    <li><span class="ok">✓</span> Open source MIT</li>
+                    <li><span class="warn">⚠</span> Subject to browser CORS</li>
+                </ul>
+                <a href="./app.html" class="btn btn-outline" style="width:100%;justify-content:center;">Launch Web App</a>
+            </div>
+            <div class="price-card price-feat">
+                <div class="price-tier" style="color:#C4B5FD;">macOS</div>
+                <div class="price-val" style="background:linear-gradient(135deg,#C4B5FD,#67E8F9);-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text;">$4.99</div>
+                <div class="price-desc">Native Desktop · Mac App Store</div>
+                <ul class="price-feats">
+                    <li><span class="ok">✓</span> All core features</li>
+                    <li><span class="ok">✓</span> No CORS restrictions</li>
+                    <li><span class="ok">✓</span> macOS 12+ · One-time</li>
+                    <li><span class="ok">✓</span> OS-level HTTP requests</li>
+                </ul>
+                <a href="./pricing.html" class="btn btn-primary" style="width:100%;justify-content:center;">Coming Soon</a>
+            </div>
+            <div class="price-card">
+                <div class="price-tier" style="color:#67E8F9;">iOS</div>
+                <div class="price-val" style="background:linear-gradient(135deg,#67E8F9,#10B981);-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text;">$2.99</div>
+                <div class="price-desc">iPhone · iPad · App Store</div>
+                <ul class="price-feats">
+                    <li><span class="ok">✓</span> All core features</li>
+                    <li><span class="ok">✓</span> No CORS restrictions</li>
+                    <li><span class="ok">✓</span> iOS 16+ · One-time</li>
+                    <li><span class="ok">✓</span> OS-level HTTP requests</li>
+                </ul>
+                <a href="./pricing.html" class="btn btn-outline" style="width:100%;justify-content:center;border-color:rgba(6,182,212,0.4);color:#67E8F9;">Coming Soon</a>
+            </div>
+        </div>
+    </div>
+</section>
+
 <section class="cta-section">
     <div class="container">
         <div class="tag r" style="justify-content:center;">Get Started</div>
-        <h2 class="r">Ready to switch?<br><span class="grad">No setup required.</span></h2>
-        <p class="hero-sub r" style="margin:0 auto 48px;">Open the web app and start testing in seconds. Or install the browser extension for one-click access from anywhere.</p>
+        <h2 class="r">Ready to switch?<br><span class="grad">Pick your platform.</span></h2>
+        <p class="hero-sub r" style="margin:0 auto 48px;">Start free in your browser — or go native on Mac and iOS for full power without CORS.</p>
         <div class="btn-row r">
             <a href="./app.html" class="btn btn-primary"
                 onclick="trackEvent('Navigation','click_web_app','CTA'); return gtagSendEvent('./app.html');">
-                Launch Web App →
+                Launch Web App — Free →
             </a>
-            <a href="https://addons.mozilla.org/addon/hitop/" class="btn btn-outline" target="_blank" rel="noopener noreferrer"
-                onclick="trackEvent('Navigation','click_firefox_extension','CTA');">
-                Firefox Extension
+            <a href="./pricing.html" class="btn btn-outline" style="border-color:rgba(167,139,250,0.4);color:#C4B5FD;"
+                onclick="trackEvent('Navigation','click_macos_cta','CTA');">
+                macOS App — $4.99
             </a>
-            <a href="https://chromewebstore.google.com/detail/hitop-http-api-testing-to/mmbpagencfjfgeicmeobbmeocdpeokdk"
-                class="btn btn-outline" target="_blank" rel="noopener noreferrer"
-                onclick="trackEvent('Navigation','click_chrome_extension','CTA');">
-                Chrome Extension
+            <a href="./pricing.html" class="btn btn-outline" style="border-color:rgba(6,182,212,0.4);color:#67E8F9;"
+                onclick="trackEvent('Navigation','click_ios_cta','CTA');">
+                iOS App — $2.99
             </a>
             <a href="https://github.com/bohdaq/hitop" class="btn btn-ghost" target="_blank" rel="noopener noreferrer"
                 onclick="trackEvent('Navigation','click_github','CTA');">
