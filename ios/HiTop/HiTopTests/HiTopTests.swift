@@ -1,4 +1,5 @@
 import Testing
+import Foundation
 @testable import HiTop
 
 // MARK: - InterpolationService
@@ -51,6 +52,7 @@ struct InterpolationServiceTests {
 // MARK: - Collection Codable
 
 @Suite("Collection Codable")
+@MainActor
 struct CollectionCodableTests {
 
     @Test("Full round-trip encode → decode")

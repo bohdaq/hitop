@@ -417,4 +417,28 @@ final class AppViewModel {
         case invalidData
         var errorDescription: String? { "Invalid JSON data" }
     }
+
+    // MARK: - Testing support
+
+    func resetForTesting() {
+        let req = HTTPRequest(name: "New Request")
+        let col = Collection(name: "Default", requests: [req])
+        collections = [col]
+        history = []
+        contexts = [:]
+        response = nil
+        responseError = nil
+        isLoading = false
+        runResults = []
+        selectedRequestId = nil
+        selectedCollectionId = nil
+        activeRequestId = nil
+        activeCollectionId = nil
+        activeURL = ""
+        activeMethod = "GET"
+        activeHeaders = [Header()]
+        activeBody = ""
+        activePreScript = ""
+        activePostScript = ""
+    }
 }
