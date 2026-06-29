@@ -1,6 +1,8 @@
 import Foundation
 import Observation
+import SwiftUI
 
+@MainActor
 @Observable
 final class AppViewModel {
     // MARK: - Collections
@@ -20,6 +22,8 @@ final class AppViewModel {
     var response: HTTPResponse? = nil
     var responseError: String? = nil
     var isLoading: Bool = false
+    // Incremented each time a response arrives so views can observe it
+    var responseReceived: Int = 0
 
     // MARK: - History
     var history: [HistoryItem] = []
@@ -51,6 +55,11 @@ final class AppViewModel {
         }
         history = storage.loadHistory()
         contexts = storage.loadContexts()
+
+        // Auto-select first request so the detail pane is not empty on launch
+        if let first = collections.first, let req = first.requests.first {
+            loadRequest(req, collectionId: first.id)
+        }
     }
 
     func persistCollections() {
@@ -81,6 +90,7 @@ final class AppViewModel {
 
     func deleteCollection(id: UInt64) {
         collections.removeAll { $0.id == id }
+        if activeCollectionId == id { clearActiveRequest() }
         persistCollections()
     }
 
@@ -89,9 +99,7 @@ final class AppViewModel {
         col.id = IDGenerator.next()
         col.name = col.name + " (Copy)"
         col.requests = col.requests.map { req in
-            var r = req
-            r.id = IDGenerator.next()
-            return r
+            var r = req; r.id = IDGenerator.next(); return r
         }
         if let idx = collections.firstIndex(where: { $0.id == id }) {
             collections.insert(col, at: idx + 1)
@@ -107,8 +115,8 @@ final class AppViewModel {
         guard let idx = collections.firstIndex(where: { $0.id == collectionId }) else { return }
         let req = HTTPRequest()
         collections[idx].requests.append(req)
-        loadRequest(req, collectionId: collectionId)
         persistCollections()
+        loadRequest(req, collectionId: collectionId)
     }
 
     func deleteRequest(id: UInt64, collectionId: UInt64) {
@@ -134,6 +142,9 @@ final class AppViewModel {
     // MARK: - Load request into editor
 
     func loadRequest(_ request: HTTPRequest, collectionId: UInt64) {
+        // Auto-save current request before switching
+        saveActiveRequest()
+
         activeRequestId = request.id
         activeCollectionId = collectionId
         activeURL = request.url
@@ -149,6 +160,7 @@ final class AppViewModel {
     }
 
     func clearActiveRequest() {
+        saveActiveRequest()
         activeRequestId = nil
         activeCollectionId = nil
         activeURL = ""
@@ -159,6 +171,7 @@ final class AppViewModel {
         activePostScript = ""
         response = nil
         responseError = nil
+        selectedRequestId = nil
     }
 
     // MARK: - Save active request back to collection
@@ -238,15 +251,14 @@ final class AppViewModel {
                     updateContext(result.contextUpdates, for: id)
                 }
             } catch {
-                await MainActor.run {
-                    self.responseError = "Pre-request script error: \(error.localizedDescription)"
-                    self.isLoading = false
-                }
+                responseError = "Pre-request script error: \(error.localizedDescription)"
                 return
             }
         }
 
-        await MainActor.run { self.isLoading = true; self.response = nil; self.responseError = nil }
+        isLoading = true
+        response = nil
+        responseError = nil
 
         do {
             let result = try await http.send(
@@ -271,16 +283,13 @@ final class AppViewModel {
             }
 
             addToHistory(result: result, url: finalURL)
-
-            await MainActor.run {
-                self.response = result
-                self.isLoading = false
-            }
+            response = result
+            isLoading = false
+            responseReceived += 1
         } catch {
-            await MainActor.run {
-                self.responseError = error.localizedDescription
-                self.isLoading = false
-            }
+            responseError = error.localizedDescription
+            isLoading = false
+            responseReceived += 1
         }
     }
 
@@ -306,6 +315,7 @@ final class AppViewModel {
     }
 
     func loadFromHistory(_ item: HistoryItem) {
+        saveActiveRequest()
         activeRequestId = nil
         activeCollectionId = nil
         activeURL = item.url
@@ -316,6 +326,8 @@ final class AppViewModel {
         activePostScript = item.postRequestScript
         response = nil
         responseError = nil
+        selectedRequestId = nil
+        responseReceived += 1  // switch view to response tab if one exists
     }
 
     func clearHistory() {
@@ -337,7 +349,8 @@ final class AppViewModel {
 
     func runCollection(_ collection: Collection) async {
         guard !collection.requests.isEmpty else { return }
-        await MainActor.run { self.runResults = []; self.isRunning = true }
+        runResults = []
+        isRunning = true
 
         let vars = collection.variables
         let ctx = context(for: collection.id)
@@ -360,25 +373,23 @@ final class AppViewModel {
 
             do {
                 let result = try await http.send(url: url, method: req.method, headers: headers, body: body)
-                let runResult = RunResult(
+                runResults.append(RunResult(
                     requestName: req.name, method: req.method, url: url,
                     statusCode: String(result.statusCode),
                     success: (200..<300).contains(result.statusCode),
                     durationMs: result.durationMs
-                )
-                await MainActor.run { self.runResults.append(runResult) }
+                ))
                 if !(200..<300).contains(result.statusCode) { break }
             } catch {
-                let runResult = RunResult(
+                runResults.append(RunResult(
                     requestName: req.name, method: req.method, url: url,
                     statusCode: "Error", success: false, durationMs: 0
-                )
-                await MainActor.run { self.runResults.append(runResult) }
+                ))
                 break
             }
         }
 
-        await MainActor.run { self.isRunning = false }
+        isRunning = false
     }
 
     // MARK: - Import / Export
@@ -396,6 +407,10 @@ final class AppViewModel {
         let imported = try JSONDecoder().decode([Collection].self, from: data)
         collections = imported
         persistCollections()
+        // Load first request after import
+        if let first = imported.first, let req = first.requests.first {
+            loadRequest(req, collectionId: first.id)
+        }
     }
 
     enum ImportError: LocalizedError {

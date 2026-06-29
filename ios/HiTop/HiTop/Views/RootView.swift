@@ -7,6 +7,8 @@ struct RootView: View {
         NavigationSplitView {
             SidebarView()
         } detail: {
+            // Shown in the detail column on iPad (sidebar always visible).
+            // On iPhone the NavigationLink in RequestRowView pushes directly.
             if vm.selectedRequestId != nil {
                 RequestDetailView()
             } else {

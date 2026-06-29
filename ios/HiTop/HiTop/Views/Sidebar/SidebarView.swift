@@ -6,20 +6,38 @@ struct SidebarView: View {
     @State private var newCollectionName = ""
     @State private var showHistory = false
     @State private var showImport = false
-    @State private var importJSON = ""
-    @State private var importError: String? = nil
     @State private var showExport = false
+    @State private var editMode: EditMode = .inactive
 
     var body: some View {
+        @Bindable var vm = vm
         List {
             ForEach($vm.collections) { $collection in
                 CollectionSectionView(collection: $collection)
             }
         }
         .listStyle(.sidebar)
+        .environment(\.editMode, $editMode)
+        // Register the navigation destination for request rows
+        .navigationDestination(for: RequestNavTarget.self) { target in
+            RequestDetailView()
+                .onAppear {
+                    guard let col = vm.collections.first(where: { $0.id == target.collectionId }),
+                          let req = col.requests.first(where: { $0.id == target.requestId }) else { return }
+                    vm.loadRequest(req, collectionId: target.collectionId)
+                }
+        }
         .navigationTitle("HiTop")
         .toolbar {
             ToolbarItemGroup(placement: .navigationBarTrailing) {
+                Button {
+                    withAnimation {
+                        editMode = editMode == .active ? .inactive : .active
+                    }
+                } label: {
+                    Image(systemName: editMode == .active ? "checkmark.circle.fill" : "arrow.up.arrow.down")
+                }
+
                 Menu {
                     Button { showHistory = true } label: {
                         Label("History", systemImage: "clock")

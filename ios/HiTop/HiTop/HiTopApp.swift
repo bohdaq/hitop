@@ -8,6 +8,11 @@ struct HiTopApp: App {
         WindowGroup {
             RootView()
                 .environment(viewModel)
+                .onAppear {
+                    if CommandLine.arguments.contains("-uitesting") {
+                        viewModel.resetForTesting()
+                    }
+                }
         }
     }
 }

@@ -412,6 +412,7 @@
             .card, .price-hero { padding: 28px 24px; }
             .checklist { grid-template-columns: 1fr; }
             .plan-grid { grid-template-columns: 1fr !important; }
+            .plan-grid > * { padding: 28px 20px !important; }
         }
     </style>
 </head>
@@ -437,7 +438,7 @@
     <div class="hero-inner">
         <div class="hero-badge">Pricing</div>
         <h1><span class="grad">Simple Pricing.</span><br>No Subscriptions.</h1>
-        <p class="hero-sub">The web app and browser extensions are free forever. The native macOS desktop app is a one-time purchase.</p>
+        <p class="hero-sub">The web app and browser extensions are free forever. Native apps for macOS and iOS are one-time purchases.</p>
     </div>
 </div>
 
@@ -445,14 +446,14 @@
     <div class="container">
 
         <!-- Pricing cards -->
-        <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-bottom:20px;" class="plan-grid">
+        <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:16px;margin-bottom:20px;" class="plan-grid">
 
             <div class="card price-hero" style="text-align:center;padding:48px 32px;">
-                <div style="font-size:0.72rem;font-weight:700;letter-spacing:1.4px;text-transform:uppercase;color:var(--cyan);margin-bottom:16px;">Web App · Browser Extensions · CLI</div>
+                <div style="font-size:0.72rem;font-weight:700;letter-spacing:1.4px;text-transform:uppercase;color:var(--cyan);margin-bottom:16px;">Web App · Extensions · CLI</div>
                 <div class="price" style="background:linear-gradient(135deg,#6EE7B7,#67E8F9);-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text;">$0</div>
                 <div class="price-sub">Free forever. No account required.</div>
                 <ul class="checklist" style="grid-template-columns:1fr;text-align:left;margin-top:24px;">
-                    <li>Web app — launch in any browser</li>
+                    <li>Web app — any browser</li>
                     <li>Firefox Extension</li>
                     <li>Chrome Extension</li>
                     <li>CLI via cargo install hitop</li>
@@ -477,10 +478,29 @@
                     <li>Local file storage</li>
                     <li>Works fully offline</li>
                     <li>Free updates included</li>
-                    <li>Mac App Store distribution</li>
+                    <li>Mac App Store</li>
                 </ul>
                 <div class="btn-row" style="margin-top:28px;">
                     <a href="#" class="btn btn-primary" style="background:linear-gradient(135deg,var(--violet),var(--indigo));opacity:0.5;cursor:default;">
+                        Coming Soon
+                    </a>
+                </div>
+            </div>
+
+            <div class="card" style="text-align:center;padding:48px 32px;background:linear-gradient(140deg,rgba(6,182,212,0.1),rgba(99,102,241,0.06));border-color:rgba(6,182,212,0.22);">
+                <div style="font-size:0.72rem;font-weight:700;letter-spacing:1.4px;text-transform:uppercase;color:var(--cyan);margin-bottom:16px;">iOS App</div>
+                <div class="price" style="background:linear-gradient(135deg,#67E8F9,#A78BFA);-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text;">$2.99</div>
+                <div class="price-sub">One-time purchase. No subscription.</div>
+                <ul class="checklist" style="grid-template-columns:1fr;text-align:left;margin-top:24px;">
+                    <li>Native iPhone and iPad app</li>
+                    <li>Full feature set</li>
+                    <li>Local storage on device</li>
+                    <li>Works fully offline</li>
+                    <li>Free updates included</li>
+                    <li>App Store distribution</li>
+                </ul>
+                <div class="btn-row" style="margin-top:28px;">
+                    <a href="#" class="btn btn-primary" style="background:linear-gradient(135deg,var(--cyan),var(--indigo));opacity:0.5;cursor:default;">
                         Coming Soon
                     </a>
                 </div>
@@ -524,8 +544,15 @@
                         <td><span class="ok">Yes</span></td>
                     </tr>
                     <tr>
-                        <td>HITOP Desktop</td>
+                        <td>HITOP Desktop (macOS)</td>
                         <td><span class="ok">$4.99 one-time</span></td>
+                        <td><span class="ok">Not required</span></td>
+                        <td><span class="ok">100% local</span></td>
+                        <td><span class="ok">Yes</span></td>
+                    </tr>
+                    <tr>
+                        <td>HITOP iOS</td>
+                        <td><span class="ok">$2.99 one-time</span></td>
                         <td><span class="ok">Not required</span></td>
                         <td><span class="ok">100% local</span></td>
                         <td><span class="ok">Yes</span></td>

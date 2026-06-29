@@ -2,49 +2,55 @@ import SwiftUI
 
 struct RequestDetailView: View {
     @Environment(AppViewModel.self) private var vm
+    // 0=Headers, 1=Body, 2=Scripts, 3=Response
     @State private var selectedTab = 0
 
     var body: some View {
         VStack(spacing: 0) {
-            // URL Bar
             URLBarView()
                 .padding(.horizontal)
                 .padding(.vertical, 10)
 
             Divider()
 
-            // Tab picker: Headers / Body / Scripts
             Picker("", selection: $selectedTab) {
                 Text("Headers").tag(0)
                 Text("Body").tag(1)
                 Text("Scripts").tag(2)
+                Text("Response").tag(3)
             }
             .pickerStyle(.segmented)
             .padding(.horizontal)
             .padding(.vertical, 8)
 
-            // Tab content
+            Divider()
+
             Group {
                 switch selectedTab {
                 case 0: HeadersEditorView()
                 case 1: BodyEditorView()
                 case 2: ScriptsEditorView()
+                case 3: ResponseView()
                 default: EmptyView()
                 }
             }
-
-            Divider()
-
-            // Response
-            ResponseView()
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
         .navigationTitle(requestTitle)
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
             ToolbarItem(placement: .navigationBarTrailing) {
-                Button("Save") { vm.saveActiveRequest() }
-                    .disabled(vm.activeRequestId == nil)
+                Button {
+                    vm.saveActiveRequest()
+                } label: {
+                    Image(systemName: "square.and.arrow.down")
+                }
+                .disabled(vm.activeRequestId == nil)
             }
+        }
+        // Auto-switch to Response tab whenever a send completes
+        .onChange(of: vm.responseReceived) { _, _ in
+            selectedTab = 3
         }
     }
 

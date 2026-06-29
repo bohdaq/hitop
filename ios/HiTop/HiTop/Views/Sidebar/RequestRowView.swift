@@ -12,14 +12,12 @@ struct RequestRowView: View {
     }
 
     var body: some View {
-        Button {
-            vm.loadRequest(request, collectionId: collectionId)
-        } label: {
+        NavigationLink(value: RequestNavTarget(requestId: request.id, collectionId: collectionId)) {
             HStack(spacing: 8) {
                 Text(request.method)
                     .font(.caption.monospaced())
                     .fontWeight(.semibold)
-                    .foregroundStyle(methodColor(request.method))
+                    .foregroundStyle(HTTPMethod.color(for: request.method))
                     .frame(width: 52, alignment: .leading)
                 Text(request.name)
                     .lineLimit(1)
@@ -27,6 +25,13 @@ struct RequestRowView: View {
             }
         }
         .listRowBackground(isSelected ? Color.accentColor.opacity(0.12) : Color.clear)
+        // Also update ViewModel so the detail view knows what's active
+        .simultaneousGesture(TapGesture().onEnded {
+            if let col = vm.collections.first(where: { $0.id == collectionId }),
+               let req = col.requests.first(where: { $0.id == request.id }) {
+                vm.loadRequest(req, collectionId: collectionId)
+            }
+        })
         .contextMenu {
             Button { renameName = request.name; showRename = true } label: {
                 Label("Rename", systemImage: "pencil")
@@ -41,17 +46,6 @@ struct RequestRowView: View {
             TextField("Name", text: $renameName)
             Button("Rename") { vm.renameRequest(id: request.id, collectionId: collectionId, name: renameName) }
             Button("Cancel", role: .cancel) {}
-        }
-    }
-
-    private func methodColor(_ method: String) -> Color {
-        switch method.uppercased() {
-        case "GET":    return .green
-        case "POST":   return .blue
-        case "PUT":    return .orange
-        case "PATCH":  return .yellow
-        case "DELETE": return .red
-        default:       return .secondary
         }
     }
 }
