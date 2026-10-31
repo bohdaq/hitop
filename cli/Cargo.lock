@@ -919,6 +919,7 @@ name = "hitop-core"
 version = "0.1.2"
 dependencies = [
  "anyhow",
+ "base64",
  "boa_engine",
  "dirs",
  "regex",

@@ -12,6 +12,7 @@ repository.workspace = true
 homepage.workspace = true
 
 [dependencies]
+base64 = "0.22"
 serde = { workspace = true }
 serde_json = { workspace = true }
 reqwest = { workspace = true }

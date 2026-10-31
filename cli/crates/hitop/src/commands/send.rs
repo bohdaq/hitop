@@ -4,12 +4,14 @@ use std::collections::HashMap;
 
 use hitop_core::{
     http,
-    interpolation::interpolate,
-    model::HistoryItem,
-    scripting::{run_post_request_script, run_pre_request_script, PreRequestCtx},
+    model::{Header, HistoryItem},
+    params::append_query,
+    prepare::{prepare, variables, Draft},
+    scripting::run_post_request_script,
     storage,
 };
 
+use super::flags::{query_pair, script_arg, AuthFlags};
 use crate::output;
 
 #[derive(Args)]
@@ -29,9 +31,28 @@ pub struct SendArgs {
     #[arg(short = 'b', long)]
     body: Option<String>,
 
+    /// Query parameter appended to the URL, as key=value (repeatable)
+    #[arg(short = 'q', long = "query", value_name = "KEY=VALUE")]
+    query: Vec<String>,
+
+    #[command(flatten)]
+    auth: AuthFlags,
+
     /// Collection name to load variables and context from
     #[arg(short = 'c', long)]
     collection: Option<String>,
+
+    /// Environment to use instead of the active one
+    #[arg(short = 'e', long = "env")]
+    env: Option<String>,
+
+    /// Pre-request script, inline or @file
+    #[arg(long, value_name = "JS|@FILE")]
+    pre_script: Option<String>,
+
+    /// Post-request script (assert.* checks included), inline or @file
+    #[arg(long, value_name = "JS|@FILE")]
+    post_script: Option<String>,
 
     /// Show response headers
     #[arg(long)]
@@ -43,16 +64,14 @@ pub struct SendArgs {
 }
 
 pub fn run(args: SendArgs) -> Result<()> {
-    let mut variables: HashMap<String, String> = HashMap::new();
+    let mut collection_vars: HashMap<String, String> = HashMap::new();
     let mut context: HashMap<String, serde_json::Value> = HashMap::new();
-    let pre_script = String::new();
-    let post_script = String::new();
 
     if let Some(col_name) = &args.collection {
         let collections = storage::load_collections()?;
         match collections.iter().find(|c| c.name == *col_name) {
             Some(col) => {
-                variables = col.variables.clone();
+                collection_vars = col.variables.clone();
                 // Load persisted context for this collection
                 let contexts = storage::load_contexts()?;
                 if let Some(ctx_map) = contexts.get(col_name).and_then(|v| v.as_object()) {
@@ -65,45 +84,35 @@ pub fn run(args: SendArgs) -> Result<()> {
             None => bail!("collection '{}' not found", col_name),
         }
     }
+    let envs = storage::load_environments()?;
+    let variables = variables(&collection_vars, envs.pick(args.env.as_deref())?);
 
-    let url = interpolate(&args.url, &variables)?;
-
-    let headers: Vec<(String, String)> = args
+    let headers: Vec<Header> = args
         .headers
         .iter()
         .filter_map(|h| {
-            let mut parts = h.splitn(2, ':');
-            let k = parts.next()?.trim().to_string();
-            let v = parts.next()?.trim().to_string();
-            Some((k, v))
+            let (k, v) = h.split_once(':')?;
+            Some(Header { name: k.trim().to_string(), value: v.trim().to_string() })
         })
         .collect();
-
+    let url = append_query(&args.url, &args.query.iter().map(|q| query_pair(q)).collect::<Vec<_>>());
     let body = args.body.clone().unwrap_or_default();
+    let pre_script = script_arg(&args.pre_script)?;
+    let post_script = script_arg(&args.post_script)?;
+    let auth = args.auth.auth()?;
 
-    // Pre-request script (not available in one-off send, only collection context)
-    let pre_ctx = PreRequestCtx {
-        url,
-        method: args.method.clone(),
-        headers,
-        body,
-        variables: variables.clone(),
-        context: context.clone(),
-    };
-
-    let pre = run_pre_request_script(&pre_script, pre_ctx)?;
-    for (k, v) in &pre.context_updates {
-        context.insert(k.clone(), v.clone());
-    }
+    let draft = Draft { method: &args.method, url: &url, headers: &headers, body: &body, pre_request_script: &pre_script, auth: auth.as_ref() };
+    let pre = prepare(&draft, &variables, &context)?;
+    context.extend(pre.context_updates.clone());
 
     let result = http::execute(&args.method, &pre.url, &pre.headers, &pre.body)?;
 
-    // Post-request script
     let post = run_post_request_script(
         &post_script,
         &result.body,
         &result.headers,
         result.status,
+        result.duration_ms,
         &variables,
         &context,
     )?;
@@ -151,6 +160,14 @@ pub fn run(args: SendArgs) -> Result<()> {
         println!("{}", result.body);
     } else {
         output::print_body(&result.body);
+    }
+
+    if !post.tests.is_empty() {
+        output::print_separator();
+        output::print_tests(&post.tests);
+        if post.tests.iter().any(|t| !t.pass) {
+            std::process::exit(1);
+        }
     }
 
     Ok(())

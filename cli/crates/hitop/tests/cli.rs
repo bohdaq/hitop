@@ -1,4 +1,5 @@
 use assert_cmd::Command;
+use predicates::prelude::PredicateBooleanExt;
 use predicates::str::contains;
 use tempfile::TempDir;
 
@@ -418,4 +419,136 @@ fn completions_zsh() {
         .args(["completions", "zsh"])
         .assert()
         .success();
+}
+
+// ---------------------------------------------------------------------------
+// Environments, auth, query parameters and assertions
+// ---------------------------------------------------------------------------
+
+/// A one-thread HTTP server on 127.0.0.1 that answers every request with a
+/// JSON echo of its request line and headers. Returns the base URL.
+fn echo_server() -> String {
+    use std::io::{BufRead, BufReader, Write};
+    let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+    let addr = listener.local_addr().unwrap();
+    std::thread::spawn(move || {
+        for stream in listener.incoming().flatten() {
+            let mut reader = BufReader::new(stream.try_clone().unwrap());
+            let mut line = String::new();
+            reader.read_line(&mut line).unwrap();
+            let target = line.split_whitespace().nth(1).unwrap_or("").to_string();
+            let mut headers = serde_json::Map::new();
+            loop {
+                let mut h = String::new();
+                if reader.read_line(&mut h).unwrap() == 0 || h == "\r\n" {
+                    break;
+                }
+                if let Some((k, v)) = h.trim_end().split_once(':') {
+                    headers.insert(k.to_lowercase(), serde_json::Value::String(v.trim().to_string()));
+                }
+            }
+            let body = serde_json::json!({ "target": target, "headers": headers }).to_string();
+            let mut out = stream;
+            let _ = write!(out, "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{}", body.len(), body);
+        }
+    });
+    format!("http://{addr}")
+}
+
+#[test]
+fn env_lifecycle() {
+    let home = TempDir::new().unwrap();
+    cmd(&home).args(["env", "add", "staging"]).assert().success();
+    cmd(&home).args(["env", "set", "staging", "token", "stg"]).assert().success();
+    cmd(&home).args(["env", "use", "staging"]).assert().success();
+    cmd(&home).args(["env", "list"]).assert().success().stdout(contains("staging")).stdout(contains("1 variables"));
+    cmd(&home).args(["env", "show", "staging"]).assert().success().stdout(contains("stg"));
+    cmd(&home).args(["env", "add", "staging"]).assert().failure();
+    cmd(&home).args(["env", "off"]).assert().success();
+    cmd(&home).args(["env", "delete", "staging"]).assert().success();
+    cmd(&home).args(["env", "show", "staging"]).assert().failure();
+}
+
+#[test]
+fn env_imports_postman_and_exports() {
+    let home = TempDir::new().unwrap();
+    let file = home.path().join("pm.json");
+    std::fs::write(&file, r#"{"name":"Prod","values":[{"key":"host","value":"https://api","enabled":true},{"key":"off","value":"x","enabled":false}]}"#).unwrap();
+    cmd(&home).args(["env", "import", file.to_str().unwrap()]).assert().success().stdout(contains("Imported 1 environment"));
+    cmd(&home).args(["env", "show", "Prod"]).assert().success().stdout(contains("https://api")).stdout(contains("off").not());
+    let out = home.path().join("out.json");
+    cmd(&home).args(["env", "export", out.to_str().unwrap()]).assert().success();
+    assert!(std::fs::read_to_string(out).unwrap().contains("\"host\""));
+}
+
+#[test]
+fn send_applies_env_auth_and_query() {
+    let home = TempDir::new().unwrap();
+    let base = echo_server();
+    cmd(&home).args(["env", "add", "dev"]).assert().success();
+    cmd(&home).args(["env", "set", "dev", "token", "dev-123"]).assert().success();
+    cmd(&home).args(["env", "use", "dev"]).assert().success();
+    cmd(&home)
+        .args(["send", &format!("{base}/x?a=1"), "-q", "b=2", "--bearer", "${token}", "--raw"])
+        .assert()
+        .success()
+        .stdout(contains("/x?a=1&b=2"))
+        .stdout(contains("Bearer dev-123"));
+    cmd(&home)
+        .args(["send", &format!("{base}/k"), "--api-key", "api_key=s3", "--api-key-in", "query", "--raw"])
+        .assert()
+        .success()
+        .stdout(contains("/k?api_key=s3"));
+    cmd(&home)
+        .args(["send", &format!("{base}/b"), "--basic", "ada:pw", "--raw"])
+        .assert()
+        .success()
+        .stdout(contains("Basic YWRhOnB3"));
+}
+
+#[test]
+fn send_post_script_assertions_set_the_exit_code() {
+    let home = TempDir::new().unwrap();
+    let base = echo_server();
+    cmd(&home)
+        .args(["send", &format!("{base}/ok"), "--raw", "--post-script", "assert.status(200); assert.bodyContains('target')"])
+        .assert()
+        .success()
+        .stdout(contains("2/2 tests passed"));
+    cmd(&home)
+        .args(["send", &format!("{base}/ok"), "--raw", "--post-script", "assert.status(201)"])
+        .assert()
+        .failure()
+        .stdout(contains("status is 201"))
+        .stdout(contains("got 200"));
+}
+
+#[test]
+fn requests_keep_auth_and_run_reports_failed_assertions() {
+    let home = TempDir::new().unwrap();
+    let base = echo_server();
+    cmd(&home).args(["collections", "add", "Api"]).assert().success();
+    cmd(&home)
+        .args(["requests", "add", "Api", "--name", "Me", "--url", &format!("{base}/me"), "-H", "Accept: application/json", "-q", "v=2", "--bearer", "t0k"])
+        .assert()
+        .success();
+    cmd(&home)
+        .args(["requests", "show", "Api", "Me"])
+        .assert()
+        .success()
+        .stdout(contains("/me?v=2"))
+        .stdout(contains("Bearer token"))
+        .stdout(contains("Accept"));
+    cmd(&home).args(["requests", "send", "Api", "Me", "--raw"]).assert().success().stdout(contains("Bearer t0k"));
+    cmd(&home).args(["run", "Api"]).assert().success().stdout(contains("1/1 requests succeeded"));
+
+    // A failing check in the collection's file makes `run` fail.
+    let cols = home.path().join("config").join("hitop").join("collections.json");
+    let mut json: serde_json::Value = serde_json::from_str(&std::fs::read_to_string(&cols).unwrap()).unwrap();
+    json[0]["requests"][0]["postRequestScript"] = "assert.header('x-missing')".into();
+    std::fs::write(&cols, json.to_string()).unwrap();
+    cmd(&home).args(["run", "Api"]).assert().failure().stdout(contains("0/1 requests succeeded")).stdout(contains("has header x-missing"));
+
+    cmd(&home).args(["requests", "auth", "Api", "Me", "--none"]).assert().success();
+    cmd(&home).args(["requests", "show", "Api", "Me"]).assert().success().stdout(contains("Auth").not());
 }

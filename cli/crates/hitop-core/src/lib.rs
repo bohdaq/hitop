@@ -1,7 +1,10 @@
+pub mod auth;
 pub mod export;
 pub mod http;
 pub mod interpolation;
 pub mod model;
+pub mod params;
+pub mod prepare;
 pub mod runner;
 pub mod scripting;
 pub mod storage;

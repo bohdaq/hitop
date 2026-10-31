@@ -18,10 +18,18 @@ pub struct RunArgs {
     /// Continue even if a request fails
     #[arg(long)]
     no_stop_on_fail: bool,
+
+    /// Environment to use instead of the active one
+    #[arg(short = 'e', long = "env")]
+    env: Option<String>,
 }
 
+/// Exits with status 1 when a request fails or an assertion doesn't pass,
+/// so CI jobs fail with it.
 pub fn run(args: RunArgs) -> Result<()> {
     let collections = storage::load_collections()?;
+    let envs = storage::load_environments()?;
+    let env = envs.pick(args.env.as_deref())?;
 
     if args.all || args.collection.is_none() {
         // Run all
@@ -29,10 +37,10 @@ pub fn run(args: RunArgs) -> Result<()> {
         let mut success = 0usize;
         for col in &collections {
             println!("\n{} {}", "▶".cyan(), col.name.bold());
-            let results = run_one_collection(col, !args.no_stop_on_fail);
+            let results = run_one_collection(col, env, !args.no_stop_on_fail);
             for r in &results {
                 total += 1;
-                if r.result.as_ref().map(|res| res.status < 400).unwrap_or(false) {
+                if r.passed() {
                     success += 1;
                 }
             }
@@ -43,6 +51,9 @@ pub fn run(args: RunArgs) -> Result<()> {
             success,
             total
         );
+        if success < total {
+            std::process::exit(1);
+        }
         return Ok(());
     }
 
@@ -53,11 +64,11 @@ pub fn run(args: RunArgs) -> Result<()> {
         .ok_or_else(|| anyhow::anyhow!("collection '{}' not found", col_name))?;
 
     println!("{} {}", "▶".cyan(), col.name.bold());
-    let results = run_one_collection(col, !args.no_stop_on_fail);
+    let results = run_one_collection(col, env, !args.no_stop_on_fail);
 
     let success = results
         .iter()
-        .filter(|r| r.result.as_ref().map(|res| res.status < 400).unwrap_or(false))
+        .filter(|r| r.passed())
         .count();
 
     println!(
@@ -66,11 +77,18 @@ pub fn run(args: RunArgs) -> Result<()> {
         success,
         results.len()
     );
+    if success < results.len() {
+        std::process::exit(1);
+    }
 
     Ok(())
 }
 
-fn run_one_collection(col: &hitop_core::model::Collection, stop_on_fail: bool) -> Vec<runner::RunStepResult> {
+fn run_one_collection(
+    col: &hitop_core::model::Collection,
+    env: Option<&hitop_core::model::Environment>,
+    stop_on_fail: bool,
+) -> Vec<runner::RunStepResult> {
     let bar = ProgressBar::new(col.requests.len() as u64);
     bar.set_style(
         ProgressStyle::default_bar()
@@ -78,7 +96,10 @@ fn run_one_collection(col: &hitop_core::model::Collection, stop_on_fail: bool) -
             .unwrap_or_else(|_| ProgressStyle::default_bar()),
     );
 
-    let results = runner::run_collection(col, stop_on_fail, &mut |step| {
+    // Without a terminal (CI logs) the bar is hidden and so is anything
+    // printed through it, so print lines directly there.
+    let say = |line: String| if bar.is_hidden() { println!("{line}") } else { bar.println(line) };
+    let results = runner::run_collection(col, env, stop_on_fail, &mut |step| {
         bar.inc(1);
         match &step.result {
             Ok(res) => {
@@ -89,17 +110,23 @@ fn run_one_collection(col: &hitop_core::model::Collection, stop_on_fail: bool) -
                 } else {
                     format!("{}", res.status).red()
                 };
-                bar.println(format!(
-                    "  {} {} {} {} ({}ms)",
-                    if res.status < 400 { "✓".green().to_string() } else { "✗".red().to_string() },
+                let passed = step.tests.iter().filter(|t| t.pass).count();
+                let tests = if step.tests.is_empty() { String::new() } else { format!(" {}/{} tests", passed, step.tests.len()) };
+                say(format!(
+                    "  {} {} {} {} ({}ms){}",
+                    if step.passed() { "✓".green().to_string() } else { "✗".red().to_string() },
                     step.method.dimmed(),
                     step.request_name.bold(),
                     status_colored,
                     res.duration_ms,
+                    tests.dimmed(),
                 ));
+                for t in step.tests.iter().filter(|t| !t.pass) {
+                    say(format!("      {} {} {}", "✗".red(), t.name, format!("({})", t.detail).red()));
+                }
             }
             Err(e) => {
-                bar.println(format!(
+                say(format!(
                     "  {} {} {} — {}",
                     "✗".red(),
                     step.method.dimmed(),

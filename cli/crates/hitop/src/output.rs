@@ -63,3 +63,20 @@ fn print_highlighted(code: &str, lang: &str) {
 pub fn print_separator() {
     println!("{}", "─".repeat(60).dimmed());
 }
+
+/// `assert.*` results, one line each; failures with their detail.
+pub fn print_tests(tests: &[hitop_core::model::TestResult]) {
+    if tests.is_empty() {
+        return;
+    }
+    let passed = tests.iter().filter(|t| t.pass).count();
+    for t in tests {
+        if t.pass {
+            println!("  {} {}", "✓".green(), t.name);
+        } else {
+            println!("  {} {} {}", "✗".red(), t.name, format!("({})", t.detail).red());
+        }
+    }
+    let summary = format!("{passed}/{} tests passed", tests.len());
+    println!("  {}", if passed == tests.len() { summary.green() } else { summary.red() });
+}

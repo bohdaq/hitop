@@ -31,6 +31,9 @@ enum Cmd {
     /// Manage collection variables
     #[command(subcommand)]
     Variables(commands::variables::VariablesCmd),
+    /// Manage environments (variable sets such as dev, staging, prod)
+    #[command(subcommand)]
+    Env(commands::env::EnvCmd),
     /// View request history
     History(commands::history::HistoryArgs),
     /// Import collections from a file
@@ -53,6 +56,7 @@ fn main() -> Result<()> {
         Cmd::Collections(cmd) => commands::collections::run(cmd),
         Cmd::Requests(cmd) => commands::requests::run(cmd),
         Cmd::Variables(cmd) => commands::variables::run(cmd),
+        Cmd::Env(cmd) => commands::env::run(cmd),
         Cmd::History(args) => commands::history::run(args),
         Cmd::Import(args) => commands::import_export::run_import(args),
         Cmd::Export(args) => commands::import_export::run_export(args),

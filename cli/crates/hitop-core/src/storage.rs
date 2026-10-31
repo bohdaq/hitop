@@ -2,7 +2,7 @@ use std::fs;
 use std::path::PathBuf;
 use anyhow::{Context, Result};
 
-use crate::model::{Collection, HistoryItem};
+use crate::model::{Collection, Environment, HistoryItem};
 
 const MAX_HISTORY: usize = 50;
 
@@ -19,6 +19,10 @@ fn collections_path() -> Result<PathBuf> {
 
 fn history_path() -> Result<PathBuf> {
     Ok(config_dir()?.join("history.json"))
+}
+
+fn environments_path() -> Result<PathBuf> {
+    Ok(config_dir()?.join("environments.json"))
 }
 
 fn contexts_path() -> Result<PathBuf> {
@@ -74,5 +78,42 @@ pub fn load_contexts() -> Result<serde_json::Value> {
 pub fn save_contexts(contexts: &serde_json::Value) -> Result<()> {
     let path = contexts_path()?;
     fs::write(path, serde_json::to_string_pretty(contexts)?)?;
+    Ok(())
+}
+
+/// Environments and the name of the active one (`environments.json`).
+#[derive(Debug, Clone, Default, serde::Serialize, serde::Deserialize)]
+pub struct Environments {
+    #[serde(default)]
+    pub active: Option<String>,
+    #[serde(default)]
+    pub environments: Vec<Environment>,
+}
+
+impl Environments {
+    /// The environment named `name`, or the active one when `name` is None.
+    pub fn pick(&self, name: Option<&str>) -> Result<Option<&Environment>> {
+        match name {
+            Some(n) => self
+                .environments
+                .iter()
+                .find(|e| e.name == n)
+                .map(Some)
+                .ok_or_else(|| anyhow::anyhow!("environment '{}' not found", n)),
+            None => Ok(self.active.as_ref().and_then(|id| self.environments.iter().find(|e| &e.id == id))),
+        }
+    }
+}
+
+pub fn load_environments() -> Result<Environments> {
+    let path = environments_path()?;
+    if !path.exists() {
+        return Ok(Environments::default());
+    }
+    Ok(serde_json::from_str(&fs::read_to_string(&path)?)?)
+}
+
+pub fn save_environments(envs: &Environments) -> Result<()> {
+    fs::write(environments_path()?, serde_json::to_string_pretty(envs)?)?;
     Ok(())
 }

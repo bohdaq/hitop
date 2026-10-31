@@ -27,6 +27,8 @@ pub struct PreRequestResult {
 #[derive(Debug, Clone)]
 pub struct PostRequestResult {
     pub context_updates: HashMap<String, Value>,
+    /// One entry per `assert.*` call, in order.
+    pub tests: Vec<crate::model::TestResult>,
 }
 
 pub fn run_pre_request_script(script: &str, ctx: PreRequestCtx) -> Result<PreRequestResult> {
@@ -125,12 +127,14 @@ pub fn run_post_request_script(
     response_body: &str,
     response_headers: &HashMap<String, String>,
     status_code: u16,
+    duration_ms: u64,
     variables: &HashMap<String, String>,
     context: &HashMap<String, Value>,
 ) -> Result<PostRequestResult> {
     if script.trim().is_empty() {
         return Ok(PostRequestResult {
             context_updates: HashMap::new(),
+            tests: vec![],
         });
     }
 
@@ -163,6 +167,20 @@ function getResponseValue(path) {{
     return val;
 }}
 function getResponseHeader(name) {{ return responseHeaders[name.toLowerCase()]; }}
+const __tests = [];
+function __record(name, pass, detail) {{ __tests.push({{ name: String(name), pass: !!pass, detail: pass ? "" : String(detail) }}); }}
+const assert = {{
+    status(e) {{ __record("status is " + e, statusCode === Number(e), "got " + statusCode); }},
+    bodyContains(f) {{ __record("body contains \"" + f + "\"", String(responseText).includes(String(f)), "not found in the response body"); }},
+    header(n, e) {{
+        const a = responseHeaders[String(n).toLowerCase()];
+        if (e === undefined) __record("has header " + n, a !== undefined, "header missing");
+        else __record("header " + n + " is \"" + e + "\"", a !== undefined && a.includes(String(e)), a === undefined ? "header missing" : "got \"" + a + "\"");
+    }},
+    responseTime(ms) {{ __record("responds within " + ms + " ms", {duration} <= Number(ms), "took {duration} ms"); }},
+    equal(a, e, name) {{ __record(name === undefined ? JSON.stringify(a) + " equals " + JSON.stringify(e) : name, JSON.stringify(a) === JSON.stringify(e), "got " + JSON.stringify(a)); }},
+    ok(c, name) {{ __record(name === undefined ? "condition is true" : name, c, "was false"); }},
+}};
 "#,
         response_json,
         response_text_json,
@@ -170,9 +188,10 @@ function getResponseHeader(name) {{ return responseHeaders[name.toLowerCase()]; 
         status_code,
         variables_json,
         context_json,
+        duration = duration_ms,
     );
 
-    let postamble = "JSON.stringify(__ctxUpdates)";
+    let postamble = "JSON.stringify({ ctx: __ctxUpdates, tests: __tests })";
     let full_script = format!("{}\n{}\n{}", preamble, script, postamble);
 
     let result = engine
@@ -184,10 +203,13 @@ function getResponseHeader(name) {{ return responseHeaders[name.toLowerCase()]; 
         .map(|s| s.to_std_string().unwrap_or_default())
         .unwrap_or_default();
 
-    let ctx_updates: HashMap<String, Value> = serde_json::from_str(&json_str).unwrap_or_default();
+    let out: Value = serde_json::from_str(&json_str).unwrap_or_default();
+    let ctx_updates: HashMap<String, Value> = serde_json::from_value(out["ctx"].clone()).unwrap_or_default();
+    let tests = serde_json::from_value(out["tests"].clone()).unwrap_or_default();
 
     Ok(PostRequestResult {
         context_updates: ctx_updates,
+        tests,
     })
 }
 
@@ -308,9 +330,29 @@ mod tests {
     // --- post-request ---
 
     #[test]
+    fn assertions_are_recorded_not_thrown() {
+        let headers: HashMap<String, String> = [("content-type".to_string(), "application/json".to_string())].into();
+        let result = run_post_request_script(
+            "assert.status(200); assert.bodyContains('id'); assert.header('Content-Type', 'json'); assert.responseTime(10); assert.equal(response.id, 2, 'id is 2'); assert.ok(true)",
+            r#"{"id":1}"#, &headers, 200, 50, &HashMap::new(), &HashMap::new(),
+        ).unwrap();
+        let summary: Vec<(String, bool)> = result.tests.iter().map(|t| (t.name.clone(), t.pass)).collect();
+        assert_eq!(summary, vec![
+            ("status is 200".to_string(), true),
+            ("body contains \"id\"".to_string(), true),
+            ("header Content-Type is \"json\"".to_string(), true),
+            ("responds within 10 ms".to_string(), false),
+            ("id is 2".to_string(), false),
+            ("condition is true".to_string(), true),
+        ]);
+        assert_eq!(result.tests[3].detail, "took 50 ms");
+        assert_eq!(result.tests[4].detail, "got 1");
+    }
+
+    #[test]
     fn empty_post_script_returns_no_updates() {
         let result = run_post_request_script(
-            "", r#"{"id":1}"#, &HashMap::new(), 200, &HashMap::new(), &HashMap::new(),
+            "", r#"{"id":1}"#, &HashMap::new(), 200, 50, &HashMap::new(), &HashMap::new(),
         ).unwrap();
         assert!(result.context_updates.is_empty());
     }
@@ -321,7 +363,7 @@ mod tests {
             "setContext('done', true)",
             "{}",
             &HashMap::new(),
-            200,
+            200, 50,
             &HashMap::new(),
             &HashMap::new(),
         ).unwrap();
@@ -334,7 +376,7 @@ mod tests {
             "setContext('userId', response.userId)",
             r#"{"userId": 5, "title": "test"}"#,
             &HashMap::new(),
-            200,
+            200, 50,
             &HashMap::new(),
             &HashMap::new(),
         ).unwrap();
@@ -347,7 +389,7 @@ mod tests {
             "setContext('status', statusCode)",
             "{}",
             &HashMap::new(),
-            201,
+            201, 50,
             &HashMap::new(),
             &HashMap::new(),
         ).unwrap();
@@ -360,7 +402,7 @@ mod tests {
             "setContext('name', getResponseValue('user.name'))",
             r#"{"user":{"name":"Alice"}}"#,
             &HashMap::new(),
-            200,
+            200, 50,
             &HashMap::new(),
             &HashMap::new(),
         ).unwrap();
@@ -375,7 +417,7 @@ mod tests {
             "setContext('ct', getResponseHeader('Content-Type'))",
             "{}",
             &headers,
-            200,
+            200, 50,
             &HashMap::new(),
             &HashMap::new(),
         ).unwrap();
@@ -390,7 +432,7 @@ mod tests {
             "setContext('env', getVariable('env'))",
             "{}",
             &HashMap::new(),
-            200,
+            200, 50,
             &vars,
             &HashMap::new(),
         ).unwrap();
@@ -403,7 +445,7 @@ mod tests {
             "setContext('isNull', response === null)",
             "not json at all",
             &HashMap::new(),
-            200,
+            200, 50,
             &HashMap::new(),
             &HashMap::new(),
         ).unwrap();
@@ -413,7 +455,7 @@ mod tests {
     #[test]
     fn post_script_syntax_error_returns_error() {
         let err = run_post_request_script(
-            "!!!invalid", "{}", &HashMap::new(), 200, &HashMap::new(), &HashMap::new(),
+            "!!!invalid", "{}", &HashMap::new(), 200, 50, &HashMap::new(), &HashMap::new(),
         ).unwrap_err();
         assert!(err.to_string().contains("post-request script error"));
     }

@@ -18,6 +18,7 @@ mod tests {
                 body: String::new(),
                 pre_request_script: String::new(),
                 post_request_script: String::new(),
+                auth: None,
             }],
             variables: [("host".to_string(), "https://example.com".to_string())].into(),
         }
@@ -46,6 +47,7 @@ mod tests {
             body: String::new(),
             pre_request_script: "setUrl('x')".to_string(),
             post_request_script: "setContext('k','v')".to_string(),
+            auth: None,
         };
         let json = serde_json::to_string(&req).unwrap();
         assert!(json.contains("preRequestScript"));
@@ -58,6 +60,20 @@ mod tests {
         let req: Request = serde_json::from_str(json).unwrap();
         assert_eq!(req.pre_request_script, "");
         assert_eq!(req.post_request_script, "");
+    }
+
+    #[test]
+    fn auth_uses_the_web_app_json() {
+        let json = r#"{"id":1,"name":"r","url":"","method":"GET","headers":[],"body":"","auth":{"type":"apikey","key":"X-Key","value":"${k}","in":"query"}}"#;
+        let req: Request = serde_json::from_str(json).unwrap();
+        assert_eq!(
+            req.auth,
+            Some(Auth::ApiKey { key: "X-Key".into(), value: "${k}".into(), location: ApiKeyLocation::Query })
+        );
+        let back = serde_json::to_value(&req).unwrap();
+        assert_eq!(back["auth"]["in"], "query");
+        let none: Request = serde_json::from_str(r#"{"id":1,"name":"r","url":"","method":"GET","headers":[],"body":""}"#).unwrap();
+        assert!(!serde_json::to_string(&none).unwrap().contains("auth"));
     }
 
     #[test]
@@ -91,6 +107,64 @@ pub struct Request {
     pub pre_request_script: String,
     #[serde(rename = "postRequestScript", default)]
     pub post_request_script: String,
+    /// Auth preset, applied when the request is sent. Same JSON as the web
+    /// app's `auth` (`{"type": "bearer", "token": "..."}` and so on).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub auth: Option<Auth>,
+}
+
+/// Auth presets: a Bearer token, Basic credentials or an API key sent as a
+/// header or query parameter. Values may contain `${variables}`.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(tag = "type", rename_all = "lowercase")]
+pub enum Auth {
+    None,
+    Bearer {
+        #[serde(default)]
+        token: String,
+    },
+    Basic {
+        #[serde(default)]
+        username: String,
+        #[serde(default)]
+        password: String,
+    },
+    #[serde(rename = "apikey")]
+    ApiKey {
+        #[serde(default)]
+        key: String,
+        #[serde(default)]
+        value: String,
+        #[serde(default, rename = "in")]
+        location: ApiKeyLocation,
+    },
+}
+
+#[derive(Debug, Clone, Copy, Default, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum ApiKeyLocation {
+    #[default]
+    Header,
+    Query,
+}
+
+/// A named set of variables (Dev, Staging, Prod). The active one overrides
+/// collection variables with the same name.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct Environment {
+    pub id: String,
+    pub name: String,
+    #[serde(default)]
+    pub variables: HashMap<String, String>,
+}
+
+/// One `assert.*` call from a post-request script.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct TestResult {
+    pub name: String,
+    pub pass: bool,
+    #[serde(default)]
+    pub detail: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

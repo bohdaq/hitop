@@ -29,17 +29,25 @@ pub fn to_postman(collection: &Collection) -> Result<String> {
                 .map(|h| json!({ "key": h.name, "value": h.value }))
                 .collect();
 
-            json!({
-                "name": r.name,
-                "request": {
-                    "method": r.method,
-                    "header": headers,
-                    "url": { "raw": r.url },
-                    "body": if r.body.is_empty() { json!(null) } else {
-                        json!({ "mode": "raw", "raw": r.body })
-                    }
+            let mut events = vec![];
+            if !r.pre_request_script.is_empty() {
+                events.push(json!({ "listen": "prerequest", "script": { "type": "text/javascript", "exec": r.pre_request_script.lines().collect::<Vec<_>>() } }));
+            }
+            if !r.post_request_script.is_empty() {
+                events.push(json!({ "listen": "test", "script": { "type": "text/javascript", "exec": r.post_request_script.lines().collect::<Vec<_>>() } }));
+            }
+            let mut request = json!({
+                "method": r.method,
+                "header": headers,
+                "url": { "raw": r.url },
+                "body": if r.body.is_empty() { json!(null) } else {
+                    json!({ "mode": "raw", "raw": r.body })
                 }
-            })
+            });
+            if let Some(auth) = crate::auth::to_postman(r.auth.as_ref()) {
+                request["auth"] = auth;
+            }
+            json!({ "name": r.name, "request": request, "event": events })
         })
         .collect();
 
@@ -88,6 +96,18 @@ pub fn from_postman(json: &str) -> Result<Collection> {
                 })
                 .collect();
             let body = req["body"]["raw"].as_str().unwrap_or("").to_string();
+            let script = |listen: &str| -> String {
+                item["event"]
+                    .as_array()
+                    .and_then(|events| events.iter().find(|e| e["listen"] == listen))
+                    .map(|e| match &e["script"]["exec"] {
+                        Value::Array(lines) => lines.iter().filter_map(|l| l.as_str()).collect::<Vec<_>>().join("\n"),
+                        Value::String(s) => s.clone(),
+                        _ => String::new(),
+                    })
+                    .unwrap_or_default()
+            };
+            let auth = crate::auth::from_postman(&req["auth"]).or_else(|| crate::auth::from_postman(&v["auth"]));
 
             Some(Request {
                 id: generate_id(),
@@ -96,8 +116,9 @@ pub fn from_postman(json: &str) -> Result<Collection> {
                 method,
                 headers,
                 body,
-                pre_request_script: String::new(),
-                post_request_script: String::new(),
+                pre_request_script: script("prerequest"),
+                post_request_script: script("test"),
+                auth,
             })
         })
         .collect();
@@ -148,6 +169,7 @@ mod tests {
                     body: String::new(),
                     pre_request_script: String::new(),
                     post_request_script: String::new(),
+                    auth: None,
                 },
                 Request {
                     id: 11,
@@ -158,10 +180,22 @@ mod tests {
                     body: r#"{"title":"test"}"#.to_string(),
                     pre_request_script: String::new(),
                     post_request_script: String::new(),
+                    auth: None,
                 },
             ],
             variables: [("host".to_string(), "https://example.com".to_string())].into(),
         }
+    }
+
+    #[test]
+    fn postman_keeps_scripts_and_auth() {
+        let mut col = sample_collection();
+        col.requests[0].post_request_script = "assert.status(200);\nsetContext('a', 1);".into();
+        col.requests[0].auth = Some(crate::model::Auth::Bearer { token: "${t}".into() });
+        let back = from_postman(&to_postman(&col).unwrap()).unwrap();
+        assert_eq!(back.requests[0].post_request_script, col.requests[0].post_request_script);
+        assert_eq!(back.requests[0].auth, col.requests[0].auth);
+        assert_eq!(back.requests[1].auth, None);
     }
 
     // --- hitop format ---

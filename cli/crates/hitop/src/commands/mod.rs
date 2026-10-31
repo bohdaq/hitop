@@ -1,4 +1,6 @@
 pub mod collections;
+pub mod env;
+pub mod flags;
 pub mod history;
 pub mod import_export;
 pub mod requests;
