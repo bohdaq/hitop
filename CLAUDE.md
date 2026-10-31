@@ -147,5 +147,5 @@ PATH="$HOME/.cargo/bin:$PATH" RUSTC="$HOME/.cargo/bin/rustc" ~/.cargo/bin/cargo 
 
 ## Crates.io
 
-- `hitop-core` and `hitop` both at version `0.2.0` in the repo (0.1.2 on crates.io until released)
+- `hitop-core` and `hitop` 0.2.0, published to crates.io 2026-10-31 (tag `cli-v0.2.0`)
 - To publish: bump `version` in `cli/Cargo.toml` (workspace), push, then push tag `cli-v<version>`; `.github/workflows/release-cli.yml` publishes core then hitop (needs the `CARGO_REGISTRY_TOKEN` secret)
