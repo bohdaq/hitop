@@ -36,7 +36,7 @@ fn version_exits_zero() {
         .arg("--version")
         .assert()
         .success()
-        .stdout(contains("0.1.0"));
+        .stdout(contains(env!("CARGO_PKG_VERSION")));
 }
 
 #[test]

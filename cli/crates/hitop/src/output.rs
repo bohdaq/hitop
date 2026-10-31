@@ -1,3 +1,4 @@
+use std::io::IsTerminal;
 use colored::Colorize;
 use syntect::easy::HighlightLines;
 use syntect::highlighting::ThemeSet;
@@ -25,7 +26,7 @@ pub fn print_headers(headers: &std::collections::HashMap<String, String>) {
 }
 
 pub fn print_body(body: &str) {
-    if !atty::is(atty::Stream::Stdout) {
+    if !std::io::stdout().is_terminal() {
         println!("{}", body);
         return;
     }

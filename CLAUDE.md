@@ -76,7 +76,7 @@ hitop/
 - Run tests: `cd cli && ~/.cargo/bin/cargo test`
 - Publish: `cd cli && cargo publish -p hitop-core` then `cargo publish -p hitop`
 - HTTP client: `reqwest 0.12` blocking + rustls (no OpenSSL)
-- JS engine: `boa_engine 0.19` (pure Rust, used for pre/post request scripts)
+- JS engine: `boa_engine 0.22` (pure Rust, used for pre/post request scripts)
 - Storage paths: `~/Library/Application Support/hitop/` (macOS), `~/.config/hitop/` (Linux)
 - `MAX_HISTORY = 50` in `storage.rs`
 
