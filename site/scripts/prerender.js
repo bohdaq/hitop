@@ -18,7 +18,7 @@ import * as notFoundPage from "../src/pages/not-found.js";
 import { pages as termsPages } from "../src/pages/terms.js";
 
 const site = join(dirname(fileURLToPath(import.meta.url)), "..");
-const legacy = join(site, "..", "docs");
+const publicAssets = join(site, "public-assets");
 const dist = join(site, "dist");
 const manifest = JSON.parse(readFileSync(join(dist, ".vite", "manifest.json"), "utf8"));
 const entry = manifest["src/client/main.js"];
@@ -47,7 +47,7 @@ write(
 
 write("favicon.svg", favicon());
 for (const f of ["apple-touch-icon.png", "favicon.png", "favicon-16x16.png", "favicon-32x32.png", "social-preview.png"]) {
-  copyFileSync(join(legacy, f), join(dist, f));
+  copyFileSync(join(publicAssets, f), join(dist, f));
 }
 
 const indexed = pages.filter((p) => !p.meta.noindex).map((p) => p.meta.path);

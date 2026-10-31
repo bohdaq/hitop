@@ -1,46 +1,33 @@
-// /terms/: the guide articles, at the same URLs as on the old site. The
-// article bodies are read from docs/terms/*.html at build time (their
-// `.content` block), stripped of emoji and inline styles, and rendered in the
-// site shell. Prerender only.
+// /terms/: the guide articles, at the same URLs as on the old site. Written
+// in Markdown in site/content/guides/<name>.md (front matter: title,
+// description) and served at /terms/<name>.html. Prerender only.
 import { readdirSync, readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { html } from "lit";
 import { unsafeHTML } from "lit/directives/unsafe-html.js";
+import { marked } from "marked";
 import { icon } from "../icons.js";
 import { footer, header } from "../shell.js";
 
-const SOURCE = join(dirname(fileURLToPath(import.meta.url)), "..", "..", "..", "docs", "terms");
-
-const EMOJI = /[\p{Extended_Pictographic}\u{FE0F}\u{200D}]\s?/gu;
-
-function clean(markup) {
-  return markup
-    .replace(EMOJI, "")
-    .replace(/\sstyle="[^"]*"/g, "")
-    .replace(/class="highlight-box"/g, 'class="callout"')
-    .replace(/class="comparison-table"/g, 'class="table"')
-    .trim();
-}
-
-// The `.content` div's inner HTML: from its opening tag to the CTA block.
-function articleBody(source) {
-  const start = source.indexOf('<div class="content">');
-  const end = source.indexOf('<div class="cta">');
-  if (start < 0 || end < 0) throw new Error("guide page without .content/.cta");
-  const inner = source.slice(start + '<div class="content">'.length, end);
-  return clean(inner.replace(/<\/div>\s*$/, ""));
-}
+const SOURCE = join(dirname(fileURLToPath(import.meta.url)), "..", "..", "content", "guides");
 
 function read(file) {
   const source = readFileSync(join(SOURCE, file), "utf8");
-  const title = source.match(/<title>([^<]*)<\/title>/)[1].split(" - HITOP")[0].trim();
-  const description = source.match(/name="description" content="([^"]*)"/)[1];
-  return { file, title, description, body: articleBody(source) };
+  const m = source.match(/^---\n([\s\S]*?)\n---\n/);
+  if (!m) throw new Error(`${file}: missing front matter`);
+  const meta = Object.fromEntries(
+    m[1].split("\n").map((line) => {
+      const at = line.indexOf(":");
+      return [line.slice(0, at).trim(), JSON.parse(line.slice(at + 1).trim())];
+    }),
+  );
+  const body = marked.parse(source.slice(m[0].length)).replace(/<table>/g, '<table class="table">');
+  return { file: file.replace(/\.md$/, ".html"), title: meta.title, description: meta.description, body };
 }
 
 const GUIDES = readdirSync(SOURCE)
-  .filter((f) => f.endsWith(".html") && f !== "index.html")
+  .filter((f) => f.endsWith(".md"))
   .sort()
   .map(read);
 

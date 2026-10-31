@@ -82,13 +82,6 @@
 .prose p { margin: var(--space-200) 0 0; }
 .prose ul, .prose ol { margin: var(--space-200) 0 0; }
 .prose pre { padding: var(--space-200); border-radius: var(--md-sys-shape-corner-large); background: var(--md-sys-color-surface-container-low); overflow-x: auto; font-size: var(--text-sm); line-height: var(--leading-sm); }
-.callout {
-  margin-top: var(--space-300); padding: var(--space-300);
-  border: 1px solid var(--md-sys-color-outline-variant);
-  border-radius: var(--md-sys-shape-corner-extra-large);
-  background: var(--md-sys-color-surface-container-low);
-}
-.callout > :first-child { margin-top: 0; }
 .prose .table, .prose table { display: block; overflow-x: auto; margin-top: var(--space-300); border-collapse: collapse; font-size: var(--text-sm); line-height: var(--leading-sm); }
 .prose th, .prose td { padding: var(--space-75) var(--space-100); border: 1px solid var(--md-sys-color-outline-variant); text-align: left; vertical-align: top; }
 .prose th { background: var(--md-sys-color-surface-container); }
@@ -98,3 +91,13 @@
 .footer-grid { display: grid; gap: var(--space-200); }
 .footer-grid p { margin: 0; }
 .prose .code-block { margin-top: var(--space-200); padding: var(--space-200); border-radius: var(--md-sys-shape-corner-large); background: var(--md-sys-color-surface-container-low); font-family: var(--font-mono); font-size: var(--text-sm); line-height: var(--leading-sm); white-space: pre; overflow-x: auto; }
+
+/* Guide callouts (Markdown blockquotes) */
+.prose blockquote {
+  margin: var(--space-300) 0 0; padding: var(--space-300);
+  border: 1px solid var(--md-sys-color-outline-variant);
+  border-radius: var(--md-sys-shape-corner-extra-large);
+  background: var(--md-sys-color-surface-container-low);
+}
+.prose blockquote > :first-child { margin-top: 0; }
+.prose pre code { padding: 0; background: none; }

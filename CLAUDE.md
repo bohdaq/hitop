@@ -58,11 +58,13 @@ hitop/
 ├── chrome-extension/           # Chrome extension source
 ├── site/                       # hitop.rws8.tech: lit-material + Lit SSR, rws8.tech design system
 │   ├── src/pages/              # home, pricing.html, privacy.html, 404, terms/ (guides)
+│   ├── content/guides/*.md     # the /terms/*.html guide articles (Markdown + front matter)
+│   ├── public-assets/          # favicons, social preview; favicon.svg is also the desktop icon source
 │   └── scripts/prerender.js    # npm run build → dist/
 ├── server/                     # hitop-server: rws app serving the site + POST /api/proxy
 │   └── src/guard.rs            # address/port policy for the proxy (SSRF guard)
 ├── deploy/                     # build.sh, install.sh, systemd unit, front rws routes, README
-├── docs/                       # OLD Pages site: terms/*.html are the guide sources; CNAME keeps github.io → hitop.rws8.tech redirects
+├── docs/CNAME                  # only file left: keeps GitHub Pages 301ing bohdaq.github.io/hitop/* → hitop.rws8.tech
 └── CLAUDE.md                   # This file
 ```
 
@@ -88,7 +90,7 @@ hitop/
 - All Tauri commands are in `src-tauri/src/commands.rs`
 - The frontend calls Rust via `invoke()` from `@tauri-apps/api/core`
 - MAS entitlements: sandbox + network.client + user-selected files
-- Icons generated from `docs/favicon.svg` via `rsvg-convert` + `npx tauri icon`
+- Icons generated from `site/public-assets/favicon.svg` via `rsvg-convert` + `npx tauri icon`
 
 ### Frontend (`frontend/`)
 - Build tool: Vite 6 (migrated from CRA — zero vulnerabilities)

@@ -1,4 +1,0 @@
-User-agent: *
-Allow: /
-
-Sitemap: https://hitop.rws8.tech/sitemap.xml
