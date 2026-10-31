@@ -9,13 +9,17 @@ Provides:
 - **HTTP execution** — blocking reqwest client with rustls
 - **Storage** — XDG/platform-aware persistence (`~/.config/hitop/`)
 - **Import/Export** — HITOP native and Postman v2.1 formats
-- **Collection runner** — sequential execution with context passing between requests
+- **Collection runner** — sequential execution with context passing between requests and `assert.*` results
+- **Auth presets** — Bearer, Basic and API key (header or query), in the web app's JSON
+- **Environments** — named variable sets that override collection variables
+- **Query parameters** — `params::parse_query` / `with_query`, leaving `${variables}` untouched
+- **`prepare`** — interpolate, apply auth, run the pre-request script: a request as it is sent
 
 ## Usage
 
 ```toml
 [dependencies]
-hitop-core = "0.1"
+hitop-core = "0.2"
 ```
 
 ```rust

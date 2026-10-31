@@ -73,7 +73,7 @@ hitop/
 ## Key technical facts
 
 ### Rust CLI (`cli/`)
-- Workspace version: `0.1.2` (both crates in sync)
+- Workspace version: `0.2.0` (both crates in sync)
 - Rust toolchain: `stable` via `cli/rust-toolchain.toml` — always use `~/.cargo/bin/cargo`, NOT Homebrew rustc
 - Run tests: `cd cli && ~/.cargo/bin/cargo test`
 - Publish: `cd cli && cargo publish -p hitop-core` then `cargo publish -p hitop`
@@ -147,5 +147,5 @@ PATH="$HOME/.cargo/bin:$PATH" RUSTC="$HOME/.cargo/bin/rustc" ~/.cargo/bin/cargo 
 
 ## Crates.io
 
-- `hitop-core` and `hitop` both at version `0.1.2`
-- To publish a new version: bump `version` in `cli/Cargo.toml` (workspace), then publish core first, then hitop
+- `hitop-core` and `hitop` both at version `0.2.0` in the repo (0.1.2 on crates.io until released)
+- To publish: bump `version` in `cli/Cargo.toml` (workspace), push, then push tag `cli-v<version>`; `.github/workflows/release-cli.yml` publishes core then hitop (needs the `CARGO_REGISTRY_TOKEN` secret)

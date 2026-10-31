@@ -54,11 +54,40 @@ hitop export MyAPI -o my-collection.json
 | `hitop run --all` | Run every collection |
 | `hitop collections list/add/delete/rename/duplicate` | Manage collections |
 | `hitop requests list/add/show/delete/rename/send` | Manage requests |
+| `hitop requests auth <collection> <request>` | Set (`--bearer`, `--basic`, `--api-key`) or clear (`--none`) a request's auth |
 | `hitop variables list/set/delete` | Manage collection variables |
+| `hitop env list/add/delete/show/set/unset/use/off/import/export` | Manage environments |
 | `hitop history` | View request history |
 | `hitop import <file>` | Import collections (HITOP or Postman format) |
 | `hitop export <collection>` | Export a collection |
 | `hitop completions <shell>` | Generate shell completions |
+
+## Environments, auth and query parameters
+
+```bash
+# Variable sets that override collection variables (Postman environments import too)
+hitop env add staging
+hitop env set staging baseUrl https://staging.api.example.com
+hitop env set staging token stg-123
+hitop env use staging             # or pass -e staging per command; hitop env off to stop
+
+# Auth presets and query parameters on a one-off request
+hitop send '${baseUrl}/users' -q page=2 -q per_page=50 --bearer '${token}'
+hitop send https://api.example.com/me --basic ada:s3cret
+hitop send https://api.example.com/search --api-key api_key=k-1 --api-key-in query
+
+# Saved requests keep their auth
+hitop requests add MyAPI --name "Me" --url '${baseUrl}/me' -H "Accept: application/json" --bearer '${token}'
+```
+
+## Checks in CI
+
+Post-request scripts can assert. `hitop run` exits with status 1 when a request fails or a check doesn't pass, so it can gate a pipeline; each step is printed even when output isn't a terminal.
+
+```bash
+hitop send https://api.example.com/health --post-script "assert.status(200); assert.responseTime(500)"
+hitop run MyAPI -e staging
+```
 
 ## Shell completions
 
@@ -75,7 +104,7 @@ hitop completions fish > ~/.config/fish/completions/hitop.fish
 
 ## Storage
 
-Collections, history, and runtime context are stored in:
+Collections, environments, history, and runtime context are stored in:
 - **Linux**: `~/.config/hitop/`
 - **macOS**: `~/Library/Application Support/hitop/`
 - **Windows**: `%APPDATA%\hitop\`
@@ -107,4 +136,12 @@ getContext(key)
 getVariable(key)
 getResponseValue(path) // dot-notation path into response JSON
 getResponseHeader(name)
+
+// Checks, reported with the response and by `hitop run`
+assert.status(200)
+assert.bodyContains('id')
+assert.header('content-type', 'json')   // or assert.header(name) for presence
+assert.responseTime(500)                // milliseconds
+assert.equal(getResponseValue('user.id'), 42, 'user id')
+assert.ok(statusCode < 300, 'success')
 ```
