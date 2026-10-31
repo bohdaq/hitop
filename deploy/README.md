@@ -74,4 +74,12 @@ backup, restart rws; point DNS back to `bohdaq.github.io`.
 
 ## Updating
 
-`./deploy/build.sh`, copy `out/` over, `./install.sh`. The front rws needs no change.
+```bash
+./deploy/deploy.sh                       # ubuntu@168.119.17.57, port 22
+./deploy/deploy.sh ubuntu@127.0.0.1 22231 # through a tunnel
+```
+
+It builds, copies `deploy/` to the host, runs `install.sh` (keeping
+`.bak-<timestamp>` copies) and checks the pages and the proxy from the host.
+The front rws needs no change. CI (`.github/workflows/ci.yml`) runs the same
+build and the browser checks on every push, so deploy from a green commit.
