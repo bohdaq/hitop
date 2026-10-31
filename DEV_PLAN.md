@@ -8,6 +8,11 @@ HITOP covers the core API testing workflow: all HTTP methods, collections, varia
 
 ## Quick wins — high impact, low effort
 
+**Status 2026-10-31:** items 1–4 are done in the web app (`webapp/src/features.js`, tests in
+`webapp/tests/features.cjs`). Open: per-parameter on/off toggles (item 1), and porting all four to
+desktop, iOS and the CLI. Auth is stored on the request as `auth: {type, …}` and maps to Postman's
+`auth`; environments live in `hitop_environments` / `hitop_active_environment`.
+
 ### 1. URL query param editor
 Table-based key/value editor that builds the query string automatically. Currently users must type params directly into the URL.
 
@@ -81,10 +86,10 @@ Replace plain `<textarea>` in the scripts tab with a lightweight code editor (e.
 
 | Feature | Web | Desktop | iOS | CLI |
 |---|---|---|---|---|
-| URL param editor | — | — | — | — |
-| Auth tab | — | — | — | — |
-| Environments | — | — | — | — |
-| Assertions | — | — | — | — |
+| URL param editor | ✓ | — | — | — |
+| Auth tab | ✓ | — | — | — |
+| Environments | ✓ | — | — | — |
+| Assertions | ✓ | — | — | — |
 | Script editor highlight | — | — | — | n/a |
 | Collection runner | ✓ | ✓ | — | ✓ |
 | Import / Export | ✓ | ✓ | — | ✓ |

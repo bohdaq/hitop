@@ -8,6 +8,7 @@ import xml from "highlight.js/lib/languages/xml";
 import { getStatusText } from "../../../frontend/src/services/httpService.jsx";
 import { usesProxy } from "../../../frontend/src/services/transportService.jsx";
 import { icon } from "../icons.js";
+import { AUTH_TYPES, emptyAuth, parseQuery, withQuery } from "../features.js";
 import { BODY_METHODS, METHODS } from "../store.js";
 
 hljs.registerLanguage("json", json);
@@ -28,11 +29,17 @@ const POST_HELP = `// Runs after the response. Available:
 // setContext(key, value), getContext(key), getVariable(key)
 //
 // Example: keep a token for the next request
-// setContext('authToken', getResponseValue('data.token'));`;
+// setContext('authToken', getResponseValue('data.token'));
+//
+// Checks, shown under Tests and in collection runs:
+// assert.status(200), assert.bodyContains('id'),
+// assert.header('content-type', 'json'), assert.responseTime(500),
+// assert.equal(getResponseValue('user.id'), 42), assert.ok(statusCode < 300)`;
 
 const scriptHelp = (text) => html`<details class="script-help"><summary>What a script can use</summary><pre>${text}</pre></details>`;
 
-const SECTIONS = ["Headers", "Body", "Pre-request script", "Post-request script"];
+// Editor sections, in tab order.
+const PARAMS = 0, AUTH = 1, HEADERS = 2, BODY = 3, PRE = 4, POST = 5;
 
 function highlighted(text, type) {
   const lang = type === "json" ? "json" : type === "html" || type === "xml" ? "xml" : null;
@@ -48,6 +55,16 @@ const bytes = (text) => {
   const n = new TextEncoder().encode(text).length;
   return n < 1024 ? `${n} B` : n < 1024 * 1024 ? `${(n / 1024).toFixed(1)} KB` : `${(n / 1024 / 1024).toFixed(1)} MB`;
 };
+
+export const testList = (tests) => html`
+  <ul class="tests">
+    ${tests.map(
+      (x) => html`<li class=${x.pass ? "pass" : "fail"}>
+        <lit-material-status status=${x.pass ? "ok" : "error"}>${x.pass ? "Passed" : "Failed"}</lit-material-status>
+        <span>${x.name}</span>${x.detail ? html`<span class="test-detail">${x.detail}</span>` : nothing}
+      </li>`,
+    )}
+  </ul>`;
 
 export class HitopRequest extends LitElement {
   static properties = {
@@ -72,7 +89,7 @@ export class HitopRequest extends LitElement {
   update(changed) {
     // A different tab starts on Headers, or on Body when it has one.
     if (changed.has("tab") && changed.get("tab")?.id !== this.tab?.id) {
-      this.section = this.tab?.requestBody && BODY_METHODS.includes(this.tab.method) ? 1 : 0;
+      this.section = this.tab?.requestBody && BODY_METHODS.includes(this.tab.method) ? BODY : this.tab?.url?.includes("?") ? PARAMS : HEADERS;
       this.responseSection = 0;
     }
     // The header editor rebuilds its rows whenever `entries` is set, and Lit
@@ -85,7 +102,52 @@ export class HitopRequest extends LitElement {
       this.headerRows = this.headerEntries();
       this.headerRowsVersion = (this.headerRowsVersion ?? 0) + 1;
     }
+    // Same for the query parameter editor, which follows the URL.
+    const params = JSON.stringify(parseQuery(this.tab?.url ?? ""));
+    if (params !== this.paramsJson) {
+      this.paramsJson = params;
+      this.paramRows = JSON.parse(params);
+      this.paramRowsVersion = (this.paramRowsVersion ?? 0) + 1;
+    }
     super.update(changed);
+  }
+
+  onParams(e) {
+    const url = withQuery(this.tab.url, e.detail.entries);
+    this.paramsJson = JSON.stringify(parseQuery(url));
+    this.set({ url });
+  }
+
+  get auth() {
+    return { ...emptyAuth(), ...(this.tab.auth || {}) };
+  }
+
+  setAuth(updates) {
+    this.set({ auth: { ...this.auth, ...updates } });
+  }
+
+  renderAuth() {
+    const a = this.auth;
+    const field = (label, key, extra = {}) => html`<lit-material-text-field variant="outlined" label=${label} .value=${a[key] || ""}
+      type=${extra.type ?? "text"} supporting-text=${extra.help ?? ""} @input=${(e) => this.setAuth({ [key]: e.target.value })}></lit-material-text-field>`;
+    return html`
+      <div class="auth">
+        <lit-material-select variant="outlined" label="Type" .value=${a.type} @change=${(e) => this.setAuth({ type: e.target.value })}>
+          ${AUTH_TYPES.map(([v, l]) => html`<lit-material-select-option value=${v}>${l}</lit-material-select-option>`)}
+        </lit-material-select>
+        ${a.type === "bearer" ? field("Token", "token", { help: "Sent as Authorization: Bearer <token>. ${variables} work here." }) : nothing}
+        ${a.type === "basic"
+          ? html`${field("Username", "username")} ${field("Password", "password", { type: "password", help: "Sent base64 encoded in Authorization: Basic." })}`
+          : nothing}
+        ${a.type === "apikey"
+          ? html`${field("Name", "key")} ${field("Value", "value")}
+              <lit-material-select variant="outlined" label="Send as" .value=${a.in} @change=${(e) => this.setAuth({ in: e.target.value })}>
+                <lit-material-select-option value="header">Header</lit-material-select-option>
+                <lit-material-select-option value="query">Query parameter</lit-material-select-option>
+              </lit-material-select>`
+          : nothing}
+        ${a.type === "none" ? html`<p class="hint">Pick a type to add credentials. A header you set by hand with the same name wins.</p>` : nothing}
+      </div>`;
   }
 
   set(updates) {
@@ -112,7 +174,11 @@ export class HitopRequest extends LitElement {
     const t = this.tab;
     const hasBody = BODY_METHODS.includes(t.method);
     const headerCount = this.headerEntries().length;
+    const paramCount = parseQuery(t.url || "").length;
+    const authType = t.auth?.type && t.auth.type !== "none" ? AUTH_TYPES.find(([v]) => v === t.auth.type)?.[1] : null;
     const labels = [
+      paramCount ? `Params (${paramCount})` : "Params",
+      authType ? `Auth ●` : "Auth",
       headerCount ? `Headers (${headerCount})` : "Headers",
       "Body",
       t.preRequestScript?.trim() ? "Pre-request script ●" : "Pre-request script",
@@ -121,10 +187,21 @@ export class HitopRequest extends LitElement {
     return html`
       <section class="editor" aria-label="Request details">
         <lit-material-tabs aria-label="Request details" .selected=${this.section} @change=${(e) => (this.section = e.target.selected)}>
-          ${SECTIONS.map((_, i) => html`<lit-material-tab>${labels[i]}</lit-material-tab>`)}
+          ${labels.map((label) => html`<lit-material-tab>${label}</lit-material-tab>`)}
         </lit-material-tabs>
         <div class="editor-panel">
-          ${this.section === 0
+          ${this.section === PARAMS
+            ? html`<lit-material-key-value-editor
+                key-label="Parameter"
+                value-label="Value"
+                add-label="Add parameter"
+                .entries=${guard([this.paramRowsVersion], () => this.paramRows)}
+                @change=${(e) => this.onParams(e)}
+              ></lit-material-key-value-editor>
+              <p class="hint">Kept in sync with the URL. Values are sent as typed, so encode special characters yourself or use \${variables}.</p>`
+            : nothing}
+          ${this.section === AUTH ? this.renderAuth() : nothing}
+          ${this.section === HEADERS
             ? html`<lit-material-key-value-editor
                 key-label="Header"
                 value-label="Value"
@@ -133,7 +210,7 @@ export class HitopRequest extends LitElement {
                 @change=${(e) => this.onHeaders(e)}
               ></lit-material-key-value-editor>`
             : nothing}
-          ${this.section === 1
+          ${this.section === BODY
             ? hasBody
               ? html`<lit-material-code-field
                   label="Request body"
@@ -144,11 +221,11 @@ export class HitopRequest extends LitElement {
                   Switch the method to POST, PUT or PATCH to send one.
                 </lit-material-empty-state>`
             : nothing}
-          ${this.section === 2
+          ${this.section === PRE
             ? html`<lit-material-code-field label="Pre-request script" .value=${t.preRequestScript || ""} @input=${(e) => this.set({ preRequestScript: e.target.value })}></lit-material-code-field>
                 ${scriptHelp(PRE_HELP)}`
             : nothing}
-          ${this.section === 3
+          ${this.section === POST
             ? html`<lit-material-code-field label="Post-request script" .value=${t.postRequestScript || ""} @input=${(e) => this.set({ postRequestScript: e.target.value })}></lit-material-code-field>
                 ${scriptHelp(POST_HELP)}`
             : nothing}
@@ -182,6 +259,9 @@ export class HitopRequest extends LitElement {
     const cls = t.statusCode < 300 ? "ok" : t.statusCode < 400 ? "info" : "bad";
     const headers = Object.entries(t.responseHeaders || {});
     const code = highlighted(t.response, t.responseType);
+    const tests = t.tests || [];
+    const passed = tests.filter((x) => x.pass).length;
+    if (this.responseSection === 2 && !tests.length) this.responseSection = 0;
     return html`
       <section class="response" aria-label="Response">
         <div class="response-meta">
@@ -189,18 +269,22 @@ export class HitopRequest extends LitElement {
           ${t.durationMs != null ? html`<span>${t.durationMs} ms</span>` : nothing}
           <span>${bytes(t.response || "")}</span>
           ${t.truncated ? html`<span class="warn">Cut at 5 MB</span>` : nothing}
+          ${tests.length ? html`<span class=${passed === tests.length ? "pass" : "warn"}>${passed} of ${tests.length} tests passed</span>` : nothing}
         </div>
         <lit-material-tabs aria-label="Response details" .selected=${this.responseSection} @change=${(e) => (this.responseSection = e.target.selected)}>
           <lit-material-tab>Body</lit-material-tab>
           <lit-material-tab>Headers (${headers.length})</lit-material-tab>
+          ${tests.length ? html`<lit-material-tab>Tests (${passed}/${tests.length})</lit-material-tab>` : nothing}
         </lit-material-tabs>
         ${this.responseSection === 0
           ? t.response
             ? html`<lit-material-code-block class="response-body" label=${t.responseType.toUpperCase()}>${code ? unsafeHTML(code) : t.response}</lit-material-code-block>`
             : html`<p class="hint">No body${t.method === "HEAD" ? ": HEAD responses never have one" : ""}.</p>`
-          : html`<dl class="response-headers">
-              ${headers.map(([k, v]) => html`<dt>${k}</dt><dd>${v}</dd>`)}
-            </dl>`}
+          : this.responseSection === 1
+            ? html`<dl class="response-headers">
+                ${headers.map(([k, v]) => html`<dt>${k}</dt><dd>${v}</dd>`)}
+              </dl>`
+            : testList(tests)}
       </section>`;
   }
 

@@ -107,7 +107,21 @@ export class HitopApp extends LitElement {
     e.preventDefault();
     const s = this.store;
     const d = this.dialog;
+    // Enter can reach the form twice (the field's own implicit submission and
+    // dialogKey); act once per opening.
+    if (!d || d.submitted) return;
+    d.submitted = true;
     if (d.kind === "add-collection") s.addCollection(this.field("name"));
+    if (d.kind === "add-environment") s.addEnvironment(this.field("name"));
+    if (d.kind === "rename-environment") s.renameEnvironment(d.id, this.field("name"));
+    if (d.kind === "import-environments") {
+      try {
+        s.importEnvironments(this.field("json"));
+      } catch (err) {
+        this.dialog = { ...d, submitted: false, error: `That isn't an environment file HITOP can read: ${err.message}` };
+        return;
+      }
+    }
     if (d.kind === "rename-collection") s.renameCollection(d.id, this.field("name"));
     if (d.kind === "rename-tab") s.renameTab(d.index, this.field("name"));
     if (d.kind === "save") {
@@ -119,7 +133,7 @@ export class HitopApp extends LitElement {
       try {
         s.importJson(this.field("json"));
       } catch (err) {
-        this.dialog = { ...d, error: `That isn't a collection file HITOP can read: ${err.message}` };
+        this.dialog = { ...d, submitted: false, error: `That isn't a collection file HITOP can read: ${err.message}` };
         return;
       }
     }
@@ -140,6 +154,11 @@ export class HitopApp extends LitElement {
   async deleteRequest(request, collectionId) {
     const ok = await confirm({ headline: `Delete ${request.name}?`, message: "The request is removed from its collection.", confirmLabel: "Delete", destructive: true });
     if (ok) this.store.deleteRequest(request, collectionId);
+  }
+
+  async deleteEnvironment(env) {
+    const ok = await confirm({ headline: `Delete ${env.name}?`, message: "Its variables are deleted too.", confirmLabel: "Delete", destructive: true });
+    if (ok) this.store.deleteEnvironment(env.id);
   }
 
   async clearHistory() {
@@ -164,6 +183,24 @@ export class HitopApp extends LitElement {
         headline = "New collection";
         body = html`<lit-material-text-field id="name" variant="outlined" label="Collection name" required autofocus></lit-material-text-field>`;
         footer = actions("Create");
+        break;
+      case "add-environment":
+        headline = "New environment";
+        body = html`<lit-material-text-field id="name" variant="outlined" label="Environment name" placeholder="Staging" required autofocus></lit-material-text-field>`;
+        footer = actions("Create");
+        break;
+      case "rename-environment":
+        headline = "Rename environment";
+        body = html`<lit-material-text-field id="name" variant="outlined" label="Environment name" .value=${d.name} required autofocus></lit-material-text-field>`;
+        footer = actions("Rename");
+        break;
+      case "import-environments":
+        headline = "Import environments";
+        body = html`
+          <p class="dialog-note">Paste a HITOP environments export or a Postman environment. They are added to the ones you have.</p>
+          <lit-material-textarea id="json" variant="outlined" label="Environment JSON" rows="10" required autofocus
+            ?error=${Boolean(d.error)} error-text=${d.error ?? ""}></lit-material-textarea>`;
+        footer = actions("Import");
         break;
       case "rename-collection":
         headline = "Rename collection";
@@ -271,6 +308,16 @@ export class HitopApp extends LitElement {
         <lit-material-button variant="tonal" class="new-request" @click=${() => (this.navOpen = false, s.newRequestInFirstCollection())}>
           ${icon("plus")} New request
         </lit-material-button>
+        <lit-material-select class="env-select" variant="outlined" label="Environment" .value=${s.activeEnvironmentId ?? "none"}
+          @change=${(e) => {
+            if (e.target.value !== "__manage") return s.setActiveEnvironment(e.target.value === "none" ? null : e.target.value);
+            e.target.value = s.activeEnvironmentId ?? "none"; // "Manage" is an action, not a choice
+            this.go("environments");
+          }}>
+          <lit-material-select-option value="none">No environment</lit-material-select-option>
+          ${s.environments.map((env) => html`<lit-material-select-option value=${env.id}>${env.name}</lit-material-select-option>`)}
+          <lit-material-select-option value="__manage">Manage environments…</lit-material-select-option>
+        </lit-material-select>
         <nav class="tree" aria-label="Collections">
           <button type="button" class="tree-row heading" aria-current=${kind === "collections" ? "page" : "false"} @click=${() => this.go("collections")}>
             ${icon("folders")}<span>Collections</span>
@@ -312,6 +359,7 @@ export class HitopApp extends LitElement {
           </ul>
         </nav>
         <div class="sidebar-footer">
+          <button type="button" class="tree-row" aria-current=${kind === "environments" ? "page" : "false"} @click=${() => this.go("environments")}>${icon("globe")}<span>Environments</span></button>
           <button type="button" class="tree-row" @click=${() => this.openDialog("history")}>${icon("clock-counter-clockwise")}<span>History</span></button>
           <button type="button" class="tree-row" @click=${() => this.openDialog("export")}>${icon("file-arrow-down")}<span>Export</span></button>
           <button type="button" class="tree-row" @click=${() => this.openDialog("import")}>${icon("file-arrow-up")}<span>Import</span></button>
@@ -370,6 +418,9 @@ export class HitopApp extends LitElement {
   renderMain() {
     const s = this.store;
     const { kind, collectionId } = s.view;
+    if (kind === "environments") {
+      return html`<hitop-environments .store=${s} .version=${s.version} .app=${this}></hitop-environments>`;
+    }
     if (kind === "collections") {
       return html`<hitop-collections .store=${s} .version=${s.version} .app=${this}></hitop-collections>`;
     }
@@ -384,6 +435,7 @@ export class HitopApp extends LitElement {
   }
 
   render() {
+    const s = this.store;
     return html`
       <a class="skip-link" href="#main">Skip to content</a>
       <header class="topbar">

@@ -23,8 +23,8 @@ const convertToBrunoFormat = (collection) => {
       request: {
         url: req.url,
         method: req.method,
-        headers: req.headers.map(h => ({
-          name: h.key,
+        headers: (req.headers || []).filter(h => h.name || h.key).map(h => ({
+          name: h.name ?? h.key,
           value: h.value,
           enabled: true
         })),
@@ -59,6 +59,36 @@ const convertToBrunoFormat = (collection) => {
 };
 
 /**
+ * Converts a HITOP auth preset to Postman v2.1 `auth` (undefined for none)
+ *
+ * @param {object} auth - { type, token, username, password, key, value, in }
+ * @returns {object|undefined} - Postman auth object
+ */
+const toPostmanAuth = (auth) => {
+  const kv = (pairs) => pairs.map(([key, value]) => ({ key, value, type: 'string' }));
+  if (!auth || auth.type === 'none') return undefined;
+  if (auth.type === 'bearer') return { type: 'bearer', bearer: kv([['token', auth.token || '']]) };
+  if (auth.type === 'basic') return { type: 'basic', basic: kv([['username', auth.username || ''], ['password', auth.password || '']]) };
+  if (auth.type === 'apikey') return { type: 'apikey', apikey: kv([['key', auth.key || ''], ['value', auth.value || ''], ['in', auth.in || 'header']]) };
+  return undefined;
+};
+
+/**
+ * Converts Postman v2.1 `auth` to a HITOP auth preset (undefined when unsupported)
+ *
+ * @param {object} auth - Postman auth object
+ * @returns {object|undefined} - HITOP auth preset
+ */
+const fromPostmanAuth = (auth) => {
+  if (!auth || !auth.type) return undefined;
+  const get = (key) => (auth[auth.type] || []).find(p => p.key === key)?.value ?? '';
+  if (auth.type === 'bearer') return { type: 'bearer', token: get('token') };
+  if (auth.type === 'basic') return { type: 'basic', username: get('username'), password: get('password') };
+  if (auth.type === 'apikey') return { type: 'apikey', key: get('key'), value: get('value'), in: get('in') === 'query' ? 'query' : 'header' };
+  return undefined;
+};
+
+/**
  * Converts HITOP collection to Postman v2.1 format
  * 
  * @param {object} collection - HITOP collection
@@ -76,8 +106,8 @@ const convertToPostmanFormat = (collection) => {
       name: req.name,
       request: {
         method: req.method,
-        header: req.headers.map(h => ({
-          key: h.key,
+        header: (req.headers || []).filter(h => h.name || h.key).map(h => ({
+          key: h.name ?? h.key,
           value: h.value,
           type: "text"
         })),
@@ -95,7 +125,8 @@ const convertToPostmanFormat = (collection) => {
           protocol: req.url.split('://')[0],
           host: req.url.split('://')[1]?.split('/')[0]?.split('.') || [],
           path: req.url.split('://')[1]?.split('/').slice(1) || []
-        }
+        },
+        auth: toPostmanAuth(req.auth)
       },
       event: [
         ...(req.preRequestScript ? [{
@@ -167,7 +198,7 @@ const flattenBrunoItems = (items) => {
           url: request.url || '',
           method: request.method || 'GET',
           headers: (request.headers || []).map(h => ({
-            key: h.name || h.key,
+            name: h.name || h.key,
             value: h.value
           })),
           body: request.body?.json || request.body?.text || request.body?.raw || '',
@@ -272,10 +303,11 @@ const convertFromPostmanFormat = (postmanCollection) => {
           url: url,
           method: request.method || 'GET',
           headers: (request.header || []).map(h => ({
-            key: h.key,
+            name: h.key,
             value: h.value
           })),
           body: request.body?.raw || '',
+          ...(fromPostmanAuth(request.auth || postmanCollection.auth) ? { auth: fromPostmanAuth(request.auth || postmanCollection.auth) } : {}),
           preRequestScript,
           postRequestScript
         };
@@ -400,7 +432,8 @@ export const createRequest = (name, requestData) => {
     headers: requestData.headers,
     body: requestData.body,
     preRequestScript: requestData.preRequestScript || '',
-    postRequestScript: requestData.postRequestScript || ''
+    postRequestScript: requestData.postRequestScript || '',
+    ...(requestData.auth ? { auth: requestData.auth } : {})
   };
 };
 

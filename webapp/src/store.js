@@ -11,6 +11,7 @@ import tabService from "../../frontend/src/services/tabService.jsx";
 import { interpolateVariables } from "../../frontend/src/services/variableInterpolation.jsx";
 import { sendRequest } from "../../frontend/src/services/transportService.jsx";
 import { generateUniqueId } from "../../frontend/src/utils/idGenerator.jsx";
+import { applyAuth, cleanAuth, emptyAuth, loadEnvironments, makeAssert, parseEnvironments, saveEnvironments } from "./features.js";
 
 export const METHODS = ["GET", "POST", "PUT", "PATCH", "DELETE", "HEAD", "OPTIONS"];
 export const BODY_METHODS = ["POST", "PUT", "PATCH"];
@@ -35,6 +36,7 @@ function tabForRequest(request, collectionId) {
     requestBody: request.body || "",
     preRequestScript: request.preRequestScript || "",
     postRequestScript: request.postRequestScript || "",
+    auth: request.auth ? { ...emptyAuth(), ...request.auth } : emptyAuth(),
     loadedRequestId: request.id,
     loadedCollectionId: collectionId,
   };
@@ -99,6 +101,9 @@ export class Store extends EventTarget {
     this.currentTab = s.currentTab;
     this.history = storageService.loadHistory() || [];
     this.contexts = storageService.loadContexts() || {};
+    const envs = loadEnvironments();
+    this.environments = envs.environments;
+    this.activeEnvironmentId = this.environments.some((e) => e.id === envs.activeEnvironmentId) ? envs.activeEnvironmentId : null;
     // What the main area shows: the request tabs, all collections, one
     // collection, or one collection's variables.
     this.view = { kind: "request", collectionId: null };
@@ -125,6 +130,7 @@ export class Store extends EventTarget {
     storageService.saveCurrentTab(this.currentTab);
     storageService.saveHistory(this.history);
     storageService.saveContexts(this.contexts);
+    saveEnvironments(this.environments, this.activeEnvironmentId);
   }
 
   notify(message) {
@@ -150,8 +156,8 @@ export class Store extends EventTarget {
 
   // --- views --------------------------------------------------------------
 
-  show(kind, collectionId = null) {
-    this.view = { kind, collectionId };
+  show(kind, collectionId = null, environmentId = null) {
+    this.view = { kind, collectionId, environmentId };
     if (kind === "collections" && !this.run.running) this.run = { ...this.run, collectionId: null, results: [] };
     this.emit();
   }
@@ -216,6 +222,7 @@ export class Store extends EventTarget {
       body: source.requestBody,
       preRequestScript: source.preRequestScript,
       postRequestScript: source.postRequestScript,
+      auth: cleanAuth(source.auth),
     });
     this.collections = collectionService.addRequestToCollection(this.collections, collectionId, request);
     this.tabs = [...this.tabs, tabForRequest(request, collectionId)];
@@ -285,6 +292,7 @@ export class Store extends EventTarget {
       body: tab.requestBody,
       preRequestScript: tab.preRequestScript,
       postRequestScript: tab.postRequestScript,
+      auth: cleanAuth(tab.auth),
     };
     const existing = tab.loadedRequestId && this.collection(tab.loadedCollectionId)?.requests.some((r) => r.id === tab.loadedRequestId);
     if (existing) {
@@ -388,6 +396,7 @@ export class Store extends EventTarget {
       loadedCollectionId: null,
       preRequestScript: item.preRequestScript || "",
       postRequestScript: item.postRequestScript || "",
+      auth: item.auth ? { ...emptyAuth(), ...item.auth } : emptyAuth(),
       title: item.isCollectionRun ? `${item.collectionName} → ${item.requestName}` : `${item.method} ${item.url}`,
     });
     this.emit();
@@ -396,6 +405,60 @@ export class Store extends EventTarget {
   clearHistory() {
     this.history = [];
     this.emit();
+  }
+
+  // --- environments -----------------------------------------------------------
+
+  get activeEnvironment() {
+    return this.environments.find((e) => e.id === this.activeEnvironmentId) ?? null;
+  }
+
+  // The variables a request sees: its collection's, overridden by the
+  // active environment's.
+  variables(collectionId) {
+    return { ...collectionService.getCollectionVariables(this.collections, collectionId), ...(this.activeEnvironment?.variables ?? {}) };
+  }
+
+  setActiveEnvironment(id) {
+    this.activeEnvironmentId = this.environments.some((e) => e.id === id) ? id : null;
+    this.emit();
+  }
+
+  addEnvironment(name) {
+    if (!name.trim()) return;
+    const env = { id: crypto.randomUUID(), name: name.trim(), variables: {} };
+    this.environments = [...this.environments, env];
+    if (!this.activeEnvironmentId) this.activeEnvironmentId = env.id;
+    this.view = { kind: "environments", collectionId: null, environmentId: env.id };
+    this.emit();
+  }
+
+  renameEnvironment(id, name) {
+    if (!name.trim()) return;
+    this.environments = this.environments.map((e) => (e.id === id ? { ...e, name: name.trim() } : e));
+    this.emit();
+  }
+
+  setEnvironmentVariables(id, variables) {
+    this.environments = this.environments.map((e) => (e.id === id ? { ...e, variables } : e));
+    this.emit();
+  }
+
+  deleteEnvironment(id) {
+    this.environments = this.environments.filter((e) => e.id !== id);
+    if (this.activeEnvironmentId === id) this.activeEnvironmentId = null;
+    this.emit();
+  }
+
+  importEnvironments(json) {
+    const imported = parseEnvironments(json); // throws on bad input
+    this.environments = [...this.environments, ...imported];
+    this.emit();
+    this.notify(`Imported ${imported.length} environment${imported.length === 1 ? "" : "s"}`);
+  }
+
+  exportEnvironments() {
+    return JSON.stringify(this.environments.map(({ name, variables }) => ({ name, variables })), null, 2);
   }
 
   // --- scripts --------------------------------------------------------------
@@ -409,7 +472,7 @@ export class Store extends EventTarget {
   runPreScript(script, collectionId, method, url, headers, body) {
     if (!script?.trim()) return { url, headers, body };
     const context = contextService.getCollectionContext(this.contexts, collectionId);
-    const variables = collectionService.getCollectionVariables(this.collections, collectionId);
+    const variables = this.variables(collectionId);
     const updates = {};
     const ctx = {
       url,
@@ -434,8 +497,9 @@ export class Store extends EventTarget {
     return { url: ctx.url, headers: ctx.headers, body: ctx.body };
   }
 
-  runPostScript(script, collectionId, text, headers, status) {
-    if (!script?.trim()) return;
+  // Returns the assert.* results (an empty list without a script).
+  runPostScript(script, collectionId, text, headers, status, durationMs) {
+    if (!script?.trim()) return [];
     let parsed = text;
     try {
       parsed = JSON.parse(text);
@@ -443,9 +507,11 @@ export class Store extends EventTarget {
       // not JSON
     }
     const context = contextService.getCollectionContext(this.contexts, collectionId);
-    const variables = collectionService.getCollectionVariables(this.collections, collectionId);
+    const variables = this.variables(collectionId);
     const updates = {};
+    const { assert, results } = makeAssert({ statusCode: status, text, headers, durationMs });
     const ctx = {
+      assert,
       response: parsed,
       responseText: text,
       responseHeaders: headers,
@@ -458,20 +524,27 @@ export class Store extends EventTarget {
       getResponseValue: (path) => path.split(".").reduce((v, k) => (v && typeof v === "object" ? v[k] : undefined), parsed),
       getResponseHeader: (name) => headers[name.toLowerCase()],
     };
-    new Function("ctx", `with(ctx) { ${script} }`)(ctx);
-    for (const [k, v] of Object.entries(updates)) this.setContext(collectionId, k, v);
+    try {
+      new Function("ctx", `with(ctx) { ${script} }`)(ctx);
+    } finally {
+      for (const [k, v] of Object.entries(updates)) this.setContext(collectionId, k, v);
+    }
+    return results;
   }
 
-  // Interpolates variables and runs the pre-request script: the request as sent.
+  // Interpolates variables, adds auth and runs the pre-request script: the
+  // request as sent. Auth comes before the script, so a script can override it.
   prepare(source, collectionId) {
-    const variables = collectionService.getCollectionVariables(this.collections, collectionId);
-    const url = interpolateVariables(source.url, variables);
+    const variables = this.variables(collectionId);
+    const interpolate = (text) => interpolateVariables(text, variables);
+    const url = interpolate(source.url);
     const headers = (source.headers || []).map((h) => ({
-      name: h.name ? interpolateVariables(h.name, variables) : "",
-      value: h.value ? interpolateVariables(h.value, variables) : "",
+      name: h.name ? interpolate(h.name) : "",
+      value: h.value ? interpolate(h.value) : "",
     }));
-    const body = source.body ? interpolateVariables(source.body, variables) : source.body;
-    return this.runPreScript(source.preRequestScript, collectionId, source.method, url, headers, body);
+    const body = source.body ? interpolate(source.body) : source.body;
+    const authed = applyAuth(source.auth, { url, headers, body }, interpolate);
+    return this.runPreScript(source.preRequestScript, collectionId, source.method, authed.url, authed.headers, authed.body);
   }
 
   // --- sending ----------------------------------------------------------------
@@ -485,12 +558,12 @@ export class Store extends EventTarget {
     }
     let prepared;
     try {
-      prepared = this.prepare({ url: tab.url, method: tab.method, headers: tab.headers, body: tab.requestBody, preRequestScript: tab.preRequestScript }, tab.loadedCollectionId);
+      prepared = this.prepare({ url: tab.url, method: tab.method, headers: tab.headers, body: tab.requestBody, preRequestScript: tab.preRequestScript, auth: tab.auth }, tab.loadedCollectionId);
     } catch (e) {
       this.notify(`The request wasn't sent: ${e.message}`);
       return;
     }
-    this.tabs = tabService.updateTab(this.tabs, index, { loading: true, response: null, statusCode: null, responseHeaders: null, durationMs: null });
+    this.tabs = tabService.updateTab(this.tabs, index, { loading: true, response: null, statusCode: null, responseHeaders: null, durationMs: null, tests: null });
     this.emit();
     const started = performance.now();
     try {
@@ -522,11 +595,15 @@ export class Store extends EventTarget {
           postRequestScript: tab.postRequestScript,
         }),
       );
+      this.history[this.history.length - 1].auth = cleanAuth(tab.auth);
+      let tests = [];
       try {
-        this.runPostScript(tab.postRequestScript, tab.loadedCollectionId, data, headers, res.status);
+        tests = this.runPostScript(tab.postRequestScript, tab.loadedCollectionId, data, headers, res.status, durationMs);
       } catch (e) {
+        tests = [...tests, { name: "post-request script", pass: false, detail: e.message }];
         this.notify(`Post-request script failed: ${e.message}`);
       }
+      this.tabs = tabService.updateTab(this.tabs, index, { tests });
     } catch (e) {
       this.tabs = tabService.updateTab(this.tabs, index, { response: `Error: ${e.message}`, responseType: "error", statusCode: null, responseHeaders: null, loading: false });
     }
@@ -563,14 +640,17 @@ export class Store extends EventTarget {
         const text = await res.text();
         const headers = {};
         res.headers.forEach((v, k) => (headers[k] = v));
+        let tests = [];
         try {
-          this.runPostScript(request.postRequestScript, id, text, headers, res.status);
+          tests = this.runPostScript(request.postRequestScript, id, text, headers, res.status, duration);
         } catch (e) {
-          this.notify(`Post-request script in "${request.name}" failed: ${e.message}`);
+          tests = [...tests, { name: "post-request script", pass: false, detail: e.message }];
         }
-        this.history = historyService.addToHistory(this.history, historyService.createCollectionRunHistoryItem(request, prepared, res, collection.name, i));
-        push({ requestName: request.name, method: request.method, url: prepared.url, statusCode: res.status, success: res.ok, response: text.slice(0, 200), duration });
-        if (!res.ok) break;
+        this.history = historyService.addToHistory(this.history, { ...historyService.createCollectionRunHistoryItem(request, prepared, res, collection.name, i), auth: request.auth });
+        const failed = tests.filter((t) => !t.pass);
+        const success = res.ok && failed.length === 0;
+        push({ requestName: request.name, method: request.method, url: prepared.url, statusCode: res.status, success, tests, response: failed.length ? failed.map((t) => `${t.name}: ${t.detail}`).join("; ") : text.slice(0, 200), duration });
+        if (!success) break;
       } catch (e) {
         push({ requestName: request.name, method: request.method, url: request.url, statusCode: "Error", success: false, response: e.message });
         break;
@@ -586,6 +666,8 @@ export class Store extends EventTarget {
     let total = 0;
     let ok = 0;
     let ran = 0;
+    let assertions = 0;
+    let assertionsFailed = 0;
     this.run = { collectionId: null, results: [], running: true, completed: 0, summary: null };
     this.emit();
     for (const col of this.collections) {
@@ -594,6 +676,8 @@ export class Store extends EventTarget {
       const results = await this.runCollection(col.id);
       total += results.length;
       ok += results.filter((r) => r.success).length;
+      assertions += results.reduce((n, r) => n + (r.tests?.length ?? 0), 0);
+      assertionsFailed += results.reduce((n, r) => n + (r.tests?.filter((t) => !t.pass).length ?? 0), 0);
       this.run = { ...this.run, running: true, completed: this.run.completed + 1 };
     }
     this.run = {
@@ -601,7 +685,7 @@ export class Store extends EventTarget {
       results: [],
       running: false,
       completed: 0,
-      summary: { totalCollections: ran, totalRequests: total, successCount: ok, failedCount: total - ok, duration: Math.round(performance.now() - started) },
+      summary: { totalCollections: ran, totalRequests: total, successCount: ok, failedCount: total - ok, assertions, assertionsFailed, duration: Math.round(performance.now() - started) },
     };
     this.emit();
   }

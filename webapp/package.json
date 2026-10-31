@@ -6,7 +6,7 @@
     "dev": "vite",
     "build": "VITE_HITOP_PROXY=/api/proxy vite build",
     "preview": "vite preview",
-    "test:e2e": "node tests/e2e.cjs && node tests/editing.cjs"
+    "test:e2e": "node tests/e2e.cjs && node tests/editing.cjs && node tests/features.cjs"
   },
   "dependencies": {
     "@fontsource-variable/geist": "5.3.0",

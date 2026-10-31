@@ -54,7 +54,7 @@ const settle = (p) => p.waitForTimeout(400); // saves are batched every 250 ms
   await p.keyboard.type('Enter test', { delay: 15 });
   await p.keyboard.press('Enter');
   await settle(p);
-  check('Enter submits a dialog', (await p.locator('aside').innerText()).includes('Enter test'));
+  check('Enter submits a dialog once', ((await p.locator('aside').innerText()).match(/Enter test/g) || []).length === 1);
 
   await p.locator('aside').getByRole('button', { name: 'Variables' }).first().click();
   await p.getByRole('button', { name: 'Add variable' }).click();
