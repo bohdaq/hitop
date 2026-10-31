@@ -24,7 +24,6 @@
     "start": "vite",
     "build": "vite build",
     "build:production": "vite build && node scripts/inject-analytics.js",
-    "build:web": "VITE_HITOP_PROXY=/api/proxy vite build --base=/app/",
     "build:extension": "vite build && cp public/manifest_extension.json build/manifest.json",
     "preview": "vite preview"
   },

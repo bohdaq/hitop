@@ -47,7 +47,10 @@ hitop/
 │       ├── tauri.conf.json     # Bundle ID: com.bohdaq.hitop, category: Developer Tools
 │       ├── Entitlements.mas.plist          # Mac App Store entitlements
 │       └── Entitlements.mas.inherit.plist  # MAS child process entitlements
-├── frontend/                   # React web app (used by browser extensions)
+├── webapp/                     # hitop.rws8.tech/app/: Lit + lit-material, reuses frontend/src/services
+│   ├── src/store.js            # all app logic (port of frontend/src/App.jsx), same localStorage keys
+│   └── tests/e2e.cjs           # Playwright e2e, seeded with React-app storage (legacy-storage.json)
+├── frontend/                   # React app, now only for the browser extensions
 │   ├── index.html              # Vite entry point (root of frontend/)
 │   ├── vite.config.js          # Vite 6, outDir: build, multi-entry (main + sandbox)
 │   └── src/                    # All files are .jsx (not .js)
@@ -94,9 +97,13 @@ hitop/
 - Dev server: `npm start` (port 3000)
 - Build: `npm run build`
 - Extension build: `npm run build:extension` (copies manifest_extension.json)
-- Web build for hitop.rws8.tech: `npm run build:web` (base `/app/`, `VITE_HITOP_PROXY=/api/proxy`)
+- `services/` are shared with `webapp/` (plain JS, no React): change them with both apps in mind
 - `services/transportService.jsx`: every request goes through `sendRequest()`; public hosts use
-  the proxy when `VITE_HITOP_PROXY` is set, localhost/private hosts and extension builds use fetch
+  the proxy when `VITE_HITOP_PROXY` is set (webapp build), otherwise fetch
+
+### Web app (`webapp/`)
+- Lit + lit-material in light DOM; theme from `site/src/theme.css`; `npm run build` → `dist/` (base `/app/`)
+- Storage must stay readable by the React app (same keys/shapes); `npm run test:e2e` with BASE= a running hitop-server
 
 ### Website and proxy
 - Hosting: VM bohdan-prod-donotdelete (168.119.17.57) behind the front rws; see `deploy/README.md`
