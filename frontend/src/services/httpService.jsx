@@ -4,6 +4,8 @@
  * Handles HTTP request execution and response processing
  */
 
+import { sendRequest } from './transportService';
+
 /**
  * Makes an HTTP request
  * 
@@ -32,7 +34,7 @@ export const makeHttpRequest = async (url, method, headers, body) => {
     fetchOptions.body = body;
   }
 
-  const response = await fetch(url, fetchOptions);
+  const response = await sendRequest(url, fetchOptions);
 
   // Extract response headers
   const responseHeaders = {};

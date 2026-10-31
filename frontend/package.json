@@ -5,7 +5,10 @@
   "license": "MIT",
   "homepage": ".",
   "dependencies": {
+    "@emotion/react": "^11.14.0",
+    "@emotion/styled": "^11.14.1",
     "@mui/icons-material": "^7.3.4",
+    "@mui/material": "^7.3.11",
     "@testing-library/dom": "^10.4.1",
     "@testing-library/jest-dom": "^6.9.1",
     "@testing-library/react": "^16.3.0",
@@ -21,6 +24,7 @@
     "start": "vite",
     "build": "vite build",
     "build:production": "vite build && node scripts/inject-analytics.js",
+    "build:web": "VITE_HITOP_PROXY=/api/proxy vite build --base=/app/",
     "build:extension": "vite build && cp public/manifest_extension.json build/manifest.json",
     "preview": "vite preview"
   },

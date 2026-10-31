@@ -1,0 +1,21 @@
+[package]
+name = "hitop-server"
+version = "0.1.0"
+edition = "2021"
+authors = ["Bohdan Tsap <bohdaq@gmail.com>"]
+license = "MIT"
+description = "Serves hitop.rws8.tech and the web app's request proxy (POST /api/proxy)"
+publish = false
+
+[dependencies]
+rust-web-server = { version = "18.14", default-features = false, features = ["http2", "serde"] }
+reqwest = { version = "0.12", default-features = false, features = ["blocking", "rustls-tls", "gzip", "brotli", "deflate"] }
+tokio = { version = "1", features = ["rt-multi-thread", "macros", "net"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+base64 = "0.22"
+url = "2"
+
+[profile.release]
+lto = true
+strip = true

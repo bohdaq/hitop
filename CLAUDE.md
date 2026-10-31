@@ -53,8 +53,13 @@ hitop/
 │   └── src/                    # All files are .jsx (not .js)
 ├── extension/                  # Firefox extension source
 ├── chrome-extension/           # Chrome extension source
-├── docs/                       # GitHub Pages site (bohdaq.github.io/hitop)
-│   └── privacy.md              # Privacy policy — URL used for App Store submission
+├── site/                       # hitop.rws8.tech: lit-material + Lit SSR, rws8.tech design system
+│   ├── src/pages/              # home, pricing.html, privacy.html, 404, terms/ (guides)
+│   └── scripts/prerender.js    # npm run build → dist/
+├── server/                     # hitop-server: rws app serving the site + POST /api/proxy
+│   └── src/guard.rs            # address/port policy for the proxy (SSRF guard)
+├── deploy/                     # build.sh, install.sh, systemd unit, front rws routes, README
+├── docs/                       # OLD GitHub Pages site; terms/*.html are still the guide sources
 └── CLAUDE.md                   # This file
 ```
 
@@ -89,6 +94,15 @@ hitop/
 - Dev server: `npm start` (port 3000)
 - Build: `npm run build`
 - Extension build: `npm run build:extension` (copies manifest_extension.json)
+- Web build for hitop.rws8.tech: `npm run build:web` (base `/app/`, `VITE_HITOP_PROXY=/api/proxy`)
+- `services/transportService.jsx`: every request goes through `sendRequest()`; public hosts use
+  the proxy when `VITE_HITOP_PROXY` is set, localhost/private hosts and extension builds use fetch
+
+### Website and proxy
+- Hosting: VM bohdan-prod-donotdelete (168.119.17.57) behind the front rws; see `deploy/README.md`
+- Build all: `./deploy/build.sh`; server tests: `cd server && cargo test`
+- Old URLs must keep working: `/privacy.html` (App Store privacy URL), `/pricing.html`, `/app.html`, `/terms/*.html`
+- App Store: macOS "HiTop API Client" id6785294166 ($4.99, macOS 12+), iOS "HiTop HTTP Client" id6785326628 ($2.99, iOS 17+)
 
 ### Data model
 - `Collection` — has `id`, `name`, `requests[]`, `variables` (HashMap, `#[serde(default)]`)
@@ -117,7 +131,7 @@ PATH="$HOME/.cargo/bin:$PATH" RUSTC="$HOME/.cargo/bin/rustc" ~/.cargo/bin/cargo 
 - Apple Developer account: active (renewed June 2025)
 - Bundle ID `com.bohdaq.hitop` — needs to be registered at developer.apple.com
 - Entitlements and icon set ready
-- Privacy policy: `https://bohdaq.github.io/hitop/privacy.html`
+- Privacy policy: `https://hitop.rws8.tech/privacy.html` (old Pages URL redirects there)
 - Next step: register App ID → create certificates → sign and build → upload via Transporter
 
 ---

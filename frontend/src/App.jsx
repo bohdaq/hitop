@@ -43,6 +43,7 @@ import scriptExecutionService from './services/scriptExecutionService';
 import variableInterpolation from './services/variableInterpolation';
 import sandboxExecutor from './services/sandboxScriptExecutor';
 import httpService from './services/httpService';
+import { sendRequest } from './services/transportService';
 import { generateUniqueId } from './utils/idGenerator';
 
 function App() {
@@ -966,7 +967,7 @@ function App() {
         }
 
         const startTime = Date.now();
-        const response = await fetch(requestData.url, options);
+        const response = await sendRequest(requestData.url, options);
         const endTime = Date.now();
         const duration = endTime - startTime;
         
@@ -1529,7 +1530,7 @@ function App() {
         fetchOptions.body = scriptResult.body;
       }
 
-      const res = await fetch(scriptResult.url, fetchOptions);
+      const res = await sendRequest(scriptResult.url, fetchOptions);
 
       // Extract response headers
       const resHeaders = {};

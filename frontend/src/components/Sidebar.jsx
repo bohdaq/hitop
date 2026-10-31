@@ -39,7 +39,7 @@ const Sidebar = ({
       <MenuList sx={{ height: '100%', display: 'flex', flexDirection: 'column', padding: 0 }}>
         <MenuItem className="SidebarHeader" disabled>
           <img 
-            src={`${process.env.PUBLIC_URL}/logo192.png`}
+            src="logo192.png"
             alt="HITOP Logo" 
             className="SidebarLogo"
           />

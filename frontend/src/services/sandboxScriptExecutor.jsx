@@ -54,8 +54,8 @@ class SandboxScriptExecutor {
         // eslint-disable-next-line no-undef
         this.iframe.src = chrome.runtime.getURL('app/sandbox.html');
       } else {
-        // In web version, use relative path
-        this.iframe.src = `${window.location.origin}/sandbox.html`;
+        // In web version, next to the app (BASE_URL is /app/ on hitop.rws8.tech)
+        this.iframe.src = `${window.location.origin}${import.meta.env.BASE_URL}sandbox.html`;
       }
       
       this.iframe.style.display = 'none';

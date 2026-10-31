@@ -196,10 +196,10 @@ Headers:
 
             <h2>Advanced REST API Testing</h2>
 
-            <h3>Environment Variables</h3>
-            <p>Use variables to test across different environments:</p>
+            <h3>Collection Variables</h3>
+            <p>Use collection variables to switch the server or user in one place:</p>
             <div class="code-block">
-{{base_url}}/users/{{user_id}}
+${base_url}/users/${user_id}
 
 Variables:
   base_url: https://api.staging.example.com

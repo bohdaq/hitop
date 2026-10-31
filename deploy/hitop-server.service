@@ -1,0 +1,32 @@
+[Unit]
+Description=hitop-server: hitop.rws8.tech site and web app request proxy (/api/proxy)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+DynamicUser=yes
+Environment=RWS_CONFIG_IP=127.0.0.1
+Environment=RWS_CONFIG_PORT=7880
+# No request log: the proxy promises not to record where requests go.
+Environment=RWS_CONFIG_LOG_FORMAT=off
+# Same as the front rws: a directory without index.html is a 404, not a listing.
+Environment=RWS_CONFIG_DIRECTORY_LISTING=false
+Environment=HITOP_ALLOWED_ORIGINS=https://hitop.rws8.tech,https://hitop.168-119-17-57.sslip.io
+# The host's own public address: the proxy must not call back into the front rws.
+Environment=HITOP_DENY_IPS=168.119.17.57
+WorkingDirectory=/var/www/hitop
+ExecStart=/usr/local/bin/hitop-server
+Restart=on-failure
+RestartSec=2
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+PrivateTmp=true
+PrivateDevices=true
+ReadOnlyPaths=/var/www/hitop
+MemoryMax=1G
+TasksMax=512
+
+[Install]
+WantedBy=multi-user.target

@@ -1,0 +1,63 @@
+# Added to /etc/rws/rws.config.toml on bohdan-prod-donotdelete, ABOVE the
+# old-docs-* redirect routes (those match any host). Nothing existing changes.
+#
+# [acme] domains: append "hitop.168-119-17-57.sslip.io" first. Append
+# "hitop.rws8.tech" only after its DNS A record points at 168.119.17.57: every
+# name shares one certificate (mail.rws8.tech too), so a name that fails
+# validation fails the whole order.
+
+[[upstream]]
+name     = "hitop"
+backends = ["127.0.0.1:7880"]
+
+# The request proxy: per client IP limits here, hitop-server only sees 127.0.0.1.
+[[route]]
+  name = "hitop-proxy"
+
+  [route.match]
+  host = "hitop.rws8.tech"
+  path = "/api/*"
+
+  [route.action]
+  type     = "proxy"
+  upstream = "hitop"
+
+  [route.middleware]
+  rate_limit = { max_requests = 60, window_secs = 60 }
+
+[[route]]
+  name = "hitop-site"
+
+  [route.match]
+  host = "hitop.rws8.tech"
+  path = "/*"
+
+  [route.action]
+  type     = "proxy"
+  upstream = "hitop"
+
+# The same two routes for the staging name, used to test before DNS moves.
+[[route]]
+  name = "hitop-proxy-staging"
+
+  [route.match]
+  host = "hitop.168-119-17-57.sslip.io"
+  path = "/api/*"
+
+  [route.action]
+  type     = "proxy"
+  upstream = "hitop"
+
+  [route.middleware]
+  rate_limit = { max_requests = 60, window_secs = 60 }
+
+[[route]]
+  name = "hitop-site-staging"
+
+  [route.match]
+  host = "hitop.168-119-17-57.sslip.io"
+  path = "/*"
+
+  [route.action]
+  type     = "proxy"
+  upstream = "hitop"
