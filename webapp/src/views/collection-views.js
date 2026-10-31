@@ -2,6 +2,7 @@
 // a collection's variables.
 import { LitElement, html, nothing } from "lit";
 import { guard } from "lit/directives/guard.js";
+import { repeat } from "lit/directives/repeat.js";
 import { confirm } from "@lit-material/confirm";
 import { icon } from "../icons.js";
 import { testList } from "./request-view.js";
@@ -40,12 +41,6 @@ function runResults(results, running) {
 export class HitopCollections extends LightElement {
   static properties = { store: { attribute: false }, version: { attribute: false }, app: { attribute: false } };
 
-  drop(e, index) {
-    e.preventDefault();
-    const from = Number(e.dataTransfer.getData("text/plain"));
-    if (!Number.isNaN(from)) this.store.reorderCollections(from, index);
-  }
-
   render() {
     const s = this.store;
     const run = s.run;
@@ -69,24 +64,20 @@ export class HitopCollections extends LightElement {
             </lit-material-alert>`
           : nothing}
         ${s.collections.length
-          ? html`<ul class="cards">
-              ${s.collections.map(
-                (c, i) => html`
-                  <li
-                    class="card"
-                    draggable="true"
-                    @dragstart=${(e) => e.dataTransfer.setData("text/plain", String(i))}
-                    @dragover=${(e) => e.preventDefault()}
-                    @drop=${(e) => this.drop(e, i)}
-                  >
-                    <span class="drag-handle" aria-hidden="true">${icon("dots-six-vertical")}</span>
+          ? html`<lit-material-sortable class="cards" layout="grid" role="list" label="Collections" @sort=${(e) => s.reorderCollections(e.detail.from, e.detail.to)}>
+              ${repeat(
+                s.collections,
+                (c) => c.id,
+                (c) => html`
+                  <div class="card" role="listitem" data-sort-id=${c.id} data-sort-label=${c.name}>
+                    <button type="button" class="drag-handle" data-sort-handle aria-label=${`Reorder ${c.name}`}>${icon("dots-six-vertical")}</button>
                     <h2><button type="button" class="card-link" @click=${() => this.app.go("collection", c.id)}>${c.name}</button></h2>
                     <p>${count(c.requests?.length ?? 0, "request")} · ${count(Object.keys(c.variables || {}).length, "variable")}</p>
                     ${run.running && run.collectionId === c.id ? html`<p class="running">Running…</p>` : nothing}
-                  </li>`,
+                  </div>`,
               )}
-            </ul>
-            <p class="hint">Drag cards to change the order "Run all" uses.</p>`
+            </lit-material-sortable>
+            <p class="hint">Drag a card by its handle, or focus the handle and press Space, to change the order "Run all" uses.</p>`
           : html`<lit-material-empty-state headline="No collections yet">
               Group related requests in a collection to run them together and share variables.
               <lit-material-button slot="actions" variant="filled" @click=${() => this.app.openDialog("add-collection")}>New collection</lit-material-button>

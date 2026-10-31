@@ -151,14 +151,17 @@ lit-material-code-block::part(pre) { max-height: 60vh; overflow: auto; font-fami
   position: relative; display: grid; gap: var(--space-75);
   padding: var(--space-300); border: 1px solid var(--md-sys-color-outline-variant);
   border-radius: var(--md-sys-shape-corner-extra-large); background: var(--md-sys-color-surface-container-low);
-  cursor: grab; transition: background-color var(--duration-color) var(--ease);
+  transition: background-color var(--duration-color) var(--ease);
 }
 .card:hover { background: var(--md-sys-color-surface-container); }
 .card p { margin: 0; color: var(--md-sys-color-on-surface-variant); font-size: var(--text-sm); line-height: var(--leading-sm); }
 .card .running { color: var(--md-sys-color-primary); }
 .card-link { padding: 0; border: 0; background: none; cursor: pointer; text-align: left; font-weight: 700; font-size: var(--text-lg); line-height: var(--leading-lg); }
 .card-link::after { content: ""; position: absolute; inset: 0; border-radius: inherit; }
-.drag-handle { position: absolute; top: var(--space-200); right: var(--space-200); color: var(--md-sys-color-on-surface-variant); }
+.drag-handle { position: absolute; z-index: 1; top: var(--space-150, 8px); right: var(--space-150, 8px); display: grid; place-items: center; width: 32px; height: 32px; padding: 0; border: 0; border-radius: var(--md-sys-shape-corner-small, 8px); background: none; color: var(--md-sys-color-on-surface-variant); cursor: grab; }
+.drag-handle:hover { background: var(--md-sys-color-surface-container-high); }
+.drag-handle:focus-visible { outline: 2px solid var(--md-sys-color-primary); }
+.card[data-sort-dragging] { opacity: 0.5; }
 
 .request-list, .run-list, .history-list { list-style: none; margin: 0; padding: 0; display: grid; gap: var(--space-50); }
 .request-list li { display: flex; align-items: center; gap: var(--space-50); }
