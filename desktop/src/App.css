@@ -727,3 +727,7 @@
 .request-failed {
   box-shadow: 0 2px 4px rgba(244, 67, 54, 0.2);
 }
+.EnvironmentSelect {
+  min-width: 180px;
+  margin: 0 8px !important;
+}

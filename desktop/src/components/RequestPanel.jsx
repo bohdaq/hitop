@@ -9,6 +9,7 @@ import IconButton from '@mui/material/IconButton';
 import SaveIcon from '@mui/icons-material/Save';
 import Switch from '@mui/material/Switch';
 import FormControlLabel from '@mui/material/FormControlLabel';
+import { AUTH_TYPES, emptyAuth, parseQuery, withQuery } from '../../../webapp/src/features.js';
 
 const RequestPanel = ({
   tabData,
@@ -20,6 +21,13 @@ const RequestPanel = ({
   onRemoveHeader,
   getStatusText
 }) => {
+  const auth = { ...emptyAuth(), ...(tabData.auth || {}) };
+  const setAuth = (updates) => onUpdateTabData({ auth: { ...auth, ...updates } });
+  const params = parseQuery(tabData.url || '');
+  const setParams = (rows) => onUpdateTabData({ url: withQuery(tabData.url || '', rows) });
+  const updateParam = (index, field, value) => setParams(params.map((p, i) => (i === index ? { ...p, [field]: value } : p)));
+  const tests = tabData.tests || [];
+
   return (
     <div className="AppContainer">
       <div className="ControlsContainer">
@@ -124,6 +132,68 @@ const RequestPanel = ({
         </Button>
       </div>
       )}
+      {tabData.showExtra && (
+      <div className="HeadersSection">
+        <h3>Query parameters</h3>
+        {params.map((param, index) => (
+          <div key={index} className="HeaderRow">
+            <TextField label="Parameter" variant="outlined" size="small" value={param.key}
+              onChange={(e) => updateParam(index, 'key', e.target.value)} className="HeaderInput" />
+            <TextField label="Value" variant="outlined" size="small" value={param.value}
+              onChange={(e) => updateParam(index, 'value', e.target.value)} className="HeaderInput" />
+            <Button variant="outlined" color="error" size="small" onClick={() => setParams(params.filter((_, i) => i !== index))}>
+              Remove
+            </Button>
+          </div>
+        ))}
+        <Button variant="outlined" onClick={() => setParams([...params, { key: 'param', value: '' }])} className="AddHeaderButton">
+          Add parameter
+        </Button>
+      </div>
+      )}
+      {tabData.showExtra && (
+      <div className="HeadersSection">
+        <h3>Auth</h3>
+        <div className="HeaderRow">
+          <FormControl size="small" className="HeaderInput">
+            <InputLabel id="auth-type-label">Type</InputLabel>
+            <Select labelId="auth-type-label" label="Type" value={auth.type} onChange={(e) => setAuth({ type: e.target.value })}>
+              {AUTH_TYPES.map(([value, label]) => <MenuItem key={value} value={value}>{label}</MenuItem>)}
+            </Select>
+          </FormControl>
+        </div>
+        {auth.type === 'bearer' && (
+          <div className="HeaderRow">
+            <TextField label="Token" variant="outlined" size="small" fullWidth value={auth.token}
+              helperText="Sent as Authorization: Bearer <token>. ${variables} work here."
+              onChange={(e) => setAuth({ token: e.target.value })} />
+          </div>
+        )}
+        {auth.type === 'basic' && (
+          <div className="HeaderRow">
+            <TextField label="Username" variant="outlined" size="small" value={auth.username}
+              onChange={(e) => setAuth({ username: e.target.value })} className="HeaderInput" />
+            <TextField label="Password" type="password" variant="outlined" size="small" value={auth.password}
+              onChange={(e) => setAuth({ password: e.target.value })} className="HeaderInput" />
+          </div>
+        )}
+        {auth.type === 'apikey' && (
+          <div className="HeaderRow">
+            <TextField label="Name" variant="outlined" size="small" value={auth.key}
+              onChange={(e) => setAuth({ key: e.target.value })} className="HeaderInput" />
+            <TextField label="Value" variant="outlined" size="small" value={auth.value}
+              onChange={(e) => setAuth({ value: e.target.value })} className="HeaderInput" />
+            <FormControl size="small" className="HeaderInput">
+              <InputLabel id="auth-in-label">Send as</InputLabel>
+              <Select labelId="auth-in-label" label="Send as" value={auth.in} onChange={(e) => setAuth({ in: e.target.value })}>
+                <MenuItem value="header">Header</MenuItem>
+                <MenuItem value="query">Query parameter</MenuItem>
+              </Select>
+            </FormControl>
+          </div>
+        )}
+      </div>
+      )}
       {(tabData.method === 'POST' || tabData.method === 'PUT' || tabData.method === 'PATCH') && (
         <div className="BodySection">
           <h3>Body</h3>
@@ -181,6 +251,19 @@ const RequestPanel = ({
                 <span className="StatusCodeText">
                   {getStatusText(tabData.statusCode)}
                 </span>
+              </div>
+            </div>
+          )}
+          {tests.length > 0 && (
+            <div className="ResponseHeadersSection">
+              <h4>Tests: {tests.filter(t => t.pass).length} of {tests.length} passed</h4>
+              <div className="ResponseHeadersList">
+                {tests.map((t, i) => (
+                  <div key={i} className="ResponseHeaderItem">
+                    <span className="ResponseHeaderKey" style={{ color: t.pass ? '#2e7d32' : '#c62828' }}>{t.pass ? '✓ Passed' : '✗ Failed'}</span>
+                    <span className="ResponseHeaderValue">{t.name}{t.detail ? ` (${t.detail})` : ''}</span>
+                  </div>
+                ))}
               </div>
             </div>
           )}

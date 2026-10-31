@@ -6,7 +6,7 @@ use tauri::Emitter;
 use hitop_core::{
     http,
     interpolation::interpolate,
-    model::{Collection, HistoryItem},
+    model::{Collection, HistoryItem, TestResult},
     runner,
     scripting::{run_post_request_script, run_pre_request_script, PreRequestCtx},
     storage,
@@ -42,6 +42,17 @@ pub fn load_contexts() -> Result<Value, String> {
 #[tauri::command]
 pub fn save_contexts(contexts: Value) -> Result<(), String> {
     storage::save_contexts(&contexts).map_err(|e| e.to_string())
+}
+
+/// Environments, shared with the CLI (`environments.json`).
+#[tauri::command]
+pub fn load_environments() -> Result<storage::Environments, String> {
+    storage::load_environments().map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub fn save_environments(environments: storage::Environments) -> Result<(), String> {
+    storage::save_environments(&environments).map_err(|e| e.to_string())
 }
 
 // ── HTTP ────────────────────────────────────────────────────────────────────
@@ -121,6 +132,8 @@ pub struct PostScriptArgs {
     pub response_body: String,
     pub response_headers: HashMap<String, String>,
     pub status_code: u16,
+    #[serde(default)]
+    pub duration_ms: u64,
     pub variables: HashMap<String, String>,
     pub context: HashMap<String, Value>,
 }
@@ -128,6 +141,7 @@ pub struct PostScriptArgs {
 #[derive(Serialize)]
 pub struct PostScriptResult {
     pub context_updates: HashMap<String, Value>,
+    pub tests: Vec<TestResult>,
 }
 
 #[tauri::command]
@@ -137,10 +151,11 @@ pub fn run_post_script(args: PostScriptArgs) -> Result<PostScriptResult, String>
         &args.response_body,
         &args.response_headers,
         args.status_code,
+        args.duration_ms,
         &args.variables,
         &args.context,
     )
-    .map(|r| PostScriptResult { context_updates: r.context_updates })
+    .map(|r| PostScriptResult { context_updates: r.context_updates, tests: r.tests })
     .map_err(|e| e.to_string())
 }
 
@@ -167,6 +182,7 @@ pub struct StepResult {
     pub status: Option<u16>,
     pub duration_ms: Option<u64>,
     pub error: Option<String>,
+    pub tests: Vec<TestResult>,
 }
 
 #[tauri::command]
@@ -175,7 +191,9 @@ pub fn run_collection_cmd(
     stop_on_fail: bool,
     window: tauri::Window,
 ) -> Result<Vec<StepResult>, String> {
-    let results = runner::run_collection(&collection, stop_on_fail, &mut |step| {
+    let envs = storage::load_environments().map_err(|e| e.to_string())?;
+    let env = envs.pick(None).map_err(|e| e.to_string())?;
+    let results = runner::run_collection(&collection, env, stop_on_fail, &mut |step| {
         let sr = match &step.result {
             Ok(r) => StepResult {
                 request_name: step.request_name.clone(),
@@ -184,6 +202,7 @@ pub fn run_collection_cmd(
                 status: Some(r.status),
                 duration_ms: Some(r.duration_ms),
                 error: None,
+                tests: step.tests.clone(),
             },
             Err(e) => StepResult {
                 request_name: step.request_name.clone(),
@@ -192,6 +211,7 @@ pub fn run_collection_cmd(
                 status: None,
                 duration_ms: None,
                 error: Some(e.to_string()),
+                tests: step.tests.clone(),
             },
         };
         // Emit live progress event to the frontend
@@ -208,6 +228,7 @@ pub fn run_collection_cmd(
                 status: Some(r.status),
                 duration_ms: Some(r.duration_ms),
                 error: None,
+                tests: step.tests.clone(),
             },
             Err(e) => StepResult {
                 request_name: step.request_name,
@@ -216,6 +237,7 @@ pub fn run_collection_cmd(
                 status: None,
                 duration_ms: None,
                 error: Some(e.to_string()),
+                tests: step.tests.clone(),
             },
         })
         .collect())

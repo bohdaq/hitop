@@ -6,6 +6,10 @@ import useMediaQuery from '@mui/material/useMediaQuery';
 import Tabs from '@mui/material/Tabs';
 import Tab from '@mui/material/Tab';
 import IconButton from '@mui/material/IconButton';
+import Select from '@mui/material/Select';
+import MenuItem from '@mui/material/MenuItem';
+import FormControl from '@mui/material/FormControl';
+import InputLabel from '@mui/material/InputLabel';
 import AddIcon from '@mui/icons-material/Add';
 import CloseIcon from '@mui/icons-material/Close';
 import hljs from 'highlight.js';
@@ -30,6 +34,10 @@ import RunCollectionModal from './components/RunCollectionModal';
 import HistoryModal from './components/HistoryModal';
 import CollectionVariablesModal from './components/CollectionVariablesModal';
 import TabContextMenu from './components/TabContextMenu';
+import EnvironmentsModal from './components/EnvironmentsModal';
+import { sendRequest } from './services/tauriTransport';
+import environmentService from './services/environmentService';
+import { applyAuth, cleanAuth, emptyAuth, makeAssert } from '../../webapp/src/features.js';
 import RenameRequestModal from './components/RenameRequestModal';
 
 // Services
@@ -106,6 +114,25 @@ function App() {
   useEffect(() => {
     collectionContextsRef.current = collectionContexts;
   }, [collectionContexts]);
+
+  // Environments (shared with the CLI's `hitop env`): the active one
+  // overrides collection variables.
+  const [environments, setEnvironments] = useState([]);
+  const [activeEnvironmentId, setActiveEnvironmentId] = useState(null);
+  const [environmentsLoaded, setEnvironmentsLoaded] = useState(false);
+  const [isEnvironmentsModalOpen, setIsEnvironmentsModalOpen] = useState(false);
+
+  useEffect(() => {
+    environmentService.loadEnvironments().then(({ active, environments: list }) => {
+      setEnvironments(list);
+      setActiveEnvironmentId(list.some(e => e.id === active) ? active : null);
+      setEnvironmentsLoaded(true);
+    });
+  }, []);
+
+  useEffect(() => {
+    if (environmentsLoaded) environmentService.saveEnvironments(environments, activeEnvironmentId);
+  }, [environments, activeEnvironmentId, environmentsLoaded]);
 
   // Load persisted data from Rust backend on first mount
   useEffect(() => {
@@ -326,7 +353,8 @@ function App() {
           headers: currentTabData.headers,
           body: currentTabData.requestBody,
           preRequestScript: currentTabData.preRequestScript,
-          postRequestScript: currentTabData.postRequestScript
+          postRequestScript: currentTabData.postRequestScript,
+          auth: cleanAuth(currentTabData.auth)
         };
         
         // Check if collection has changed
@@ -379,7 +407,8 @@ function App() {
             headers: currentTabData.headers,
             body: currentTabData.requestBody,
             preRequestScript: currentTabData.preRequestScript,
-            postRequestScript: currentTabData.postRequestScript
+            postRequestScript: currentTabData.postRequestScript,
+            auth: cleanAuth(currentTabData.auth)
           });
           
           setCollections(collectionService.addRequestToCollection(
@@ -454,7 +483,8 @@ function App() {
         preRequestScript: request.preRequestScript || '',
         postRequestScript: request.postRequestScript || '',
         loadedRequestId: request.id,
-        loadedCollectionId: collectionId
+        loadedCollectionId: collectionId,
+        auth: request.auth ? { ...emptyAuth(), ...request.auth } : emptyAuth()
       };
       
       const newTabs = [...tabs, newTab];
@@ -885,7 +915,7 @@ function App() {
 
     // Get collection ID and variables
     const collectionId = collection.id;
-    const variables = collection.variables || {};
+    const variables = getCollectionVariables(collection.id);
 
     for (let i = 0; i < collection.requests.length; i++) {
       const request = collection.requests[i];
@@ -920,7 +950,10 @@ function App() {
           break;
         }
 
-        // Execute pre-request script if exists
+        // Auth preset, then the pre-request script (which can override it)
+        const authed = applyAuth(request.auth, { url: interpolatedUrl, headers: interpolatedHeaders, body: interpolatedBody }, (text) => interpolateVariables(text, variables));
+        interpolatedUrl = authed.url;
+        interpolatedHeaders = authed.headers;
         let requestData = {
           url: interpolatedUrl,
           headers: interpolatedHeaders,
@@ -976,7 +1009,7 @@ function App() {
         }
 
         const startTime = Date.now();
-        const response = await fetch(requestData.url, options);
+        const response = await sendRequest(requestData.url, options);
         const endTime = Date.now();
         const duration = endTime - startTime;
         
@@ -988,29 +1021,31 @@ function App() {
           resHeaders[key] = value;
         });
 
-        // Execute post-request script if exists
+        // Post-request script; its assert.* results decide the step too
+        let tests = [];
         if (request.postRequestScript && request.postRequestScript.trim()) {
-          try {
-            await executePostRequestScript(
-              request.postRequestScript,
-              collectionId,
-              responseText,
-              resHeaders,
-              response.status
-            );
-          } catch (postScriptError) {
-            console.error('Post-request script error:', postScriptError);
-          }
+          tests = await executePostRequestScript(
+            request.postRequestScript,
+            collectionId,
+            responseText,
+            resHeaders,
+            response.status,
+            response.timeMs ?? duration
+          );
         }
+        const failedTests = tests.filter(t => !t.pass);
 
         const result = {
           requestName: request.name,
           method: request.method,
           url: requestData.url,
           statusCode: response.status,
-          success: response.ok,
-          response: responseText.substring(0, 200), // Truncate for display
-          duration: duration
+          success: response.ok && failedTests.length === 0,
+          tests,
+          response: failedTests.length
+            ? failedTests.map(t => `${t.name}: ${t.detail}`).join('; ')
+            : responseText.substring(0, 200), // Truncate for display
+          duration: response.timeMs ?? duration
         };
 
         results.push(result);
@@ -1026,8 +1061,8 @@ function App() {
         );
         setRequestHistory(prev => historyService.addToHistory(prev, historyItem));
 
-        // Stop if error response
-        if (!response.ok) {
+        // Stop at an error response or a failed check
+        if (!result.success) {
           break;
         }
       } catch (error) {
@@ -1198,7 +1233,8 @@ function App() {
           headers: tabToDuplicate.headers,
           body: tabToDuplicate.requestBody,
           preRequestScript: tabToDuplicate.preRequestScript,
-          postRequestScript: tabToDuplicate.postRequestScript
+          postRequestScript: tabToDuplicate.postRequestScript,
+          auth: cleanAuth(tabToDuplicate.auth)
         }
       );
       
@@ -1220,6 +1256,7 @@ function App() {
         requestBody: tabToDuplicate.requestBody,
         preRequestScript: tabToDuplicate.preRequestScript,
         postRequestScript: tabToDuplicate.postRequestScript,
+        auth: tabToDuplicate.auth,
         loadedRequestId: newRequest.id,
         loadedCollectionId: targetCollectionId
       };
@@ -1290,10 +1327,13 @@ function App() {
     setCollectionContexts(newContexts);
   };
 
-  const executePostRequestScript = async (script, collectionId, response, responseHeaders, statusCode) => {
+  // Returns the assert.* results ([] without a script; a failed script is
+  // reported as a failed check).
+  const executePostRequestScript = async (script, collectionId, response, responseHeaders, statusCode, durationMs) => {
     if (!script || !script.trim()) {
-      return;
+      return [];
     }
+    const { assert, results: tests } = makeAssert({ statusCode, text: response, headers: responseHeaders, durationMs });
 
     // Check if we're in a Chrome extension environment
     const isExtension = () => {
@@ -1322,6 +1362,9 @@ function App() {
         responseText: response,
         responseHeaders: responseHeaders,
         statusCode: statusCode,
+        assert,
+        variables: { ...getCollectionVariables(collectionId) },
+        getVariable: (key) => getCollectionVariables(collectionId)[key],
         context: { ...context },
         setContext: (key, value) => {
           contextUpdates[key] = value;
@@ -1372,9 +1415,10 @@ function App() {
       Object.keys(contextUpdates).forEach(key => {
         updateCollectionContext(collectionId, key, contextUpdates[key]);
       });
+      return tests;
     } catch (error) {
       console.error('Post-request script error:', error);
-      alert(`Post-request script error: ${error.message}`);
+      return [...tests, { name: 'post-request script', pass: false, detail: error.message }];
     }
   };
 
@@ -1474,7 +1518,8 @@ function App() {
   };
 
   const getCollectionVariables = (collectionId) => {
-    return collectionService.getCollectionVariables(collections, collectionId);
+    const active = environments.find(e => e.id === activeEnvironmentId);
+    return { ...collectionService.getCollectionVariables(collections, collectionId), ...(active?.variables || {}) };
   };
 
   const makeRequest = async () => {
@@ -1507,6 +1552,10 @@ function App() {
       return;
     }
 
+    const authed = applyAuth(currentTabData.auth, { url: interpolatedUrl, headers: interpolatedHeaders, body: interpolatedBody }, (text) => interpolateVariables(text, variables));
+    interpolatedUrl = authed.url;
+    interpolatedHeaders = authed.headers;
+
     // Execute pre-request script with collection-specific context and interpolated values
     const scriptResult = await executePreRequestScript(
       currentTabData.preRequestScript,
@@ -1519,7 +1568,7 @@ function App() {
       return; // Script failed
     }
 
-    updateTabData({ loading: true, response: null });
+    updateTabData({ loading: true, response: null, tests: null });
     try {
       // Build headers object from the headers array (use script-modified headers)
       const requestHeaders = {};
@@ -1539,7 +1588,7 @@ function App() {
         fetchOptions.body = scriptResult.body;
       }
 
-      const res = await fetch(scriptResult.url, fetchOptions);
+      const res = await sendRequest(scriptResult.url, fetchOptions);
 
       // Extract response headers
       const resHeaders = {};
@@ -1565,22 +1614,25 @@ function App() {
         type = 'text';
       }
 
+      // Execute post-request script with collection-specific context
+      const tests = await executePostRequestScript(
+        currentTabData.postRequestScript,
+        currentTabData.loadedCollectionId,
+        data,
+        resHeaders,
+        res.status,
+        res.timeMs
+      );
+
       updateTabData({
         response: data,
         responseType: type,
         statusCode: res.status,
         responseHeaders: resHeaders,
+        durationMs: res.timeMs,
+        tests,
         loading: false
       });
-
-      // Execute post-request script with collection-specific context
-      executePostRequestScript(
-        currentTabData.postRequestScript,
-        currentTabData.loadedCollectionId,
-        data,
-        resHeaders,
-        res.status
-      );
 
       // Add to history
       addToHistory({
@@ -1690,6 +1742,22 @@ function App() {
                   />
                 ))}
               </Tabs>
+              <FormControl size="small" className="EnvironmentSelect">
+                <InputLabel id="environment-label">Environment</InputLabel>
+                <Select
+                  labelId="environment-label"
+                  label="Environment"
+                  value={activeEnvironmentId ?? 'none'}
+                  onChange={(e) => {
+                    if (e.target.value === '__manage') setIsEnvironmentsModalOpen(true);
+                    else setActiveEnvironmentId(e.target.value === 'none' ? null : e.target.value);
+                  }}
+                >
+                  <MenuItem value="none">No environment</MenuItem>
+                  {environments.map(env => <MenuItem key={env.id} value={env.id}>{env.name}</MenuItem>)}
+                  <MenuItem value="__manage">Manage environments…</MenuItem>
+                </Select>
+              </FormControl>
               <IconButton color="primary" aria-label="add new tab" className="AddTabButton" onClick={addNewTab}>
                 <AddIcon />
               </IconButton>
@@ -1831,6 +1899,15 @@ function App() {
           onRename={handleOpenRenameRequestModal}
           onDuplicate={handleDuplicateTab}
           onDelete={handleDeleteTabRequest}
+        />
+
+        <EnvironmentsModal
+          open={isEnvironmentsModalOpen}
+          onClose={() => setIsEnvironmentsModalOpen(false)}
+          environments={environments}
+          activeEnvironmentId={activeEnvironmentId}
+          onChange={setEnvironments}
+          onActivate={setActiveEnvironmentId}
         />
 
         <RenameRequestModal
