@@ -62,7 +62,7 @@ hitop/
 ├── server/                     # hitop-server: rws app serving the site + POST /api/proxy
 │   └── src/guard.rs            # address/port policy for the proxy (SSRF guard)
 ├── deploy/                     # build.sh, install.sh, systemd unit, front rws routes, README
-├── docs/                       # OLD GitHub Pages site; terms/*.html are still the guide sources
+├── docs/                       # OLD Pages site: terms/*.html are the guide sources; CNAME keeps github.io → hitop.rws8.tech redirects
 └── CLAUDE.md                   # This file
 ```
 

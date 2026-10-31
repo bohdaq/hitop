@@ -63,8 +63,11 @@ tunnel (see the rws8.tech host notes).
 5. DNS (uadns, by hand): `hitop.rws8.tech` CNAME `bohdaq.github.io` → A `168.119.17.57`.
 6. Once it resolves, add `"hitop.rws8.tech"` to `[acme] domains`, repeat step 3,
    and test https://hitop.rws8.tech/.
-7. Then retire GitHub Pages: delete `docs/CNAME` and `deploy-to-pages.sh`, and
-   turn Pages off in the repo settings. Until then Pages keeps serving the old site.
+7. GitHub Pages stays on with `docs/CNAME` only so that old
+   `bohdaq.github.io/hitop/*` links (the App Store privacy URL among them)
+   301 to hitop.rws8.tech. Nothing is deployed there any more
+   (`deploy-to-pages.sh` is gone); don't delete `docs/CNAME` or turn Pages off
+   until no listing points at github.io.
 
 Rollback: remove the hitop routes and names from the rws config, restore the
 backup, restart rws; point DNS back to `bohdaq.github.io`.
