@@ -3,7 +3,7 @@ import { unsafeSVG } from "lit/directives/unsafe-svg.js";
 
 // Only the icons the app uses: a glob of the whole set would bundle ~1,500.
 const files = import.meta.glob(
-  "../node_modules/@phosphor-icons/core/assets/regular/{plus,x,floppy-disk,paper-plane-tilt,folder-simple,folders,sliders-horizontal,file-arrow-down,file-arrow-up,clock-counter-clockwise,play,dots-three-vertical,list,sun,moon,trash,copy,pencil-simple,arrow-left,house,dots-six-vertical,check-circle,warning-circle,plugs,globe}.svg",
+  "../node_modules/@phosphor-icons/core/assets/regular/{plus,x,floppy-disk,paper-plane-tilt,folder-simple,folders,sliders-horizontal,file-arrow-down,file-arrow-up,clock-counter-clockwise,play,dots-three-vertical,list,sun,moon,trash,copy,pencil-simple,arrow-left,house,dots-six-vertical,check-circle,warning-circle,plugs,globe,cookie}.svg",
   {
     query: "?raw",
     import: "default",

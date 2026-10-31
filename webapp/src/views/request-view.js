@@ -10,6 +10,7 @@ import { usesProxy } from "../../../frontend/src/services/transportService.jsx";
 import { icon } from "../icons.js";
 import { AUTH_TYPES, emptyAuth, parseQuery, withQuery } from "../features.js";
 import { BODY_METHODS, METHODS } from "../store.js";
+import "./code-editor.js";
 
 hljs.registerLanguage("json", json);
 hljs.registerLanguage("xml", xml);
@@ -50,6 +51,8 @@ function highlighted(text, type) {
     return null;
   }
 }
+
+const size = (n) => (n < 1024 ? `${n} B` : n < 1024 * 1024 ? `${(n / 1024).toFixed(1)} KB` : `${(n / 1024 / 1024).toFixed(1)} MB`);
 
 const bytes = (text) => {
   const n = new TextEncoder().encode(text).length;
@@ -102,20 +105,131 @@ export class HitopRequest extends LitElement {
       this.headerRows = this.headerEntries();
       this.headerRowsVersion = (this.headerRowsVersion ?? 0) + 1;
     }
-    // Same for the query parameter editor, which follows the URL.
-    const params = JSON.stringify(parseQuery(this.tab?.url ?? ""));
-    if (params !== this.paramsJson) {
-      this.paramsJson = params;
-      this.paramRows = JSON.parse(params);
-      this.paramRowsVersion = (this.paramRowsVersion ?? 0) + 1;
-    }
     super.update(changed);
   }
 
-  onParams(e) {
-    const url = withQuery(this.tab.url, e.detail.entries);
-    this.paramsJson = JSON.stringify(parseQuery(url));
-    this.set({ url });
+  // Adds an empty parameter or form field and focuses its name.
+  async addRow(kind) {
+    if (kind === "param") this.paramDrafts = [...(this.paramDrafts ?? []), { key: "", value: "" }];
+    else this.set({ formFields: [...(this.tab.formFields || []), { id: crypto.randomUUID(), key: "", value: "", type: "text", enabled: true }] });
+    this.requestUpdate();
+    await this.updateComplete;
+    const rows = this.querySelectorAll(kind === "param" ? ".param-row" : ".form-row");
+    rows[rows.length - 1]?.querySelector("lit-material-text-field")?.focus();
+  }
+
+  // Parameters: rows that are on live in the URL; rows turned off are kept
+  // on the tab (disabledParams); new rows stay local until they get a key.
+  renderParams() {
+    const t = this.tab;
+    const on = parseQuery(t.url || "");
+    const off = t.disabledParams || [];
+    this.paramDrafts ??= [];
+    const setOn = (rows, extra = {}) => this.set({ url: withQuery(t.url || "", rows), ...extra });
+    const row = (p, kind, i) => {
+      const update = (field, value) => {
+        if (kind === "on") setOn(on.map((r, j) => (j === i ? { ...r, [field]: value } : r)));
+        else if (kind === "off") this.set({ disabledParams: off.map((r, j) => (j === i ? { ...r, [field]: value } : r)) });
+        else {
+          const draft = { ...this.paramDrafts[i], [field]: value };
+          if (draft.key) {
+            this.paramDrafts = this.paramDrafts.filter((_, j) => j !== i);
+            setOn([...on, draft]);
+          } else {
+            this.paramDrafts = this.paramDrafts.map((r, j) => (j === i ? draft : r));
+            this.requestUpdate();
+          }
+        }
+      };
+      const toggle = () => {
+        if (kind === "on") setOn(on.filter((_, j) => j !== i), { disabledParams: [...off, p] });
+        else if (kind === "off") setOn([...on, p], { disabledParams: off.filter((_, j) => j !== i) });
+      };
+      const remove = () => {
+        if (kind === "on") setOn(on.filter((_, j) => j !== i));
+        else if (kind === "off") this.set({ disabledParams: off.filter((_, j) => j !== i) });
+        else {
+          this.paramDrafts = this.paramDrafts.filter((_, j) => j !== i);
+          this.requestUpdate();
+        }
+      };
+      return html`
+        <li class=${`param-row ${kind === "off" ? "off" : ""}`}>
+          <lit-material-checkbox aria-label=${`Send ${p.key || "this parameter"}`} ?checked=${kind !== "off"} ?disabled=${kind === "draft"} @change=${toggle}></lit-material-checkbox>
+          <lit-material-text-field variant="outlined" label="Parameter" .value=${p.key} @input=${(e) => update("key", e.target.value)}></lit-material-text-field>
+          <lit-material-text-field variant="outlined" label="Value" .value=${p.value} @input=${(e) => update("value", e.target.value)}></lit-material-text-field>
+          <lit-material-icon-button aria-label=${`Remove ${p.key || "parameter"}`} @click=${remove}>${icon("trash")}</lit-material-icon-button>
+        </li>`;
+    };
+    return html`
+      <ul class="param-rows">
+        ${[
+          // One list, drafts right after the live rows: a draft that gets its
+          // first character becomes the last live row in the same place, so
+          // the field being typed in keeps focus.
+          ...on.map((p, i) => row(p, "on", i)),
+          ...this.paramDrafts.map((p, i) => row(p, "draft", i)),
+          ...off.map((p, i) => row(p, "off", i)),
+        ]}
+      </ul>
+      <lit-material-button variant="text" @click=${() => this.addRow("param")}>
+        ${icon("plus")} Add parameter
+      </lit-material-button>
+      <p class="hint">Kept in sync with the URL; unchecked rows are kept but not sent. Values are sent as typed, so encode special characters yourself or use \${variables}.</p>`;
+  }
+
+  // Body: raw text, multipart form data (with files) or a URL-encoded form.
+  renderBody() {
+    const t = this.tab;
+    const mode = t.bodyMode || "raw";
+    const fields = t.formFields || [];
+    const setFields = (next) => this.set({ formFields: next });
+    const looksJson = /^\s*[[{]/.test(t.requestBody || "") || /json/i.test((t.headers || []).find((h) => h.name?.toLowerCase() === "content-type")?.value || "");
+    return html`
+      <div class="body-mode">
+        <lit-material-select variant="outlined" label="Body type" .value=${mode} @change=${(e) => this.set({ bodyMode: e.target.value })}>
+          <lit-material-select-option value="raw">Raw (JSON, XML, text)</lit-material-select-option>
+          <lit-material-select-option value="multipart">Form data (multipart, files)</lit-material-select-option>
+          <lit-material-select-option value="urlencoded">URL-encoded form</lit-material-select-option>
+        </lit-material-select>
+      </div>
+      ${mode === "raw"
+        ? html`<hitop-code-editor label="Request body" language=${looksJson ? "json" : "text"} .value=${t.requestBody || ""}
+            @input=${(e) => this.set({ requestBody: e.target.value })}></hitop-code-editor>`
+        : html`
+            <ul class=${`form-rows ${mode}`}>
+              ${fields.map((f, i) => {
+                const update = (changes) => setFields(fields.map((x, j) => (j === i ? { ...x, ...changes } : x)));
+                const file = this.store.files.get(f.id);
+                return html`
+                  <li class=${`form-row ${f.enabled === false ? "off" : ""}`}>
+                    <lit-material-checkbox aria-label=${`Send ${f.key || "this field"}`} ?checked=${f.enabled !== false} @change=${(e) => update({ enabled: e.target.checked })}></lit-material-checkbox>
+                    <lit-material-text-field variant="outlined" label="Field" .value=${f.key} @input=${(e) => update({ key: e.target.value })}></lit-material-text-field>
+                    ${mode === "multipart"
+                      ? html`<lit-material-select variant="outlined" label="Type" .value=${f.type || "text"} @change=${(e) => update({ type: e.target.value })}>
+                          <lit-material-select-option value="text">Text</lit-material-select-option>
+                          <lit-material-select-option value="file">File</lit-material-select-option>
+                        </lit-material-select>`
+                      : nothing}
+                    ${f.type === "file" && mode === "multipart"
+                      ? html`<label class="file-pick">
+                          <input type="file" class="visually-hidden" @change=${(e) => {
+                            const picked = e.target.files?.[0] ?? null;
+                            this.store.setFile(f.id, picked);
+                            update({ fileName: picked?.name ?? "" });
+                          }} />
+                          <span class="file-button">${icon("file-arrow-up")} ${file ? "Change file" : "Choose file"}</span>
+                          <span class="file-name">${file ? `${file.name} (${size(file.size)})` : f.fileName ? `${f.fileName}: choose it again after a reload` : "No file"}</span>
+                        </label>`
+                      : html`<lit-material-text-field variant="outlined" label="Value" .value=${f.value || ""} @input=${(e) => update({ value: e.target.value })}></lit-material-text-field>`}
+                    <lit-material-icon-button aria-label=${`Remove ${f.key || "field"}`} @click=${() => { this.store.setFile(f.id, null); setFields(fields.filter((_, j) => j !== i)); }}>${icon("trash")}</lit-material-icon-button>
+                  </li>`;
+              })}
+            </ul>
+            <lit-material-button variant="text" @click=${() => this.addRow("field")}>${icon("plus")} Add field</lit-material-button>
+            <p class="hint">${mode === "multipart"
+              ? "Sent as multipart/form-data. Files stay in this page only: they aren't saved, and a collection run sends file fields empty."
+              : "Sent as application/x-www-form-urlencoded."} \${variables} work in names and values.</p>`}`;
   }
 
   get auth() {
@@ -174,7 +288,7 @@ export class HitopRequest extends LitElement {
     const t = this.tab;
     const hasBody = BODY_METHODS.includes(t.method);
     const headerCount = this.headerEntries().length;
-    const paramCount = parseQuery(t.url || "").length;
+    const paramCount = parseQuery(t.url || "").length + (t.disabledParams?.length ?? 0);
     const authType = t.auth?.type && t.auth.type !== "none" ? AUTH_TYPES.find(([v]) => v === t.auth.type)?.[1] : null;
     const labels = [
       paramCount ? `Params (${paramCount})` : "Params",
@@ -190,16 +304,7 @@ export class HitopRequest extends LitElement {
           ${labels.map((label) => html`<lit-material-tab>${label}</lit-material-tab>`)}
         </lit-material-tabs>
         <div class="editor-panel">
-          ${this.section === PARAMS
-            ? html`<lit-material-key-value-editor
-                key-label="Parameter"
-                value-label="Value"
-                add-label="Add parameter"
-                .entries=${guard([this.paramRowsVersion], () => this.paramRows)}
-                @change=${(e) => this.onParams(e)}
-              ></lit-material-key-value-editor>
-              <p class="hint">Kept in sync with the URL. Values are sent as typed, so encode special characters yourself or use \${variables}.</p>`
-            : nothing}
+          ${this.section === PARAMS ? this.renderParams() : nothing}
           ${this.section === AUTH ? this.renderAuth() : nothing}
           ${this.section === HEADERS
             ? html`<lit-material-key-value-editor
@@ -212,21 +317,17 @@ export class HitopRequest extends LitElement {
             : nothing}
           ${this.section === BODY
             ? hasBody
-              ? html`<lit-material-code-field
-                  label="Request body"
-                  .value=${t.requestBody || ""}
-                  @input=${(e) => this.set({ requestBody: e.target.value })}
-                ></lit-material-code-field>`
+              ? this.renderBody()
               : html`<lit-material-empty-state size="compact" headline=${`${t.method} requests have no body`}>
                   Switch the method to POST, PUT or PATCH to send one.
                 </lit-material-empty-state>`
             : nothing}
           ${this.section === PRE
-            ? html`<lit-material-code-field label="Pre-request script" .value=${t.preRequestScript || ""} @input=${(e) => this.set({ preRequestScript: e.target.value })}></lit-material-code-field>
+            ? html`<hitop-code-editor label="Pre-request script" language="javascript" .value=${t.preRequestScript || ""} @input=${(e) => this.set({ preRequestScript: e.target.value })}></hitop-code-editor>
                 ${scriptHelp(PRE_HELP)}`
             : nothing}
           ${this.section === POST
-            ? html`<lit-material-code-field label="Post-request script" .value=${t.postRequestScript || ""} @input=${(e) => this.set({ postRequestScript: e.target.value })}></lit-material-code-field>
+            ? html`<hitop-code-editor label="Post-request script" language="javascript" .value=${t.postRequestScript || ""} @input=${(e) => this.set({ postRequestScript: e.target.value })}></hitop-code-editor>
                 ${scriptHelp(POST_HELP)}`
             : nothing}
         </div>

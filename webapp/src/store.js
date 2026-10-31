@@ -9,9 +9,39 @@ import historyService from "../../frontend/src/services/historyService.jsx";
 import storageService from "../../frontend/src/services/storageService.jsx";
 import tabService from "../../frontend/src/services/tabService.jsx";
 import { interpolateVariables } from "../../frontend/src/services/variableInterpolation.jsx";
-import { sendRequest } from "../../frontend/src/services/transportService.jsx";
+import { sendRequest, usesProxy } from "../../frontend/src/services/transportService.jsx";
 import { generateUniqueId } from "../../frontend/src/utils/idGenerator.jsx";
-import { applyAuth, cleanAuth, emptyAuth, loadEnvironments, makeAssert, parseEnvironments, saveEnvironments } from "./features.js";
+import {
+  applyAuth,
+  cleanAuth,
+  cookieHeader,
+  emptyAuth,
+  loadEnvironments,
+  makeAssert,
+  mergeCookies,
+  multipartBody,
+  parseEnvironments,
+  saveEnvironments,
+  urlEncodedBody,
+} from "./features.js";
+
+const COOKIES_KEY = "hitop_cookies";
+const COOKIE_JAR_KEY = "hitop_cookie_jar";
+
+function loadCookies() {
+  try {
+    return { cookies: JSON.parse(localStorage.getItem(COOKIES_KEY) || "[]"), enabled: localStorage.getItem(COOKIE_JAR_KEY) !== "off" };
+  } catch {
+    return { cookies: [], enabled: true };
+  }
+}
+
+// Request fields the web app adds; saved with requests and carried by tabs.
+const EXTRA_FIELDS = (r) => ({
+  bodyMode: r.bodyMode || "raw",
+  formFields: r.formFields || [],
+  disabledParams: r.disabledParams || [],
+});
 
 export const METHODS = ["GET", "POST", "PUT", "PATCH", "DELETE", "HEAD", "OPTIONS"];
 export const BODY_METHODS = ["POST", "PUT", "PATCH"];
@@ -37,6 +67,7 @@ function tabForRequest(request, collectionId) {
     preRequestScript: request.preRequestScript || "",
     postRequestScript: request.postRequestScript || "",
     auth: request.auth ? { ...emptyAuth(), ...request.auth } : emptyAuth(),
+    ...EXTRA_FIELDS(request),
     loadedRequestId: request.id,
     loadedCollectionId: collectionId,
   };
@@ -104,6 +135,12 @@ export class Store extends EventTarget {
     const envs = loadEnvironments();
     this.environments = envs.environments;
     this.activeEnvironmentId = this.environments.some((e) => e.id === envs.activeEnvironmentId) ? envs.activeEnvironmentId : null;
+    const jar = loadCookies();
+    this.cookies = jar.cookies;
+    this.cookieJarEnabled = jar.enabled;
+    // Files picked for multipart fields, by field id. Never stored: a page
+    // reload asks for them again.
+    this.files = new Map();
     // What the main area shows: the request tabs, all collections, one
     // collection, or one collection's variables.
     this.view = { kind: "request", collectionId: null };
@@ -131,6 +168,32 @@ export class Store extends EventTarget {
     storageService.saveHistory(this.history);
     storageService.saveContexts(this.contexts);
     saveEnvironments(this.environments, this.activeEnvironmentId);
+    try {
+      localStorage.setItem(COOKIES_KEY, JSON.stringify(this.cookies));
+      localStorage.setItem(COOKIE_JAR_KEY, this.cookieJarEnabled ? "on" : "off");
+    } catch {
+      // Storage full or blocked: the jar lasts for this page only.
+    }
+  }
+
+  // --- cookies -------------------------------------------------------------------
+
+  setCookieJarEnabled(on) {
+    this.cookieJarEnabled = on;
+    this.emit();
+  }
+
+  setCookies(cookies) {
+    this.cookies = cookies;
+    this.emit();
+  }
+
+  // --- form fields --------------------------------------------------------------
+
+  setFile(fieldId, file) {
+    if (file) this.files.set(fieldId, file);
+    else this.files.delete(fieldId);
+    this.emit();
   }
 
   notify(message) {
@@ -293,6 +356,7 @@ export class Store extends EventTarget {
       preRequestScript: tab.preRequestScript,
       postRequestScript: tab.postRequestScript,
       auth: cleanAuth(tab.auth),
+      ...EXTRA_FIELDS(tab),
     };
     const existing = tab.loadedRequestId && this.collection(tab.loadedCollectionId)?.requests.some((r) => r.id === tab.loadedRequestId);
     if (existing) {
@@ -549,6 +613,48 @@ export class Store extends EventTarget {
 
   // --- sending ----------------------------------------------------------------
 
+  // Prepares and sends one request; returns { prepared, res }. Handles form
+  // bodies and the cookie jar (proxied requests only: the browser keeps
+  // localhost cookies itself and hides Set-Cookie from scripts).
+  async dispatch(source, collectionId) {
+    let prepared;
+    try {
+      prepared = this.prepare(source, collectionId);
+    } catch (e) {
+      e.stage = "prepare"; // a variable or pre-request script error: nothing was sent
+      throw e;
+    }
+    const headers = [...prepared.headers];
+    const hasHeader = (name) => headers.some((h) => h.name.toLowerCase() === name && h.value);
+    let body = prepared.body;
+    const mode = source.bodyMode || "raw";
+    const scriptChangedBody = prepared.body !== (source.body ? interpolateVariables(source.body, this.variables(collectionId)) : source.body);
+    if (BODY_METHODS.includes(source.method) && mode !== "raw" && !scriptChangedBody) {
+      const variables = this.variables(collectionId);
+      const fields = (source.formFields || []).map((f) => ({
+        ...f,
+        key: f.key ? interpolateVariables(f.key, variables) : "",
+        value: f.type === "file" ? f.value : interpolateVariables(f.value || "", variables),
+      }));
+      const built = mode === "multipart" ? await multipartBody(fields, this.files) : urlEncodedBody(fields);
+      body = built.body;
+      if (!hasHeader("content-type")) headers.push({ name: "Content-Type", value: built.contentType });
+    }
+    const proxied = usesProxy(prepared.url);
+    if (proxied && this.cookieJarEnabled && !hasHeader("cookie")) {
+      const cookie = cookieHeader(this.cookies, prepared.url);
+      if (cookie) headers.push({ name: "Cookie", value: cookie });
+    }
+    const options = { method: source.method, headers: headersObject(headers) };
+    if (body && BODY_METHODS.includes(source.method)) options.body = body;
+    const res = await sendRequest(prepared.url, options);
+    if (proxied && this.cookieJarEnabled && res.headers.pairs) {
+      const lines = res.headers.pairs.filter(([k]) => k.toLowerCase() === "set-cookie").map(([, v]) => v);
+      if (lines.length) this.cookies = mergeCookies(this.cookies, lines, res.url || prepared.url);
+    }
+    return { prepared: { ...prepared, headers }, res };
+  }
+
   async send() {
     const index = this.currentTab;
     const tab = this.tabs[index];
@@ -556,20 +662,21 @@ export class Store extends EventTarget {
       this.notify("Enter a URL first.");
       return;
     }
-    let prepared;
-    try {
-      prepared = this.prepare({ url: tab.url, method: tab.method, headers: tab.headers, body: tab.requestBody, preRequestScript: tab.preRequestScript, auth: tab.auth }, tab.loadedCollectionId);
-    } catch (e) {
-      this.notify(`The request wasn't sent: ${e.message}`);
-      return;
-    }
+    const source = {
+      url: tab.url,
+      method: tab.method,
+      headers: tab.headers,
+      body: tab.requestBody,
+      preRequestScript: tab.preRequestScript,
+      auth: tab.auth,
+      bodyMode: tab.bodyMode,
+      formFields: tab.formFields,
+    };
     this.tabs = tabService.updateTab(this.tabs, index, { loading: true, response: null, statusCode: null, responseHeaders: null, durationMs: null, tests: null });
     this.emit();
     const started = performance.now();
     try {
-      const options = { method: tab.method, headers: headersObject(prepared.headers) };
-      if (prepared.body && BODY_METHODS.includes(tab.method)) options.body = prepared.body;
-      const res = await sendRequest(prepared.url, options);
+      const { res } = await this.dispatch(source, tab.loadedCollectionId);
       const headers = {};
       res.headers.forEach((v, k) => (headers[k] = v));
       const { data, type } = await readResponse(res);
@@ -605,7 +712,12 @@ export class Store extends EventTarget {
       }
       this.tabs = tabService.updateTab(this.tabs, index, { tests });
     } catch (e) {
-      this.tabs = tabService.updateTab(this.tabs, index, { response: `Error: ${e.message}`, responseType: "error", statusCode: null, responseHeaders: null, loading: false });
+      if (e.stage === "prepare") {
+        this.tabs = tabService.updateTab(this.tabs, index, { loading: false });
+        this.notify(`The request wasn't sent: ${e.message}`);
+      } else {
+        this.tabs = tabService.updateTab(this.tabs, index, { response: `Error: ${e.message}`, responseType: "error", statusCode: null, responseHeaders: null, loading: false });
+      }
     }
     this.emit();
   }
@@ -624,18 +736,9 @@ export class Store extends EventTarget {
     };
     for (let i = 0; i < collection.requests.length; i++) {
       const request = collection.requests[i];
-      let prepared;
       try {
-        prepared = this.prepare(request, id);
-      } catch (e) {
-        push({ requestName: request.name, method: request.method, url: request.url, statusCode: "Script error", success: false, response: e.message });
-        break;
-      }
-      try {
-        const options = { method: request.method, headers: headersObject(prepared.headers) };
-        if (prepared.body && BODY_METHODS.includes(request.method)) options.body = prepared.body;
         const started = performance.now();
-        const res = await sendRequest(prepared.url, options);
+        const { prepared, res } = await this.dispatch(request, id);
         const duration = res.timeMs ?? Math.round(performance.now() - started);
         const text = await res.text();
         const headers = {};
@@ -652,7 +755,7 @@ export class Store extends EventTarget {
         push({ requestName: request.name, method: request.method, url: prepared.url, statusCode: res.status, success, tests, response: failed.length ? failed.map((t) => `${t.name}: ${t.detail}`).join("; ") : text.slice(0, 200), duration });
         if (!success) break;
       } catch (e) {
-        push({ requestName: request.name, method: request.method, url: request.url, statusCode: "Error", success: false, response: e.message });
+        push({ requestName: request.name, method: request.method, url: request.url, statusCode: e.stage === "prepare" ? "Script error" : "Error", success: false, response: e.message });
         break;
       }
     }

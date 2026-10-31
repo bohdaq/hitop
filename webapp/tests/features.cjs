@@ -32,7 +32,7 @@ const settle = (p) => p.waitForTimeout(400);
   await p.getByLabel('URL').fill('https://jsonplaceholder.typicode.com/posts?userId=1');
   await section('Params');
   await settle(p);
-  const firstKey = await p.locator('lit-material-key-value-editor').evaluate((el) => el.entries.map((e) => `${e.key}=${e.value}`).join('&'));
+  const firstKey = await p.locator('.param-row').evaluateAll((rows) => rows.map((r) => [...r.querySelectorAll('lit-material-text-field')].map((f) => f.value).join('=')).join('&'));
   check('params parsed from the URL', firstKey === 'userId=1', firstKey);
   await p.getByRole('button', { name: 'Add parameter' }).click();
   await p.keyboard.type('_limit', { delay: 15 });
@@ -64,7 +64,7 @@ const settle = (p) => p.waitForTimeout(400);
   // Back to the request (the tab strip shows with the request view)
   await p.locator('aside').getByRole('button', { name: /New Request/ }).first().click();
   await p.getByRole('tab', { name: /Post-request/ }).click();
-  await p.locator('lit-material-code-field').click();
+  await p.locator('.cm-content').click();
   await p.keyboard.type("assert.status(200); assert.bodyContains('userId'); assert.header('content-type', 'json'); assert.responseTime(10000); assert.equal(response.length, 99, 'two posts');", { delay: 2 });
   await settle(p);
   await send();

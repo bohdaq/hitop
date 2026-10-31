@@ -8,10 +8,12 @@ HITOP covers the core API testing workflow: all HTTP methods, collections, varia
 
 ## Quick wins — high impact, low effort
 
-**Status 2026-10-31:** items 1–4 are done in the web app (`webapp/src/features.js`, tests in
-`webapp/tests/features.cjs`). Open: per-parameter on/off toggles (item 1), and porting all four to
-desktop, iOS and the CLI. Auth is stored on the request as `auth: {type, …}` and maps to Postman's
-`auth`; environments live in `hitop_environments` / `hitop_active_environment`.
+**Status 2026-10-31:** items 1–4 are done in the web app, the desktop app and the CLI; item 1's
+per-parameter toggles in the web app. iOS is still open (needs Xcode). Auth is stored on the request
+as `auth: {type, …}` (same JSON everywhere) and maps to Postman's `auth`. Environments: web app in
+`hitop_environments` / `hitop_active_environment`; desktop and CLI share hitop-core's
+`environments.json` (`hitop env`). Assertions: `assert.*` in post-request scripts; `hitop run` and
+`hitop send --post-script` exit 1 on a failed check.
 
 ### 1. URL query param editor
 Table-based key/value editor that builds the query string automatically. Currently users must type params directly into the URL.
@@ -52,6 +54,10 @@ Runner shows pass/fail per request with assertion detail, total pass/fail count 
 
 ## Medium effort
 
+**Status 2026-10-31:** items 5, 6 and 12 are done in the web app (`webapp/tests/extras.cjs`).
+Files picked for multipart fields stay in memory only. The cookie jar applies to proxied requests
+(the browser handles localhost cookies itself).
+
 ### 5. Multipart/form-data builder
 Key/value table for `multipart/form-data` bodies. File field type for binary uploads.
 
@@ -86,14 +92,15 @@ Replace plain `<textarea>` in the scripts tab with a lightweight code editor (e.
 
 | Feature | Web | Desktop | iOS | CLI |
 |---|---|---|---|---|
-| URL param editor | ✓ | — | — | — |
-| Auth tab | ✓ | — | — | — |
-| Environments | ✓ | — | — | — |
-| Assertions | ✓ | — | — | — |
-| Script editor highlight | — | — | — | n/a |
+| URL param editor | ✓ | ✓ | — | `-q` |
+| Auth tab | ✓ | ✓ | — | ✓ |
+| Environments | ✓ | ✓ | — | ✓ |
+| Assertions | ✓ | ✓ | — | ✓ |
+| Script editor highlight | ✓ | — | — | n/a |
 | Collection runner | ✓ | ✓ | — | ✓ |
+| Param on/off toggles | ✓ | — | — | n/a |
 | Import / Export | ✓ | ✓ | — | ✓ |
-| Multipart body | — | — | — | — |
-| Cookie jar | — | — | — | — |
+| Multipart body | ✓ | — | — | — |
+| Cookie jar | ✓ | — | — | — |
 | WebSocket | — | — | — | — |
 | GraphQL | — | — | — | — |

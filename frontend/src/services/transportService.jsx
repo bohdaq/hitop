@@ -46,6 +46,8 @@ export const usesProxy = (url) => {
 /** Read only Headers lookalike that keeps repeated headers (Set-Cookie). */
 class ProxiedHeaders {
   constructor(pairs) {
+    // Every header as sent, repeats included (Set-Cookie needs them apart).
+    this.pairs = pairs;
     this.map = new Map();
     for (const [name, value] of pairs) {
       const key = name.toLowerCase();
@@ -95,6 +97,12 @@ class ProxiedResponse {
   }
 }
 
+const toBase64 = (bytes) => {
+  let text = '';
+  for (let i = 0; i < bytes.length; i += 0x8000) text += String.fromCharCode(...bytes.subarray(i, i + 0x8000));
+  return btoa(text);
+};
+
 const headerPairs = (headers) => {
   if (!headers) return [];
   if (Array.isArray(headers)) return headers.map(h => [h.name, h.value]);
@@ -112,6 +120,8 @@ export const sendRequest = async (url, options = {}) => {
   if (!usesProxy(url)) {
     return fetch(url, options);
   }
+  // Binary bodies (multipart with files) travel base64 encoded.
+  const binary = options.body instanceof Uint8Array;
   const answer = await fetch(PROXY_URL, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
@@ -119,7 +129,8 @@ export const sendRequest = async (url, options = {}) => {
       method: options.method || 'GET',
       url,
       headers: headerPairs(options.headers),
-      body: options.body ?? null,
+      body: binary ? toBase64(options.body) : options.body ?? null,
+      ...(binary ? { bodyEncoding: 'base64' } : {}),
     }),
   });
   let envelope;

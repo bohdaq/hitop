@@ -360,6 +360,7 @@ export class HitopApp extends LitElement {
         </nav>
         <div class="sidebar-footer">
           <button type="button" class="tree-row" aria-current=${kind === "environments" ? "page" : "false"} @click=${() => this.go("environments")}>${icon("globe")}<span>Environments</span></button>
+          <button type="button" class="tree-row" aria-current=${kind === "cookies" ? "page" : "false"} @click=${() => this.go("cookies")}>${icon("cookie")}<span>Cookies</span></button>
           <button type="button" class="tree-row" @click=${() => this.openDialog("history")}>${icon("clock-counter-clockwise")}<span>History</span></button>
           <button type="button" class="tree-row" @click=${() => this.openDialog("export")}>${icon("file-arrow-down")}<span>Export</span></button>
           <button type="button" class="tree-row" @click=${() => this.openDialog("import")}>${icon("file-arrow-up")}<span>Import</span></button>
@@ -418,6 +419,9 @@ export class HitopApp extends LitElement {
   renderMain() {
     const s = this.store;
     const { kind, collectionId } = s.view;
+    if (kind === "cookies") {
+      return html`<hitop-cookies .store=${s} .version=${s.version} .app=${this}></hitop-cookies>`;
+    }
     if (kind === "environments") {
       return html`<hitop-environments .store=${s} .version=${s.version} .app=${this}></hitop-environments>`;
     }

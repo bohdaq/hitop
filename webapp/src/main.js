@@ -6,6 +6,7 @@ import "./app.css";
 
 import "@lit-material/alert";
 import "@lit-material/button";
+import "@lit-material/checkbox";
 import "@lit-material/code-block";
 import "@lit-material/confirm";
 import "@lit-material/dialog";
@@ -17,6 +18,7 @@ import "@lit-material/menu";
 import "@lit-material/select";
 import "@lit-material/snackbar";
 import "@lit-material/status";
+import "@lit-material/switch";
 import "@lit-material/tabs";
 import "@lit-material/text-field";
 

@@ -2,6 +2,7 @@
 // a collection's variables.
 import { LitElement, html, nothing } from "lit";
 import { guard } from "lit/directives/guard.js";
+import { confirm } from "@lit-material/confirm";
 import { icon } from "../icons.js";
 import { testList } from "./request-view.js";
 
@@ -260,3 +261,79 @@ export class HitopEnvironments extends LightElement {
 }
 
 customElements.define("hitop-environments", HitopEnvironments);
+
+export class HitopCookies extends LightElement {
+  static properties = { store: { attribute: false }, version: { attribute: false }, app: { attribute: false } };
+
+  edit(cookie, value) {
+    this.store.setCookies(this.store.cookies.map((c) => (c === cookie ? { ...c, value } : c)));
+  }
+
+  remove(cookie) {
+    this.store.setCookies(this.store.cookies.filter((c) => c !== cookie));
+  }
+
+  async clear() {
+    if (await confirm({ headline: "Delete all cookies?", message: "Requests stop sending them until servers set new ones.", confirmLabel: "Delete all", destructive: true })) {
+      this.store.setCookies([]);
+    }
+  }
+
+  add(e) {
+    e.preventDefault();
+    const form = e.target;
+    const get = (name) => form.querySelector(`[name="${name}"]`).value.trim();
+    const domain = get("domain").replace(/^\./, "").toLowerCase();
+    const name = get("name");
+    if (!domain || !name) return;
+    const cookie = { name, value: get("value"), domain, hostOnly: false, path: "/", expires: null, secure: false };
+    this.store.setCookies([...this.store.cookies.filter((c) => !(c.name === name && c.domain === domain && c.path === "/")), cookie]);
+    form.querySelectorAll("lit-material-text-field").forEach((f) => (f.value = ""));
+  }
+
+  render() {
+    const s = this.store;
+    const byDomain = new Map();
+    for (const c of s.cookies) byDomain.set(c.domain, [...(byDomain.get(c.domain) ?? []), c]);
+    return html`
+      <div class="page">
+        <header class="page-header">
+          <h1>Cookies</h1>
+          <div class="page-actions">
+            <lit-material-button variant="outlined" ?disabled=${!s.cookies.length} @click=${() => this.clear()}>${icon("trash")} Delete all</lit-material-button>
+          </div>
+        </header>
+        <label class="switch-row">
+          <lit-material-switch aria-label="Keep and send cookies" ?checked=${s.cookieJarEnabled} @change=${(e) => s.setCookieJarEnabled(e.target.checked)}></lit-material-switch>
+          <span>Keep cookies from responses and send them with later requests to the same site</span>
+        </label>
+        <p class="page-lead">Applies to requests that go through the HITOP proxy. For localhost your browser keeps cookies itself. Cookies stay in this browser.</p>
+        ${byDomain.size
+          ? [...byDomain].map(
+              ([domain, cookies]) => html`
+                <section class="cookie-domain" aria-label=${domain}>
+                  <h2>${domain}</h2>
+                  <ul class="cookie-list">
+                    ${cookies.map(
+                      (c) => html`<li>
+                        <span class="cookie-name">${c.name}</span>
+                        <lit-material-text-field variant="outlined" label="Value" .value=${c.value} @change=${(e) => this.edit(c, e.target.value)}></lit-material-text-field>
+                        <span class="cookie-meta">${c.path}${c.secure ? " · secure" : ""} · ${c.expires ? `expires ${new Date(c.expires).toLocaleString()}` : "session"}</span>
+                        <lit-material-icon-button aria-label=${`Delete ${c.name}`} @click=${() => this.remove(c)}>${icon("trash")}</lit-material-icon-button>
+                      </li>`,
+                    )}
+                  </ul>
+                </section>`,
+            )
+          : html`<lit-material-empty-state size="compact" headline="No cookies yet">Cookies that responses set appear here, or add one below.</lit-material-empty-state>`}
+        <form class="cookie-add" @submit=${(e) => this.add(e)}>
+          <lit-material-text-field name="domain" variant="outlined" label="Domain" placeholder="api.example.com"></lit-material-text-field>
+          <lit-material-text-field name="name" variant="outlined" label="Name"></lit-material-text-field>
+          <lit-material-text-field name="value" variant="outlined" label="Value"></lit-material-text-field>
+          <lit-material-button variant="tonal" type="submit">${icon("plus")} Add cookie</lit-material-button>
+        </form>
+      </div>`;
+  }
+}
+
+customElements.define("hitop-cookies", HitopCookies);

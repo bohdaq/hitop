@@ -158,3 +158,108 @@ export function makeAssert({ statusCode, text, headers, durationMs }) {
   };
   return { assert, results };
 }
+
+// --- cookie jar -----------------------------------------------------------------
+
+// One Set-Cookie line as a jar entry, or null when it can't be stored for
+// this URL (wrong domain, unparsable). `deleted` marks an expiry in the past.
+export function parseSetCookie(line, requestUrl, now = Date.now()) {
+  const host = new URL(requestUrl).hostname.toLowerCase();
+  const [pair, ...attrs] = line.split(";").map((s) => s.trim());
+  const eq = pair.indexOf("=");
+  if (eq <= 0) return null;
+  const cookie = { name: pair.slice(0, eq).trim(), value: pair.slice(eq + 1).trim(), domain: host, hostOnly: true, path: "/", expires: null, secure: false };
+  const reqPath = new URL(requestUrl).pathname;
+  cookie.path = reqPath.lastIndexOf("/") > 0 ? reqPath.slice(0, reqPath.lastIndexOf("/")) : "/";
+  let maxAge = null;
+  for (const attr of attrs) {
+    const at = attr.indexOf("=");
+    const key = (at < 0 ? attr : attr.slice(0, at)).trim().toLowerCase();
+    const val = at < 0 ? "" : attr.slice(at + 1).trim();
+    if (key === "domain" && val) {
+      const d = val.replace(/^\./, "").toLowerCase();
+      if (host !== d && !host.endsWith(`.${d}`)) return null; // another site's cookie
+      cookie.domain = d;
+      cookie.hostOnly = false;
+    } else if (key === "path" && val.startsWith("/")) cookie.path = val;
+    else if (key === "expires") {
+      const t = Date.parse(val);
+      if (!Number.isNaN(t)) cookie.expires = t;
+    } else if (key === "max-age" && /^-?\d+$/.test(val)) maxAge = Number(val);
+    else if (key === "secure") cookie.secure = true;
+  }
+  if (maxAge !== null) cookie.expires = now + maxAge * 1000;
+  cookie.deleted = cookie.expires !== null && cookie.expires <= now;
+  return cookie;
+}
+
+const sameCookie = (a, b) => a.name === b.name && a.domain === b.domain && a.path === b.path;
+
+// The jar after `lines` (Set-Cookie values from one response) are applied.
+export function mergeCookies(jar, lines, requestUrl, now = Date.now()) {
+  let next = jar.filter((c) => c.expires === null || c.expires > now);
+  for (const line of lines) {
+    const cookie = parseSetCookie(line, requestUrl, now);
+    if (!cookie) continue;
+    next = next.filter((c) => !sameCookie(c, cookie));
+    if (!cookie.deleted) {
+      delete cookie.deleted;
+      next.push(cookie);
+    }
+  }
+  return next;
+}
+
+// The Cookie header value the jar has for this URL ("" when none).
+export function cookieHeader(jar, requestUrl, now = Date.now()) {
+  const url = new URL(requestUrl);
+  const host = url.hostname.toLowerCase();
+  const path = url.pathname || "/";
+  return jar
+    .filter((c) => c.expires === null || c.expires > now)
+    .filter((c) => (c.hostOnly ? host === c.domain : host === c.domain || host.endsWith(`.${c.domain}`)))
+    .filter((c) => path === c.path || path.startsWith(c.path.endsWith("/") ? c.path : `${c.path}/`) || c.path === "/")
+    .filter((c) => !c.secure || url.protocol === "https:")
+    .sort((a, b) => b.path.length - a.path.length)
+    .map((c) => `${c.name}=${c.value}`)
+    .join("; ");
+}
+
+// --- form bodies --------------------------------------------------------------------
+
+// fields: [{ key, value, type: "text" | "file", enabled }]; files: Map of
+// field id -> File (files are never stored, only kept while the page is open).
+export async function multipartBody(fields, files) {
+  const boundary = `----hitop${crypto.randomUUID().replace(/-/g, "")}`;
+  const enc = new TextEncoder();
+  const parts = [];
+  const quote = (s) => String(s).replace(/"/g, "%22").replace(/\r|\n/g, " ");
+  for (const f of fields) {
+    if (f.enabled === false || !f.key) continue;
+    if (f.type === "file") {
+      const file = files.get(f.id);
+      const name = file?.name ?? f.fileName ?? "";
+      parts.push(enc.encode(`--${boundary}\r\nContent-Disposition: form-data; name="${quote(f.key)}"; filename="${quote(name)}"\r\nContent-Type: ${file?.type || "application/octet-stream"}\r\n\r\n`));
+      parts.push(file ? new Uint8Array(await file.arrayBuffer()) : new Uint8Array());
+      parts.push(enc.encode("\r\n"));
+    } else {
+      parts.push(enc.encode(`--${boundary}\r\nContent-Disposition: form-data; name="${quote(f.key)}"\r\n\r\n${f.value ?? ""}\r\n`));
+    }
+  }
+  parts.push(enc.encode(`--${boundary}--\r\n`));
+  const body = new Uint8Array(parts.reduce((n, p) => n + p.length, 0));
+  let at = 0;
+  for (const p of parts) {
+    body.set(p, at);
+    at += p.length;
+  }
+  return { body, contentType: `multipart/form-data; boundary=${boundary}` };
+}
+
+export function urlEncodedBody(fields) {
+  const body = fields
+    .filter((f) => f.enabled !== false && f.key)
+    .map((f) => `${encodeURIComponent(f.key)}=${encodeURIComponent(f.value ?? "")}`)
+    .join("&");
+  return { body, contentType: "application/x-www-form-urlencoded" };
+}

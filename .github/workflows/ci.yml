@@ -55,6 +55,9 @@ jobs:
           workspaces: server
       - name: Build site, web app and server
         run: ./deploy/build.sh
+      - name: Unit checks
+        working-directory: webapp
+        run: npm run test:unit
       - name: Install Playwright's Chromium
         working-directory: webapp
         run: npx playwright install --with-deps chromium
@@ -65,7 +68,7 @@ jobs:
           HITOP_ALLOWED_ORIGINS=http://localhost:7879 ../hitop-server > ../server.log 2>&1 &
           for i in $(seq 30); do curl -fs http://127.0.0.1:7879/ > /dev/null && exit 0; sleep 1; done
           cat ../server.log; exit 1
-      - name: End-to-end checks (they call example.com and jsonplaceholder.typicode.com)
+      - name: End-to-end checks (they call example.com, jsonplaceholder.typicode.com and httpbin.org)
         working-directory: webapp
         run: BASE=http://localhost:7879 npm run test:e2e
 
