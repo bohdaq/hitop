@@ -1,5 +1,6 @@
 // One request tab: method, URL, send; headers, body and scripts; the response.
 import { LitElement, html, nothing } from "lit";
+import { guard } from "lit/directives/guard.js";
 import { unsafeHTML } from "lit/directives/unsafe-html.js";
 import hljs from "highlight.js/lib/core";
 import json from "highlight.js/lib/languages/json";
@@ -74,6 +75,16 @@ export class HitopRequest extends LitElement {
       this.section = this.tab?.requestBody && BODY_METHODS.includes(this.tab.method) ? 1 : 0;
       this.responseSection = 0;
     }
+    // The header editor rebuilds its rows whenever `entries` is set, and Lit
+    // sets object properties on every render, so the binding is guarded:
+    // rows are handed over only when the headers changed outside the editor
+    // (another tab, history, a save), never while typing in it.
+    const json = JSON.stringify(this.tab?.headers ?? []);
+    if (json !== this.headersJson) {
+      this.headersJson = json;
+      this.headerRows = this.headerEntries();
+      this.headerRowsVersion = (this.headerRowsVersion ?? 0) + 1;
+    }
     super.update(changed);
   }
 
@@ -86,8 +97,10 @@ export class HitopRequest extends LitElement {
   }
 
   onHeaders(e) {
-    const headers = e.detail.entries.map((x) => ({ name: x.key, value: x.value }));
-    this.set({ headers: headers.length ? headers : [{ name: "", value: "" }] });
+    const rows = e.detail.entries.map((x) => ({ name: x.key, value: x.value }));
+    const headers = rows.length ? rows : [{ name: "", value: "" }];
+    this.headersJson = JSON.stringify(headers);
+    this.set({ headers });
   }
 
   send(e) {
@@ -116,7 +129,7 @@ export class HitopRequest extends LitElement {
                 key-label="Header"
                 value-label="Value"
                 add-label="Add header"
-                .entries=${this.headerEntries()}
+                .entries=${guard([this.headerRowsVersion], () => this.headerRows)}
                 @change=${(e) => this.onHeaders(e)}
               ></lit-material-key-value-editor>`
             : nothing}
@@ -151,7 +164,7 @@ export class HitopRequest extends LitElement {
         <div class="skeleton block"></div>
       </section>`;
     }
-    if (t.response == null || t.response === "") {
+    if (t.statusCode == null && (t.response == null || t.response === "")) {
       return html`<section class="response empty" aria-label="Response">
         <lit-material-empty-state size="compact" headline="Send a request to see the response">
           ${usesProxy(t.url || "https://example.com")
@@ -174,7 +187,7 @@ export class HitopRequest extends LitElement {
         <div class="response-meta">
           <span class=${`status-chip ${cls}`}>${t.statusCode} ${getStatusText(t.statusCode) === "Unknown Status" ? "" : getStatusText(t.statusCode)}</span>
           ${t.durationMs != null ? html`<span>${t.durationMs} ms</span>` : nothing}
-          <span>${bytes(t.response)}</span>
+          <span>${bytes(t.response || "")}</span>
           ${t.truncated ? html`<span class="warn">Cut at 5 MB</span>` : nothing}
         </div>
         <lit-material-tabs aria-label="Response details" .selected=${this.responseSection} @change=${(e) => (this.responseSection = e.target.selected)}>
@@ -182,7 +195,9 @@ export class HitopRequest extends LitElement {
           <lit-material-tab>Headers (${headers.length})</lit-material-tab>
         </lit-material-tabs>
         ${this.responseSection === 0
-          ? html`<lit-material-code-block class="response-body" label=${t.responseType.toUpperCase()}>${code ? unsafeHTML(code) : t.response}</lit-material-code-block>`
+          ? t.response
+            ? html`<lit-material-code-block class="response-body" label=${t.responseType.toUpperCase()}>${code ? unsafeHTML(code) : t.response}</lit-material-code-block>`
+            : html`<p class="hint">No body${t.method === "HEAD" ? ": HEAD responses never have one" : ""}.</p>`
           : html`<dl class="response-headers">
               ${headers.map(([k, v]) => html`<dt>${k}</dt><dd>${v}</dd>`)}
             </dl>`}

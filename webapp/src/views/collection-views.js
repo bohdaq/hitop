@@ -1,6 +1,7 @@
 // The collections overview, one collection (requests and its last run), and
 // a collection's variables.
 import { LitElement, html, nothing } from "lit";
+import { guard } from "lit/directives/guard.js";
 import { icon } from "../icons.js";
 
 class LightElement extends LitElement {
@@ -146,12 +147,21 @@ export class HitopVariables extends LightElement {
   change(e) {
     const editor = e.target;
     if (!editor.valid) return;
-    this.store.setVariables(this.collection.id, editor.toObject());
+    const variables = editor.toObject();
+    this.variablesJson = `${this.collection.id}:${JSON.stringify(variables)}`;
+    this.store.setVariables(this.collection.id, variables);
   }
 
   render() {
     const c = this.collection;
-    const entries = Object.entries(c.variables || {}).map(([key, value]) => ({ key, value: String(value) }));
+    // Rows go to the editor only when the variables changed outside it
+    // (another collection, an import): setting `entries` rebuilds its rows.
+    const json = `${c.id}:${JSON.stringify(c.variables || {})}`;
+    if (json !== this.variablesJson) {
+      this.variablesJson = json;
+      this.rows = Object.entries(c.variables || {}).map(([key, value]) => ({ key, value: String(value) }));
+      this.rowsVersion = (this.rowsVersion ?? 0) + 1;
+    }
     return html`
       <div class="page">
         <button type="button" class="back" @click=${() => this.store.show("collection", c.id)}>${icon("arrow-left")} ${c.name}</button>
@@ -163,7 +173,7 @@ export class HitopVariables extends LightElement {
           add-label="Add variable"
           key-pattern="[^}]+"
           key-pattern-message="A name can't contain }"
-          .entries=${entries}
+          .entries=${guard([this.rowsVersion], () => this.rows)}
           @change=${(e) => this.change(e)}
         ></lit-material-key-value-editor>
       </div>`;

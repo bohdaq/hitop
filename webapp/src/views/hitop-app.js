@@ -44,7 +44,12 @@ export class HitopApp extends LitElement {
     this.dragging = null;
     const saved = readTheme();
     if (saved) document.documentElement.dataset.theme = saved;
-    this.dark = (saved ?? (matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light")) === "dark";
+    const system = matchMedia("(prefers-color-scheme: dark)");
+    this.dark = (saved ?? (system.matches ? "dark" : "light")) === "dark";
+    // Without a saved choice, follow the system when it switches.
+    system.addEventListener("change", (e) => {
+      if (!document.documentElement.dataset.theme) this.dark = e.matches;
+    });
     this.store.addEventListener("change", () => this.requestUpdate());
     this.store.addEventListener("notify", (e) => this.toast(e.detail));
   }
@@ -76,7 +81,9 @@ export class HitopApp extends LitElement {
     await this.updateComplete;
     const dlg = this.querySelector("#dialog");
     dlg?.show();
-    dlg?.querySelector("[autofocus]")?.focus();
+    // The dialog focuses itself as it opens; move focus to the first field after.
+    await dlg?.updateComplete;
+    requestAnimationFrame(() => dlg?.querySelector("[autofocus]")?.focus());
   }
 
   closeDialog() {
@@ -85,6 +92,15 @@ export class HitopApp extends LitElement {
 
   field(id) {
     return this.querySelector(`#dialog #${id}`)?.value ?? "";
+  }
+
+  // The fields' inputs live in shadow DOM, so Enter doesn't submit the form
+  // by itself. Enter in a textarea still adds a line.
+  dialogKey(e) {
+    if (e.key !== "Enter" || e.shiftKey || e.isComposing) return;
+    if (e.composedPath().some((n) => n.localName === "textarea" || n.localName === "lit-material-select")) return;
+    e.preventDefault();
+    e.currentTarget.requestSubmit();
   }
 
   submitDialog(e) {
@@ -220,7 +236,7 @@ export class HitopApp extends LitElement {
     return html`
       <lit-material-dialog id="dialog" @close=${() => (this.dialog = null)}>
         <span slot="headline">${headline}</span>
-        <form id="dialog-form" class="dialog-form" @submit=${(e) => this.submitDialog(e)}>${body}</form>
+        <form id="dialog-form" class="dialog-form" @submit=${(e) => this.submitDialog(e)} @keydown=${(e) => this.dialogKey(e)}>${body}</form>
         ${footer}
       </lit-material-dialog>`;
   }
@@ -276,7 +292,11 @@ export class HitopApp extends LitElement {
                       (r) => html`
                         <li
                           draggable="true"
-                          @dragstart=${(e) => ((this.dragging = { type: "request", id: r.id, collectionId: c.id }), (e.dataTransfer.effectAllowed = "move"))}
+                          @dragstart=${(e) => {
+                            this.dragging = { type: "request", id: r.id, collectionId: c.id };
+                            e.dataTransfer.effectAllowed = "move";
+                            e.dataTransfer.setData("text/plain", r.name); // Firefox drags nothing without data
+                          }}
                           @dragover=${(e) => e.preventDefault()}
                           @drop=${(e) => this.dropRequest(e, c.id, r.id)}
                           @dragend=${() => (this.dragging = null)}

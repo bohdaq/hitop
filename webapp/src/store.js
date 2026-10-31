@@ -103,6 +103,7 @@ export class Store extends EventTarget {
     // collection, or one collection's variables.
     this.view = { kind: "request", collectionId: null };
     this.run = { collectionId: null, results: [], running: false, completed: 0, summary: null };
+    addEventListener("pagehide", () => this.save());
   }
 
   // --- plumbing -----------------------------------------------------------
@@ -110,12 +111,20 @@ export class Store extends EventTarget {
   emit() {
     // Views get the store by reference; this changing number re-renders them.
     this.version = (this.version ?? 0) + 1;
+    // Saving serializes everything, responses included (up to 5 MB), so it
+    // runs at most every 250 ms rather than on each keystroke.
+    clearTimeout(this.saveTimer);
+    this.saveTimer = setTimeout(() => this.save(), 250);
+    this.dispatchEvent(new Event("change"));
+  }
+
+  save() {
+    clearTimeout(this.saveTimer);
     storageService.saveCollections(this.collections);
     storageService.saveTabs(this.tabs);
     storageService.saveCurrentTab(this.currentTab);
     storageService.saveHistory(this.history);
     storageService.saveContexts(this.contexts);
-    this.dispatchEvent(new Event("change"));
   }
 
   notify(message) {
