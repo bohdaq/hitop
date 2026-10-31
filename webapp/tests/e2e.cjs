@@ -43,7 +43,7 @@ const check = (name, ok, extra = '') => { results.push(`${ok ? 'PASS' : 'FAIL'} 
   await p.screenshot({ path: `${out}/new-collection.png` });
 
   // 4. Save the current tab into Billing API with a new name
-  await p.locator('aside').getByRole('button', { name: /Create post/ }).click();
+  await p.locator('aside').getByRole('button', { name: /^POST Create post/ }).click();
   await p.getByRole('button', { name: 'Save request' }).click();
   const name = p.locator('#dialog #name');
   await name.waitFor();
@@ -77,7 +77,7 @@ const check = (name, ok, extra = '') => { results.push(`${ok ? 'PASS' : 'FAIL'} 
   // 8. Mobile + dark
   await p.setViewportSize({ width: 390, height: 844 });
   await p.emulateMedia({ colorScheme: 'dark' });
-  await p.evaluate(() => { delete document.documentElement.dataset.theme; });
+  await p.evaluate(() => { document.documentElement.removeAttribute('color-scheme'); });
   await p.locator('aside').getByRole('button', { name: /Default/ }).click({ force: true }).catch(() => {});
   await p.waitForTimeout(300);
   await p.getByRole('button', { name: 'Open collections' }).click();

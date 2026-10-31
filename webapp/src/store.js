@@ -383,11 +383,14 @@ export class Store extends EventTarget {
     this.emit();
   }
 
-  reorderRequest(collectionId, requestId, targetRequestId) {
-    if (requestId === targetRequestId) return;
-    const request = this.collection(collectionId)?.requests.find((r) => r.id === requestId);
-    if (!request) return;
-    this.collections = collectionService.reorderRequest(this.collections, collectionId, collectionId, request, targetRequestId);
+  moveRequest(collectionId, from, to) {
+    if (from === to) return;
+    this.collections = this.collections.map((c) => {
+      if (c.id !== collectionId) return c;
+      const requests = [...c.requests];
+      requests.splice(to, 0, ...requests.splice(from, 1));
+      return { ...c, requests };
+    });
     this.emit();
   }
 

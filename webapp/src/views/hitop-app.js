@@ -2,6 +2,7 @@
 // and every dialog. Light DOM, so the global theme and app.css style it.
 import { LitElement, html, nothing } from "lit";
 import { confirm } from "@lit-material/confirm";
+import { repeat } from "lit/directives/repeat.js";
 import { unsafeSVG } from "lit/directives/unsafe-svg.js";
 import { mark } from "../../../site/src/brand/mark.js";
 import { icon } from "../icons.js";
@@ -9,30 +10,11 @@ import { Store } from "../store.js";
 import "./request-view.js";
 import "./collection-views.js";
 
-const THEME_KEY = "hitop-theme";
-
-function readTheme() {
-  try {
-    return localStorage.getItem(THEME_KEY);
-  } catch {
-    return null;
-  }
-}
-
-function writeTheme(value) {
-  try {
-    localStorage.setItem(THEME_KEY, value);
-  } catch {
-    // Storage blocked: the choice lasts for this page only.
-  }
-}
-
 export class HitopApp extends LitElement {
   static properties = {
     navOpen: { state: true },
     dialog: { state: true },
     exportFormat: { state: true },
-    dark: { state: true },
   };
 
   constructor() {
@@ -41,15 +23,6 @@ export class HitopApp extends LitElement {
     this.navOpen = false;
     this.dialog = null; // { kind, ...data }
     this.exportFormat = "hitop";
-    this.dragging = null;
-    const saved = readTheme();
-    if (saved) document.documentElement.dataset.theme = saved;
-    const system = matchMedia("(prefers-color-scheme: dark)");
-    this.dark = (saved ?? (system.matches ? "dark" : "light")) === "dark";
-    // Without a saved choice, follow the system when it switches.
-    system.addEventListener("change", (e) => {
-      if (!document.documentElement.dataset.theme) this.dark = e.matches;
-    });
     this.store.addEventListener("change", () => this.requestUpdate());
     this.store.addEventListener("notify", (e) => this.toast(e.detail));
   }
@@ -60,13 +33,6 @@ export class HitopApp extends LitElement {
 
   toast(message) {
     this.querySelector("#toast")?.show(message);
-  }
-
-  toggleTheme() {
-    this.dark = !this.dark;
-    const value = this.dark ? "dark" : "light";
-    document.documentElement.dataset.theme = value;
-    writeTheme(value);
   }
 
   go(kind, collectionId = null) {
@@ -288,13 +254,6 @@ export class HitopApp extends LitElement {
 
   // --- sidebar ------------------------------------------------------------------
 
-  dropRequest(e, collectionId, targetId) {
-    e.preventDefault();
-    const d = this.dragging;
-    this.dragging = null;
-    if (d?.type === "request" && d.collectionId === collectionId) this.store.reorderRequest(collectionId, d.id, targetId);
-  }
-
   renderSidebar() {
     const s = this.store;
     const { kind, collectionId } = s.view;
@@ -335,24 +294,22 @@ export class HitopApp extends LitElement {
                         ${icon("sliders-horizontal")}<span>Variables</span>
                       </button>
                     </li>
-                    ${(c.requests || []).map(
-                      (r) => html`
-                        <li
-                          draggable="true"
-                          @dragstart=${(e) => {
-                            this.dragging = { type: "request", id: r.id, collectionId: c.id };
-                            e.dataTransfer.effectAllowed = "move";
-                            e.dataTransfer.setData("text/plain", r.name); // Firefox drags nothing without data
-                          }}
-                          @dragover=${(e) => e.preventDefault()}
-                          @drop=${(e) => this.dropRequest(e, c.id, r.id)}
-                          @dragend=${() => (this.dragging = null)}
-                        >
-                          <button type="button" class="tree-row leaf" aria-current=${activeRequest === r.id ? "page" : "false"} @click=${() => ((this.navOpen = false), s.openRequest(r, c.id))}>
-                            <span class=${`method-tag m-${r.method}`}>${r.method}</span><span>${r.name}</span>
-                          </button>
-                        </li>`,
-                    )}
+                    ${c.requests?.length
+                      ? html`<li>
+                          <lit-material-sortable role="list" label=${`Requests in ${c.name}`} @sort=${(e) => s.moveRequest(c.id, e.detail.from, e.detail.to)}>
+                            ${repeat(
+                              c.requests,
+                              (r) => r.id,
+                              (r) => html`<div role="listitem" class="request-item" data-sort-id=${r.id} data-sort-label=${r.name}>
+                                <button type="button" class="tree-row leaf" aria-current=${activeRequest === r.id ? "page" : "false"} @click=${() => ((this.navOpen = false), s.openRequest(r, c.id))}>
+                                  <span class=${`method-tag m-${r.method}`}>${r.method}</span><span>${r.name}</span>
+                                </button>
+                                <button type="button" class="sort-handle" data-sort-handle aria-label=${`Reorder ${r.name}`}>${icon("dots-six-vertical")}</button>
+                              </div>`,
+                            )}
+                          </lit-material-sortable>
+                        </li>`
+                      : nothing}
                   </ul>
                 </li>`,
             )}
@@ -449,9 +406,9 @@ export class HitopApp extends LitElement {
         <span class="topbar-title">HITOP</span>
         <span class="topbar-spacer"></span>
         <a class="topbar-link" href="/">${icon("house")}<span>hitop.rws8.tech</span></a>
-        <lit-material-icon-button aria-label=${this.dark ? "Switch to light theme" : "Switch to dark theme"} @click=${() => this.toggleTheme()}>
-          ${icon(this.dark ? "sun" : "moon")}
-        </lit-material-icon-button>
+        <lit-material-color-scheme-toggle storage-key="hitop-theme">
+          ${icon("sun", { slot: "light-icon" })}${icon("moon", { slot: "dark-icon" })}
+        </lit-material-color-scheme-toggle>
       </header>
       <div class="layout">
         ${this.renderSidebar()}

@@ -1,5 +1,5 @@
-// Phosphor icons (skill B6) as inline SVG strings, bundled by Vite.
-import { unsafeSVG } from "lit/directives/unsafe-svg.js";
+// Phosphor icons (skill B6), registered with lit-material's icon registry.
+import { registerIcons } from "@lit-material/icon";
 
 // Only the icons the app uses: a glob of the whole set would bundle ~1,500.
 const files = import.meta.glob(
@@ -11,11 +11,6 @@ const files = import.meta.glob(
   },
 );
 
-const byName = Object.fromEntries(
-  Object.entries(files).map(([path, svg]) => [
-    path.split("/").pop().replace(".svg", ""),
-    svg.replace("<svg ", '<svg aria-hidden="true" focusable="false" '),
-  ]),
-);
+registerIcons(Object.fromEntries(Object.entries(files).map(([path, svg]) => [path.split("/").pop().replace(".svg", ""), svg])));
 
-export const icon = (name) => unsafeSVG(byName[name] ?? "");
+export { icon } from "@lit-material/icon";

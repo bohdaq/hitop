@@ -6,7 +6,7 @@ body { overflow: hidden; }
 hitop-app { display: flex; flex-direction: column; height: 100%; }
 [hidden] { display: none !important; }
 button { font: inherit; color: inherit; }
-svg { width: 20px; height: 20px; flex: none; }
+svg, lit-material-icon { width: 20px; height: 20px; flex: none; }
 code { font-family: var(--font-mono); font-size: 0.9em; padding: var(--space-25) var(--space-50); border-radius: var(--md-sys-shape-corner-extra-small); background: var(--md-sys-color-surface-container); }
 
 /* Top bar */
@@ -56,10 +56,17 @@ code { font-family: var(--font-mono); font-size: 0.9em; padding: var(--space-25)
 .tree-row:hover { background: var(--md-sys-color-surface-container-high); }
 .tree-row:active { transform: scale(0.98); }
 .tree-row[aria-current="page"] { background: var(--md-sys-color-primary-container); color: var(--md-sys-color-on-primary-container); font-weight: 600; }
-.tree-row svg { width: 18px; height: 18px; color: var(--md-sys-color-on-surface-variant); }
-.tree-row[aria-current="page"] svg { color: inherit; }
+.tree-row lit-material-icon { width: 18px; height: 18px; color: var(--md-sys-color-on-surface-variant); }
+.tree-row[aria-current="page"] lit-material-icon { color: inherit; }
 .tree-row.heading { font-weight: 600; }
-.tree li[draggable="true"] { cursor: grab; }
+.request-item { position: relative; }
+.request-item .tree-row { padding-right: 36px; }
+.sort-handle { position: absolute; top: 50%; right: 4px; translate: 0 -50%; display: grid; place-items: center; width: 28px; height: 28px; padding: 0; border: 0; border-radius: var(--md-sys-shape-corner-small, 8px); background: none; color: var(--md-sys-color-on-surface-variant); cursor: grab; opacity: 0; }
+.sort-handle lit-material-icon { width: 18px; height: 18px; }
+.request-item:hover .sort-handle, .sort-handle:focus-visible, .request-item[data-sort-grabbed] .sort-handle { opacity: 1; }
+.sort-handle:focus-visible { outline: 2px solid var(--md-sys-color-primary); }
+.request-item[data-sort-dragging] { opacity: 0.5; }
+@media (hover: none) { .sort-handle { opacity: 1; } }
 .sidebar-footer { margin-top: auto; padding-top: var(--space-100); border-top: 1px solid var(--md-sys-color-outline-variant); }
 
 .method-tag {

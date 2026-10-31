@@ -150,8 +150,8 @@
 
 
 /* Explicit theme choice (the toggle sets data-theme on <html>) */
-:root[data-theme="light"] { color-scheme: light; }
-:root[data-theme="dark"] { color-scheme: dark; }
+:root[data-theme="light"], :root[color-scheme="light"] { color-scheme: light; }
+:root[data-theme="dark"], :root[color-scheme="dark"] { color-scheme: dark; }
 
 html {
   background: var(--md-sys-color-background);
