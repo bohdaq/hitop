@@ -57,6 +57,13 @@ jobs:
         run: |
           cargo build --locked --manifest-path ../sync-server/Cargo.toml
           echo "HITOP_SYNC_SERVER_BIN=$GITHUB_WORKSPACE/sync-server/target/debug/hitop-sync-server" >> "$GITHUB_ENV"
+      # tests/sync.rs `hitop sync login --sso` through Keycloak (the sync-server's test realm).
+      - name: Keycloak for tests/sync.rs
+        run: |
+          docker run -d --name keycloak -p 127.0.0.1:18080:8080 \
+            -v "$GITHUB_WORKSPACE/sync-server/tests/fixtures/keycloak:/opt/keycloak/data/import:ro" \
+            quay.io/keycloak/keycloak:26.4.2 start-dev --import-realm
+          echo "HITOP_SYNC_TEST_KEYCLOAK=http://127.0.0.1:18080" >> "$GITHUB_ENV"
       - name: actionlint (tests/schedule.rs lints the workflows hitop schedule writes)
         env:
           ACTIONLINT_VERSION: 1.7.12
@@ -70,6 +77,14 @@ jobs:
           tar -xzf "$dir/$tgz" -C "$dir" actionlint
           "$dir/actionlint" --version
           echo "HITOP_ACTIONLINT=$dir/actionlint" >> "$GITHUB_ENV"
+      - name: Wait for Keycloak
+        run: |
+          for i in $(seq 1 90); do
+            curl -sf http://127.0.0.1:18080/realms/hitop/.well-known/openid-configuration >/dev/null && exit 0
+            sleep 2
+          done
+          docker logs keycloak
+          exit 1
       - run: cargo test --locked
       - name: hitop schedule --github output passes actionlint
         run: |
@@ -125,7 +140,22 @@ jobs:
       - uses: Swatinem/rust-cache@v2
         with:
           workspaces: sync-server
+      # SSO tests (tests/keycloak.rs) run against a real Keycloak with the test realm. A step,
+      # not a service: services can't pass the container its command (start-dev --import-realm).
+      - name: Start Keycloak
+        run: |
+          docker run -d --name keycloak -p 127.0.0.1:18080:8080 \
+            -v "$PWD/tests/fixtures/keycloak:/opt/keycloak/data/import:ro" \
+            quay.io/keycloak/keycloak:26.4.2 start-dev --import-realm
+          for i in $(seq 1 90); do
+            curl -sf http://127.0.0.1:18080/realms/hitop/.well-known/openid-configuration >/dev/null && exit 0
+            sleep 2
+          done
+          docker logs keycloak
+          exit 1
       - run: cargo test --locked --workspace
+        env:
+          HITOP_SYNC_TEST_KEYCLOAK: http://127.0.0.1:18080
       - run: cargo test --locked --features postgres --test postgres
         env:
           HITOP_SYNC_TEST_POSTGRES: postgres://postgres:ci@127.0.0.1:5432/postgres
