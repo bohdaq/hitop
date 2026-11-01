@@ -129,7 +129,7 @@ Secret variables: `secret: true` in an environment file, with the value resolved
 | --- | --- | --- | --- | --- |
 | T0 | Bootstrap and housekeeping | done | pricing list, DEV_PLAN pointer, CLAUDE.md; deployed | 2026-11-01 |
 | T1 | YAML collection format in hitop-core and CLI | done | 9697b6d, 8b1b6de, df70ec0, edf04e5 | 2026-11-01 |
-| T2 | Secrets in the OS keychain | todo | | |
+| T2 | Secrets in the OS keychain | done | accd2a4, 20951a8, 8104002, b15cb14 | 2026-11-01 |
 | T3 | CI runner: reports, exit codes, flags | todo | | |
 | T4 | Postman migration: environments and pm.* | todo | | |
 | T5 | Desktop = web app; web folder import/export | todo | | |
@@ -235,6 +235,52 @@ export PATH="$HOME/.cargo/bin:$PATH"
   are never written to exports (zip or JSON). Say so in the UI next to the secret toggle.
 - **Done when:** unit tests with a mock keyring backend; test that no secret value appears in
   history, exports or reports; CI green on Linux (env var path).
+- **Notes (2026-11-01, done):**
+  - Crates: `keyring` 4.2 (default `v1` feature: macOS Keychain, Windows Credential Manager, Secret
+    Service over `zbus` with `crypto-rust` on Linux, so no libdbus and no C) behind the hitop-core
+    feature `keychain` (default on; off for the future wasm build, then every keychain call is
+    "unavailable"). `rpassword` 7.5 for the prompt, in the CLI only. Licenses pass `cargo deny`.
+    RustSec: no vulnerability in the new crates; three "unmaintained" notices (RUSTSEC-2026-0370,
+    -0371, -0372: `zvariant`, `zbus_names`, `zvariant_derive` were folded into zbus 6) that go away
+    when keyring's zbus store moves to zbus 6. Checked the pre-existing advisories too:
+    webpki-roots 1.0.8 (RUSTSEC-2026-0381) bumped to 1.0.11 in the CLI and desktop locks (8104002);
+    bincode (syntect) and number_prefix (indicatif) stay unmaintained notices.
+  - Workspace id (spec section 2 and 5): `workspace` in `hitop.yaml` (random 32 hex digits from
+    `hitop init`; `Collection.workspace` in JSON), else the collection id in decimal; global
+    storage is `global`. Env var names: upper case, every non-alphanumeric → `_`
+    (`HITOP_SECRET_MY_ENV_API_KEY`). Keychain account uses the environment name as written.
+  - `HITOP_KEYCHAIN=off` skips the keychain (CI runners that shouldn't touch D-Bus, and the CLI
+    tests). The keychain is asked only for secrets no env var or `--secret` gave, so a CI run on
+    env vars never touches it or prints a note. Checked on this machine (no Secret Service): with
+    no bus, a bus without `org.freedesktop.secrets`, or `HITOP_KEYCHAIN=off`, hitop fails or falls
+    back in under 50 ms with the reason and the env var to set; no panic.
+  - CLI: `hitop secret set|get|rm|ls --env <env> [-c <folder or name>]`; `set` reads the value from
+    the argument, a prompt, or stdin, stores it, and marks the variable secret (global
+    `environments.json` `secrets`, or only that folder environment file via
+    `format::mark_secret`). `rm` removes the keychain value only (the variable stays secret);
+    `ls` shows where each value comes from, never the value. `--secret NAME=value` on `send`,
+    `run` and also `requests send`. `env show` prints `••••`, `env set` refuses a secret name,
+    `env export` writes `secrets` without values, `env import` reads them back.
+  - Masking (`secrets::Masker`, also the percent-encoded form): response body and headers, test
+    names and details, errors, history `url`; `runner::run_collection_with` masks every step
+    before `on_step` and in what it returns (T3 reports build on those). `run_collection` is kept
+    for the desktop. Scripts still see the real values.
+  - Web app: a Secrets section per environment (`lit-material-key-value-editor` with
+    `mask-values`, a "Show secret values" switch, and the note), `secrets: [names]` on the
+    environment with values in `variables` (localStorage). Collection run history items and run
+    results are masked; the environments export keeps names only. There is no zip export yet:
+    T5's must use `exportableEnvironments()` from `webapp/src/features.js`.
+  - Deviations: the "secret toggle" is a separate Secrets editor plus a show switch, because the
+    key-value editor masks all rows or none. The single request view still shows the response as
+    received (the browser keeps no history of interpolated values for it; its history item keeps
+    the `${var}` templates). The real keychain round trip (set, get, rm against macOS Keychain or
+    a Secret Service) isn't exercised by tests: CI has none and neither has this machine; the
+    store logic runs against `MemoryStore`. See the handoff in section 6.
+  - Tests: hitop-core 96 unit (secrets 9, runner 1, format 2 new) + 4 format; hitop 34 + 9 folder
+    + 7 secrets (send and run masking, env var and flag paths, missing-secret error without a TTY,
+    no keychain, `env show/export`, `convert`); web unit checks for export stripping, masking and
+    environments stored before T2; e2e checks for the Secrets section, its export and masked run
+    history.
 
 #### T3 CI runner: reports, exit codes, flags
 - `hitop run <path|name> --reporter cli,junit,json --out <dir>`; per request: status, timings,
@@ -478,6 +524,7 @@ Agent appends here; owner ticks when done.
 
 | Date | Tranche | What the owner needs to do | Done |
 | --- | --- | --- | --- |
+| 2026-11-01 | T2 | On your Mac (and a Windows or desktop Linux box if handy), check the keychain once: `hitop env add t2 && hitop secret set token --env t2` (macOS asks to allow access), then `hitop secret get token --env t2`, `hitop secret ls --env t2`, `hitop secret rm token --env t2`. The agent's machine and CI have no keychain, so only the fallback path is tested there. | |
 
 ## 7. Setup the owner does before the agent starts
 

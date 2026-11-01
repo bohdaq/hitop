@@ -27,6 +27,7 @@ hitop/
 │       │       ├── scripting.rs    # Pre/post request JS via boa_engine
 │       │       ├── runner.rs       # Sequential collection runner
 │       │       ├── export.rs       # HITOP and Postman v2.1 import/export
+│       │       ├── secrets.rs      # secret variables: resolve order, keychain (keyring), Masker (••••)
 │       │       └── format/         # collection folders (YAML, spec/collection-format.md) ⇄ the JSON model
 │       │   └── tests/format.rs     # golden files (tests/golden/, UPDATE_GOLDEN=1 regenerates) + proptest round trip
 │       └── hitop/              # Binary crate (published to crates.io)
@@ -34,6 +35,7 @@ hitop/
 │               ├── main.rs         # clap CLI entry point
 │               ├── commands/source.rs # a collection argument: global name or folder path
 │               ├── commands/folder.rs # `hitop init`, `hitop convert`
+│               ├── commands/secret.rs # `hitop secret set|get|rm|ls`, the `--secret` flag
 │               └── output.rs       # Colored output, syntect highlighting
 │   └── fixtures/sample/        # collection folder run by tests/folder.rs against httpmock
 ├── desktop/                    # Tauri 2.0 desktop app
@@ -85,6 +87,10 @@ hitop/
 - Run tests: `cd cli && ~/.cargo/bin/cargo test`; CI also runs `cargo clippy --all-targets -- -D warnings`
 - Collection folders: `hitop init [dir]`, `hitop convert <json> <dir>` / `<dir> <json>` (`--environments`, `-c`, `--force`);
   `run`, `requests`, `variables`, `export`, `send -c` also take a folder path (`hitop run ./my-api --env local`); a folder uses only its own `environments/`
+- Secrets: `hitop secret set|get|rm|ls --env <env> [-c <folder>]`; `--secret NAME=value` on `send`, `run`, `requests send`;
+  resolve order `HITOP_SECRET_<ENV>_<NAME>`, `--secret`, OS keychain (`keyring` 4, service `hitop`, account
+  `<workspace>/<env>/<name>`), prompt on a TTY. `HITOP_KEYCHAIN=off` skips the keychain (CLI tests set it). Values are
+  masked as `••••` in output, history and runner steps (`runner::run_collection_with`); hitop-core feature `keychain` (default)
 - YAML crate: `yaml_serde` (serde_yaml continued by the YAML org); HTTP tests use `httpmock` 0.8, never the public internet
 - Publish: `cd cli && cargo publish -p hitop-core` then `cargo publish -p hitop`
 - HTTP client: `reqwest 0.12` blocking + rustls (no OpenSSL)
@@ -116,6 +122,7 @@ hitop/
 ### Web app (`webapp/`)
 - Lit + lit-material in light DOM; theme from `site/src/theme.css`; `npm run build` → `dist/` (base `/app/`)
 - Storage must stay readable by the React app (same keys/shapes); `npm run test:e2e` with BASE= a running hitop-server
+- Secrets: environment `secrets` names, masked editor; `features.js` `exportableEnvironments()`/`maskSecrets()` for exports and run history
 
 ### Website and proxy
 - Hosting: VM bohdan-prod-donotdelete (168.119.17.57) behind the front rws; see `deploy/README.md`
@@ -124,7 +131,8 @@ hitop/
 - App Store: macOS "HiTop API Client" id6785294166 ($4.99, macOS 12+), iOS "HiTop HTTP Client" id6785326628 ($2.99, iOS 17+)
 
 ### Data model
-- `Collection` — has `id`, `name`, `requests[]`, `variables` (HashMap, `#[serde(default)]`), optional default `auth`
+- `Collection` — has `id`, `name`, `requests[]`, `variables` (HashMap, `#[serde(default)]`), optional default `auth`, optional `workspace` (keychain key)
+- `Environment` — `secrets` lists secret variable names: CLI values in the keychain, web app values in `variables` (localStorage), never in files or exports
 - `Request` — has `id`, `name`, `url`, `method`, `headers[]` (`enabled`), `body`, `preRequestScript`, `postRequestScript`,
   `auth`, and the web app's `bodyMode`/`formFields`/`disabledParams`, plus `bodyType`, `examples`, `file` (folder path)
 - Every model struct keeps unknown JSON keys (`#[serde(flatten)] extra`); new fields are skipped when empty, so old JSON reads and writes unchanged
