@@ -35,6 +35,10 @@ hitop send https://api.example.com/upload -F title=Q3 -F file=@report.csv -F 'lo
 # GraphQL: the query from a file (or - for stdin), sent as a JSON POST of {query, variables, operationName}
 hitop send https://api.example.com/graphql --graphql user.graphql --graphql-vars '{"id": "${userId}"}' -c ./my-api
 
+# WebSocket: type messages on stdin, or script it (send two, exit after two replies, JSON lines)
+hitop ws wss://echo.example.com/socket
+hitop ws wss://echo.example.com/socket --send hello --send '{"op": "ping"}' --count 2 --json
+
 # Create a collection and save variables
 hitop collections add MyAPI
 hitop variables set MyAPI hostname https://api.example.com
@@ -67,6 +71,7 @@ hitop export MyAPI -o my-collection.json
 | `hitop run --all` | Run every collection |
 | `hitop collections list/add/delete/rename/duplicate` | Manage collections |
 | `hitop requests list/add/show/delete/rename/send` | Manage requests |
+| `hitop ws <url>` / `hitop ws <request> -c <collection>` | Open a WebSocket connection: send typed lines or `--send`/`--message` messages, print what arrives (see "WebSocket") |
 | `hitop snippet <collection> <request> --lang <lang>` | Print a saved request as code: `curl`, `fetch`, `python`, `go`, `java`, `rust` (see "Code snippets") |
 | `hitop requests auth <collection> <request>` | Set (`--bearer`, `--basic`, `--api-key`) or clear (`--none`) a request's auth |
 | `hitop variables list/set/delete` | Manage collection variables |
@@ -141,6 +146,31 @@ hitop send https://api.example.com/search --api-key api_key=k-1 --api-key-in que
 # Saved requests keep their auth
 hitop requests add MyAPI --name "Me" --url '${baseUrl}/me' -H "Accept: application/json" --bearer '${token}'
 ```
+
+## WebSocket
+
+A request saved with `kind: websocket` (the web app and desktop: method "WebSocket") opens a connection
+instead of sending an HTTP request. `hitop ws` connects to a URL, or to a saved request with `-c`: its URL,
+query parameters, headers, auth and subprotocols go into the handshake, with `${variables}` and secrets
+filled in as for `hitop send`. `-H`, `--protocol` and the auth flags add to or replace what is saved.
+
+```bash
+# Interactive: each line you type is sent; Ctrl-D closes after --wait (1 s)
+hitop ws 'ws://localhost:8080/chat' -H 'X-Client: cli' --protocol chat.v2
+
+# A saved request: its saved messages by name, then a text; exit after 3 replies
+hitop ws "Live prices" -c ./my-api --env prod -m subscribe -m ping -s '${symbol}' --count 3
+
+# For scripts: one JSON object per event on stdout (open, sent, received, closed, error)
+hitop ws "Live prices" -c ./my-api -m subscribe -n 1 --json | jq -r 'select(.event == "received") | .data'
+```
+
+What the server sends goes to stdout (binary messages as hex, base64 in `--json`); sent messages and
+connection events go to stderr. Secret values are shown as `••••`. Without `--send` or `--message`, lines
+from stdin are sent (empty lines are skipped). After the last message (or the end of stdin) hitop keeps
+listening for `--wait` ms (default 1000, or 30000 with `--count`), then closes. `--count N` exits once N
+messages arrived; exit code 1 when the connection fails or fewer than N arrived. `--timeout` limits the
+handshake (default 30000 ms). `hitop run` skips WebSocket requests.
 
 ## Globals
 

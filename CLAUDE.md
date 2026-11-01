@@ -26,6 +26,7 @@ hitop/
 │       │       ├── cookies.rs      # cookie jar per workspace (<config>/hitop/cookies/<ws>.json), web app rules and JSON shape
 │       │       ├── form.rs         # urlencoded and multipart bodies; saved form requests (bodyMode) as sent
 │       │       ├── snippet.rs      # code snippets (curl, fetch, python, go, java, rust): secrets/missing vars as {{NAME}} (no native deps)
+│       │       ├── websocket.rs    # kind websocket: target()/message() fill in variables (no native deps); connect() tokio-tungstenite + rustls (feature `websocket`)
 │       │       ├── graphql.rs      # GraphQL bodies: bodyType graphql + `graphql` {variables, operationName}, request_body() (no native deps)
 │       │       ├── telemetry.rs    # opt-in weekly usage ping, feature `telemetry` (telemetry.json per surface)
 │       │       ├── interpolation.rs # ${variable} substitution
@@ -44,6 +45,7 @@ hitop/
 │           ├── tests/postman.rs # hitop import --to of the fixtures/postman collections, run against httpmock
 │           ├── tests/cookies_forms.rs # cookie jar across send/run, -F uploads, saved form bodies
 │           ├── tests/snippet.rs # hitop snippet: curl, fetch, Python, Java, Go output run against a capture server = what requests send sends
+│           ├── tests/ws.rs     # hitop ws against a local tokio-tungstenite echo server: flags, stdin, --count/--wait/--json, saved requests, masking
 │           ├── tests/graphql.rs # send --graphql, saved graphql requests via run/requests send, Postman graphql import (httpmock)
 │           ├── tests/globals.rs # globals below collection/env, secret globals, pm.globals, import, convert
 │           ├── tests/mcp.rs    # hitop mcp: JSON-RPC over stdio for every tool (httpmock), no secret value anywhere on stdout
@@ -58,6 +60,7 @@ hitop/
 │               ├── commands/data.rs # `--data` CSV (RFC 4180, hand written) and JSON rows
 │               ├── commands/cookies.rs # `hitop cookies ls|clear`, `--no-cookies`
 │               ├── commands/globals.rs # `hitop globals show|set|unset|import|export [-c folder]`
+│               ├── commands/ws.rs  # `hitop ws <url|request> [-c]`: stdin or --send/--message, --count, --wait, --timeout, --json
 │               ├── commands/mcp.rs # `hitop mcp [folder]`: MCP server over stdio (rmcp), the nine tools, masking
 │               ├── commands/telemetry.rs # `hitop telemetry on|off|status` and the background ping (feature `telemetry`)
 │               └── output.rs       # Colored output, syntect highlighting
@@ -91,6 +94,7 @@ hitop/
 │   ├── src/diff.js             # response diff: JSON by path (key order ignored), lines (LCS), headers; history response snapshots
 │   ├── src/views/tools-dialogs.js # Code dialog (hitop-wasm snippet) and Compare responses dialog
 │   ├── src/graphql-schema.js   # graphql-js: introspection query, schema from the answer (lazy)
+│   ├── src/views/websocket-view.js # WebSocket tab: connect, saved/typed messages, timestamped log (store.sockets, memory only)
 │   ├── src/views/code-editor-graphql.js # cm6-graphql: GraphQL language, completion, schema lint (own lazy chunk)
 │   ├── src/zip.js              # collection folder ⇄ .zip (fflate)
 │   ├── tests/harness.cjs       # e2e in web or Tauri mode (HITOP_MODE=tauri); tests/tauri-mock.cjs mocks invoke in Node
@@ -156,6 +160,13 @@ hitop/
   `body.operationName`, spec §3). `prepare::Draft.graphql` (`Draft::of(request, collection_auth)`) builds the JSON body after
   `${var}` substitution, adds `Content-Type: application/json` unless set. `hitop send --graphql <file|-> [--graphql-vars JSON|@file]
   [--operation-name N]`. Postman graphql bodies import/export as GraphQL
+- WebSocket: a request with `kind: websocket` + `websocket: {subprotocols, messages: [{name, content}]}` (spec §3 "WebSocket";
+  URL, params, headers, auth are the request's own). Core `websocket::target(request, collection_auth, vars)` / `message()`, then
+  `websocket::connect(&target, timeout)` (async, needs a tokio runtime) → `Connection {opened, sender, events}`; feature `websocket`
+  (default; tokio-tungstenite 0.30, rustls with ring + webpki-roots; no aws-lc). `hitop ws <url>` or `hitop ws <request> -c <col>`:
+  `-H`, `--protocol`, auth flags, `-m/--message <saved>` then `-s/--send <text>`, else stdin lines; `-n/--count`, `--wait <ms>`
+  (default 1000, 30000 with --count), `--timeout`, `--json` (JSON lines); exit 1 on failure or count not reached. `hitop run`,
+  `snippet` and MCP `run_request` skip or refuse WebSocket requests; MCP has no WebSocket tools (open)
 - Snippets: `hitop snippet <collection> <request> --lang curl|fetch|python|go|java|rust [-e env] [--show-secrets]`; core
   `snippet::generate(lang, request, collection_auth, variables, secrets)`; secret names and variables with no value become
   `{{NAME}}` (the CLI never resolves secrets without `--show-secrets`); one value per header name, as hitop sends; golden files
@@ -196,6 +207,8 @@ hitop/
 - Two frontends until the owner's macOS check (ROADMAP T5): React `desktop/src` (default config, what
   `release-desktop.yml` ships) and the Lit web app via `--config src-tauri/tauri.webapp.conf.json`
   (`npm run build:webapp`, `dev:webapp`; CI checks it with `TAURI_CONFIG="$(cat tauri.webapp.conf.json)" cargo check`).
+  WebSocket: `ws_connect {args: {url, headers, protocols, timeoutMs}, onEvent: Channel}` → `{id, status, protocol, headers}`, events
+  `{type: message|closed|error}` (binary as base64) on the channel; `ws_send {id, data, binary?}`, `ws_close {id}` (state `Sockets`).
   Web app commands: `send_request` (proxy envelope; `cookies: true` uses hitop-core's `global` jar and returns it),
   `cookies_load|save`, `load_globals|save_globals`, `read_folder`, `write_folder` (optional `globals`), `secret_get|set|delete`, `write_file`, `telemetry_status|set`; dialog plugin.
   Script commands return script-set `variables`; `run_post_script` takes the sent `request` (pm.request)
@@ -225,6 +238,11 @@ hitop/
 - GraphQL body: tab `bodyMode: "graphql"` ⇄ saved `bodyType: graphql` + `graphql` (store.js `EXTRA_FIELDS`/`SAVED_FIELDS`); the body
   is built by hitop-wasm `graphqlBody` (same bytes as the CLI); `store.fetchSchema()` introspects through `dispatch` (proxy/Rust),
   schemas live in memory per tab (`store.schemas`). Editor deps: cm6-graphql, graphql, @codemirror/autocomplete (MIT)
+- WebSocket: method select "WebSocket" sets tab `kind: "websocket"` (tab `subprotocols`, `wsMessages`, `wsDraft`; saved as `kind` +
+  `websocket` via `EXTRA_FIELDS`/`SAVED_FIELDS`); `store.wsConnect/wsSend/wsDisconnect`, log in `store.sockets` (never saved).
+  Adapter `websocket(url, {headers, protocols}, handlers)`: web.js = browser WebSocket (no handshake headers; the page says so),
+  tauri.js = Rust `ws_connect` over a Tauri channel (harness `transformCallback`/`runCallback`, mock `mock.deliver`). Runs skip them.
+  e2e `tests/websocket.cjs` with a hand-written Node echo server
 - Response diff and Code: history items keep `response` {status, headers, body ≤ 100 kB, truncated?, durationMs} (secrets masked;
   older items have none and aren't offered); "Save as example" appends {name, status, headers, body} to the saved request's
   `examples`; Compare picks current / examples / history (`store.compareSources()`); Code uses hitop-wasm `snippet` (`store.snippetInput()`)
@@ -258,7 +276,7 @@ hitop/
 - `Environment` — `secrets` lists secret variable names: CLI values in the keychain, web app values in `variables` (localStorage), never in files or exports
 - Globals — an `Environment` with id/name `globals` (`model::GLOBALS_ID`); web app `hitop_globals` `{variables, secrets}`; `format::Folder.globals` (None leaves globals.yaml alone)
 - `Request` — has `id`, `name`, `url`, `method`, `headers[]` (`enabled`), `body`, `preRequestScript`, `postRequestScript`,
-  `auth`, and the web app's `bodyMode`/`formFields`/`disabledParams`, plus `bodyType`, `graphql`, `examples`, `file` (folder path)
+  `auth`, and the web app's `bodyMode`/`formFields`/`disabledParams`, plus `bodyType`, `graphql`, `kind`/`websocket`, `examples`, `file` (folder path)
 - Every model struct keeps unknown JSON keys (`#[serde(flatten)] extra`); new fields are skipped when empty, so old JSON reads and writes unchanged
 - ids are `u64`; old web app string ids (`"col-legacy"`) read as a number derived from them (`model.rs` `de_id`)
 - `HistoryItem` (history.json, CLI and desktop) keeps extra keys; the desktop web app maps its items onto it (`platform/history.js`)
