@@ -107,6 +107,7 @@ hitop/
   exit 0 passed, 1 a request or assertion failed, 2 usage or config error (`main.rs` maps `run`'s Err to 2).
   Default is to run every request; `--no-stop-on-fail` is a hidden no-op. Variable order: collection, environment,
   data row, `--var`, secrets. A new hitop-core runtime dep also changes `desktop/src-tauri/Cargo.lock` (CI checks it `--locked`)
+  and `cli/crates/hitop-wasm/Cargo.lock` (its own workspace; `npm run build` builds it `--locked`, so a stale lock breaks every web build)
 - YAML crate: `yaml_serde` (serde_yaml continued by the YAML org); HTTP tests use `httpmock` 0.8, never the public internet
 - Publish: `cd cli && cargo publish -p hitop-core` then `cargo publish -p hitop`
 - HTTP client: `reqwest 0.12` blocking + rustls (no OpenSSL)
