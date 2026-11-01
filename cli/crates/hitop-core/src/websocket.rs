@@ -231,6 +231,23 @@ mod client {
         let (commands, mut inbox) = mpsc::unbounded_channel::<Command>();
         let (events_tx, events) = mpsc::unbounded_channel();
         tokio::spawn(async move {
+            // The loop borrows both channel ends, so they drop in a fixed
+            // order after it: the command inbox first (a send after the
+            // close is an error), then the events (a reader sees `None`).
+            // Left to the task's captures, the order was a race.
+            run_socket(stream, &mut inbox, &events_tx).await;
+            drop(inbox);
+            drop(events_tx);
+        });
+        Ok(Connection { opened, sender: Sender(commands), events })
+    }
+
+    async fn run_socket(
+        stream: tokio_tungstenite::WebSocketStream<tokio_tungstenite::MaybeTlsStream<tokio::net::TcpStream>>,
+        inbox: &mut mpsc::UnboundedReceiver<Command>,
+        events_tx: &mpsc::UnboundedSender<Event>,
+    ) {
+        {
             let (mut sink, mut source) = stream.split();
             let emit = |e: Event| {
                 let _ = events_tx.send(e);
@@ -285,8 +302,7 @@ mod client {
                     }
                 }
             }
-        });
-        Ok(Connection { opened, sender: Sender(commands), events })
+        }
     }
 
     #[cfg(test)]
