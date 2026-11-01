@@ -89,6 +89,22 @@ pub fn normalize(kind: &str, json: &str) -> Result<String, JsError> {
     normalize_json(kind, json).map_err(err)
 }
 
+/// A Postman collection through hitop-core's importer, as `{collection,
+/// report}`. `scans_json` maps each script's text to its unsupported calls
+/// (`[[line, call, text]]`), found by the shim in the page.
+pub fn import_postman_json(json: &str, scans_json: &str) -> anyhow::Result<String> {
+    let scans: std::collections::HashMap<String, Vec<(usize, String, String)>> = serde_json::from_str(scans_json)?;
+    let scan = |code: &str| scans.get(code).cloned().unwrap_or_default();
+    let (collection, report) = hitop_core::postman::import_collection_with(json, &scan)?;
+    Ok(serde_json::to_string(&serde_json::json!({ "collection": collection, "report": report }))?)
+}
+
+/// See [`import_postman_json`].
+#[wasm_bindgen(js_name = importPostman)]
+pub fn import_postman(json: &str, scans_json: &str) -> Result<String, JsError> {
+    import_postman_json(json, scans_json).map_err(chain)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -104,6 +120,17 @@ mod tests {
         assert_eq!(back["environments"][0]["secrets"][0], "t");
         let plan: serde_json::Value = serde_json::from_str(&plan_sync_json(r#"["requests/old.yaml"]"#, &files).unwrap()).unwrap();
         assert_eq!(plan["remove"][0], "requests/old.yaml");
+    }
+
+    #[test]
+    fn postman_import_takes_the_page_s_script_checks() {
+        let c = r#"{"info":{"name":"P"},"item":[{"name":"a","request":{"url":"{{b}}/x","method":"GET"},
+            "event":[{"listen":"test","script":{"exec":["pm.sendRequest('x');"]}}]}]}"#;
+        let scans = r#"{"pm.sendRequest('x');":[[1,"pm.sendRequest","pm.sendRequest('x');"]]}"#;
+        let out: serde_json::Value = serde_json::from_str(&import_postman_json(c, scans).unwrap()).unwrap();
+        assert_eq!(out["collection"]["requests"][0]["url"], "${b}/x");
+        assert_eq!(out["report"]["issues"][0]["what"], "pm.sendRequest");
+        assert_eq!(out["report"]["issues"][0]["location"], "a (post-request script)");
     }
 
     #[test]

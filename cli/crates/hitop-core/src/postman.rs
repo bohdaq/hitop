@@ -154,14 +154,23 @@ pub fn merge_globals(env: &mut ImportedEnvironment, globals: &ImportedEnvironmen
 /// and folder scripts are put in front of each request's own, in the order
 /// Postman runs them. `{{name}}` becomes `${name}`.
 pub fn import_collection(text: &str) -> Result<(Collection, ImportReport)> {
+    import_collection_with(text, &script_calls)
+}
+
+/// Finds a script's unsupported calls as (line, call, line text).
+pub type ScriptScan<'a> = &'a dyn Fn(&str) -> Vec<(usize, String, String)>;
+
+/// [`import_collection`] with the script check given: the web app runs the
+/// shim's own check in the page and passes the results in.
+pub fn import_collection_with(text: &str, scan: ScriptScan) -> Result<(Collection, ImportReport)> {
     let v: Value = serde_json::from_str(text.trim_start_matches('\u{feff}'))?;
     if detect(&v) != Some(Kind::Collection) {
         bail!("not a Postman collection (no `info` and `item`)");
     }
     let name = v["info"]["name"].as_str().filter(|n| !n.trim().is_empty()).unwrap_or("Imported").to_string();
-    let mut im = Importer { report: ImportReport::default(), requests: vec![], used: HashSet::new() };
+    let mut im = Importer { report: ImportReport::default(), requests: vec![], used: HashSet::new(), scan };
     let auth = im.auth(&v["auth"], "collection auth").filter(|a| *a != Auth::None);
-    let scripts = Scripts::default().with(&v["event"], "collection", &mut im.report);
+    let scripts = Scripts::default().with(&v["event"], "collection", &mut im.report, scan);
     im.items(&v["item"], &[], &scripts, None);
     let mut variables = HashMap::new();
     for row in v["variable"].as_array().into_iter().flatten() {
@@ -185,14 +194,14 @@ struct Scripts {
 impl Scripts {
     /// These scripts plus the ones in `events`, checked for unsupported
     /// calls once, where they are written.
-    fn with(&self, events: &Value, location: &str, report: &mut ImportReport) -> Scripts {
+    fn with(&self, events: &Value, location: &str, report: &mut ImportReport, scan: ScriptScan) -> Scripts {
         let mut out = self.clone();
         let (pre, post) = event_scripts(events);
         for (code, kind, list) in [(pre, "pre-request script", &mut out.pre), (post, "post-request script", &mut out.post)] {
             if code.trim().is_empty() {
                 continue;
             }
-            for (line, what, text) in script_calls(&code) {
+            for (line, what, text) in scan(&code) {
                 report.issues.push(Issue { location: format!("{location} ({kind})"), line: Some(line), what, text });
             }
             list.push((location.to_string(), code));
@@ -213,7 +222,9 @@ fn script_calls(_: &str) -> Vec<(usize, String, String)> {
     vec![]
 }
 
-/// The `prerequest` and `test` scripts of an `event` list.
+/// The `prerequest` and `test` scripts of an `event` list: `exec` lines
+/// joined with `\n`, several events of one kind joined with `\n`, disabled
+/// ones left out. (The web app's `postmanScripts` must match this.)
 fn event_scripts(events: &Value) -> (String, String) {
     let script = |listen: &str| -> String {
         events
@@ -247,10 +258,11 @@ fn join_scripts(parts: &[(String, String)]) -> String {
     }
 }
 
-struct Importer {
+struct Importer<'a> {
     report: ImportReport,
     requests: Vec<Request>,
     used: HashSet<String>,
+    scan: ScriptScan<'a>,
 }
 
 fn scalar(v: &Value) -> String {
@@ -266,7 +278,7 @@ fn placeholder_re() -> &'static Regex {
     RE.get_or_init(|| Regex::new(r"\{\{\s*([^{}]+?)\s*\}\}").unwrap())
 }
 
-impl Importer {
+impl Importer<'_> {
     /// `{{name}}` → `${name}`. Postman's dynamic variables (`{{$guid}}`)
     /// have no hitop equivalent: they stay as written and are reported.
     fn convert(&mut self, text: &str, location: &str) -> String {
@@ -320,10 +332,10 @@ impl Importer {
             if item["item"].is_array() {
                 // A folder.
                 let auth = self.auth(&item["auth"], &format!("{location} (auth)"));
-                let inner = scripts.with(&item["event"], &format!("folder {location}"), &mut self.report);
+                let inner = scripts.with(&item["event"], &format!("folder {location}"), &mut self.report, self.scan);
                 self.items(&item["item"], &here, &inner, auth.as_ref().or(folder_auth));
             } else if item["request"].is_object() || item["request"].is_string() {
-                let own = scripts.with(&item["event"], &location, &mut self.report);
+                let own = scripts.with(&item["event"], &location, &mut self.report, self.scan);
                 let request = self.request(item, &name, path, &location, &own, folder_auth);
                 self.requests.push(request);
             }
