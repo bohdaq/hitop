@@ -319,3 +319,31 @@ jobs:
             grep -q -a -F "$s" "$bin" || { echo "control: telemetry build lacks '$s'"; exit 1; }
           done
           echo "MAS configuration: no ping code or endpoint; telemetry build: present"
+
+  hitopkit:
+    # ROADMAP T26: HitopKit, the iOS companion's Swift package (format reader, variables,
+    # secrets, scripts, runner), tested on Linux in the official Swift image pinned by digest.
+    # A hitop built from this commit runs the same folder for CLICompatibilityTests.
+    name: HitopKit (Swift package for the iOS companion)
+    runs-on: ubuntu-24.04
+    env:
+      SWIFT_IMAGE: swift:6.4.2-noble@sha256:bca121f6eb59fd80340d1296887b2698ed8f3eb9eca7d80c181f8af769dc7ee0
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: cli
+      - name: Build hitop (for the CLI compatibility test)
+        working-directory: cli
+        env:
+          CARGO_PROFILE_DEV_DEBUG: "0"
+        run: cargo build --locked -p hitop
+      - name: swift test (Swift 6.4.2; python3 for the mock server, node as the script engine)
+        run: |
+          docker run --rm -v "$PWD:/w" -w /w/ios/HitopKit -e HITOP_BIN=/w/cli/target/debug/hitop "$SWIFT_IMAGE" bash -euo pipefail -c '
+            apt-get update -qq && apt-get install -y -qq python3 nodejs >/dev/null
+            swift --version && node --version && python3 --version
+            swift test 2>&1 | tee /tmp/swift-test.log
+            if grep -E "Test Case .* skipped" /tmp/swift-test.log; then echo "tests were skipped"; exit 1; fi
+          '
