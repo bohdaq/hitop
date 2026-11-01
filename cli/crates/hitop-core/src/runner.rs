@@ -9,7 +9,7 @@ use crate::{
     form,
     http,
     model::{Collection, Environment, RequestResult, TestResult},
-    prepare::{apply_updates, prepare, variables, Draft},
+    prepare::{prepare_in, variables, Draft, Scopes},
     scripting::{run_post_request_script_with, PostRequestCtx, SentRequest},
     secrets::{Masker, Secrets},
 };
@@ -37,6 +37,12 @@ pub struct RunOptions {
     /// Variables that override the collection's and the environment's
     /// (a data row, `--var`); secrets still override these.
     pub overrides: HashMap<String, String>,
+    /// The globals scope, below the collection's variables, with its secret
+    /// values filled in (see `global_secrets`).
+    pub globals: HashMap<String, String>,
+    /// The globals' resolved secrets: already in `globals`, here so every
+    /// step masks them too.
+    pub global_secrets: Secrets,
 }
 
 impl RunStepResult {
@@ -117,10 +123,11 @@ pub fn run_collection_jar(
 ) -> Vec<RunStepResult> {
     let stop_on_fail = options.stop_on_fail;
     let mut context: HashMap<String, Value> = HashMap::new();
-    let mut variables = variables(&collection.variables, environment);
-    variables.extend(options.overrides.iter().map(|(k, v)| (k.clone(), v.clone())));
-    secrets.apply(&mut variables);
-    let masker = secrets.masker();
+    let mut upper = variables(&collection.variables, environment);
+    upper.extend(options.overrides.iter().map(|(k, v)| (k.clone(), v.clone())));
+    secrets.apply(&mut upper);
+    let mut scopes = Scopes { globals: options.globals.clone(), upper };
+    let masker = secrets.masker_with(&options.global_secrets);
     let mut results = Vec::new();
 
     for request in &collection.requests {
@@ -134,7 +141,7 @@ pub fn run_collection_jar(
             // A request's own auth (even `none`) wins over the collection's.
             auth: request.auth.as_ref().or(collection.auth.as_ref()),
         };
-        let step = match prepare(&draft, &variables, &context) {
+        let step = match prepare_in(&draft, &scopes, &context) {
             Err(e) => RunStepResult {
                 request_name: request.name.clone(),
                 method: request.method.clone(),
@@ -147,7 +154,8 @@ pub fn run_collection_jar(
                 let mut sent_parts = (pre.headers.clone(), pre.body.clone().into_bytes());
                 context.extend(pre.context_updates.clone());
                 // Variables a script sets (pm.environment.set, ...) last for the run.
-                apply_updates(&mut variables, &pre.variables);
+                scopes.apply(&pre.variables, &pre.globals);
+                let variables = scopes.merged();
                 let result = form::outgoing(request, &pre.headers, &pre.body, &variables).and_then(|(h, b)| {
                     sent_parts = (h.clone(), b.clone());
                     http::execute_opts(&request.method, &pre.url, &h, b, http::Options { timeout: options.timeout, jar: jar.as_deref_mut() })
@@ -166,11 +174,12 @@ pub fn run_collection_jar(
                             variables: &variables,
                             context: &context,
                             request: Some(&sent),
+                            globals: Some(&scopes.globals),
                         },
                     ) {
                         Ok(post) => {
                             context.extend(post.context_updates);
-                            apply_updates(&mut variables, &post.variables);
+                            scopes.apply(&post.variables, &post.globals);
                             tests = post.tests;
                         }
                         Err(e) => tests.push(TestResult { name: "post-request script".into(), pass: false, detail: e.to_string() }),

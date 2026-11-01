@@ -188,7 +188,7 @@ fn secrets_have_no_value_in_the_file() {
         ..Default::default()
     };
     let dir = tempfile::tempdir().unwrap();
-    write_folder(dir.path(), &Folder { collection: col(vec![]), environments: vec![env] }).unwrap();
+    write_folder(dir.path(), &Folder { collection: col(vec![]), environments: vec![env], globals: None }).unwrap();
     let y = file(dir.path(), "environments/prod.yaml");
     assert_eq!(y, "variables:\n  base: https://api\n  token:\n    secret: true\n");
     let back = &read_folder(dir.path()).unwrap().environments[0];

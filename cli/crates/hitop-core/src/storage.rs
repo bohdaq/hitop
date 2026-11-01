@@ -26,6 +26,31 @@ fn environments_path() -> Result<PathBuf> {
     Ok(config_dir()?.join("environments.json"))
 }
 
+fn globals_path() -> Result<PathBuf> {
+    Ok(config_dir()?.join("globals.json"))
+}
+
+/// The globals of global storage (`globals.json`); empty when there is none.
+/// Secret values aren't in it (they are in the keychain as
+/// `global/global/<name>`, see `secrets`).
+pub fn load_globals() -> Result<Environment> {
+    let path = globals_path()?;
+    if !path.exists() {
+        return Ok(Environment::globals());
+    }
+    let mut v: serde_json::Value = serde_json::from_str(&fs::read_to_string(&path)?)?;
+    if let Some(o) = v.as_object_mut() {
+        o.insert("id".into(), crate::model::GLOBALS_ID.into());
+        o.insert("name".into(), crate::model::GLOBALS_ID.into());
+    }
+    Ok(serde_json::from_value(v)?)
+}
+
+pub fn save_globals(globals: &Environment) -> Result<()> {
+    fs::write(globals_path()?, serde_json::to_string_pretty(globals)?)?;
+    Ok(())
+}
+
 fn contexts_path() -> Result<PathBuf> {
     Ok(config_dir()?.join("contexts.json"))
 }

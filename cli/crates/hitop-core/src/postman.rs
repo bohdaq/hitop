@@ -128,25 +128,23 @@ pub fn import_environment(text: &str) -> Result<ImportedEnvironment> {
     Ok(ImportedEnvironment { environment, secret_values, kind })
 }
 
-/// Postman's globals have no scope of their own in hitop: they become
-/// defaults in every imported environment (the environment's own values
-/// win, as in Postman).
-pub fn merge_globals(env: &mut ImportedEnvironment, globals: &ImportedEnvironment) {
-    let e = &mut env.environment;
-    for (k, v) in &globals.environment.variables {
-        if !e.variables.contains_key(k) && !e.secrets.contains(k) {
-            e.variables.insert(k.clone(), v.clone());
+/// Puts imported Postman globals into hitop's globals scope: the imported
+/// values win over what `globals` had (a name changes between plain and
+/// secret as the import says). Returns the imported secret values, for the
+/// keychain.
+pub fn merge_into_globals(globals: &mut Environment, imported: &ImportedEnvironment) -> Vec<(String, String)> {
+    for (k, v) in &imported.environment.variables {
+        globals.secrets.retain(|s| s != k);
+        globals.variables.insert(k.clone(), v.clone());
+    }
+    for name in &imported.environment.secrets {
+        globals.variables.remove(name);
+        if !globals.secrets.contains(name) {
+            globals.secrets.push(name.clone());
         }
     }
-    for name in &globals.environment.secrets {
-        if !e.variables.contains_key(name) && !e.secrets.contains(name) {
-            e.secrets.push(name.clone());
-            if let Some(v) = globals.secret_values.iter().find(|(k, _)| k == name) {
-                env.secret_values.push(v.clone());
-            }
-        }
-    }
-    e.secrets.sort();
+    globals.secrets.sort();
+    imported.secret_values.clone()
 }
 
 /// A Postman collection (v2.0 or v2.1). Folders become request paths
@@ -597,18 +595,20 @@ mod tests {
     }
 
     #[test]
-    fn globals_are_defaults_for_environments() {
-        let globals = import_environment(
+    fn globals_go_to_the_globals_scope() {
+        let imported = import_environment(
             r#"{"name": "My Workspace Globals", "_postman_variable_scope": "globals", "values": [{"key": "base", "value": "g"}, {"key": "g", "value": "1"}, {"key": "gs", "value": "v", "type": "secret"}]}"#,
         )
         .unwrap();
-        assert_eq!(globals.kind, Kind::Globals);
-        let mut env = import_environment(r#"{"name": "Dev", "values": [{"key": "base", "value": "dev"}]}"#).unwrap();
-        merge_globals(&mut env, &globals);
-        assert_eq!(env.environment.variables["base"], "dev");
-        assert_eq!(env.environment.variables["g"], "1");
-        assert_eq!(env.environment.secrets, ["gs"]);
-        assert_eq!(env.secret_values, [("gs".to_string(), "v".to_string())]);
+        assert_eq!(imported.kind, Kind::Globals);
+        let mut globals = Environment::globals();
+        globals.variables.insert("gs".into(), "old plain".into());
+        globals.variables.insert("keep".into(), "k".into());
+        globals.secrets.push("base".into());
+        let secret_values = merge_into_globals(&mut globals, &imported);
+        assert_eq!(globals.variables, [("base".to_string(), "g".to_string()), ("g".to_string(), "1".to_string()), ("keep".to_string(), "k".to_string())].into());
+        assert_eq!(globals.secrets, ["gs"]);
+        assert_eq!(secret_values, [("gs".to_string(), "v".to_string())]);
         assert!(import_environment(r#"{"info": {}, "item": []}"#).is_err());
     }
 }

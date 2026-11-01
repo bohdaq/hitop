@@ -56,6 +56,16 @@ pub fn workspace_id(collection: &Collection, is_folder: bool) -> String {
     }
 }
 
+/// The environment name globals' secrets go by: env var
+/// `HITOP_SECRET_GLOBAL_<NAME>`, keychain account `<workspace>/global/<name>`.
+/// (An environment named `global` shares them.)
+pub const GLOBALS_ENV: &str = "global";
+
+/// The globals as [`resolve`] takes them: an environment named [`GLOBALS_ENV`].
+pub fn globals_lookup_env(globals: &Environment) -> Environment {
+    Environment { name: GLOBALS_ENV.into(), ..globals.clone() }
+}
+
 /// A new random workspace id: 32 hex digits.
 pub fn new_workspace_id() -> String {
     use std::hash::{BuildHasher, Hasher};
@@ -237,6 +247,11 @@ impl Secrets {
 
     pub fn masker(&self) -> Masker {
         Masker::new(self.values.values().map(|(v, _)| v.as_str()))
+    }
+
+    /// A masker for these and `other`'s values (environment and globals secrets).
+    pub fn masker_with(&self, other: &Secrets) -> Masker {
+        Masker::new(self.values.values().chain(other.values.values()).map(|(v, _)| v.as_str()))
     }
 }
 

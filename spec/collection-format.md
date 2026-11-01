@@ -25,6 +25,7 @@ my-api/
   environments/
     dev.yaml                 # variables; secret ones have no value in the file
     prod.yaml
+  globals.yaml               # optional: variables below everything else (section 5a)
 ```
 
 ## 1. General rules
@@ -203,6 +204,36 @@ interactive prompt (TTY only). Writers never put a secret's value in a file.
   output, history, logs or reports, and never write it to an export. HITOP
   JSON exports keep only the names, as `secrets`.
 
+## 5a. Globals: `globals.yaml`
+
+```yaml
+variables:
+  region: eu
+  sharedKey:
+    secret: true
+```
+
+An optional file at the folder's root, with the `variables` of an
+environment file (section 5) and nothing else (no `name` or `id`). Globals
+are the lowest scope. Variables resolve in this order, later ones win:
+globals, collection variables (`hitop.yaml`), the environment, a data row,
+values given for the run (`--var`), values a script sets, then secrets
+(section 5). A secret global's value sits at the globals level, so an
+environment's value of the same name still wins over it.
+
+- Secret globals resolve like environment secrets with the environment name
+  `global`: environment variable `HITOP_SECRET_GLOBAL_<NAME>`, then
+  `--secret NAME=value`, then the OS keychain (account
+  `<workspace-id>/global/<name>`), then a prompt. An environment named
+  `global` shares these names.
+- A folder's globals apply to that folder only. hitop's own storage keeps
+  one set of globals (`globals.json`, the same shape as an environment in
+  the JSON model) for every collection stored there.
+- Postman globals import into the globals. In Postman scripts,
+  `pm.globals` reads and writes this scope; a global a script sets lasts for
+  the run and shows through `pm.variables` unless another scope has the name.
+- Writers that don't handle globals leave an existing `globals.yaml` alone.
+
 ## 6. Ids and the JSON model
 
 hitop's JSON storage (`collections.json`, the web app's localStorage, HITOP
@@ -218,6 +249,7 @@ that only exist in one place are carried in JSON as:
 | `bodyType` | `body.type` of a text body, kept only when it differs from the inferred type |
 | `file` | the request's path, kept only when it differs from the default for its name |
 | `secrets` (environment) | variables written as `{secret: true}` |
+| the globals (`globals.json`, or `globals` beside `collection` and `environments`) | `globals.yaml` (section 5a) |
 | any other key | the same key in the file |
 
 Files without `id` get one derived from their path, so the same folder always

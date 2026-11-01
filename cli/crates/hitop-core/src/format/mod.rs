@@ -5,6 +5,7 @@
 //!   hitop.yaml            format, name, variables, default auth, request order
 //!   requests/*.yaml       one request per file; subfolders are folders
 //!   environments/*.yaml   variables; secret ones have no value in the file
+//!   globals.yaml          optional: the globals scope, below the collection's variables
 //! ```
 //!
 //! Reading a folder gives the same [`Collection`] and [`Environment`]
@@ -26,17 +27,22 @@ pub use convert::infer_body_type;
 use convert::{check_extra, COLLECTION_KEYS};
 use doc::{CollectionDoc, EnvironmentDoc, RequestDoc, FORMAT_VERSION};
 
-use crate::model::{Collection, Environment};
+use crate::model::{Collection, Environment, GLOBALS_ID};
 
 pub const MANIFEST: &str = "hitop.yaml";
 const REQUESTS: &str = "requests";
 const ENVIRONMENTS: &str = "environments";
+/// The globals scope at the folder's root (id and name [`GLOBALS_ID`]).
+pub const GLOBALS: &str = "globals.yaml";
 
 /// A collection folder in memory.
 #[derive(Debug, Clone, Default, PartialEq)]
 pub struct Folder {
     pub collection: Collection,
     pub environments: Vec<Environment>,
+    /// `globals.yaml`. On write, `None` leaves an existing file alone (so a
+    /// writer that doesn't know globals can't drop them); `Some` writes it.
+    pub globals: Option<Environment>,
 }
 
 /// True when `dir` holds a collection folder.
@@ -147,7 +153,42 @@ pub fn read_folder(dir: &Path) -> Result<Folder> {
         let doc: EnvironmentDoc = parse(&path)?;
         environments.push(convert::doc_to_environment(doc, &stem).with_context(|| format!("{}", path.display()))?);
     }
-    Ok(Folder { collection, environments })
+    let globals = read_globals(dir)?;
+    Ok(Folder { collection, environments, globals })
+}
+
+/// `globals.yaml` as the globals scope: an environment file whose id and
+/// name are always [`GLOBALS_ID`].
+fn doc_to_globals(doc: EnvironmentDoc) -> Result<Environment> {
+    let mut g = convert::doc_to_environment(doc, GLOBALS_ID)?;
+    g.id = GLOBALS_ID.into();
+    g.name = GLOBALS_ID.into();
+    Ok(g)
+}
+
+/// The text of `globals.yaml`.
+fn globals_file(globals: &Environment) -> Result<String> {
+    let g = Environment { id: GLOBALS_ID.into(), name: GLOBALS_ID.into(), ..globals.clone() };
+    yaml(&convert::environment_to_doc(&g, GLOBALS_ID)?)
+}
+
+/// Reads a folder's `globals.yaml` (`None` when it has none).
+pub fn read_globals(dir: &Path) -> Result<Option<Environment>> {
+    for file in [GLOBALS, "globals.yml"] {
+        let path = dir.join(file);
+        if path.is_file() {
+            return Ok(Some(doc_to_globals(parse(&path)?).with_context(|| format!("{}", path.display()))?));
+        }
+    }
+    Ok(None)
+}
+
+/// Writes a folder's `globals.yaml` (an existing `globals.yml` keeps its name).
+pub fn write_globals(dir: &Path, globals: &Environment) -> Result<()> {
+    let text = globals_file(globals)?;
+    let path = if dir.join("globals.yml").is_file() && !dir.join(GLOBALS).is_file() { dir.join("globals.yml") } else { dir.join(GLOBALS) };
+    write_if_changed(&path, &text)?;
+    Ok(())
 }
 
 /// Reads one environment file (spec section 5) from anywhere, as
@@ -296,8 +337,15 @@ pub fn write_folder(dir: &Path, folder: &Folder) -> Result<()> {
     // folder untouched.
     collection_files(&folder.collection)?;
     environment_files(&folder.environments)?;
+    if let Some(g) = &folder.globals {
+        globals_file(g)?;
+    }
     write_collection(dir, &folder.collection)?;
-    write_environments(dir, &folder.environments)
+    write_environments(dir, &folder.environments)?;
+    if let Some(g) = &folder.globals {
+        write_globals(dir, g)?;
+    }
+    Ok(())
 }
 
 /// The starter folder `hitop init` writes.
@@ -326,6 +374,7 @@ pub fn starter(name: &str) -> Folder {
             variables: [("base".to_string(), "http://localhost:8080".to_string())].into(),
             ..Default::default()
         }],
+        globals: None,
     }
 }
 

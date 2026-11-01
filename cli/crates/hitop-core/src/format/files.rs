@@ -1,7 +1,8 @@
 //! Collection folders in memory, for places without a file system: the web
 //! app (through hitop-wasm), `.zip` files and directory handles. A folder
 //! is a map from the path inside it (`/`-separated, with the extension:
-//! `hitop.yaml`, `requests/orders/create.yaml`, `environments/dev.yaml`)
+//! `hitop.yaml`, `requests/orders/create.yaml`, `environments/dev.yaml`,
+//! `globals.yaml`)
 //! to the file's text. Reading and writing follow the same rules as
 //! [`read_folder`](super::read_folder) and [`write_folder`](super::write_folder),
 //! and give the same results (tests below compare both on the golden folder).
@@ -11,7 +12,7 @@ use anyhow::{bail, Context, Result};
 
 use super::convert::{self, check_extra, COLLECTION_KEYS};
 use super::doc::{CollectionDoc, EnvironmentDoc, RequestDoc, FORMAT_VERSION};
-use super::{names, Folder, ENVIRONMENTS, MANIFEST, REQUESTS};
+use super::{names, Folder, ENVIRONMENTS, GLOBALS, MANIFEST, REQUESTS};
 use crate::model::Collection;
 
 /// Path inside the folder → file text.
@@ -94,7 +95,14 @@ pub fn read_files(files: &Files, name: &str) -> Result<Folder> {
         let doc: EnvironmentDoc = parse(path, text)?;
         environments.push(convert::doc_to_environment(doc, &stem).with_context(|| path.to_string())?);
     }
-    Ok(Folder { collection, environments })
+    let mut globals = None;
+    for path in [GLOBALS, "globals.yml"] {
+        if let Some(text) = files.get(path) {
+            globals = Some(super::doc_to_globals(parse(path, text)?).with_context(|| path.to_string())?);
+            break;
+        }
+    }
+    Ok(Folder { collection, environments, globals })
 }
 
 /// Every file of a folder: `hitop.yaml`, `requests/` and `environments/`,
@@ -106,6 +114,9 @@ pub fn to_files(folder: &Folder) -> Result<Files> {
     out.insert(MANIFEST.to_string(), manifest);
     out.extend(requests.into_iter().map(|(k, v)| (format!("{REQUESTS}/{k}.yaml"), v)));
     out.extend(environments.into_iter().map(|(k, v)| (format!("{ENVIRONMENTS}/{k}.yaml"), v)));
+    if let Some(g) = &folder.globals {
+        out.insert(GLOBALS.to_string(), super::globals_file(g)?);
+    }
     Ok(out)
 }
 
@@ -140,7 +151,9 @@ pub fn plan_sync(existing: &[String], files: &Files) -> Result<SyncPlan> {
     }
     for (path, text) in files {
         if !placed.contains(path) {
-            plan.write.insert(path.clone(), text.clone());
+            // An existing globals.yml keeps its name.
+            let target = if path == GLOBALS && !existing.iter().any(|p| p == GLOBALS) && existing.iter().any(|p| p == "globals.yml") { "globals.yml".to_string() } else { path.clone() };
+            plan.write.insert(target, text.clone());
         }
     }
     Ok(plan)
@@ -195,6 +208,7 @@ mod tests {
                 ..Default::default()
             },
             environments: vec![Environment { id: "dev".into(), name: "dev".into(), variables: [("k".to_string(), "v".to_string()), ("token".to_string(), "s3cr3t".to_string())].into(), secrets: vec!["token".into()], ..Default::default() }],
+            globals: Some(Environment { variables: [("g".to_string(), "1".to_string()), ("gk".to_string(), "hidden".to_string())].into(), secrets: vec!["gk".into()], ..Environment::globals() }),
         };
         let dir = tempfile::tempdir().unwrap();
         super::super::write_folder(dir.path(), &folder).unwrap();
@@ -204,7 +218,9 @@ mod tests {
         let mut back = read_files(&files, "ignored").unwrap();
         assert_eq!(back, super::super::read_folder(dir.path()).unwrap());
         back.environments[0].variables.insert("token".into(), "s3cr3t".into());
+        back.globals.as_mut().unwrap().variables.insert("gk".into(), "hidden".into());
         assert_eq!(back, folder);
+        assert_eq!(files["globals.yaml"], "variables:\n  g: '1'\n  gk:\n    secret: true\n");
     }
 
     #[test]

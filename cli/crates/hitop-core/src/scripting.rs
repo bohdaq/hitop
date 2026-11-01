@@ -5,14 +5,17 @@ use boa_engine::{Context, Source};
 use serde_json::Value;
 
 /// Inputs the pre-request script can mutate.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Default)]
 pub struct PreRequestCtx {
     pub url: String,
     pub method: String,
     pub headers: Vec<(String, String)>,
     pub body: String,
+    /// Every scope merged (globals lowest).
     pub variables: HashMap<String, String>,
     pub context: HashMap<String, Value>,
+    /// The globals scope alone, for `pm.globals`.
+    pub globals: HashMap<String, String>,
 }
 
 /// Outputs after running a pre-request script.
@@ -25,6 +28,8 @@ pub struct PreRequestResult {
     /// Variables the script set (`pm.environment.set`, ...) for the rest of
     /// the run; `None` unsets one.
     pub variables: VariableUpdates,
+    /// Globals the script set (`pm.globals.set`, ...), as above.
+    pub globals: VariableUpdates,
 }
 
 /// Outputs after running a post-request script.
@@ -35,6 +40,8 @@ pub struct PostRequestResult {
     pub tests: Vec<crate::model::TestResult>,
     /// Variables the script set, as in [`PreRequestResult::variables`].
     pub variables: VariableUpdates,
+    /// Globals the script set.
+    pub globals: VariableUpdates,
 }
 
 /// Variables set (`Some`) or unset (`None`) by a script.
@@ -59,6 +66,9 @@ pub struct PostRequestCtx<'a> {
     pub variables: &'a HashMap<String, String>,
     pub context: &'a HashMap<String, Value>,
     pub request: Option<&'a SentRequest>,
+    /// The globals scope alone, for `pm.globals` (`None`: pm.globals shares
+    /// the merged variables).
+    pub globals: Option<&'a HashMap<String, String>>,
 }
 
 /// The Postman `pm.*` shim (`shared/pm-shim.js`; this crate keeps a copy so
@@ -83,6 +93,7 @@ fn with_shim(api: &str, script: &str) -> String {
 }
 
 const SET_VAR_JS: &str = "function (k, v) { __varUpdates[k] = v; if (v === null) delete __vars[k]; else __vars[k] = v; }";
+const SET_GLOBAL_JS: &str = "function (k, v) { __globalUpdates[k] = v; }";
 
 fn variable_updates(v: &Value) -> VariableUpdates {
     v.as_object()
@@ -127,12 +138,14 @@ pub fn run_pre_request_script(script: &str, ctx: PreRequestCtx) -> Result<PreReq
             body: ctx.body,
             context_updates: HashMap::new(),
             variables: HashMap::new(),
+            globals: HashMap::new(),
         });
     }
 
     let mut engine = Context::default();
 
     let variables_json = serde_json::to_string(&ctx.variables)?;
+    let globals_json = serde_json::to_string(&ctx.globals)?;
     let context_json = serde_json::to_string(&ctx.context)?;
 
     // Build the wrapper script that exposes the API surface
@@ -142,6 +155,8 @@ const __vars = {};
 const __ctx  = {};
 const __ctxUpdates = {{}};
 const __varUpdates = {{}};
+const __globals = {};
+const __globalUpdates = {{}};
 let __url    = {};
 let __body   = {};
 let __headers = {};
@@ -164,6 +179,7 @@ function __removeHeader(name) {{
 "#,
         variables_json,
         context_json,
+        globals_json,
         serde_json::to_string(&ctx.url)?,
         serde_json::to_string(&ctx.body)?,
         // The script starts from the request's headers, as in the web app.
@@ -172,12 +188,12 @@ function __removeHeader(name) {{
     );
 
     let postamble = r#"
-JSON.stringify({ url: __url, body: __body, headers: __headers, ctx: __ctxUpdates, vars: __varUpdates })
+JSON.stringify({ url: __url, body: __body, headers: __headers, ctx: __ctxUpdates, vars: __varUpdates, globals: __globalUpdates })
 "#;
 
     let body = if uses_postman_api(script) {
         let api = format!(
-            "{{ vars: __vars, setVar: {SET_VAR_JS}, assert: {{ ok: function () {{}} }}, \
+            "{{ vars: __vars, setVar: {SET_VAR_JS}, globals: __globals, setGlobal: {SET_GLOBAL_JS}, assert: {{ ok: function () {{}} }}, \
              request: {{ get url() {{ return __url; }}, method: __method, get headers() {{ return __headers; }}, get body() {{ return __body; }} }}, \
              setUrl: setUrl, setHeader: setHeader, removeHeader: __removeHeader, setBody: setBody, response: null }}"
         );
@@ -228,6 +244,7 @@ JSON.stringify({ url: __url, body: __body, headers: __headers, ctx: __ctxUpdates
         body: new_body,
         context_updates: ctx_updates,
         variables: variable_updates(&parsed["vars"]),
+        globals: variable_updates(&parsed["globals"]),
     })
 }
 
@@ -242,19 +259,20 @@ pub fn run_post_request_script(
 ) -> Result<PostRequestResult> {
     run_post_request_script_with(
         script,
-        &PostRequestCtx { response_body, response_headers, status_code, duration_ms, variables, context, request: None },
+        &PostRequestCtx { response_body, response_headers, status_code, duration_ms, variables, context, request: None, globals: None },
     )
 }
 
 /// [`run_post_request_script`] that also gives the script the request as
 /// sent (`pm.request`).
 pub fn run_post_request_script_with(script: &str, ctx: &PostRequestCtx) -> Result<PostRequestResult> {
-    let PostRequestCtx { response_body, response_headers, status_code, duration_ms, variables, context, request } = *ctx;
+    let PostRequestCtx { response_body, response_headers, status_code, duration_ms, variables, context, request, globals } = *ctx;
     if script.trim().is_empty() {
         return Ok(PostRequestResult {
             context_updates: HashMap::new(),
             tests: vec![],
             variables: HashMap::new(),
+            globals: HashMap::new(),
         });
     }
 
@@ -277,6 +295,8 @@ const __vars = {};
 const __ctx  = {};
 const __ctxUpdates = {{}};
 const __varUpdates = {{}};
+const __globals = {};
+const __globalUpdates = {{}};
 
 function getVariable(k) {{ return __vars[k]; }}
 function getContext(k)  {{ return __ctxUpdates[k] !== undefined ? __ctxUpdates[k] : __ctx[k]; }}
@@ -309,14 +329,15 @@ const assert = {{
         status_code,
         variables_json,
         context_json,
+        globals.map(serde_json::to_string).transpose()?.unwrap_or_else(|| "null".into()),
         duration = duration_ms,
     );
 
-    let postamble = "JSON.stringify({ ctx: __ctxUpdates, tests: __tests, vars: __varUpdates })";
+    let postamble = "JSON.stringify({ ctx: __ctxUpdates, tests: __tests, vars: __varUpdates, globals: __globalUpdates })";
     let body = if uses_postman_api(script) {
         let sent = request.cloned().unwrap_or_default();
         let api = format!(
-            "{{ vars: __vars, setVar: {SET_VAR_JS}, assert: assert, \
+            "{{ vars: __vars, setVar: {SET_VAR_JS}, globals: __globals || undefined, setGlobal: {SET_GLOBAL_JS}, assert: assert, \
              request: {{ url: {}, method: {}, headers: {}, body: {} }}, \
              response: {{ code: statusCode, text: responseText, headers: responseHeaders, time: {duration_ms} }} }}",
             serde_json::to_string(&sent.url)?,
@@ -347,6 +368,7 @@ const assert = {{
         context_updates: ctx_updates,
         tests,
         variables: variable_updates(&out["vars"]),
+        globals: variable_updates(&out["globals"]),
     })
 }
 
@@ -362,6 +384,7 @@ mod tests {
             body: String::new(),
             variables: HashMap::new(),
             context: HashMap::new(),
+            globals: HashMap::new(),
         }
     }
 
@@ -605,9 +628,35 @@ mod tests {
         let sent = SentRequest { url: "http://x/get".into(), method: "GET".into(), headers: vec![("Accept".into(), "*/*".into())], body: String::new() };
         run_post_request_script_with(
             script,
-            &PostRequestCtx { response_body: body, response_headers: &headers, status_code: status, duration_ms: 12, variables: &vars, context: &HashMap::new(), request: Some(&sent) },
+            &PostRequestCtx { response_body: body, response_headers: &headers, status_code: status, duration_ms: 12, variables: &vars, context: &HashMap::new(), request: Some(&sent), globals: None },
         )
         .unwrap()
+    }
+
+    #[test]
+    fn globals_are_their_own_scope() {
+        let ctx = PreRequestCtx {
+            url: "http://x".into(),
+            method: "GET".into(),
+            variables: [("k".to_string(), "env".to_string()), ("g".to_string(), "G".to_string())].into(),
+            globals: [("k".to_string(), "global".to_string()), ("g".to_string(), "G".to_string())].into(),
+            ..Default::default()
+        };
+        let script = "setHeader('a', pm.globals.get('k') + '/' + pm.environment.get('k') + '/' + pm.variables.get('g')); \
+                      pm.globals.set('k', 'g2'); pm.globals.set('n', 'new'); postman.clearGlobalVariable('g'); \
+                      setHeader('b', pm.variables.get('k') + '/' + pm.variables.get('n') + '/' + pm.variables.get('g') + '/' + pm.globals.get('k') + '/' + globals.k);";
+        let r = run_pre_request_script(script, ctx).unwrap();
+        let h: HashMap<_, _> = r.headers.into_iter().collect();
+        assert_eq!(h["a"], "global/env/G");
+        // The environment still hides k; n and the unset g come from the
+        // globals; the legacy `globals` object is the scope as the script began.
+        assert_eq!(h["b"], "env/new/undefined/g2/global");
+        assert!(r.variables.is_empty());
+        assert_eq!(r.globals, [("k".to_string(), Some("g2".to_string())), ("n".to_string(), Some("new".to_string())), ("g".to_string(), None)].into());
+        // Without a globals scope (old hosts) pm.globals is the shared set.
+        let post = post("pm.globals.set('z', 1); pm.test('t', () => pm.expect(pm.variables.get('base')).to.eql(pm.globals.get('base')));", "{}", 200);
+        assert_eq!(post.variables["z"].as_deref(), Some("1"));
+        assert!(post.tests[0].pass);
     }
 
     fn summary(r: &PostRequestResult) -> Vec<(String, bool, String)> {

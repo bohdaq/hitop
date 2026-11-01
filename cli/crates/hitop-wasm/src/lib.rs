@@ -7,12 +7,15 @@ use hitop_core::model::{Collection, Environment, HistoryItem};
 use serde::{Deserialize, Serialize};
 use wasm_bindgen::prelude::*;
 
-/// `{collection, environments}`: a collection folder in memory.
+/// `{collection, environments, globals?}`: a collection folder in memory
+/// (`globals`: its globals.yaml; left out, an existing one is kept).
 #[derive(Serialize, Deserialize)]
 struct FolderJson {
     collection: Collection,
     #[serde(default)]
     environments: Vec<Environment>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    globals: Option<Environment>,
 }
 
 /// The desktop's `environments.json` (`hitop_core::storage::Environments`,
@@ -36,12 +39,12 @@ fn chain(e: anyhow::Error) -> JsError {
 pub fn read_files_json(files_json: &str, name: &str) -> anyhow::Result<String> {
     let files: files::Files = serde_json::from_str(files_json)?;
     let folder = files::read_files(&files, name)?;
-    Ok(serde_json::to_string(&FolderJson { collection: folder.collection, environments: folder.environments })?)
+    Ok(serde_json::to_string(&FolderJson { collection: folder.collection, environments: folder.environments, globals: folder.globals })?)
 }
 
 pub fn to_files_json(folder_json: &str) -> anyhow::Result<String> {
     let f: FolderJson = serde_json::from_str(folder_json)?;
-    let files = files::to_files(&Folder { collection: f.collection, environments: f.environments })?;
+    let files = files::to_files(&Folder { collection: f.collection, environments: f.environments, globals: f.globals })?;
     Ok(serde_json::to_string(&files)?)
 }
 
@@ -57,6 +60,14 @@ pub fn normalize_json(kind: &str, json: &str) -> anyhow::Result<String> {
         "history" => serde_json::to_string(&serde_json::from_str::<Vec<HistoryItem>>(json)?)?,
         "environments" => serde_json::to_string(&serde_json::from_str::<EnvironmentsJson>(json)?)?,
         "folder" => serde_json::to_string(&serde_json::from_str::<FolderJson>(json)?)?,
+        "globals" => {
+            let mut v: serde_json::Value = serde_json::from_str(json)?;
+            if let Some(o) = v.as_object_mut() {
+                o.insert("id".into(), hitop_core::model::GLOBALS_ID.into());
+                o.insert("name".into(), hitop_core::model::GLOBALS_ID.into());
+            }
+            serde_json::to_string(&serde_json::from_value::<Environment>(v)?)?
+        }
         other => anyhow::bail!("unknown kind {other}"),
     })
 }

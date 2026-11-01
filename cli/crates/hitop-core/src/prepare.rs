@@ -33,7 +33,42 @@ pub fn variables(collection: &HashMap<String, String>, environment: Option<&Envi
     vars
 }
 
+/// Variables in two layers: the globals scope, and everything above it
+/// (collection, environment, data row, `--var`, script-set values, secrets).
+/// A name in `upper` hides the global of that name.
+#[derive(Debug, Clone, Default, PartialEq)]
+pub struct Scopes {
+    pub globals: HashMap<String, String>,
+    pub upper: HashMap<String, String>,
+}
+
+impl Scopes {
+    /// `upper` alone, no globals.
+    pub fn plain(upper: HashMap<String, String>) -> Self {
+        Scopes { globals: HashMap::new(), upper }
+    }
+
+    /// Every variable, the upper layer winning.
+    pub fn merged(&self) -> HashMap<String, String> {
+        let mut out = self.globals.clone();
+        out.extend(self.upper.iter().map(|(k, v)| (k.clone(), v.clone())));
+        out
+    }
+
+    /// A script's updates: `variables` go to the upper layer, `globals` to the globals.
+    pub fn apply(&mut self, variables: &VariableUpdates, globals: &VariableUpdates) {
+        apply_updates(&mut self.upper, variables);
+        apply_updates(&mut self.globals, globals);
+    }
+}
+
+/// [`prepare_in`] without globals.
 pub fn prepare(draft: &Draft, variables: &HashMap<String, String>, context: &HashMap<String, Value>) -> Result<PreRequestResult> {
+    prepare_in(draft, &Scopes::plain(variables.clone()), context)
+}
+
+pub fn prepare_in(draft: &Draft, scopes: &Scopes, context: &HashMap<String, Value>) -> Result<PreRequestResult> {
+    let variables = &scopes.merged();
     // A `${name}` with no value yet is kept for the script: a Postman
     // pre-request script often sets the variable the same request uses.
     let missing = std::cell::RefCell::new(Vec::new());
@@ -49,9 +84,10 @@ pub fn prepare(draft: &Draft, variables: &HashMap<String, String>, context: &Has
             body: first.2.clone(),
             variables: variables.clone(),
             context: context.clone(),
+            globals: scopes.globals.clone(),
         },
     )?;
-    if pre.variables.is_empty() {
+    if pre.variables.is_empty() && pre.globals.is_empty() {
         if let Some(name) = missing.first() {
             bail!("variable '{name}' is not defined");
         }
@@ -59,8 +95,9 @@ pub fn prepare(draft: &Draft, variables: &HashMap<String, String>, context: &Has
     }
     // The script set variables: what it left as built is built again with
     // them; what it changed only gets the missing ones filled in.
-    let mut vars = variables.clone();
-    apply_updates(&mut vars, &pre.variables);
+    let mut after = scopes.clone();
+    after.apply(&pre.variables, &pre.globals);
+    let vars = after.merged();
     let strict = |s: &str| interpolate(s, &vars);
     let (url, headers, body) = build(draft, &strict)?;
     pre.url = if pre.url == first.0 { url } else { fill(&pre.url, &missing, &vars)? };

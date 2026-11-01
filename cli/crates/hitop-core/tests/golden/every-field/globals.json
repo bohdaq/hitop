@@ -1,0 +1,6 @@
+{
+  "id": "globals",
+  "name": "globals",
+  "variables": { "region": "eu", "timeout": "30" },
+  "secrets": ["sharedKey"]
+}

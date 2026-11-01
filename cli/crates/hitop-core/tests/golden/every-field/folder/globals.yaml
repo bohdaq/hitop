@@ -1,0 +1,5 @@
+variables:
+  region: eu
+  sharedKey:
+    secret: true
+  timeout: '30'

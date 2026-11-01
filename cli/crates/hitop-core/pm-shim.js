@@ -10,16 +10,21 @@
 //                               shim doesn't provide (the import report)
 //
 // `api` is what the host gives:
-//   vars          variables (collection, environment, ...) as name -> string
+//   vars          variables (globals, collection, environment, ...) merged, as name -> string
 //   setVar(k, v)  sets a variable for the rest of the run (v null: unset)
+//   globals       optional: the globals scope alone, as name -> string
+//   setGlobal(k, v)  with `globals`: sets a global for the rest of the run (v null: unset)
 //   assert        hitop's assert object; assert.ok(pass, name, detail) records a test
 //   request       { url, method, headers: [[name, value]], body } as sent or about to be sent
 //   setUrl, setHeader, removeHeader, setBody   (pre-request scripts only)
 //   response      null, or { code, text, headers: {lowercased name: value}, time }
 //
-// Postman's collection, environment, global and local scopes are one set of
-// variables in hitop, so pm.environment, pm.collectionVariables, pm.globals and
-// pm.variables all read and write the same values.
+// Postman's collection, environment and local scopes are one set of variables
+// in hitop, so pm.environment, pm.collectionVariables and pm.variables read and
+// write the same values. Globals are their own scope when the host passes
+// `globals`: pm.globals (and postman.*GlobalVariable, the legacy `globals`)
+// read and write it, and a global set in a script shows through pm.variables
+// unless another scope has that name. Without `globals` they share the one set.
 
 // Every pm.* and postman.* path the shim provides. A path used in a script is
 // supported when it is listed here or is the start of a listed path.
@@ -101,6 +106,7 @@ function __hitopPm(api) {
   };
   var get = function (k) {
     if (Object.prototype.hasOwnProperty.call(updates, k)) return updates[k] === null ? undefined : updates[k];
+    if (gvars && own(gupdates, k) && !shadowed(k)) return gupdates[k] === null ? undefined : gupdates[k];
     return Object.prototype.hasOwnProperty.call(vars, k) ? vars[k] : undefined;
   };
   var set = function (k, v) {
@@ -109,9 +115,42 @@ function __hitopPm(api) {
     updates[k] = value;
     if (api.setVar) api.setVar(k, value);
   };
+  // --- globals ---------------------------------------------------------------
+  var gvars = api.globals || null;
+  var gupdates = {};
+  var own = function (o, k) { return Object.prototype.hasOwnProperty.call(o, k); };
+  // A name another scope defines: its merged value isn't the global one.
+  var shadowed = function (k) { return own(vars, k) && !(gvars && own(gvars, k) && gvars[k] === vars[k]); };
+  var gget = function (k) {
+    if (own(gupdates, k)) return gupdates[k] === null ? undefined : gupdates[k];
+    return own(gvars, k) ? gvars[k] : undefined;
+  };
+  var gset = function (k, v) {
+    k = String(k);
+    var value = v === undefined || v === null ? null : str(v);
+    gupdates[k] = value;
+    if (api.setGlobal) api.setGlobal(k, value);
+  };
+  var gall = function () {
+    var out = {};
+    Object.keys(gvars).forEach(function (k) { out[k] = gvars[k]; });
+    Object.keys(gupdates).forEach(function (k) {
+      if (gupdates[k] === null) delete out[k];
+      else out[k] = gupdates[k];
+    });
+    return out;
+  };
+
   var all = function () {
     var out = {};
     Object.keys(vars).forEach(function (k) { out[k] = vars[k]; });
+    if (gvars) {
+      Object.keys(gupdates).forEach(function (k) {
+        if (shadowed(k) || own(updates, k)) return;
+        if (gupdates[k] === null) delete out[k];
+        else out[k] = gupdates[k];
+      });
+    }
     Object.keys(updates).forEach(function (k) {
       if (updates[k] === null) delete out[k];
       else out[k] = updates[k];
@@ -132,6 +171,21 @@ function __hitopPm(api) {
     toObject: all,
     replaceIn: replaceIn,
   };
+  var globalScope = gvars
+    ? {
+        get: gget,
+        set: gset,
+        has: function (k) { return gget(k) !== undefined; },
+        unset: function (k) { gset(k, null); },
+        toObject: gall,
+        replaceIn: function (text) {
+          return String(text).replace(/\{\{\s*([^{}]+?)\s*\}\}/g, function (whole, name) {
+            var v = gget(name);
+            return v === undefined ? whole : v;
+          });
+        },
+      }
+    : scope;
 
   // --- assertions -------------------------------------------------------------
   var show = function (v) {
@@ -432,7 +486,7 @@ function __hitopPm(api) {
   var pm = {
     environment: scope,
     collectionVariables: scope,
-    globals: scope,
+    globals: globalScope,
     variables: scope,
     request: pmRequest,
     response: pmResponse,
@@ -446,16 +500,16 @@ function __hitopPm(api) {
     setEnvironmentVariable: set,
     getEnvironmentVariable: get,
     clearEnvironmentVariable: function (k) { set(k, null); },
-    setGlobalVariable: set,
-    getGlobalVariable: get,
-    clearGlobalVariable: function (k) { set(k, null); },
+    setGlobalVariable: globalScope.set,
+    getGlobalVariable: globalScope.get,
+    clearGlobalVariable: function (k) { globalScope.set(k, null); },
   };
   return {
     pm: pm,
     tests: tests,
     postman: postman,
     environment: all(),
-    globals: all(),
+    globals: gvars ? gall() : all(),
     responseBody: response ? response.text : undefined,
     responseCode: response ? { code: response.code, name: REASONS[response.code] || "", detail: "" } : undefined,
     responseTime: response ? response.time : undefined,

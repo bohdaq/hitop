@@ -335,6 +335,18 @@ pub struct Environment {
     pub extra: Extra,
 }
 
+/// The id and name of the globals scope: the variables below every other
+/// scope (globals < collection < environment), kept as an [`Environment`]
+/// (`globals.json` in global storage, `globals.yaml` in a collection folder).
+pub const GLOBALS_ID: &str = "globals";
+
+impl Environment {
+    /// An empty globals scope.
+    pub fn globals() -> Environment {
+        Environment { id: GLOBALS_ID.into(), name: GLOBALS_ID.into(), ..Default::default() }
+    }
+}
+
 /// One `assert.*` call from a post-request script.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct TestResult {

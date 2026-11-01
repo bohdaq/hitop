@@ -35,7 +35,8 @@ fn golden_model() -> Folder {
     let dir = golden_dir();
     let collection: Collection = serde_json::from_str(&fs::read_to_string(dir.join("collection.json")).unwrap()).unwrap();
     let environments: Vec<Environment> = serde_json::from_str(&fs::read_to_string(dir.join("environments.json")).unwrap()).unwrap();
-    Folder { collection, environments }
+    let globals: Environment = serde_json::from_str(&fs::read_to_string(dir.join("globals.json")).unwrap()).unwrap();
+    Folder { collection, environments, globals: Some(globals) }
 }
 
 /// The one change a round trip makes on purpose: blank header rows (the
@@ -233,8 +234,9 @@ fn folder() -> impl Strategy<Value = Folder> {
         extra(),
         prop::collection::vec(environment(), 0..3),
         prop::option::of("[0-9a-f]{1,32}"),
+        prop::option::of(environment().prop_map(|e| Environment { id: "globals".into(), name: "globals".into(), ..e })),
     )
-        .prop_map(|(id, name, mut requests, variables, auth, extra, mut environments, workspace)| {
+        .prop_map(|(id, name, mut requests, variables, auth, extra, mut environments, workspace, globals)| {
             // Explicit files must be unique (writing rejects duplicates).
             let mut seen = std::collections::HashSet::new();
             for r in &mut requests {
@@ -246,7 +248,7 @@ fn folder() -> impl Strategy<Value = Folder> {
             }
             let mut ids = std::collections::HashSet::new();
             environments.retain(|e| ids.insert(e.id.clone()));
-            Folder { collection: Collection { id, name, requests, workspace, variables: variables.into_iter().collect(), auth, extra }, environments }
+            Folder { collection: Collection { id, name, requests, workspace, variables: variables.into_iter().collect(), auth, extra }, environments, globals }
         })
 }
 

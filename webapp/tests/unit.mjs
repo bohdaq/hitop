@@ -64,7 +64,11 @@ const tree = (dir) => {
 };
 // The shared fixtures: hitop-core's golden folder must come out byte for byte.
 const golden = join(here, "../../cli/crates/hitop-core/tests/golden/every-field");
-const model = { collection: JSON.parse(readFileSync(join(golden, "collection.json"), "utf8")), environments: JSON.parse(readFileSync(join(golden, "environments.json"), "utf8")) };
+const model = {
+  collection: JSON.parse(readFileSync(join(golden, "collection.json"), "utf8")),
+  environments: JSON.parse(readFileSync(join(golden, "environments.json"), "utf8")),
+  globals: JSON.parse(readFileSync(join(golden, "globals.json"), "utf8")),
+};
 const goldenFiles = tree(join(golden, "folder"));
 assert.deepEqual(format.toFiles(model), goldenFiles, "the browser writes the golden folder exactly as the CLI does");
 const readBack = format.readFiles(goldenFiles, "folder");
