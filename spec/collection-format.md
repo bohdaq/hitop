@@ -9,8 +9,9 @@ The hitop code that implements it is MIT licensed.
 
 # hitop collection format, version 1
 
-Status: draft (frozen as stable in T19, v1.0). Reference implementation:
-`cli/crates/hitop-core/src/format/`.
+Status: **stable** since hitop 1.0 (2026-11-01). Version 1 changes only by
+additions (section 7). Reference implementation:
+`cli/crates/hitop-core/src/format/`. Compatibility suite: `spec/compat/v1/`.
 
 A collection is a folder of YAML files, one file per request, so it can live
 in git, be reviewed in pull requests and be run in CI with `hitop run ./my-api`.
@@ -34,7 +35,9 @@ my-api/
   `on`, `yes` and `no` are strings, not booleans.
 - `.yaml` and `.yml` are both read. A writer keeps an existing file's
   extension and uses `.yaml` for new files. Two files for the same request
-  (`a.yaml` and `a.yml`) are an error.
+  (`a.yaml` and `a.yml`) are an error, and so are request files whose paths
+  differ only in case (`Get.yaml` and `get.yaml`): they are one file on
+  macOS and Windows.
 - Hidden files and folders (name starting with `.`) and symlinks are ignored.
 - Keys are written in the order this document lists them, so diffs stay
   small. Keys a reader doesn't know are kept and written back after the
@@ -493,3 +496,41 @@ Ids in JSON are whole numbers. Older web app data may hold string ids
 (`"col-legacy"`); readers take a string of digits as that number and any
 other string as FNV-1a 64 of `legacy-id/<string>` (low 53 bits), and write
 the number back.
+
+## 7. Stability and compatibility
+
+Version 1 is stable. What a v1 folder means today it means in every later
+hitop, and a v1 reader keeps working on folders written by later 1.x tools
+as far as the rules below allow.
+
+- **Additive only.** Within version 1 a key, value or row field is never
+  removed or renamed, never gets another meaning, type or default, and an
+  optional key never becomes required. New things are optional keys (or new
+  values of an existing key, such as another `kind`), and a file that doesn't
+  use them reads exactly as before.
+- **Unknown keys.** A reader keeps keys it doesn't know where section 1 says
+  so (`hitop.yaml`, request files, environment files, header, disabled
+  parameter, form field and WebSocket message rows) and writes them back
+  after the known ones, sorted by name. Inside `body`, `scripts`,
+  `websocket` and `grpc`, and on enabled query parameters, an unknown key is
+  an error: a reader refuses the file rather than send a request it only
+  half understood. So a key added at one of those places (as `body.variables`
+  was) makes older readers refuse the files that use it, never misread them.
+  An `auth` object with a `type` the reader doesn't know is an error too;
+  other unknown keys inside `auth` are ignored and not written back, so new
+  auth settings come as a new `type`. Additions go at the top level of a
+  file where they can.
+- **Breaking changes** need `format: 2`. A reader refuses a `format` higher
+  than it knows (`format 2 needs a newer hitop`), and a reader of a later
+  version keeps reading version 1.
+- **Compatibility suite.** `spec/compat/v1/` holds v1 folders (HTTP with
+  every body and auth type, GraphQL, WebSocket, gRPC, an OpenAPI import,
+  environments, globals, secret variables and secret manager references,
+  saved examples, unknown keys, and input no writer produces: `.yml`, flow
+  style, numbers and booleans as strings, hidden and non-YAML files) with
+  the JSON model each reads as (`expected.json`, section 6). Every reader
+  must read every case to exactly that model. Cases are only added, never
+  changed. hitop runs them in `cli/crates/hitop-core/tests/compat.rs`, which
+  also writes each case back and reads it again, and checks that the writer
+  reproduces the files of every case that isn't marked `"canonical": false`
+  in its `case.json`.

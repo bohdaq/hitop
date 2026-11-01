@@ -1,0 +1,8 @@
+name: Header key
+method: OPTIONS
+url: ${base}/things
+auth:
+  type: apikey
+  key: X-API-Key
+  value: ${apiKey}
+  in: header

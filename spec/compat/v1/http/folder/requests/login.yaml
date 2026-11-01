@@ -1,0 +1,10 @@
+name: Log in
+method: POST
+url: ${base}/login
+body:
+  type: form
+  fields:
+  - name: user
+    value: ada
+  - name: password
+    value: ${password}

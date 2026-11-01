@@ -1,0 +1,38 @@
+{
+  "collection": {
+    "id": 1204587137065477,
+    "name": "Examples",
+    "requests": [
+      {
+        "body": "",
+        "examples": [
+          {
+            "body": "{\"id\": 7, \"name\": \"Ada\"}",
+            "headers": {
+              "content-type": "application/json"
+            },
+            "name": "200 OK",
+            "status": 200
+          },
+          {
+            "body": "",
+            "durationMs": 12,
+            "name": "not found",
+            "savedAt": 1793470569736,
+            "status": 404
+          }
+        ],
+        "headers": [],
+        "id": 8924970193556500,
+        "method": "GET",
+        "name": "Get user",
+        "postRequestScript": "",
+        "preRequestScript": "",
+        "url": "https://api.example.test/users/7"
+      }
+    ],
+    "variables": {}
+  },
+  "environments": [],
+  "globals": null
+}

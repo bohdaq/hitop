@@ -1,0 +1,45 @@
+{
+  "collection": {
+    "id": 5303799541274319,
+    "name": "GraphQL",
+    "requests": [
+      {
+        "body": "{ __schema { types { name } } }",
+        "bodyType": "graphql",
+        "file": "schema",
+        "headers": [
+          {
+            "name": "Content-Type",
+            "value": "application/graphql+json"
+          }
+        ],
+        "id": 3927703533402351,
+        "method": "POST",
+        "name": "Schema only",
+        "postRequestScript": "",
+        "preRequestScript": "",
+        "url": "${gql}"
+      },
+      {
+        "body": "query User($id: ID!, $limit: Int) {\n  user(id: $id) { name posts(limit: $limit) { title } }\n}\n",
+        "bodyType": "graphql",
+        "graphql": {
+          "operationName": "User",
+          "variables": "{\"id\": \"${userId}\", \"limit\": ${limit}}\n"
+        },
+        "headers": [],
+        "id": 2447407309272407,
+        "method": "POST",
+        "name": "User",
+        "postRequestScript": "",
+        "preRequestScript": "",
+        "url": "${gql}"
+      }
+    ],
+    "variables": {
+      "gql": "https://api.example.test/graphql"
+    }
+  },
+  "environments": [],
+  "globals": null
+}

@@ -1,0 +1,62 @@
+{
+  "collection": {
+    "color": "teal",
+    "id": 1931608660575523,
+    "name": "Future keys",
+    "requests": [
+      {
+        "body": "",
+        "bodyMode": "urlencoded",
+        "disabledParams": [
+          {
+            "key": "off",
+            "note": "kept on a disabled row",
+            "value": "1"
+          }
+        ],
+        "docs": "A key from a later 1.x writer: kept and written back.\n",
+        "formFields": [
+          {
+            "description": "kept on a form row",
+            "key": "a",
+            "type": "text",
+            "value": "b"
+          }
+        ],
+        "headers": [
+          {
+            "description": "kept on a header row",
+            "name": "X-One",
+            "value": "1"
+          }
+        ],
+        "id": 4493597764620600,
+        "method": "POST",
+        "name": "Tagged",
+        "postRequestScript": "",
+        "preRequestScript": "",
+        "tags": [
+          "smoke",
+          "billing"
+        ],
+        "url": "https://api.example.test/things"
+      }
+    ],
+    "variables": {},
+    "x-owner": {
+      "oncall": true,
+      "team": "payments"
+    }
+  },
+  "environments": [
+    {
+      "color": "green",
+      "id": "dev",
+      "name": "Dev",
+      "variables": {
+        "base": "http://localhost"
+      }
+    }
+  ],
+  "globals": null
+}

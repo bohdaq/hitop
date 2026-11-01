@@ -1,0 +1,23 @@
+name: Tagged
+method: POST
+url: https://api.example.test/things
+params:
+- name: off
+  value: '1'
+  enabled: false
+  note: kept on a disabled row
+headers:
+- name: X-One
+  value: '1'
+  description: kept on a header row
+body:
+  type: form
+  fields:
+  - name: a
+    value: b
+    description: kept on a form row
+docs: |
+  A key from a later 1.x writer: kept and written back.
+tags:
+- smoke
+- billing

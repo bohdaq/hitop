@@ -1,0 +1,23 @@
+name: Live prices
+kind: websocket
+method: GET
+url: wss://stream.example.test/prices
+params:
+- name: market
+  value: eu
+headers:
+- name: X-Client
+  value: hitop
+auth:
+  type: bearer
+  token: ${token}
+websocket:
+  subprotocols:
+  - prices.v2
+  - prices.v1
+  messages:
+  - name: subscribe
+    content: '{"op": "subscribe", "symbol": "${symbol}"}'
+  - name: ping
+    content: ping
+    pinned: true

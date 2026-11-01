@@ -1,0 +1,21 @@
+name: List products
+method: GET
+url: ${base}/products
+params:
+- name: page
+  value: '1'
+- name: tag
+  value: a%20b
+- name: debug
+  value: yes
+  enabled: false
+headers:
+- name: Accept
+  value: application/json
+- name: X-Trace
+  value: on
+  enabled: false
+scripts:
+  post: |
+    assert.status(200);
+    assert.ok(getResponseValue('items').length > 0, 'has items');

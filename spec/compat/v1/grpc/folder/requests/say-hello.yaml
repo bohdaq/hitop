@@ -1,0 +1,25 @@
+name: Say hello
+kind: grpc
+method: GET
+url: ${grpcHost}:50051
+headers:
+- name: x-tenant
+  value: ${tenant}
+- name: trace-bin
+  value: AAEC
+auth:
+  type: bearer
+  token: ${token}
+grpc:
+  service: hitop.test.Greeter
+  method: SayHello
+  message: |
+    {
+      "name": "${user}",
+      "times": 2
+    }
+  protos:
+  - protos/greeter.proto
+  importPaths:
+  - protos/include
+  plaintext: true

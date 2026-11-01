@@ -1,0 +1,27 @@
+name: Get a pet
+method: GET
+url: ${baseUrl}/pets/${petId}
+headers:
+- name: X-Trace
+  value: t-1
+  enabled: false
+examples:
+- body: |-
+    {
+      "id": 7,
+      "name": "Rex"
+    }
+  name: 200 The pet
+  source: openapi
+  status: 200
+openapi:
+  operation: GET /pets/{petId}
+  operationId: getPet
+  synced:
+    auth: 1bc4ba528108e4
+    body: e94b0e218e482
+    examples: 1974ebdf1d2543
+    headers: c7996177058de
+    method: 184fae9dabc84f
+    params: 12b07b5ecb5a5
+    url: 15607de1bf2e6f

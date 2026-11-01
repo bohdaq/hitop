@@ -1,0 +1,4 @@
+name: Dev
+variables:
+  base: http://localhost
+color: green

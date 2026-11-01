@@ -1,0 +1,4 @@
+name: Production
+variables:
+  token: {secret: true}
+  base: https://api.example.test

@@ -1,0 +1,14 @@
+name: Get user
+method: GET
+url: https://api.example.test/users/7
+examples:
+- body: '{"id": 7, "name": "Ada"}'
+  headers:
+    content-type: application/json
+  name: 200 OK
+  status: 200
+- body: ''
+  durationMs: 12
+  name: not found
+  savedAt: 1793470569736
+  status: 404

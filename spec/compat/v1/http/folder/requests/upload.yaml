@@ -1,0 +1,14 @@
+name: Upload avatar
+method: POST
+url: ${base}/avatar
+body:
+  type: multipart
+  fields:
+  - name: title
+    value: Me
+  - name: file
+    value: avatar.png
+    type: file
+  - name: old
+    value: x
+    enabled: false

@@ -1,0 +1,94 @@
+{
+  "collection": {
+    "auth": {
+      "in": "header",
+      "key": "X-API-Key",
+      "type": "apikey",
+      "value": "${key}"
+    },
+    "id": 8089529384220052,
+    "name": "Pets",
+    "openapi": {
+      "synced": {
+        "auth": "1613ad0caf8210",
+        "baseUrl": "419f40dc0698"
+      },
+      "version": "1.4.0"
+    },
+    "requests": [
+      {
+        "body": "{\n  \"age\": 0,\n  \"name\": \"Rex\"\n}",
+        "file": "pets/add-a-pet",
+        "headers": [
+          {
+            "name": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "id": 7796755317797856,
+        "method": "POST",
+        "name": "Add a pet",
+        "openapi": {
+          "operation": "POST /pets",
+          "synced": {
+            "auth": "1bc4ba528108e4",
+            "body": "8953a135f3fbd",
+            "examples": "12b07b5ecb5a5",
+            "headers": "1654db054b9120",
+            "method": "158ba26b66bf9f",
+            "params": "12b07b5ecb5a5",
+            "url": "8b2883077b262"
+          }
+        },
+        "postRequestScript": "",
+        "preRequestScript": "",
+        "url": "${baseUrl}/pets"
+      },
+      {
+        "body": "",
+        "examples": [
+          {
+            "body": "{\n  \"id\": 7,\n  \"name\": \"Rex\"\n}",
+            "name": "200 The pet",
+            "source": "openapi",
+            "status": 200
+          }
+        ],
+        "file": "pets/get-a-pet",
+        "headers": [
+          {
+            "enabled": false,
+            "name": "X-Trace",
+            "value": "t-1"
+          }
+        ],
+        "id": 5895869873477563,
+        "method": "GET",
+        "name": "Get a pet",
+        "openapi": {
+          "operation": "GET /pets/{petId}",
+          "operationId": "getPet",
+          "synced": {
+            "auth": "1bc4ba528108e4",
+            "body": "e94b0e218e482",
+            "examples": "1974ebdf1d2543",
+            "headers": "c7996177058de",
+            "method": "184fae9dabc84f",
+            "params": "12b07b5ecb5a5",
+            "url": "15607de1bf2e6f"
+          }
+        },
+        "postRequestScript": "",
+        "preRequestScript": "",
+        "url": "${baseUrl}/pets/${petId}"
+      }
+    ],
+    "variables": {
+      "baseUrl": "https://pets.example.test/v1",
+      "petId": ""
+    },
+    "workspace": "98cc201ea51260e05c84927225659356"
+  },
+  "environments": [],
+  "globals": null
+}

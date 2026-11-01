@@ -1,0 +1,21 @@
+{
+  "collection": {
+    "id": 6178672625152034,
+    "name": "folder",
+    "requests": [
+      {
+        "body": "",
+        "headers": [],
+        "id": 3161093490144396,
+        "method": "GET",
+        "name": "ping",
+        "postRequestScript": "",
+        "preRequestScript": "",
+        "url": "https://api.example.test/ping"
+      }
+    ],
+    "variables": {}
+  },
+  "environments": [],
+  "globals": null
+}

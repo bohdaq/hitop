@@ -1,0 +1,4 @@
+format: 1
+name: Greeter
+variables:
+  grpcHost: 127.0.0.1

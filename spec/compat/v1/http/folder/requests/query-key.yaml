@@ -1,0 +1,8 @@
+name: Query key
+method: GET
+url: ${base}/search?q=hitop&&raw
+auth:
+  type: apikey
+  key: api_key
+  value: ${apiKey}
+  in: query

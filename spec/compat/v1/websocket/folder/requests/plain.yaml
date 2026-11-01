@@ -1,0 +1,4 @@
+name: Plain echo
+kind: websocket
+method: GET
+url: ws://127.0.0.1:9001/echo

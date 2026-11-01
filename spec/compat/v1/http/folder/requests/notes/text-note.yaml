@@ -1,0 +1,8 @@
+name: Text note
+method: PATCH
+url: ${base}/notes/2
+body:
+  type: text
+  content: |
+    line one
+    line two

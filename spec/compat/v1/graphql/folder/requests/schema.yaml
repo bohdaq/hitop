@@ -1,0 +1,9 @@
+name: Schema only
+method: POST
+url: ${gql}
+headers:
+- name: Content-Type
+  value: application/graphql+json
+body:
+  type: graphql
+  content: '{ __schema { types { name } } }'

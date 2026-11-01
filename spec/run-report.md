@@ -9,7 +9,10 @@ The hitop code that implements it is MIT licensed.
 
 # hitop run report, version 1
 
-Reference implementation: `cli/crates/hitop-core/src/report.rs`.
+Status: **stable** since hitop 1.0 (2026-11-01); version 1 changes only by
+additions (section 1). Reference implementation:
+`cli/crates/hitop-core/src/report.rs`. A v1 example every later writer must
+stay a superset of: `spec/compat/v1/run-report/report.json`.
 
 `hitop run <collection> --reporter json --out <dir>` writes `<dir>/report.json`
 (and `--reporter junit` writes `<dir>/junit.xml`, section 4, and

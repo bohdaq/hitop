@@ -1,0 +1,15 @@
+name: Create order
+method: POST
+url: ${base}/orders
+headers:
+- name: Content-Type
+  value: application/json
+body:
+  type: json
+  content: |
+    {"product": 42, "qty": ${qty}}
+scripts:
+  pre: setHeader('Idempotency-Key', String(Date.now()));
+  post: |
+    assert.status(201);
+    setContext('orderId', getResponseValue('id'));

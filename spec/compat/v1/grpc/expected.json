@@ -1,0 +1,65 @@
+{
+  "collection": {
+    "id": 2399593577657092,
+    "name": "Greeter",
+    "requests": [
+      {
+        "body": "",
+        "file": "reflection",
+        "grpc": {
+          "method": "StreamHellos",
+          "service": "hitop.test.Greeter"
+        },
+        "headers": [],
+        "id": 5150482700400057,
+        "kind": "grpc",
+        "method": "GET",
+        "name": "Stream over TLS by reflection",
+        "postRequestScript": "",
+        "preRequestScript": "",
+        "url": "https://grpc.example.test:443"
+      },
+      {
+        "auth": {
+          "token": "${token}",
+          "type": "bearer"
+        },
+        "body": "",
+        "grpc": {
+          "importPaths": [
+            "protos/include"
+          ],
+          "message": "{\n  \"name\": \"${user}\",\n  \"times\": 2\n}\n",
+          "method": "SayHello",
+          "plaintext": true,
+          "protos": [
+            "protos/greeter.proto"
+          ],
+          "service": "hitop.test.Greeter"
+        },
+        "headers": [
+          {
+            "name": "x-tenant",
+            "value": "${tenant}"
+          },
+          {
+            "name": "trace-bin",
+            "value": "AAEC"
+          }
+        ],
+        "id": 4859624884545462,
+        "kind": "grpc",
+        "method": "GET",
+        "name": "Say hello",
+        "postRequestScript": "",
+        "preRequestScript": "",
+        "url": "${grpcHost}:50051"
+      }
+    ],
+    "variables": {
+      "grpcHost": "127.0.0.1"
+    }
+  },
+  "environments": [],
+  "globals": null
+}

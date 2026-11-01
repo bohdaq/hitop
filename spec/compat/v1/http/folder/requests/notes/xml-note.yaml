@@ -1,0 +1,6 @@
+name: XML note
+method: PUT
+url: ${base}/notes/1
+body:
+  type: xml
+  content: <note><to>Ada</to></note>

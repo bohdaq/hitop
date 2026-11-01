@@ -1,0 +1,9 @@
+# Input a writer wouldn't produce, which every v1 reader must still read.
+format: 1
+name: Quirks
+variables:
+  port: 8080
+  debug: yes
+  ratio: 1.5
+  empty: ''
+  flag: true

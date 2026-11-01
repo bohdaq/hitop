@@ -1,0 +1,5 @@
+name: Health
+method: HEAD
+url: ${base}/health
+auth:
+  type: none

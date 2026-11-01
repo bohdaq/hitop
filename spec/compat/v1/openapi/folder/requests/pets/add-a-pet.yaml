@@ -1,0 +1,23 @@
+name: Add a pet
+method: POST
+url: ${baseUrl}/pets
+headers:
+- name: Content-Type
+  value: application/json
+body:
+  type: json
+  content: |-
+    {
+      "age": 0,
+      "name": "Rex"
+    }
+openapi:
+  operation: POST /pets
+  synced:
+    auth: 1bc4ba528108e4
+    body: 8953a135f3fbd
+    examples: 12b07b5ecb5a5
+    headers: 1654db054b9120
+    method: 158ba26b66bf9f
+    params: 12b07b5ecb5a5
+    url: 8b2883077b262

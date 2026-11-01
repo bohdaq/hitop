@@ -1,0 +1,49 @@
+openapi: 3.0.3
+info:
+  title: Pets
+  version: 1.4.0
+servers:
+- url: https://pets.example.test/v1
+components:
+  securitySchemes:
+    key:
+      type: apiKey
+      in: header
+      name: X-API-Key
+security:
+- key: []
+paths:
+  /pets/{petId}:
+    get:
+      tags: [pets]
+      operationId: getPet
+      summary: Get a pet
+      parameters:
+      - name: petId
+        in: path
+        required: true
+        schema: {type: integer}
+      - name: X-Trace
+        in: header
+        schema: {type: string}
+        example: t-1
+      responses:
+        '200':
+          description: The pet
+          content:
+            application/json:
+              example: {"id": 7, "name": "Rex"}
+  /pets:
+    post:
+      tags: [pets]
+      summary: Add a pet
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                name: {type: string, example: Rex}
+                age: {type: integer}
+      responses:
+        '201': {description: Created}

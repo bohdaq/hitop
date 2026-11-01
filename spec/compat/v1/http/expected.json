@@ -1,0 +1,219 @@
+{
+  "collection": {
+    "auth": {
+      "token": "${token}",
+      "type": "bearer"
+    },
+    "id": 162089393994598,
+    "name": "Shop API",
+    "requests": [
+      {
+        "body": "{\"product\": 42, \"qty\": ${qty}}\n",
+        "file": "orders/create-order",
+        "headers": [
+          {
+            "name": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "id": 101053153215215,
+        "method": "POST",
+        "name": "Create order",
+        "postRequestScript": "assert.status(201);\nsetContext('orderId', getResponseValue('id'));\n",
+        "preRequestScript": "setHeader('Idempotency-Key', String(Date.now()));",
+        "url": "${base}/orders"
+      },
+      {
+        "body": "",
+        "disabledParams": [
+          {
+            "key": "debug",
+            "value": "yes"
+          }
+        ],
+        "headers": [
+          {
+            "name": "Accept",
+            "value": "application/json"
+          },
+          {
+            "enabled": false,
+            "name": "X-Trace",
+            "value": "on"
+          }
+        ],
+        "id": 6105679768668395,
+        "method": "GET",
+        "name": "List products",
+        "postRequestScript": "assert.status(200);\nassert.ok(getResponseValue('items').length > 0, 'has items');\n",
+        "preRequestScript": "",
+        "url": "${base}/products?page=1&tag=a%20b"
+      },
+      {
+        "body": "",
+        "file": "orders/delete-order",
+        "headers": [],
+        "id": 42,
+        "method": "DELETE",
+        "name": "Delete order",
+        "postRequestScript": "",
+        "preRequestScript": "",
+        "url": "${base}/orders/${orderId}"
+      },
+      {
+        "body": "",
+        "bodyMode": "multipart",
+        "file": "upload",
+        "formFields": [
+          {
+            "key": "title",
+            "type": "text",
+            "value": "Me"
+          },
+          {
+            "key": "file",
+            "type": "file",
+            "value": "avatar.png"
+          },
+          {
+            "enabled": false,
+            "key": "old",
+            "type": "text",
+            "value": "x"
+          }
+        ],
+        "headers": [],
+        "id": 8526684533282677,
+        "method": "POST",
+        "name": "Upload avatar",
+        "postRequestScript": "",
+        "preRequestScript": "",
+        "url": "${base}/avatar"
+      },
+      {
+        "body": "",
+        "bodyMode": "urlencoded",
+        "file": "login",
+        "formFields": [
+          {
+            "key": "user",
+            "type": "text",
+            "value": "ada"
+          },
+          {
+            "key": "password",
+            "type": "text",
+            "value": "${password}"
+          }
+        ],
+        "headers": [],
+        "id": 6511913125115145,
+        "method": "POST",
+        "name": "Log in",
+        "postRequestScript": "",
+        "preRequestScript": "",
+        "url": "${base}/login"
+      },
+      {
+        "body": "<note><to>Ada</to></note>",
+        "file": "notes/xml-note",
+        "headers": [],
+        "id": 1317130204050482,
+        "method": "PUT",
+        "name": "XML note",
+        "postRequestScript": "",
+        "preRequestScript": "",
+        "url": "${base}/notes/1"
+      },
+      {
+        "body": "line one\nline two\n",
+        "file": "notes/text-note",
+        "headers": [],
+        "id": 1030267856950312,
+        "method": "PATCH",
+        "name": "Text note",
+        "postRequestScript": "",
+        "preRequestScript": "",
+        "url": "${base}/notes/2"
+      },
+      {
+        "auth": {
+          "type": "none"
+        },
+        "body": "",
+        "file": "no-auth",
+        "headers": [],
+        "id": 7138289110012144,
+        "method": "HEAD",
+        "name": "Health",
+        "postRequestScript": "",
+        "preRequestScript": "",
+        "url": "${base}/health"
+      },
+      {
+        "auth": {
+          "password": "${password}",
+          "type": "basic",
+          "username": "shop"
+        },
+        "body": "",
+        "file": "basic-auth",
+        "headers": [],
+        "id": 5760110653738455,
+        "method": "GET",
+        "name": "Basic",
+        "postRequestScript": "",
+        "preRequestScript": "",
+        "url": "${base}/me"
+      },
+      {
+        "auth": {
+          "in": "query",
+          "key": "api_key",
+          "type": "apikey",
+          "value": "${apiKey}"
+        },
+        "body": "",
+        "headers": [],
+        "id": 8071950886030942,
+        "method": "GET",
+        "name": "Query key",
+        "postRequestScript": "",
+        "preRequestScript": "",
+        "url": "${base}/search?q=hitop&&raw"
+      },
+      {
+        "auth": {
+          "in": "header",
+          "key": "X-API-Key",
+          "type": "apikey",
+          "value": "${apiKey}"
+        },
+        "body": "",
+        "headers": [],
+        "id": 4198777138160595,
+        "method": "OPTIONS",
+        "name": "Header key",
+        "postRequestScript": "",
+        "preRequestScript": "",
+        "url": "${base}/things"
+      }
+    ],
+    "variables": {
+      "base": "https://api.example.test",
+      "port": "8080"
+    },
+    "workspace": "0f1e2d3c4b5a69788796a5b4c3d2e1f0"
+  },
+  "environments": [
+    {
+      "id": "dev",
+      "name": "Development",
+      "variables": {
+        "base": "http://localhost:8080",
+        "qty": "1"
+      }
+    }
+  ],
+  "globals": null
+}

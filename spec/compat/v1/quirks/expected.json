@@ -1,0 +1,76 @@
+{
+  "collection": {
+    "id": 7561840154990469,
+    "name": "Quirks",
+    "requests": [
+      {
+        "body": "",
+        "file": "nested/deep/leaf",
+        "headers": [],
+        "id": 4926629360129951,
+        "method": "GET",
+        "name": "leaf",
+        "postRequestScript": "",
+        "preRequestScript": "",
+        "url": "http://localhost/leaf"
+      },
+      {
+        "auth": {
+          "in": "header",
+          "key": "k",
+          "type": "apikey",
+          "value": "v"
+        },
+        "body": "first\nsecond\n",
+        "file": "short",
+        "headers": [
+          {
+            "name": "X-On",
+            "value": "on"
+          },
+          {
+            "name": "X-Num",
+            "value": "3"
+          },
+          {
+            "name": "",
+            "value": ""
+          }
+        ],
+        "id": 3640404412091086,
+        "method": "post",
+        "name": "Short form",
+        "postRequestScript": "",
+        "preRequestScript": "",
+        "url": "http://localhost:${port}/a?x=1&y=two"
+      }
+    ],
+    "variables": {
+      "debug": "yes",
+      "empty": "",
+      "flag": "true",
+      "port": "8080",
+      "ratio": "1.5"
+    }
+  },
+  "environments": [
+    {
+      "id": "local",
+      "name": "local",
+      "variables": {
+        "port": "9090"
+      }
+    },
+    {
+      "id": "prod",
+      "name": "Production",
+      "secrets": [
+        "token"
+      ],
+      "variables": {
+        "base": "https://api.example.test"
+      }
+    }
+  ],
+  "globals": null
+}

@@ -1,0 +1,60 @@
+{
+  "collection": {
+    "id": 1492838937232035,
+    "name": "Streams",
+    "requests": [
+      {
+        "auth": {
+          "token": "${token}",
+          "type": "bearer"
+        },
+        "body": "",
+        "headers": [
+          {
+            "name": "X-Client",
+            "value": "hitop"
+          }
+        ],
+        "id": 3407786589868791,
+        "kind": "websocket",
+        "method": "GET",
+        "name": "Live prices",
+        "postRequestScript": "",
+        "preRequestScript": "",
+        "url": "wss://stream.example.test/prices?market=eu",
+        "websocket": {
+          "messages": [
+            {
+              "content": "{\"op\": \"subscribe\", \"symbol\": \"${symbol}\"}",
+              "name": "subscribe"
+            },
+            {
+              "content": "ping",
+              "name": "ping",
+              "pinned": true
+            }
+          ],
+          "subprotocols": [
+            "prices.v2",
+            "prices.v1"
+          ]
+        }
+      },
+      {
+        "body": "",
+        "file": "plain",
+        "headers": [],
+        "id": 451754465487712,
+        "kind": "websocket",
+        "method": "GET",
+        "name": "Plain echo",
+        "postRequestScript": "",
+        "preRequestScript": "",
+        "url": "ws://127.0.0.1:9001/echo"
+      }
+    ],
+    "variables": {}
+  },
+  "environments": [],
+  "globals": null
+}

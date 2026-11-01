@@ -1,0 +1,4 @@
+name: Delete order
+method: DELETE
+url: ${base}/orders/${orderId}
+id: 42

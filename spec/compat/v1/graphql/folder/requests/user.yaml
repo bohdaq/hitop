@@ -1,0 +1,12 @@
+name: User
+method: POST
+url: ${gql}
+body:
+  type: graphql
+  content: |
+    query User($id: ID!, $limit: Int) {
+      user(id: $id) { name posts(limit: $limit) { title } }
+    }
+  variables: |
+    {"id": "${userId}", "limit": ${limit}}
+  operationName: User

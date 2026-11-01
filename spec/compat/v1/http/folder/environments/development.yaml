@@ -1,0 +1,5 @@
+name: Development
+id: dev
+variables:
+  base: http://localhost:8080
+  qty: '1'

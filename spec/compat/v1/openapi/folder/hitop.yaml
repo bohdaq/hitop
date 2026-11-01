@@ -1,0 +1,16 @@
+format: 1
+name: Pets
+workspace: 98cc201ea51260e05c84927225659356
+variables:
+  baseUrl: https://pets.example.test/v1
+  petId: ''
+auth:
+  type: apikey
+  key: X-API-Key
+  value: ${key}
+  in: header
+openapi:
+  synced:
+    auth: 1613ad0caf8210
+    baseUrl: 419f40dc0698
+  version: 1.4.0

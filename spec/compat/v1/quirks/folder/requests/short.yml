@@ -1,0 +1,11 @@
+name: Short form
+method: post
+url: http://localhost:${port}/a?x=1&y=two
+headers:
+- {name: X-On, value: on}
+- {name: X-Num, value: 3}
+- {name: '', value: ''}
+auth: {type: apikey, key: k, value: v, in: header}
+body:
+  type: text
+  content: "first\nsecond\n"

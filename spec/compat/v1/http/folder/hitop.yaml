@@ -1,0 +1,21 @@
+format: 1
+name: Shop API
+workspace: 0f1e2d3c4b5a69788796a5b4c3d2e1f0
+variables:
+  base: https://api.example.test
+  port: '8080'
+auth:
+  type: bearer
+  token: ${token}
+order:
+- orders/create-order
+- list-products
+- orders/delete-order
+- upload
+- login
+- notes/xml-note
+- notes/text-note
+- no-auth
+- basic-auth
+- query-key
+- header-key

@@ -1,0 +1,4 @@
+format: 1
+name: GraphQL
+variables:
+  gql: https://api.example.test/graphql

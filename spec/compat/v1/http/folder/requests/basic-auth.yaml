@@ -1,0 +1,7 @@
+name: Basic
+method: GET
+url: ${base}/me
+auth:
+  type: basic
+  username: shop
+  password: ${password}

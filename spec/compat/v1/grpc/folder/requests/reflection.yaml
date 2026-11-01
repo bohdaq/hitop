@@ -1,0 +1,7 @@
+name: Stream over TLS by reflection
+kind: grpc
+method: GET
+url: https://grpc.example.test:443
+grpc:
+  service: hitop.test.Greeter
+  method: StreamHellos
