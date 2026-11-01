@@ -139,7 +139,7 @@ Secret variables: `secret: true` in an environment file, with the value resolved
 | T9 | License notices, DCO, project policies | done | 51cd299; DCO verified on PR #1 | 2026-11-01 |
 | T10 | Opt-in telemetry | done (deploy pending) | server 032ec68, 15f4b4e (deployed); client a64c6c6, 4b8b898 | 2026-11-01 |
 | T11 | Launch readiness, release 0.3.0 / desktop 0.2.0 | todo | | |
-| T12 | `hitop mcp` | todo | | |
+| T12 | `hitop mcp` | done (handoff) | 54f80e5, e1f8bdf; MCP directory listing text in section 6 | 2026-11-01 |
 | T13 | GraphQL | todo | | |
 | T14 | WebSocket | todo | | |
 | T15 | gRPC | todo | | |
@@ -758,6 +758,39 @@ export PATH="$HOME/.cargo/bin:$PATH"
 - Guide: using hitop with Claude Code and Cursor, with a `.mcp.json` example.
 - **Done when:** JSON-RPC integration tests for every tool; manual check with an MCP client
   recorded in the tranche notes. **Handoff:** listing in MCP directories (text prepared).
+- **Notes (2026-11-01, done):**
+  - SDK: `rmcp` 3.8.0 (Apache-2.0, `cargo deny ... check licenses` ok), features `server`, `macros`,
+    `transport-io` only, plus `tokio` and `schemars` 1, all in the `hitop` binary crate (hitop-core, the desktop
+    and hitop-wasm locks are unchanged). `commands/mcp.rs`; `Source::global` opens a collection by name only, so a
+    folder with the same name in the working directory never wins in global mode.
+  - Contract: tool names as specified; inputs snake_case, outputs camelCase (run results reuse the report.json
+    `RequestReport` shape; `run_collection` returns the whole report, reportVersion 1). Requests are found by name
+    or folder file path. `run_request` adds `headers`, `body` (cut at 64 KiB, `bodyTruncated`) and `environment`.
+    Default time limit 30 s per request (`timeout_ms`), `iterations` 1 to 100. No delete tool.
+  - Behaviour: runs go through `runner::run_collection_jar` (one-request collection for `run_request`), so
+    precedence is globals < collection < environment < call `variables` (the `--var` slot) < script-set < secrets and
+    the workspace cookie jar is loaded and saved per call, as in `hitop run`. `set_environment` is session-only
+    (environments.json `active` untouched); the session starts with the active environment in global storage, none
+    for a folder. Tool bodies run in `spawn_blocking` behind one mutex (blocking reqwest; no interleaved saves).
+  - Secrets: resolved like `hitop run` with no flags and no prompt (env vars, keychain); the missing-secret error
+    drops the `--secret` hint. Every value resolved in the session is masked in each JSON string (keys too) and in
+    the final text, for results and errors; `list_environments` gives secret names only; `create_request` and
+    `update_request` refuse input holding a known secret value. Checked that nothing reachable prints to stdout
+    (core has no print; secret notes go to stderr; the usage ping thread is silent).
+  - Tests: `cli/crates/hitop/tests/mcp.rs`, 5 tests driving the binary over stdio JSON-RPC against httpmock: every
+    tool, precedence, cookies across calls, global storage, bail/iterations, refusals, a missing secret (tool error,
+    server keeps answering), and no secret value in the whole stdout stream nor in the folder's files (secret echoed in
+    response body and header, in a failing assertion message and in a connection error).
+  - Manual check with the MCP inspector CLI (`npx @modelcontextprotocol/inspector@0.17.2 --cli target/debug/hitop mcp
+    fixtures/sample ...`): `tools/list` returned the nine tools; `tools/call get_request request="Get user"` returned
+    the saved request; `run_request` with `environment=prod`, `HITOP_SECRET_PROD_TOKEN`/`_APIKEY` set and
+    `variables={"base":"http://127.0.0.1:18431"}` against a local Python server that echoes `Authorization` returned
+    200, both assertions passed, body `{"name":"Ada","echo":"Bearer ••••"}`; the secret value appeared nowhere in the
+    output; without `_APIKEY` it returned `isError: true` naming `HITOP_SECRET_PROD_APIKEY`.
+  - Guide: `site/content/guides/use-hitop-with-claude-code-and-cursor.md` (site build ok, `/terms/` lists it).
+  - Open: README and the site home page don't mention `hitop mcp` yet (T11 rewrites the README; add one line
+    after it lands). `update_request` can't clear a request's auth back to the collection default (give
+    `{"type":"none"}` to send none); additive later if needed.
 
 #### T13 GraphQL
 - Body type `graphql` (query plus variables JSON) in the format, core, CLI and web app;
@@ -917,6 +950,7 @@ Agent appends here; owner ticks when done.
 | 2026-11-01 | T23 | Put the SMTP password on the VM: `/etc/hitop-sync/env` exists (root, 0600) but has no `SMTP_URL` line, so email sign-in at https://sync.hitop.rws8.tech answers 503. Add `SMTP_URL=smtp://noreply%40rws8.tech:<password>@127.0.0.1:587` (or `smtp://noreply:<password>@...` if the account logs in without the domain; percent-encode special characters in the password), then `sudo systemctl restart hitop-sync`. `SMTP_TLS_SERVER_NAME=mail.rws8.tech` is already there (STARTTLS on 127.0.0.1:587 verifies as mail.rws8.tech). Test: `curl --resolve sync.hitop.rws8.tech:443:127.0.0.1 -XPOST https://sync.hitop.rws8.tech/v1/auth/email -d '{"email":"<you>"}'` and `journalctl -u hitop-sync` shows "sign-in mail sent". || done 2026-11-01: owner added SMTP_URL; test sign-in mail to noreply@rws8.tech delivered (HTTP 202, postfix local delivery) |
 | 2026-11-01 | T10 | Nothing to do now; for the MAS build after the T5 switch: build it as today (plain `tauri build`, no `--features telemetry`), so it has no usage ping and the App Store "Data Not Collected" label stays true. CI checks that configuration on every push. | |
 | 2026-11-01 | T23 | Before any public launch of hitop sync: get an external review of the encryption design (`sync-server/THREAT_MODEL.md`) and code (`sync-server/crates/hitop-sync-crypto`, plus the T24 clients). Top item for the reviewer: the server hands out members' public keys, so key substitution is the open risk until clients pin fingerprints. | |
+| 2026-11-01 | T12 | Optional, when you want it listed: submit `hitop mcp` to MCP directories (for example the official MCP Registry, mcp.so, Smithery, PulseMCP, Glama). Text: **Name** hitop. **Short description** "Run and edit your HTTP API collections from your AI tools: list, read, run, create and update requests in a hitop collection folder, with secrets masked." **Long description** "hitop mcp is a local stdio MCP server for hitop, the open source (MIT) HTTP API client. Point it at a collection folder in your repository (`hitop mcp ./my-api`) or at hitop's global storage. Tools: list_collections, list_requests, get_request, run_request, run_collection (returns the hitop run report), create_request, update_request, list_environments, set_environment. Requests run like `hitop run`: the same variables, scripts, assertions and cookie jar. Secret values come from the OS keychain or HITOP_SECRET_* env vars and are shown as •••• in every result; there is no delete tool." **Install** `cargo install hitop` or a binary from https://github.com/bohdaq/hitop/releases. **Config** `{"mcpServers": {"hitop": {"command": "hitop", "args": ["mcp", "./my-api"]}}}`. **Docs** https://hitop.rws8.tech/terms/use-hitop-with-claude-code-and-cursor.html. **License** MIT. **Categories** developer tools, API testing. | |
 
 ## 7. Setup the owner does before the agent starts
 
