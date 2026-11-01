@@ -24,6 +24,17 @@ hitop sync login --email you@example.com
 
 In the app, open **Sync** in the sidebar, enter the server and your email, choose **Send code**, then paste the code. Each device makes its own key pair; the secret half stays on the device (the OS keychain for the CLI and the desktop app). hitop shows the device's **fingerprint**: eight groups of four hex digits. Your team uses it to check that a key is really yours.
 
+### Single sign-on
+
+If your organization runs its own sync server with single sign-on (Okta, Entra ID, Google Workspace, Keycloak or another OpenID Connect provider), sign in with your work account instead:
+
+```bash
+hitop sync login --sso
+# opens your organization's sign-in page; over SSH: hitop sync login --sso --no-browser
+```
+
+In the app choose **Sign in with SSO**, sign in on the page that opens, and paste the code it shows. The server may require SSO for your company's domain, and then sign-in mails don't work for it. SSO only replaces how you sign in: your device still makes its own key, and your team still checks its fingerprint before sharing a workspace with it.
+
 ## Share a collection
 
 From a collection folder:
@@ -107,6 +118,18 @@ The workflow pulls the workspace with the credential, then runs it with the [HIT
 
 **Running on the sync server instead** would mean giving the server a key that decrypts the workspace: while it runs your collection it sees your requests, responses and environment values, which is exactly what end-to-end encryption keeps from it. hitop's test server doesn't offer that. If you run your own server and want it to run your monitors, run the runner credential on that host yourself, as its own service with its own limits, and treat that host as one that can read the workspace.
 
+## Audit log
+
+The server keeps a log of what happened in each workspace: members added and removed, role changes, invites, key rotations, runner credentials, and the workspace being created or deleted. Owners can read it:
+
+```bash
+hitop sync audit -c ./my-api            # newest first; --json, --event member_added, --limit 0 for all
+hitop sync audit --verify -c ./my-api   # checks the log's hash chain on your computer
+hitop sync audit --mine                 # your own sign-ins and failed sign-ins
+```
+
+In the app it is under **Members** → **Show audit log**. Each entry is chained to the one before it with a hash, so an edited or deleted entry shows up in `--verify`; your computer also remembers the last entry it checked, so a log rewritten from there on is caught next time. Entries hold who did what and when, the first three parts of the IP address (the last part is dropped) and the app's user agent, never file contents or keys. The test server keeps them for a year.
+
 ## What stays where
 
 | | Where |
@@ -115,5 +138,6 @@ The workflow pulls the workspace with the credential, then runs it with the [HIT
 | secret values | each device's keychain (web app: the browser); never synced |
 | device secret key | the device (keychain); the web app keeps it in the browser |
 | who is in which workspace, file counts, sizes, times | visible to the server |
+| audit log: who did what, when, truncated IP, user agent (a year on the test server) | on the server, readable by workspace owners |
 
 The full design and what the server can and can't do are in the [threat model](https://github.com/bohdaq/hitop/blob/main/sync-server/THREAT_MODEL.md).

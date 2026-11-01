@@ -1,6 +1,7 @@
 # hitop sync: threat model and encryption design
 
-Status: design and implementation for testing (server T23, clients and teams T24). **Not
+Status: design and implementation for testing (server T23, clients and teams T24, SSO and audit
+log T25). **Not
 externally reviewed.** An external review of this design, of `cli/crates/hitop-sync-crypto` and of
 the clients (`hitop_core::sync`, `hitop sync` in the CLI, `webapp/src/sync.js`) is required before
 any public launch.
@@ -23,6 +24,7 @@ contents without clients noticing.
 | A member's device | the workspaces it belongs to, while it is a member | anything after removal (see "Removal") |
 | Sync server (and its operator, host, backups) | availability; storing what it's given; enforcing roles and versions as a courtesy | confidentiality and integrity of contents |
 | Mail server, network | delivering sign-in links | anything else (TLS everywhere) |
+| Identity provider (SSO, when configured) | saying who a person is (verified address, groups) | anything else: it never sees a key or a file |
 
 ## What the server stores
 
@@ -31,6 +33,9 @@ contents without clients noticing.
 - Device public keys (X25519), per account. Secret keys never leave the device.
 - Workspaces: random 128-bit id, current key epoch, change sequence number, total size.
 - Members and roles (owner, editor, viewer).
+- With SSO (T25): each linked identity (issuer, subject, address, first and last use).
+- The audit log (T25): security events with the account, target, time, truncated client IP and
+  user agent; see "Audit log".
 - Wrapped workspace keys: for each epoch and each member device, the epoch's key sealed with HPKE
   to that device's public key. Opaque to the server.
 - Blobs: client-chosen id, version, version vector (device id → counter), epoch, tombstone flag,
@@ -183,7 +188,98 @@ build in its unit tests.
   host to run monitors runs a runner credential there as a separate service, and that host can
   then read the workspace; this is a choice for self-hosters, documented, never a default.
 
-## What the server *can* do (accepted risks)
+## Single sign-on (T25)
+
+A self-hosted server can sign people in with an OpenID Connect provider (`src/oidc.rs`; set up in
+README.md). The server is the OIDC client: a confidential client whose secret lives only in the
+server's environment (`HITOP_SYNC_OIDC_CLIENT_SECRET` or a `_FILE`), never in a hitop client.
+
+- **Flow**: authorization code with PKCE (S256). The server makes `state` (32 random bytes,
+  single use, 10 minutes, kept as a hash in memory), `nonce` and its own PKCE verifier per
+  sign-in; the callback exchanges the code with the client secret (HTTP Basic) and the verifier.
+- **ID token checks**: an asymmetric signature only (RS/PS 256-512, ES256/384, EdDSA; `none` and
+  HMAC are refused, so the client secret can't be used to forge a token), with a key from the
+  provider's JWKS; `iss` equal to the configured issuer (and the discovery document must name the
+  same issuer); `aud` containing the client id, and `azp` equal to it when present or when there
+  are several audiences; `exp` and `iat` within 60 seconds of the server's clock; `nonce` equal to
+  the one this sign-in sent. The JWKS is cached for an hour and fetched again when a token names
+  an unknown key id (provider key rotation), at most once a minute. Provider endpoints must be
+  https (http only on localhost, for tests).
+- **Handing the session to the right client**: the browser that signed in gets a one-time code
+  (32 random bytes, 5 minutes, single use): by a redirect to the CLI's loopback listener
+  (`http://127.0.0.1:<port>/`), to a page of an allowed web origin (in the URL fragment), or on a
+  page to paste from. Finishing (`POST /v1/auth/sso/finish`) also needs the verifier whose SHA-256
+  the client sent when it started, and that verifier never leaves the client. So someone who
+  starts a sign-in and sends the provider link to a victim can't finish it: the code only goes to
+  the victim's browser (or a loopback address on the victim's machine), and the attacker's
+  verifier doesn't match a code started elsewhere. What remains is the paste page: a victim who
+  pastes a code into an attacker's hitop gives them the session, as with a mailed sign-in code.
+  The page says not to.
+- **Accounts**: an identity is (issuer, subject). The first SSO sign-in links it to the account
+  with the same address only when the provider says the address is verified
+  (`email_verified: true`); an unverified address is refused, never linked and never used to make
+  an account (otherwise anyone who can set an address at the provider would take over the hitop
+  account with that address). Providers that don't send `email_verified` (Entra ID) need
+  `HITOP_SYNC_OIDC_ASSUME_VERIFIED=1`, which the server accepts only together with a list of
+  allowed domains: the operator asserts the provider owns those addresses. After the first link,
+  sign-in follows the subject, so an address changed at the provider doesn't move the account.
+- **Policy**: allowed email domains, required groups (from a groups claim), and "SSO required"
+  (no sign-in mails and no passkey sign-in for the allowed domains, checked when a mail is
+  requested, when its link is used, and at passkey sign-in). Turning SSO on or off doesn't end
+  existing sessions (30 days); an operator who must lock someone out at once deletes their
+  sessions (README.md).
+- **What SSO doesn't change**: it protects access to the ciphertext and the membership list, like
+  the other sign-ins. A provider (or anyone who controls an account there) can sign in as that
+  person and register a device key, but can't decrypt anything: members only wrap workspace keys
+  for device keys whose fingerprints they confirmed. The provider is trusted for authentication
+  only, never for confidentiality.
+
+## Audit log (T25)
+
+`src/audit.rs`. An append-only table of security-relevant events: sign-in (with the method),
+failed sign-in (with a reason), sign-out, passkeys and device keys added, SSO links and SSO
+configuration errors; and per workspace: created and deleted, members added and removed, role
+changes, invites created, deleted and accepted, key rotations and keys wrapped for new devices,
+runner credentials created and their sessions revoked. Never blob contents, file names, keys,
+wrapped keys or tokens (`tests/audit.rs` checks every token, code and the workspace key against
+every row).
+
+- **Who and from where**: the account id and address of whoever did it, the target (an account,
+  invite or workspace id), a small JSON detail, the time, the client IP and the user agent (at most
+  200 characters). Behind a proxy the IP comes from the last `X-Forwarded-For` entry, and only when
+  the peer is a trusted proxy (`HITOP_SYNC_TRUSTED_PROXIES`, default loopback).
+- **IP privacy**: the server stores IPv4 addresses truncated to their /24 and IPv6 to their /48
+  (`203.0.113.0`, `2001:db8:1::`), or nothing (`HITOP_SYNC_AUDIT_IP=off`). Not hashed: there are
+  only 2^32 IPv4 addresses, so a hash is reversible by trying them all and would only look
+  private. A truncated address still tells a country and a network, which is what an owner looking
+  at a strange sign-in needs.
+- **Who can read it**: a workspace's owners (`GET /v1/workspaces/:ws/audit`, paginated, filters
+  for event, actor and time); every person their own account events (`GET /v1/me/audit`). Account
+  events of other people (failed sign-ins for an address, for instance) are for the operator only.
+  A deleted workspace's log stays, unreadable over the API, until the retention purge.
+- **Retention**: rows older than `HITOP_SYNC_AUDIT_RETENTION_DAYS` (default 365, 0 keeps them)
+  are deleted at start and hourly.
+- **Tamper evidence**: one hash chain per workspace, and one for account events:
+
+  ```text
+  hash = hex(SHA-256("hitop-sync/v1/audit" || 0x00 || for each field: u32 big-endian length || UTF-8 bytes))
+  fields = prev_hash, workspace_id, seq, at, event, actor_id, actor_email, target, detail, ip, user_agent
+  ```
+
+  `seq` and `at` in decimal; `prev_hash` of the first row is 64 zeros. `audit_chain` holds each
+  chain's head (the last row's seq and hash, so a deleted last row shows) and anchor (the last
+  purged row, so a purged chain still verifies from where it now starts). Verification
+  (`GET .../audit/verify`, `hitop-sync-server audit-verify`) reports the first row that is
+  missing, out of place or changed. `hitop sync audit --verify` recomputes the chain on the
+  client from the rows (`detailJson` carries the hashed detail text) and remembers the head it
+  saw; a later answer whose row at that seq differs is reported as a rewritten log.
+- **Limits**: this is tamper evidence, not tamper proofing. Someone who can write the database
+  (the operator, or an attacker on the host) can rewrite a whole chain with fresh hashes and a new
+  head; only a client that pinned an earlier head notices, and only for rows up to that head. The
+  operator can also simply not record an event, or purge. Anchoring heads outside the server
+  (signed, or published) would close the first; not in v1.
+
+
 
 - **See metadata**: account emails, who is in which workspace, number and size of blobs, blob ids
   (clients use random ids, never file names), when and how often they change, version vectors.
@@ -225,3 +321,5 @@ process's own TLS (the front proxy terminates TLS); post-quantum security (X2551
 5. The web app's device key in localStorage (a non-extractable WebCrypto key can't be used by the
    Rust HPKE code; an IndexedDB-wrapped key would only move the problem).
 6. Done in T24: key fingerprints and trust-on-first-use pinning in every client.
+7. Audit log heads anchored outside the server (signed or published), so a rewritten chain is
+   detectable without a pinned head.
