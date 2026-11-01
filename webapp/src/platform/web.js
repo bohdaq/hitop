@@ -189,6 +189,8 @@ export function createPlatform() {
     grpc: null,
     // Git is the desktop app's (libgit2 in Rust).
     git: null,
+    // ${secret:...} references (Vault, AWS, Azure, 1Password): desktop and CLI only.
+    resolveSecretRefs: null,
     // The browser handles cookies of direct requests itself (and hides them);
     // the proxy's answers carry Set-Cookie for the app's jar.
     managesCookies: usesProxy,

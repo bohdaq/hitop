@@ -222,6 +222,34 @@ export function secretValues(env) {
     .filter((v) => typeof v === "string" && v !== "");
 }
 
+// --- secret manager references -------------------------------------------------
+// `${secret:vault:kv/app#token}`, `${secret:aws:name#key}`, `${secret:azure:vault/name}`,
+// `${secret:op:vault/item/field}` (spec section 5b). Their inner text is used as a
+// variable name, as hitop-core does, so a resolved one fills in like a variable.
+
+const SECRET_REF = /\$\{(secret:[^}]+)\}/g;
+// Keys whose strings are never interpolated: scripts and saved responses.
+const NOT_FILLED = new Set(["preRequestScript", "postRequestScript", "examples", "scripts"]);
+
+// The inner texts of the references in a value (strings, arrays, objects).
+export function secretRefs(value, out = new Set()) {
+  if (typeof value === "string") for (const m of value.matchAll(SECRET_REF)) out.add(m[1]);
+  else if (Array.isArray(value)) value.forEach((v) => secretRefs(v, out));
+  else if (value && typeof value === "object") for (const [k, v] of Object.entries(value)) if (!NOT_FILLED.has(k)) secretRefs(v, out);
+  return out;
+}
+
+// Variables with resolved references added (by inner text) and filled in
+// inside other variables' values (`token: ${secret:vault:kv/app#token}`).
+export function withSecretRefs(variables, refValues) {
+  if (!refValues || !Object.keys(refValues).length) return variables;
+  const out = { ...variables, ...refValues };
+  for (const [k, v] of Object.entries(out)) {
+    if (typeof v === "string" && v.includes("${secret:")) out[k] = v.replace(SECRET_REF, (whole, r) => (r in refValues ? refValues[r] : whole));
+  }
+  return out;
+}
+
 // Replaces every secret value (and its URL-encoded form) with MASK, in a
 // string or, recursively, in an object's strings.
 export function maskSecrets(value, secrets) {

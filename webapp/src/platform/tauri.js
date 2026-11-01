@@ -353,6 +353,12 @@ export function createPlatform() {
     grpc: rustGrpc,
     // Git for collection folders (hitop-git over libgit2).
     git: gitApi(invoke),
+    // ${secret:vault|aws|azure|op:...} references, resolved by hitop-core in Rust.
+    // Rust's error is a string: one line per reference that failed.
+    resolveSecretRefs: (refs) =>
+      invoke("secret_refs_resolve", { refs }).catch((e) => {
+        throw new Error(String(e));
+      }),
     // The Rust jar handles cookies (send passes options.cookies on), so the
     // page adds no Cookie header itself.
     managesCookies: () => false,

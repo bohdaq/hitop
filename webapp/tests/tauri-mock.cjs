@@ -165,6 +165,9 @@ class TauriMock {
     this.sent = [];
     this.calls = [];
     this.keychain = new Map();
+    // secret_refs_resolve: what hitop-core's secret managers would answer, by inner text.
+    this.secretManager = new Map();
+    this.refCalls = [];
     this.writes = [];
     this.nextFolder = null;
     this.lastCall = 0;
@@ -282,6 +285,12 @@ class TauriMock {
         }
         for (const rel of plan.remove) fs.rmSync(path.join(args.path, rel));
         return null;
+      }
+      case 'secret_refs_resolve': {
+        this.refCalls.push([...args.refs]);
+        const missing = args.refs.filter((r) => !this.secretManager.has(r));
+        if (missing.length) throw missing.map((r) => `\${${r}} (${r.split(':')[1]}): not found`).join('\n');
+        return Object.fromEntries(args.refs.map((r) => [r, this.secretManager.get(r)]));
       }
       case 'secret_get':
         return this.keychain.get(args.account) ?? null;

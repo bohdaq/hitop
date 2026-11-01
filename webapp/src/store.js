@@ -28,6 +28,8 @@ import {
   parseEnvironments,
   secretNames,
   secretValues,
+  secretRefs,
+  withSecretRefs,
   urlEncodedBody,
 } from "./features.js";
 import { platform } from "./platform/index.js";
@@ -250,6 +252,9 @@ export class Store extends EventTarget {
     this.activeEnvironmentId = this.environments.some((e) => e.id === envs.activeEnvironmentId) ? envs.activeEnvironmentId : null;
     // The globals: below collection variables and environments, for every collection.
     this.globals = normalizeGlobals(storage().loadGlobals?.() ?? emptyGlobals());
+    // ${secret:vault|aws|azure|op:...} values (desktop only), by inner text:
+    // memory only, for one send or run, masked like secrets, never saved.
+    this.refValues = {};
     // Globals scripts set (pm.globals.set): app-wide (folder collections: their own), until reload.
     this.scriptGlobals = {};
     const jar = loadCookies();
@@ -724,7 +729,20 @@ export class Store extends EventTarget {
 
   secretValuesFor(collectionId) {
     const own = this.folders.get(collectionId)?.globals ?? this.globals;
-    return [...secretValues(this.activeEnvironment), ...secretValues(own)];
+    return [...secretValues(this.activeEnvironment), ...secretValues(own), ...Object.values(this.refValues).filter(Boolean)];
+  }
+
+  // Resolves the ${secret:...} references a request (not its scripts) and the
+  // variables it sees use, through the desktop (hitop-core's secret managers).
+  // The browser can't reach them: a request that uses one fails with a note.
+  async resolveRefs(source, collectionId) {
+    const wanted = [...new Set([...secretRefs(source), ...secretRefs(Object.values(this.variables(collectionId)))])].filter((r) => !(r in this.refValues));
+    if (!wanted.length) return;
+    const p = platform();
+    const list = wanted.map((r) => `\${${r}}`).join(", ");
+    if (!p.resolveSecretRefs) throw new Error(`Secret manager references resolve in the hitop desktop app and the CLI, not in the browser: ${list}`);
+    const values = await p.resolveSecretRefs(wanted);
+    this.refValues = { ...this.refValues, ...values };
   }
 
   loadedRequest(tab = this.tab) {
@@ -787,7 +805,12 @@ export class Store extends EventTarget {
     if (auth) request.auth = auth;
     // The web app sends a body only with these methods.
     if (!BODY_METHODS.includes(tab.method)) Object.assign(request, { bodyMode: "raw", bodyType: undefined });
-    return { request, variables: this.variables(tab.loadedCollectionId), secrets: showSecrets ? [] : this.secretNamesFor(tab.loadedCollectionId) };
+    // ${secret:...} references stay placeholders (as `hitop snippet` keeps them
+    // without --show-secrets): the page never puts their values in code.
+    const variables = this.variables(tab.loadedCollectionId, false);
+    const refs = [...secretRefs([request, Object.values(variables)])];
+    for (const [k, v] of Object.entries(variables)) if (typeof v === "string" && v.includes("${secret:")) variables[k] = v.replace(/\$\{(secret:[^}]+)\}/g, "{{$1}}");
+    return { request, variables, secrets: [...(showSecrets ? [] : this.secretNamesFor(tab.loadedCollectionId)), ...refs] };
   }
 
   // { code, placeholders } from hitop-core's generator.
@@ -843,13 +866,13 @@ export class Store extends EventTarget {
 
   // The variables a request sees, later ones winning: the globals, its
   // collection's, the active environment's, then what scripts set.
-  variables(collectionId) {
+  variables(collectionId, withRefs = true) {
     const out = { ...this.globalsFor(collectionId), ...collectionService.getCollectionVariables(this.collections, collectionId), ...(this.activeEnvironment?.variables ?? {}) };
     for (const [k, v] of Object.entries(this.scriptVariables[collectionId] ?? {})) {
       if (v === null) delete out[k];
       else out[k] = v;
     }
-    return out;
+    return withRefs ? withSecretRefs(out, this.refValues) : out;
   }
 
   setScriptVariables(collectionId, updates) {
@@ -1035,6 +1058,7 @@ export class Store extends EventTarget {
   // Interpolates variables, adds auth and runs the pre-request script: the
   // request as sent. Auth comes before the script, so a script can override it.
   async prepare(source, collectionId) {
+    await this.resolveRefs(source, collectionId);
     const variables = this.variables(collectionId);
     // A Postman script may set variables this request uses: the ones still
     // missing are filled in after it runs.
@@ -1134,6 +1158,7 @@ export class Store extends EventTarget {
       this.notify("Enter a URL first.");
       return;
     }
+    this.refValues = {};
     if (tab.kind === "websocket") return this.wsConnect();
     if (tab.kind === "grpc") return this.grpcCall();
     const source = {
@@ -1221,10 +1246,11 @@ export class Store extends EventTarget {
     const tab = this.tab;
     const id = tab.id;
     if (["open", "connecting"].includes(this.socket(id).status)) return;
-    const variables = this.variables(tab.loadedCollectionId);
-    const fill = (text) => (text ? interpolateVariables(text, variables) : text);
     let url, headers, protocols;
     try {
+      await this.resolveRefs({ url: tab.url, headers: tab.headers, auth: tab.auth, subprotocols: tab.subprotocols, wsMessages: tab.wsMessages }, tab.loadedCollectionId);
+      const variables = this.variables(tab.loadedCollectionId);
+      const fill = (text) => (text ? interpolateVariables(text, variables) : text);
       const authed = applyAuth(tab.auth, { url: fill(tab.url.trim()), headers: (tab.headers || []).filter((h) => h.name && h.enabled !== false).map((h) => ({ name: fill(h.name), value: fill(h.value || "") })), body: "" }, fill);
       url = wsUrl(authed.url);
       headers = authed.headers;
@@ -1372,7 +1398,7 @@ export class Store extends EventTarget {
 
   // Calls the tab's method with its message, variables filled in; the
   // headers, messages and status go to the tab's log.
-  grpcCall() {
+  async grpcCall() {
     const tab = this.tab;
     const id = tab.id;
     const g = platform().grpc;
@@ -1381,6 +1407,7 @@ export class Store extends EventTarget {
     if (!tab.grpcService || !tab.grpcMethod) return this.notify("Pick a service and method first (Load schema).");
     let args;
     try {
+      await this.resolveRefs({ url: tab.url, headers: tab.headers, auth: tab.auth, grpcMessage: tab.grpcMessage }, tab.loadedCollectionId);
       const fill = (text) => (text ? interpolateVariables(text, this.variables(tab.loadedCollectionId)) : text);
       args = { ...this.grpcServer(tab), service: tab.grpcService, method: tab.grpcMethod, message: fill(tab.grpcMessage || "") };
     } catch (e) {
@@ -1463,10 +1490,9 @@ export class Store extends EventTarget {
     this.emit();
     const results = [];
     // Secret values of the environment and of the globals this collection sees.
-    const own = this.folders.get(id)?.globals ?? this.globals;
-    const secrets = [...secretValues(this.activeEnvironment), ...secretValues(own)];
+    this.refValues = {};
     const push = (r) => {
-      r = maskSecrets(r, secrets);
+      r = maskSecrets(r, this.secretValuesFor(id));
       results.push(r);
       this.run = { ...this.run, results: [...results] };
       this.emit();
@@ -1490,7 +1516,7 @@ export class Store extends EventTarget {
         }
         // The run item keeps the request as sent: mask secret values in it.
         const response = snapshotResponse({ status: res.status, headers, body: text, durationMs: duration });
-        const item = maskSecrets({ ...historyService.createCollectionRunHistoryItem(request, prepared, res, collection.name, i), auth: request.auth, response }, secrets);
+        const item = maskSecrets({ ...historyService.createCollectionRunHistoryItem(request, prepared, res, collection.name, i), auth: request.auth, response }, this.secretValuesFor(id));
         this.history = historyService.addToHistory(this.history, item);
         const failed = tests.filter((t) => !t.pass);
         const success = res.ok && failed.length === 0;

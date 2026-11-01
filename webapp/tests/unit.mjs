@@ -1,6 +1,6 @@
 // Unit checks for features.js (no browser): node tests/unit.mjs
 import assert from "node:assert/strict";
-import { cookieHeader, exportableEnvironments, exportableGlobals, isPostmanGlobals, maskSecrets, mergeGlobals, normalizeGlobals, parseGlobals, mergeCookies, multipartBody, parseEnvironments, parseQuery, secretNames, secretValues, urlEncodedBody, withQuery } from "../src/features.js";
+import { cookieHeader, exportableEnvironments, exportableGlobals, isPostmanGlobals, maskSecrets, mergeGlobals, normalizeGlobals, parseGlobals, mergeCookies, multipartBody, parseEnvironments, parseQuery, secretNames, secretRefs, secretValues, urlEncodedBody, withQuery, withSecretRefs } from "../src/features.js";
 
 const now = Date.parse("2026-10-31T12:00:00Z");
 let jar = mergeCookies([], ["sid=abc; Path=/; HttpOnly", "pref=dark; Domain=example.com; Path=/; Max-Age=3600", "evil=1; Domain=other.com", "old=x; Expires=Thu, 01 Jan 2026 00:00:00 GMT"], "https://api.example.com/v1/login", now);
@@ -175,6 +175,17 @@ assert.throws(() => schemaFromResponse('{"errors": [{"message": "introspection i
   assert.ok(out.code.includes('"Bearer {{token}}"') && !out.code.includes("s3cr3t") && out.code.includes("https://api.test/u"), out.code);
   assert.deepEqual(out.placeholders, ["token"]);
   assert.deepEqual(format.snippetLanguages().map((l) => l.id), ["curl", "fetch", "python", "go", "java", "rust"]);
+}
+
+// ${secret:...} references: found outside scripts, filled in variables and their values.
+{
+  const request = { url: "${base}/x?t=${secret:vault:kv/app#token}", headers: [{ name: "A", value: "${secret:op:v/i/f}" }], preRequestScript: "// ${secret:aws:no}", examples: [{ body: "${secret:aws:no}" }] };
+  assert.deepEqual([...secretRefs(request)], ["secret:vault:kv/app#token", "secret:op:v/i/f"]);
+  assert.deepEqual([...secretRefs(["${secret:azure:v/n} ${secret:unterminated"])], ["secret:azure:v/n"]);
+  const vars = withSecretRefs({ base: "b", key: "k-${secret:azure:v/n}", other: "${secret:aws:missing}" }, { "secret:azure:v/n": "AZ" });
+  assert.deepEqual(vars, { base: "b", key: "k-AZ", other: "${secret:aws:missing}", "secret:azure:v/n": "AZ" });
+  const same = { a: "1" };
+  assert.equal(withSecretRefs(same, {}), same);
 }
 
 console.log("unit checks passed");
