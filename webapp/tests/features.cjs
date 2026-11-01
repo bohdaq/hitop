@@ -62,8 +62,8 @@ const settle = (p) => p.waitForTimeout(400);
   check('environment created and active', envs.list[0]?.name === 'Staging' && envs.list[0].variables.token === 'stg-123' && envs.active === envs.list[0].id, JSON.stringify(envs));
 
   // Back to the request (the tab strip shows with the request view)
-  await p.locator('aside').getByRole('button', { name: /New Request/ }).first().click();
-  await p.getByRole('tab', { name: /Post-request/ }).click();
+  await p.locator('aside').getByRole('button', { name: /New request/ }).first().click();
+  await p.getByRole('tab', { name: /Script after/ }).click();
   await p.locator('.cm-content').click();
   await p.keyboard.type("assert.status(200); assert.bodyContains('userId'); assert.header('content-type', 'json'); assert.responseTime(10000); assert.equal(response.length, 99, 'two posts');", { delay: 2 });
   await settle(p);
@@ -132,7 +132,7 @@ const settle = (p) => p.waitForTimeout(400);
   await p.getByRole('button', { name: /Run collection/ }).click();
   await p.locator('.run h2', { hasText: 'Last run' }).waitFor({ timeout: 30000 });
   const run = await p.locator('.run').innerText();
-  check('collection run reports the failed assertion', run.includes('4/5 tests') && run.includes('two posts'), run.replace(/\n/g, ' | ').slice(0, 200));
+  check('collection run reports the failed assertion', run.includes('4 of 5 tests passed') && run.includes('two posts'), run.replace(/\n/g, ' | ').slice(0, 200));
 
   check('no page errors', errors.length === 0, errors.join(' || '));
   console.log(results.join('\n'));

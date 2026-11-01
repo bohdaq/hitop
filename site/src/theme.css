@@ -189,6 +189,25 @@ lit-material-button::part(button) {
 }
 lit-material-button:active::part(button) { transform: scale(0.98); }
 
+/* One focus ring everywhere: the controls' own ring takes the page's style,
+   and their hosts don't draw a second one around it. */
+lit-material-button::part(focus-ring),
+lit-material-icon-button::part(focus-ring),
+lit-material-checkbox::part(focus-ring),
+lit-material-switch::part(focus-ring) {
+  outline: 2px solid var(--md-sys-color-primary);
+  outline-offset: 2px;
+}
+lit-material-tab::part(focus-ring) {
+  outline: 2px solid var(--md-sys-color-primary);
+  outline-offset: -2px;
+}
+lit-material-button:focus-visible,
+lit-material-icon-button:focus-visible,
+lit-material-checkbox:focus-visible,
+lit-material-switch:focus-visible,
+lit-material-tab:focus-visible { outline: none; }
+
 lit-material-code-block::part(code-block) {
   border-radius: var(--md-sys-shape-corner-large);
   background: var(--md-sys-color-surface-container-low);

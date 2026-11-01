@@ -20,7 +20,7 @@ export const PLATFORMS = [
     price: "$4.99",
     note: "One time · macOS 12 or later",
     points: ["Native app, requests sent by macOS itself", "Reaches localhost and your private network", "Collections saved as files on your Mac"],
-    action: [MAC_APP, "Get it on the Mac App Store"],
+    action: [MAC_APP, "Get the Mac app"],
   },
   {
     icon: "device-mobile",
@@ -28,7 +28,7 @@ export const PLATFORMS = [
     price: "$2.99",
     note: "One time · iOS 17 or later",
     points: ["Check an API from your phone in seconds", "Requests sent by iOS itself, no proxy", "Collections stored on the device"],
-    action: [IOS_APP, "Get it on the App Store"],
+    action: [IOS_APP, "Get the iOS app"],
   },
   {
     icon: "terminal-window",

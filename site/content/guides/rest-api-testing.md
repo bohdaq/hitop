@@ -1,9 +1,9 @@
 ---
-title: "REST API Testing"
+title: "REST API testing"
 description: "Complete guide to REST API testing with HITOP. Learn how to test RESTful APIs, validate responses, and automate API workflows."
 ---
 
-## What is REST API Testing?
+## What is REST API testing?
 
 REST API testing is the process of validating RESTful web services to ensure they function correctly, return expected responses, and handle errors appropriately. It involves sending HTTP requests to API endpoints and verifying the responses.
 
@@ -19,22 +19,22 @@ REST (Representational State Transfer) is an architectural style for designing n
 -   **HEAD:** Retrieve headers only
 -   **OPTIONS:** Get supported methods
 
-## Why Test REST APIs?
+## Why test REST APIs?
 
 REST API testing is crucial for:
 
--   **Functionality Validation:** Ensure endpoints work as expected
--   **Data Integrity:** Verify correct data is returned
--   **Error Handling:** Test how APIs handle invalid inputs
+-   **Functionality validation:** Ensure endpoints work as expected
+-   **Data integrity:** Verify correct data is returned
+-   **Error handling:** Test how APIs handle invalid inputs
 -   **Performance:** Check response times and throughput
 -   **Security:** Validate authentication and authorization
 -   **Integration:** Ensure APIs work with other systems
 
-## REST API Testing with HITOP
+## REST API testing with HITOP
 
 HITOP provides a comprehensive environment for testing REST APIs with features designed specifically for RESTful services.
 
-### Testing GET Requests
+### Testing GET requests
 
 GET requests retrieve data from the server. With HITOP, you can:
 
@@ -45,7 +45,7 @@ Headers:
   Accept: application/json
 ```
 
-### Testing POST Requests
+### Testing POST requests
 
 POST requests create new resources. HITOP supports JSON, form data, and raw body formats:
 
@@ -61,7 +61,7 @@ Body:
 }
 ```
 
-### Testing PUT/PATCH Requests
+### Testing PUT and PATCH requests
 
 Update existing resources with PUT (full update) or PATCH (partial update):
 
@@ -75,7 +75,7 @@ Body:
 }
 ```
 
-### Testing DELETE Requests
+### Testing DELETE requests
 
 Remove resources from the server:
 
@@ -85,9 +85,9 @@ Headers:
   Authorization: Bearer your-token-here
 ```
 
-## Key Aspects of REST API Testing
+## Key aspects of REST API testing
 
-### 1\. Status Code Validation
+### 1. Status code validation
 
 Verify the API returns appropriate HTTP status codes:
 
@@ -99,26 +99,26 @@ Verify the API returns appropriate HTTP status codes:
 -   **404 Not Found:** Resource doesn't exist
 -   **500 Internal Server Error:** Server error
 
-### 2\. Response Body Validation
+### 2. Response body validation
 
 Check that the response contains expected data structure and values. HITOP's syntax highlighting makes it easy to inspect JSON responses.
 
-### 3\. Header Validation
+### 3. Header validation
 
-Verify response headers including Content-Type, Cache-Control, and custom headers.
+Verify response headers including `Content-Type`, `Cache-Control`, and custom headers.
 
-### 4\. Authentication Testing
+### 4. Authentication testing
 
 Test various authentication methods:
 
--   Bearer Token authentication
--   Basic Authentication
--   API Key authentication
+-   Bearer token authentication
+-   Basic authentication
+-   API key authentication
 -   OAuth 2.0 flows
 
-## Advanced REST API Testing
+## Advanced REST API testing
 
-### Collection Variables
+### Collection variables
 
 Use collection variables to switch the server or user in one place:
 
@@ -130,15 +130,15 @@ Variables:
   user_id: 123
 ```
 
-### Pre-Request Scripts
+### Script before
 
-Execute JavaScript before sending requests to set up authentication, generate timestamps, or modify request data.
+In the Script before tab, run JavaScript before the request is sent to set up authentication, generate timestamps, or modify request data.
 
-### Post-Request Scripts
+### Script after
 
-Validate responses, extract data for subsequent requests, or perform assertions.
+In the Script after tab, validate responses, extract data for subsequent requests, or perform assertions.
 
-### Collection Runner
+### Collection runner
 
 Run multiple API tests sequentially to test complete workflows:
 
@@ -147,17 +147,17 @@ Run multiple API tests sequentially to test complete workflows:
 3.  Update user (PATCH)
 4.  Delete user (DELETE)
 
-> ### Best Practice
+> ### Best practice
 >
 > Organize your REST API tests into collections by resource or feature. This makes it easy to run related tests together and share with team members.
 
-## Common REST API Testing Scenarios
+## Common REST API testing scenarios
 
-### CRUD Operations Testing
+### CRUD operations testing
 
 Test Create, Read, Update, Delete operations for each resource in your API.
 
-### Query Parameters
+### Query parameters
 
 Test filtering, sorting, and pagination:
 
@@ -165,7 +165,7 @@ Test filtering, sorting, and pagination:
 GET https://api.example.com/users?page=2&limit=10&sort=name
 ```
 
-### Error Handling
+### Error handling
 
 Verify your API handles errors gracefully:
 
@@ -174,11 +174,11 @@ Verify your API handles errors gracefully:
 -   Unauthorized access
 -   Resource not found
 
-### Edge Cases
+### Edge cases
 
 Test boundary conditions, empty responses, large payloads, and special characters.
 
-## REST API Testing Checklist
+## REST API testing checklist
 
 -   ✓ Test all HTTP methods (GET, POST, PUT, PATCH, DELETE)
 -   ✓ Verify status codes for success and error cases
@@ -188,16 +188,16 @@ Test boundary conditions, empty responses, large payloads, and special character
 -   ✓ Verify error messages are helpful
 -   ✓ Test query parameters and filters
 -   ✓ Validate pagination
--   ✓ Test with invalid/malformed data
+-   ✓ Test with invalid or malformed data
 -   ✓ Check response times
 
-## Why Use HITOP for REST API Testing?
+## Why use HITOP for REST API testing?
 
--   **Complete HTTP Support:** All REST methods supported
--   **JSON Formatting:** Beautiful syntax highlighting
+-   **Complete HTTP support:** All REST methods supported
+-   **JSON formatting:** Beautiful syntax highlighting
 -   **Collections:** Organize tests by resource
 -   **Variables:** Test across environments
 -   **Scripting:** Automate complex workflows
--   **Privacy:** Test internal APIs securely
--   **No Account:** Start testing immediately
+-   **Privacy:** Collections and history stay on your device
+-   **No account:** Start testing immediately
 -   **History:** Track all your requests

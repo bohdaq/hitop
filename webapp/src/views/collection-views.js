@@ -28,8 +28,8 @@ function runResults(results, running) {
               <span class="method">${r.method}</span>
               <span class="run-name">${r.requestName}</span>
               ${r.duration != null ? html`<span class="run-time">${r.duration} ms</span>` : nothing}
-              ${r.tests?.length ? html`<span class="run-tests">${r.tests.filter((x) => x.pass).length}/${r.tests.length} tests</span>` : nothing}
-              ${!r.success ? html`<p class="run-detail">${r.response}</p>` : nothing}
+              ${r.tests?.length ? html`<span class="run-tests">${r.tests.filter((x) => x.pass).length} of ${r.tests.length} tests passed</span>` : nothing}
+              ${!r.success && !r.tests?.some((x) => !x.pass) ? html`<p class="run-detail">${r.response}</p>` : nothing}
               ${r.tests?.some((x) => !x.pass) ? html`<div class="run-detail-tests">${testList(r.tests)}</div>` : nothing}
             </li>`,
         )}
@@ -59,8 +59,8 @@ export class HitopCollections extends LightElement {
         ${summary
           ? html`<lit-material-alert variant=${summary.failedCount ? "warning" : "success"}>
               <span slot="title">${summary.failedCount ? "The run stopped at a failed request" : "Every request succeeded"}</span>
-              ${count(summary.totalCollections, "collection")}, ${count(summary.totalRequests, "request")}: ${summary.successCount} succeeded,
-              ${summary.failedCount} failed${summary.assertions ? `; ${summary.assertions - summary.assertionsFailed} of ${summary.assertions} tests passed` : ""}, in ${summary.duration} ms.
+              ${count(summary.totalCollections, "collection")}, ${summary.totalRequests} of ${count(summary.plannedRequests ?? summary.totalRequests, "request")} sent:
+              ${summary.successCount} succeeded, ${summary.failedCount} failed${summary.assertions ? `; ${summary.assertions - summary.assertionsFailed} of ${summary.assertions} tests passed` : ""}, in ${summary.duration} ms.
             </lit-material-alert>`
           : nothing}
         ${s.collections.length
@@ -216,9 +216,9 @@ export class HitopEnvironments extends LightElement {
         <p class="page-lead">An environment is a set of variables such as Dev, Staging or Prod. The active one, picked in the sidebar, overrides collection variables with the same name in every request.</p>
         ${s.environments.length
           ? html`
-              <div class="env-tabs" role="list">
+              <div class="env-tabs">
                 ${s.environments.map(
-                  (e) => html`<button type="button" role="listitem" class=${`env-chip ${e.id === selectedId ? "selected" : ""}`} aria-current=${e.id === selectedId ? "true" : "false"}
+                  (e) => html`<button type="button" class=${`env-chip ${e.id === selectedId ? "selected" : ""}`} aria-current=${e.id === selectedId ? "true" : "false"}
                     @click=${() => s.show("environments", null, e.id)}>
                     ${e.name}${e.id === s.activeEnvironmentId ? html` <span class="active-tag">active</span>` : nothing}
                   </button>`,
@@ -260,12 +260,14 @@ export class HitopCookies extends LightElement {
     this.store.setCookies(this.store.cookies.map((c) => (c === cookie ? { ...c, value } : c)));
   }
 
-  remove(cookie) {
+  // Not `remove`: that would shadow Element.remove, and Lit could no longer
+  // take this view out of the page.
+  removeCookie(cookie) {
     this.store.setCookies(this.store.cookies.filter((c) => c !== cookie));
   }
 
   async clear() {
-    if (await confirm({ headline: "Delete all cookies?", message: "Requests stop sending them until servers set new ones.", confirmLabel: "Delete all", destructive: true })) {
+    if (await confirm({ headline: "Clear cookies?", message: "Requests stop sending them until servers set new ones.", confirmLabel: "Clear", destructive: true })) {
       this.store.setCookies([]);
     }
   }
@@ -276,6 +278,13 @@ export class HitopCookies extends LightElement {
     const get = (name) => form.querySelector(`[name="${name}"]`).value.trim();
     const domain = get("domain").replace(/^\./, "").toLowerCase();
     const name = get("name");
+    const mark = (field, message) => {
+      const el = form.querySelector(`[name="${field}"]`);
+      el.error = Boolean(message);
+      el.errorText = message;
+    };
+    mark("domain", domain ? "" : "Enter the domain the cookie is for");
+    mark("name", name ? "" : "Enter the cookie name");
     if (!domain || !name) return;
     const cookie = { name, value: get("value"), domain, hostOnly: false, path: "/", expires: null, secure: false };
     this.store.setCookies([...this.store.cookies.filter((c) => !(c.name === name && c.domain === domain && c.path === "/")), cookie]);
@@ -291,7 +300,7 @@ export class HitopCookies extends LightElement {
         <header class="page-header">
           <h1>Cookies</h1>
           <div class="page-actions">
-            <lit-material-button variant="outlined" ?disabled=${!s.cookies.length} @click=${() => this.clear()}>${icon("trash")} Delete all</lit-material-button>
+            <lit-material-button variant="outlined" ?disabled=${!s.cookies.length} @click=${() => this.clear()}>${icon("trash")} Clear cookies</lit-material-button>
           </div>
         </header>
         <label class="switch-row">
@@ -309,19 +318,19 @@ export class HitopCookies extends LightElement {
                       (c) => html`<li>
                         <span class="cookie-name">${c.name}</span>
                         <lit-material-text-field variant="outlined" label="Value" .value=${c.value} @change=${(e) => this.edit(c, e.target.value)}></lit-material-text-field>
-                        <span class="cookie-meta">${c.path}${c.secure ? " · secure" : ""} · ${c.expires ? `expires ${new Date(c.expires).toLocaleString()}` : "session"}</span>
-                        <lit-material-icon-button aria-label=${`Delete ${c.name}`} @click=${() => this.remove(c)}>${icon("trash")}</lit-material-icon-button>
+                        <span class="cookie-meta">Path ${c.path}${c.secure ? " · HTTPS only" : ""} · ${c.expires ? `expires ${new Date(c.expires).toLocaleString()}` : "kept until you close the browser"}</span>
+                        <lit-material-icon-button aria-label=${`Delete ${c.name}`} @click=${() => this.removeCookie(c)}>${icon("trash")}</lit-material-icon-button>
                       </li>`,
                     )}
                   </ul>
                 </section>`,
             )
           : html`<lit-material-empty-state size="compact" headline="No cookies yet">Cookies that responses set appear here, or add one below.</lit-material-empty-state>`}
-        <form class="cookie-add" @submit=${(e) => this.add(e)}>
+        <form class="cookie-add" novalidate @submit=${(e) => this.add(e)}>
           <lit-material-text-field name="domain" variant="outlined" label="Domain" placeholder="api.example.com"></lit-material-text-field>
           <lit-material-text-field name="name" variant="outlined" label="Name"></lit-material-text-field>
           <lit-material-text-field name="value" variant="outlined" label="Value"></lit-material-text-field>
-          <lit-material-button variant="tonal" type="submit">${icon("plus")} Add cookie</lit-material-button>
+          <lit-material-button variant="text" type="submit">${icon("plus")} Add cookie</lit-material-button>
         </form>
       </div>`;
   }

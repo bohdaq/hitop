@@ -2,6 +2,7 @@
 import { html } from "lit";
 import { unsafeHTML } from "lit/directives/unsafe-html.js";
 import { mark } from "../brand/mark.js";
+import { icon } from "../icons.js";
 import { footer, header } from "../shell.js";
 
 export const meta = {
@@ -20,7 +21,7 @@ export function render() {
       <h1>That request came back empty</h1>
       <p class="lead">Nothing lives at this address. The app is at /app/ and the guides are under /terms/.</p>
       <div class="install">
-        <a class="button-filled" href="/app/">Open the web app</a>
+        <a class="button-filled" href="/app/">${unsafeHTML(icon("browser"))} Open the web app</a>
         <a class="text-link" href="/">Back to the home page</a>
       </div>
     </main>

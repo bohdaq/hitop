@@ -63,7 +63,7 @@ const settle = (p) => p.waitForTimeout(400);
 
   // URL-encoded form
   await p.getByRole('combobox', { name: 'Body type' }).click();
-  await p.getByRole('option', { name: 'URL-encoded form' }).click();
+  await p.getByRole('option', { name: 'URL encoded form' }).click();
   await send();
   echo = await responseJson();
   check('URL-encoded form', echo.form?.title === 'Report' && /x-www-form-urlencoded/.test(echo.headers?.['Content-Type'] || ''), JSON.stringify(echo.form));
@@ -83,13 +83,13 @@ const settle = (p) => p.waitForTimeout(400);
   check('cookies page lists it', cookiesPage.includes('httpbin.org') && cookiesPage.includes('session'));
   await p.getByRole('switch', { name: 'Keep and send cookies' }).click();
   await settle(p);
-  await p.locator('aside').getByRole('button', { name: /New Request/ }).first().click();
+  await p.locator('aside').getByRole('button', { name: /New request/ }).first().click();
   await send();
   echo = await responseJson();
   check('turning the jar off stops sending', !echo.cookies?.session, JSON.stringify(echo.cookies));
 
   // Code editor: highlighting and syntax errors
-  await section('Pre-request script');
+  await section('Script before');
   await p.locator('.cm-content').click();
   await p.keyboard.type("const id = getContext('id');\nsetUrl(", { delay: 5 });
   await p.waitForTimeout(1200);

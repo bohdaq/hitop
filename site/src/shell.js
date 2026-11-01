@@ -14,7 +14,7 @@ export const FIREFOX = "https://addons.mozilla.org/addon/hitop/";
 export const CRATE = "https://crates.io/crates/hitop";
 
 const NAV = [
-  ["/#features", "Features", "/features"],
+  ["/#features", "Features", null],
   ["/pricing.html", "Pricing", "/pricing.html"],
   ["/terms/", "Guides", "/terms/"],
   ["/app/", "Web app", "/app/"],
@@ -22,7 +22,7 @@ const NAV = [
 
 function links(path) {
   return html`${NAV.map(
-    ([href, label, match]) => html`<a href=${href} aria-current=${path.startsWith(match) ? "page" : "false"}>${label}</a>`,
+    ([href, label, match]) => html`<a href=${href} aria-current=${match && path.startsWith(match) ? "page" : "false"}>${label}</a>`,
   )}<a href=${GITHUB}>GitHub</a>`;
 }
 

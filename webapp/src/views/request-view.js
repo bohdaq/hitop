@@ -178,7 +178,7 @@ export class HitopRequest extends LitElement {
       <p class="hint">Kept in sync with the URL; unchecked rows are kept but not sent. Values are sent as typed, so encode special characters yourself or use \${variables}.</p>`;
   }
 
-  // Body: raw text, multipart form data (with files) or a URL-encoded form.
+  // Body: raw text, multipart form data (with files) or a URL encoded form.
   renderBody() {
     const t = this.tab;
     const mode = t.bodyMode || "raw";
@@ -190,7 +190,7 @@ export class HitopRequest extends LitElement {
         <lit-material-select variant="outlined" label="Body type" .value=${mode} @change=${(e) => this.set({ bodyMode: e.target.value })}>
           <lit-material-select-option value="raw">Raw (JSON, XML, text)</lit-material-select-option>
           <lit-material-select-option value="multipart">Form data (multipart, files)</lit-material-select-option>
-          <lit-material-select-option value="urlencoded">URL-encoded form</lit-material-select-option>
+          <lit-material-select-option value="urlencoded">URL encoded form</lit-material-select-option>
         </lit-material-select>
       </div>
       ${mode === "raw"
@@ -295,8 +295,8 @@ export class HitopRequest extends LitElement {
       authType ? `Auth ●` : "Auth",
       headerCount ? `Headers (${headerCount})` : "Headers",
       "Body",
-      t.preRequestScript?.trim() ? "Pre-request script ●" : "Pre-request script",
-      t.postRequestScript?.trim() ? "Post-request script ●" : "Post-request script",
+      t.preRequestScript?.trim() ? "Script before ●" : "Script before",
+      t.postRequestScript?.trim() ? "Script after ●" : "Script after",
     ];
     return html`
       <section class="editor" aria-label="Request details">
@@ -323,11 +323,11 @@ export class HitopRequest extends LitElement {
                 </lit-material-empty-state>`
             : nothing}
           ${this.section === PRE
-            ? html`<hitop-code-editor label="Pre-request script" language="javascript" .value=${t.preRequestScript || ""} @input=${(e) => this.set({ preRequestScript: e.target.value })}></hitop-code-editor>
+            ? html`<hitop-code-editor label="Script that runs before the request is sent" language="javascript" .value=${t.preRequestScript || ""} @input=${(e) => this.set({ preRequestScript: e.target.value })}></hitop-code-editor>
                 ${scriptHelp(PRE_HELP)}`
             : nothing}
           ${this.section === POST
-            ? html`<hitop-code-editor label="Post-request script" language="javascript" .value=${t.postRequestScript || ""} @input=${(e) => this.set({ postRequestScript: e.target.value })}></hitop-code-editor>
+            ? html`<hitop-code-editor label="Script that runs after the response arrives" language="javascript" .value=${t.postRequestScript || ""} @input=${(e) => this.set({ postRequestScript: e.target.value })}></hitop-code-editor>
                 ${scriptHelp(POST_HELP)}`
             : nothing}
         </div>

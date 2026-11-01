@@ -7,7 +7,7 @@ import { footer, header } from "../shell.js";
 
 export const meta = {
   path: "/pricing.html",
-  title: "HITOP pricing: free web app and CLI, $4.99 Mac app, $2.99 iOS app",
+  title: "HITOP pricing: free web app, extensions and CLI, $4.99 Mac app, $2.99 iOS app",
   description:
     "HITOP is free in the browser, as a Chrome or Firefox extension and on the command line. The native Mac app is $4.99 and the iPhone and iPad app is $2.99, each a one time purchase.",
 };
@@ -25,7 +25,7 @@ const INCLUDED = [
 
 const FAQ = [
   ["Is there a subscription?", "No. The web app, the extensions and the CLI are free. The Mac and iOS apps are paid once, and updates are free."],
-  ["Why pay for the native apps?", "They send requests from the operating system, so they reach localhost and machines on your network as well as public APIs, and they keep working when you are offline."],
+  ["Why pay for the native apps?", "They send requests from the operating system, so they reach localhost with no CORS setup and machines on your network as well as public APIs, and they keep working when you are offline."],
   ["Do I need to buy both native apps?", "No. They are separate purchases; buy the one for the device you use. Export a collection as JSON to move it between them."],
   ["Can I get a refund?", "Refunds for App Store purchases are handled by Apple at reportaproblem.apple.com."],
 ];

@@ -34,7 +34,7 @@ const settle = (p) => p.waitForTimeout(400); // saves are batched every 250 ms
   t = await tab();
   check('body typed in full', t.method === 'POST' && t.requestBody === '{"a": 1}', JSON.stringify(t.requestBody));
 
-  await p.getByRole('tab', { name: /Pre-request/ }).click();
+  await p.getByRole('tab', { name: /Script before/ }).click();
   await p.locator('.cm-content').click();
   await p.keyboard.type("setHeader('X-A', 'b');", { delay: 15 });
   await settle(p);

@@ -47,7 +47,7 @@ export const METHODS = ["GET", "POST", "PUT", "PATCH", "DELETE", "HEAD", "OPTION
 export const BODY_METHODS = ["POST", "PUT", "PATCH"];
 
 const emptyRequest = () =>
-  collectionService.createRequest("New Request", {
+  collectionService.createRequest("New request", {
     url: "",
     method: "GET",
     headers: [{ name: "", value: "" }],
@@ -119,7 +119,7 @@ function autoTitle(tab) {
   try {
     return `${tab.method} ${new URL(tab.url).pathname || "/"}`;
   } catch {
-    return "New Request";
+    return "New request";
   }
 }
 
@@ -242,11 +242,11 @@ export class Store extends EventTarget {
     this.emit();
   }
 
-  newTab() {
-    const col = this.defaultCollection();
-    const request = emptyRequest();
-    this.collections = collectionService.addRequestToCollection(this.collections, col.id, request);
-    this.tabs = [...this.tabs, tabForRequest(request, col.id)];
+  // A new, unsaved request: it uses the collection's variables but joins the
+  // collection only when saved, so collections don't fill with blank rows.
+  newTab(collection = this.defaultCollection()) {
+    const tab = { ...tabService.createNewTab(), title: "New request", auth: emptyAuth(), ...EXTRA_FIELDS({}), loadedRequestId: null, loadedCollectionId: collection.id };
+    this.tabs = [...this.tabs, tab];
     this.currentTab = this.tabs.length - 1;
     this.view = { kind: "request", collectionId: null };
     this.emit();
@@ -303,7 +303,7 @@ export class Store extends EventTarget {
       this.tabs = tabs;
       this.currentTab = newCurrentTab;
     } else {
-      this.tabs = [tabService.createNewTab()];
+      this.tabs = [{ ...tabService.createNewTab(), title: "New request", auth: emptyAuth(), ...EXTRA_FIELDS({}) }];
       this.currentTab = 0;
     }
     this.emit();
@@ -324,14 +324,7 @@ export class Store extends EventTarget {
   }
 
   newRequestInFirstCollection() {
-    if (!this.collections.length) return this.newTab();
-    const col = this.collections[0];
-    const request = emptyRequest();
-    this.collections = collectionService.addRequestToCollection(this.collections, col.id, request);
-    this.tabs = [...this.tabs, tabForRequest(request, col.id)];
-    this.currentTab = this.tabs.length - 1;
-    this.view = { kind: "request", collectionId: null };
-    this.emit();
+    this.newTab(this.collections[0] ?? this.defaultCollection());
   }
 
   // The save dialog's starting values: the loaded request, or a new one.
@@ -340,7 +333,7 @@ export class Store extends EventTarget {
     const request = tab.loadedRequestId && this.collection(tab.loadedCollectionId)?.requests.find((r) => r.id === tab.loadedRequestId);
     return request
       ? { name: request.name, collectionId: tab.loadedCollectionId, overwrite: true }
-      : { name: "", collectionId: (this.collections.find((c) => c.name === "Default") ?? this.collections[0])?.id ?? null, overwrite: false };
+      : { name: "", collectionId: (this.collection(tab.loadedCollectionId) ?? this.collections.find((c) => c.name === "Default") ?? this.collections[0])?.id ?? null, overwrite: false };
   }
 
   saveRequest(name, collectionId) {
@@ -650,7 +643,16 @@ export class Store extends EventTarget {
     }
     const options = { method: source.method, headers: headersObject(headers) };
     if (body && BODY_METHODS.includes(source.method)) options.body = body;
-    const res = await sendRequest(prepared.url, options);
+    let res;
+    try {
+      res = await sendRequest(prepared.url, options);
+    } catch (e) {
+      // fetch says only "Failed to fetch"; for direct requests the usual cause
+      // is a server that doesn't allow CORS.
+      if (!proxied && e instanceof TypeError)
+        e.message = "Couldn't reach the server. Requests to localhost and private networks go straight from your browser, so the server must allow CORS from this site; the desktop and mobile apps don't need it.";
+      throw e;
+    }
     if (proxied && this.cookieJarEnabled && res.headers.pairs) {
       const lines = res.headers.pairs.filter(([k]) => k.toLowerCase() === "set-cookie").map(([, v]) => v);
       if (lines.length) this.cookies = mergeCookies(this.cookies, lines, res.url || prepared.url);
@@ -710,8 +712,8 @@ export class Store extends EventTarget {
       try {
         tests = this.runPostScript(tab.postRequestScript, tab.loadedCollectionId, data, headers, res.status, durationMs);
       } catch (e) {
-        tests = [...tests, { name: "post-request script", pass: false, detail: e.message }];
-        this.notify(`Post-request script failed: ${e.message}`);
+        tests = [...tests, { name: "Script after", pass: false, detail: e.message }];
+        this.notify(`The script after the request failed: ${e.message}`);
       }
       this.tabs = tabService.updateTab(this.tabs, index, { tests });
     } catch (e) {
@@ -750,7 +752,7 @@ export class Store extends EventTarget {
         try {
           tests = this.runPostScript(request.postRequestScript, id, text, headers, res.status, duration);
         } catch (e) {
-          tests = [...tests, { name: "post-request script", pass: false, detail: e.message }];
+          tests = [...tests, { name: "Script after", pass: false, detail: e.message }];
         }
         this.history = historyService.addToHistory(this.history, { ...historyService.createCollectionRunHistoryItem(request, prepared, res, collection.name, i), auth: request.auth });
         const failed = tests.filter((t) => !t.pass);
@@ -772,6 +774,7 @@ export class Store extends EventTarget {
     let total = 0;
     let ok = 0;
     let ran = 0;
+    let planned = 0;
     let assertions = 0;
     let assertionsFailed = 0;
     this.run = { collectionId: null, results: [], running: true, completed: 0, summary: null };
@@ -779,6 +782,7 @@ export class Store extends EventTarget {
     for (const col of this.collections) {
       if (!col.requests?.length) continue;
       ran++;
+      planned += col.requests.length;
       const results = await this.runCollection(col.id);
       total += results.length;
       ok += results.filter((r) => r.success).length;
@@ -791,7 +795,7 @@ export class Store extends EventTarget {
       results: [],
       running: false,
       completed: 0,
-      summary: { totalCollections: ran, totalRequests: total, successCount: ok, failedCount: total - ok, assertions, assertionsFailed, duration: Math.round(performance.now() - started) },
+      summary: { totalCollections: ran, plannedRequests: planned, totalRequests: total, successCount: ok, failedCount: total - ok, assertions, assertionsFailed, duration: Math.round(performance.now() - started) },
     };
     this.emit();
   }

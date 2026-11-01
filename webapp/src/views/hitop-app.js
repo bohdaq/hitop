@@ -10,6 +10,13 @@ import { Store } from "../store.js";
 import "./request-view.js";
 import "./collection-views.js";
 
+// Import errors in words: a parser's message ("Unexpected token } in JSON at
+// position 41") tells most people nothing.
+function readableError(err, what) {
+  if (err instanceof SyntaxError) return `That isn't valid JSON. Paste the whole of ${what}, from the first { or [ to the last.`;
+  return `That isn't ${what} HITOP can read: ${err.message}`;
+}
+
 export class HitopApp extends LitElement {
   static properties = {
     navOpen: { state: true },
@@ -43,6 +50,7 @@ export class HitopApp extends LitElement {
   // --- dialogs ----------------------------------------------------------------
 
   async openDialog(kind, data = {}) {
+    this.navOpen = false;
     this.dialog = { kind, ...data };
     await this.updateComplete;
     const dlg = this.querySelector("#dialog");
@@ -50,6 +58,27 @@ export class HitopApp extends LitElement {
     // The dialog focuses itself as it opens; move focus to the first field after.
     await dlg?.updateComplete;
     requestAnimationFrame(() => dlg?.querySelector("[autofocus]")?.focus());
+  }
+
+  // The form is novalidate: empty required fields get their message on the
+  // field, not in the browser's bubble.
+  validateDialog() {
+    let first = null;
+    for (const el of this.querySelectorAll("#dialog-form [required]")) {
+      const empty = !String(el.value ?? "").trim();
+      el.error = empty;
+      const label = el.getAttribute("label") ?? "";
+      el.errorText = empty ? `Enter the ${label.charAt(0).toLowerCase()}${label.slice(1)}` : "";
+      if (empty) first ??= el;
+    }
+    first?.focus();
+    return !first;
+  }
+
+  clearFieldError(el) {
+    if (!el?.error) return;
+    el.error = false;
+    el.errorText = "";
   }
 
   closeDialog() {
@@ -76,6 +105,7 @@ export class HitopApp extends LitElement {
     // Enter can reach the form twice (the field's own implicit submission and
     // dialogKey); act once per opening.
     if (!d || d.submitted) return;
+    if (!this.validateDialog()) return;
     d.submitted = true;
     if (d.kind === "add-collection") s.addCollection(this.field("name"));
     if (d.kind === "add-environment") s.addEnvironment(this.field("name"));
@@ -84,7 +114,7 @@ export class HitopApp extends LitElement {
       try {
         s.importEnvironments(this.field("json"));
       } catch (err) {
-        this.dialog = { ...d, submitted: false, error: `That isn't an environment file HITOP can read: ${err.message}` };
+        this.dialog = { ...d, submitted: false, error: readableError(err, "an environment file") };
         return;
       }
     }
@@ -99,7 +129,7 @@ export class HitopApp extends LitElement {
       try {
         s.importJson(this.field("json"));
       } catch (err) {
-        this.dialog = { ...d, submitted: false, error: `That isn't a collection file HITOP can read: ${err.message}` };
+        this.dialog = { ...d, submitted: false, error: readableError(err, "a collection file") };
         return;
       }
     }
@@ -223,7 +253,7 @@ export class HitopApp extends LitElement {
                       <span class=${`status-chip ${item.success ? "ok" : "bad"}`}>${item.statusCode || "Error"}</span>
                       <span class="method">${item.method}</span>
                       <span class="history-url">${item.isCollectionRun ? `${item.collectionName} → ${item.requestName}` : item.url}</span>
-                      <time datetime=${item.timestamp}>${new Date(item.timestamp).toLocaleTimeString()}</time>
+                      <time datetime=${item.timestamp}>${new Date(item.timestamp).toLocaleString(undefined, { dateStyle: "medium", timeStyle: "short" })}</time>
                     </button>
                   </li>`,
               )}
@@ -239,7 +269,7 @@ export class HitopApp extends LitElement {
     return html`
       <lit-material-dialog id="dialog" @close=${() => (this.dialog = null)}>
         <span slot="headline">${headline}</span>
-        <form id="dialog-form" class="dialog-form" @submit=${(e) => this.submitDialog(e)} @keydown=${(e) => this.dialogKey(e)}>${body}</form>
+        <form id="dialog-form" class="dialog-form" novalidate @submit=${(e) => this.submitDialog(e)} @input=${(e) => this.clearFieldError(e.target)} @keydown=${(e) => this.dialogKey(e)}>${body}</form>
         ${footer}
       </lit-material-dialog>`;
   }
@@ -264,7 +294,7 @@ export class HitopApp extends LitElement {
           ${unsafeSVG(mark())}
           <span>HITOP</span>
         </a>
-        <lit-material-button variant="tonal" class="new-request" @click=${() => (this.navOpen = false, s.newRequestInFirstCollection())}>
+        <lit-material-button variant="filled" class="new-request" @click=${() => (this.navOpen = false, s.newRequestInFirstCollection())}>
           ${icon("plus")} New request
         </lit-material-button>
         <lit-material-select class="env-select" variant="outlined" label="Environment" .value=${s.activeEnvironmentId ?? "none"}

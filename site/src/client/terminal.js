@@ -14,11 +14,15 @@ export function initTerminal() {
     pre.append(el);
     return el;
   };
+  // Keep the box its finished height, so it doesn't shrink while it retypes.
+  pre.style.minHeight = `${pre.offsetHeight}px`;
   let visible = true;
   new IntersectionObserver(([e]) => (visible = e.isIntersecting)).observe(pre);
 
   (async function loop() {
     for (;;) {
+      // Show the finished session first, and between runs.
+      await sleep(4500);
       pre.replaceChildren();
       for (const l of lines) {
         while (!visible) await sleep(500);
@@ -42,7 +46,6 @@ export function initTerminal() {
           await sleep(140);
         }
       }
-      await sleep(4500);
     }
   })();
 }
