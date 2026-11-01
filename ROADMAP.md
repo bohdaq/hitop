@@ -140,7 +140,7 @@ Secret variables: `secret: true` in an environment file, with the value resolved
 | T10 | Opt-in telemetry | done | server 032ec68, 15f4b4e (deployed from a112885); client a64c6c6, 4b8b898, released in cli-v0.3.0 / desktop-v0.2.0 | 2026-11-01 |
 | T11 | Launch readiness, release 0.3.0 / desktop 0.2.0 | done (handoffs) | bc1fdc0, f8a78e7, 7e2889f, e2f5788, ddcca14, 9327b37, b91e7b9, 31414f3; cli-v0.3.0, desktop-v0.2.0; hitop-action 37701e4, v1.0.1 | 2026-11-01 |
 | T12 | `hitop mcp` | done (handoff) | c0a55c8, 1d6986f, faad9aa; MCP directory listing text in section 6 | 2026-11-01 |
-| T13 | GraphQL | todo | | |
+| T13 | GraphQL | done | 208583d, a78211d | 2026-11-01 |
 | T14 | WebSocket | todo | | |
 | T15 | gRPC | todo | | |
 | T16 | Response diff and code snippets | todo | | |
@@ -850,6 +850,43 @@ export PATH="$HOME/.cargo/bin:$PATH"
 - Body type `graphql` (query plus variables JSON) in the format, core, CLI and web app;
   introspection fetch; schema-aware completion in CodeMirror.
 - **Done when:** tests against a local GraphQL mock; e2e for the editor; format round-trip.
+- **Notes (2026-11-01, done):**
+  - Format (additive to v1): `body.type: graphql` with `content` (the query), `variables` (JSON text, a block scalar, not a YAML
+    map, so `{"limit": ${limit}}` works and round-trips exactly) and `operationName`. JSON model: `bodyType: "graphql"`, query in
+    `body`, new `graphql: {variables, operationName}` (skipped when empty; `{}` reads as none). Both keys may stay on another body
+    type (kept, not sent). Readers up to 0.3.0 refuse a file that has them (unknown keys in `body` are an error) and read every
+    file without them. Spec section 3 "GraphQL" and section 6 updated. Golden `graphql-me` now has variables and operationName;
+    the proptest generates `graphql` on any request (512 cases).
+  - Sending (`hitop-core/src/graphql.rs`, no native deps): `${var}` substitution in query, variables and operation name first, then
+    `{"query":...,"variables":...,"operationName":...}` in that order (query JSON-encoded, variables text as typed after checking it
+    is a JSON object, empty parts left out) and `Content-Type: application/json` unless the request sets one. A Postman script that
+    sets a variable the GraphQL variables use still works (the variables wait for the script, as for other fields).
+  - API: `prepare::Draft` has a new field `graphql` and a constructor `Draft::of(request, collection_auth)` (runner and
+    `requests send` use it); `Request` has `graphql`. Struct literals of `Draft` outside the crate break, so the next hitop-core
+    release is a minor bump (0.4.0), not 0.3.x.
+  - CLI: `hitop send <url> --graphql <file|-> [--graphql-vars JSON|@file] [--operation-name NAME]` (POST by default; conflicts with
+    `-b`/`-F`). `run`, `requests send` and MCP `run_request`/`run_collection` send saved GraphQL requests; MCP `get_request` shows
+    `graphql`. Postman `graphql` bodies now import as GraphQL requests (they were flattened to a raw JSON body) and export as Postman
+    `mode: graphql`. Tests: `cli/crates/hitop/tests/graphql.rs` (5, httpmock as the GraphQL endpoint matching the exact JSON body),
+    core unit tests (body shapes, bad variables, Content-Type, script-set variables, Postman import/export).
+  - hitop-wasm: `graphqlBody(query, variables, operationName)`, so the web app and desktop send the bytes the CLI sends.
+  - Web app and desktop: Body type "GraphQL" with a query editor, a variables (JSON) editor and the operation name; "Fetch schema"
+    sends the introspection query through `store.dispatch` (proxy or direct on the web, `send_request` in Rust on the desktop; the
+    request's headers, auth and cookies, not its script) and turns on completion (fields, arguments, types) and schema checks.
+    Packages: `cm6-graphql` 0.2.2 (1.0 is still rc), `graphql` 16.14.2, `@codemirror/autocomplete` 6.20.3 (6.20.4 was under two
+    weeks old), all MIT, as are `graphql-language-service`, `nullthrows`, `debounce-promise`, `vscode-languageserver-types`. The
+    GraphQL editor is its own lazy chunk (`code-editor-graphql`, 120 kB, 36 kB gzipped; graphql-js shared chunk 79 kB), so the other
+    editors don't load it. The checks skip a query holding `${...}` (not GraphQL until filled in). Schemas stay in memory per tab.
+  - e2e `webapp/tests/graphql.cjs` against a local graphql-js server: introspection, completion of root fields and of `User`'s
+    fields, the exact JSON body with variables filled in, response shown, saved shape, reload, switch to raw, a failed
+    introspection, invalid variables not sent; 14 checks on the web, 16 in Tauri mode (sent through Rust, nothing via the proxy).
+    Full suites green locally: web 97 PASS, Tauri 120 PASS; unit checks (wasm `graphqlBody`, Rust keeps a GraphQL request,
+    schema from an introspection answer); `cargo deny ... check licenses` ok; no new Rust dependency.
+  - Deviation: variables use hitop's `${var}` syntax, not `{{var}}` (Postman's `{{var}}` is converted on import as before).
+  - Open: history items keep the query only (reopening one doesn't bring back variables); GraphQL over GET, subscriptions and a
+    CLI introspection command are not done; the site comparison pages and `launch/` texts still say GraphQL is planned (update
+    with the next release). Seen, not from T13: the URL field shows "Please enter a URL." for URLs starting with `${...}`;
+    `npm audit --omit=dev` reports fflate 0.8.2 (moderate, GHSA-px8p-9vwx-vf98, fixed in 0.8.3). No owner handoff.
 
 #### T14 WebSocket
 - WebSocket requests in the format; desktop and CLI through Rust (`tokio-tungstenite`), the web
