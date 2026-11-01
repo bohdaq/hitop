@@ -415,3 +415,55 @@ fn localstack_secrets_manager() {
         .failure()
         .stderr(contains(format!("${{secret:aws:hitop-t21/missing-{suffix}}} (aws): Secrets Manager answered 400 Bad Request ResourceNotFoundException")));
 }
+
+/// The desktop's Settings file (secret-managers.json in hitop's settings
+/// folder) is read by the CLI too: it fills in what the environment leaves
+/// out, and the environment wins.
+#[test]
+fn the_settings_file_fills_in_and_the_environment_wins() {
+    let mut env = Env::new();
+    let server = MockServer::start();
+    server.mock(|w, t| {
+        w.method(GET).path("/v1/sys/internal/ui/mounts/secret/app").header("X-Vault-Token", "dev-token");
+        t.status(200).json_body(serde_json::json!({"data": {"path": "secret/", "type": "kv", "options": {"version": "2"}}}));
+    });
+    server.mock(|w, t| {
+        w.method(GET).path("/v1/secret/data/app").header("X-Vault-Token", "dev-token");
+        t.status(200).json_body(serde_json::json!({"data": {"data": {"token": VAULT_VALUE}, "metadata": {}}}));
+    });
+    // `op` only where the settings say, not on PATH.
+    let tools = env.home.path().join("tools");
+    fs::create_dir(&tools).unwrap();
+    fs::rename(env.bin.join("op"), tools.join("op-cli")).unwrap();
+    let tmp = TempDir::new().unwrap();
+    let dir = tmp.path().join("api");
+    fs::create_dir_all(dir.join("environments")).unwrap();
+    fs::write(dir.join("hitop.yaml"), "format: 1\nname: Api\n").unwrap();
+    fs::write(dir.join("environments/dev.yaml"), "variables:\n  a: ${secret:op:Dev/API/token}\n  b: ${secret:vault:secret/app#token}\n").unwrap();
+    env.set("VAULT_TOKEN", "dev-token");
+    let check = |env: &Env| env.hitop(tmp.path()).args(["secret", "check", "-c", dir.to_str().unwrap()]).output().unwrap();
+
+    let o = check(&env);
+    let text = output(&o);
+    assert!(!o.status.success() && text.contains("not found on PATH") && text.contains("VAULT_ADDR is not set"), "{text}");
+
+    let settings = env.home.path().join("config/hitop/secret-managers.json");
+    fs::create_dir_all(settings.parent().unwrap()).unwrap();
+    fs::write(&settings, serde_json::json!({"opPath": tools.join("op-cli"), "vaultAddr": server.base_url()}).to_string()).unwrap();
+    let o = check(&env);
+    let text = output(&o);
+    assert!(o.status.success() && text.matches("✓ ${secret:").count() == 2 && text.contains("secret-managers.json"), "{text}");
+    no_value("secret check", &text);
+
+    // The environment wins over the file.
+    env.set("HITOP_OP_BIN", "/nonexistent-op");
+    env.set("BAO_ADDR", "http://127.0.0.1:9");
+    let o = check(&env);
+    let text = output(&o);
+    assert!(!o.status.success() && text.contains("/nonexistent-op") && text.matches("✗ ${secret:").count() == 2, "{text}");
+
+    // A broken file is an error naming it.
+    fs::write(&settings, "{nope").unwrap();
+    let text = output(&check(&env));
+    assert!(text.contains("secret-managers.json") && text.contains("not valid"), "{text}");
+}

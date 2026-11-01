@@ -32,6 +32,8 @@ pub fn run() {
             commands::secret_set,
             commands::secret_delete,
             commands::secret_refs_resolve,
+            commands::secret_manager_settings,
+            commands::secret_manager_settings_set,
             commands::write_file,
             commands::telemetry_status,
             commands::telemetry_set,

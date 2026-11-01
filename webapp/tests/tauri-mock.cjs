@@ -179,6 +179,37 @@ class TauriMock {
     this.grpcCalls = [];
     this.grpcCancelled = [];
     this.telemetry = { enabled: false, asked: true, id: null, lastPing: null };
+    // Secret manager settings (commands.rs secret_manager_settings*): the
+    // variables the app's environment sets (names), as Rust reports them.
+    this.smShell = [];
+  }
+
+  // hitop-core secret_managers::settings_view: settings from
+  // secret-managers.json, which secrets the keychain holds, never values.
+  smView() {
+    const names = ['VAULT_TOKEN', 'AZURE_CLIENT_SECRET', 'AWS_ACCESS_KEY_ID', 'AWS_SECRET_ACCESS_KEY', 'AWS_SESSION_TOKEN'];
+    return {
+      settings: JSON.parse(this.read('secret-managers.json', '{}')),
+      secrets: Object.fromEntries(names.map((n) => [n, Boolean(this.keychain.get(`secret-managers/${n}`))])),
+      shell: [...this.smShell],
+      path: this.file('secret-managers.json'),
+      keychainError: null,
+    };
+  }
+
+  // save_settings: secrets to the keychain (text stores, null removes),
+  // the rest trimmed into the file (no file when nothing is set).
+  smSave(settings, secrets) {
+    const names = ['VAULT_TOKEN', 'AZURE_CLIENT_SECRET', 'AWS_ACCESS_KEY_ID', 'AWS_SECRET_ACCESS_KEY', 'AWS_SESSION_TOKEN'];
+    for (const [name, value] of Object.entries(secrets || {})) {
+      if (!names.includes(name)) throw `${name} is not a secret manager setting (one of ${names.join(', ')})`;
+      if (value && value.trim()) this.keychain.set(`secret-managers/${name}`, value.trim());
+      else this.keychain.delete(`secret-managers/${name}`);
+    }
+    const clean = Object.fromEntries(Object.entries(settings || {}).filter(([, v]) => v !== null && v !== undefined && String(v).trim() !== '').map(([k, v]) => [k, typeof v === 'string' ? v.trim() : v]));
+    if (Object.keys(clean).length) this.write('secret-managers.json', clean);
+    else fs.rmSync(this.file('secret-managers.json'), { force: true });
+    return this.smView();
   }
 
   telemetryStatus() {
@@ -292,6 +323,10 @@ class TauriMock {
         if (missing.length) throw missing.map((r) => `\${${r}} (${r.split(':')[1]}): not found`).join('\n');
         return Object.fromEntries(args.refs.map((r) => [r, this.secretManager.get(r)]));
       }
+      case 'secret_manager_settings':
+        return this.smView();
+      case 'secret_manager_settings_set':
+        return this.smSave(args.settings, args.secrets);
       case 'secret_get':
         return this.keychain.get(args.account) ?? null;
       case 'secret_set':

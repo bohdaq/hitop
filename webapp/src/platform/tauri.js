@@ -245,6 +245,12 @@ export function createPlatform() {
     status: () => invoke("telemetry_status"),
     set: (enabled) => invoke("telemetry_set", { enabled }),
   };
+  // Secret manager settings (Settings page): values for VAULT_ADDR and
+  // friends, secrets in the keychain; Rust passes them to the resolver only.
+  const managers = {
+    load: () => invoke("secret_manager_settings"),
+    save: (settings, secrets) => invoke("secret_manager_settings_set", { settings, secrets }),
+  };
   const platform = {
     name: "tauri",
     onError(fn) {
@@ -283,8 +289,8 @@ export function createPlatform() {
           // nothing stored, or not readable: start empty
         }
       }
-      // The usage ping's setting (absent in Mac App Store builds: no page then).
-      const settings = await settingsPages(telemetry);
+      // The Settings page: secret managers, and the usage ping where the build has it (not the Mac App Store one).
+      const settings = await settingsPages(telemetry, managers);
       // The Git panel for collection folders, then Settings.
       platform.pages = [...gitPages(platform.git), ...settings.pages];
       platform.onStart = () => askOnce(telemetry, settings.status);

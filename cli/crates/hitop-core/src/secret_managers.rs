@@ -17,6 +17,17 @@
 //!   from `az account get-access-token --resource https://vault.azure.net`.
 //! - **1Password**: `op read op://...` (the user's signed-in `op` CLI).
 //!
+//! Settings ([`Settings`], `secret-managers.json` in hitop's settings folder,
+//! edited in the desktop's Settings page and read by the CLI too) fill in
+//! what the process environment leaves out: VAULT_ADDR, VAULT_NAMESPACE,
+//! AWS_REGION, AWS_PROFILE, AZURE_TENANT_ID, AZURE_CLIENT_ID and where `op`,
+//! `az` and `aws` are; VAULT_TOKEN, AZURE_CLIENT_SECRET and the AWS keys live
+//! only in the OS keychain (service `hitop`, account
+//! `secret-managers/<NAME>`). The environment always wins: when it sets any
+//! variable of a group ([`GROUPS`]), the whole group comes from it.
+//! [`Resolver::configured`] layers them; the values go to the resolver only,
+//! never into the process environment.
+//!
 //! Values are cached for the life of a [`Resolver`] (one run). Errors name the
 //! reference, never a value. `HITOP_SECRET_MANAGERS=off` turns it all off
 //! ([`enabled`]); `HITOP_SECRET_MANAGER_TIMEOUT` (seconds) sets the time limit
@@ -27,9 +38,206 @@ use std::path::PathBuf;
 use std::process::{Command, Stdio};
 use std::time::{Duration, Instant, SystemTime};
 
-use serde_json::Value;
+use serde::{Deserialize, Serialize};
+use serde_json::{json, Value};
 
 use crate::secret_refs::{display, parse, Reference};
+use crate::secrets::SecretStore;
+
+// ── Settings ─────────────────────────────────────────────────────────
+
+/// The settings file in hitop's settings folder.
+pub const SETTINGS_FILE: &str = "secret-managers.json";
+
+/// The secret values Settings keeps in the OS keychain, never in a file.
+pub const SECRET_NAMES: [&str; 5] = ["VAULT_TOKEN", "AZURE_CLIENT_SECRET", "AWS_ACCESS_KEY_ID", "AWS_SECRET_ACCESS_KEY", "AWS_SESSION_TOKEN"];
+
+/// Variables that come from one place: when the environment sets any of a
+/// group, Settings gives none of it (a shell's `AWS_PROFILE` isn't mixed with
+/// saved AWS keys, nor a shell's `BAO_ADDR` with a saved `VAULT_ADDR`).
+pub const GROUPS: [&[&str]; 9] = [
+    &["VAULT_ADDR", "BAO_ADDR"],
+    &["VAULT_TOKEN", "BAO_TOKEN"],
+    &["VAULT_NAMESPACE", "BAO_NAMESPACE"],
+    &["AWS_REGION", "AWS_DEFAULT_REGION"],
+    &["AWS_PROFILE", "AWS_ACCESS_KEY_ID", "AWS_SECRET_ACCESS_KEY", "AWS_SESSION_TOKEN"],
+    &["AZURE_TENANT_ID", "AZURE_CLIENT_ID", "AZURE_CLIENT_SECRET"],
+    &["HITOP_OP_BIN"],
+    &["HITOP_AZ_BIN"],
+    &["HITOP_AWS_BIN"],
+];
+
+/// The keychain account of a Settings secret (service `hitop`).
+pub fn secret_account(name: &str) -> String {
+    format!("secret-managers/{name}")
+}
+
+/// The non-secret values of the desktop's "Secret managers" settings, in
+/// `<settings folder>/secret-managers.json`. Unknown keys are kept.
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Settings {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub vault_addr: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub vault_namespace: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub aws_region: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub aws_profile: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub azure_tenant_id: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub azure_client_id: Option<String>,
+    /// The `op` program (1Password CLI), when it isn't on PATH.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub op_path: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub az_path: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub aws_path: Option<String>,
+    #[serde(flatten)]
+    pub extra: serde_json::Map<String, Value>,
+}
+
+impl Settings {
+    /// Where the file is.
+    pub fn path() -> anyhow::Result<PathBuf> {
+        Ok(crate::storage::config_dir()?.join(SETTINGS_FILE))
+    }
+
+    /// The file's settings; none when there is no file.
+    pub fn load() -> anyhow::Result<Settings> {
+        Self::load_from(&Self::path()?)
+    }
+
+    pub fn load_from(path: &std::path::Path) -> anyhow::Result<Settings> {
+        use anyhow::Context;
+        match std::fs::read_to_string(path) {
+            Ok(text) => serde_json::from_str(&text).with_context(|| format!("{} is not valid secret manager settings", path.display())),
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(Settings::default()),
+            Err(e) => Err(e).with_context(|| format!("reading {}", path.display())),
+        }
+    }
+
+    /// Writes the file (blank values left out; no file when nothing is set).
+    pub fn save(&self) -> anyhow::Result<()> {
+        self.save_to(&Self::path()?)
+    }
+
+    pub fn save_to(&self, path: &std::path::Path) -> anyhow::Result<()> {
+        let clean = self.cleaned();
+        if clean == Settings::default() {
+            return match std::fs::remove_file(path) {
+                Err(e) if e.kind() != std::io::ErrorKind::NotFound => Err(e.into()),
+                _ => Ok(()),
+            };
+        }
+        std::fs::write(path, serde_json::to_string_pretty(&clean)? + "\n")?;
+        Ok(())
+    }
+
+    /// Values trimmed, blank ones dropped.
+    pub fn cleaned(&self) -> Settings {
+        let c = |v: &Option<String>| v.as_deref().map(str::trim).filter(|v| !v.is_empty()).map(str::to_string);
+        Settings {
+            vault_addr: c(&self.vault_addr),
+            vault_namespace: c(&self.vault_namespace),
+            aws_region: c(&self.aws_region),
+            aws_profile: c(&self.aws_profile),
+            azure_tenant_id: c(&self.azure_tenant_id),
+            azure_client_id: c(&self.azure_client_id),
+            op_path: c(&self.op_path),
+            az_path: c(&self.az_path),
+            aws_path: c(&self.aws_path),
+            extra: self.extra.clone(),
+        }
+    }
+
+    /// The setting standing in for environment variable `name`.
+    pub fn value(&self, name: &str) -> Option<&str> {
+        let v = match name {
+            "VAULT_ADDR" => &self.vault_addr,
+            "VAULT_NAMESPACE" => &self.vault_namespace,
+            "AWS_REGION" => &self.aws_region,
+            "AWS_PROFILE" => &self.aws_profile,
+            "AZURE_TENANT_ID" => &self.azure_tenant_id,
+            "AZURE_CLIENT_ID" => &self.azure_client_id,
+            "HITOP_OP_BIN" => &self.op_path,
+            "HITOP_AZ_BIN" => &self.az_path,
+            "HITOP_AWS_BIN" => &self.aws_path,
+            _ => return None,
+        };
+        v.as_deref().map(str::trim).filter(|v| !v.is_empty())
+    }
+}
+
+/// The group of variable `name` (itself alone when it has none).
+fn group(name: &str) -> &[&str] {
+    GROUPS.iter().copied().find(|g| g.contains(&name)).unwrap_or(&[])
+}
+
+/// True when `env` sets `name` or another variable of its group.
+pub fn shell_sets(env: &dyn Fn(&str) -> Option<String>, name: &str) -> bool {
+    env(name).is_some_and(|v| !v.is_empty()) || group(name).iter().any(|g| env(g).is_some_and(|v| !v.is_empty()))
+}
+
+/// `env`, then for a variable whose group `env` doesn't set, `settings`, then
+/// `secrets` (the keychain values by name).
+pub fn layered(env: EnvLookup, settings: Settings, secrets: HashMap<String, String>) -> EnvLookup {
+    Box::new(move |name| {
+        if let Some(v) = env(name).filter(|v| !v.is_empty()) {
+            return Some(v);
+        }
+        if shell_sets(&*env, name) {
+            return None;
+        }
+        settings.value(name).map(str::to_string).or_else(|| secrets.get(name).cloned())
+    })
+}
+
+/// The Settings secrets the keychain holds that `env` doesn't shadow (a
+/// keychain that isn't there or refuses counts as none).
+pub fn keychain_secrets(env: &dyn Fn(&str) -> Option<String>, store: &dyn SecretStore) -> HashMap<String, String> {
+    SECRET_NAMES
+        .iter()
+        .filter(|n| !shell_sets(env, n))
+        .filter_map(|n| store.get(&secret_account(n)).ok().flatten().filter(|v| !v.is_empty()).map(|v| (n.to_string(), v)))
+        .collect()
+}
+
+/// What the Settings page shows: the settings, which secrets are saved
+/// (never their values), which variables the environment already sets (its
+/// value wins), and the file's path.
+pub fn settings_view(env: &dyn Fn(&str) -> Option<String>, store: &dyn SecretStore) -> anyhow::Result<Value> {
+    let settings = Settings::load()?;
+    let saved: serde_json::Map<String, Value> = SECRET_NAMES.iter().map(|n| (n.to_string(), json!(store.get(&secret_account(n)).ok().flatten().is_some_and(|v| !v.is_empty())))).collect();
+    let names = GROUPS.iter().flat_map(|g| g.iter()).filter(|n| env(n).is_some_and(|v| !v.is_empty())).map(|n| n.to_string()).collect::<Vec<_>>();
+    let keychain = store.get(&secret_account("VAULT_TOKEN")).err().map(|e| e.to_string());
+    Ok(json!({"settings": settings, "secrets": saved, "shell": names, "path": Settings::path()?.display().to_string(), "keychainError": keychain}))
+}
+
+/// Saves the page's settings and secrets: a secret given as text is stored
+/// in the keychain, as null it is removed, left out it stays.
+pub fn save_settings(settings: &Settings, secrets: &HashMap<String, Option<String>>, store: &dyn SecretStore) -> anyhow::Result<()> {
+    save_settings_at(&Settings::path()?, settings, secrets, store)
+}
+
+/// [`save_settings`] with the file at `path`.
+pub fn save_settings_at(path: &std::path::Path, settings: &Settings, secrets: &HashMap<String, Option<String>>, store: &dyn SecretStore) -> anyhow::Result<()> {
+    for (name, value) in secrets {
+        if !SECRET_NAMES.contains(&name.as_str()) {
+            anyhow::bail!("{name} is not a secret manager setting (one of {})", SECRET_NAMES.join(", "));
+        }
+        match value.as_deref().map(str::trim) {
+            Some(v) if !v.is_empty() => store.set(&secret_account(name), v)?,
+            _ => {
+                store.delete(&secret_account(name))?;
+            }
+        }
+    }
+    settings.save_to(path)
+}
 
 /// Reads a process environment variable (`std::env::var` outside tests).
 pub type EnvLookup = Box<dyn Fn(&str) -> Option<String> + Send + Sync>;
@@ -63,6 +271,15 @@ impl Resolver {
     /// Reads the process environment.
     pub fn from_env() -> Self {
         Self::with_env(Box::new(|k| std::env::var(k).ok().filter(|v| !v.is_empty())))
+    }
+
+    /// The process environment, then [`Settings`] and its keychain secrets
+    /// from `store` (see [`layered`]). An unreadable settings file is an error.
+    pub fn configured(store: &dyn SecretStore) -> Result<Self, String> {
+        let settings = Settings::load().map_err(|e| format!("{e:#}"))?;
+        let env = |k: &str| std::env::var(k).ok().filter(|v| !v.is_empty());
+        let secrets = keychain_secrets(&env, store);
+        Ok(Self::with_env(layered(Box::new(env), settings, secrets)))
     }
 
     /// Reads `env` instead of the process environment (tests).
@@ -869,5 +1086,136 @@ mod tests {
         assert!(started.elapsed() < Duration::from_secs(3));
         let e = run_command("sh", &["-c", "echo VALUE; echo 'not signed in' >&2; exit 3"], Duration::from_secs(5)).unwrap_err();
         assert!(e.contains("not signed in") && !e.contains("VALUE"), "{e}");
+    }
+
+    fn lookup(pairs: &[(&str, &str)]) -> EnvLookup {
+        let map: HashMap<String, String> = pairs.iter().map(|(k, v)| (k.to_string(), v.to_string())).collect();
+        Box::new(move |k| map.get(k).cloned())
+    }
+
+    fn saved() -> (Settings, HashMap<String, String>) {
+        let settings = Settings {
+            vault_addr: Some("http://saved-vault:8200".into()),
+            vault_namespace: Some("team".into()),
+            aws_region: Some("eu-west-1".into()),
+            aws_profile: Some("saved".into()),
+            azure_tenant_id: Some("tenant".into()),
+            azure_client_id: Some("client".into()),
+            op_path: Some("/opt/op".into()),
+            ..Default::default()
+        };
+        let secrets = [("VAULT_TOKEN", "kc-vault"), ("AWS_ACCESS_KEY_ID", "AKIDSAVED"), ("AWS_SECRET_ACCESS_KEY", "kc-aws"), ("AZURE_CLIENT_SECRET", "kc-azure")];
+        (settings, secrets.iter().map(|(k, v)| (k.to_string(), v.to_string())).collect())
+    }
+
+    #[test]
+    fn settings_fill_in_only_what_the_environment_leaves_out() {
+        let (settings, secrets) = saved();
+        // Nothing in the shell: every saved value.
+        let env = layered(lookup(&[]), settings.clone(), secrets.clone());
+        for (k, v) in [("VAULT_ADDR", "http://saved-vault:8200"), ("VAULT_NAMESPACE", "team"), ("VAULT_TOKEN", "kc-vault"), ("AWS_REGION", "eu-west-1"), ("AWS_PROFILE", "saved"), ("AWS_ACCESS_KEY_ID", "AKIDSAVED"), ("AZURE_CLIENT_SECRET", "kc-azure"), ("HITOP_OP_BIN", "/opt/op")] {
+            assert_eq!(env(k).as_deref(), Some(v), "{k}");
+        }
+        assert_eq!(env("HITOP_AZ_BIN"), None);
+        assert_eq!(env("HOME"), None, "only secret manager variables come from Settings");
+
+        // The shell wins, a whole group at a time.
+        let env = layered(
+            lookup(&[("VAULT_ADDR", "http://shell:8200"), ("BAO_TOKEN", "shell-bao"), ("AWS_PROFILE", "work"), ("AWS_DEFAULT_REGION", "us-east-2"), ("AZURE_CLIENT_ID", "shell-client"), ("HITOP_OP_BIN", "")]),
+            settings,
+            secrets,
+        );
+        assert_eq!(env("VAULT_ADDR").as_deref(), Some("http://shell:8200"));
+        assert_eq!(env("VAULT_TOKEN"), None, "BAO_TOKEN in the shell: no saved VAULT_TOKEN");
+        assert_eq!(env("VAULT_NAMESPACE").as_deref(), Some("team"), "a group the shell doesn't touch");
+        assert_eq!(env("AWS_PROFILE").as_deref(), Some("work"));
+        assert_eq!(env("AWS_ACCESS_KEY_ID"), None, "a shell profile isn't mixed with saved keys");
+        assert_eq!(env("AWS_SECRET_ACCESS_KEY"), None);
+        assert_eq!(env("AWS_REGION"), None, "AWS_DEFAULT_REGION in the shell");
+        assert_eq!(env("AZURE_TENANT_ID"), None, "the shell sets AZURE_CLIENT_ID: Azure comes from the shell");
+        assert_eq!(env("AZURE_CLIENT_SECRET"), None);
+        assert_eq!(env("HITOP_OP_BIN").as_deref(), Some("/opt/op"), "an empty variable counts as not set");
+    }
+
+    #[test]
+    fn keychain_secrets_are_read_only_where_the_shell_is_silent() {
+        let store = crate::secrets::MemoryStore::new();
+        store.set(&secret_account("VAULT_TOKEN"), "kc-vault").unwrap();
+        store.set(&secret_account("AWS_SECRET_ACCESS_KEY"), "kc-aws").unwrap();
+        store.set(&secret_account("AZURE_CLIENT_SECRET"), "").unwrap();
+        let none = |_: &str| None;
+        let got = keychain_secrets(&none, &store);
+        assert_eq!(got.len(), 2);
+        assert_eq!(got["VAULT_TOKEN"], "kc-vault");
+        let shell = |k: &str| (k == "VAULT_TOKEN").then(|| "t".to_string());
+        assert!(!keychain_secrets(&shell, &store).contains_key("VAULT_TOKEN"));
+        // A keychain that isn't there gives nothing, no error.
+        let gone = crate::secrets::NoStore("off".into());
+        assert!(keychain_secrets(&none, &gone).is_empty());
+    }
+
+    #[test]
+    fn the_settings_file_round_trips_and_names_itself_when_broken() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join(SETTINGS_FILE);
+        assert_eq!(Settings::load_from(&path).unwrap(), Settings::default(), "no file: nothing set");
+        let mut s = Settings { vault_addr: Some(" http://v:8200 ".into()), aws_region: Some("  ".into()), ..Default::default() };
+        s.extra.insert("later".into(), json!(true));
+        s.save_to(&path).unwrap();
+        let text = std::fs::read_to_string(&path).unwrap();
+        assert_eq!(serde_json::from_str::<Value>(&text).unwrap(), json!({"vaultAddr": "http://v:8200", "later": true}), "{text}");
+        for name in SECRET_NAMES {
+            assert!(!text.contains(name) && !text.to_lowercase().contains("token"), "no secret in the file: {text}");
+        }
+        let back = Settings::load_from(&path).unwrap();
+        assert_eq!(back.value("VAULT_ADDR"), Some("http://v:8200"));
+        assert_eq!(back.extra["later"], json!(true), "unknown keys are kept");
+        Settings::default().save_to(&path).unwrap();
+        assert!(!path.exists(), "nothing set: no file");
+        std::fs::write(&path, "{not json").unwrap();
+        let e = format!("{:#}", Settings::load_from(&path).unwrap_err());
+        assert!(e.contains(SETTINGS_FILE), "{e}");
+    }
+
+    #[test]
+    fn save_settings_keeps_secrets_in_the_store_only() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join(SETTINGS_FILE);
+        let store = crate::secrets::MemoryStore::new();
+        store.set(&secret_account("AWS_SESSION_TOKEN"), "old-session").unwrap();
+        store.set(&secret_account("AZURE_CLIENT_SECRET"), "kept").unwrap();
+        let settings = Settings { vault_addr: Some("http://v:8200".into()), ..Default::default() };
+        let secrets: HashMap<String, Option<String>> = [("VAULT_TOKEN".to_string(), Some("hvs.s3cr3t".to_string())), ("AWS_SESSION_TOKEN".to_string(), None)].into_iter().collect();
+        save_settings_at(&path, &settings, &secrets, &store).unwrap();
+        assert_eq!(store.get("secret-managers/VAULT_TOKEN").unwrap().as_deref(), Some("hvs.s3cr3t"));
+        assert_eq!(store.get("secret-managers/AWS_SESSION_TOKEN").unwrap(), None, "null removes");
+        assert_eq!(store.get("secret-managers/AZURE_CLIENT_SECRET").unwrap().as_deref(), Some("kept"), "left out stays");
+        let text = std::fs::read_to_string(&path).unwrap();
+        assert!(text.contains("http://v:8200") && !text.contains("hvs.s3cr3t"), "{text}");
+        let bad: HashMap<String, Option<String>> = [("HOME".to_string(), Some("x".to_string()))].into_iter().collect();
+        let e = save_settings_at(&path, &Settings::default(), &bad, &store).unwrap_err().to_string();
+        assert!(e.contains("not a secret manager setting"), "{e}");
+    }
+
+    #[test]
+    fn a_vault_reference_with_the_address_from_settings_and_the_token_from_the_keychain() {
+        use httpmock::prelude::*;
+        let server = MockServer::start();
+        server.mock(|w, t| {
+            w.method(GET).path("/v1/sys/internal/ui/mounts/secret/app").header("X-Vault-Token", "kc-vault");
+            t.status(200).json_body(json!({"data": {"path": "secret/", "type": "kv", "options": {"version": "2"}}}));
+        });
+        server.mock(|w, t| {
+            w.method(GET).path("/v1/secret/data/app").header("X-Vault-Token", "kc-vault");
+            t.status(200).json_body(json!({"data": {"data": {"token": "from-vault"}, "metadata": {}}}));
+        });
+        let settings = Settings { vault_addr: Some(server.base_url()), ..Default::default() };
+        let secrets = [("VAULT_TOKEN".to_string(), "kc-vault".to_string())].into_iter().collect();
+        let mut r = Resolver::with_env(layered(lookup(&[("HOME", "/nonexistent")]), settings.clone(), secrets));
+        assert_eq!(r.resolve("secret:vault:secret/app#token").unwrap(), "from-vault");
+        // The shell's address wins over the saved one.
+        let mut r = Resolver::with_env(layered(lookup(&[("VAULT_ADDR", "http://127.0.0.1:9"), ("HOME", "/nonexistent")]), settings, HashMap::new()));
+        let e = r.resolve("secret:vault:secret/app#token").unwrap_err();
+        assert!(e.contains("connect") || e.contains("token"), "{e}");
     }
 }

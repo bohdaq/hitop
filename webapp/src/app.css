@@ -287,6 +287,12 @@ hitop-code-editor { display: grid; gap: var(--space-50); align-content: start; }
 .section-header { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: var(--space-200); }
 .section-header h2 { margin: 0; }
 .switch-row { display: flex; align-items: center; gap: var(--space-200); cursor: pointer; }
+.sm-form { display: grid; gap: var(--space-300); max-width: 44rem; }
+.sm-group { display: grid; gap: var(--space-200); margin: 0; padding: var(--space-200) var(--space-300) var(--space-300); border: 1px solid var(--md-sys-color-outline-variant); border-radius: var(--md-sys-shape-corner-medium); }
+.sm-group legend { padding: 0 var(--space-100); font-weight: 600; }
+.sm-secret { display: flex; align-items: flex-start; gap: var(--space-200); }
+.sm-secret lit-material-text-field { flex: 1; min-width: 0; }
+.sm-actions { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-200); }
 .cookie-domain { display: grid; gap: var(--space-100); }
 .cookie-list li { --lit-material-text-field-min-width: 0; display: grid; grid-template-columns: minmax(80px, max-content) minmax(0, 1fr) auto auto; gap: var(--space-100); align-items: center; }
 .cookie-name { font-family: var(--font-mono); font-weight: 600; }

@@ -130,7 +130,7 @@ pub fn add_refs(secrets: &mut Secrets, refs: &BTreeSet<String>, flags: &SecretFl
         let why = if flags.no_secret_managers { "--no-secret-managers" } else { "HITOP_SECRET_MANAGERS=off" };
         bail!("secret manager references are turned off ({why}), but these are used: {}", list.join(", "));
     }
-    let (values, errors) = Resolver::from_env().resolve_all(&refs);
+    let (values, errors) = Resolver::configured(store().as_ref()).map_err(|e| anyhow::anyhow!(e))?.resolve_all(&refs);
     if !errors.is_empty() {
         bail!("could not resolve {} secret reference{}:\n  {}", errors.len(), if errors.len() == 1 { "" } else { "s" }, errors.join("\n  "));
     }
@@ -239,7 +239,12 @@ fn check(args: CheckArgs) -> Result<()> {
     if off {
         eprintln!("{} HITOP_SECRET_MANAGERS=off: listing only", "note:".yellow());
     }
-    let mut resolver = Resolver::from_env();
+    if !args.list && !off {
+        if let Some(path) = secret_managers::Settings::path().ok().filter(|p| p.exists()) {
+            eprintln!("{} settings from {} fill in what the environment doesn't set", "note:".yellow(), path.display());
+        }
+    }
+    let mut resolver = Resolver::configured(store().as_ref()).map_err(|e| anyhow::anyhow!(e))?;
     let mut failed = 0;
     for (r, places) in &found {
         let places: Vec<&str> = places.iter().map(String::as_str).collect();

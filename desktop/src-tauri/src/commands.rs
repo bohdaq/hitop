@@ -425,11 +425,30 @@ pub fn secret_refs_resolve(refs: Vec<String>) -> Result<HashMap<String, String>,
     if !secret_managers::enabled() {
         return Err("secret manager references are turned off (HITOP_SECRET_MANAGERS=off)".into());
     }
-    let (values, errors) = secret_managers::Resolver::from_env().resolve_all(&refs);
+    let (values, errors) = secret_managers::Resolver::configured(secrets::os_store().as_ref())?.resolve_all(&refs);
     if !errors.is_empty() {
         return Err(errors.join("\n"));
     }
     Ok(values.into_iter().collect())
+}
+
+/// The Settings page's "Secret managers" section: `{settings, secrets:
+/// {NAME: saved?}, shell: [names the app's environment sets], path,
+/// keychainError}`. Secret values never leave the keychain.
+#[tauri::command(async)]
+pub fn secret_manager_settings() -> Result<Value, String> {
+    let env = |k: &str| std::env::var(k).ok();
+    hitop_core::secret_managers::settings_view(&env, secrets::os_store().as_ref()).map_err(|e| format!("{e:#}"))
+}
+
+/// Saves the section: non-secret values to secret-managers.json in hitop's
+/// settings folder, `secrets` to the keychain (text = store, null = remove,
+/// left out = unchanged). Returns the section as `secret_manager_settings`.
+#[tauri::command(async)]
+pub fn secret_manager_settings_set(settings: hitop_core::secret_managers::Settings, secrets: HashMap<String, Option<String>>) -> Result<Value, String> {
+    let store = hitop_core::secrets::os_store();
+    hitop_core::secret_managers::save_settings(&settings, &secrets, store.as_ref()).map_err(|e| format!("{e:#}"))?;
+    secret_manager_settings()
 }
 
 /// Writes an export to the path the save dialog gave (`data` is base64).

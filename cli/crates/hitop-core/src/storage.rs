@@ -7,7 +7,8 @@ use crate::model::{Collection, Environment, HistoryItem};
 
 const MAX_HISTORY: usize = 50;
 
-fn config_dir() -> Result<PathBuf> {
+/// hitop's settings folder (`~/.config/hitop`, `~/Library/Application Support/hitop`), created when missing.
+pub fn config_dir() -> Result<PathBuf> {
     let base = dirs::config_dir().context("cannot determine config directory")?;
     let dir = base.join("hitop");
     fs::create_dir_all(&dir)?;
