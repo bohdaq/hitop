@@ -35,8 +35,13 @@ pub fn run() {
             commands::ws_connect,
             commands::ws_send,
             commands::ws_close,
+            commands::grpc_list,
+            commands::grpc_describe,
+            commands::grpc_call,
+            commands::grpc_cancel,
         ])
         .manage(commands::Sockets::default())
+        .manage(commands::GrpcCalls::default())
         .setup(|_app| {
             // The usage ping, when the user turned it on (off by default).
             #[cfg(feature = "telemetry")]

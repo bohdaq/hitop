@@ -153,12 +153,14 @@ mod client {
     use tokio::sync::mpsc;
     use tonic::codec::{Codec, DecodeBuf, Decoder, EncodeBuf, Encoder};
     use tonic::metadata::{AsciiMetadataKey, BinaryMetadataKey, BinaryMetadataValue, KeyAndValueRef, MetadataMap, MetadataValue};
-    use tonic::transport::{Channel, ClientTlsConfig, Endpoint};
+    use tonic::transport::{ClientTlsConfig, Endpoint};
 
     use super::{code_name, endpoint, Target};
 
     /// The schema type, for callers that keep one (the desktop between calls).
     pub use prost_reflect::DescriptorPool;
+    /// A connection to a server, from [`connect`].
+    pub use tonic::transport::Channel;
 
     const B64: base64::engine::GeneralPurpose = base64::engine::general_purpose::STANDARD;
 

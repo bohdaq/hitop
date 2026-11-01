@@ -576,3 +576,190 @@ pub fn ws_close(state: tauri::State<'_, Sockets>, id: u64) -> Result<(), String>
     }
     Ok(())
 }
+
+// ── gRPC ────────────────────────────────────────────────────────────────────
+// The web app's gRPC requests on the desktop (a browser can't make gRPC
+// calls): hitop-core's client (tonic over rustls, dynamic messages). The
+// schema comes from server reflection, or from .proto files (relative paths
+// taken from `baseDir`, the collection's folder). `grpc_list` and
+// `grpc_describe` read the schema; `grpc_call` streams the response headers,
+// messages and final status to the page on a channel; `grpc_cancel` stops a
+// call. Variables are filled in by the page.
+
+/// Calls in flight, by id.
+#[derive(Default)]
+pub struct GrpcCalls {
+    next: std::sync::atomic::AtomicU64,
+    running: std::sync::Mutex<HashMap<u64, tauri::async_runtime::JoinHandle<()>>>,
+}
+
+/// Where the server is and where its schema comes from.
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct GrpcServerArgs {
+    pub address: String,
+    #[serde(default)]
+    pub plaintext: bool,
+    /// Metadata, in order (header auth already applied by the page).
+    #[serde(default)]
+    pub metadata: Vec<(String, String)>,
+    /// .proto files; none means server reflection.
+    #[serde(default)]
+    pub protos: Vec<String>,
+    #[serde(default)]
+    pub import_paths: Vec<String>,
+    /// The collection's folder, for relative paths.
+    #[serde(default)]
+    pub base_dir: Option<String>,
+    /// Time limit for connecting and reading the schema (default 10 s).
+    #[serde(default)]
+    pub timeout_ms: Option<u64>,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct GrpcCallArgs {
+    #[serde(flatten)]
+    pub server: GrpcServerArgs,
+    pub service: String,
+    pub method: String,
+    /// The request message, JSON text.
+    #[serde(default)]
+    pub message: String,
+    /// Deadline for the call (none by default).
+    #[serde(default)]
+    pub max_time_ms: Option<u64>,
+}
+
+fn grpc_target(a: &GrpcServerArgs) -> hitop_core::grpc::Target {
+    let path = |p: &String| {
+        let p = std::path::PathBuf::from(p);
+        match &a.base_dir {
+            Some(b) if p.is_relative() && !b.is_empty() => std::path::Path::new(b).join(p),
+            _ => p,
+        }
+    };
+    hitop_core::grpc::Target {
+        address: a.address.clone(),
+        plaintext: a.plaintext,
+        metadata: a.metadata.clone(),
+        protos: a.protos.iter().map(path).collect(),
+        import_paths: a.import_paths.iter().map(path).collect(),
+        ..Default::default()
+    }
+}
+
+async fn grpc_open(
+    t: &hitop_core::grpc::Target,
+    timeout_ms: Option<u64>,
+) -> Result<(hitop_core::grpc::Channel, hitop_core::grpc::DescriptorPool, hitop_core::grpc::Source), String> {
+    use hitop_core::grpc;
+    let timeout = Some(std::time::Duration::from_millis(timeout_ms.unwrap_or(10_000)));
+    let channel = grpc::connect(t, timeout).await.map_err(|e| format!("{e:#}"))?;
+    let (pool, source) = grpc::schema(t, &channel, timeout).await.map_err(|e| format!("{e:#}"))?;
+    Ok((channel, pool, source))
+}
+
+fn grpc_source(s: &hitop_core::grpc::Source) -> &'static str {
+    use hitop_core::grpc::{Reflection, Source};
+    match s {
+        Source::Protos => "protos",
+        Source::Reflection(Reflection::V1) => "reflection v1",
+        Source::Reflection(Reflection::V1Alpha) => "reflection v1alpha",
+    }
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct GrpcListed {
+    /// `protos`, `reflection v1` or `reflection v1alpha`.
+    pub source: String,
+    pub services: Vec<hitop_core::grpc::ServiceInfo>,
+}
+
+/// The services and methods of the schema.
+#[tauri::command]
+pub async fn grpc_list(args: GrpcServerArgs) -> Result<GrpcListed, String> {
+    let (_, pool, source) = grpc_open(&grpc_target(&args), args.timeout_ms).await?;
+    Ok(GrpcListed { source: grpc_source(&source).into(), services: hitop_core::grpc::services(&pool) })
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct GrpcDescribed {
+    pub description: String,
+    /// A JSON message to start from: a message's own, a method's request.
+    pub template: Option<Value>,
+}
+
+/// A service, method (`package.Service/Method`), message or enum, as in a .proto file.
+#[tauri::command]
+pub async fn grpc_describe(args: GrpcServerArgs, symbol: String) -> Result<GrpcDescribed, String> {
+    use hitop_core::grpc;
+    let (_, pool, _) = grpc_open(&grpc_target(&args), args.timeout_ms).await?;
+    let description = grpc::describe(&pool, &symbol).map_err(|e| format!("{e:#}"))?;
+    let template = pool
+        .get_message_by_name(symbol.trim_start_matches('.'))
+        .or_else(|| grpc::split_method(&symbol).and_then(|(s, m)| grpc::find_method(&pool, &s, &m).ok()).map(|m| m.input()))
+        .map(|m| grpc::template(&m));
+    Ok(GrpcDescribed { description, template })
+}
+
+/// What the page gets on the channel; `status` is the last.
+#[derive(Serialize, Clone)]
+#[serde(tag = "type", rename_all = "camelCase")]
+pub enum GrpcEvent {
+    Headers { metadata: Vec<(String, String)> },
+    Message { data: Value },
+    Status { code: i32, name: String, message: String, trailers: Vec<(String, String)> },
+}
+
+#[derive(Serialize)]
+pub struct GrpcStarted {
+    pub id: u64,
+}
+
+/// Starts a unary or server-streaming call. Problems found before sending
+/// (no server, no such method, bad JSON) are errors; the rest arrives on
+/// the channel.
+#[tauri::command]
+pub async fn grpc_call(
+    app: tauri::AppHandle,
+    state: tauri::State<'_, GrpcCalls>,
+    args: GrpcCallArgs,
+    on_event: tauri::ipc::Channel<GrpcEvent>,
+) -> Result<GrpcStarted, String> {
+    use hitop_core::grpc::{self, Event};
+    use tauri::Manager;
+    let mut target = grpc_target(&args.server);
+    target.service = args.service;
+    target.method = args.method;
+    target.message = args.message;
+    let (channel, pool, _) = grpc_open(&target, args.server.timeout_ms).await?;
+    let max_time = args.max_time_ms.map(std::time::Duration::from_millis);
+    let mut events = grpc::call(channel, &pool, &target, max_time).await.map_err(|e| format!("{e:#}"))?;
+    let id = state.next.fetch_add(1, std::sync::atomic::Ordering::Relaxed) + 1;
+    let handle = tauri::async_runtime::spawn(async move {
+        while let Some(e) = events.recv().await {
+            let _ = on_event.send(match e {
+                Event::Headers(metadata) => GrpcEvent::Headers { metadata },
+                Event::Message(data) => GrpcEvent::Message { data },
+                Event::Status(s) => GrpcEvent::Status { code: s.code, name: s.name, message: s.message, trailers: s.trailers },
+            });
+        }
+        if let Ok(mut running) = app.state::<GrpcCalls>().running.lock() {
+            running.remove(&id);
+        }
+    });
+    state.running.lock().map_err(|e| e.to_string())?.insert(id, handle);
+    Ok(GrpcStarted { id })
+}
+
+/// Stops a call; the page gets no more events for it.
+#[tauri::command]
+pub fn grpc_cancel(state: tauri::State<'_, GrpcCalls>, id: u64) -> Result<(), String> {
+    if let Some(h) = state.running.lock().map_err(|e| e.to_string())?.remove(&id) {
+        h.abort();
+    }
+    Ok(())
+}
