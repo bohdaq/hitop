@@ -154,7 +154,7 @@ Secret variables: `secret: true` in an environment file, with the value resolved
 | T24 | Client sync, teams, cloud runs | todo | | |
 | T25 | SSO and audit log | todo | | |
 | T26 | iOS companion code | done (handoff) | 981c736, c1bfa7f, 24c00c5, f3332cb; CI 41309724315 (HitopKit on Linux); Xcode build in section 6 | 2026-11-01 |
-| Brand | Brand unification (owner request 2026-11-01) | done (handoffs) | b924e03, ebc7438; hitop-action 8931565 (untagged) | 2026-11-01 |
+| Brand | Brand unification (owner request 2026-11-01) | done (handoffs) | b924e03, ebc7438, bc588a1; CI 41317707104; hitop-action 8931565 (untagged) | 2026-11-01 |
 | 1.1 | 1.1 owner follow-ups: MCP WebSocket/OpenAPI tools, row-by-row OpenAPI sync, secret manager settings | done | cf400c6, 75d5a1a, ef5ab83, bc1d19a; ships in CLI/desktop 1.1.0 (not tagged) | 2026-11-01 |
 
 Common commands referenced below:
