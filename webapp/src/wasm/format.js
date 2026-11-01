@@ -16,6 +16,11 @@ function api(m) {
     normalize: (kind, value) => call(m.normalize, kind, value),
     // Postman collection JSON + { script: [[line, call, text]] } → { collection, report }.
     importPostman: (json, scans) => call(m.importPostman, json, scans),
+    // OpenAPI 3 text (YAML or JSON) + { flat, source, inlineAuth } → { collection, report: { mapped, skipped, warnings } }.
+    importOpenapi: (text, options) => call(m.importOpenapi, String(text ?? ""), options ?? {}),
+    // An imported collection + newer spec text → { collection, diff: { added, changed, removed, unchanged, collection }, report }.
+    syncOpenapi: (collection, text, options, prune) => JSON.parse(m.syncOpenapi(JSON.stringify(collection), String(text ?? ""), JSON.stringify(options ?? {}), Boolean(prune))),
+    isOpenapi: (text) => m.isOpenapi(String(text ?? "")),
     // A GraphQL request's JSON body (variables filled in), as hitop-core
     // builds it: text, not parsed. Throws when the variables aren't an object.
     graphqlBody: (query, variables, operationName) => m.graphqlBody(String(query ?? ""), String(variables ?? ""), String(operationName ?? "")),

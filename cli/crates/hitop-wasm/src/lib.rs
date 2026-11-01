@@ -116,6 +116,43 @@ pub fn import_postman(json: &str, scans_json: &str) -> Result<String, JsError> {
     import_postman_json(json, scans_json).map_err(chain)
 }
 
+/// An OpenAPI 3.0 or 3.1 spec (YAML or JSON text) through hitop-core's
+/// importer, as `{collection, report}`. `options_json`: `{flat, source,
+/// inlineAuth}` (the web app passes `inlineAuth: true`: it has no collection auth).
+pub fn import_openapi_json(text: &str, options_json: &str) -> anyhow::Result<String> {
+    let opts: hitop_core::openapi::Options = if options_json.trim().is_empty() { Default::default() } else { serde_json::from_str(options_json)? };
+    let (collection, report) = hitop_core::openapi::import(text, &opts)?;
+    Ok(serde_json::to_string(&serde_json::json!({ "collection": collection, "report": report }))?)
+}
+
+/// See [`import_openapi_json`].
+#[wasm_bindgen(js_name = importOpenapi)]
+pub fn import_openapi(text: &str, options_json: &str) -> Result<String, JsError> {
+    import_openapi_json(text, options_json).map_err(chain)
+}
+
+/// A collection imported from a spec, synced with the spec in `text`:
+/// `{collection, diff, report}` (`diff`: added, changed, removed, unchanged).
+/// Removed operations' requests stay unless `prune`.
+pub fn sync_openapi_json(collection_json: &str, text: &str, options_json: &str, prune: bool) -> anyhow::Result<String> {
+    let collection: Collection = serde_json::from_str(collection_json)?;
+    let opts: hitop_core::openapi::Options = if options_json.trim().is_empty() { Default::default() } else { serde_json::from_str(options_json)? };
+    let s = hitop_core::openapi::sync(&collection, text, &opts, prune)?;
+    Ok(serde_json::to_string(&serde_json::json!({ "collection": s.collection, "diff": s.diff, "report": s.report }))?)
+}
+
+/// See [`sync_openapi_json`].
+#[wasm_bindgen(js_name = syncOpenapi)]
+pub fn sync_openapi(collection_json: &str, text: &str, options_json: &str, prune: bool) -> Result<String, JsError> {
+    sync_openapi_json(collection_json, text, options_json, prune).map_err(chain)
+}
+
+/// True when the text is an OpenAPI (or Swagger) document.
+#[wasm_bindgen(js_name = isOpenapi)]
+pub fn is_openapi(text: &str) -> bool {
+    hitop_core::openapi::detect(text)
+}
+
 /// The JSON body of a GraphQL request whose `${variables}` are filled in
 /// (`{"query","variables","operationName"}`), built by the same code as the
 /// CLI's (`hitop_core::graphql::request_body`). Fails when the variables
@@ -187,6 +224,23 @@ mod tests {
         assert_eq!(out["collection"]["requests"][0]["url"], "${b}/x");
         assert_eq!(out["report"]["issues"][0]["what"], "pm.sendRequest");
         assert_eq!(out["report"]["issues"][0]["location"], "a (post-request script)");
+    }
+
+    #[test]
+    fn openapi_import_and_sync() {
+        let spec = "openapi: 3.0.0\ninfo: {title: P}\nservers: [{url: /v1}]\nsecurity: [{k: []}]\ncomponents: {securitySchemes: {k: {type: http, scheme: bearer}}}\npaths:\n  /a: {get: {operationId: a, responses: {}}}\n";
+        let out: serde_json::Value = serde_json::from_str(&import_openapi_json(spec, r#"{"source":"https://x.test/spec.yaml","inlineAuth":true}"#).unwrap()).unwrap();
+        let c = &out["collection"];
+        assert_eq!(c["variables"]["baseUrl"], "https://x.test/v1");
+        assert_eq!(c["requests"][0]["auth"]["token"], "${k}");
+        assert!(c.get("auth").is_none(), "no collection auth in the web app");
+        assert_eq!(out["report"]["mapped"]["requests"], 1);
+        let spec2 = spec.replace("/a: {get: {operationId: a", "/b: {get: {operationId: b");
+        let s: serde_json::Value = serde_json::from_str(&sync_openapi_json(&c.to_string(), &spec2, r#"{"inlineAuth":true}"#, false).unwrap()).unwrap();
+        assert_eq!(s["diff"]["added"][0]["operationId"], "b");
+        assert_eq!(s["diff"]["removed"][0]["operationId"], "a");
+        assert_eq!(s["collection"]["requests"].as_array().unwrap().len(), 2);
+        assert!(is_openapi(spec) && !is_openapi("{\"info\":{}}"));
     }
 
     #[test]
