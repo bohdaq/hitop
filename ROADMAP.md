@@ -151,7 +151,7 @@ Secret variables: `secret: true` in an environment file, with the value resolved
 | T21 | Secret manager integrations | done (handoff) | 47d72f0, b375fb8, bdd1f67, 9d12eaf, 7979fa5; CI 41306134755; real-account check in section 6 | 2026-11-01 |
 | T22 | HTML reports and scheduled runs | done | 9c3302e, 7dd53a3, 2cdc097, 0638ca4; CI 41289440630 | 2026-11-01 |
 | T23 | Sync server (AGPL) | done (handoff) | 5cd2ac2, 9a8119f, 35f2775, f08bbce, a3b6c7d, ce07adf; deployed https://sync.hitop.rws8.tech | 2026-11-01 |
-| T24 | Client sync, teams, cloud runs | todo | | |
+| T24 | Client sync, teams, cloud runs | done (handoff) | 7aea6c7, cf840bd, 3213817, ab721a2, ae52378, 320eaff, e119f0f, 67dde26, fafab1d, 4a0fb9f, 24f18a0, 533aa7a, 7283511; CI 41323865763; sync server + site deploy in section 6 | 2026-11-01 |
 | T25 | SSO and audit log | todo | | |
 | T26 | iOS companion code | done (handoff) | 981c736, c1bfa7f, 24c00c5, f3332cb; CI 41309724315 (HitopKit on Linux); Xcode build in section 6 | 2026-11-01 |
 | Brand | Brand unification (owner request 2026-11-01) | done (handoffs) | b924e03, ebc7438, bc588a1; CI 41317707104; hitop-action 8931565 (untagged) | 2026-11-01 |
@@ -1445,6 +1445,59 @@ export PATH="$HOME/.cargo/bin:$PATH"
   owner explicitly shares a run key (documented trade-off with E2E encryption).
 - No billing and no paid accounts.
 - **Done when:** two-client sync e2e test; role enforcement tests.
+- **Notes (2026-11-01, done; deploy and the external review are handoffs):**
+  - Layout: `hitop-sync-crypto` moved to `cli/crates/` (cli workspace, publishable 0.1.0; release-cli.yml publishes it before
+    hitop-core when crates.io doesn't have its version); sync-server dev-depends on it by path, still never links it. Client
+    decisions are `hitop_core::sync` (no deps, so desktop's lock didn't change): unit = a collection folder's files, one blob per
+    file under a random 128-bit id, plaintext `{"v":1,"path","text"}`; `plan(local, state, remote, me, ids)` → writes, removes,
+    pushes, conflicts, merged, skipped; three-way against the last synced text; `hitop.yaml`/environments/globals merge key by key
+    (request `order` merges as a list); a request changed on both sides is a conflict and never pushed until resolved; create
+    races converge on the smaller blob id (the loser's client merges and tombstones it); remote paths must pass `is_synced_path`
+    (no `..`, hidden, absolute, other files); own pushes coming back and older versions are ignored; a same-text rewrite (re-encryption)
+    keeps a local edit. Core tests 9 (an in-memory server with the real CAS rules), wasm 1 + web unit (vectors in wasm).
+  - Crypto additions: `fingerprint(pk)` = first 16 bytes of SHA-256("hitop-sync/v1/fingerprint" || pk), 8×4 hex (zero key pinned in a
+    test, cross-checked with Python); `random_hex`. hitop-wasm exposes plan/pushed/resolve and keygen/wrap/unwrap/seal/open/
+    fingerprint/checkVectors (getrandom 0.4 `wasm_js`, no rustflags needed); `webapp/tests/unit.mjs` runs `vectors/v1.json` in WASM.
+  - CLI `hitop sync login|logout|whoami|ls|init|link|unlink|status|pull|push|resolve --mine|--theirs|--show|members|invite|accept|
+    add|remove|role|trust|runner create` (commands/sync/). Keychain `sync/<host>` (or `HITOP_SYNC_KEY_FILE`), TOFU pins (wraps only
+    for pinned keys: `--trust <fp>` or a TTY prompt; a changed key for a pinned id is refused), `remove` rotates and re-encrypts every
+    live blob, `members` hands older and current epoch keys to trusted new devices, `runner create` prints `hitop-runner-1.<b64url>`
+    (token + device secret; `HITOP_SYNC_RUNNER` makes `pull` read-only for that workspace, and the server wins: a CI checkout's
+    older copy is overwritten and stray request files go, no state kept). Exit 1 while a conflict is open.
+    `hitop schedule --sync`: GitHub = a docker `sync pull` step with `secrets.HITOP_SYNC_RUNNER` before the action (actionlint
+    clean); cron = pull as this device, then run.
+  - Desktop + web: one implementation (`webapp/src/sync.js`, Sync page `views/sync-view.js`), no new Tauri commands: HTTP via fetch
+    (web; the server's CORS) or `send_request` (desktop), device secret via `folderSecrets` (keychain on the desktop, localStorage
+    on the web). A shared collection is a folder collection: its disk folder, or app storage under the ref `hitop-sync:<ws>`
+    (`withSyncFolders` wraps `platform().folders`; Open folder/Save to folder now check `folders.pick`). Conflicts: View both /
+    Keep mine / Take theirs; members with fingerprints, Trust… dialog, Add disabled until trusted, roles, remove; invites by mail or
+    link; runner credential shown once with the runner-vs-server trade-off text. Closing or deleting a shared collection marks its
+    link closed (a reload of its files re-links it) and the next start drops its local copy.
+  - Server (migration 2, SQLite and Postgres, applied on start): `users.runner_of`, `invites`; `PUT .../members/:user {role}`
+    (one owner kept, runners stay viewers), `POST/GET/DELETE .../invites` (mailed via the existing SMTP path or a link, token hashed,
+    7 days, 50 open, 20 mails/h per workspace, email-bound when mailed), `POST /v1/invites/accept`, `POST .../runners` (10 per
+    workspace, viewer, `<id>@runner.invalid`, one-year session); runner accounts can't sign in, add keys, look up users, accept
+    invites, register passkeys or create workspaces; removing one deletes it; deleting a workspace deletes its runners and invites;
+    `/invite` page (code in the fragment). A test opens a T23-shaped database (migration 1 + an account) and checks it migrates.
+  - Tests: sync-server roles 2 (every role × read/changes/blob/wraps/write/delete/wrap-for-others/add/role/invite/list/delete invite/
+    runner/rotate/remove/delete workspace for owner, editor, viewer, runner, outsider, removed member; a removed member can't open
+    anything written after the rotation, not even from the database bytes), teams 5, postgres 2 (teams flow added); CLI tests/sync.rs
+    2 (two clients + a viewer + a runner against the real server binary: create, edit, delete, conflict both ways, invite/accept/
+    trust/add, remove with rotation and re-encryption, no plaintext in the server's files), schedule +1; web e2e tests/sync.cjs in web
+    and Tauri modes (two browser contexts, 24 checks incl. reload, a deleted shared collection staying deleted, keychain-only device
+    key on the desktop, no plaintext on the server, the CLI pulling with a credential the web app made when HITOP_BIN is set). Every
+    other e2e suite still passes in both modes. CI builds the sync server in the cli and web jobs
+    (`HITOP_SYNC_SERVER_BIN`, required when `CI` is set).
+  - Deviations: server-side runs are not implemented. The spec allowed a minimal server path; it would need a decrypting key on the
+    server (the server binary links no crypto by design, tests/no_crypto_in_server.rs), so T24 ships the runner path fully and
+    documents the trade-off (Sync page, guide, THREAT_MODEL "Teams"): a self-hoster who wants it runs a runner credential on the
+    host as its own service. Web-app collections without a folder sync collection files only (they have no environments of their
+    own); folder collections sync their environments and globals too. Desktop folder collections are synced through the canonical
+    writer (a hand-formatted file is pushed once in canonical form); that disk-folder path (`applyFiles` → `folders.write`) has no
+    e2e (tests/sync.cjs shares app-storage collections), so it is in the macOS check below. Removal can't take back what a member already synced (documented).
+  - Open: authenticated wraps (HPKE base mode doesn't authenticate the wrapper: a server can hand a new member a key of its choice;
+    THREAT_MODEL item 2); signed manifest; device recovery; the web app's device key in localStorage; `hitop sync` reaches users
+    with the next CLI release (first to publish hitop-sync-crypto); generated `--sync` workflows need that image (> 1.0.0).
 
 #### T25 SSO and audit log
 - OIDC sign-in and an audit log in the sync server, open source.
@@ -1624,6 +1677,9 @@ Agent appends here; owner ticks when done.
 | 2026-11-01 | T23 | Put the SMTP password on the VM: `/etc/hitop-sync/env` exists (root, 0600) but has no `SMTP_URL` line, so email sign-in at https://sync.hitop.rws8.tech answers 503. Add `SMTP_URL=smtp://noreply%40rws8.tech:<password>@127.0.0.1:587` (or `smtp://noreply:<password>@...` if the account logs in without the domain; percent-encode special characters in the password), then `sudo systemctl restart hitop-sync`. `SMTP_TLS_SERVER_NAME=mail.rws8.tech` is already there (STARTTLS on 127.0.0.1:587 verifies as mail.rws8.tech). Test: `curl --resolve sync.hitop.rws8.tech:443:127.0.0.1 -XPOST https://sync.hitop.rws8.tech/v1/auth/email -d '{"email":"<you>"}'` and `journalctl -u hitop-sync` shows "sign-in mail sent". || done 2026-11-01: owner added SMTP_URL; test sign-in mail to noreply@rws8.tech delivered (HTTP 202, postfix local delivery) |
 | 2026-11-01 | T10 | Nothing to do now; for the MAS build after the T5 switch: build it as today (plain `tauri build`, no `--features telemetry`), so it has no usage ping and the App Store "Data Not Collected" label stays true. CI checks that configuration on every push. | |
 | 2026-11-01 | T23 | Before any public launch of hitop sync: get an external review of the encryption design (`sync-server/THREAT_MODEL.md`) and code (`sync-server/crates/hitop-sync-crypto`, plus the T24 clients). Top item for the reviewer: the server hands out members' public keys, so key substitution is the open risk until clients pin fingerprints. | |
+| 2026-11-01 | T24 | Deploy the sync server built from main (has migration 2), as in T23: `cd sync-server && cargo build --release --locked`, copy `target/release/hitop-sync-server`, `deploy/hitop-sync.service` and `deploy/install.sh` into one directory on the VM, run `install.sh` there (it backs up `sync.db` and the binary, installs, restarts `hitop-sync`, checks `/healthz`). The server migrates the SQLite database on start (adds `users.runner_of` and the `invites` table; no manual SQL, nothing to change in `/etc/hitop-sync/env`: `SMTP_URL` mails invites the same way as sign-in links, and `HITOP_SYNC_ALLOWED_ORIGINS` must still list `https://hitop.rws8.tech` for the web app's Sync page). Check: `curl --resolve sync.hitop.rws8.tech:443:127.0.0.1 https://sync.hitop.rws8.tech/` shows the version, `/invite` serves the invite page, `journalctl -u hitop-sync` has no migration error. Then deploy the site and web app (`deploy/deploy.sh`): the Sync page and the guide /terms/share-a-workspace-with-your-team.html. | |
+| 2026-11-01 | T24 | Before any public launch of hitop sync (replaces nothing above, adds to it): the external review now covers the clients too: `cli/crates/hitop-sync-crypto`, `cli/crates/hitop-core/src/sync.rs`, `cli/crates/hitop/src/commands/sync/`, `webapp/src/sync.js` and `sync-server/THREAT_MODEL.md` (sections "Clients", "Teams"). Top items: unauthenticated key wraps (a server can hand a new member a workspace key of its choice; fix = HPKE Auth mode or signed wraps) and the first fingerprint comparison (TOFU is implemented). Also decide whether the web app may hold device keys in localStorage for real workspaces. | |
+| 2026-11-01 | T24 | Next CLI release: release-cli.yml now publishes `hitop-sync-crypto` 0.1.0 to crates.io first (a new crate under your token; it skips the step when that version exists). `hitop schedule --github --sync` workflows need an image with `hitop sync` (that release, `--hitop-version`). On your Mac with the T5 check: Sync page in the desktop build: sign in, share a collection, see the device key in Keychain (`security find-generic-password -s hitop -a hitop-sync/sync.hitop.rws8.tech`), sync with `hitop sync link` in a terminal; then share a collection opened with Open folder and check that a pull rewrites the YAML on disk and Git shows it. Open question: should the server ever run monitors itself (T24 shipped runners only, see the T24 notes)? | |
 | 2026-11-01 | T12 | Optional, when you want it listed: submit `hitop mcp` to MCP directories (for example the official MCP Registry, mcp.so, Smithery, PulseMCP, Glama). Text: **Name** hitop. **Short description** "Run and edit your HTTP API collections from your AI tools: list, read, run, create and update requests in a hitop collection folder, with secrets masked." **Long description** "hitop mcp is a local stdio MCP server for hitop, the open source (MIT) HTTP API client. Point it at a collection folder in your repository (`hitop mcp ./my-api`) or at hitop's global storage. Tools: list_collections, list_requests, get_request, run_request, run_collection (returns the hitop run report), create_request, update_request, list_environments, set_environment, run_websocket (one bounded WebSocket exchange), import_openapi, sync_openapi. Requests run like `hitop run`: the same variables, scripts, assertions and cookie jar. Secret values come from the OS keychain or HITOP_SECRET_* env vars and are shown as •••• in every result; there is no delete tool (sync_openapi removes requests of dropped operations only with apply and prune)." (Tool list updated for 1.1.) **Install** `cargo install hitop` or a binary from https://github.com/bohdaq/hitop/releases. **Config** `{"mcpServers": {"hitop": {"command": "hitop", "args": ["mcp", "./my-api"]}}}`. **Docs** https://hitop.rws8.tech/terms/use-hitop-with-claude-code-and-cursor.html. **License** MIT. **Categories** developer tools, API testing. | |
 | 2026-11-01 | T11 | Record the terminal GIF (vhs isn't installed on the agent's machine): install vhs (https://github.com/charmbracelet/vhs, needs ttyd and ffmpeg) and hitop 0.3.0 on PATH, then from the repository root `vhs site/demo/demo.tape`; it writes `site/demo/demo.gif` using the local launch-gate mock (nothing leaves the machine). Commit the GIF, or send it and the agent wires it into the README, home page and launch posts. | |
 | 2026-11-01 | T11 | Mac App Store update at 0.2.0: on your Mac, from tag `desktop-v0.2.0`, build as today with plain `tauri build` (no `--features telemetry`, so the "Data Not Collected" label stays true), sign and upload with Transporter. tauri.conf.json now says 0.2.0. Whether this build uses the React UI or the web app overlay depends on the T5 check above. | |
