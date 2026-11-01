@@ -497,6 +497,9 @@ fn new_blob_id() -> String {
 /// Pull (and push, when `push`). Retries when someone writes in between.
 fn sync_folder(t: &Target, dir: &Path, push: bool) -> Result<(Plan, usize)> {
     let mut ws = Workspace::open(&t.api, &t.device, &t.workspace)?;
+    if t.runner {
+        return runner_pull(&ws, t, dir);
+    }
     let mut state = store::load_state(&t.workspace, dir)?;
     for _ in 0..5 {
         let (changes, seq) = ws.changes(state.seq)?;
@@ -531,6 +534,21 @@ fn sync_folder(t: &Target, dir: &Path, push: bool) -> Result<(Plan, usize)> {
         }
     }
     bail!("the workspace kept changing while syncing; try again")
+}
+
+/// A runner's pull: the server wins. The folder ends up holding exactly the workspace's files
+/// (a CI checkout may hold an older copy of the collection; it is overwritten, and synced files
+/// the workspace doesn't have are removed). Nothing is pushed and no state is kept between runs.
+fn runner_pull(ws: &Workspace, t: &Target, dir: &Path) -> Result<(Plan, usize)> {
+    let (changes, seq) = ws.changes(0)?;
+    let mut plan = engine::plan(&Files::new(), &State::default(), &changes, &t.me, &mut new_blob_id);
+    plan.state.seq = seq;
+    let on_disk = read_folder(dir)?;
+    plan.write.retain(|p, text| on_disk.get(p) != Some(text));
+    plan.remove = on_disk.keys().filter(|p| !plan.state.entries.get(*p).is_some_and(|e| e.base.is_some())).cloned().collect();
+    plan.push.clear();
+    apply(dir, &plan)?;
+    Ok((plan, 0))
 }
 
 fn report(plan: &Plan, waiting: usize, pushed: bool) -> i32 {

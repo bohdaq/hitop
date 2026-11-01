@@ -302,9 +302,15 @@ fn two_clients_sync_a_folder_end_to_end() {
     assert!(cred.starts_with("hitop-runner-1."));
     let ci = Client::new(&server);
     let r = ci.folder("checkout");
+    // A CI checkout that already holds an older copy, and a request the workspace doesn't have:
+    // the runner's pull makes the folder the workspace's, without conflicts.
+    write(&r, "requests/list-orders.yaml", &request("List orders", "https://stale.example.test"));
+    write(&r, "requests/stray.yaml", &request("Stray", "https://stray.example.test"));
+    write(&r, "README.md", "not synced, left alone\n");
     let o = Client::out(ci.cmd().env("HITOP_SYNC_RUNNER", &cred).args(["sync", "pull", "-c", r.to_str().unwrap()]).output().unwrap());
-    assert_eq!(o.code, 0, "{}", o.stderr);
+    assert_eq!(o.code, 0, "{}\n{}", o.stdout, o.stderr);
     assert_eq!(snapshot(&r), snapshot(&a));
+    assert!(!r.join("requests/stray.yaml").exists() && r.join("README.md").exists());
     let o = Client::out(ci.cmd().env("HITOP_SYNC_RUNNER", &cred).args(["sync", "push", "-c", r.to_str().unwrap()]).output().unwrap());
     assert_eq!(o.code, 2);
     assert!(o.stderr.contains("read-only"));
