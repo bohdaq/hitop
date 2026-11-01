@@ -131,7 +131,7 @@ Secret variables: `secret: true` in an environment file, with the value resolved
 | T1 | YAML collection format in hitop-core and CLI | done | 9697b6d, 8b1b6de, df70ec0, edf04e5 | 2026-11-01 |
 | T2 | Secrets in the OS keychain | done | accd2a4, 20951a8, 8104002, b15cb14 | 2026-11-01 |
 | T3 | CI runner: reports, exit codes, flags | done | 3ee1091, ea5b43c, 8304dcc, aa5f226 | 2026-11-01 |
-| T4 | Postman migration: environments and pm.* | todo | | |
+| T4 | Postman migration: environments and pm.* | done | cee58cb, 56bda1c, c629096, 1eaf04e, e4ed688, 53a0156 | 2026-11-01 |
 | T5 | Desktop = web app; web folder import/export | handoff | a1e7704, 767f0d2, c7ae8f5, 37a6385, 54611a7, f527ceb; macOS check in section 6 | 2026-11-01 |
 | T6 | Cookie jar and multipart in Rust and CLI | todo | | |
 | T7 | Release infra: GitHub Releases, Docker image | done | ee41820; dry run cli-v0.3.0-rc.1, desktop-v0.2.0-rc.1; deployed | 2026-11-01 |
@@ -337,6 +337,71 @@ export PATH="$HOME/.cargo/bin:$PATH"
   printed by `hitop import`.
 - **Done when:** fixtures from three real-world public Postman collections import and run against
   a mock server; report lists unsupported calls; CI green.
+- **Notes (2026-11-01, done):**
+  - Shim: `shared/pm-shim.js` defines `__hitopPm(api)` (pm plus Postman's legacy names) and
+    `__hitopPmUnsupported(src)` (the report check, with the supported path list in the same file).
+    hitop-core embeds a byte-for-byte copy, `cli/crates/hitop-core/pm-shim.js`
+    (`scripting::PM_SHIM`), because `cargo publish` only packages files inside the crate and a
+    symlink breaks Windows checkouts; the test `shared_shim_is_the_packaged_copy` fails when the two
+    differ (copy `shared/` over). The web app loads `shared/pm-shim.js?raw` (`webapp/src/pm.js`),
+    the Tauri mock (`webapp/tests/tauri-mock.cjs`) reads it from disk.
+  - The shim loads only when a script mentions `pm`, `postman`, `tests`, `responseBody`,
+    `responseCode`, `responseTime`, `environment` or `globals`; then the script runs inside a
+    function that receives those names. Every other script runs exactly as before.
+  - Variables: Postman's collection, environment, global and local scopes are one set in hitop.
+    `PreRequestResult`/`PostRequestResult` gained `variables` (set or `None` = unset); the runner
+    applies them for the rest of the run (never written to files). `prepare` keeps a missing
+    `${name}` for the pre-request script and fills it after, and rebuilds what the script left
+    unchanged when it set variables, so `pm.variables.set('ts', ...)` works in the same request.
+    The web app keeps script variables in memory per collection (`store.scriptVariables`) until
+    reload. `run_post_request_script_with` + `SentRequest` give post scripts `pm.request`;
+    the old functions keep their signatures for the desktop.
+  - Beyond the spec, because Conduit needs them: the legacy sandbox (`tests[...]`, `responseBody`,
+    `responseCode`, `responseTime`, `environment`, `globals`, `postman.*Variable`), `pm.globals`,
+    `pm.response.to.*`, `pm.request` edits. `assert.ok(c, name, detail)` takes a detail (chai's
+    message) in scripting.rs and `features.js`. `pm.expect` outside `pm.test` records its own test.
+  - Importer: `hitop-core/src/postman.rs` (v2.0 and v2.1); `export::from_postman` delegates to it.
+    Folders → `file` paths (`folder/sub/slug`, numbered on clashes) with derived ids; collection
+    auth → `Collection.auth`; folder auth inherited by its requests; `noauth` → `{type: none}`;
+    collection and folder scripts put in front of the request's own, each in a `{ }` block with a
+    `// From ...` line; `{{x}}` → `${x}`; disabled headers and query rows kept off; urlencoded and
+    formdata bodies; GraphQL sent as a JSON body; saved responses → `examples`. Reported: script
+    lines with unsupported calls (checked where written, collection or folder, not per request),
+    unsupported auth types, file form fields, other body modes, `{{$dynamic}}` variables (left as
+    written). Environments: `type: "secret"` → `secrets`, values kept apart; disabled values left
+    out. Globals have no hitop scope: they become defaults in every environment imported with them
+    (the environment wins), or an environment of their own.
+  - CLI: `hitop import <files>... [--to <dir>] [--force]`; files detected by content (collection,
+    environment, globals, HITOP JSON). `--to` writes the folder (new workspace id; an existing
+    folder keeps its id; environments added or replaced by name). Secret values go to the keychain
+    (`<workspace>/<env>/<name>`, `global` without `--to`); without one, a note names
+    `HITOP_SECRET_<ENV>_<NAME>`. `hitop env import` of a Postman file does the same. The report
+    prints after the import; the exit code stays 0.
+  - Web app: Postman collections import through hitop-core's importer in WASM (`importPostman` in
+    hitop-wasm, with the page's shim check results passed in, so CLI and web give the same report);
+    the "Check after import" dialog lists it (copy says "script before/after"). The web app has no
+    collection auth, so `forWebApp` copies it into requests without their own. Postman `secret`
+    environment values become web secrets (masked, kept in localStorage as for any web secret).
+    HITOP and Bruno JSON still import through `collectionService.jsx`.
+  - Fixtures (`cli/fixtures/postman/`, README with sources): Conduit from gothinkster/realworld
+    (MIT, `dedb6969fe`), newman's `examples/sample-collection.json` (Apache-2.0, `8fbb2eb4`),
+    Adyen `BinLookupService-v54.json` (MIT, `50d57dd2`), vendored unchanged with their licenses;
+    the environment and globals files next to them are ours (dummy secrets). `tests/postman.rs`
+    imports each with `--to` and runs it against httpmock: Conduit 32 requests and over 300 legacy
+    checks pass, and its mock only answers with the token and slug earlier scripts set; newman's
+    sample passes and fails with chai's message; Adyen sends the secret API key from the globals.
+  - Tests: hitop-core 116 unit (scripting 7, postman 4, prepare 1, interpolation 1 new) + 4 format;
+    hitop 3 + 34 cli + 9 folder + 5 postman + 12 run + 7 secrets; hitop-wasm 3; web `tests/pm.mjs`
+    (shim, import report, three fixtures through WASM, secret env) and e2e `tests/postman.cjs`
+    (report dialog, folders and auth, a run where `pm.environment.set` carries a token, against a
+    local Node server) in web and Tauri mode. No new crates.
+  - Open: desktop `commands.rs` `run_pre_script`/`run_post_script` don't return `variables` yet
+    (desktop/ was out of scope), so in the desktop app a variable set by a script doesn't reach the
+    next request; `tauri.js` and the store already pass it on once the command returns it (the
+    Tauri e2e check records the current behaviour). Desktop post scripts see an empty
+    `pm.request` (it calls `run_post_request_script`). A variable a script sets for a secret name
+    isn't masked. chai methods outside the list fail at run time inside `pm.test` (with a
+    TypeError message) rather than in the report.
 
 #### T5 Desktop = web app; web folder import/export
 - Add a platform adapter in `webapp/src/platform/`: `web` (current fetch/proxy and localStorage)
@@ -729,6 +794,7 @@ Agent appends here; owner ticks when done.
 | 2026-11-01 | T3 | Open question, no action needed now: masking replaces every occurrence of a secret value, so a very short value (one to three characters) also masks those characters elsewhere in logs and reports (`token=t` turns every `t` into `••••`). Should hitop warn about, or refuse to mask, secrets shorter than some length? Until decided it masks them (safe side). | |
 | 2026-11-01 | T8 | Publish the action to the GitHub Marketplace: open https://github.com/bohdaq/hitop-action/releases/tag/v1.0.0, Edit, tick "Publish this Action to the GitHub Marketplace" (accept the agreement once), primary category **Testing**, secondary **Continuous integration**, then Update release. The name "Run hitop collection" (from `action.yml`) must be unique on the Marketplace; if taken, change `name:` in `action.yml` and retag v1. Listing text, if a field asks for it: "Run hitop API collections from your repository in GitHub Actions: pinned hitop image, JUnit artifact, job summary, secrets from repository secrets, and a failing check when a request fails." || done 2026-11-01: https://github.com/marketplace/actions/run-hitop-collection |
 | 2026-11-01 | T5 | On your Mac, build the desktop with the web app: `cd webapp && npm ci && cd ../desktop && npm ci && npm run build:webapp` (needs `rustup target add wasm32-unknown-unknown` and `cargo install wasm-bindgen-cli --version 0.2.126 --locked`; for the MAS package use your usual signing, the overlay only changes the frontend). Check: (1) your existing collections, environments and history from the React app and the CLI show up; (2) send to a public host and to `http://localhost:<port>` (no CORS errors), a multipart file upload, a cookie set then sent back; (3) a post script with `assert.*` and `setContext` across a collection run; (4) Environments: add a secret, quit and reopen, the value is still there and `hitop secret ls --env <env>` shows it in the Keychain (macOS asks for access once); (5) Collections → Open folder on a `hitop init` folder, edit and save a request, check the YAML changed on disk (`git diff`); quit and reopen: the folder comes back (in the sandboxed MAS build it may ask you to open it again: tell me if so); (6) Export as zip and Import zip; Export dialog saves JSON; (7) the app runs on the oldest macOS you support (12, Safari 16.4 WebKit needed; if 12 without updates fails, say so). If all pass, say so and the React `desktop/src` gets deleted and `release-desktop.yml` switched to the overlay. | |
+| 2026-11-01 | T4 | For whoever next touches `desktop/` (T5 follow-up, no owner action): add `variables: r.variables` to `PreScriptResult` and `PostScriptResult` in `desktop/src-tauri/src/commands.rs`, and call `run_post_request_script_with` with the sent request, so Postman scripts' `pm.environment.set` reaches later requests in the desktop app as it does in the CLI and web app. `webapp/src/platform/tauri.js` already forwards it; then change the `[tauri]` check in `webapp/tests/postman.cjs` to expect the token run to pass. | |
 | 2026-11-01 | T23 | Put the SMTP password on the VM: `/etc/hitop-sync/env` exists (root, 0600) but has no `SMTP_URL` line, so email sign-in at https://sync.hitop.rws8.tech answers 503. Add `SMTP_URL=smtp://noreply%40rws8.tech:<password>@127.0.0.1:587` (or `smtp://noreply:<password>@...` if the account logs in without the domain; percent-encode special characters in the password), then `sudo systemctl restart hitop-sync`. `SMTP_TLS_SERVER_NAME=mail.rws8.tech` is already there (STARTTLS on 127.0.0.1:587 verifies as mail.rws8.tech). Test: `curl --resolve sync.hitop.rws8.tech:443:127.0.0.1 -XPOST https://sync.hitop.rws8.tech/v1/auth/email -d '{"email":"<you>"}'` and `journalctl -u hitop-sync` shows "sign-in mail sent". | |
 | 2026-11-01 | T23 | Before any public launch of hitop sync: get an external review of the encryption design (`sync-server/THREAT_MODEL.md`) and code (`sync-server/crates/hitop-sync-crypto`, plus the T24 clients). Top item for the reviewer: the server hands out members' public keys, so key substitution is the open risk until clients pin fingerprints. | |
 

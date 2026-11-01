@@ -24,16 +24,19 @@ hitop/
 │       │       ├── storage.rs      # Load/save collections, history, contexts
 │       │       ├── http.rs         # reqwest blocking client (rustls, no OpenSSL)
 │       │       ├── interpolation.rs # ${variable} substitution
-│       │       ├── scripting.rs    # Pre/post request JS via boa_engine
+│       │       ├── scripting.rs    # Pre/post request JS via boa_engine; loads the pm.* shim (PM_SHIM) for Postman scripts
 │       │       ├── runner.rs       # Sequential collection runner (RunOptions: bail, timeout, variable overrides)
 │       │       ├── report.rs       # run reports: JSON (spec/run-report.md, reportVersion 1) and JUnit XML, no deps
 │       │       ├── export.rs       # HITOP and Postman v2.1 import/export
+│       │       ├── postman.rs      # Postman import: collections (folders, auth, scripts), environments, globals, ImportReport
 │       │       ├── secrets.rs      # secret variables: resolve order, keychain (keyring), Masker (••••)
 │       │       └── format/         # collection folders (YAML, spec/collection-format.md) ⇄ the JSON model; files.rs: in memory (path → text)
+│       │   ├── pm-shim.js          # byte-for-byte copy of shared/pm-shim.js (packaged; a test checks they match)
 │       │   └── tests/format.rs     # golden files (tests/golden/, UPDATE_GOLDEN=1 regenerates) + proptest round trip
 │       ├── hitop-wasm/         # format + model for the web app (wasm-bindgen =0.2.126), own workspace, not published
 │       └── hitop/              # Binary crate (published to crates.io)
 │           ├── tests/run.rs    # hitop run: JUnit shape (roxmltree), JSON report, exit codes, flags, masking
+│           ├── tests/postman.rs # hitop import --to of the fixtures/postman collections, run against httpmock
 │           └── src/
 │               ├── main.rs         # clap CLI entry point
 │               ├── commands/source.rs # a collection argument: global name or folder path
@@ -42,7 +45,8 @@ hitop/
 │               ├── commands/run.rs # `hitop run`: reporters, iterations, --data, exit codes 0/1/2
 │               ├── commands/data.rs # `--data` CSV (RFC 4180, hand written) and JSON rows
 │               └── output.rs       # Colored output, syntect highlighting
-│   └── fixtures/sample/        # collection folder run by tests/folder.rs against httpmock
+│   ├── fixtures/sample/        # collection folder run by tests/folder.rs against httpmock
+│   └── fixtures/postman/       # Conduit (MIT), newman sample (Apache-2.0), Adyen BIN lookup (MIT), vendored with licenses
 ├── desktop/                    # Tauri 2.0 desktop app
 │   ├── src/                    # React frontend (JSX, Vite 6)
 │   │   ├── App.jsx             # Main component, async loads data from Rust on mount
@@ -63,6 +67,7 @@ hitop/
 ├── webapp/                     # hitop.rws8.tech/app/: Lit + lit-material, reuses frontend/src/services
 │   ├── src/store.js            # all app logic (port of frontend/src/App.jsx), same localStorage keys; folders, zip
 │   ├── src/platform/           # adapters: web.js (fetch/proxy, localStorage, File System Access), tauri.js (invoke), history.js
+│   ├── src/pm.js               # Postman scripts: loads shared/pm-shim.js, runScript, import report helpers
 │   ├── src/wasm/format.js      # hitop-wasm wrapper; src/wasm/pkg/ is built by scripts/build-wasm.mjs (gitignored)
 │   ├── src/zip.js              # collection folder ⇄ .zip (fflate)
 │   ├── tests/harness.cjs       # e2e in web or Tauri mode (HITOP_MODE=tauri); tests/tauri-mock.cjs mocks invoke in Node
@@ -88,6 +93,7 @@ hitop/
 │   ├── deploy/                 # hitop-sync.service, install.sh, rws-routes.toml (sync.hitop.rws8.tech)
 │   └── THREAT_MODEL.md, README.md (self-host guide), Dockerfile
 ├── spec/collection-format.md   # collection folder format v1 (CC BY 4.0)
+├── shared/pm-shim.js           # the pm.* shim for Postman scripts, run by hitop-core (copy in the crate) and the web app
 ├── spec/run-report.md          # `hitop run --reporter json` report, reportVersion 1, and the JUnit shape (CC BY 4.0)
 ├── ROADMAP.md                  # agent work order to v1.x: decisions, rules, tranches T0–T26, status
 ├── docs/CNAME                  # only file left: keeps GitHub Pages 301ing bohdaq.github.io/hitop/* → hitop.rws8.tech
@@ -102,6 +108,9 @@ hitop/
 - Workspace version: `0.2.0` (both crates in sync)
 - Rust toolchain: `stable` via `cli/rust-toolchain.toml` — always use `~/.cargo/bin/cargo`, NOT Homebrew rustc
 - Run tests: `cd cli && ~/.cargo/bin/cargo test`; CI also runs `cargo clippy --all-targets -- -D warnings`
+- Postman: `hitop import <files>... [--to <dir>] [--force]` (collections, environments, globals detected by content;
+  secret values to the keychain; prints the import report). Edit `shared/pm-shim.js`, then copy it to
+  `cli/crates/hitop-core/pm-shim.js` (test `shared_shim_is_the_packaged_copy`)
 - Collection folders: `hitop init [dir]`, `hitop convert <json> <dir>` / `<dir> <json>` (`--environments`, `-c`, `--force`);
   `run`, `requests`, `variables`, `export`, `send -c` also take a folder path (`hitop run ./my-api --env local`); a folder uses only its own `environments/`
 - Secrets: `hitop secret set|get|rm|ls --env <env> [-c <folder>]`; `--secret NAME=value` on `send`, `run`, `requests send`;
@@ -158,6 +167,8 @@ hitop/
 ### Web app (`webapp/`)
 - Lit + lit-material in light DOM; theme from `site/src/theme.css`; `npm run build` → `dist/` (base `/app/`)
 - Storage must stay readable by the React app (same keys/shapes); `npm run test:e2e` with BASE= a running hitop-server
+- Postman collections import through hitop-wasm `importPostman` (same importer and report as the CLI); scripts that
+  mention pm/postman/tests/... run with the shim; script-set variables live in `store.scriptVariables` until reload
 - Secrets: environment `secrets` names, masked editor; `features.js` `exportableEnvironments()`/`maskSecrets()` for exports and run history
 - Builds need the wasm32 target and the wasm-bindgen CLI 0.2.126 (`cargo install wasm-bindgen-cli --version 0.2.126 --locked`):
   `npm run build` (web, `/app/`, proxy), `npm run build:tauri` (`dist-tauri/`, no proxy). `npm run test:e2e:tauri` runs every

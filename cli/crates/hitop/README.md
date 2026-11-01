@@ -38,8 +38,8 @@ hitop run MyAPI
 # View history
 hitop history --limit 10
 
-# Import from Postman
-hitop import my-collection.json --format postman
+# Import from Postman: a collection, its environment and globals, into a folder
+hitop import shop.postman_collection.json dev.postman_environment.json --to ./shop
 
 # Export to HITOP format (compatible with the web app)
 hitop export MyAPI -o my-collection.json
@@ -61,11 +61,39 @@ hitop export MyAPI -o my-collection.json
 | `hitop env list/add/delete/show/set/unset/use/off/import/export` | Manage environments |
 | `hitop secret set/get/rm/ls --env <env>` | Secret variables in the OS keychain (`-c <folder>` for a folder's environment) |
 | `hitop history` | View request history |
-| `hitop import <file>` | Import collections (HITOP or Postman format) |
+| `hitop import <files>... [--to <dir>]` | Import HITOP or Postman collections, Postman environments and globals; prints what didn't come over (see "From Postman") |
 | `hitop export <collection>` | Export a collection |
 | `hitop completions <shell>` | Generate shell completions |
 
 `run`, `requests`, `variables`, `export` and `send -c` take a path to a collection folder as well as a collection name.
+
+## From Postman
+
+`hitop import` reads Postman collections (v2.0 and v2.1), environments and globals, detected
+from the content. With `--to <dir>` it writes a collection folder; without it, global storage.
+
+- Folders become subfolders of `requests/`; collection auth is the folder's default auth;
+  collection and folder scripts run before each request's own, as in Postman. `{{name}}`
+  becomes `${name}`.
+- Environment values of Postman's `secret` type become secret variables: their values go to
+  the OS keychain, never into a file (without a keychain hitop names the `HITOP_SECRET_*`
+  variable to set instead). Globals become defaults in every environment imported with them,
+  or an environment of their own.
+- Scripts keep working through hitop's `pm.*` shim: `pm.environment`, `pm.collectionVariables`,
+  `pm.globals` and `pm.variables` (one set of variables in hitop; values set by a script last
+  for the run), `pm.response`, `pm.request`, `pm.test`, a chai style `pm.expect`, and the old
+  `tests[...]`, `responseBody`, `responseCode` and `postman.*Variable` API.
+- What can't come over is listed after the import: every script line with a `pm.*` call the
+  shim doesn't have (`pm.sendRequest`, `pm.cookies`, `postman.setNextRequest`, `require`, ...),
+  OAuth and other auth types, file fields and Postman's `{{$dynamic}}` variables.
+
+```bash
+$ hitop import api.postman_collection.json --to ./api
+✓ Imported 'API' into ./api (12 requests)
+! 'API': 2 things to check (1 script line with unsupported calls)
+  Users / Create (post-request script) line 4: pm.sendRequest in `pm.sendRequest(url, cb);`
+  collection auth: oauth2 auth
+```
 
 ## Collections in git
 
