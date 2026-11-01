@@ -52,7 +52,7 @@ hitop export MyAPI -o my-collection.json
 | `hitop send <url>` | Send a one-off request |
 | `hitop init [dir]` | Create a collection folder (`hitop.yaml`, `requests/`, `environments/`) |
 | `hitop convert <json> <dir>` / `hitop convert <dir> <json>` | Convert a HITOP JSON export to a collection folder, or back |
-| `hitop run <collection>` | Run all requests in a collection sequentially |
+| `hitop run <collection>` | Run all requests in a collection sequentially (reports, data files and exit codes: see "Checks in CI") |
 | `hitop run --all` | Run every collection |
 | `hitop collections list/add/delete/rename/duplicate` | Manage collections |
 | `hitop requests list/add/show/delete/rename/send` | Manage requests |
@@ -116,12 +116,31 @@ Without a keychain (headless Linux, or `HITOP_KEYCHAIN=off`) hitop says so and u
 
 ## Checks in CI
 
-Post-request scripts can assert. `hitop run` exits with status 1 when a request fails or a check doesn't pass, so it can gate a pipeline; each step is printed even when output isn't a terminal.
+Post-request scripts can assert. `hitop run` prints every request with its status, time and each assertion, and
+exits with a code a pipeline can use:
+
+| Exit code | Meaning |
+|---|---|
+| `0` | every request passed (sent, status below 400, every assertion true) |
+| `1` | a request or an assertion failed |
+| `2` | usage or configuration error (unknown collection or environment, bad flag, unreadable `--env-file` or `--data`, missing secret, reports not written) |
 
 ```bash
 hitop send https://api.example.com/health --post-script "assert.status(200); assert.responseTime(500)"
-hitop run MyAPI -e staging
+hitop run ./my-api --env ci --reporter cli,junit,json --out reports   # reports/junit.xml, reports/report.json
+hitop run ./my-api --env-file ci.yaml --var base=https://preview.example.com --timeout 5000 --bail
+hitop run ./my-api --env ci --data users.csv     # one iteration per row (CSV with a header row, or a JSON array of objects)
+hitop run ./my-api --env ci --iterations 3
 ```
+
+- `--reporter`: `cli` (default), `junit`, `json`, comma separated; files go to `--out` (default `hitop-reports`).
+  The JSON report is versioned (`"reportVersion": 1`) and documented in
+  [spec/run-report.md](https://github.com/bohdaq/hitop/blob/main/spec/run-report.md). Secret values are `••••` in every report.
+- Variables, later ones win: collection, environment (`--env` or `--env-file`), the `--data` row, `--var`, then secrets.
+  `--var` values are not masked; use `--secret` or `HITOP_SECRET_<ENV>_<NAME>` for secrets.
+- `--bail` stops at the first failed request; without it every request runs. (Before 0.3 stopping was the default
+  and `--no-stop-on-fail` turned it off; that flag is still accepted.)
+- `--timeout <ms>` limits each request; a slower one fails the run with a timeout.
 
 ## Shell completions
 
