@@ -35,6 +35,7 @@ hitop/
 │       │       ├── report.rs       # run reports: JSON (spec/run-report.md, reportVersion 1) and JUnit XML, no deps
 │       │       ├── export.rs       # HITOP and Postman v2.1 import/export
 │       │       ├── postman.rs      # Postman import: collections (folders, auth, scripts), environments, globals, ImportReport
+│       │       ├── openapi/        # OpenAPI 3.0/3.1 import (refs.rs: parse + local $ref, example.rs: schema → example) and sync.rs (three-way per field)
 │       │       ├── secrets.rs      # secret variables: resolve order, keychain (keyring), Masker (••••)
 │       │       └── format/         # collection folders (YAML, spec/collection-format.md) ⇄ the JSON model; files.rs: in memory (path → text)
 │       │   ├── pm-shim.js          # byte-for-byte copy of shared/pm-shim.js (packaged; a test checks they match)
@@ -43,6 +44,7 @@ hitop/
 │       └── hitop/              # Binary crate (published to crates.io)
 │           ├── tests/run.rs    # hitop run: JUnit shape (roxmltree), JSON report, exit codes, flags, masking
 │           ├── tests/postman.rs # hitop import --to of the fixtures/postman collections, run against httpmock
+│           ├── tests/openapi.rs # hitop import openapi (file, URL via httpmock), run, openapi sync keeping edits, --prune
 │           ├── tests/cookies_forms.rs # cookie jar across send/run, -F uploads, saved form bodies
 │           ├── tests/snippet.rs # hitop snippet: curl, fetch, Python, Java, Go output run against a capture server = what requests send sends
 │           ├── tests/ws.rs     # hitop ws against a local tokio-tungstenite echo server: flags, stdin, --count/--wait/--json, saved requests, masking
@@ -60,12 +62,14 @@ hitop/
 │               ├── commands/data.rs # `--data` CSV (RFC 4180, hand written) and JSON rows
 │               ├── commands/cookies.rs # `hitop cookies ls|clear`, `--no-cookies`
 │               ├── commands/globals.rs # `hitop globals show|set|unset|import|export [-c folder]`
+│               ├── commands/openapi.rs # `hitop import openapi <file|url>`, `hitop openapi sync <file|url> <folder> [--dry-run] [--prune]`
 │               ├── commands/ws.rs  # `hitop ws <url|request> [-c]`: stdin or --send/--message, --count, --wait, --timeout, --json
 │               ├── commands/mcp.rs # `hitop mcp [folder]`: MCP server over stdio (rmcp), the nine tools, masking
 │               ├── commands/telemetry.rs # `hitop telemetry on|off|status` and the background ping (feature `telemetry`)
 │               └── output.rs       # Colored output, syntect highlighting
 │   ├── fixtures/sample/        # collection folder run by tests/folder.rs against httpmock
 │   ├── fixtures/postman/       # Conduit (MIT), newman sample (Apache-2.0), Adyen BIN lookup (MIT), vendored with licenses
+│   ├── fixtures/openapi/       # swagger-petstore 3.0 (Apache-2.0), Adyen Checkout v71 3.1 (MIT), Kubernetes apps/v1 3.0 (Apache-2.0); README with sources
 │   └── fixtures/launch-gate/   # Shop API Postman collection + Staging/Local envs, mock_server.py, check_junit.py (CI job launch-gate)
 ├── desktop/                    # Tauri 2.0 desktop app
 │   ├── src/                    # React frontend (JSX, Vite 6)
@@ -90,6 +94,7 @@ hitop/
 │   │                           # tauri-settings.js: desktop-only Settings page + first-run usage ping question
 │   ├── scripts/check-no-telemetry.mjs # CI: dist/ and web.js have no usage ping (control: dist-tauri has the page)
 │   ├── src/pm.js               # Postman scripts: loads shared/pm-shim.js, runScript, import report helpers
+│   ├── src/views/openapi-dialogs.js # OpenAPI import (URL or paste), its report, Sync with OpenAPI (diff preview, apply)
 │   ├── src/wasm/format.js      # hitop-wasm wrapper; src/wasm/pkg/ is built by scripts/build-wasm.mjs (gitignored)
 │   ├── src/diff.js             # response diff: JSON by path (key order ignored), lines (LCS), headers; history response snapshots
 │   ├── src/views/tools-dialogs.js # Code dialog (hitop-wasm snippet) and Compare responses dialog
@@ -140,6 +145,12 @@ hitop/
 - Postman: `hitop import <files>... [--to <dir>] [--force]` (collections, environments, globals detected by content;
   secret values to the keychain; prints the import report). Edit `shared/pm-shim.js`, then copy it to
   `cli/crates/hitop-core/pm-shim.js` (test `shared_shim_is_the_packaged_copy`)
+- OpenAPI: `hitop import openapi <file|url> [--to <dir>] [--force] [--flat]` (also `hitop import <spec>` by content; Swagger 2.0 refused);
+  `hitop openapi sync <file|url> <folder> [--dry-run] [--prune]`. Core `openapi::import`/`sync` (pure, in hitop-wasm): tags → folders,
+  first server → `baseUrl` variable, path params `${name}`, security → auth (bearer, basic, apiKey header/query; OAuth 2 reported),
+  response examples `source: openapi`. Requests and `hitop.yaml` carry an `openapi` record (extra key, spec section "OpenAPI source"):
+  operation, operationId, per-field FNV hashes as imported; sync updates a field only where it still has that value. Report
+  `OpenApiReport {mapped, skipped, warnings}`. JSON maps are sorted (no serde_json preserve_order), so requests come in path order
 - Collection folders: `hitop init [dir]`, `hitop convert <json> <dir>` / `<dir> <json>` (`--environments`, `-c`, `--force`);
   `run`, `requests`, `variables`, `export`, `send -c` also take a folder path (`hitop run ./my-api --env local`); a folder uses only its own `environments/`
 - Secrets: `hitop secret set|get|rm|ls --env <env> [-c <folder>]`; `--secret NAME=value` on `send`, `run`, `requests send`;
@@ -249,6 +260,10 @@ hitop/
 - Postman collections import through hitop-wasm `importPostman` (same importer and report as the CLI); scripts that
   mention pm/postman/tests/... run with the shim; script-set variables live in `store.scriptVariables` until reload,
   script-set globals in `store.scriptGlobals`; the Globals section is on the Environments page (`store.globals`)
+- OpenAPI: the Import dialog takes a pasted spec (hitop-wasm `isOpenapi`) and "Load an OpenAPI spec from a URL" (`store.fetchSpec`
+  through `platform().send`: proxy on the web, Rust on the desktop); it adds a collection (never replaces), `inlineAuth: true`
+  (no collection auth in the web app). "Sync with OpenAPI" on a collection with an `openapi` record: `previewOpenapiSync`
+  (request ids go to Rust as positions and come back), then `applyOpenapiSync`; folder collections save through live sync
 - Secrets: environment `secrets` names, masked editor; `features.js` `exportableEnvironments()`/`maskSecrets()` for exports and run history
 - No telemetry in the web build: telemetry UI lives only in `platform/tauri-settings.js` (imported by tauri.js);
   `node scripts/check-no-telemetry.mjs` after both builds checks it. Adapter hooks `pages`/`onStart` add desktop-only pages

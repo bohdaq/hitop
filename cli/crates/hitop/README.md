@@ -56,6 +56,10 @@ hitop history --limit 10
 # Import from Postman: a collection, its environment and globals, into a folder
 hitop import shop.postman_collection.json dev.postman_environment.json --to ./shop
 
+# Import an OpenAPI 3.0 or 3.1 spec (file or URL) into a folder; later, sync it with a newer spec
+hitop import openapi https://petstore3.swagger.io/api/v3/openapi.json --to ./petstore
+hitop openapi sync https://petstore3.swagger.io/api/v3/openapi.json ./petstore --dry-run
+
 # Export to HITOP format (compatible with the web app)
 hitop export MyAPI -o my-collection.json
 ```
@@ -81,6 +85,8 @@ hitop export MyAPI -o my-collection.json
 | `hitop cookies ls/clear [-c <collection>]` | The cookies hitop keeps between requests (`--no-cookies` on `send`, `run`, `requests send` turns the jar off) |
 | `hitop history` | View request history |
 | `hitop import <files>... [--to <dir>]` | Import HITOP or Postman collections, Postman environments and globals; prints what didn't come over (see "From Postman") |
+| `hitop import openapi <file\|url> [--to <dir>] [--flat]` | Import an OpenAPI 3.0 or 3.1 spec (YAML or JSON): a folder per tag, a request per operation; prints what was mapped and skipped (see "From OpenAPI") |
+| `hitop openapi sync <file\|url> <dir> [--dry-run] [--prune]` | Update a folder imported from a spec: adds new operations, updates changed ones where you didn't edit them, lists removed ones (deleted only with `--prune`) |
 | `hitop export <collection>` | Export a collection |
 | `hitop telemetry on/off/status` | The anonymous weekly usage ping: off unless you turn it on; `status` shows exactly what would be sent |
 | `hitop mcp [folder]` | MCP server over stdio for Claude Code, Cursor and other MCP clients: list, read, run, create and update requests, switch environments; secrets never returned ([guide](https://hitop.rws8.tech/terms/use-hitop-with-claude-code-and-cursor.html)) |
@@ -114,6 +120,41 @@ $ hitop import api.postman_collection.json --to ./api
 ! 'API': 2 things to check (1 script line with unsupported calls)
   Users / Create (post-request script) line 4: pm.sendRequest in `pm.sendRequest(url, cb);`
   collection auth: oauth2 auth
+```
+
+## From OpenAPI
+
+`hitop import openapi <file|url>` reads an OpenAPI 3.0 or 3.1 spec, YAML or JSON (Swagger 2.0
+is refused: convert it first). `hitop import spec.yaml --to dir` finds a spec by its content too.
+
+- Each tag is a folder (`--flat` puts every request at the top), each operation a request named
+  after its summary (or operationId). The first server is the `baseUrl` collection variable;
+  path parameters are `${name}` variables; required query parameters and headers are on,
+  optional ones kept off. JSON bodies come from the spec's example or one built from the
+  schema; form and multipart bodies become form fields. Local `$ref`s are followed (recursive
+  schemas stop where they loop); refs to other files are reported.
+- Security schemes become auth: HTTP bearer and basic, API keys in a header or query. OAuth 2,
+  OpenID Connect and cookie keys are reported. The variables they use (`${api_key}`) are yours
+  to set, as secrets in an environment.
+- Response examples become saved examples (marked `source: openapi`).
+- Each request records its operation under `openapi` (operationId, `METHOD /path` and a hash
+  of each field as imported), and `hitop.yaml` records the spec.
+
+`hitop openapi sync <file|url> <dir>` brings the folder up to a newer spec. Operations are matched
+by operationId, then by method and path. New ones are added; a field the spec changed (URL,
+parameters, headers, body, auth, its examples) is updated when you left it as imported, and kept
+with a note when you edited it. Names, files, scripts and your own examples are never touched.
+Operations gone from the spec are listed and kept; `--prune` deletes them. `--dry-run` shows the
+diff and writes nothing.
+
+```bash
+$ hitop openapi sync ./openapi-v2.yaml ./shop --dry-run
+Sync 'Shop' with ./openapi-v2.yaml (dry run: nothing is written)
+  + GET /pets/{id} (getPet)  Get a pet → requests/pets/get-a-pet.yaml
+  ~ GET /pets (listPets)  All my pets: updated url
+  ~ POST /pets (addPet)  Add a pet: kept your body (the spec changed it too)
+  - DELETE /pets/{id} (deletePet)  Delete a pet: removed from the spec: kept (--prune deletes it)
+  2 added, 2 changed, 1 removed, 0 unchanged
 ```
 
 ## Collections in git
