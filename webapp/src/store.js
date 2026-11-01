@@ -34,6 +34,7 @@ import { platform } from "./platform/index.js";
 import { fillVariables, forWebApp, isPostmanCollection, loadShim, runScript, scriptScans, usesPostmanApi } from "./pm.js";
 import pmShimText from "../../shared/pm-shim.js?raw";
 import { loadFormat } from "./wasm/format.js";
+import { exampleResponse, snapshotResponse } from "./diff.js";
 import { folderToZip, zipToFolder } from "./zip.js";
 
 // Postman's pm.* API for scripts (the shim the CLI and desktop run too).
@@ -574,6 +575,87 @@ export class Store extends EventTarget {
     this.emit();
   }
 
+  // --- response diff, examples and code snippets ------------------------------
+
+  // Secret names and values a request in this collection sees: the active
+  // environment's and those of the globals it uses.
+  secretNamesFor(collectionId) {
+    const own = this.folders.get(collectionId)?.globals ?? this.globals;
+    return [...new Set([...secretNames(this.activeEnvironment), ...secretNames(own)])];
+  }
+
+  secretValuesFor(collectionId) {
+    const own = this.folders.get(collectionId)?.globals ?? this.globals;
+    return [...secretValues(this.activeEnvironment), ...secretValues(own)];
+  }
+
+  loadedRequest(tab = this.tab) {
+    return (tab?.loadedRequestId && this.collection(tab.loadedCollectionId)?.requests.find((r) => r.id === tab.loadedRequestId)) || null;
+  }
+
+  // Saves the current tab's response as an example of its saved request
+  // (`examples` in the folder format), secret values masked.
+  saveExample(name) {
+    const tab = this.tab;
+    const request = this.loadedRequest(tab);
+    if (!request || tab.statusCode == null || tab.responseType === "error") return false;
+    const example = maskSecrets(
+      { name: name.trim() || `${tab.statusCode} response`, status: tab.statusCode, headers: { ...(tab.responseHeaders || {}) }, body: tab.response ?? "" },
+      this.secretValuesFor(tab.loadedCollectionId),
+    );
+    this.collections = this.collections.map((c) =>
+      c.id === tab.loadedCollectionId ? { ...c, requests: c.requests.map((r) => (r.id === request.id ? { ...r, examples: [...(r.examples || []), example] } : r)) } : c,
+    );
+    this.emit();
+    this.notify(`Saved example "${example.name}"`);
+    return true;
+  }
+
+  // What the compare dialog can pick from: the current response, the loaded
+  // request's examples, then history items that kept their response (items
+  // stored before responses were kept have none and are left out).
+  compareSources() {
+    const out = [];
+    const tab = this.tab;
+    if (tab?.statusCode != null && tab.responseType !== "error") {
+      // Masked like the stored ones, so a secret never shows up as a difference.
+      const response = maskSecrets(snapshotResponse({ status: tab.statusCode, headers: tab.responseHeaders, body: tab.response, durationMs: tab.durationMs }), this.secretValuesFor(tab.loadedCollectionId));
+      out.push({ id: "current", label: "Current response", response });
+    }
+    (this.loadedRequest(tab)?.examples || []).forEach((e, i) => out.push({ id: `example:${i}`, label: `Example: ${e?.name ?? i + 1}`, response: exampleResponse(e) }));
+    for (const h of [...this.history].reverse()) {
+      if (!h?.response) continue;
+      const when = new Date(h.timestamp).toLocaleString(undefined, { dateStyle: "medium", timeStyle: "short" });
+      const what = h.isCollectionRun ? `${h.collectionName} → ${h.requestName}` : `${h.method} ${h.url}`;
+      out.push({ id: `history:${h.id}`, label: `${h.response.status ?? "?"} ${what} · ${when}`, response: h.response });
+    }
+    return out;
+  }
+
+  // The current tab as hitop-wasm's snippet input. Secrets stay {{NAME}}
+  // placeholders unless `showSecrets`.
+  snippetInput(showSecrets = false) {
+    const tab = this.tab;
+    const request = {
+      id: 0,
+      name: tab.title || "",
+      url: tab.url || "",
+      method: tab.method || "GET",
+      headers: (tab.headers || []).filter((h) => h.name).map((h) => ({ name: h.name, value: h.value ?? "", ...(h.enabled === false ? { enabled: false } : {}) })),
+      body: BODY_METHODS.includes(tab.method) ? tab.requestBody || "" : "",
+      ...EXTRA_FIELDS(tab),
+    };
+    const auth = cleanAuth(tab.auth);
+    if (auth) request.auth = auth;
+    if (!BODY_METHODS.includes(tab.method)) request.bodyMode = "raw";
+    return { request, variables: this.variables(tab.loadedCollectionId), secrets: showSecrets ? [] : this.secretNamesFor(tab.loadedCollectionId) };
+  }
+
+  // { code, placeholders } from hitop-core's generator.
+  async snippet(lang, showSecrets = false) {
+    return (await loadFormat()).snippet(this.snippetInput(showSecrets), lang);
+  }
+
   // --- environments -----------------------------------------------------------
 
   get activeEnvironment() {
@@ -953,6 +1035,7 @@ export class Store extends EventTarget {
         }),
       );
       this.history[this.history.length - 1].auth = cleanAuth(tab.auth);
+      this.history[this.history.length - 1].response = maskSecrets(snapshotResponse({ status: res.status, headers, body: data, durationMs }), this.secretValuesFor(tab.loadedCollectionId));
       let tests = [];
       try {
         tests = await this.runPostScript(tab.postRequestScript, tab.loadedCollectionId, data, headers, res.status, durationMs, { ...prepared, method: tab.method });
@@ -1045,7 +1128,8 @@ export class Store extends EventTarget {
           tests = [...tests, { name: "Script after", pass: false, detail: e.message }];
         }
         // The run item keeps the request as sent: mask secret values in it.
-        const item = maskSecrets({ ...historyService.createCollectionRunHistoryItem(request, prepared, res, collection.name, i), auth: request.auth }, secrets);
+        const response = snapshotResponse({ status: res.status, headers, body: text, durationMs: duration });
+        const item = maskSecrets({ ...historyService.createCollectionRunHistoryItem(request, prepared, res, collection.name, i), auth: request.auth, response }, secrets);
         this.history = historyService.addToHistory(this.history, item);
         const failed = tests.filter((t) => !t.pass);
         const success = res.ok && failed.length === 0;

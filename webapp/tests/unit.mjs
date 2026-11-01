@@ -136,4 +136,39 @@ const introspection = JSON.stringify(graphqlSync({ schema: sdl, source: INTROSPE
 assert.ok(schemaFromResponse(introspection).getType("User").getFields().name);
 assert.throws(() => schemaFromResponse('{"errors": [{"message": "introspection is off"}]}'), /introspection is off/);
 
+// Response diff (src/diff.js): JSON by structure, key order ignored; text by line.
+{
+  const { compareResponses, diffJson, diffLines, diffHeaders, exampleResponse, sideBySide, snapshotResponse, SNAPSHOT_LIMIT } = await import("../src/diff.js");
+  assert.deepEqual(diffJson({ a: 1, b: { c: [1, 2] }, "x-y": true }, { b: { c: [1, 3, 4] }, a: 1, z: null }), [
+    { path: "$.b.c[1]", kind: "changed", before: 2, after: 3 },
+    { path: "$.b.c[2]", kind: "added", after: 4 },
+    { path: '$["x-y"]', kind: "removed", before: true },
+    { path: "$.z", kind: "added", after: null },
+  ]);
+  assert.deepEqual(diffJson({ a: 1, b: 2 }, { b: 2, a: 1 }), [], "key order doesn't matter");
+  assert.deepEqual(diffJson({ a: "1" }, { a: 1 }), [{ path: "$.a", kind: "changed", before: "1", after: 1 }], "types count");
+  const same = compareResponses({ status: 200, headers: { "Content-Type": "application/json" }, body: '{"a":1,"b":2}' }, { status: 200, headers: { "content-type": "application/json" }, body: '{\n  "b": 2,\n  "a": 1\n}' });
+  assert.ok(same.same && same.body.kind === "json", "formatting and key order alone are no difference");
+  const c = compareResponses({ status: 200, headers: { etag: "1", date: "x" }, body: "one\ntwo\nthree" }, { status: 404, headers: { etag: "2", "x-new": "y", date: "x" }, body: "one\n2\nthree\nfour" });
+  assert.deepEqual([c.same, c.status, c.body.kind], [false, { before: 200, after: 404, same: false }, "text"]);
+  assert.deepEqual(c.headers.filter((h) => h.kind !== "same").map((h) => `${h.name}:${h.kind}`), ["etag:changed", "x-new:added"]);
+  assert.deepEqual(c.body.lines.map((l) => l.op[0] + l.text), ["sone", "rtwo", "a2", "sthree", "afour"]);
+  assert.deepEqual(sideBySide(c.body.lines).map((r) => r.op), ["same", "changed", "same", "added"]);
+  assert.deepEqual(diffLines("", "a").map((l) => l.op), ["added"]);
+  assert.deepEqual(diffLines("a\nb\nc", "a\nx\nc", 0).map((l) => l.op), ["same", "removed", "added", "same"], "over the limit: no LCS, still correct");
+  assert.deepEqual(diffHeaders({ A: "1" }, { a: "1" }), [{ name: "a", kind: "same", before: "1", after: "1" }]);
+  const big = snapshotResponse({ status: 200, headers: { a: "1" }, body: "x".repeat(SNAPSHOT_LIMIT + 5), durationMs: 3 });
+  assert.deepEqual([big.body.length, big.truncated, big.durationMs], [SNAPSHOT_LIMIT, true, 3]);
+  assert.deepEqual(exampleResponse({ name: "created", status: 201, body: '{"id": 42}' }), { status: 201, headers: {}, body: '{"id": 42}' }, "an example as the folder format writes it");
+  assert.deepEqual(exampleResponse({ status: "200", headers: [{ name: "X-A", value: 1 }], body: { id: 1 } }).headers, { "x-a": "1" });
+}
+
+// Code snippets through hitop-wasm (the CLI's generator): secrets as {{NAME}}.
+{
+  const out = format.snippet({ request: { id: 0, name: "r", url: "${base}/u", method: "GET", headers: [{ name: "Authorization", value: "Bearer ${token}" }], body: "" }, variables: { base: "https://api.test", token: "s3cr3t" }, secrets: ["token"] }, "python");
+  assert.ok(out.code.includes('"Bearer {{token}}"') && !out.code.includes("s3cr3t") && out.code.includes("https://api.test/u"), out.code);
+  assert.deepEqual(out.placeholders, ["token"]);
+  assert.deepEqual(format.snippetLanguages().map((l) => l.id), ["curl", "fetch", "python", "go", "java", "rust"]);
+}
+
 console.log("unit checks passed");

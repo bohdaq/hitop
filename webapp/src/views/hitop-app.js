@@ -11,6 +11,7 @@ import { IS_TAURI, platform } from "../platform/index.js";
 import { issueText } from "../pm.js";
 import "./request-view.js";
 import "./collection-views.js";
+import { WIDE_DIALOGS, codeDialog, compareDialog, refreshCode } from "./tools-dialogs.js";
 
 // Import errors in words: a parser's message ("Unexpected token } in JSON at
 // position 41") tells most people nothing.
@@ -58,6 +59,7 @@ export class HitopApp extends LitElement {
   async openDialog(kind, data = {}) {
     this.navOpen = false;
     this.dialog = { kind, ...data };
+    if (kind === "code") refreshCode(this);
     await this.updateComplete;
     const dlg = this.querySelector("#dialog");
     dlg?.show();
@@ -126,6 +128,7 @@ export class HitopApp extends LitElement {
     }
     if (d.kind === "rename-collection") s.renameCollection(d.id, this.field("name"));
     if (d.kind === "rename-tab") s.renameTab(d.index, this.field("name"));
+    if (d.kind === "save-example") s.saveExample(this.field("name"));
     if (d.kind === "save") {
       const collectionId = Number.isNaN(Number(this.field("collection"))) ? this.field("collection") : Number(this.field("collection"));
       const target = s.collections.find((c) => String(c.id) === String(collectionId));
@@ -277,6 +280,17 @@ export class HitopApp extends LitElement {
           </div>`;
         break;
       }
+      case "save-example":
+        headline = "Save as example";
+        body = html`
+          <p class="dialog-note">The response is saved with ${d.request}, as an example to compare later (and in its folder file).</p>
+          <lit-material-text-field id="name" variant="outlined" label="Example name" .value=${d.name} required autofocus></lit-material-text-field>`;
+        footer = actions("Save");
+        break;
+      case "code":
+      case "compare":
+        ({ headline, body, footer } = (d.kind === "code" ? codeDialog : compareDialog)(this, d));
+        break;
       case "history":
         headline = "History";
         body = s.history.length
@@ -297,12 +311,13 @@ export class HitopApp extends LitElement {
         footer = html`
           <div slot="actions" class="dialog-actions">
             ${s.history.length ? html`<lit-material-button variant="text" @click=${() => (this.closeDialog(), this.clearHistory())}>Clear history</lit-material-button>` : nothing}
+            ${s.history.some((h) => h.response) ? html`<lit-material-button variant="text" @click=${() => this.openDialog("compare")}>Compare responses</lit-material-button>` : nothing}
             <lit-material-button variant="filled" @click=${() => this.closeDialog()}>Close</lit-material-button>
           </div>`;
         break;
     }
     return html`
-      <lit-material-dialog id="dialog" @close=${() => (this.dialog = null)}>
+      <lit-material-dialog id="dialog" class=${WIDE_DIALOGS.includes(d.kind) ? "wide" : ""} @close=${() => (this.dialog = null)}>
         <span slot="headline">${headline}</span>
         <form id="dialog-form" class="dialog-form" novalidate @submit=${(e) => this.submitDialog(e)} @input=${(e) => this.clearFieldError(e.target)} @keydown=${(e) => this.dialogKey(e)}>${body}</form>
         ${footer}

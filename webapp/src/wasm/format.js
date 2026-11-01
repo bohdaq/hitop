@@ -19,6 +19,10 @@ function api(m) {
     // A GraphQL request's JSON body (variables filled in), as hitop-core
     // builds it: text, not parsed. Throws when the variables aren't an object.
     graphqlBody: (query, variables, operationName) => m.graphqlBody(String(query ?? ""), String(variables ?? ""), String(operationName ?? "")),
+    // { request, variables, secrets } + "curl" | "fetch" | "python" | "go" | "java" | "rust" → { code, placeholders }.
+    snippet: (input, lang) => call(m.snippet, input, lang),
+    // [{ id, label }] in menu order.
+    snippetLanguages: () => JSON.parse(m.snippetLanguages()),
   };
 }
 

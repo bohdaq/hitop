@@ -404,6 +404,12 @@ export class HitopRequest extends LitElement {
           <span>${bytes(t.response || "")}</span>
           ${t.truncated ? html`<span class="warn">Cut at 5 MB</span>` : nothing}
           ${tests.length ? html`<span class=${passed === tests.length ? "pass" : "warn"}>${passed} of ${tests.length} tests passed</span>` : nothing}
+          <span class="response-actions">
+            ${this.store.loadedRequest(t)
+              ? html`<lit-material-button variant="text" @click=${() => this.app.openDialog("save-example", { name: `${t.statusCode} response`, request: this.store.loadedRequest(t).name })}>${icon("bookmark-simple")} Save as example</lit-material-button>`
+              : nothing}
+            <lit-material-button variant="text" @click=${() => this.app.openDialog("compare")}>${icon("git-diff")} Compare</lit-material-button>
+          </span>
         </div>
         <lit-material-tabs aria-label="Response details" .selected=${this.responseSection} @change=${(e) => (this.responseSection = e.target.selected)}>
           <lit-material-tab>Body</lit-material-tab>
@@ -447,6 +453,9 @@ export class HitopRequest extends LitElement {
         </lit-material-button>
         <lit-material-icon-button aria-label="Save request" ?disabled=${!t.url} @click=${() => this.app.openDialog("save", this.store.saveTarget())}>
           ${icon("floppy-disk")}
+        </lit-material-icon-button>
+        <lit-material-icon-button aria-label="Code" title="Code: curl, fetch, Python, Go, Java, Rust" ?disabled=${!t.url} @click=${() => this.app.openDialog("code", { lang: "curl", showSecrets: false })}>
+          ${icon("code")}
         </lit-material-icon-button>
       </form>
       ${this.renderEditor()} ${this.renderResponse()}`;
