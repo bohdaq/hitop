@@ -480,6 +480,10 @@ export PATH="$HOME/.cargo/bin:$PATH"
     `release-desktop.yml` is unchanged. Bundle id (`tech.rws8.hitop`, CLAUDE.md said
     `com.bohdaq.hitop`), MAS entitlements (user-selected read-write covers folders) and storage files
     are the same in both. Delete `desktop/src` once the macOS check passes.
+  - 2026-11-01, owner decision: GitHub desktop builds switch to the web app now. `tauri.github.conf.json`
+    carries the webapp `build` block and `release-desktop.yml` runs `npm ci` in `webapp/`; released as
+    desktop 1.0.1 (1.0.0 still had the React UI). The Mac App Store build (plain `tauri build`) keeps
+    `desktop/src` until the owner's macOS check; React code stays in the repo until then.
   - Adapters (`webapp/src/platform/`): `web` (fetch or proxy, localStorage, File System Access) and
     `tauri` (`window.__TAURI_INTERNALS__.invoke`, no npm dep). `main.js` awaits `initPlatform()`
     (the desktop preloads storage from Rust) before the app starts; Vite drops the other adapter.
