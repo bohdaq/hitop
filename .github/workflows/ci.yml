@@ -352,7 +352,7 @@ jobs:
     # The macOS-only code (src/bookmarks.rs: security-scoped bookmarks for the Mac App
     # Store sandbox, objc2) compiles only here. The MAS build is a plain `tauri build`.
     name: Desktop app compiles on macOS (MAS configuration)
-    runs-on: macos-14
+    runs-on: macos-15
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4

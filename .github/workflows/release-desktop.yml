@@ -46,7 +46,7 @@ jobs:
       matrix:
         include:
           - name: macOS universal
-            os: macos-14
+            os: macos-15
             args: --target universal-apple-darwin
           - name: Windows
             os: windows-2022
@@ -62,7 +62,7 @@ jobs:
           node-version: 22
       - uses: dtolnay/rust-toolchain@stable
         with:
-          targets: ${{ matrix.os == 'macos-14' && 'aarch64-apple-darwin,x86_64-apple-darwin' || '' }}
+          targets: ${{ matrix.os == 'macos-15' && 'aarch64-apple-darwin,x86_64-apple-darwin' || '' }}
       - uses: Swatinem/rust-cache@v2
         with:
           workspaces: desktop/src-tauri
