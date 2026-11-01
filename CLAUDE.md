@@ -44,6 +44,7 @@ hitop/
 │           ├── tests/globals.rs # globals below collection/env, secret globals, pm.globals, import, convert
 │           ├── tests/mcp.rs    # hitop mcp: JSON-RPC over stdio for every tool (httpmock), no secret value anywhere on stdout
 │           ├── tests/telemetry.rs # nothing sent while off, at most once a week (HITOP_TELEMETRY_URL → httpmock)
+│           ├── tests/launch_gate.rs # T11 scenario: Postman import, two environments, login token via pm.environment.set, JUnit
 │           └── src/
 │               ├── main.rs         # clap CLI entry point
 │               ├── commands/source.rs # a collection argument: global name or folder path
@@ -57,7 +58,8 @@ hitop/
 │               ├── commands/telemetry.rs # `hitop telemetry on|off|status` and the background ping (feature `telemetry`)
 │               └── output.rs       # Colored output, syntect highlighting
 │   ├── fixtures/sample/        # collection folder run by tests/folder.rs against httpmock
-│   └── fixtures/postman/       # Conduit (MIT), newman sample (Apache-2.0), Adyen BIN lookup (MIT), vendored with licenses
+│   ├── fixtures/postman/       # Conduit (MIT), newman sample (Apache-2.0), Adyen BIN lookup (MIT), vendored with licenses
+│   └── fixtures/launch-gate/   # Shop API Postman collection + Staging/Local envs, mock_server.py, check_junit.py (CI job launch-gate)
 ├── desktop/                    # Tauri 2.0 desktop app
 │   ├── src/                    # React frontend (JSX, Vite 6)
 │   │   ├── App.jsx             # Main component, async loads data from Rust on mount
@@ -93,7 +95,8 @@ hitop/
 ├── chrome-extension/           # Chrome extension source
 ├── site/                       # hitop.rws8.tech: lit-material + Lit SSR, rws8.tech design system
 │   ├── src/pages/              # home, pricing.html, privacy.html, 404, terms/ (guides)
-│   ├── content/guides/*.md     # the /terms/*.html guide articles (Markdown + front matter)
+│   ├── content/guides/*.md     # the /terms/*.html guide articles (Markdown + front matter); hitop-vs-*.md comparisons carry a checked date and sources
+│   ├── demo/demo.tape          # vhs tape for the terminal GIF (vhs site/demo/demo.tape from the repo root)
 │   ├── public-assets/          # favicons, social preview; favicon.svg is also the desktop icon source
 │   └── scripts/prerender.js    # npm run build → dist/
 ├── server/                     # hitop-server: rws app serving the site + POST /api/proxy
@@ -109,6 +112,7 @@ hitop/
 ├── shared/pm-shim.js           # the pm.* shim for Postman scripts, run by hitop-core (copy in the crate) and the web app
 ├── spec/run-report.md          # `hitop run --reporter json` report, reportVersion 1, and the JUnit shape (CC BY 4.0)
 ├── ROADMAP.md                  # agent work order to v1.x: decisions, rules, tranches T0–T26, status
+├── launch/                     # launch text drafts for the owner (Show HN, Reddit, TWiR, Product Hunt); never posted by agents
 ├── docs/CNAME                  # only file left: keeps GitHub Pages 301ing bohdaq.github.io/hitop/* → hitop.rws8.tech
 └── CLAUDE.md                   # This file
 ```
@@ -118,7 +122,7 @@ hitop/
 ## Key technical facts
 
 ### Rust CLI (`cli/`)
-- Workspace version: `0.2.0` (both crates in sync)
+- Workspace version: `0.3.0` (both crates in sync; also `[workspace.dependencies] hitop-core` version)
 - Rust toolchain: `stable` via `cli/rust-toolchain.toml` — always use `~/.cargo/bin/cargo`, NOT Homebrew rustc
 - Run tests: `cd cli && ~/.cargo/bin/cargo test`; CI also runs `cargo clippy --all-targets -- -D warnings`
 - Postman: `hitop import <files>... [--to <dir>] [--force]` (collections, environments, globals detected by content;
@@ -161,11 +165,14 @@ hitop/
 ### GitHub Action and images
 - `ghcr.io/bohdaq/hitop:<version>` is distroless static, nonroot, entrypoint `hitop`, workdir `/work`;
   `<version>-debug` (`cli/docker/Dockerfile.debug`, busybox shell, root) is for GitLab CI (`entrypoint: [""]`).
-  Both pushed by `release-cli.yml`; `latest`/`debug` only on non-rc tags. Newest rc: `0.3.0-rc.2`
-- `bohdaq/hitop-action` (separate repo, MIT, tags `v1`, `v1.0.0`): composite action, `run.sh` (docker run
-  `--network host --user $(id -u)`), `summary.js` (job summary from report.json v1, sets the outcome from the
+  Both pushed by `release-cli.yml`; `latest`/`debug` only on non-rc tags. Newest release: `0.3.0`
+- `bohdaq/hitop-action` (separate repo, MIT, tags `v1` → `v1.0.1`, `v1.0.0`): composite action, `run.sh` (docker run
+  `--network host --user $(id -u)`; a tag not on ghcr.io but already on the runner is used as is, since v1.0.1), `summary.js` (job summary from report.json v1, sets the outcome from the
   exit code), self-test with a local Python mock server. Move `v1` to each compatible release
 - Guides: `site/content/guides/run-hitop-in-github-actions.md`, `run-hitop-in-gitlab-ci.md`
+- CI job `launch-gate` (ci.yml): musl build → `ghcr.io/bohdaq/hitop:launch-gate` on the runner → `hitop import` in the
+  container → `bohdaq/hitop-action@v1` per environment against `cli/fixtures/launch-gate/mock_server.py` → `check_junit.py`
+- Reports: JUnit `<testcase file=...>` and report.json `file` (folder as given + `requests/<file>.yaml`, null for global storage)
 
 ### Desktop (`desktop/`)
 - Framework: Tauri 2.0, frontend: React 19 + MUI v7, build: Vite 6
@@ -263,5 +270,6 @@ PATH="$HOME/.cargo/bin:$PATH" RUSTC="$HOME/.cargo/bin/rustc" ~/.cargo/bin/cargo 
 
 ## Crates.io
 
-- `hitop-core` and `hitop` 0.2.0, published to crates.io 2026-10-31 (tag `cli-v0.2.0`)
+- `hitop-core` and `hitop` 0.3.0, published to crates.io 2026-11-01 (tag `cli-v0.3.0`); 0.2.0 on 2026-10-31
+- Desktop 0.2.0 (tauri.conf.json, Cargo.toml, package.json): GitHub Release `desktop-v0.2.0`
 - To publish: bump `version` in `cli/Cargo.toml` (workspace), push, then push tag `cli-v<version>`; `.github/workflows/release-cli.yml` publishes core then hitop (needs the `CARGO_REGISTRY_TOKEN` secret)

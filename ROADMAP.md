@@ -137,8 +137,8 @@ Secret variables: `secret: true` in an environment file, with the value resolved
 | T7 | Release infra: GitHub Releases, Docker image | done | ee41820; dry run cli-v0.3.0-rc.1, desktop-v0.2.0-rc.1; deployed | 2026-11-01 |
 | T8 | GitHub Action and GitLab template | done | 52f26f5, 0595081; cli-v0.3.0-rc.2; hitop-action aa873b7, 1223c47, tags v1, v1.0.0 | 2026-11-01 |
 | T9 | License notices, DCO, project policies | done | 51cd299; DCO verified on PR #1 | 2026-11-01 |
-| T10 | Opt-in telemetry | done (deploy pending) | server 032ec68, 15f4b4e (deployed); client a64c6c6, 4b8b898 | 2026-11-01 |
-| T11 | Launch readiness, release 0.3.0 / desktop 0.2.0 | todo | | |
+| T10 | Opt-in telemetry | done | server 032ec68, 15f4b4e (deployed from a112885); client a64c6c6, 4b8b898, released in cli-v0.3.0 / desktop-v0.2.0 | 2026-11-01 |
+| T11 | Launch readiness, release 0.3.0 / desktop 0.2.0 | done (site deploy pending; handoffs) | bc1fdc0, f8a78e7, 7e2889f, e2f5788, ddcca14, 9327b37, b91e7b9, 31414f3; cli-v0.3.0, desktop-v0.2.0; hitop-action 37701e4, v1.0.1 | 2026-11-01 |
 | T12 | `hitop mcp` | done (handoff) | c0a55c8, 1d6986f, faad9aa; MCP directory listing text in section 6 | 2026-11-01 |
 | T13 | GraphQL | todo | | |
 | T14 | WebSocket | todo | | |
@@ -658,7 +658,7 @@ export PATH="$HOME/.cargo/bin:$PATH"
     `run-collections-in-ci.md`; built, not deployed. The action README links the GitHub guide, so that link
     works after the next site deploy. Docs pin `0.3.0-rc.2`; T11 changes them to `0.3.0` (and the action
     self-test default `TEST_HITOP_VERSION`).
-  - Open for T11/T19: add a `file` attribute (the request's YAML path) to `<testcase>` so annotations land on
+  - (Closed in T11: `file` on `<testcase>` and in report.json.) Open for T11/T19: add a `file` attribute (the request's YAML path) to `<testcase>` so annotations land on
     the request file in a pull request; spec section 4 would gain it as an addition within v1.
 
 #### T9 License notices, DCO, project policies
@@ -746,6 +746,60 @@ export PATH="$HOME/.cargo/bin:$PATH"
 - **Done when:** scenario test green in CI; releases published; live site updated.
   **Handoffs:** owner records the GIF if `vhs` can't run here, builds the MAS update, and posts
   the launch.
+- **Notes (2026-11-01, done; site deploy and handoffs open):**
+  - Launch gate, two layers. `cli/crates/hitop/tests/launch_gate.rs`: `hitop import` of a Postman v2.1
+    collection (`cli/fixtures/launch-gate/shop.postman_collection.json`, written for hitop) with two
+    Postman environments (Staging, Local; `password` of type secret), then a run per environment against
+    its own httpmock server: Log in posts the secret, its test script does `pm.environment.set("token", ...)`,
+    and the collection's Bearer auth `{{token}}` authenticates List orders and Get order (the mocks only
+    answer with that token and only on that environment's server); JUnit checked with roxmltree (suite
+    environment property, testcases, URLs, `file`), the password in neither report nor stdout; a wrong
+    password fails all three with exit 1. CI job `launch-gate` (ci.yml): musl build, image
+    `ghcr.io/bohdaq/hitop:launch-gate` built on the runner from `cli/docker/Dockerfile`, import in the container,
+    then `bohdaq/hitop-action@v1` once per environment (secret through the `secrets` input, then through
+    `HITOP_SECRET_LOCAL_PASSWORD`) against `mock_server.py` on 127.0.0.1:8781/8782, `check_junit.py` on each
+    junit.xml. Green on main (CI 41277643609, 41278740884). No external network. pm.environment.set →
+    collection auth worked as is: no launch-gate gap found.
+  - hitop-action v1.0.1 (37701e4): `run.sh` uses an image already on the runner when its tag isn't on
+    ghcr.io (notice in the log), so hitop's CI can run the action on a just-built image; self-test job
+    `local-image` (also a tag in neither place → exit 2). Tagged v1.0.1, `v1` moved, release created
+    with `gh`. After the release: self-test default and README to 0.3.0 (docs only, no retag).
+  - `file` (T8 open item): each `<testcase>` gets `file="<folder as given>/requests/<file>.yaml"` (no
+    leading `./`, `.yml` when that is the file on disk; absent for global storage and `--all`), and
+    `report.json` requests get `"file"` (string or null). Deviation: added to the JSON report too, as an
+    addition within reportVersion 1 (spec sections 2, 3 and 4 say "added in hitop 0.3.0").
+  - Site: `hitop-vs-postman|bruno|insomnia|yaak.md` (guides at `/terms/*.html`), each "Checked on
+    2026-11-01" with a Sources list of the official pricing pages, repositories and docs fetched that day;
+    claims not on those pages were left out (Postman's license, Bruno's app account, Inso reporters).
+    `postman-alternative.md` had "$0 to $49" and "account mandatory"; corrected to the current pricing page.
+    Guides `migrate-from-postman.md`, `collections-in-git.md`; CI guides pin 0.3.0. Home page: `hitop mcp`
+    line and link to T12's guide; CI FAQ answer. README rewritten around the full positioning line (T12
+    landed before the tag, so "your AI agent" holds); crate README intro, `hitop mcp` row and the `file`
+    attribute.
+  - `site/demo/demo.tape`: hidden setup copies the launch-gate fixtures to a temp dir and starts the mock;
+    shows import, a passing run, a failing run (exit 1) and the testcase `file` attributes. Commands
+    dry-run by hand; vhs isn't installed here, so the GIF is a handoff.
+  - Versions: workspace 0.3.0 (and the `[workspace.dependencies] hitop-core` version), desktop 0.2.0 in
+    tauri.conf.json, Cargo.toml, package.json and package-lock.json; the three Cargo locks edited to the new
+    versions only (`cargo update` also reshuffled windows-sys entries in the desktop lock, so those were
+    hand-edited and checked with `cargo metadata --locked`). tokio 1.52.3 → 1.54.1 in the cli and desktop
+    locks (RUSTSEC-2026-0386), the same entry as server/ and sync-server/.
+  - Audits before tagging: `cargo deny check advisories` (no cargo-audit here): cli only unmaintained
+    (bincode, number_prefix, zbus_names, zvariant*); desktop also quick-xml 0.39.4 via plist/tauri-utils
+    (RUSTSEC-2026-0194, -0195; no newer version in range) and unmaintained proc-macro-error, unic-*; server
+    clean. `npm audit --omit=dev`: site and desktop clean, webapp fflate 0.8.2 moderate (GHSA-px8p-9vwx-vf98).
+    No high or critical; left for T19.
+  - Releases on 31414f3 (CI 41278740884 green): Release CLI https://github.com/bohdaq/hitop/actions/runs/41278983546
+    green first time: crates.io hitop and hitop-core 0.3.0, GitHub Release `cli-v0.3.0` with the five archives and
+    their `.sha256`, `ghcr.io/bohdaq/hitop:0.3.0`, `:latest`, `:0.3.0-debug`, `:debug` (amd64 and arm64;
+    `docker run ghcr.io/bohdaq/hitop:0.3.0 --version` → `hitop 0.3.0`). Release desktop
+    https://github.com/bohdaq/hitop/actions/runs/41278983311 green: `desktop-v0.2.0` with the universal dmg and
+    app.tar.gz, msi, setup.exe, deb, rpm and AppImage, all named 0.2.0. hitop-action self-test on 0.3.0
+    (81264f1): https://github.com/bohdaq/hitop-action/actions/runs/41279497845 green.
+  - Still open: the site deploy (comparison pages, guides, home page `hitop mcp` line, which links to T12's
+    guide, so both go out together); the handoffs in section 6.
+  - Launch drafts in `launch/` (README with where and when, Show HN, r/rust, r/webdev, This Week in Rust,
+    Product Hunt). Nothing posted.
 
 ### Phase 2: different (target v1.0)
 
@@ -951,6 +1005,10 @@ Agent appends here; owner ticks when done.
 | 2026-11-01 | T10 | Nothing to do now; for the MAS build after the T5 switch: build it as today (plain `tauri build`, no `--features telemetry`), so it has no usage ping and the App Store "Data Not Collected" label stays true. CI checks that configuration on every push. | |
 | 2026-11-01 | T23 | Before any public launch of hitop sync: get an external review of the encryption design (`sync-server/THREAT_MODEL.md`) and code (`sync-server/crates/hitop-sync-crypto`, plus the T24 clients). Top item for the reviewer: the server hands out members' public keys, so key substitution is the open risk until clients pin fingerprints. | |
 | 2026-11-01 | T12 | Optional, when you want it listed: submit `hitop mcp` to MCP directories (for example the official MCP Registry, mcp.so, Smithery, PulseMCP, Glama). Text: **Name** hitop. **Short description** "Run and edit your HTTP API collections from your AI tools: list, read, run, create and update requests in a hitop collection folder, with secrets masked." **Long description** "hitop mcp is a local stdio MCP server for hitop, the open source (MIT) HTTP API client. Point it at a collection folder in your repository (`hitop mcp ./my-api`) or at hitop's global storage. Tools: list_collections, list_requests, get_request, run_request, run_collection (returns the hitop run report), create_request, update_request, list_environments, set_environment. Requests run like `hitop run`: the same variables, scripts, assertions and cookie jar. Secret values come from the OS keychain or HITOP_SECRET_* env vars and are shown as •••• in every result; there is no delete tool." **Install** `cargo install hitop` or a binary from https://github.com/bohdaq/hitop/releases. **Config** `{"mcpServers": {"hitop": {"command": "hitop", "args": ["mcp", "./my-api"]}}}`. **Docs** https://hitop.rws8.tech/terms/use-hitop-with-claude-code-and-cursor.html. **License** MIT. **Categories** developer tools, API testing. | |
+| 2026-11-01 | T11 | Record the terminal GIF (vhs isn't installed on the agent's machine): install vhs (https://github.com/charmbracelet/vhs, needs ttyd and ffmpeg) and hitop 0.3.0 on PATH, then from the repository root `vhs site/demo/demo.tape`; it writes `site/demo/demo.gif` using the local launch-gate mock (nothing leaves the machine). Commit the GIF, or send it and the agent wires it into the README, home page and launch posts. | |
+| 2026-11-01 | T11 | Mac App Store update at 0.2.0: on your Mac, from tag `desktop-v0.2.0`, build as today with plain `tauri build` (no `--features telemetry`, so the "Data Not Collected" label stays true), sign and upload with Transporter. tauri.conf.json now says 0.2.0. Whether this build uses the React UI or the web app overlay depends on the T5 check above. | |
+| 2026-11-01 | T11 | Post the launch when you're ready (agents never post): drafts in `launch/` (Show HN, r/rust, r/webdev, This Week in Rust as a PR, Product Hunt), with where and when in `launch/README.md`. Best after the site deploy and the GIF. | |
+| 2026-11-01 | T11 | Optional: the hitop-action Marketplace listing still shows v1.0.0 as newest; open https://github.com/bohdaq/hitop-action/releases/tag/v1.0.1, Edit, tick "Publish this Action to the GitHub Marketplace", Update release. `v1` already points at v1.0.1. | |
 
 ## 7. Setup the owner does before the agent starts
 
