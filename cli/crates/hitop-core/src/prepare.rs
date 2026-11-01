@@ -1,3 +1,4 @@
+#![cfg(feature = "native")]
 //! A request as it is sent: variables interpolated, auth applied, then the
 //! pre-request script run (so a script can still override the auth).
 use std::collections::HashMap;

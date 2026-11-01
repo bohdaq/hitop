@@ -1,3 +1,4 @@
+#![cfg(feature = "native")]
 use std::collections::HashMap;
 use std::time::{Duration, Instant};
 use anyhow::Result;

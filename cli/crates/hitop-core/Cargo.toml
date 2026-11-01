@@ -15,9 +15,9 @@ homepage.workspace = true
 base64 = "0.22"
 serde = { workspace = true }
 serde_json = { workspace = true }
-reqwest = { workspace = true }
-boa_engine = { workspace = true }
-dirs = { workspace = true }
+reqwest = { workspace = true, optional = true }
+boa_engine = { workspace = true, optional = true }
+dirs = { workspace = true, optional = true }
 thiserror = { workspace = true }
 anyhow = { workspace = true }
 regex = "1"
@@ -29,7 +29,11 @@ yaml_serde = "0.10.7"
 keyring = { version = "4.2", optional = true }
 
 [features]
-default = ["keychain"]
+default = ["keychain", "native"]
+# HTTP (reqwest), scripts (boa), the runner and the JSON storage in the
+# config directory. Off for wasm32 (hitop-wasm: the format module and the
+# model in the web app).
+native = ["dep:reqwest", "dep:boa_engine", "dep:dirs"]
 # Off for targets without an OS keychain (the future wasm build).
 keychain = ["dep:keyring"]
 

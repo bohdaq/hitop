@@ -150,6 +150,7 @@ pub fn run(args: SendArgs) -> Result<()> {
         collection_name: args.collection.clone(),
         request_name: None,
         duration_ms: result.duration_ms,
+        extra: Default::default(),
     });
     storage::save_history(&history)?;
 

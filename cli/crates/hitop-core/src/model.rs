@@ -108,6 +108,36 @@ mod tests {
     }
 
     #[test]
+    fn string_ids_from_old_web_app_data_load() {
+        let json = r#"[{"id":"col-legacy","name":"Billing API","requests":[{"id":"r1","name":"r","url":"","method":"GET","headers":[],"body":""},{"id":"42","name":"s","url":"","method":"GET","headers":[],"body":""},{"id":1.793470569736e15,"name":"t","url":"","method":"GET","headers":[],"body":""}]}]"#;
+        let cols: Vec<Collection> = serde_json::from_str(json).unwrap();
+        let again: Vec<Collection> = serde_json::from_str(json).unwrap();
+        assert_eq!(cols[0].id, again[0].id, "the same string always gives the same id");
+        assert_eq!(cols[0].id, crate::format::names::derived_id("legacy-id/col-legacy"));
+        assert!(cols[0].id < 1 << 53, "JavaScript keeps it exact");
+        assert_ne!(cols[0].requests[0].id, cols[0].id);
+        assert_eq!(cols[0].requests[1].id, 42);
+        assert_eq!(cols[0].requests[2].id, 1_793_470_569_736_000);
+        let back = serde_json::to_value(&cols).unwrap();
+        assert!(back[0]["id"].is_u64());
+        for bad in [r#"{"id":-1,"name":"c","requests":[]}"#, r#"{"id":1.5,"name":"c","requests":[]}"#, r#"{"id":null,"name":"c","requests":[]}"#] {
+            assert!(serde_json::from_str::<Collection>(bad).is_err(), "{bad}");
+        }
+    }
+
+    #[test]
+    fn history_keeps_what_the_web_app_adds() {
+        let json = r#"{"id":1,"timestamp":1793470570537,"url":"https://x/","method":"GET","status_code":200,"success":true,"collection_name":null,"request_name":null,"duration_ms":12,"headers":[{"name":"A","value":"1"}],"body":"","isCollectionRun":false}"#;
+        let item: HistoryItem = serde_json::from_str(json).unwrap();
+        assert_eq!(item.extra["headers"][0]["name"], "A");
+        let back = serde_json::to_value(&item).unwrap();
+        assert_eq!(back, serde_json::from_str::<serde_json::Value>(json).unwrap());
+        // What the CLI writes still reads.
+        let cli = r#"{"id":1,"timestamp":1,"url":"u","method":"GET","status_code":200,"success":true,"collection_name":null,"request_name":null,"duration_ms":1}"#;
+        assert!(serde_json::from_str::<HistoryItem>(cli).unwrap().extra.is_empty());
+    }
+
+    #[test]
     fn collection_array_roundtrip() {
         let cols = vec![sample_collection()];
         let json = serde_json::to_string(&cols).unwrap();
@@ -131,6 +161,7 @@ fn yes() -> bool {
 
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
 pub struct Collection {
+    #[serde(deserialize_with = "de_id")]
     pub id: u64,
     pub name: String,
     pub requests: Vec<Request>,
@@ -149,6 +180,7 @@ pub struct Collection {
 
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
 pub struct Request {
+    #[serde(deserialize_with = "de_id")]
     pub id: u64,
     pub name: String,
     pub url: String,
@@ -190,6 +222,23 @@ pub struct Request {
     pub file: Option<String>,
     #[serde(flatten)]
     pub extra: Extra,
+}
+
+/// Ids are numbers, but older web app data has strings (`"col-legacy"`).
+/// A string of digits reads as that number; any other string as a stable
+/// number derived from it (FNV-1a 64 of `legacy-id/<string>`, low 53 bits,
+/// so JavaScript keeps it exact). Saving writes the number.
+fn de_id<'de, D: serde::Deserializer<'de>>(d: D) -> Result<u64, D::Error> {
+    use serde::de::Error;
+    match serde_json::Value::deserialize(d)? {
+        serde_json::Value::Number(n) => match (n.as_u64(), n.as_f64()) {
+            (Some(v), _) => Ok(v),
+            (None, Some(f)) if f >= 0.0 && f.fract() == 0.0 && f < 18446744073709551616.0 => Ok(f as u64),
+            _ => Err(D::Error::custom(format!("invalid id {n}: ids are whole numbers from 0"))),
+        },
+        serde_json::Value::String(s) => Ok(s.parse::<u64>().unwrap_or_else(|_| crate::format::names::derived_id(&format!("legacy-id/{s}")))),
+        other => Err(D::Error::custom(format!("invalid id {other}: expected a number or a string"))),
+    }
 }
 
 fn de_body_mode<'de, D: serde::Deserializer<'de>>(d: D) -> Result<Option<String>, D::Error> {
@@ -323,6 +372,9 @@ pub struct HistoryItem {
     pub collection_name: Option<String>,
     pub request_name: Option<String>,
     pub duration_ms: u64,
+    /// What the desktop's web app keeps besides (headers, body, scripts).
+    #[serde(flatten)]
+    pub extra: Extra,
 }
 
 #[derive(Debug, Clone)]

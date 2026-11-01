@@ -13,6 +13,7 @@
 //! normalizations).
 mod convert;
 mod doc;
+pub mod files;
 pub mod names;
 
 use std::collections::{BTreeMap, BTreeSet};

@@ -228,3 +228,8 @@ gives the same ids: FNV-1a 64 of `requests/<path>` for a request and of
 Two normalizations are part of the format: blank header rows (empty name and
 value, the editor's placeholder) are not written, and `bodyMode: "raw"` reads
 as no body mode. Environments are read in file name order.
+
+Ids in JSON are whole numbers. Older web app data may hold string ids
+(`"col-legacy"`); readers take a string of digits as that number and any
+other string as FNV-1a 64 of `legacy-id/<string>` (low 53 bits), and write
+the number back.
