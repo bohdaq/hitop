@@ -425,8 +425,8 @@ Checked 2026-11-01:
 - [x] Open changes in `webapp/` committed (UI review fixes, 49ceefe).
 - [x] Disk: 88 GB free.
 - [x] Empty public repo `bohdaq/hitop-action` exists.
-- [x] `CARGO_REGISTRY_TOKEN` works (published 0.2.0 on 2026-10-31). Owner: confirm its expiry is
-      at least mid-2027.
+- [x] `CARGO_REGISTRY_TOKEN` works (published 0.2.0 on 2026-10-31). Owner confirmed (2026-11-01)
+      it is valid until at least mid-2027.
 - [x] Deploy path works through the tunnel pod (`deploy/README.md`), used 2026-11-01.
 - [ ] Before T23 (Phase 3): DNS A record `sync.hitop.rws8.tech` → 168.119.17.57, and an SMTP
       mailbox for magic links (for example `noreply@rws8.tech`) with its password placed on the VM
