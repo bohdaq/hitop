@@ -36,6 +36,9 @@ export const theme = EditorView.theme({
   ".cm-activeLineGutter": { backgroundColor: "transparent" },
   "&.cm-focused .cm-selectionBackground, .cm-selectionBackground, ::selection": { backgroundColor: "var(--md-sys-color-primary-container)" },
   ".cm-placeholder": { color: "var(--md-sys-color-on-surface-variant)" },
+  ".cm-tooltip": { backgroundColor: "var(--md-sys-color-surface-container-high)", color: "var(--md-sys-color-on-surface)", border: "1px solid var(--md-sys-color-outline-variant)", borderRadius: "var(--md-sys-shape-corner-extra-small)" },
+  ".cm-tooltip-autocomplete > ul > li[aria-selected]": { backgroundColor: "var(--md-sys-color-primary-container)", color: "var(--md-sys-color-on-primary-container)" },
+  ".cm-completionDetail": { color: "var(--md-sys-color-on-surface-variant)", fontStyle: "normal", marginLeft: "var(--space-100)" },
 });
 
 // JavaScript: report the parser's error nodes. Lezer recovers from errors,

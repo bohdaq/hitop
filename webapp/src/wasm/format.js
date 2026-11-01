@@ -16,6 +16,9 @@ function api(m) {
     normalize: (kind, value) => call(m.normalize, kind, value),
     // Postman collection JSON + { script: [[line, call, text]] } → { collection, report }.
     importPostman: (json, scans) => call(m.importPostman, json, scans),
+    // A GraphQL request's JSON body (variables filled in), as hitop-core
+    // builds it: text, not parsed. Throws when the variables aren't an object.
+    graphqlBody: (query, variables, operationName) => m.graphqlBody(String(query ?? ""), String(variables ?? ""), String(operationName ?? "")),
   };
 }
 

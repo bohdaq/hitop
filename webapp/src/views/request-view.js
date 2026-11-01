@@ -191,9 +191,10 @@ export class HitopRequest extends LitElement {
           <lit-material-select-option value="raw">Raw (JSON, XML, text)</lit-material-select-option>
           <lit-material-select-option value="multipart">Form data (multipart, files)</lit-material-select-option>
           <lit-material-select-option value="urlencoded">URL encoded form</lit-material-select-option>
+          <lit-material-select-option value="graphql">GraphQL</lit-material-select-option>
         </lit-material-select>
       </div>
-      ${mode === "raw"
+      ${mode === "graphql" ? this.renderGraphql() : mode === "raw"
         ? html`<hitop-code-editor label="Request body" language=${looksJson ? "json" : "text"} .value=${t.requestBody || ""}
             @input=${(e) => this.set({ requestBody: e.target.value })}></hitop-code-editor>`
         : html`
@@ -230,6 +231,38 @@ export class HitopRequest extends LitElement {
             <p class="hint">${mode === "multipart"
               ? "Sent as multipart/form-data. Files stay in this page only: they aren't saved, and a collection run sends file fields empty."
               : "Sent as application/x-www-form-urlencoded."} \${variables} work in names and values.</p>`}`;
+  }
+
+  // GraphQL: the query (completion from the fetched schema), its variables
+  // as JSON and the operation name; sent as one JSON POST.
+  renderGraphql() {
+    const t = this.tab;
+    const entry = this.store.schemas.get(t.id);
+    const status = entry?.loading
+      ? html`<span class="hint" role="status">Fetching the schema…</span>`
+      : entry?.error
+        ? html`<span class="hint graphql-error" role="status">Couldn't fetch the schema: ${entry.error}</span>`
+        : entry?.schema
+          ? html`<span class="hint" role="status">Schema: ${entry.types} types from ${entry.url}. Completion is on in the query.</span>`
+          : html`<span class="hint">Fetch the schema (introspection) for field completion.</span>`;
+    return html`
+      <div class="graphql-tools">
+        <lit-material-button variant="outlined" ?disabled=${entry?.loading} @click=${() => this.store.fetchSchema()}>
+          ${icon("arrows-clockwise")} ${entry?.schema ? "Fetch schema again" : "Fetch schema"}
+        </lit-material-button>
+        ${status}
+      </div>
+      <div class="graphql-panes">
+        <hitop-code-editor class="graphql-query" label="Query" language="graphql" placeholder="query { ... }" .schema=${entry?.schema ?? null} .value=${t.requestBody || ""}
+          @input=${(e) => this.set({ requestBody: e.target.value })}></hitop-code-editor>
+        <div class="graphql-side">
+          <hitop-code-editor class="graphql-variables" label="Variables (JSON)" language="json" placeholder='{"id": "\${userId}"}' .value=${t.graphqlVariables || ""}
+            @input=${(e) => this.set({ graphqlVariables: e.target.value })}></hitop-code-editor>
+          <lit-material-text-field variant="outlined" label="Operation name" supporting-text="Only needed when the query has more than one operation."
+            .value=${t.graphqlOperationName || ""} @input=${(e) => this.set({ graphqlOperationName: e.target.value })}></lit-material-text-field>
+        </div>
+      </div>
+      <p class="hint">Sent as application/json: {"query", "variables", "operationName"}. \${variables} work in all three.</p>`;
   }
 
   get auth() {

@@ -254,6 +254,11 @@ lit-material-code-block::part(pre) { max-height: 60vh; overflow: auto; font-fami
 .form-row lit-material-select { --lit-material-select-min-width: 0; display: block; width: 100%; }
 .param-row.off lit-material-text-field, .form-row.off lit-material-text-field { opacity: 0.55; }
 .body-mode { max-width: 320px; margin-bottom: var(--space-200); }
+/* GraphQL body: query beside variables and operation name, stacked on phones. */
+.graphql-tools { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-100) var(--space-200); margin-bottom: var(--space-200); }
+.graphql-panes { display: grid; grid-template-columns: minmax(0, 3fr) minmax(0, 2fr); gap: var(--space-200); margin-bottom: var(--space-100); }
+.graphql-side { display: grid; gap: var(--space-200); align-content: start; }
+.graphql-error { color: var(--md-sys-color-error); }
 .file-pick { display: flex; align-items: center; gap: var(--space-100); min-width: 0; cursor: pointer; }
 .file-button {
   display: inline-flex; align-items: center; gap: var(--space-75); flex: none;
@@ -265,7 +270,7 @@ lit-material-code-block::part(pre) { max-height: 60vh; overflow: auto; font-fami
 .visually-hidden { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
 
 /* Code editor (CodeMirror) */
-hitop-code-editor { display: grid; gap: var(--space-50); }
+hitop-code-editor { display: grid; gap: var(--space-50); align-content: start; }
 .code-editor-label { font-size: var(--text-xs); line-height: var(--leading-xs); font-weight: 600; color: var(--md-sys-color-on-surface-variant); }
 .cm-tooltip-lint { font-family: var(--font-sans); font-size: var(--text-sm); }
 
@@ -289,4 +294,5 @@ hitop-code-editor { display: grid; gap: var(--space-50); }
   .cookie-add { grid-template-columns: minmax(0, 1fr); }
   .cookie-add lit-material-button { justify-self: start; }
   .cookie-meta { grid-column: 1 / -1; }
+  .graphql-panes { grid-template-columns: minmax(0, 1fr); }
 }

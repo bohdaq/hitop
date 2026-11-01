@@ -62,12 +62,33 @@ function loadCookies() {
   }
 }
 
-// Request fields the web app adds; saved with requests and carried by tabs.
+// A saved request sent as GraphQL (hitop-core's rule): bodyType graphql on
+// a raw body. Its query is `body`, the rest is in `graphql`.
+export const isGraphql = (r) => r?.bodyType === "graphql" && (!r.bodyMode || r.bodyMode === "raw");
+
+// Request fields the web app adds, as a tab carries them: a GraphQL request
+// shows the body mode "graphql", with its variables and operation name.
 const EXTRA_FIELDS = (r) => ({
-  bodyMode: r.bodyMode || "raw",
+  bodyMode: isGraphql(r) ? "graphql" : r.bodyMode || "raw",
   formFields: r.formFields || [],
   disabledParams: r.disabledParams || [],
+  graphqlVariables: r.graphql?.variables ?? "",
+  graphqlOperationName: r.graphql?.operationName ?? "",
 });
+
+// The same fields of a tab, as saved with the request: the "graphql" mode is
+// a raw body with bodyType graphql. Variables and operation name are kept
+// after a switch to another body type (as the form rows are), not sent.
+const SAVED_FIELDS = (t) => {
+  const graphql = Object.fromEntries(Object.entries({ variables: t.graphqlVariables, operationName: t.graphqlOperationName }).filter(([, v]) => v));
+  return {
+    bodyMode: t.bodyMode === "graphql" ? "raw" : t.bodyMode || "raw",
+    formFields: t.formFields || [],
+    disabledParams: t.disabledParams || [],
+    graphql: Object.keys(graphql).length ? graphql : undefined,
+    ...(t.bodyMode === "graphql" ? { bodyType: "graphql" } : {}),
+  };
+};
 
 export const METHODS = ["GET", "POST", "PUT", "PATCH", "DELETE", "HEAD", "OPTIONS"];
 export const BODY_METHODS = ["POST", "PUT", "PATCH"];
@@ -175,6 +196,9 @@ export class Store extends EventTarget {
     // Files picked for multipart fields, by field id. Never stored: a page
     // reload asks for them again.
     this.files = new Map();
+    // GraphQL schemas fetched by introspection, by tab id: { schema, types,
+    // url, loading, error }. Memory only: fetched again after a reload.
+    this.schemas = new Map();
     // What the main area shows: the request tabs, all collections, one
     // collection, or one collection's variables.
     this.view = { kind: "request", collectionId: null };
@@ -340,9 +364,11 @@ export class Store extends EventTarget {
       preRequestScript: source.preRequestScript,
       postRequestScript: source.postRequestScript,
       auth: cleanAuth(source.auth),
-      ...EXTRA_FIELDS(source),
+      ...SAVED_FIELDS(source),
     });
     if (!request.auth) delete request.auth;
+    if (!request.graphql) delete request.graphql;
+    if (request.bodyType === "graphql" && source.bodyMode !== "graphql") delete request.bodyType;
     this.collections = collectionService.addRequestToCollection(this.collections, collectionId, request);
     this.tabs = [...this.tabs, tabForRequest(request, collectionId)];
     this.currentTab = this.tabs.length - 1;
@@ -405,11 +431,12 @@ export class Store extends EventTarget {
       preRequestScript: tab.preRequestScript,
       postRequestScript: tab.postRequestScript,
       auth: cleanAuth(tab.auth),
-      ...EXTRA_FIELDS(tab),
+      ...SAVED_FIELDS(tab),
     };
     const existing = tab.loadedRequestId && this.collection(tab.loadedCollectionId)?.requests.find((r) => r.id === tab.loadedRequestId);
-    // A body type label from a folder is kept only while the body is the same.
-    if (existing?.bodyType && existing.body !== data.body) data.bodyType = undefined;
+    // A body type label from a folder is kept only while the body is the
+    // same; graphql is the body mode the editor shows, so it goes with it.
+    if (tab.bodyMode !== "graphql" && existing?.bodyType && (existing.body !== data.body || existing.bodyType === "graphql")) data.bodyType = undefined;
     if (existing) {
       if (collectionId !== tab.loadedCollectionId) {
         // Moving keeps every field the editor doesn't know (examples, file,
@@ -797,13 +824,30 @@ export class Store extends EventTarget {
       name: h.name ? interpolate(h.name) : "",
       value: h.value ? interpolate(h.value) : "",
     }));
-    const body = source.body ? interpolate(source.body) : source.body;
+    // GraphQL: the JSON body hitop-core builds (hitop-wasm), from the query,
+    // variables and operation name with variables filled in.
+    const gql = isGraphql(source) ? { format: await loadFormat(), query: source.body || "", variables: source.graphql?.variables || "", operationName: source.graphql?.operationName || "" } : null;
+    const graphqlBody = (fill) => gql.format.graphqlBody(fill(gql.query), fill(gql.variables), fill(gql.operationName));
+    let body;
+    if (gql) {
+      try {
+        body = graphqlBody(interpolate);
+      } catch (e) {
+        // Variables a Postman script is still to set may leave them unparsable for now.
+        if (!postman || !/\$\{/.test(gql.variables)) throw e;
+        body = gql.format.graphqlBody(interpolate(gql.query), "", interpolate(gql.operationName));
+      }
+      if (!headers.some((h) => h.name.toLowerCase() === "content-type" && h.value)) headers.push({ name: "Content-Type", value: "application/json" });
+    } else {
+      body = source.body ? interpolate(source.body) : source.body;
+    }
     const authed = applyAuth(source.auth, { url, headers, body }, interpolate);
     const out = await this.runPreScript(source.preRequestScript, collectionId, source.method, authed.url, authed.headers, authed.body);
     if (!postman) return out;
     const after = this.variables(collectionId);
     const strict = (text) => (text ? interpolateVariables(text, after) : text);
-    return { url: strict(out.url), headers: out.headers.map((h) => ({ ...h, name: strict(h.name), value: strict(h.value) })), body: strict(out.body) };
+    const sentBody = gql && out.body === authed.body ? graphqlBody(strict) : strict(out.body);
+    return { url: strict(out.url), headers: out.headers.map((h) => ({ ...h, name: strict(h.name), value: strict(h.value) })), body: sentBody };
   }
 
   // --- sending ----------------------------------------------------------------
@@ -876,8 +920,7 @@ export class Store extends EventTarget {
       body: tab.requestBody,
       preRequestScript: tab.preRequestScript,
       auth: tab.auth,
-      bodyMode: tab.bodyMode,
-      formFields: tab.formFields,
+      ...SAVED_FIELDS(tab),
     };
     this.tabs = tabService.updateTab(this.tabs, index, { loading: true, response: null, statusCode: null, responseHeaders: null, durationMs: null, tests: null });
     this.emit();
@@ -927,6 +970,47 @@ export class Store extends EventTarget {
       }
     }
     this.emit();
+  }
+
+  // Fetches the GraphQL schema of the current tab's endpoint by
+  // introspection: its URL, headers, auth and cookies, through the same
+  // transport as Send (proxy or direct; Rust on the desktop). The tab's
+  // script doesn't run. The schema feeds completion in the query editor.
+  async fetchSchema() {
+    const tab = this.tab;
+    if (!tab.url.trim()) {
+      this.notify("Enter a URL first.");
+      return null;
+    }
+    const id = tab.id;
+    const set = (entry) => {
+      this.schemas = new Map(this.schemas).set(id, entry);
+      this.emit();
+    };
+    set({ ...this.schemas.get(id), loading: true, error: null });
+    try {
+      const gql = await import("./graphql-schema.js");
+      const source = {
+        url: tab.url,
+        method: "POST",
+        headers: tab.headers,
+        auth: tab.auth,
+        body: gql.INTROSPECTION_QUERY,
+        bodyType: "graphql",
+        graphql: { operationName: "IntrospectionQuery" },
+        preRequestScript: "",
+      };
+      const { prepared, res } = await this.dispatch(source, tab.loadedCollectionId);
+      const text = await res.text();
+      if (!res.ok && !text.includes("__schema")) throw new Error(`the server answered ${res.status}${text ? `: ${text.slice(0, 160)}` : ""}`);
+      const schema = gql.schemaFromResponse(text);
+      const types = Object.keys(schema.getTypeMap()).filter((n) => !n.startsWith("__")).length;
+      set({ schema, types, url: prepared.url, loading: false, error: null });
+      return schema;
+    } catch (e) {
+      set({ schema: this.schemas.get(id)?.schema ?? null, loading: false, error: errorText(e) });
+      return null;
+    }
   }
 
   // Runs a collection's requests in order, stopping at the first failure.

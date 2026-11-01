@@ -1,7 +1,8 @@
 // A CodeMirror 6 editor for scripts and request bodies: syntax highlighting
 // on the site's colours, and syntax errors marked as you type. CodeMirror
 // itself (code-editor-lib.js) loads with the first editor shown.
-//   <hitop-code-editor language="javascript|json|text" label="..." .value=${...} @input=${...}>
+//   <hitop-code-editor language="javascript|json|graphql|text" label="..." .value=${...} @input=${...}>
+// `.schema` (graphql): a GraphQLSchema for completion and checks.
 // Fires `input` (bubbling) with `.value` set after every edit.
 import { LitElement, html } from "lit";
 
@@ -11,6 +12,7 @@ export class HitopCodeEditor extends LitElement {
     language: { type: String },
     label: { type: String },
     placeholderText: { type: String, attribute: "placeholder" },
+    schema: { attribute: false },
   };
 
   constructor() {
@@ -19,6 +21,7 @@ export class HitopCodeEditor extends LitElement {
     this.language = "text";
     this.label = "";
     this.placeholderText = "";
+    this.schema = null;
     // Typing in CodeMirror fires the browser's own input events; only this
     // element's own `input` (with .value set) should reach listeners.
     this.addEventListener("input", (e) => {
@@ -42,7 +45,9 @@ export class HitopCodeEditor extends LitElement {
   async firstUpdated() {
     const cm = (this.cm ??= await import("./code-editor-lib.js"));
     if (!this.isConnected || this.view) return;
-    const { EditorState, Compartment, EditorView, keymap, lineNumbers, highlightActiveLine, drawSelection, placeholder, defaultKeymap, history, historyKeymap, indentWithTab, bracketMatching, indentOnInput, syntaxHighlighting, highlight, theme, languageExtensions } = cm;
+    const language = await this.extensionsFor(this.language);
+    if (!this.isConnected || this.view) return;
+    const { EditorState, Compartment, EditorView, keymap, lineNumbers, highlightActiveLine, drawSelection, placeholder, defaultKeymap, history, historyKeymap, indentWithTab, bracketMatching, indentOnInput, syntaxHighlighting, highlight, theme } = cm;
     this.languageSlot = new Compartment();
     this.view = new EditorView({
       parent: this.querySelector(".code-editor-host"),
@@ -61,7 +66,7 @@ export class HitopCodeEditor extends LitElement {
           EditorView.contentAttributes.of({ "aria-labelledby": this.labelId, "aria-multiline": "true" }),
           placeholder(this.placeholderText),
           theme,
-          this.languageSlot.of(languageExtensions(this.language)),
+          this.languageSlot.of(language),
           EditorView.updateListener.of((update) => {
             if (!update.docChanged) return;
             this.value = update.state.doc.toString();
@@ -73,10 +78,22 @@ export class HitopCodeEditor extends LitElement {
     });
   }
 
+  // The language's extensions; GraphQL loads its own module first.
+  async extensionsFor(language) {
+    if (language !== "graphql") return this.cm.languageExtensions(language);
+    this.gql ??= await import("./code-editor-graphql.js");
+    return this.gql.graphqlExtensions(this.schema);
+  }
+
   updated(changed) {
     if (!this.view) return;
     if (changed.has("language")) {
-      this.view.dispatch({ effects: this.languageSlot.reconfigure(this.cm.languageExtensions(this.language)) });
+      const language = this.language;
+      this.extensionsFor(language).then((ext) => {
+        if (this.view && this.language === language) this.view.dispatch({ effects: this.languageSlot.reconfigure(ext) });
+      });
+    } else if (changed.has("schema") && this.language === "graphql" && this.gql) {
+      this.gql.updateSchema(this.view, this.schema ?? undefined);
     }
     // Text set from outside (another tab, history): replace the document,
     // but never echo back what the user just typed (it would move the caret).

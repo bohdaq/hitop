@@ -123,4 +123,17 @@ assert.deepEqual(normalizeGlobals(null), { variables: {}, secrets: [] }, "storag
 assert.throws(() => parseGlobals("[]"));
 assert.deepEqual(format.normalize("globals", { variables: { x: "1" } }), { id: "globals", name: "globals", variables: { x: "1" } });
 
+// GraphQL: the body hitop-core builds, and the schema from an introspection answer.
+assert.equal(format.graphqlBody("query Q($id: ID) { u(id: $id) { n } }", '{"id": "7", "a": 1}', "Q"), '{"query":"query Q($id: ID) { u(id: $id) { n } }","variables":{"id": "7", "a": 1},"operationName":"Q"}');
+assert.equal(format.graphqlBody("{ me }", "", ""), '{"query":"{ me }"}');
+assert.throws(() => format.graphqlBody("{ me }", "{id: 1}", ""), /not valid JSON/);
+const gqlRequest = { id: 1, name: "Me", url: "u", method: "POST", headers: [], body: "{ me }", preRequestScript: "", postRequestScript: "", bodyType: "graphql", graphql: { variables: '{"a": 1}', operationName: "Me" } };
+assert.deepEqual(format.normalize("collections", [{ id: 1, name: "c", requests: [gqlRequest] }])[0].requests[0], gqlRequest, "Rust keeps a GraphQL request as saved");
+const { schemaFromResponse, INTROSPECTION_QUERY } = await import("../src/graphql-schema.js");
+const { buildSchema, graphqlSync } = await import("graphql");
+const sdl = buildSchema("type Query { user(id: ID!): User } type User { name: String }");
+const introspection = JSON.stringify(graphqlSync({ schema: sdl, source: INTROSPECTION_QUERY }));
+assert.ok(schemaFromResponse(introspection).getType("User").getFields().name);
+assert.throws(() => schemaFromResponse('{"errors": [{"message": "introspection is off"}]}'), /introspection is off/);
+
 console.log("unit checks passed");

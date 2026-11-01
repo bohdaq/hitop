@@ -10,10 +10,11 @@
     "build:tauri": "npm run wasm && VITE_HITOP_PLATFORM=tauri vite build --outDir dist-tauri --base ./",
     "preview": "vite preview",
     "test:unit": "npm run wasm && node tests/unit.mjs && node tests/pm.mjs",
-    "test:e2e": "node tests/e2e.cjs && node tests/editing.cjs && node tests/features.cjs && node tests/extras.cjs && node tests/folders.cjs && node tests/postman.cjs && node tests/settings.cjs && node tests/globals.cjs",
+    "test:e2e": "node tests/e2e.cjs && node tests/editing.cjs && node tests/features.cjs && node tests/extras.cjs && node tests/folders.cjs && node tests/postman.cjs && node tests/settings.cjs && node tests/globals.cjs && node tests/graphql.cjs",
     "test:e2e:tauri": "HITOP_MODE=tauri npm run test:e2e"
   },
   "dependencies": {
+    "@codemirror/autocomplete": "6.20.3",
     "@codemirror/commands": "6.11.1",
     "@codemirror/lang-javascript": "6.2.5",
     "@codemirror/lang-json": "6.0.2",
@@ -46,7 +47,9 @@
     "@lit-material/text-field": "0.3.0",
     "@lit-material/tokens": "0.0.2",
     "@phosphor-icons/core": "2.1.1",
+    "cm6-graphql": "0.2.2",
     "fflate": "0.8.2",
+    "graphql": "16.14.2",
     "highlight.js": "11.11.1",
     "lit": "3.3.3"
   },
