@@ -1,0 +1,46 @@
+# cargo deny for sync-server/ (AGPL-3.0-or-later). The server may link anything whose license is
+# compatible with the AGPL: the permissive set from ../deny.toml, MPL-2.0 (webauthn-rs), and the
+# GPL-3.0/AGPL-3.0 family. The MIT client crate (crates/hitop-sync-crypto) is checked separately
+# against ../deny.toml, so it can't pick up a copyleft dependency:
+#   cargo deny --config deny.toml --manifest-path sync-server/Cargo.toml --exclude hitop-sync-server check licenses
+#   cargo deny --config sync-server/deny.toml --manifest-path sync-server/Cargo.toml --workspace check licenses
+[graph]
+all-features = true
+
+[licenses]
+confidence-threshold = 0.9
+unused-allowed-license = "allow"
+allow = [
+  "MIT",
+  "MIT-0",
+  "Apache-2.0",
+  "Apache-2.0 WITH LLVM-exception",
+  "BSD-2-Clause",
+  "BSD-3-Clause",
+  "ISC",
+  "Zlib",
+  "0BSD",
+  "CC0-1.0",
+  "Unlicense",
+  "BSL-1.0",
+  "Unicode-3.0",
+  "Unicode-DFS-2016",
+  "MPL-2.0",
+  "CDLA-Permissive-2.0",
+  "OpenSSL",
+  "LGPL-2.1-or-later",
+  "LGPL-3.0-or-later",
+  "GPL-3.0-or-later",
+  "AGPL-3.0-or-later",
+]
+
+[licenses.private]
+ignore = true
+
+[advisories]
+ignore = [
+  # rsa (through webauthn-rs's crypto-glue): the Marvin timing attack recovers a private key from
+  # RSA decryption or signing. The server only verifies passkey signatures with public keys and
+  # holds no RSA private key. No fixed rsa release exists yet.
+  { id = "RUSTSEC-2023-0071", reason = "only RSA public-key verification is used (passkey signatures)" },
+]

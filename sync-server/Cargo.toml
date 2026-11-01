@@ -1,0 +1,42 @@
+[workspace]
+members = [".", "crates/hitop-sync-crypto"]
+resolver = "2"
+
+[package]
+name = "hitop-sync-server"
+version = "0.1.0"
+edition = "2021"
+authors = ["Bohdan Tsap <bohdaq@gmail.com>"]
+license = "AGPL-3.0-or-later"
+description = "hitop sync server: stores end-to-end encrypted workspace blobs, version vectors and wrapped keys"
+publish = false
+
+[features]
+default = []
+# Postgres as the database (HITOP_SYNC_DATABASE=postgres://...). SQLite is always built in.
+postgres = ["dep:postgres"]
+
+[dependencies]
+rust-web-server = { version = "18.14", default-features = false, features = ["http2", "serde"] }
+tokio = { version = "1", features = ["rt-multi-thread", "macros", "net"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+base64 = "0.22"
+sha2 = "0.10"
+getrandom = "0.3"
+url = "2"
+uuid = { version = "1", features = ["v4", "serde"] }
+rusqlite = { version = "0.41", features = ["bundled"] }
+postgres = { version = "0.19", optional = true }
+lettre = { version = "0.11", default-features = false, features = ["smtp-transport", "builder", "rustls", "ring", "webpki-roots"] }
+webauthn-rs = "0.6"
+
+[dev-dependencies]
+# Tests act as the clients: they encrypt with the client crate and check the server only ever
+# holds ciphertext. The server itself never links it (see tests/no_crypto_in_server.rs).
+hitop-sync-crypto = { path = "crates/hitop-sync-crypto" }
+webauthn-authenticator-rs = { version = "0.6", default-features = false, features = ["softpasskey"] }
+
+[profile.release]
+lto = true
+strip = true
