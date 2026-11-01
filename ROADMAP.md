@@ -152,7 +152,7 @@ Secret variables: `secret: true` in an environment file, with the value resolved
 | T22 | HTML reports and scheduled runs | done | 9c3302e, 7dd53a3, 2cdc097, 0638ca4; CI 41289440630 | 2026-11-01 |
 | T23 | Sync server (AGPL) | done (handoff) | 5cd2ac2, 9a8119f, 35f2775, f08bbce, a3b6c7d, ce07adf; deployed https://sync.hitop.rws8.tech | 2026-11-01 |
 | T24 | Client sync, teams, cloud runs | done (handoff) | 7aea6c7, cf840bd, 3213817, ab721a2, ae52378, 320eaff, e119f0f, 67dde26, fafab1d, 4a0fb9f, 24f18a0, 533aa7a, 7283511; CI 41323865763; sync server + site deploy in section 6 | 2026-11-01 |
-| T25 | SSO and audit log | todo | | |
+| T25 | SSO and audit log | done (handoff) | 85d7aa3, 1a8b6bd, b88ecc3, 89644fd, 85b0d45, cfbc6cc, 46aaa5e, 1c2e04d, b5d974d; CI 41331504040; sync server + site deploy and hosted-SSO decision in section 6 | 2026-11-01 |
 | T26 | iOS companion code | done (handoff) | 981c736, c1bfa7f, 24c00c5, f3332cb; CI 41309724315 (HitopKit on Linux); Xcode build in section 6 | 2026-11-01 |
 | Brand | Brand unification (owner request 2026-11-01) | done (handoffs) | b924e03, ebc7438, bc588a1; CI 41317707104; hitop-action 8931565 (untagged) | 2026-11-01 |
 | 1.1 | 1.1 owner follow-ups: MCP WebSocket/OpenAPI tools, row-by-row OpenAPI sync, secret manager settings | done | cf400c6, 75d5a1a, ef5ab83, bc1d19a; ships in CLI/desktop 1.1.0 (not tagged) | 2026-11-01 |
@@ -1502,6 +1502,50 @@ export PATH="$HOME/.cargo/bin:$PATH"
 #### T25 SSO and audit log
 - OIDC sign-in and an audit log in the sync server, open source.
 - **Done when:** tests against a local OIDC provider (for example Keycloak in a container).
+- **Notes (2026-11-01, done; deploy and the hosted-SSO decision are handoffs):**
+  - Server (AGPL, `sync-server/src/oidc.rs`, `audit.rs`; migration 3 for SQLite and Postgres: `oidc_identities`, `audit_log`,
+    `audit_chain`). SSO: the server is a confidential OIDC client (authorization code + PKCE S256, discovery with exact issuer match,
+    JWKS cached 1 h and refetched on an unknown `kid` at most once a minute, `iss`/`aud`/`azp`/`exp`/`iat`/`nonce` checked, asymmetric
+    algorithms only, `none`/HS* refused). `POST /v1/auth/sso/start {challenge=SHA-256(verifier), returnTo?, email?}` → provider URL;
+    `GET /v1/auth/sso/callback` exchanges the code (client secret by HTTP Basic + PKCE) and hands a one-time code to the browser only
+    (302 to a loopback `returnTo`, to an allowed web origin in the fragment, or a paste page); `POST /v1/auth/sso/finish {code, verifier}`
+    → session. Accounts: (issuer, subject) first, else link by a *verified* address, else a new account; unverified or missing
+    `email_verified` refused (`HITOP_SYNC_OIDC_ASSUME_VERIFIED=1` for Entra, only with allowed domains). Env: `HITOP_SYNC_OIDC_ISSUER`,
+    `_CLIENT_ID`, `_CLIENT_SECRET` or `_CLIENT_SECRET_FILE`, `_ALLOWED_DOMAINS`, `_REQUIRED_GROUPS`/`_GROUPS_CLAIM`, `_SCOPES`, `_NAME`,
+    `HITOP_SYNC_SSO_REQUIRED` (no sign-in mails, no passkey sign-in for those domains; checked at mail request, link use and passkey).
+    Crates: jsonwebtoken 9.3 (ring, already in the tree via rustls) and ureq 3 (rustls + webpki roots); cargo-deny clean.
+  - Audit log: 19 event types (`audit::EVENTS`: signin with method, signin_failed with reason, signout, passkey_added, device_key_added,
+    sso_linked, sso_config_error; workspace_created/deleted, member_added/removed, role_changed, key_rotated, key_wrapped,
+    invite_created/deleted/accepted, runner_created, session_revoked), written inside the action's transaction (failures in their own),
+    with actor, target, small JSON detail, time, IP truncated to /24 or /48 (`HITOP_SYNC_AUDIT_IP=off` drops it; decision: truncate,
+    not hash, since a hashed IPv4 is reversible), user agent ≤ 200 chars; client IP from the last `X-Forwarded-For` entry only when the
+    peer is in `HITOP_SYNC_TRUSTED_PROXIES` (default loopback; the front rws appends it). One SHA-256 chain per workspace plus the
+    account chain (`""`); `audit_chain` keeps head and purge anchor. `GET /v1/workspaces/:ws/audit` (owner; limit/before/event/actor/
+    since/until), `.../audit/verify`, `GET /v1/me/audit`, `hitop-sync-server audit-verify` (every chain, exit 1 when broken); purge at
+    start and hourly (`HITOP_SYNC_AUDIT_RETENTION_DAYS`, default 365). Rows send `detailJson` (the hashed text) for client checks.
+  - Clients: CLI `hitop sync login --sso [--no-browser] [--email hint]` (loopback listener on 127.0.0.1:0, `xdg-open`/`open`/rundll32,
+    `HITOP_NO_BROWSER` to print the link; `--no-browser` = paste the code), `hitop sync audit [-c dir] [--json] [--verify] [--mine]
+    [--event] [--actor] [--limit]`; `--verify` recomputes the chain locally, asks the server's check and pins the head in
+    `audit-heads.json`. Web/desktop Sync page: "Sign in with SSO" (new tab on the web, a link on the desktop; paste the code: no new
+    Tauri command), Members → "Show audit log" (owners) with the server's chain check.
+  - Tests: sync-server unit 7 (+ hash vector pinned and cross-checked with Python, IP truncation, migration-2 → 3 upgrade with a
+    team in it); sso 9 (mock IdP in `tests/common/idp.rs`, P-256 keys generated per run: flow, code to the starting client only,
+    returnTo rules, 16 bad-token cases incl. wrong aud/iss, expired, future iat, nonce replay, azp, foreign key, alg none, HS256 with
+    the client secret, tampered signature, unverified/missing email_verified; state single use and expiry; JWKS cache and rotation;
+    domains/groups/SSO-required; config errors audited); keycloak 7 (Keycloak 26.4.2 dev mode, realm `tests/fixtures/keycloak/
+    hitop-realm.json`, browser login driven over HTTP: login, linking to a mailed account, unverified never linked, domain and group
+    restriction, SSO-required, replayed redirect/stolen code, real-token checks for nonce replay/bad signature/swapped payload/wrong
+    aud/wrong iss (Keycloak names itself after the host)/expired, wrong issuer and wrong secret as config errors); audit 5 (every event
+    type and no secret in any row, owner-only read and filters/pages, edit/delete-first/middle/last/reorder/rehash detected, purge
+    keeps the chain verifiable, IP rules); postgres +1 (SSO link, audit page, tamper, purge on Postgres). CLI tests/sync.rs: audit
+    after the team flow, `login --sso` through Keycloak with the secret in a file and SSO required. Web tests/sync.cjs (web and Tauri):
+    audit log + chain check, SSO error without SSO, and the full SSO sign-in in a real browser tab with Keycloak. CI runs Keycloak as a
+    `docker run` step in the sync-server, cli and web jobs (services can't pass `start-dev --import-realm`).
+  - Deviations: the web app and desktop take the SSO code by paste, not a redirect back into the app (one path for both, no Tauri
+    command; the CLI gets the loopback redirect). Existing sessions survive turning SSO on (documented with the SQL to end them).
+    Tamper evidence only: someone who writes the database can rewrite a whole chain; clients that pinned a head notice (THREAT_MODEL
+    open item 7: anchor heads outside the server). jsonwebtoken stays on 9.3 (10+ needs a separate crypto backend; 9 uses the ring
+    already linked).
 
 #### T26 iOS companion code
 - Swift package `HitopKit` (format reader with Yams, runner on URLSession, environments, keychain
@@ -1700,6 +1744,9 @@ Agent appends here; owner ticks when done.
 | 2026-11-01 | Brand | **GitHub repo social preview** (bohdaq/hitop → Settings → General → Social preview): upload `site/public-assets/social-preview.png` (1280 × 640, purple mark and "HITOP") if it isn't there already. Optional: repository About description = the tagline. **hitop-action Marketplace**: main now says "Run HITOP collection" with a purple badge (hitop-action 8931565), untagged. To show it on the Marketplace: tag `v1.0.2` on hitop-action main and move `v1` (or let an agent do it), then open the release, Edit, tick "Publish this Action to the GitHub Marketplace", Update release. The listing URL `.../marketplace/actions/run-hitop-collection` should stay (same name, other case); if GitHub asks for a new name, keep "Run HITOP collection". | |
 | 2026-11-01 | Brand | iOS companion naming (with the T26 build): it is called **HITOP Runs** (app and widget) because its bundle id makes it a second App Store app. If you ship it as the next version of the iOS app instead (T26 option), also set `CFBundleDisplayName` to `HITOP` in `ios/HitopCompanion/HitopCompanion/Info.plist`. For a new listing: App Name "HITOP Runs", subtitle "Run your API collections" (24). Shortcuts now say "Run HITOP collection" and "Get last HITOP run status". | |
 | 2026-11-01 | T26 | Build and ship the iOS companion (agents can't build for Apple platforms). On a Mac with Xcode 16+: (1) `cd ios/HitopKit && swift test` (42 tests; JavaScriptCore runs the scripts there; `HITOP_BIN=<path to hitop> swift test` adds the CLI comparison, `HITOP_TEST_KEYCHAIN=1` also writes and deletes one real keychain item). (2) `brew install xcodegen && cd ios/HitopCompanion && xcodegen && open HitopCompanion.xcodeproj`. (3) Decide: a new App Store app (keep bundle ids `hitop.rws8.tech.HitopCompanion` and `hitop.rws8.tech.HitopCompanion.Widget`, create them and the app group `group.hitop.rws8.tech.companion` in the developer portal, enable App Groups on both ids) or the next version of "HiTop HTTP Client" (then set `PRODUCT_BUNDLE_IDENTIFIER` to `hitop.rws8.tech.HiTop` and the widget to `hitop.rws8.tech.HiTop.Widget` in `project.yml`, and keep `ios/HiTop` only as history). Team is `XD7JHZ5DB3` as in the HiTop project. If you change the app group, change it in both `.entitlements` files and `Shared/Library.swift` (`AppGroup.id`). (4) On a device: open a collection folder from iCloud Drive (for example a `hitop init` folder or `cli/fixtures/sample` with a `local` environment pointing at a server you can reach), run one request and the collection, switch environment, set a secret in Secrets… and run `prod`, pin it (swipe) and add the "hitop runs" widget, run "Run hitop collection" and "Get last hitop run status" in Shortcuts. Check that a folder still opens after a relaunch and after the folder is renamed in Files. (5) App Review: the app has `NSAllowsArbitraryLoads` (as HiTop does; an API client calls hosts the user names) and a local network usage string; privacy label "Data Not Collected" holds (no telemetry, no network calls but the user's requests). Both targets carry a `PrivacyInfo.xcprivacy` (no tracking, no collected data; required-reason APIs: app-group UserDefaults `1C8F.1`, file metadata in the user-picked folder `3B52.1`): check the reasons against Apple's current list when you archive. The icon is a copy of HiTop's. Tell me what fails to compile: the app sources were written without an Apple SDK. | |
+| 2026-11-01 | T25 | Deploy the sync server built from main (migration 3), as for T24: `cd sync-server && cargo build --release --locked`, copy `target/release/hitop-sync-server`, `deploy/hitop-sync.service` and `deploy/install.sh` into one directory on the VM, run `install.sh` (backs up `sync.db` and the binary, installs, restarts, checks `/healthz`). The server migrates SQLite on start (adds `oidc_identities`, `audit_log`, `audit_chain`; no manual SQL) and starts the hourly audit purge. Nothing to add to `/etc/hitop-sync/env`: SSO stays off without `HITOP_SYNC_OIDC_*`; defaults keep audit rows 365 days (`HITOP_SYNC_AUDIT_RETENTION_DAYS`), store IPs truncated to /24 or /48 (`HITOP_SYNC_AUDIT_IP=off` drops them) and read the client IP from the front rws's `X-Forwarded-For` because it connects from 127.0.0.1 (`HITOP_SYNC_TRUSTED_PROXIES`). Check: `journalctl -u hitop-sync` has no migration error; after one sign-in, `curl --resolve sync.hitop.rws8.tech:443:127.0.0.1 https://sync.hitop.rws8.tech/v1/auth/sso` answers `{"enabled":false}`; `sudo sqlite3 /var/lib/private/hitop-sync/sync.db "SELECT event, ip FROM audit_log ORDER BY at DESC LIMIT 3"` shows the sign-in with a `.0` IP (not 127.0.0.0: if it is, the front proxy isn't adding X-Forwarded-For); optional chain check on a copy (README, "Audit log"). Then deploy the site (`deploy/deploy.sh`): the privacy page now says what the sync test server keeps (account, ciphertext, audit log with truncated IPs, a year), and the team guide has SSO and audit sections. | |
+| 2026-11-01 | T25 | Decide whether the hosted test server (sync.hitop.rws8.tech) gets SSO. Agent's recommendation: leave it off. It serves individuals with sign-in mails and passkeys; SSO is for organizations running their own server with their own provider, and turning it on here means registering a client at one provider (for example Google with `HITOP_SYNC_OIDC_ALLOWED_DOMAINS` set to your domain) and keeping its secret on the VM. If yes: register a web client with redirect URI `https://sync.hitop.rws8.tech/v1/auth/sso/callback`, add `HITOP_SYNC_OIDC_ISSUER`, `HITOP_SYNC_OIDC_CLIENT_ID`, `HITOP_SYNC_OIDC_CLIENT_SECRET` (and the domains) to `/etc/hitop-sync/env` (root, 0600), `sudo systemctl restart hitop-sync`, and test with `hitop sync login --sso`. Leave `HITOP_SYNC_SSO_REQUIRED` off on a shared test server. | |
+| 2026-11-01 | T25 | Before any public launch (adds to the review above): the reviewer also covers `sync-server/src/oidc.rs` (token checks, the code handoff, account linking) and `sync-server/src/audit.rs` (chain, purge), and THREAT_MODEL sections "Single sign-on" and "Audit log". Open: audit heads anchored outside the server (THREAT_MODEL item 7). | |
 
 ## 7. Setup the owner does before the agent starts
 
