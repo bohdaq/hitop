@@ -14,6 +14,8 @@ pub fn run() {
             commands::save_contexts,
             commands::load_environments,
             commands::save_environments,
+            commands::load_globals,
+            commands::save_globals,
             commands::execute_request,
             commands::run_pre_script,
             commands::run_post_script,

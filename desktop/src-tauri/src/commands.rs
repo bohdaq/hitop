@@ -50,6 +50,18 @@ pub fn save_contexts(contexts: Value) -> Result<(), String> {
     storage::save_contexts(&contexts).map_err(|e| e.to_string())
 }
 
+/// The globals of global storage (`globals.json`, shared with `hitop globals`);
+/// secret values are in the keychain as `global/global/<name>`.
+#[tauri::command]
+pub fn load_globals() -> Result<Environment, String> {
+    storage::load_globals().map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub fn save_globals(globals: Environment) -> Result<(), String> {
+    storage::save_globals(&globals).map_err(|e| e.to_string())
+}
+
 /// Environments, shared with the CLI (`environments.json`).
 #[tauri::command]
 pub fn load_environments() -> Result<storage::Environments, String> {
@@ -102,6 +114,9 @@ pub struct PreScriptArgs {
     pub body: String,
     pub variables: HashMap<String, String>,
     pub context: HashMap<String, Value>,
+    /// The globals scope alone, for `pm.globals`.
+    #[serde(default)]
+    pub globals: HashMap<String, String>,
 }
 
 #[derive(Serialize)]
@@ -112,6 +127,8 @@ pub struct PreScriptResult {
     pub context_updates: HashMap<String, Value>,
     /// Variables the script set (`pm.environment.set`, ...); `null` unsets one.
     pub variables: VariableUpdates,
+    /// Globals the script set (`pm.globals.set`, ...).
+    pub globals: VariableUpdates,
 }
 
 #[tauri::command]
@@ -123,6 +140,7 @@ pub fn run_pre_script(args: PreScriptArgs) -> Result<PreScriptResult, String> {
         body: args.body,
         variables: args.variables,
         context: args.context,
+        globals: args.globals,
     };
     run_pre_request_script(&args.script, ctx)
         .map(|r| PreScriptResult {
@@ -131,6 +149,7 @@ pub fn run_pre_script(args: PreScriptArgs) -> Result<PreScriptResult, String> {
             body: r.body,
             context_updates: r.context_updates,
             variables: r.variables,
+            globals: r.globals,
         })
         .map_err(|e| e.to_string())
 }
@@ -148,6 +167,10 @@ pub struct PostScriptArgs {
     /// The request as sent, for `pm.request`.
     #[serde(default)]
     pub request: Option<SentRequestArgs>,
+    /// The globals scope alone, for `pm.globals` (left out: pm.globals
+    /// shares the variables).
+    #[serde(default)]
+    pub globals: Option<HashMap<String, String>>,
 }
 
 #[derive(Deserialize)]
@@ -168,6 +191,8 @@ pub struct PostScriptResult {
     pub tests: Vec<TestResult>,
     /// Variables the script set, as in [`PreScriptResult::variables`].
     pub variables: VariableUpdates,
+    /// Globals the script set.
+    pub globals: VariableUpdates,
 }
 
 #[tauri::command]
@@ -181,9 +206,10 @@ pub fn run_post_script(args: PostScriptArgs) -> Result<PostScriptResult, String>
         variables: &args.variables,
         context: &args.context,
         request: sent.as_ref(),
+        globals: args.globals.as_ref(),
     };
     run_post_request_script_with(&args.script, &ctx)
-        .map(|r| PostScriptResult { context_updates: r.context_updates, tests: r.tests, variables: r.variables })
+        .map(|r| PostScriptResult { context_updates: r.context_updates, tests: r.tests, variables: r.variables, globals: r.globals })
         .map_err(|e| e.to_string())
 }
 
@@ -345,20 +371,24 @@ pub fn cookies_save(cookies: Jar) -> Result<(), String> {
 pub struct FolderResult {
     pub collection: Collection,
     pub environments: Vec<Environment>,
+    /// `globals.yaml`, when the folder has one.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub globals: Option<Environment>,
 }
 
 /// Reads a collection folder (hitop.yaml, requests/, environments/).
 #[tauri::command(async)]
 pub fn read_folder(path: String) -> Result<FolderResult, String> {
     let f = format::read_folder(std::path::Path::new(&path)).map_err(|e| format!("{e:#}"))?;
-    Ok(FolderResult { collection: f.collection, environments: f.environments })
+    Ok(FolderResult { collection: f.collection, environments: f.environments, globals: f.globals })
 }
 
 /// Writes a collection folder: changed files only, stale request and
 /// environment files removed. Secret values are never written.
 #[tauri::command(async)]
-pub fn write_folder(path: String, collection: Collection, environments: Vec<Environment>) -> Result<(), String> {
-    format::write_folder(std::path::Path::new(&path), &format::Folder { collection, environments }).map_err(|e| format!("{e:#}"))
+pub fn write_folder(path: String, collection: Collection, environments: Vec<Environment>, globals: Option<Environment>) -> Result<(), String> {
+    // Without `globals` an existing globals.yaml is left as it is.
+    format::write_folder(std::path::Path::new(&path), &format::Folder { collection, environments, globals }).map_err(|e| format!("{e:#}"))
 }
 
 /// Secret values in the OS keychain (service `hitop`, account
