@@ -7,6 +7,8 @@ use hitop_core::model::{Collection, Environment, HistoryItem};
 use serde::{Deserialize, Serialize};
 use wasm_bindgen::prelude::*;
 
+pub mod sync;
+
 /// `{collection, environments, globals?}`: a collection folder in memory
 /// (`globals`: its globals.yaml; left out, an existing one is kept).
 #[derive(Serialize, Deserialize)]
