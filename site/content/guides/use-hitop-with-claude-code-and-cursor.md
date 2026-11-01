@@ -1,5 +1,5 @@
 ---
-title: "Use hitop with Claude Code and Cursor"
+title: "Use HITOP with Claude Code and Cursor"
 description: "Connect hitop to Claude Code, Cursor or any MCP client with hitop mcp: list, read, run, create and update the requests of a collection folder, with secrets masked."
 ---
 

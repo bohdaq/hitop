@@ -1,4 +1,4 @@
-HITOP - HTTP Client Chrome Extension
+HITOP Chrome Extension
 
 A powerful HTTP client for testing and debugging APIs directly in your browser.
 

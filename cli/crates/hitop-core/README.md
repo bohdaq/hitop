@@ -1,6 +1,6 @@
 # hitop-core
 
-Core engine for [hitop](https://crates.io/crates/hitop) — the HTTP API client CLI.
+Core engine of [HITOP](https://crates.io/crates/hitop), the API client your terminal, your CI and your AI agent can all drive.
 
 Provides:
 - **Collection model** — typed structs matching the hitop web app JSON format

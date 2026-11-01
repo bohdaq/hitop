@@ -1,5 +1,5 @@
 ---
-title: "Run hitop in GitLab CI"
+title: "Run HITOP in GitLab CI"
 description: "A .gitlab-ci.yml template for hitop: run a collection folder on every pipeline, show each request in the merge request test report and keep secrets in CI/CD variables."
 ---
 

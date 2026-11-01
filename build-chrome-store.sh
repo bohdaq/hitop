@@ -23,31 +23,23 @@ cp -r frontend/build/* chrome-store-package/
 
 # Step 4: Create and copy icons in all required sizes
 echo "🎨 Creating icons for Chrome Web Store..."
-if [ -f "frontend/public/logo512.png" ]; then
-  # Chrome Web Store requires: 16, 48, 128
-  if command -v sips &> /dev/null; then
-    sips -z 16 16 frontend/public/logo512.png --out chrome-store-package/icons/icon-16.png > /dev/null 2>&1
-    sips -z 48 48 frontend/public/logo512.png --out chrome-store-package/icons/icon-48.png > /dev/null 2>&1
-    sips -z 128 128 frontend/public/logo512.png --out chrome-store-package/icons/icon-128.png > /dev/null 2>&1
-    echo "✓ Icons created: 16x16, 48x48, 128x128"
-  else
-    echo "⚠️  sips not found, please create icons manually"
-  fi
-else
-  echo "⚠️  Warning: logo512.png not found"
-fi
+# Chrome Web Store requires 16, 48, 128: renders of brand/logo.svg (brand/export.sh)
+cp brand/png/logo-16.png chrome-store-package/icons/icon-16.png
+cp brand/png/logo-48.png chrome-store-package/icons/icon-48.png
+cp brand/png/logo-128.png chrome-store-package/icons/icon-128.png
+echo "✓ Icons copied: 16x16, 48x48, 128x128"
 
 # Step 5: Create Chrome Web Store manifest
 echo "🔧 Creating Chrome Web Store manifest..."
 cat > chrome-store-package/manifest.json << 'EOF'
 {
   "manifest_version": 3,
-  "name": "HITOP - HTTP Client",
+  "name": "HITOP",
   "version": "4.0.0",
-  "description": "Powerful HTTP client for testing APIs with collections, variables, pre/post request scripts, and request history.",
+  "description": "The API client your terminal, your CI and your AI agent can all drive.",
   "author": "HITOP Team",
   "action": {
-    "default_title": "Open HITOP HTTP Client"
+    "default_title": "HITOP"
   },
   "icons": {
     "16": "icons/icon-16.png",
@@ -84,13 +76,13 @@ chrome.action.onClicked.addListener((tab) => {
 // Handle installation
 chrome.runtime.onInstalled.addListener((details) => {
   if (details.reason === 'install') {
-    console.log('HITOP HTTP Client installed');
+    console.log('HITOP installed');
     // Optionally open welcome page
     chrome.tabs.create({
       url: chrome.runtime.getURL('index.html')
     });
   } else if (details.reason === 'update') {
-    console.log('HITOP HTTP Client updated to version ' + chrome.runtime.getManifest().version);
+    console.log('HITOP updated to version ' + chrome.runtime.getManifest().version);
   }
 });
 EOF
@@ -107,13 +99,13 @@ fi
 # Step 8: Create privacy policy
 echo "📄 Creating privacy policy..."
 cat > chrome-store-package/PRIVACY.md << 'EOF'
-# Privacy Policy for HITOP HTTP Client
+# Privacy Policy for HITOP
 
 Last updated: November 2025
 
 ## Data Collection and Storage
 
-HITOP HTTP Client does NOT collect, transmit, or share any personal data. All data is stored locally in your browser.
+HITOP does NOT collect, transmit, or share any personal data. All data is stored locally in your browser.
 
 ### What We Store Locally:
 - HTTP request collections
@@ -141,7 +133,7 @@ EOF
 # Step 9: Create README for store
 echo "📄 Creating store README..."
 cat > chrome-store-package/README.txt << 'EOF'
-HITOP - HTTP Client Chrome Extension
+HITOP Chrome Extension
 
 A powerful HTTP client for testing and debugging APIs directly in your browser.
 

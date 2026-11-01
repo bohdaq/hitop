@@ -23,7 +23,7 @@ struct ExportView: View {
                     Button("Close") { dismiss() }
                 }
                 ToolbarItem(placement: .confirmationAction) {
-                    ShareLink(item: json, subject: Text("HiTop Collections"), message: Text("Exported collections")) {
+                    ShareLink(item: json, subject: Text("HITOP Collections"), message: Text("Exported collections")) {
                         Label("Share", systemImage: "square.and.arrow.up")
                     }
                 }

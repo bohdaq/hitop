@@ -1,5 +1,5 @@
 ---
-title: "Run hitop in GitHub Actions"
+title: "Run HITOP in GitHub Actions"
 description: "Test your API on every push with the hitop GitHub Action: run a collection folder from your repository, get a JUnit artifact, a job summary and a failing check when a request fails."
 ---
 

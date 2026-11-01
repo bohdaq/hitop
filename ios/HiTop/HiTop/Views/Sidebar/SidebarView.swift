@@ -27,7 +27,7 @@ struct SidebarView: View {
                     vm.loadRequest(req, collectionId: target.collectionId)
                 }
         }
-        .navigationTitle("HiTop")
+        .navigationTitle("HITOP")
         .toolbar {
             ToolbarItemGroup(placement: .navigationBarTrailing) {
                 Button {

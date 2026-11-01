@@ -1,4 +1,4 @@
-# hitop
+# HITOP
 
 The API client your terminal, your CI and your AI agent can all drive. One small Rust binary,
 collections as files in your repo, nothing in anyone's cloud.
@@ -89,7 +89,7 @@ hitop export MyAPI -o my-collection.json
 | `hitop secret set/get/rm/ls --env <env>` | Secret variables in the OS keychain (`-c <folder>` for a folder's environment; `--globals` for a secret global) |
 | `hitop secret check [-c <collection>] [--env <env>]` | List the `${secret:vault\|aws\|azure\|op:...}` references and test that each resolves (never prints a value) |
 | `hitop globals show/set/unset/import/export [-c <folder>]` | The globals: variables below every collection's, in global storage or a folder's `globals.yaml` |
-| `hitop cookies ls/clear [-c <collection>]` | The cookies hitop keeps between requests (`--no-cookies` on `send`, `run`, `requests send` turns the jar off) |
+| `hitop cookies ls/clear [-c <collection>]` | The cookies HITOP keeps between requests (`--no-cookies` on `send`, `run`, `requests send` turns the jar off) |
 | `hitop history` | View request history |
 | `hitop import <files>... [--to <dir>]` | Import HITOP or Postman collections, Postman environments and globals; prints what didn't come over (see "From Postman") |
 | `hitop import openapi <file\|url> [--to <dir>] [--flat]` | Import an OpenAPI 3.0 or 3.1 spec (YAML or JSON): a folder per tag, a request per operation; prints what was mapped and skipped (see "From OpenAPI") |
@@ -417,7 +417,7 @@ Collections, environments, history, and runtime context are stored in:
 - **macOS**: `~/Library/Application Support/hitop/`
 - **Windows**: `%APPDATA%\hitop\`
 
-The JSON format is identical to the hitop web app — collections can be exported from the app and imported into the CLI (and vice versa).
+The JSON format is identical to the HITOP web app — collections can be exported from the app and imported into the CLI (and vice versa).
 
 ## Scripting
 

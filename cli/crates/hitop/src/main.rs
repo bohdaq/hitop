@@ -9,7 +9,7 @@ use colored::Colorize;
 #[derive(Parser)]
 #[command(
     name = "hitop",
-    about = "HTTP API client — send requests, run collections, and script with JS from the terminal",
+    about = "HITOP: the API client your terminal, your CI and your AI agent can all drive",
     version
 )]
 struct Cli {
@@ -49,7 +49,7 @@ enum Cmd {
     /// Manage secret variables in the OS keychain
     #[command(subcommand)]
     Secret(commands::secret::SecretCmd),
-    /// List or clear the cookies hitop keeps between requests
+    /// List or clear the cookies HITOP keeps between requests
     #[command(subcommand)]
     Cookies(commands::cookies::CookiesCmd),
     /// View request history

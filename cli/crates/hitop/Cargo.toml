@@ -1,6 +1,6 @@
 [package]
 name = "hitop"
-description = "HTTP API client CLI — send requests, run collections, and script with JS from the terminal"
+description = "HITOP: the API client your terminal, your CI and your AI agent can all drive. Send requests, run collections in CI, serve them over MCP"
 keywords = ["http", "api", "client", "rest", "cli"]
 categories = ["command-line-utilities", "web-programming::http-client"]
 readme = "README.md"

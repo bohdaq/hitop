@@ -26,7 +26,7 @@ struct ContentView: View {
                     Text(e).foregroundStyle(.red).font(.footnote)
                 }
             }
-            .navigationTitle("hitop")
+            .navigationTitle("HITOP")
             .navigationDestination(for: String.self) { id in CollectionView(id: id) }
             .toolbar {
                 Button { picking = true } label: { Label("Open folder", systemImage: "folder.badge.plus") }

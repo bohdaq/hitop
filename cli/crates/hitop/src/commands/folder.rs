@@ -38,11 +38,11 @@ pub struct ConvertArgs {
     /// The collection to take when the JSON has more than one
     #[arg(short = 'c', long)]
     collection: Option<String>,
-    /// Environments JSON (`environments.json` from hitop's storage, or an
+    /// Environments JSON (`environments.json` from HITOP's storage, or an
     /// array): read into the folder's environments/, or written from it
     #[arg(long, value_name = "FILE")]
     environments: Option<PathBuf>,
-    /// Globals JSON (`globals.json` from hitop's storage): read into the
+    /// Globals JSON (`globals.json` from HITOP's storage): read into the
     /// folder's globals.yaml, or written from it
     #[arg(long, value_name = "FILE")]
     globals: Option<PathBuf>,

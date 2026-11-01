@@ -96,7 +96,7 @@ export function grpcMessage(view) {
     </div>
     ${g.schemaError ? html`<p class="error-text grpc-schema-error" role="alert">${g.schemaError}</p>` : nothing}
     ${g.schema ? html`<p class="hint grpc-schema-source">${services.length} service${services.length === 1 ? "" : "s"} from ${g.schema.source === "protos" ? ".proto files" : `server ${g.schema.source}`}${method ? `. ${method.input} → ${method.serverStreaming ? "stream " : ""}${method.output}` : ""}</p>` : nothing}
-    ${method?.clientStreaming ? html`<p class="hint warn" role="note">hitop calls unary and server-streaming methods; this one streams from the client.</p>` : nothing}
+    ${method?.clientStreaming ? html`<p class="hint warn" role="note">HITOP calls unary and server-streaming methods; this one streams from the client.</p>` : nothing}
     <hitop-code-editor class="grpc-message" label="Message (JSON)" language="json" placeholder='{"name": "\${user}"}' .value=${t.grpcMessage || ""}
       @input=${(e) => view.set({ grpcMessage: e.target.value })}></hitop-code-editor>
     <p class="hint">The request message in the proto3 JSON mapping; \${variables} are filled in when sent. Empty sends {}.</p>`;

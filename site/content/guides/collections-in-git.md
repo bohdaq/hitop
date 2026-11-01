@@ -95,7 +95,7 @@ On GitHub:
     HITOP_SECRET_STAGING_TOKEN: ${{ secrets.STAGING_TOKEN }}
 ```
 
-More in [Run collections in CI](/terms/run-collections-in-ci.html), [Run hitop in GitHub Actions](/terms/run-hitop-in-github-actions.html) and [Run hitop in GitLab CI](/terms/run-hitop-in-gitlab-ci.html).
+More in [Run collections in CI](/terms/run-collections-in-ci.html), [Run HITOP in GitHub Actions](/terms/run-hitop-in-github-actions.html) and [Run HITOP in GitLab CI](/terms/run-hitop-in-gitlab-ci.html).
 
 ## Merge conflicts
 

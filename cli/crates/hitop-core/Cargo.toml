@@ -1,6 +1,6 @@
 [package]
 name = "hitop-core"
-description = "Core library for hitop — HTTP API client engine with collections, variables, and scripting"
+description = "Core library of HITOP, the API client your terminal, your CI and your AI agent can all drive: collections, variables, scripting, runs"
 keywords = ["http", "api", "client", "rest", "scripting"]
 categories = ["web-programming::http-client", "api-bindings"]
 readme = "README.md"

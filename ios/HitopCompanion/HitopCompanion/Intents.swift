@@ -4,7 +4,7 @@ import WidgetKit
 
 /// A saved collection folder, as Shortcuts shows it.
 struct CollectionEntity: AppEntity {
-    static var typeDisplayRepresentation: TypeDisplayRepresentation = "hitop collection"
+    static var typeDisplayRepresentation: TypeDisplayRepresentation = "HITOP collection"
     static var defaultQuery: CollectionQuery = CollectionQuery()
 
     var id: String
@@ -33,11 +33,11 @@ struct IntentFailure: Error, CustomLocalizedStringResourceConvertible {
     var localizedStringResource: LocalizedStringResource { "\(message)" }
 }
 
-/// "Run hitop collection": runs it with its chosen environment and secrets
+/// "Run HITOP collection": runs it with its chosen environment and secrets
 /// from the keychain; the result is the summary line, and the run's status
 /// shows in the widget.
 struct RunCollectionIntent: AppIntent {
-    static var title: LocalizedStringResource = "Run hitop collection"
+    static var title: LocalizedStringResource = "Run HITOP collection"
     static var description: IntentDescription = IntentDescription("Runs every request of a hitop collection folder and returns how many passed.")
 
     @Parameter(title: "Collection") var collection: CollectionEntity
@@ -55,7 +55,7 @@ struct RunCollectionIntent: AppIntent {
 
 /// "Get last hitop status": the last run's result without running anything.
 struct LastStatusIntent: AppIntent {
-    static var title: LocalizedStringResource = "Get last hitop run status"
+    static var title: LocalizedStringResource = "Get last HITOP run status"
     static var description: IntentDescription = IntentDescription("Whether the last run of a hitop collection passed, without running it again.")
 
     @Parameter(title: "Collection") var collection: CollectionEntity

@@ -18,8 +18,8 @@ final class HiTopUITests: XCTestCase {
     // MARK: - Launch
 
     func testAppLaunchShowsNavigationTitle() {
-        // The sidebar should show the "HiTop" navigation title
-        let navBar = app.navigationBars["HiTop"]
+        // The sidebar should show the "HITOP" navigation title
+        let navBar = app.navigationBars["HITOP"]
         XCTAssertTrue(navBar.waitForExistence(timeout: 3))
     }
 

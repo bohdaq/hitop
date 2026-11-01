@@ -1,10 +1,10 @@
 {
   "manifest_version": 3,
-  "name": "HITOP - HTTP API Testing Tool",
+  "name": "HITOP",
   "version": "4.0.0",
-  "description": "A powerful HTTP API testing tool with collections, variables, and custom scripting support",
+  "description": "The API client your terminal, your CI and your AI agent can all drive.",
   "action": {
-    "default_title": "HITOP API Tester"
+    "default_title": "HITOP"
   },
   "icons": {
     "16": "icons/icon-16.png",

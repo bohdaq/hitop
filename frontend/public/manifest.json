@@ -1,7 +1,7 @@
 {
   "short_name": "HITOP",
-  "name": "HITOP - HTTP Client",
-  "description": "HITOP is a powerful web-based HTTP client for testing REST APIs",
+  "name": "HITOP",
+  "description": "The API client your terminal, your CI and your AI agent can all drive.",
   "icons": [
     {
       "src": "favicon.ico",

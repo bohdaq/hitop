@@ -37,7 +37,7 @@ struct StatusWidgetView: View {
     var body: some View {
         let rows = entry.statuses.prefix(family == .systemSmall ? 2 : 4)
         VStack(alignment: .leading, spacing: 6) {
-            Text("hitop").font(.caption.bold()).foregroundStyle(.secondary)
+            Text("HITOP").font(.caption.bold()).foregroundStyle(.secondary)
             if rows.isEmpty {
                 Text("Pin a collection in the app to see its last run here.").font(.caption)
             }
@@ -64,7 +64,7 @@ struct HitopStatusWidget: Widget {
         StaticConfiguration(kind: "HitopStatus", provider: StatusProvider()) { entry in
             StatusWidgetView(entry: entry)
         }
-        .configurationDisplayName("hitop runs")
+        .configurationDisplayName("HITOP Runs")
         .description("The last run of your pinned hitop collections.")
         .supportedFamilies([.systemSmall, .systemMedium])
     }

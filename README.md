@@ -102,7 +102,7 @@ GitLab CI and any other runner: `ghcr.io/bohdaq/hitop:1.0.0` (distroless) or
 ## Guides
 
 - [Migrate from Postman](https://hitop.rws8.tech/terms/migrate-from-postman.html)
-- [Use hitop with Claude Code and Cursor](https://hitop.rws8.tech/terms/use-hitop-with-claude-code-and-cursor.html) (`hitop mcp`)
+- [Use HITOP with Claude Code and Cursor](https://hitop.rws8.tech/terms/use-hitop-with-claude-code-and-cursor.html) (`hitop mcp`)
 - [Collections in git](https://hitop.rws8.tech/terms/collections-in-git.html)
 - [Run collections in CI](https://hitop.rws8.tech/terms/run-collections-in-ci.html),
   [GitHub Actions](https://hitop.rws8.tech/terms/run-hitop-in-github-actions.html),

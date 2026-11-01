@@ -11,7 +11,7 @@
   "app": {
     "windows": [
       {
-        "title": "HITOP — HTTP API Testing Tool",
+        "title": "HITOP",
         "width": 1400,
         "height": 900,
         "minWidth": 900,
@@ -36,8 +36,8 @@
     ],
     "category": "Developer Tools",
     "copyright": "© 2025 Bohdan Tsap",
-    "shortDescription": "HTTP API testing tool",
-    "longDescription": "HITOP is a native HTTP API testing tool. Send requests, manage collections, use variables, and run pre/post request scripts — all stored locally.",
+    "shortDescription": "The API client your terminal, your CI and your AI agent can all drive.",
+    "longDescription": "HITOP: the API client your terminal, your CI and your AI agent can all drive. Send requests, keep collections as folders of YAML files in your repository, script them in JavaScript and run them in CI. No account, MIT licensed.",
     "macOS": {
       "minimumSystemVersion": "12.0",
       "entitlements": "./Entitlements.mas.plist",

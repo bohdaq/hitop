@@ -1,10 +1,10 @@
-# Privacy Policy for HITOP HTTP Client
+# Privacy Policy for HITOP
 
 Last updated: November 2025
 
 ## Data Collection and Storage
 
-HITOP HTTP Client does NOT collect, transmit, or share any personal data. All data is stored locally in your browser.
+HITOP does NOT collect, transmit, or share any personal data. All data is stored locally in your browser.
 
 ### What We Store Locally:
 - HTTP request collections

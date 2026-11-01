@@ -232,7 +232,8 @@ jobs:
           labels: |
             org.opencontainers.image.source=https://github.com/bohdaq/hitop
             org.opencontainers.image.licenses=MIT
-            org.opencontainers.image.description=hitop: run HTTP API collections from the command line and in CI
+            org.opencontainers.image.title=HITOP
+            org.opencontainers.image.description=HITOP: the API client your terminal, your CI and your AI agent can all drive
       - uses: docker/build-push-action@v6
         with:
           context: image
@@ -243,7 +244,8 @@ jobs:
           labels: |
             org.opencontainers.image.source=https://github.com/bohdaq/hitop
             org.opencontainers.image.licenses=MIT
-            org.opencontainers.image.description=hitop with a busybox shell, for shell-based CI runners such as GitLab CI
+            org.opencontainers.image.title=HITOP (debug)
+            org.opencontainers.image.description=HITOP with a busybox shell, for shell-based CI runners such as GitLab CI
       - name: The image runs a collection
         run: |
           docker run --rm ghcr.io/bohdaq/hitop:${{ needs.check.outputs.version }} --version

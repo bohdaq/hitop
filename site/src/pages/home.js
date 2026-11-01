@@ -147,7 +147,7 @@ export function render() {
           <p class="section-lead">The CLI is a single Rust binary. It runs collections with their pre and post request scripts, passes values from one request to the next, and writes JUnit and JSON reports for any pipeline.</p>
           <p class="section-lead"><code>hitop mcp</code> lets Claude Code, Cursor and other MCP clients list, run and edit the requests of a collection folder, with secrets masked.</p>
           <a class="text-link" href=${CRATE}>Install from crates.io ${unsafeHTML(icon("arrow-right"))}</a>
-          <a class="text-link" href="/terms/use-hitop-with-claude-code-and-cursor.html">Use hitop with Claude Code and Cursor ${unsafeHTML(icon("arrow-right"))}</a>
+          <a class="text-link" href="/terms/use-hitop-with-claude-code-and-cursor.html">Use HITOP with Claude Code and Cursor ${unsafeHTML(icon("arrow-right"))}</a>
         </div>
         ${terminal()}
       </section>

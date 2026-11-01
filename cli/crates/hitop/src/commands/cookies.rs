@@ -11,7 +11,7 @@ use super::source::Source;
 
 #[derive(Subcommand)]
 pub enum CookiesCmd {
-    /// List the cookies hitop keeps and sends back
+    /// List the cookies HITOP keeps and sends back
     #[command(alias = "list")]
     Ls(Which),
     /// Delete every cookie of the jar
