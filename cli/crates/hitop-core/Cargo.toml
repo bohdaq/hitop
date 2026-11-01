@@ -27,13 +27,22 @@ yaml_serde = "0.10.7"
 # OS keychain for secret variables: macOS Keychain, Windows Credential Manager, and the
 # Secret Service over zbus on Linux (pure Rust, so static musl builds keep working).
 keyring = { version = "4.2", optional = true }
+# WebSocket connections (src/websocket.rs, feature `websocket`): tokio-tungstenite over
+# rustls with the ring provider and the webpki roots, as reqwest uses (no OpenSSL).
+tokio = { version = "1.54.1", default-features = false, features = ["rt", "net", "sync", "time", "macros"], optional = true }
+tokio-tungstenite = { version = "0.30", default-features = false, features = ["connect", "handshake", "rustls-tls-webpki-roots"], optional = true }
+futures-util = { version = "0.3", default-features = false, features = ["sink", "std"], optional = true }
+rustls = { version = "0.23", default-features = false, features = ["ring", "std", "tls12"], optional = true }
+webpki-roots = { version = "1", optional = true }
 
 [features]
-default = ["keychain", "native"]
+default = ["keychain", "native", "websocket"]
 # HTTP (reqwest), scripts (boa), the runner and the JSON storage in the
 # config directory. Off for wasm32 (hitop-wasm: the format module and the
 # model in the web app).
 native = ["dep:reqwest", "dep:boa_engine", "dep:dirs"]
+# WebSocket connections (src/websocket.rs's client): the CLI's `hitop ws` and the desktop.
+websocket = ["native", "dep:tokio", "dep:tokio-tungstenite", "dep:futures-util", "dep:rustls", "dep:webpki-roots"]
 # Off for targets without an OS keychain (the future wasm build).
 keychain = ["dep:keyring"]
 # The opt-in weekly usage ping (src/telemetry.rs). Off by default: the CLI and the
@@ -43,4 +52,5 @@ telemetry = ["native"]
 
 [dev-dependencies]
 tempfile = "3"
+tokio = { version = "1.54.1", features = ["rt-multi-thread", "macros", "net"] }
 proptest = "1"

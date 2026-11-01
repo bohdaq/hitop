@@ -17,3 +17,4 @@ pub mod secrets;
 pub mod snippet;
 pub mod storage;
 pub mod telemetry;
+pub mod websocket;

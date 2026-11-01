@@ -131,6 +131,11 @@ pub fn run_collection_jar(
     let mut results = Vec::new();
 
     for request in &collection.requests {
+        // A WebSocket request opens a connection on demand (`hitop ws`);
+        // a run has nothing to send for it.
+        if request.is_websocket() {
+            continue;
+        }
         let started = Instant::now();
         // A request's own auth (even `none`) wins over the collection's.
         let draft = Draft::of(request, collection.auth.as_ref());
@@ -226,6 +231,15 @@ mod tests {
         assert_eq!(results[0].url, "http://127.0.0.1:9/x?key=••••");
         let all = format!("{seen:?} {:?}", results);
         assert!(!all.contains("s3cr3t"), "{all}");
+    }
+
+    #[test]
+    fn websocket_requests_are_skipped() {
+        let collection = Collection {
+            requests: vec![Request { name: "socket".into(), method: "GET".into(), url: "ws://127.0.0.1:9/".into(), kind: Some("websocket".into()), ..Default::default() }],
+            ..Default::default()
+        };
+        assert!(run_collection(&collection, None, false, &mut |_| panic!("no step")).is_empty());
     }
 
     #[test]
