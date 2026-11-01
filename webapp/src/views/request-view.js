@@ -392,8 +392,10 @@ export class HitopRequest extends LitElement {
   render() {
     const t = this.tab;
     if (!t) return nothing;
+    // novalidate: a URL that starts with a variable is no valid type="url"
+    // value, and the browser would then refuse to submit (Send did nothing).
     return html`
-      <form class="request-line" @submit=${(e) => this.send(e)}>
+      <form class="request-line" novalidate @submit=${(e) => this.send(e)}>
         <lit-material-select class="method" variant="outlined" label="Method" .value=${t.method} @change=${(e) => this.set({ method: e.target.value })}>
           ${METHODS.map((m) => html`<lit-material-select-option value=${m}>${m}</lit-material-select-option>`)}
         </lit-material-select>
