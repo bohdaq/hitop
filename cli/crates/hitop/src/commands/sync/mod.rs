@@ -39,7 +39,7 @@ pub enum SyncCmd {
         #[arg(long, requires = "sso")]
         no_browser: bool,
         /// The code from the sign-in mail (asked for on a terminal when left out)
-        #[arg(long)]
+        #[arg(long, allow_hyphen_values = true)]
         code: Option<String>,
         /// Sync server (default https://sync.hitop.rws8.tech, or HITOP_SYNC_SERVER)
         #[arg(long)]
@@ -102,7 +102,11 @@ pub enum SyncCmd {
         folder: FolderArgs,
     },
     /// Accept an invite (the code from the invite mail or link)
-    Accept { code: String },
+    Accept {
+        // Codes are base64url: one may start with '-'.
+        #[arg(allow_hyphen_values = true)]
+        code: String,
+    },
     /// Add an account that accepted an invite, after checking its key fingerprints (owner)
     Add {
         email: String,

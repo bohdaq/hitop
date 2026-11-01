@@ -382,6 +382,12 @@ fn sync_commands_explain_what_is_missing() {
     let (code, err) = cmd(&["sync", "login", "--email", "a@example.com", "--server", "http://sync.example.com"]);
     assert_eq!(code, 2);
     assert!(err.contains("https"), "{err}");
+    // Codes are base64url and may start with '-'.
+    let (code, err) = cmd(&["sync", "login", "--email", "a@example.com", "--code", "-iPhD7m9", "--server", "http://sync.example.com"]);
+    assert_eq!(code, 2);
+    assert!(err.contains("https") && !err.contains("unexpected argument"), "{err}");
+    let (_, err) = cmd(&["sync", "accept", "-iPhD7m9"]);
+    assert!(!err.contains("unexpected argument"), "{err}");
     let o = Command::cargo_bin("hitop").unwrap().env("HITOP_SYNC_RUNNER", "nonsense").args(["sync", "pull"]).output().unwrap();
     assert_eq!(o.status.code(), Some(2));
     assert!(String::from_utf8_lossy(&o.stderr).contains("runner credential"));
