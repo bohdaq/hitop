@@ -12,7 +12,6 @@ use serde_json::{json, Value};
 
 use crate::format::names;
 use crate::model::{Auth, Collection, Environment, FormField, Header, Param, Request};
-use crate::scripting::unsupported_calls;
 
 /// One thing the import couldn't carry over as it was.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -193,13 +192,25 @@ impl Scripts {
             if code.trim().is_empty() {
                 continue;
             }
-            for c in unsupported_calls(&code) {
-                report.issues.push(Issue { location: format!("{location} ({kind})"), line: Some(c.line), what: c.call, text: c.text });
+            for (line, what, text) in script_calls(&code) {
+                report.issues.push(Issue { location: format!("{location} ({kind})"), line: Some(line), what, text });
             }
             list.push((location.to_string(), code));
         }
         out
     }
+}
+
+/// Unsupported calls in a script as (line, call, text). The check runs in the
+/// shim, so it needs the JS engine; a build without it (wasm) reports none.
+#[cfg(feature = "native")]
+fn script_calls(code: &str) -> Vec<(usize, String, String)> {
+    crate::scripting::unsupported_calls(code).into_iter().map(|c| (c.line, c.call, c.text)).collect()
+}
+
+#[cfg(not(feature = "native"))]
+fn script_calls(_: &str) -> Vec<(usize, String, String)> {
+    vec![]
 }
 
 /// The `prerequest` and `test` scripts of an `event` list.
