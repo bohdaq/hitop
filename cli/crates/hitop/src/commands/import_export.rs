@@ -23,7 +23,7 @@ pub struct ImportArgs {
 
 #[derive(Args)]
 pub struct ExportArgs {
-    /// Collection name
+    /// Collection name or folder path
     collection: String,
 
     /// Output format
@@ -69,11 +69,8 @@ pub fn run_import(args: ImportArgs) -> Result<()> {
 }
 
 pub fn run_export(args: ExportArgs) -> Result<()> {
-    let collections = storage::load_collections()?;
-    let col = collections
-        .iter()
-        .find(|c| c.name == args.collection)
-        .ok_or_else(|| anyhow::anyhow!("collection '{}' not found", args.collection))?;
+    let source = super::source::Source::open(&args.collection)?;
+    let col = &source.collection;
 
     let output = match args.format {
         Format::Hitop => export::to_hitop(std::slice::from_ref(col))?,

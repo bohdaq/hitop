@@ -2,36 +2,36 @@ use anyhow::Result;
 use clap::Subcommand;
 use colored::Colorize;
 
-use hitop_core::storage;
+use super::source::Source;
 
 #[derive(Subcommand)]
 pub enum VariablesCmd {
     /// List variables for a collection
     List {
+        /// Collection name or folder path
         collection: String,
     },
     /// Set a variable
     Set {
+        /// Collection name or folder path
         collection: String,
         key: String,
         value: String,
     },
     /// Delete a variable
     Delete {
+        /// Collection name or folder path
         collection: String,
         key: String,
     },
 }
 
 pub fn run(cmd: VariablesCmd) -> Result<()> {
-    let mut collections = storage::load_collections()?;
 
     match cmd {
         VariablesCmd::List { collection } => {
-            let col = collections
-                .iter()
-                .find(|c| c.name == collection)
-                .ok_or_else(|| anyhow::anyhow!("collection '{}' not found", collection))?;
+            let source = Source::open(&collection)?;
+            let col = &source.collection;
 
             if col.variables.is_empty() {
                 println!("{}", "No variables defined.".dimmed());
@@ -46,26 +46,22 @@ pub fn run(cmd: VariablesCmd) -> Result<()> {
         }
 
         VariablesCmd::Set { collection, key, value } => {
-            let col = collections
-                .iter_mut()
-                .find(|c| c.name == collection)
-                .ok_or_else(|| anyhow::anyhow!("collection '{}' not found", collection))?;
+            let mut source = Source::open(&collection)?;
+            let col = &mut source.collection;
 
             col.variables.insert(key.clone(), value.clone());
-            storage::save_collections(&collections)?;
+            source.save()?;
             println!("{} Set {}={}", "✓".green(), key.bold(), value);
         }
 
         VariablesCmd::Delete { collection, key } => {
-            let col = collections
-                .iter_mut()
-                .find(|c| c.name == collection)
-                .ok_or_else(|| anyhow::anyhow!("collection '{}' not found", collection))?;
+            let mut source = Source::open(&collection)?;
+            let col = &mut source.collection;
 
             if col.variables.remove(&key).is_none() {
                 anyhow::bail!("variable '{}' not found", key);
             }
-            storage::save_collections(&collections)?;
+            source.save()?;
             println!("{} Deleted variable '{}'", "✓".green(), key.bold());
         }
     }

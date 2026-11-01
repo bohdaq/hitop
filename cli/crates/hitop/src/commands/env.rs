@@ -53,7 +53,7 @@ pub fn run(cmd: EnvCmd) -> Result<()> {
             if envs.environments.iter().any(|e| e.name == name) {
                 bail!("environment '{}' already exists", name);
             }
-            envs.environments.push(Environment { id: new_id(), name: name.clone(), variables: HashMap::new() });
+            envs.environments.push(Environment { id: new_id(), name: name.clone(), variables: HashMap::new(), ..Default::default() });
             println!("{} Created environment '{}'", "✓".green(), name.bold());
         }
         EnvCmd::Delete { name } => {
@@ -134,7 +134,7 @@ fn parse(json: &str) -> Result<Vec<Environment>> {
                 bail!("item {} has no variables", i + 1);
             }
             let name = e["name"].as_str().map(str::to_string).unwrap_or_else(|| format!("Environment {}", i + 1));
-            Ok(Environment { id: new_id(), name, variables })
+            Ok(Environment { id: new_id(), name, variables, ..Default::default() })
         })
         .collect()
 }

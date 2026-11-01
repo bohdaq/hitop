@@ -5,15 +5,18 @@ use colored::Colorize;
 use hitop_core::{model::{Auth, Header, Request}, params::append_query, storage};
 
 use super::flags::{query_pair, AuthFlags};
+use super::source::Source;
 
 #[derive(Subcommand)]
 pub enum RequestsCmd {
     /// List requests in a collection
     List {
+        /// Collection name or folder path
         collection: String,
     },
     /// Add a request to a collection
     Add {
+        /// Collection name or folder path
         collection: String,
         #[arg(long)]
         name: String,
@@ -35,6 +38,7 @@ pub enum RequestsCmd {
     },
     /// Set or clear a request's auth
     Auth {
+        /// Collection name or folder path
         collection: String,
         request: String,
         #[command(flatten)]
@@ -45,22 +49,26 @@ pub enum RequestsCmd {
     },
     /// Show a request's details
     Show {
+        /// Collection name or folder path
         collection: String,
         request: String,
     },
     /// Delete a request
     Delete {
+        /// Collection name or folder path
         collection: String,
         request: String,
     },
     /// Rename a request
     Rename {
+        /// Collection name or folder path
         collection: String,
         request: String,
         new_name: String,
     },
     /// Load and immediately send a request from a collection
     Send {
+        /// Collection name or folder path
         collection: String,
         request: String,
         /// Show response headers
@@ -76,11 +84,11 @@ pub enum RequestsCmd {
 }
 
 pub fn run(cmd: RequestsCmd) -> Result<()> {
-    let mut collections = storage::load_collections()?;
 
     match cmd {
         RequestsCmd::List { collection } => {
-            let col = find_col(&collections, &collection)?;
+            let source = Source::open(&collection)?;
+            let col = &source.collection;
             if col.requests.is_empty() {
                 println!("{}", "No requests in this collection.".dimmed());
                 return Ok(());
@@ -97,12 +105,13 @@ pub fn run(cmd: RequestsCmd) -> Result<()> {
         }
 
         RequestsCmd::Add { collection, name, url, method, headers, body, query, auth } => {
-            let col = find_col_mut(&mut collections, &collection)?;
+            let mut source = Source::open(&collection)?;
+            let col = &mut source.collection;
             let headers: Vec<Header> = headers
                 .iter()
                 .filter_map(|h| {
                     let (k, v) = h.split_once(':')?;
-                    Some(Header { name: k.trim().to_string(), value: v.trim().to_string() })
+                    Some(Header::new(k.trim(), v.trim()))
                 })
                 .collect();
             let req = Request {
@@ -110,19 +119,21 @@ pub fn run(cmd: RequestsCmd) -> Result<()> {
                 name: name.clone(),
                 url: append_query(&url, &query.iter().map(|q| query_pair(q)).collect::<Vec<_>>()),
                 method,
-                headers: if headers.is_empty() { vec![Header { name: String::new(), value: String::new() }] } else { headers },
+                headers: if headers.is_empty() { vec![Header::new("", "")] } else { headers },
                 body: body.unwrap_or_default(),
                 pre_request_script: String::new(),
                 post_request_script: String::new(),
                 auth: auth.auth()?,
+                ..Default::default()
             };
             col.requests.push(req);
-            storage::save_collections(&collections)?;
+            source.save()?;
             println!("{} Added request '{}' to '{}'", "✓".green(), name.bold(), collection.bold());
         }
 
         RequestsCmd::Auth { collection, request, auth, none } => {
-            let col = find_col_mut(&mut collections, &collection)?;
+            let mut source = Source::open(&collection)?;
+            let col = &mut source.collection;
             let req = col
                 .requests
                 .iter_mut()
@@ -134,12 +145,13 @@ pub fn run(cmd: RequestsCmd) -> Result<()> {
                     None => bail!("give --bearer, --basic, --api-key or --none"),
                 }
             };
-            storage::save_collections(&collections)?;
+            source.save()?;
             println!("{} Updated auth for '{}'", "✓".green(), request.bold());
         }
 
         RequestsCmd::Show { collection, request } => {
-            let col = find_col(&collections, &collection)?;
+            let source = Source::open(&collection)?;
+            let col = &source.collection;
             let req = find_req(col, &request)?;
             println!("{}: {}", "Name".bold(), req.name);
             println!("{}: {}", "Method".bold(), req.method);
@@ -163,25 +175,27 @@ pub fn run(cmd: RequestsCmd) -> Result<()> {
         }
 
         RequestsCmd::Delete { collection, request } => {
-            let col = find_col_mut(&mut collections, &collection)?;
+            let mut source = Source::open(&collection)?;
+            let col = &mut source.collection;
             let len_before = col.requests.len();
             col.requests.retain(|r| r.name != request);
             if col.requests.len() == len_before {
                 bail!("request '{}' not found in '{}'", request, collection);
             }
-            storage::save_collections(&collections)?;
+            source.save()?;
             println!("{} Deleted request '{}'", "✓".green(), request.bold());
         }
 
         RequestsCmd::Rename { collection, request, new_name } => {
-            let col = find_col_mut(&mut collections, &collection)?;
+            let mut source = Source::open(&collection)?;
+            let col = &mut source.collection;
             let req = col
                 .requests
                 .iter_mut()
                 .find(|r| r.name == request)
                 .ok_or_else(|| anyhow::anyhow!("request '{}' not found", request))?;
             req.name = new_name.clone();
-            storage::save_collections(&collections)?;
+            source.save()?;
             println!("{} Renamed '{}' → '{}'", "✓".green(), request.bold(), new_name.bold());
         }
 
@@ -189,15 +203,16 @@ pub fn run(cmd: RequestsCmd) -> Result<()> {
             use hitop_core::{http, prepare::{prepare, variables, Draft}, scripting::run_post_request_script};
             use crate::output;
 
-            let col = find_col(&collections, &collection)?.clone();
-            let req = find_req(&col, &request)?.clone();
-            let envs = storage::load_environments()?;
-            let vars = variables(&col.variables, envs.pick(env.as_deref())?);
+            let source = Source::open(&collection)?;
+            let col = &source.collection;
+            let req = find_req(col, &request)?.clone();
+            let vars = variables(&col.variables, source.environment(env.as_deref())?.as_ref());
+            let context_key = source.context_key();
 
             // Load context
             let contexts = storage::load_contexts()?;
             let context: std::collections::HashMap<String, serde_json::Value> = contexts
-                .get(&collection)
+                .get(&context_key)
                 .and_then(|v| v.as_object())
                 .map(|m| m.iter().map(|(k, v)| (k.clone(), v.clone())).collect())
                 .unwrap_or_default();
@@ -208,7 +223,7 @@ pub fn run(cmd: RequestsCmd) -> Result<()> {
                 headers: &req.headers,
                 body: &req.body,
                 pre_request_script: &req.pre_request_script,
-                auth: req.auth.as_ref(),
+                auth: req.auth.as_ref().or(col.auth.as_ref()),
             };
             let pre = prepare(&draft, &vars, &context)?;
             let result = http::execute(&req.method, &pre.url, &pre.headers, &pre.body)?;
@@ -233,7 +248,7 @@ pub fn run(cmd: RequestsCmd) -> Result<()> {
                     .map(|(k, v)| (k.clone(), v.clone()))
                     .collect();
                 if let Some(obj) = contexts.as_object_mut() {
-                    obj.insert(collection.clone(), serde_json::Value::Object(merged));
+                    obj.insert(context_key, serde_json::Value::Object(merged));
                 }
                 storage::save_contexts(&contexts)?;
             }
@@ -269,26 +284,6 @@ fn describe_auth(auth: &Auth) -> String {
         Auth::Basic { username, .. } => format!("Basic, user {username}"),
         Auth::ApiKey { key, location, .. } => format!("API key {key} in the {}", if *location == hitop_core::model::ApiKeyLocation::Query { "query" } else { "headers" }),
     }
-}
-
-fn find_col<'a>(
-    collections: &'a [hitop_core::model::Collection],
-    name: &str,
-) -> Result<&'a hitop_core::model::Collection> {
-    collections
-        .iter()
-        .find(|c| c.name == name)
-        .ok_or_else(|| anyhow::anyhow!("collection '{}' not found", name))
-}
-
-fn find_col_mut<'a>(
-    collections: &'a mut Vec<hitop_core::model::Collection>,
-    name: &str,
-) -> Result<&'a mut hitop_core::model::Collection> {
-    collections
-        .iter_mut()
-        .find(|c| c.name == name)
-        .ok_or_else(|| anyhow::anyhow!("collection '{}' not found", name))
 }
 
 fn find_req<'a>(

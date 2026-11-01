@@ -60,6 +60,7 @@ pub fn run(cmd: CollectionsCmd) -> Result<()> {
                 name: name.clone(),
                 requests: vec![],
                 variables: HashMap::new(),
+                ..Default::default()
             });
             storage::save_collections(&collections)?;
             println!("{} Created collection '{}'", "✓".green(), name.bold());

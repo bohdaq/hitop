@@ -1,0 +1,11 @@
+format: 1
+name: Sample API
+variables:
+  base: http://localhost:8080
+auth:
+  type: bearer
+  token: ${token}
+order:
+- get-user
+- orders/create-order
+- orders/get-order

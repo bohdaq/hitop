@@ -1,0 +1,13 @@
+name: Get order
+method: GET
+url: ${base}/orders/latest
+auth:
+  type: apikey
+  key: X-API-Key
+  value: ${apiKey}
+  in: header
+scripts:
+  pre: setUrl(getVariable('base') + '/orders/' + getContext('orderId'));
+  post: |
+    assert.status(200);
+    assert.equal(getResponseValue('status'), 'paid', 'status');

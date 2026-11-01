@@ -1,0 +1,6 @@
+variables:
+  apiKey:
+    secret: true
+  base: https://api.example.com
+  token:
+    secret: true

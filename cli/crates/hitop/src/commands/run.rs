@@ -5,10 +5,12 @@ use indicatif::{ProgressBar, ProgressStyle};
 
 use hitop_core::{runner, storage};
 
+use super::source::Source;
+
 
 #[derive(Args)]
 pub struct RunArgs {
-    /// Collection name (omit to run all)
+    /// Collection name, or path to a collection folder (omit to run all)
     collection: Option<String>,
 
     /// Run all collections
@@ -19,7 +21,8 @@ pub struct RunArgs {
     #[arg(long)]
     no_stop_on_fail: bool,
 
-    /// Environment to use instead of the active one
+    /// Environment to use instead of the active one (for a folder: one of
+    /// its environments/, none by default)
     #[arg(short = 'e', long = "env")]
     env: Option<String>,
 }
@@ -27,11 +30,10 @@ pub struct RunArgs {
 /// Exits with status 1 when a request fails or an assertion doesn't pass,
 /// so CI jobs fail with it.
 pub fn run(args: RunArgs) -> Result<()> {
-    let collections = storage::load_collections()?;
-    let envs = storage::load_environments()?;
-    let env = envs.pick(args.env.as_deref())?;
-
     if args.all || args.collection.is_none() {
+        let collections = storage::load_collections()?;
+        let envs = storage::load_environments()?;
+        let env = envs.pick(args.env.as_deref())?;
         // Run all
         let mut total = 0usize;
         let mut success = 0usize;
@@ -57,14 +59,12 @@ pub fn run(args: RunArgs) -> Result<()> {
         return Ok(());
     }
 
-    let col_name = args.collection.as_deref().unwrap();
-    let col = collections
-        .iter()
-        .find(|c| c.name == col_name)
-        .ok_or_else(|| anyhow::anyhow!("collection '{}' not found", col_name))?;
+    let source = Source::open(args.collection.as_deref().unwrap_or_default())?;
+    let env = source.environment(args.env.as_deref())?;
+    let col = &source.collection;
 
     println!("{} {}", "▶".cyan(), col.name.bold());
-    let results = run_one_collection(col, env, !args.no_stop_on_fail);
+    let results = run_one_collection(col, env.as_ref(), !args.no_stop_on_fail);
 
     let success = results
         .iter()

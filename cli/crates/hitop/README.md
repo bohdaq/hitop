@@ -50,6 +50,8 @@ hitop export MyAPI -o my-collection.json
 | Command | Description |
 |---|---|
 | `hitop send <url>` | Send a one-off request |
+| `hitop init [dir]` | Create a collection folder (`hitop.yaml`, `requests/`, `environments/`) |
+| `hitop convert <json> <dir>` / `hitop convert <dir> <json>` | Convert a HITOP JSON export to a collection folder, or back |
 | `hitop run <collection>` | Run all requests in a collection sequentially |
 | `hitop run --all` | Run every collection |
 | `hitop collections list/add/delete/rename/duplicate` | Manage collections |
@@ -61,6 +63,21 @@ hitop export MyAPI -o my-collection.json
 | `hitop import <file>` | Import collections (HITOP or Postman format) |
 | `hitop export <collection>` | Export a collection |
 | `hitop completions <shell>` | Generate shell completions |
+
+Every command that takes a collection name also takes a path to a collection folder.
+
+## Collections in git
+
+A collection folder is YAML, one file per request, so it can be reviewed and run from the repository
+([format spec](https://github.com/bohdaq/hitop/blob/main/spec/collection-format.md)):
+
+```bash
+hitop init my-api                      # hitop.yaml, requests/get-example.yaml, environments/local.yaml
+hitop convert export.json my-api       # or from the web app's JSON export (--environments envs.json too)
+hitop requests add ./my-api --name "List orders" --url '${base}/orders'
+hitop run ./my-api --env local         # a folder uses its own environments/
+hitop convert ./my-api export.json     # back to JSON
+```
 
 ## Environments, auth and query parameters
 

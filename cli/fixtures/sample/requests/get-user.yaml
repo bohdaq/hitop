@@ -1,0 +1,19 @@
+name: Get user
+method: GET
+url: ${base}/users/1
+params:
+- name: fields
+  value: name,email
+- name: debug
+  value: '1'
+  enabled: false
+headers:
+- name: Accept
+  value: application/json
+- name: X-Debug
+  value: '1'
+  enabled: false
+scripts:
+  post: |
+    assert.status(200);
+    assert.equal(getResponseValue('name'), 'Ada', 'name');

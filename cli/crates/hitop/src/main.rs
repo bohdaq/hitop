@@ -18,6 +18,10 @@ struct Cli {
 
 #[derive(Subcommand)]
 enum Cmd {
+    /// Create a collection folder (hitop.yaml, requests/, environments/)
+    Init(commands::folder::InitArgs),
+    /// Convert a HITOP JSON export to a collection folder, or back
+    Convert(commands::folder::ConvertArgs),
     /// Send a single HTTP request
     Send(commands::send::SendArgs),
     /// Run a collection or all collections
@@ -51,6 +55,8 @@ fn main() -> Result<()> {
     let cli = Cli::parse();
 
     match cli.command {
+        Cmd::Init(args) => commands::folder::run_init(args),
+        Cmd::Convert(args) => commands::folder::run_convert(args),
         Cmd::Send(args) => commands::send::run(args),
         Cmd::Run(args) => commands::run::run(args),
         Cmd::Collections(cmd) => commands::collections::run(cmd),

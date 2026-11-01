@@ -1,4 +1,4 @@
-use anyhow::{bail, Result};
+use anyhow::Result;
 use clap::Args;
 use std::collections::HashMap;
 
@@ -12,6 +12,7 @@ use hitop_core::{
 };
 
 use super::flags::{query_pair, script_arg, AuthFlags};
+use super::source::Source;
 use crate::output;
 
 #[derive(Args)]
@@ -38,7 +39,7 @@ pub struct SendArgs {
     #[command(flatten)]
     auth: AuthFlags,
 
-    /// Collection name to load variables and context from
+    /// Collection name or folder path to load variables and context from
     #[arg(short = 'c', long)]
     collection: Option<String>,
 
@@ -67,32 +68,27 @@ pub fn run(args: SendArgs) -> Result<()> {
     let mut collection_vars: HashMap<String, String> = HashMap::new();
     let mut context: HashMap<String, serde_json::Value> = HashMap::new();
 
-    if let Some(col_name) = &args.collection {
-        let collections = storage::load_collections()?;
-        match collections.iter().find(|c| c.name == *col_name) {
-            Some(col) => {
-                collection_vars = col.variables.clone();
-                // Load persisted context for this collection
-                let contexts = storage::load_contexts()?;
-                if let Some(ctx_map) = contexts.get(col_name).and_then(|v| v.as_object()) {
-                    context = ctx_map
-                        .iter()
-                        .map(|(k, v)| (k.clone(), v.clone()))
-                        .collect();
-                }
-            }
-            None => bail!("collection '{}' not found", col_name),
+    let source = args.collection.as_deref().map(Source::open).transpose()?;
+    if let Some(source) = &source {
+        collection_vars = source.collection.variables.clone();
+        // Load persisted context for this collection
+        let contexts = storage::load_contexts()?;
+        if let Some(ctx_map) = contexts.get(source.context_key()).and_then(|v| v.as_object()) {
+            context = ctx_map.iter().map(|(k, v)| (k.clone(), v.clone())).collect();
         }
     }
-    let envs = storage::load_environments()?;
-    let variables = variables(&collection_vars, envs.pick(args.env.as_deref())?);
+    let environment = match &source {
+        Some(s) => s.environment(args.env.as_deref())?,
+        None => storage::load_environments()?.pick(args.env.as_deref())?.cloned(),
+    };
+    let variables = variables(&collection_vars, environment.as_ref());
 
     let headers: Vec<Header> = args
         .headers
         .iter()
         .filter_map(|h| {
             let (k, v) = h.split_once(':')?;
-            Some(Header { name: k.trim().to_string(), value: v.trim().to_string() })
+            Some(Header::new(k.trim(), v.trim()))
         })
         .collect();
     let url = append_query(&args.url, &args.query.iter().map(|q| query_pair(q)).collect::<Vec<_>>());
@@ -118,7 +114,7 @@ pub fn run(args: SendArgs) -> Result<()> {
     )?;
 
     // Persist updated context if tied to a collection
-    if let Some(col_name) = &args.collection {
+    if let Some(source) = &source {
         let mut contexts = storage::load_contexts()?;
         let merged: serde_json::Map<String, serde_json::Value> = context
             .iter()
@@ -126,7 +122,7 @@ pub fn run(args: SendArgs) -> Result<()> {
             .map(|(k, v)| (k.clone(), v.clone()))
             .collect();
         if let Some(obj) = contexts.as_object_mut() {
-            obj.insert(col_name.clone(), serde_json::Value::Object(merged));
+            obj.insert(source.context_key(), serde_json::Value::Object(merged));
         }
         storage::save_contexts(&contexts)?;
     }
