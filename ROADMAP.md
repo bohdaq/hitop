@@ -155,6 +155,7 @@ Secret variables: `secret: true` in an environment file, with the value resolved
 | T25 | SSO and audit log | todo | | |
 | T26 | iOS companion code | done (handoff) | 981c736, c1bfa7f, 24c00c5, f3332cb; CI 41309724315 (HitopKit on Linux); Xcode build in section 6 | 2026-11-01 |
 | Brand | Brand unification (owner request 2026-11-01) | done (handoffs) | b924e03, ebc7438; hitop-action 8931565 (untagged) | 2026-11-01 |
+| 1.1 | 1.1 owner follow-ups: MCP WebSocket/OpenAPI tools, row-by-row OpenAPI sync, secret manager settings | done | cf400c6, 75d5a1a, ef5ab83, bc1d19a; ships in CLI/desktop 1.1.0 (not tagged) | 2026-11-01 |
 
 Common commands referenced below:
 
@@ -938,7 +939,7 @@ export PATH="$HOME/.cargo/bin:$PATH"
   - Deviations: the composer and saved messages are text only (binary is shown, not sent; `ws_send` accepts base64 for later). The
     method column of the request line is 160 px (was 140) so "WebSocket" fits. `--message` messages go before `--send` ones
     (clap loses the order between the two flags).
-  - Open: MCP WebSocket tools (not added, by the tranche's scope); history doesn't record WebSocket sessions; no ping/keepalive
+  - Open: MCP WebSocket tools (not added, by the tranche's scope; added in 1.1 as `run_websocket`, section "1.1 Owner follow-ups"); history doesn't record WebSocket sessions; no ping/keepalive
     control or auto-reconnect; the browser can't send handshake headers (platform limit, documented); Postman export writes a
     WebSocket request as a plain GET (Postman v2.1 has no WebSocket items); pre/post scripts don't run for WebSocket requests.
 
@@ -1113,10 +1114,11 @@ export PATH="$HOME/.cargo/bin:$PATH"
   - Guide `site/content/guides/import-an-openapi-spec.md` (/terms/import-an-openapi-spec.html); CLI README "From OpenAPI".
   - Deviations: JSON maps are sorted (serde_json without `preserve_order`), so requests within a folder follow path
     order and generated example bodies list keys alphabetically (the same on every surface). Field-level merge: adding
-    one header of your own makes the spec's later header changes "kept" for that request. A file path source isn't
+    one header of your own made the spec's later header changes "kept" for that request (1.1 merges header and query
+    rows one by one). A file path source isn't
     recorded (only URLs), so the web app's sync dialog is prefilled only for URL imports.
   - Open: external `$ref`s (other files/URLs) aren't fetched; OAuth 2 flows aren't set up (no OAuth in hitop); XML
-    bodies aren't generated from schemas; `hitop mcp` has no OpenAPI tool; `cargo fuzz` target for the importer is T19's.
+    bodies aren't generated from schemas; `hitop mcp` has no OpenAPI tool (added in 1.1: `import_openapi`, `sync_openapi`); `cargo fuzz` target for the importer is T19's.
 
 #### T18 Bring-your-own-key AI
 - Dropped by the owner on 2026-11-01. Skip it; nothing later depends on it.
@@ -1317,7 +1319,7 @@ export PATH="$HOME/.cargo/bin:$PATH"
   - Deviations: "the browser shows them unresolved with a clear note" is implemented as: the request isn't sent and the note names the
     references (sending `${secret:...}` text would be useless). The single request view shows the response as received, and the
     WebSocket/gRPC logs show the URL/message as sent, as for environment secrets (T2 deviation). The React desktop (`desktop/src`,
-    `run_collection_cmd`) doesn't resolve references: it is frozen until the T5 switch. On macOS a Dock-launched desktop app doesn't see
+    `run_collection_cmd`) doesn't resolve references: it is frozen until the T5 switch. On macOS a Dock-launched desktop app (until 1.1's Settings section) doesn't see
     shell env vars (VAULT_ADDR...), and the MAS sandbox can't run `op`/`az`/`aws`; documented in the guide, not tested (no Mac).
     Real Azure, AWS, 1Password and HCP Vault were not exercised (no accounts): stubs, the mock and the dev servers stand in.
   - Pre-existing flake seen once locally: hitop-core `websocket::client::tests::echoes_text_and_binary_with_headers_auth_and_subprotocols`
@@ -1544,6 +1546,69 @@ export PATH="$HOME/.cargo/bin:$PATH"
   - Checked: extension build (`npm run build:extension`), `./deploy/build.sh` (site, web app, server
     tests), web app unit + e2e (web and Tauri modes), `cargo test -p hitop`, desktop `cargo check`.
 
+#### 1.1 Owner follow-ups (2026-11-01)
+- The owner answered three open questions of section 6 with "yes" on 2026-11-01: MCP tools for WebSocket and
+  OpenAPI (T14, T17), OpenAPI sync merging header rows one by one (T17), a desktop Settings field for the secret
+  manager environment (T21). They ship in the next CLI and desktop release, 1.1.0 (the owner pre-approved the tags;
+  not tagged here: the coordinator releases).
+- **Notes (2026-11-01, done):**
+  - Row-by-row sync (cf400c6): the request record gains `openapi.rows` (additive: per-row FNV hashes of headers, keyed by
+    lower-case name, and of `params` rows, keyed as written; `name#2` for a repeat). When both sides changed `headers` or
+    `params`, sync merges by row: a row you added/edited/removed stays (outcome `yours`), each row the spec
+    added/changed/removed applies where you didn't touch it (`updated`, a new row goes after the spec's row before it),
+    a row both changed keeps yours (`kept`). `OpChange.rows` (`RowChange {field, name, change, outcome}`) is in the diff;
+    the field still appears in `updated`/`kept`, so older consumers work. A 1.0 record (no `rows`) keeps an edited
+    field whole once, then has row hashes. CLI prints the rows under the request (`~ header X changed by the spec:
+    updated`, `= header Y added by you: kept`); the web app's sync preview lists them. Spec section "OpenAPI source"
+    and a new compat case `spec/compat/v1/openapi-rows` (HitopKit's CompatSuiteTests read it too: swift test green).
+  - MCP (75d5a1a): `run_websocket` (saved WebSocket request or a ws:// URL; saved messages by name then texts; until
+    `count` or `wait_ms` (default 1000, 10000 with count), then close; at most 100 messages, 256 KiB, 60 s; handshake
+    10 s; events with ms since connect; binary as base64). A URL gets no collection auth (the collection's credentials
+    only go to its own requests); `${secret:...}` refs come only from workspace files, as for the other tools.
+    `import_openapi` (URL or a file inside the workspace → a new collection folder `to` inside it, never over a
+    collection, not the served folder or its requests/ or environments/; with global storage and no `to`, a global
+    collection named like the CLI does). `sync_openapi` (preview by default, `apply` writes, `prune` only with `apply`;
+    source defaults to the recorded URL). Paths: relative to, and canonicalized inside, the served folder (the server's
+    working directory with global storage); `..` refused. `import_to_folder`/`import_to_storage` print to stdout, so
+    MCP writes the collection itself. INSTRUCTIONS and the guide say the one exception to "no delete tool"
+    (`sync_openapi` with `apply` + `prune`). `run_request` now points WebSocket requests at `run_websocket`. The echo
+    server of tests/ws.rs moved to `tests/support/ws_echo.rs` (shared with tests/mcp.rs).
+  - Secret manager settings (ef5ab83, docs bc1d19a): core `secret_managers::Settings` (`<config>/hitop/secret-managers.json`: vaultAddr,
+    vaultNamespace, awsRegion, awsProfile, azureTenantId, azureClientId, opPath, azPath, awsPath; unknown keys kept; no
+    file when empty) and keychain items `secret-managers/<NAME>` for VAULT_TOKEN, AZURE_CLIENT_SECRET,
+    AWS_ACCESS_KEY_ID, AWS_SECRET_ACCESS_KEY, AWS_SESSION_TOKEN. `Resolver::configured(store)` layers them under the
+    process env through the resolver's own lookup (nothing is put into the process environment). Precedence: the
+    environment wins a group at a time (`GROUPS`: VAULT_ADDR/BAO_ADDR, VAULT_TOKEN/BAO_TOKEN,
+    VAULT_NAMESPACE/BAO_NAMESPACE, AWS_REGION/AWS_DEFAULT_REGION, AWS_PROFILE + the three AWS keys, the AZURE_* three,
+    each HITOP_*_BIN), then the saved values, then hitop's own lookups (~/.vault-token, ~/.aws, `az`, `op`). The CLI has
+    no per-manager flags, so "CLI flags/env > config file" is "env > file" there; `--no-secret-managers` still turns
+    all off; `hitop secret check` notes the file. Desktop: Tauri `secret_manager_settings` (settings, which secrets
+    are saved, which variables the app's env sets; never a value) and `secret_manager_settings_set` (text stores,
+    null removes, left out stays); `secret_refs_resolve` uses the configured resolver. Web app: the Settings page
+    (`platform/tauri-settings.js`) now shows in every desktop build with a "Secret managers" section; the usage ping
+    part only where the build has it.
+  - Tests: hitop-core 2 openapi (row merge both ways incl. a later spec removal, 1.0 record fallback) + 5
+    secret_managers (layering and groups, keychain reads only where the env is silent, settings file round trip and
+    error, save keeps secrets out of the file, a Vault ref with address from settings and token from the "keychain");
+    compat case openapi-rows. CLI: tests/openapi.rs sync test extended (you add X-Mine, the spec changes
+    X-Api-Version: dry-run output lists both rows, the file has both); tests/mcp.rs 2 new (run_websocket: saved request
+    with messages + texts + count, binary, URL mode without auth, wait, server close 4001, refusals, connection error,
+    real secret at the server and none on stdout; import/sync: 8 path refusals, file and URL import, preview writes
+    nothing, apply keeps X-Mine and takes X-Api-Version 2, prune only with apply, up to date, global storage) and the
+    tool list (12); tests/secret_managers.rs 1 (settings file supplies opPath and vaultAddr; env HITOP_OP_BIN and
+    BAO_ADDR win; broken file named). Web: tests/openapi.cjs row lines in the preview and both header outcomes;
+    tests/settings.cjs (Tauri: values to secret-managers.json trimmed, token only in the keychain and in no file,
+    blank keeps, Remove deletes, env-set variables named; build without the ping: page with secret managers only,
+    no question; web: no page). Full e2e green in both modes locally (web served by hitop-server on 127.0.0.1);
+    clippy -D warnings clean (cli workspace, hitop-core --no-default-features, hitop-wasm host and wasm32, desktop in
+    a Debian container with GTK/WebKit); swift test (HitopKit) green.
+  - Deviations: the e2e assertion "build without the ping: no Settings page" became "Settings page with the secret
+    managers only" (the section must exist in the Mac App Store build too). The MAS build's settings file and keychain
+    items live in its sandbox container, so the CLI doesn't see what the MAS app saved (documented). No per-manager
+    CLI flags were added.
+  - Open: no long-lived MCP WebSocket session (connect/read/close across calls), by design for now; MCP gRPC tools
+    (T15 question) still open.
+
 ---
 
 ## 6. Handoffs and open questions
@@ -1559,17 +1624,17 @@ Agent appends here; owner ticks when done.
 | 2026-11-01 | T23 | Put the SMTP password on the VM: `/etc/hitop-sync/env` exists (root, 0600) but has no `SMTP_URL` line, so email sign-in at https://sync.hitop.rws8.tech answers 503. Add `SMTP_URL=smtp://noreply%40rws8.tech:<password>@127.0.0.1:587` (or `smtp://noreply:<password>@...` if the account logs in without the domain; percent-encode special characters in the password), then `sudo systemctl restart hitop-sync`. `SMTP_TLS_SERVER_NAME=mail.rws8.tech` is already there (STARTTLS on 127.0.0.1:587 verifies as mail.rws8.tech). Test: `curl --resolve sync.hitop.rws8.tech:443:127.0.0.1 -XPOST https://sync.hitop.rws8.tech/v1/auth/email -d '{"email":"<you>"}'` and `journalctl -u hitop-sync` shows "sign-in mail sent". || done 2026-11-01: owner added SMTP_URL; test sign-in mail to noreply@rws8.tech delivered (HTTP 202, postfix local delivery) |
 | 2026-11-01 | T10 | Nothing to do now; for the MAS build after the T5 switch: build it as today (plain `tauri build`, no `--features telemetry`), so it has no usage ping and the App Store "Data Not Collected" label stays true. CI checks that configuration on every push. | |
 | 2026-11-01 | T23 | Before any public launch of hitop sync: get an external review of the encryption design (`sync-server/THREAT_MODEL.md`) and code (`sync-server/crates/hitop-sync-crypto`, plus the T24 clients). Top item for the reviewer: the server hands out members' public keys, so key substitution is the open risk until clients pin fingerprints. | |
-| 2026-11-01 | T12 | Optional, when you want it listed: submit `hitop mcp` to MCP directories (for example the official MCP Registry, mcp.so, Smithery, PulseMCP, Glama). Text: **Name** hitop. **Short description** "Run and edit your HTTP API collections from your AI tools: list, read, run, create and update requests in a hitop collection folder, with secrets masked." **Long description** "hitop mcp is a local stdio MCP server for hitop, the open source (MIT) HTTP API client. Point it at a collection folder in your repository (`hitop mcp ./my-api`) or at hitop's global storage. Tools: list_collections, list_requests, get_request, run_request, run_collection (returns the hitop run report), create_request, update_request, list_environments, set_environment. Requests run like `hitop run`: the same variables, scripts, assertions and cookie jar. Secret values come from the OS keychain or HITOP_SECRET_* env vars and are shown as •••• in every result; there is no delete tool." **Install** `cargo install hitop` or a binary from https://github.com/bohdaq/hitop/releases. **Config** `{"mcpServers": {"hitop": {"command": "hitop", "args": ["mcp", "./my-api"]}}}`. **Docs** https://hitop.rws8.tech/terms/use-hitop-with-claude-code-and-cursor.html. **License** MIT. **Categories** developer tools, API testing. | |
+| 2026-11-01 | T12 | Optional, when you want it listed: submit `hitop mcp` to MCP directories (for example the official MCP Registry, mcp.so, Smithery, PulseMCP, Glama). Text: **Name** hitop. **Short description** "Run and edit your HTTP API collections from your AI tools: list, read, run, create and update requests in a hitop collection folder, with secrets masked." **Long description** "hitop mcp is a local stdio MCP server for hitop, the open source (MIT) HTTP API client. Point it at a collection folder in your repository (`hitop mcp ./my-api`) or at hitop's global storage. Tools: list_collections, list_requests, get_request, run_request, run_collection (returns the hitop run report), create_request, update_request, list_environments, set_environment, run_websocket (one bounded WebSocket exchange), import_openapi, sync_openapi. Requests run like `hitop run`: the same variables, scripts, assertions and cookie jar. Secret values come from the OS keychain or HITOP_SECRET_* env vars and are shown as •••• in every result; there is no delete tool (sync_openapi removes requests of dropped operations only with apply and prune)." (Tool list updated for 1.1.) **Install** `cargo install hitop` or a binary from https://github.com/bohdaq/hitop/releases. **Config** `{"mcpServers": {"hitop": {"command": "hitop", "args": ["mcp", "./my-api"]}}}`. **Docs** https://hitop.rws8.tech/terms/use-hitop-with-claude-code-and-cursor.html. **License** MIT. **Categories** developer tools, API testing. | |
 | 2026-11-01 | T11 | Record the terminal GIF (vhs isn't installed on the agent's machine): install vhs (https://github.com/charmbracelet/vhs, needs ttyd and ffmpeg) and hitop 0.3.0 on PATH, then from the repository root `vhs site/demo/demo.tape`; it writes `site/demo/demo.gif` using the local launch-gate mock (nothing leaves the machine). Commit the GIF, or send it and the agent wires it into the README, home page and launch posts. | |
 | 2026-11-01 | T11 | Mac App Store update at 0.2.0: on your Mac, from tag `desktop-v0.2.0`, build as today with plain `tauri build` (no `--features telemetry`, so the "Data Not Collected" label stays true), sign and upload with Transporter. tauri.conf.json now says 0.2.0. Whether this build uses the React UI or the web app overlay depends on the T5 check above. | |
 | 2026-11-01 | T11 | Post the launch when you're ready (agents never post): drafts in `launch/` (Show HN, r/rust, r/webdev, This Week in Rust as a PR, Product Hunt), with where and when in `launch/README.md`. Best after the site deploy and the GIF. | |
 | 2026-11-01 | T11 | Optional: the hitop-action Marketplace listing still shows v1.0.0 as newest; open https://github.com/bohdaq/hitop-action/releases/tag/v1.0.1, Edit, tick "Publish this Action to the GitHub Marketplace", Update release. `v1` already points at v1.0.1. | |
-| 2026-11-01 | T14 | Nothing to do now. Open question for later: should `hitop mcp` get WebSocket tools (for example connect, send, read the next messages, close)? T14 left them out as scoped; MCP `run_request` refuses WebSocket requests and points to `hitop ws`. On your Mac, when you do the T5 check, a WebSocket request in the desktop app sends its headers and auth (the browser build can't). | |
+| 2026-11-01 | T14 | Nothing to do now. Open question for later: should `hitop mcp` get WebSocket tools (for example connect, send, read the next messages, close)? T14 left them out as scoped; MCP `run_request` refuses WebSocket requests and points to `hitop ws`. On your Mac, when you do the T5 check, a WebSocket request in the desktop app sends its headers and auth (the browser build can't). | answered 2026-11-01: yes; MCP `run_websocket` (75d5a1a), 1.1 follow-ups |
 | 2026-11-01 | T15 | Nothing to do now. Open questions for later: should `hitop mcp` get gRPC tools (list/describe/call, like the WebSocket question under T14), and should hitop support client-streaming and bidirectional gRPC calls and `--insecure` TLS? When you do the T5 check on your Mac, a gRPC request (method "gRPC") against a local server with reflection shows the service pickers and streams responses. | |
-| 2026-11-01 | T17 | Nothing to do now. Open question for later: should sync also merge header rows one by one (today a request whose headers you edited keeps all of them when the spec changes its headers), and should `hitop mcp` get an import or sync tool for OpenAPI? | |
+| 2026-11-01 | T17 | Nothing to do now. Open question for later: should sync also merge header rows one by one (today a request whose headers you edited keeps all of them when the spec changes its headers), and should `hitop mcp` get an import or sync tool for OpenAPI? | answered 2026-11-01: yes to both; row-by-row sync (cf400c6), MCP `import_openapi`/`sync_openapi` (75d5a1a), 1.1 follow-ups |
 | 2026-11-01 | T22 | Nothing to do now. `--reporter html` and the html artifact in `hitop schedule --github` workflows reach users with the next CLI release (0.3.0 images don't have it); the guides already say "releases after 0.3.0". The guide changes go live with the next site deploy. | |
 | 2026-11-01 | T20 | When you do the T5 macOS check (web app overlay build), try the Git panel: open a collection folder that is a git clone with an HTTPS remote (for example a private GitHub repo), make sure it is in a clean state, then: (1) Collections → the folder → Git (or the sidebar's Git); the branch, upstream and ↑/↓ show; (2) edit a request, see it under Changes with its diff, Stage, write a message, Commit (author = your git config; in the sandboxed MAS build the app may not see `~/.gitconfig`: it then asks for a name and email and keeps them in the repo's `.git/config`); (3) Push: in the MAS build it fails without a token and says so (outside the sandbox git's credential helper, for example osxkeychain, may answer); paste a fine-grained token (contents read/write) under Remote access, Push again (macOS may ask for Keychain access once; `security find-generic-password -s hitop -a git/github.com/token` shows it); (4) make a commit on GitHub's web editor to the same line, Pull: a conflict appears; Take theirs or edit the text, Commit merge, Push; (5) create a branch, switch back, delete it after merging. Outside the MAS build, an SSH remote should work through your ssh-agent (the host must be in `~/.ssh/known_hosts`). Tell me what fails, especially anything the sandbox blocks. | |
-| 2026-11-01 | T21 | Optional, with accounts you have: put one reference per manager you use into a test folder's environment (`token: ${secret:vault:secret/x#token}`, `${secret:aws:name#key}`, `${secret:azure:<vault>/<name>}`, `${secret:op:<vault>/<item>/<field>}`), sign in as usual (`vault login`, `aws sso login`, `az login`, `op signin`) and run `hitop secret check -c <folder>`: each should show ✓ (no value printed); tell me any that fails and its message. Agents had only Vault dev mode, LocalStack, stubs and mocks. On the Mac with the T5 check: does the desktop app opened from the Dock resolve a Vault reference (it doesn't see shell env vars like VAULT_ADDR; `~/.vault-token` alone isn't enough without the address), and does the MAS build run `op`/`az` (expected: sandbox blocks them)? Open question: should the desktop get a Settings field for VAULT_ADDR and friends? | |
+| 2026-11-01 | T21 | Optional, with accounts you have: put one reference per manager you use into a test folder's environment (`token: ${secret:vault:secret/x#token}`, `${secret:aws:name#key}`, `${secret:azure:<vault>/<name>}`, `${secret:op:<vault>/<item>/<field>}`), sign in as usual (`vault login`, `aws sso login`, `az login`, `op signin`) and run `hitop secret check -c <folder>`: each should show ✓ (no value printed); tell me any that fails and its message. Agents had only Vault dev mode, LocalStack, stubs and mocks. On the Mac with the T5 check: does the desktop app opened from the Dock resolve a Vault reference (it doesn't see shell env vars like VAULT_ADDR; `~/.vault-token` alone isn't enough without the address), and does the MAS build run `op`/`az` (expected: sandbox blocks them)? Open question: should the desktop get a Settings field for VAULT_ADDR and friends? | Settings question answered 2026-11-01: yes; desktop Settings "Secret managers" + CLI reads the same file (ef5ab83), 1.1 follow-ups; the real-account check stays open |
 | 2026-11-01 | T19 | Mac App Store 1.0: on your Mac, from tag `desktop-v1.0.0`, build as before with plain `tauri build` (no `--features telemetry`), sign with your MAS identity and `Entitlements.mas.plist` (it now also has `com.apple.security.files.bookmarks.app-scope`), upload with Transporter. If the T5 check passed, build the web app overlay (`npm run build:webapp`) so the folders, WebSocket, gRPC and Git features are in it. | |
 | 2026-11-01 | T19 | Check the security-scoped bookmarks in the sandboxed MAS (overlay) build: Collections → Open folder on a `hitop init` folder, edit a request, quit, reopen: the folder comes back without asking and saves still work (also a Git panel action on it). Then rename or move the folder in Finder and relaunch: it should still open (stale bookmark renewed) or ask to open it again, never crash. `~/Library/Containers/tech.rws8.hitop/Data/Library/Application Support/tech.rws8.hitop/folder-bookmarks.json` should list the folder; closing the collection removes it. Tell me what the Console shows for `hitop:` lines if it fails. | |
 | 2026-11-01 | T19 | Optional: the App Store price change for 1.0 ($9–19 was the plan; today Mac $4.99, iOS $2.99), in App Store Connect, if you want it. Agents don't change prices. | |
