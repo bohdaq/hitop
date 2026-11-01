@@ -7,7 +7,7 @@ use std::fs;
 use std::path::{Path, PathBuf};
 
 use hitop_core::format::{self, Folder};
-use hitop_core::model::{ApiKeyLocation, Auth, Collection, Environment, FormField, Graphql, Header, Param, Request};
+use hitop_core::model::{ApiKeyLocation, Auth, Collection, Environment, FormField, Graphql, Header, Param, Request, WebSocket, WsMessage};
 use proptest::prelude::*;
 
 fn golden_dir() -> PathBuf {
@@ -81,7 +81,7 @@ fn golden_covers_every_field() {
         "type: json", "type: xml", "type: text", "type: graphql", "type: form", "type: multipart", "type: file",
         "content: |", "fields:", "scripts:", "pre:", "post: |", "examples:", "type: bearer", "type: basic",
         "type: apikey", "in: query", "type: none", "secret: true", "pinned: true", "color: teal", "region: eu",
-        "variables: |", "operationName:",
+        "variables: |", "operationName:", "kind: websocket", "subprotocols:", "messages:",
     ] {
         assert!(all.contains(key), "no golden file has `{key}`");
     }
@@ -190,7 +190,19 @@ fn request() -> impl Strategy<Value = Request> {
         // GraphQL variables and operation name: kept on any body, empty means none.
         prop::option::of((text(), text()).prop_map(|(variables, operation_name)| Graphql { variables, operation_name, ..Default::default() })),
     );
-    (core, rows, more).prop_map(|((id, name, url, method), (headers, body, pre, post, auth, mode), (form_fields, disabled_params, body_type, examples, file, extra, graphql))| {
+    // A WebSocket request: kind and the websocket section, each on its own
+    // (the section is kept on any request, as graphql is).
+    let socket = (
+        prop::option::of(prop::sample::select(vec!["websocket", "grpc"])),
+        prop::option::of(
+            (
+                prop::collection::vec(text(), 0..3),
+                prop::collection::vec((text(), text(), extra()).prop_map(|(name, content, extra)| WsMessage { name, content, extra }), 0..3),
+            )
+                .prop_map(|(subprotocols, messages)| WebSocket { subprotocols, messages, ..Default::default() }),
+        ),
+    );
+    (core, rows, more, socket).prop_map(|((id, name, url, method), (headers, body, pre, post, auth, mode), (form_fields, disabled_params, body_type, examples, file, extra, graphql), (kind, websocket))| {
         let mut r = Request {
             id,
             name,
@@ -206,6 +218,8 @@ fn request() -> impl Strategy<Value = Request> {
             disabled_params,
             body_type: None,
             graphql: graphql.filter(|g| !g.is_empty()),
+            kind: kind.map(String::from),
+            websocket: websocket.filter(|w| !w.is_empty()),
             examples,
             file,
             extra,

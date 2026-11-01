@@ -1,0 +1,24 @@
+name: Live prices
+kind: websocket
+method: GET
+url: ${wsBase}/prices
+params:
+- name: market
+  value: eu
+headers:
+- name: X-Client
+  value: hitop
+auth:
+  type: bearer
+  token: ${token}
+websocket:
+  subprotocols:
+  - prices.v2
+  - prices.v1
+  messages:
+  - name: subscribe
+    content: '{"op": "subscribe", "symbol": "${symbol}"}'
+  - name: ping
+    content: ping
+    pinned: true
+id: 1793470569736009

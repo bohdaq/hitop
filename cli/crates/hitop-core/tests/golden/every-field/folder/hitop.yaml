@@ -18,4 +18,5 @@ order:
 - login-form
 - uploads/avatar
 - orders/delete-order
+- live-prices
 color: teal

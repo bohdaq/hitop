@@ -217,6 +217,16 @@ pub struct Request {
     /// the form fields are; sent only for a GraphQL body.
     #[serde(default, deserialize_with = "de_graphql", skip_serializing_if = "Option::is_none")]
     pub graphql: Option<Graphql>,
+    /// What kind of request this is: None for HTTP, `websocket` for a
+    /// WebSocket connection (see `websocket`). Kept as a string so a kind
+    /// added later never makes stored collections unreadable; `"http"` reads
+    /// as None.
+    #[serde(default, deserialize_with = "de_kind", skip_serializing_if = "Option::is_none")]
+    pub kind: Option<String>,
+    /// A WebSocket request's subprotocols and saved messages (its URL,
+    /// headers and auth are the request's own).
+    #[serde(default, deserialize_with = "de_websocket", skip_serializing_if = "Option::is_none")]
+    pub websocket: Option<WebSocket>,
     /// Saved responses.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub examples: Vec<serde_json::Value>,
@@ -255,6 +265,50 @@ fn de_body_mode<'de, D: serde::Deserializer<'de>>(d: D) -> Result<Option<String>
 fn de_graphql<'de, D: serde::Deserializer<'de>>(d: D) -> Result<Option<Graphql>, D::Error> {
     let g: Option<Graphql> = Option::deserialize(d)?;
     Ok(g.filter(|g| !g.is_empty()))
+}
+
+fn de_kind<'de, D: serde::Deserializer<'de>>(d: D) -> Result<Option<String>, D::Error> {
+    let kind: Option<String> = Option::deserialize(d)?;
+    Ok(kind.filter(|k| k != "http" && !k.is_empty()))
+}
+
+/// `websocket: {}` (nothing in it) reads as no `websocket`.
+fn de_websocket<'de, D: serde::Deserializer<'de>>(d: D) -> Result<Option<WebSocket>, D::Error> {
+    let w: Option<WebSocket> = Option::deserialize(d)?;
+    Ok(w.filter(|w| !w.is_empty()))
+}
+
+/// The `kind` of a WebSocket request.
+pub const WEBSOCKET: &str = "websocket";
+
+/// What a WebSocket request carries besides its URL, headers and auth.
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+pub struct WebSocket {
+    /// Offered in `Sec-WebSocket-Protocol`, in order.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub subprotocols: Vec<String>,
+    /// Messages saved to send, each with a name.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub messages: Vec<WsMessage>,
+    #[serde(flatten)]
+    pub extra: Extra,
+}
+
+impl WebSocket {
+    pub fn is_empty(&self) -> bool {
+        self.subprotocols.is_empty() && self.messages.is_empty() && self.extra.is_empty()
+    }
+}
+
+/// A saved WebSocket message: text, `${variables}` filled in when sent.
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+pub struct WsMessage {
+    #[serde(default)]
+    pub name: String,
+    #[serde(default)]
+    pub content: String,
+    #[serde(flatten)]
+    pub extra: Extra,
 }
 
 /// What a GraphQL request sends besides its query (see `graphql.rs`).

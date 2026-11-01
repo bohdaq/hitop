@@ -114,12 +114,14 @@ examples:
 | Key | Default | Meaning |
 | --- | --- | --- |
 | `name` | the file name | Display name. |
+| `kind` | `http` | `websocket` for a WebSocket request (below). Left out for HTTP. |
 | `method` | `GET` | HTTP method, as written. |
 | `url` | empty | URL; may contain `${variables}`. |
 | `params` | none | Query parameters: rows of `name`, `value`, `enabled`. Enabled rows are appended to `url` in order; disabled rows are kept but not sent. |
 | `headers` | none | Rows of `name`, `value`, `enabled` (default `true`). Disabled rows are not sent. |
 | `auth` | none | Auth preset (section 4). `{type: none}` turns off the collection's default auth. |
 | `body` | none | `type` and `content` or `fields`, see below. |
+| `websocket` | none | A WebSocket request's `subprotocols` and saved `messages` (below). |
 | `scripts.pre` / `scripts.post` | empty | Pre-request and post-request JavaScript (hitop's script API: `setHeader`, `setUrl`, `setBody`, `getVariable`, `getContext`, `setContext`, `getResponseValue`, `assert.*`). |
 | `examples` | none | Saved responses, free-form maps. |
 | `id` | derived from the path | Numeric id used by hitop's JSON storage (section 6). |
@@ -185,6 +187,56 @@ type (kept from before the body type was switched); they are then not sent.
 Both keys were added to version 1 after its first release: readers from
 before them (hitop 0.3.0 and older) refuse a file that has them (unknown
 keys inside `body` are an error), and read every file without them.
+
+### WebSocket
+
+```yaml
+name: Live prices
+kind: websocket
+url: wss://stream.example.com/prices
+params:
+- name: market
+  value: eu
+headers:
+- name: X-Client
+  value: hitop
+auth:
+  type: bearer
+  token: ${token}
+websocket:
+  subprotocols:
+  - prices.v2
+  - prices.v1
+  messages:
+  - name: subscribe
+    content: '{"op": "subscribe", "symbol": "${symbol}"}'
+  - name: ping
+    content: ping
+```
+
+A request with `kind: websocket` opens a WebSocket connection instead of
+sending an HTTP request. `url` is a `ws://` or `wss://` URL (`http://` and
+`https://` are read as `ws://` and `wss://`); `params`, `headers` and `auth`
+work as for HTTP and are sent with the opening handshake, so an API key in
+the query, a bearer token or a custom header all reach the server.
+`${variables}` are substituted in the URL, headers, auth, subprotocols and
+messages, at connect and send time. `method`, `body` and `scripts` are kept
+but not used.
+
+| Key | Default | Meaning |
+| --- | --- | --- |
+| `websocket.subprotocols` | none | Offered in `Sec-WebSocket-Protocol`, in order; the server picks one. |
+| `websocket.messages` | none | Saved messages: rows of `name` and `content` (text). Rows keep unknown keys like header rows. |
+
+Unknown keys directly under `websocket` are an error. Collection runs
+(`hitop run`) skip WebSocket requests; tools connect them on demand (the
+CLI's `hitop ws`). Browsers can't set handshake headers, so a web client
+sends only the URL (with an API key in the query) and the subprotocols.
+
+`kind` and `websocket` were added to version 1 after its first release.
+They are top-level keys, so readers from before them (hitop 0.3.0 and older)
+keep them as unknown keys and write them back, but treat the request as an
+HTTP `GET`.
 
 ## 4. Auth
 
@@ -280,6 +332,7 @@ that only exist in one place are carried in JSON as:
 | `disabledParams` | `params` rows with `enabled: false` |
 | `bodyType` | `body.type` of a text body, kept only when it differs from the inferred type |
 | `graphql` (`{variables, operationName}`; the query is `body`, `bodyType` is `graphql`) | `body.variables` and `body.operationName` |
+| `kind` (`websocket`; `http` and none mean HTTP) and `websocket` (`{subprotocols, messages: [{name, content}]}`) | `kind` and `websocket` |
 | `file` | the request's path, kept only when it differs from the default for its name |
 | `secrets` (environment) | variables written as `{secret: true}` |
 | the globals (`globals.json`, or `globals` beside `collection` and `environments`) | `globals.yaml` (section 5a) |

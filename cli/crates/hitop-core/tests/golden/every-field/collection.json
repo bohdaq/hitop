@@ -113,6 +113,25 @@
       "body": "",
       "pinned": true,
       "file": "orders/delete-order"
+    },
+    {
+      "id": 1793470569736009,
+      "name": "Live prices",
+      "method": "GET",
+      "url": "${wsBase}/prices?market=eu",
+      "headers": [
+        { "name": "X-Client", "value": "hitop" }
+      ],
+      "body": "",
+      "auth": { "type": "bearer", "token": "${token}" },
+      "kind": "websocket",
+      "websocket": {
+        "subprotocols": ["prices.v2", "prices.v1"],
+        "messages": [
+          { "name": "subscribe", "content": "{\"op\": \"subscribe\", \"symbol\": \"${symbol}\"}" },
+          { "name": "ping", "content": "ping", "pinned": true }
+        ]
+      }
     }
   ]
 }

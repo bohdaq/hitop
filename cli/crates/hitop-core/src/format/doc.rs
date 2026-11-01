@@ -33,6 +33,11 @@ pub fn scalar_string(v: Value) -> Result<String, String> {
     }
 }
 
+fn strings<'de, D: Deserializer<'de>>(d: D) -> Result<Vec<String>, D::Error> {
+    let raw: Vec<Value> = Vec::deserialize(d)?;
+    raw.into_iter().map(scalar_string).collect::<Result<_, _>>().map_err(serde::de::Error::custom)
+}
+
 fn stringish_map<'de, D: Deserializer<'de>>(d: D) -> Result<BTreeMap<String, String>, D::Error> {
     let raw: BTreeMap<String, Value> = BTreeMap::deserialize(d)?;
     raw.into_iter()
@@ -67,6 +72,9 @@ pub struct CollectionDoc {
 pub struct RequestDoc {
     #[serde(default)]
     pub name: Option<String>,
+    /// `websocket` for a WebSocket request; left out for HTTP.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub kind: Option<String>,
     #[serde(default = "get")]
     pub method: String,
     #[serde(default)]
@@ -79,6 +87,8 @@ pub struct RequestDoc {
     pub auth: Option<Auth>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub body: Option<BodyDoc>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub websocket: Option<WebSocketDoc>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub scripts: Option<ScriptsDoc>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
@@ -123,6 +133,27 @@ pub struct BodyDoc {
     pub operation_name: Option<String>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub fields: Vec<RowDoc>,
+}
+
+/// A WebSocket request's `websocket` section.
+#[derive(Debug, Default, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct WebSocketDoc {
+    #[serde(default, skip_serializing_if = "Vec::is_empty", deserialize_with = "strings")]
+    pub subprotocols: Vec<String>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub messages: Vec<MessageDoc>,
+}
+
+/// A saved WebSocket message row.
+#[derive(Debug, Serialize, Deserialize)]
+pub struct MessageDoc {
+    #[serde(default, deserialize_with = "stringish")]
+    pub name: String,
+    #[serde(default, deserialize_with = "stringish", skip_serializing_if = "String::is_empty")]
+    pub content: String,
+    #[serde(flatten)]
+    pub extra: Extra,
 }
 
 fn none() -> String {

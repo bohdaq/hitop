@@ -250,6 +250,24 @@ mod tests {
     }
 
     #[test]
+    fn websocket_requests() {
+        let files = |req: &str| -> Files { [("hitop.yaml".to_string(), "format: 1\n".to_string()), ("requests/ws.yaml".to_string(), req.to_string())].into() };
+        let f = read_files(&files("kind: websocket\nurl: wss://x/s\nwebsocket:\n  subprotocols: [chat, 2]\n  messages:\n  - name: hi\n    content: hello ${who}\n  - name: empty\n"), "x").unwrap();
+        let r = &f.collection.requests[0];
+        assert_eq!(r.kind.as_deref(), Some("websocket"));
+        let w = r.websocket.as_ref().unwrap();
+        assert_eq!(w.subprotocols, ["chat", "2"]);
+        assert_eq!((w.messages[0].name.as_str(), w.messages[0].content.as_str()), ("hi", "hello ${who}"));
+        assert_eq!(w.messages[1].content, "");
+        // `kind: http` is the default; an empty section is none.
+        let plain = read_files(&files("kind: http\nurl: https://x\nwebsocket: {}\n"), "x").unwrap();
+        assert_eq!((plain.collection.requests[0].kind.clone(), plain.collection.requests[0].websocket.clone()), (None, None));
+        // Unknown keys in the section are an error, as in `body`.
+        let err = read_files(&files("kind: websocket\nwebsocket:\n  protocols: [chat]\n"), "x").unwrap_err();
+        assert!(format!("{err:#}").contains("protocols"), "{err:#}");
+    }
+
+    #[test]
     fn sync_plan_keeps_extensions_and_removes_stale_files() {
         let files: Files = [("hitop.yaml", "m"), ("requests/a.yaml", "a"), ("requests/n/b.yaml", "b"), ("environments/dev.yaml", "d")]
             .into_iter()

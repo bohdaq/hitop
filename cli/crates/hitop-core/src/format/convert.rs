@@ -2,9 +2,9 @@
 use anyhow::{anyhow, bail, Result};
 use serde_json::Value;
 
-use super::doc::{BodyDoc, EnvironmentDoc, RequestDoc, RowDoc, ScriptsDoc};
+use super::doc::{BodyDoc, EnvironmentDoc, MessageDoc, RequestDoc, RowDoc, ScriptsDoc, WebSocketDoc};
 use super::names;
-use crate::model::{Environment, Extra, FormField, Graphql, Header, Param, Request};
+use crate::model::{Environment, Extra, FormField, Graphql, Header, Param, Request, WebSocket, WsMessage};
 use crate::params::{append_query, parse_query, with_query};
 
 /// Keys the JSON model or the YAML files give a meaning to. An unknown key
@@ -13,7 +13,9 @@ use crate::params::{append_query, parse_query, with_query};
 const REQUEST_KEYS: &[&str] = &[
     "id", "name", "url", "method", "headers", "body", "preRequestScript", "postRequestScript", "auth", "bodyMode",
     "formFields", "disabledParams", "bodyType", "examples", "file", "params", "scripts", "graphql",
+    "kind", "websocket",
 ];
+const MESSAGE_KEYS: &[&str] = &["name", "content"];
 const ROW_KEYS: &[&str] = &["key", "name", "value", "type", "enabled"];
 pub const COLLECTION_KEYS: &[&str] = &["id", "name", "workspace", "requests", "variables", "auth", "format", "order"];
 const ENVIRONMENT_KEYS: &[&str] = &["id", "name", "variables", "secrets"];
@@ -135,6 +137,24 @@ pub fn request_to_doc(r: &Request, file: &str) -> Result<RequestDoc> {
         })
     };
 
+    let websocket = match &r.websocket {
+        None => None,
+        Some(w) => {
+            if let Some(k) = w.extra.keys().next() {
+                bail!("request '{}': websocket: the key '{k}' has no place in a collection folder", r.name);
+            }
+            let messages = w
+                .messages
+                .iter()
+                .map(|m| {
+                    check_extra(&m.extra, MESSAGE_KEYS, "websocket message")?;
+                    Ok(MessageDoc { name: m.name.clone(), content: m.content.clone(), extra: m.extra.clone() })
+                })
+                .collect::<Result<Vec<_>>>()?;
+            (!w.is_empty()).then(|| WebSocketDoc { subprotocols: w.subprotocols.clone(), messages })
+        }
+    };
+
     let scripts = if r.pre_request_script.is_empty() && r.post_request_script.is_empty() {
         None
     } else {
@@ -143,12 +163,14 @@ pub fn request_to_doc(r: &Request, file: &str) -> Result<RequestDoc> {
 
     Ok(RequestDoc {
         name: Some(r.name.clone()),
+        kind: r.kind.clone(),
         method: r.method.clone(),
         url,
         params,
         headers,
         auth: r.auth.clone(),
         body,
+        websocket,
         scripts,
         examples: r.examples.clone(),
         id: (r.id != names::request_id(file)).then_some(r.id),
@@ -201,6 +223,21 @@ pub fn doc_to_request(d: RequestDoc, file: &str) -> Result<Request> {
             body_mode = Some(b.kind);
         }
     }
+    let websocket = match d.websocket {
+        None => None,
+        Some(w) => {
+            let messages = w
+                .messages
+                .into_iter()
+                .map(|m| {
+                    check_extra(&m.extra, MESSAGE_KEYS, &what)?;
+                    Ok(WsMessage { name: m.name, content: m.content, extra: m.extra })
+                })
+                .collect::<Result<_>>()?;
+            Some(WebSocket { subprotocols: w.subprotocols, messages, extra: Extra::new() }).filter(|w| !w.is_empty())
+        }
+    };
+    let kind = d.kind.filter(|k| k != "http" && !k.is_empty());
     let scripts = d.scripts.unwrap_or_default();
     let name = d.name.unwrap_or_else(|| file.rsplit('/').next().unwrap_or(file).to_string());
     Ok(Request {
@@ -218,6 +255,8 @@ pub fn doc_to_request(d: RequestDoc, file: &str) -> Result<Request> {
         disabled_params,
         body_type,
         graphql,
+        kind,
+        websocket,
         examples: d.examples,
         file: Some(file.to_string()),
         extra: d.extra,

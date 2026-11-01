@@ -200,6 +200,17 @@ mod tests {
     }
 
     #[test]
+    fn websocket_requests_round_trip() {
+        let folder = r#"{"collection":{"id":1,"name":"W","requests":[{"id":2,"name":"Echo","url":"wss://x/echo","method":"GET","headers":[],"body":"","kind":"websocket","websocket":{"subprotocols":["chat"],"messages":[{"name":"hi","content":"hello ${who}"}]}}]}}"#;
+        let files = to_files_json(folder).unwrap();
+        assert!(files.contains("kind: websocket") && files.contains("subprotocols:"), "{files}");
+        let back: serde_json::Value = serde_json::from_str(&read_files_json(&files, "x").unwrap()).unwrap();
+        let r = &back["collection"]["requests"][0];
+        assert_eq!(r["kind"], "websocket");
+        assert_eq!(r["websocket"], serde_json::json!({"subprotocols": ["chat"], "messages": [{"name": "hi", "content": "hello ${who}"}]}));
+    }
+
+    #[test]
     fn normalize_reads_what_rust_reads() {
         let out = normalize_json("collections", r#"[{"id":"col-legacy","name":"c","requests":[]}]"#).unwrap();
         assert!(out.starts_with(r#"[{"id":"#) && !out.contains("col-legacy"), "{out}");
