@@ -121,7 +121,9 @@ async function loadSecretValues(accounts) {
 // --- the adapter ---------------------------------------------------------------------
 
 export function createPlatform() {
-  const cache = { collections: null, history: [], contexts: {}, environments: { environments: [], activeEnvironmentId: null }, cookies: [] };
+  const cache = { collections: null, history: [], contexts: {}, environments: { environments: [], activeEnvironmentId: null }, cookies: [], globals: { variables: {}, secrets: [] } };
+  // Secret globals' values, in the keychain as global/global/<name> (`hitop secret set --globals`).
+  let knownGlobalSecrets = {};
   const last = {};
   let knownSecrets = {};
   let report = (message) => console.error(message);
@@ -159,6 +161,13 @@ export function createPlatform() {
         invoke("load_environments").catch(() => ({ active: null, environments: [] })),
         invoke("cookies_load").catch(() => []),
       ]);
+      const globals = await invoke("load_globals").catch(() => null);
+      const gNames = Array.isArray(globals?.secrets) ? globals.secrets : [];
+      knownGlobalSecrets = await loadSecretValues(gNames.map((n) => account(GLOBAL, GLOBAL, n)));
+      cache.globals = {
+        variables: { ...(globals?.variables ?? {}), ...Object.fromEntries(gNames.map((n) => [n, knownGlobalSecrets[account(GLOBAL, GLOBAL, n)] ?? ""])) },
+        secrets: gNames,
+      };
       cache.cookies = Array.isArray(cookies) ? cookies : [];
       // Before the Rust jar, the desktop kept cookies in the window's
       // localStorage (as the web app does): move them over once.
@@ -204,6 +213,20 @@ export function createPlatform() {
       loadContexts: () => cache.contexts,
       saveContexts: (contexts) => write("contexts", "save_contexts", { contexts }),
       loadEnvironments: () => cache.environments,
+      loadGlobals: () => cache.globals,
+      // Secret values to the keychain, the rest to globals.json, as `hitop globals` keeps them.
+      saveGlobals(globals) {
+        const names = globals.secrets || [];
+        const wanted = {};
+        for (const n of names) if (globals.variables?.[n]) wanted[account(GLOBAL, GLOBAL, n)] = globals.variables[n];
+        const variables = Object.fromEntries(Object.entries(globals.variables || {}).filter(([k]) => !names.includes(k)));
+        write("globals", "save_globals", { globals: { id: "globals", name: "globals", variables, ...(names.length ? { secrets: names } : {}) } });
+        const json = JSON.stringify(wanted);
+        if (last.globalSecrets !== json) {
+          last.globalSecrets = json;
+          syncSecrets(knownGlobalSecrets, wanted, report);
+        }
+      },
       // Secret values go to the keychain (account global/<env>/<name>), the
       // rest to environments.json, as `hitop secret set` does.
       saveEnvironments(environments, activeId) {
@@ -232,15 +255,15 @@ export function createPlatform() {
     cookiesNote: "Applies to every request. The desktop app keeps cookies in hitop's settings folder, in the same jar as the CLI's hitop send (see hitop cookies ls).",
     usesProxy: () => false,
     scripts: {
-      async pre({ script, url, method, headers, body, variables, context }) {
-        const r = await invoke("run_pre_script", { args: { script, url, method, headers: headers.filter((h) => h.name).map((h) => [h.name, h.value]), body: body || "", variables, context } });
-        return { url: r.url, headers: r.headers.map(([name, value]) => ({ name, value })), body: r.body, contextUpdates: r.context_updates || {}, variables: r.variables || {} };
+      async pre({ script, url, method, headers, body, variables, context, globals }) {
+        const r = await invoke("run_pre_script", { args: { script, url, method, headers: headers.filter((h) => h.name).map((h) => [h.name, h.value]), body: body || "", variables, context, globals: globals || {} } });
+        return { url: r.url, headers: r.headers.map(([name, value]) => ({ name, value })), body: r.body, contextUpdates: r.context_updates || {}, variables: r.variables || {}, globals: r.globals || {} };
       },
-      async post({ script, text, headers, status, durationMs, sent, variables, context }) {
+      async post({ script, text, headers, status, durationMs, sent, variables, context, globals }) {
         // pm.request: the request as sent (a multipart body with files is bytes: left out).
         const request = sent && { url: sent.url ?? "", method: sent.method ?? "", headers: (sent.headers ?? []).filter((h) => h.name).map((h) => [h.name, h.value]), body: typeof sent.body === "string" ? sent.body : "" };
-        const r = await invoke("run_post_script", { args: { script, response_body: text, response_headers: headers, status_code: status, duration_ms: Math.round(durationMs || 0), variables, context, request } });
-        return { tests: r.tests || [], contextUpdates: r.context_updates || {}, variables: r.variables || {} };
+        const r = await invoke("run_post_script", { args: { script, response_body: text, response_headers: headers, status_code: status, duration_ms: Math.round(durationMs || 0), variables, context, request, globals: globals || {} } });
+        return { tests: r.tests || [], contextUpdates: r.context_updates || {}, variables: r.variables || {}, globals: r.globals || {} };
       },
     },
     folders: {
@@ -248,7 +271,8 @@ export function createPlatform() {
         return (await invoke("plugin:dialog|open", { options: { directory: true, multiple: false, title: "Choose a collection folder" } })) ?? null;
       },
       read: (path) => invoke("read_folder", { path }),
-      write: (path, folder) => invoke("write_folder", { path, collection: folder.collection, environments: folder.environments }),
+      // Without `globals` the folder's globals.yaml is left as it is.
+      write: (path, folder) => invoke("write_folder", { path, collection: folder.collection, environments: folder.environments, ...(folder.globals ? { globals: folder.globals } : {}) }),
       label: (path) => String(path).split(/[\\/]/).filter(Boolean).pop() ?? String(path),
       async restore() {
         try {

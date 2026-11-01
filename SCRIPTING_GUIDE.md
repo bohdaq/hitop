@@ -451,11 +451,12 @@ another Postman name. Other scripts run exactly as before.
 
 | Postman | In hitop |
 | --- | --- |
-| `pm.environment`, `pm.collectionVariables`, `pm.globals`, `pm.variables`: `get`, `set`, `has`, `unset`, `toObject`, `replaceIn` | One set of variables (collection, environment, run). A value set by a script is used by later requests in the run, and by the same request when a pre-request script sets it. The CLI never writes it back to files; the web app keeps it until the page reloads. |
+| `pm.environment`, `pm.collectionVariables`, `pm.variables`: `get`, `set`, `has`, `unset`, `toObject`, `replaceIn` | One set of variables (collection, environment, run). A value set by a script is used by later requests in the run, and by the same request when a pre-request script sets it. The CLI never writes it back to files; the web app keeps it until the page reloads. |
+| `pm.globals`: the same methods | The globals scope, below collection variables and the environment (`hitop globals`, a folder's `globals.yaml`, the Globals section in the app). `pm.globals.get` reads only globals; a global a script sets lasts for the run like other script values, and `${name}` and `pm.variables` see it unless another scope has that name. |
 | `pm.response`: `code`, `status`, `responseTime`, `headers.get/has/toObject`, `json()`, `text()`, `to.have.status/header/body/jsonBody`, `to.be.ok/success/error/clientError/serverError/notFound/json` | Same |
 | `pm.request`: `url`, `method`, `headers.get/has/add/upsert/remove`, `body.raw/update` | Pre-request scripts can change them |
 | `pm.test(name, fn)`, `pm.expect(value)` | A test result per `pm.test`; failures carry chai's message. `expect` supports `to/be/been/is/that/which/and/has/have/with`, `not`, `deep`, `equal/eql`, `above/below/least/most/within/closeTo`, `a/an`, `include/contain`, `property`, `lengthOf`, `match`, `oneOf`, `keys`, `members`, `satisfy`, `ok/true/false/null/undefined/exist/empty/NaN`. An `expect` outside `pm.test` is a test result of its own. |
-| `tests['name'] = bool`, `responseBody`, `responseCode`, `responseTime`, `environment`, `globals`, `postman.set/get/clearEnvironmentVariable`, `postman.set/get/clearGlobalVariable` | Postman's old sandbox API, same behaviour |
+| `tests['name'] = bool`, `responseBody`, `responseCode`, `responseTime`, `environment`, `globals`, `postman.set/get/clearEnvironmentVariable`, `postman.set/get/clearGlobalVariable` | Postman's old sandbox API, same behaviour (the `*GlobalVariable` calls and `globals` use the globals scope; `globals` and `environment` are the values as the script started) |
 
 Not there (listed by `hitop import` and the web app's import dialog): `pm.sendRequest`,
 `pm.cookies`, `pm.info`, `pm.iterationData`, `pm.execution`, `postman.setNextRequest`,

@@ -108,6 +108,70 @@ export function saveEnvironments(environments, activeId) {
   }
 }
 
+// --- globals ---------------------------------------------------------------------------
+
+// The globals: the lowest variable scope, { variables, secrets } (secret
+// values in `variables`, as for environments). Kept apart from the old keys,
+// so storage from before globals reads as it was.
+const GLOBALS_KEY = "hitop_globals";
+
+export const emptyGlobals = () => ({ variables: {}, secrets: [] });
+
+export function normalizeGlobals(g) {
+  const variables = g && typeof g.variables === "object" && g.variables ? Object.fromEntries(Object.entries(g.variables).map(([k, v]) => [k, String(v ?? "")])) : {};
+  const secrets = secretNames(g);
+  for (const n of secrets) if (!(n in variables)) variables[n] = "";
+  return { variables, secrets };
+}
+
+export function loadGlobals() {
+  try {
+    return normalizeGlobals(JSON.parse(localStorage.getItem(GLOBALS_KEY) || "null"));
+  } catch {
+    return emptyGlobals();
+  }
+}
+
+export function saveGlobals(globals) {
+  try {
+    localStorage.setItem(GLOBALS_KEY, JSON.stringify(globals));
+  } catch {
+    // Storage full or blocked: globals last for this page only.
+  }
+}
+
+// What `hitop globals export` writes: { variables, secrets } without the
+// secret values.
+export function exportableGlobals(g) {
+  const names = secretNames(g);
+  const out = { variables: Object.fromEntries(Object.entries(g.variables || {}).filter(([k]) => !names.includes(k))) };
+  if (names.length) out.secrets = names;
+  return out;
+}
+
+// Globals from a file: a Postman globals (or environment) export, or HITOP's
+// globals export. A Postman secret keeps its value (masked in this browser).
+export function parseGlobals(json) {
+  const g = JSON.parse(json);
+  if (!g || typeof g !== "object" || Array.isArray(g)) throw new Error("that isn't a globals file");
+  if (Array.isArray(g.values)) {
+    const [env] = parseEnvironments(json);
+    return { variables: env.variables, secrets: env.secrets || [] };
+  }
+  if (g.variables && typeof g.variables === "object") return normalizeGlobals(g);
+  throw new Error("that isn't a globals file (no values or variables)");
+}
+
+// Adds `incoming` globals to `globals`: incoming values win, and a name is
+// secret or plain as `incoming` says.
+export function mergeGlobals(globals, incoming) {
+  const variables = { ...globals.variables, ...incoming.variables };
+  const secrets = [...secretNames(globals).filter((n) => !(n in incoming.variables) || secretNames(incoming).includes(n)), ...secretNames(incoming)];
+  return { variables, secrets: [...new Set(secrets)].sort() };
+}
+
+export const isPostmanGlobals = (v) => v && typeof v === "object" && v._postman_variable_scope === "globals";
+
 // Accepts HITOP's own export ([{name, variables}]) or a Postman environment
 // ({name, values: [{key, value, enabled}]}), alone or in an array.
 export function parseEnvironments(json) {

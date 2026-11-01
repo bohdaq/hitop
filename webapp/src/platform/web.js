@@ -4,7 +4,7 @@
 // browser has it (Chrome, Edge).
 import storageService from "../../../frontend/src/services/storageService.jsx";
 import { sendRequest, usesProxy } from "../../../frontend/src/services/transportService.jsx";
-import { loadEnvironments, saveEnvironments } from "../features.js";
+import { loadEnvironments, loadGlobals, saveEnvironments, saveGlobals } from "../features.js";
 import { loadFormat } from "../wasm/format.js";
 
 const FOLDER_SECRETS_KEY = "hitop_folder_secrets";
@@ -144,6 +144,8 @@ export function createPlatform() {
       ...storageService,
       loadEnvironments,
       saveEnvironments,
+      loadGlobals,
+      saveGlobals,
     },
     send: sendRequest,
     // The browser handles cookies of direct requests itself (and hides them);

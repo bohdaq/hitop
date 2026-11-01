@@ -31,6 +31,7 @@ async function loadFormat() {
 const PM_SHIM = fs.readFileSync(path.join(__dirname, '../../shared/pm-shim.js'), 'utf8');
 const usesPostmanApi = (script) => /\b(pm|postman|tests|responseBody|responseCode|responseTime|environment|globals)\b/.test(script);
 const SET_VAR = 'function (k, v) { __varUpdates[k] = v; if (v === null) delete __vars[k]; else __vars[k] = v; }';
+const SET_GLOBAL = 'function (k, v) { __globalUpdates[k] = v; }';
 const withShim = (api, script) =>
   `${PM_SHIM}\nconst __p = __hitopPm(${api});\n(function (pm, tests, postman, environment, globals, responseBody, responseCode, responseTime) {\n${script}\n}).call(undefined, __p.pm, __p.tests, __p.postman, __p.environment, __p.globals, __p.responseBody, __p.responseCode, __p.responseTime);\n__p.finish();\n`;
 
@@ -44,6 +45,8 @@ let __url    = ${JSON.stringify(a.url)};
 let __body   = ${JSON.stringify(a.body)};
 let __headers = ${JSON.stringify(a.headers)};
 const __varUpdates = {};
+const __globals = ${JSON.stringify(a.globals || {})};
+const __globalUpdates = {};
 const __method = ${JSON.stringify(a.method)};
 function __removeHeader(name) { const n = String(name).toLowerCase(); __headers = __headers.filter(h => String(h[0]).toLowerCase() !== n); }
 function getVariable(k) { return __vars[k]; }
@@ -57,16 +60,16 @@ function setHeader(name, value) {
     if (!found) __headers.push([name, value]);
 }
 ${usesPostmanApi(a.script)
-    ? withShim(`{ vars: __vars, setVar: ${SET_VAR}, assert: { ok: function () {} }, request: { get url() { return __url; }, method: __method, get headers() { return __headers; }, get body() { return __body; } }, setUrl: setUrl, setHeader: setHeader, removeHeader: __removeHeader, setBody: setBody, response: null }`, a.script)
+    ? withShim(`{ vars: __vars, setVar: ${SET_VAR}, globals: __globals, setGlobal: ${SET_GLOBAL}, assert: { ok: function () {} }, request: { get url() { return __url; }, method: __method, get headers() { return __headers; }, get body() { return __body; } }, setUrl: setUrl, setHeader: setHeader, removeHeader: __removeHeader, setBody: setBody, response: null }`, a.script)
     : a.script}
-;JSON.stringify({ url: __url, body: __body, headers: __headers, ctx: __ctxUpdates, vars: __varUpdates })`;
+;JSON.stringify({ url: __url, body: __body, headers: __headers, ctx: __ctxUpdates, vars: __varUpdates, globals: __globalUpdates })`;
   let out;
   try {
     out = JSON.parse(vm.runInNewContext(src, {}, { timeout: 2000 }));
   } catch (e) {
     throw `pre-request script error: ${e.message}`;
   }
-  return { url: typeof out.url === 'string' ? out.url : a.url, headers: out.headers, body: typeof out.body === 'string' ? out.body : a.body, context_updates: out.ctx, variables: out.vars };
+  return { url: typeof out.url === 'string' ? out.url : a.url, headers: out.headers, body: typeof out.body === 'string' ? out.body : a.body, context_updates: out.ctx, variables: out.vars, globals: out.globals };
 }
 
 // scripting.rs: run_post_request_script.
@@ -86,6 +89,8 @@ const __vars = ${JSON.stringify(a.variables || {})};
 const __ctx  = ${JSON.stringify(a.context || {})};
 const __ctxUpdates = {};
 const __varUpdates = {};
+const __globals = ${JSON.stringify(a.globals ?? null)};
+const __globalUpdates = {};
 function getVariable(k) { return __vars[k]; }
 function getContext(k)  { return __ctxUpdates[k] !== undefined ? __ctxUpdates[k] : __ctx[k]; }
 function setContext(k, v) { __ctxUpdates[k] = v; }
@@ -111,16 +116,16 @@ const assert = {
     ok(c, name, detail) { __record(name === undefined ? "condition is true" : name, c, detail === undefined || detail === "" ? "was false" : detail); },
 };
 ${usesPostmanApi(a.script)
-    ? withShim(`{ vars: __vars, setVar: ${SET_VAR}, assert: assert, request: ${JSON.stringify(a.request || { url: '', method: '', headers: [], body: '' })}, response: { code: statusCode, text: responseText, headers: responseHeaders, time: ${a.duration_ms || 0} } }`, a.script)
+    ? withShim(`{ vars: __vars, setVar: ${SET_VAR}, globals: __globals || undefined, setGlobal: ${SET_GLOBAL}, assert: assert, request: ${JSON.stringify(a.request || { url: '', method: '', headers: [], body: '' })}, response: { code: statusCode, text: responseText, headers: responseHeaders, time: ${a.duration_ms || 0} } }`, a.script)
     : a.script}
-;JSON.stringify({ ctx: __ctxUpdates, tests: __tests, vars: __varUpdates })`;
+;JSON.stringify({ ctx: __ctxUpdates, tests: __tests, vars: __varUpdates, globals: __globalUpdates })`;
   let out;
   try {
     out = JSON.parse(vm.runInNewContext(src, {}, { timeout: 2000 }));
   } catch (e) {
     throw `post-request script error: ${e.message}`;
   }
-  return { context_updates: out.ctx, tests: out.tests, variables: out.vars };
+  return { context_updates: out.ctx, tests: out.tests, variables: out.vars, globals: out.globals };
 }
 
 function listTree(dir, base = dir, out = {}) {
@@ -217,6 +222,10 @@ class TauriMock {
         return JSON.parse(this.read('contexts.json', '{}'));
       case 'save_contexts':
         return this.write('contexts.json', args.contexts);
+      case 'load_globals':
+        return f.normalize('globals', this.read('globals.json', '{"id":"globals","name":"globals","variables":{}}'));
+      case 'save_globals':
+        return this.write('globals.json', f.normalize('globals', args.globals));
       case 'load_environments':
         return f.normalize('environments', this.read('environments.json', '{"active":null,"environments":[]}'));
       case 'save_environments':
@@ -242,7 +251,7 @@ class TauriMock {
         return f.readFiles(listTree(args.path), path.basename(args.path));
       }
       case 'write_folder': {
-        const files = f.toFiles({ collection: args.collection, environments: args.environments });
+        const files = f.toFiles({ collection: args.collection, environments: args.environments, ...(args.globals ? { globals: args.globals } : {}) });
         const plan = f.planSync(Object.keys(listTree(args.path)), files);
         for (const [rel, text] of Object.entries(plan.write)) {
           const p = path.join(args.path, rel);

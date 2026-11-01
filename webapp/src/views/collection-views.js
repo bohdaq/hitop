@@ -211,7 +211,88 @@ customElements.define("hitop-collection", HitopCollection);
 customElements.define("hitop-variables", HitopVariables);
 
 export class HitopEnvironments extends LightElement {
-  static properties = { store: { attribute: false }, version: { attribute: false }, app: { attribute: false }, reveal: { state: true } };
+  static properties = { store: { attribute: false }, version: { attribute: false }, app: { attribute: false }, reveal: { state: true }, revealGlobals: { state: true } };
+
+  // The globals' two editors, as an environment's: plain values and secrets.
+  changeGlobals(e, secret) {
+    const editor = e.target;
+    if (!editor.valid) return;
+    const g = this.store.globals;
+    const names = secretNames(g);
+    const own = editor.toObject();
+    const other = Object.fromEntries(Object.entries(g.variables).filter(([k]) => names.includes(k) !== secret));
+    const variables = secret ? { ...other, ...own } : { ...own, ...other };
+    const secrets = secret ? Object.keys(own) : names;
+    this.globalsJson = `${JSON.stringify(variables)}:${JSON.stringify(secrets)}`;
+    this.store.setGlobals(variables, secrets);
+  }
+
+  async importGlobals() {
+    const input = document.createElement("input");
+    input.type = "file";
+    input.accept = ".json,application/json";
+    input.onchange = async () => {
+      const file = input.files?.[0];
+      if (!file) return;
+      try {
+        this.store.importGlobals(await file.text());
+      } catch (err) {
+        this.store.notify(`Couldn't import ${file.name}: ${err.message}`);
+      }
+    };
+    input.click();
+  }
+
+  renderGlobals() {
+    const s = this.store;
+    const g = s.globals;
+    const names = secretNames(g);
+    const json = `${JSON.stringify(g.variables)}:${JSON.stringify(names)}`;
+    if (json !== this.globalsJson) {
+      this.globalsJson = json;
+      const rows = Object.entries(g.variables).map(([key, value]) => ({ key, value: String(value) }));
+      this.globalRows = rows.filter((r) => !names.includes(r.key));
+      this.globalSecretRows = rows.filter((r) => names.includes(r.key));
+      this.globalsVersion = (this.globalsVersion ?? 0) + 1;
+    }
+    return html`
+      <section class="globals" aria-labelledby="globals-title">
+        <header class="section-header">
+          <h2 id="globals-title">Globals</h2>
+          <div class="page-actions">
+            <lit-material-button variant="outlined" @click=${() => this.importGlobals()}>${icon("file-arrow-up")} Import globals</lit-material-button>
+            <lit-material-button variant="outlined" ?disabled=${!Object.keys(g.variables).length} @click=${() => this.app.download("hitop-globals.json", s.exportGlobals())}>${icon("file-arrow-down")} Export globals</lit-material-button>
+          </div>
+        </header>
+        <p class="hint">Variables every collection sees. Collection variables and the active environment override them; Postman globals import here.</p>
+        <lit-material-key-value-editor
+          aria-label="Globals"
+          key-label="Name"
+          value-label="Value"
+          add-label="Add global"
+          key-pattern="[^}]+"
+          key-pattern-message="A name can't contain }"
+          .entries=${guard([this.globalsVersion], () => this.globalRows)}
+          @change=${(e) => this.changeGlobals(e, false)}
+        ></lit-material-key-value-editor>
+        <h3>Secret globals</h3>
+        <label class="switch-row">
+          <lit-material-switch aria-label="Show secret global values" ?checked=${this.revealGlobals} @change=${(e) => (this.revealGlobals = e.target.checked)}></lit-material-switch>
+          <span>Show secret values</span>
+        </label>
+        <lit-material-key-value-editor
+          aria-label="Secret globals"
+          key-label="Name"
+          value-label="Value"
+          add-label="Add a secret global"
+          key-pattern="[^}]+"
+          key-pattern-message="A name can't contain }"
+          .maskValues=${!this.revealGlobals}
+          .entries=${guard([this.globalsVersion], () => this.globalSecretRows)}
+          @change=${(e) => this.changeGlobals(e, true)}
+        ></lit-material-key-value-editor>
+      </section>`;
+  }
 
   // Two editors, one environment: plain variables and secrets (masked). Both
   // write `variables`; the secrets editor also sets the `secrets` names.
@@ -305,6 +386,7 @@ export class HitopEnvironments extends LightElement {
               Create Dev, Staging and Prod with the same variable names and different values, then switch between them in the sidebar.
               <lit-material-button slot="actions" variant="filled" @click=${() => this.app.openDialog("add-environment")}>New environment</lit-material-button>
             </lit-material-empty-state>`}
+        ${this.renderGlobals()}
       </div>`;
   }
 }

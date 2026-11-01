@@ -14,7 +14,13 @@ import {
   cleanAuth,
   cookieHeader,
   emptyAuth,
+  emptyGlobals,
   exportableEnvironments,
+  exportableGlobals,
+  isPostmanGlobals,
+  mergeGlobals,
+  normalizeGlobals,
+  parseGlobals,
   makeAssert,
   maskSecrets,
   mergeCookies,
@@ -36,6 +42,9 @@ const pmShim = loadShim(pmShimText);
 const storage = () => platform().storage;
 const account = (workspace, env, name) => `${workspace}/${env}/${name}`;
 const workspaceOf = (collection) => collection.workspace || String(collection.id);
+// Secret globals go by this environment name (env var HITOP_SECRET_GLOBAL_<NAME>,
+// keychain account <workspace>/global/<name>), as in the CLI.
+const GLOBALS_ENV = "global";
 // Ids the Rust model reads (whole numbers); old web data has strings.
 const numericId = (id) => (Number.isSafeInteger(id) && id >= 0 ? id : generateUniqueId());
 const errorText = (e) => (e && typeof e === "object" && "message" in e ? e.message : String(e));
@@ -155,6 +164,10 @@ export class Store extends EventTarget {
     const envs = storage().loadEnvironments();
     this.environments = envs.environments;
     this.activeEnvironmentId = this.environments.some((e) => e.id === envs.activeEnvironmentId) ? envs.activeEnvironmentId : null;
+    // The globals: below collection variables and environments, for every collection.
+    this.globals = normalizeGlobals(storage().loadGlobals?.() ?? emptyGlobals());
+    // Globals scripts set (pm.globals.set): app-wide (folder collections: their own), until reload.
+    this.scriptGlobals = {};
     const jar = loadCookies();
     // The desktop keeps the jar in Rust (hitop-core), the web app in localStorage.
     this.cookies = platform().cookies ? platform().cookies.load() : jar.cookies;
@@ -199,6 +212,7 @@ export class Store extends EventTarget {
     st.saveCurrentTab(this.currentTab);
     st.saveHistory(this.history);
     st.saveContexts(this.contexts);
+    st.saveGlobals?.(this.globals);
     const globalEnvs = this.environments.filter((e) => !this.folderEnvs.has(e.id));
     st.saveEnvironments(globalEnvs, globalEnvs.some((e) => e.id === this.activeEnvironmentId) ? this.activeEnvironmentId : null);
     this.syncFolders();
@@ -539,10 +553,50 @@ export class Store extends EventTarget {
     return this.environments.find((e) => e.id === this.activeEnvironmentId) ?? null;
   }
 
-  // The variables a request sees: its collection's, overridden by the
-  // active environment's.
+  // The globals a collection sees: a folder's own globals.yaml when it has
+  // one, else the app's; with what scripts set on top.
+  globalsKey(collectionId) {
+    return this.folders.get(collectionId)?.globals ? `folder:${collectionId}` : "app";
+  }
+
+  globalsFor(collectionId) {
+    const own = this.folders.get(collectionId)?.globals;
+    const out = { ...(own ?? this.globals).variables };
+    for (const [k, v] of Object.entries(this.scriptGlobals[this.globalsKey(collectionId)] ?? {})) {
+      if (v === null) delete out[k];
+      else out[k] = v;
+    }
+    return out;
+  }
+
+  setScriptGlobals(collectionId, updates) {
+    const key = this.globalsKey(collectionId);
+    if (updates && Object.keys(updates).length) this.scriptGlobals[key] = { ...this.scriptGlobals[key], ...updates };
+  }
+
+  setGlobals(variables, secrets) {
+    const names = (secrets ?? this.globals.secrets).filter((n) => n in variables);
+    this.globals = { variables, secrets: names };
+    this.emit();
+  }
+
+  // Postman globals or HITOP's globals export: added to the globals.
+  importGlobals(json) {
+    const incoming = parseGlobals(json); // throws on bad input
+    this.globals = mergeGlobals(this.globals, incoming);
+    this.emit();
+    const n = Object.keys(incoming.variables).length;
+    this.notify(`Imported ${n} global${n === 1 ? "" : "s"}`);
+  }
+
+  exportGlobals() {
+    return JSON.stringify(exportableGlobals(this.globals), null, 2);
+  }
+
+  // The variables a request sees, later ones winning: the globals, its
+  // collection's, the active environment's, then what scripts set.
   variables(collectionId) {
-    const out = { ...collectionService.getCollectionVariables(this.collections, collectionId), ...(this.activeEnvironment?.variables ?? {}) };
+    const out = { ...this.globalsFor(collectionId), ...collectionService.getCollectionVariables(this.collections, collectionId), ...(this.activeEnvironment?.variables ?? {}) };
     for (const [k, v] of Object.entries(this.scriptVariables[collectionId] ?? {})) {
       if (v === null) delete out[k];
       else out[k] = v;
@@ -595,6 +649,14 @@ export class Store extends EventTarget {
   }
 
   importEnvironments(json) {
+    // Postman globals go to the globals, not to a new environment.
+    let parsed = null;
+    try {
+      parsed = JSON.parse(json);
+    } catch {
+      // parseEnvironments says what's wrong
+    }
+    if (isPostmanGlobals(parsed)) return this.importGlobals(json);
     const imported = parseEnvironments(json); // throws on bad input
     this.environments = [...this.environments, ...imported];
     this.emit();
@@ -620,9 +682,10 @@ export class Store extends EventTarget {
     const native = platform().scripts;
     if (native) {
       // The desktop runs scripts in Rust (boa), as the CLI does.
-      const r = await native.pre({ script, url, method, headers, body, variables, context });
+      const r = await native.pre({ script, url, method, headers, body, variables, context, globals: this.globalsFor(collectionId) });
       for (const [k, v] of Object.entries(r.contextUpdates)) this.setContext(collectionId, k, v);
       this.setScriptVariables(collectionId, r.variables);
+      this.setScriptGlobals(collectionId, r.globals);
       return { url: r.url, headers: r.headers, body: r.body };
     }
     const updates = {};
@@ -645,9 +708,12 @@ export class Store extends EventTarget {
       setBody: (b) => (ctx.body = b),
     };
     const vars = {};
+    const globals = {};
     runScript(pmShim, script, ctx, {
       vars: { ...variables },
       setVar: (k, v) => (vars[k] = v),
+      globals: this.globalsFor(collectionId),
+      setGlobal: (k, v) => (globals[k] = v),
       assert: { ok() {} },
       request: { get url() { return ctx.url; }, method, get headers() { return ctx.headers.map((h) => [h.name, h.value]); }, get body() { return ctx.body; } },
       setUrl: ctx.setUrl,
@@ -658,6 +724,7 @@ export class Store extends EventTarget {
     });
     for (const [k, v] of Object.entries(updates)) this.setContext(collectionId, k, v);
     this.setScriptVariables(collectionId, vars);
+    this.setScriptGlobals(collectionId, globals);
     return { url: ctx.url, headers: ctx.headers, body: ctx.body };
   }
 
@@ -667,9 +734,10 @@ export class Store extends EventTarget {
     if (!script?.trim()) return [];
     const native = platform().scripts;
     if (native) {
-      const r = await native.post({ script, text, headers, status, durationMs, sent, variables: this.variables(collectionId), context: contextService.getCollectionContext(this.contexts, collectionId) });
+      const r = await native.post({ script, text, headers, status, durationMs, sent, variables: this.variables(collectionId), globals: this.globalsFor(collectionId), context: contextService.getCollectionContext(this.contexts, collectionId) });
       for (const [k, v] of Object.entries(r.contextUpdates)) this.setContext(collectionId, k, v);
       this.setScriptVariables(collectionId, r.variables);
+      this.setScriptGlobals(collectionId, r.globals);
       return r.tests;
     }
     let parsed = text;
@@ -697,10 +765,13 @@ export class Store extends EventTarget {
       getResponseHeader: (name) => headers[name.toLowerCase()],
     };
     const vars = {};
+    const globals = {};
     try {
       runScript(pmShim, script, ctx, {
         vars: { ...variables },
         setVar: (k, v) => (vars[k] = v),
+        globals: this.globalsFor(collectionId),
+        setGlobal: (k, v) => (globals[k] = v),
         assert,
         request: { url: sent?.url ?? "", method: sent?.method ?? "", headers: (sent?.headers ?? []).filter((h) => h.name).map((h) => [h.name, h.value]), body: typeof sent?.body === "string" ? sent.body : "" },
         response: { code: status, text, headers, time: durationMs },
@@ -708,6 +779,7 @@ export class Store extends EventTarget {
     } finally {
       for (const [k, v] of Object.entries(updates)) this.setContext(collectionId, k, v);
       this.setScriptVariables(collectionId, vars);
+      this.setScriptGlobals(collectionId, globals);
     }
     return results;
   }
@@ -864,7 +936,9 @@ export class Store extends EventTarget {
     this.run = { ...this.run, collectionId: id, results: [], running: true };
     this.emit();
     const results = [];
-    const secrets = secretValues(this.activeEnvironment);
+    // Secret values of the environment and of the globals this collection sees.
+    const own = this.folders.get(id)?.globals ?? this.globals;
+    const secrets = [...secretValues(this.activeEnvironment), ...secretValues(own)];
     const push = (r) => {
       r = maskSecrets(r, secrets);
       results.push(r);
@@ -924,7 +998,9 @@ export class Store extends EventTarget {
     const environments = this.environments
       .filter((e) => this.folderEnvs.get(e.id)?.collectionId === collectionId)
       .map((e) => withoutSecretValues({ ...e, id: this.folderEnvs.get(e.id).id }));
-    return { collection, environments };
+    // A folder's globals.yaml goes back as it came (left out: the file stays as it is).
+    const globals = this.folders.get(collectionId)?.globals;
+    return globals ? { collection, environments, globals: withoutSecretValues({ ...globals, id: "globals", name: "globals" }) } : { collection, environments };
   }
 
   folderSecretValues(collectionId) {
@@ -947,6 +1023,14 @@ export class Store extends EventTarget {
     const accounts = envs.flatMap((e) => secretNames(e).map((n) => account(workspaceOf(col), e.name, n)));
     const values = accounts.length ? await p.folderSecrets.load(accounts) : {};
     for (const e of envs) for (const n of secretNames(e)) e.variables[n] = values[account(workspaceOf(col), e.name, n)] ?? "";
+    // The folder's globals.yaml, with secret values from the keychain (desktop).
+    let globals = null;
+    if (folder.globals) {
+      globals = { variables: { ...folder.globals.variables }, secrets: secretNames(folder.globals) };
+      const gAccounts = globals.secrets.map((n) => account(workspaceOf(col), GLOBALS_ENV, n));
+      const gValues = gAccounts.length ? await p.folderSecrets.load(gAccounts) : {};
+      for (const n of globals.secrets) globals.variables[n] = gValues[account(workspaceOf(col), GLOBALS_ENV, n)] ?? "";
+    }
     for (const [id, owner] of this.folderEnvs) if (owner.collectionId === col.id) this.folderEnvs.delete(id);
     for (const e of envs) {
       this.folderEnvs.set(e.id, { collectionId: col.id, id: e.folderId });
@@ -955,8 +1039,9 @@ export class Store extends EventTarget {
     this.environments = [...this.environments.filter((e) => !e.id.startsWith?.(`folder:${col.id}:`)), ...envs];
     const at = this.collections.findIndex((c) => c.id === col.id);
     this.collections = at === -1 ? [...this.collections, col] : this.collections.map((c, i) => (i === at ? col : c));
-    const entry = { ref, label: p.folders.label(ref), connected: true, error: null, written: null, secrets: this.folderSecretValues(col.id) };
+    const entry = { ref, label: p.folders.label(ref), connected: true, error: null, written: null, secrets: {}, globals };
     this.folders.set(col.id, entry);
+    entry.secrets = this.folderSecretValues(col.id);
     entry.written = JSON.stringify(this.folderContent(col.id));
     p.setFolderCollections?.([...this.folders.keys()]);
     if (remember) p.folders.remember(col.id, ref);

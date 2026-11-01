@@ -1,6 +1,6 @@
 // Unit checks for features.js (no browser): node tests/unit.mjs
 import assert from "node:assert/strict";
-import { cookieHeader, exportableEnvironments, maskSecrets, mergeCookies, multipartBody, parseEnvironments, parseQuery, secretNames, secretValues, urlEncodedBody, withQuery } from "../src/features.js";
+import { cookieHeader, exportableEnvironments, exportableGlobals, isPostmanGlobals, maskSecrets, mergeGlobals, normalizeGlobals, parseGlobals, mergeCookies, multipartBody, parseEnvironments, parseQuery, secretNames, secretValues, urlEncodedBody, withQuery } from "../src/features.js";
 
 const now = Date.parse("2026-10-31T12:00:00Z");
 let jar = mergeCookies([], ["sid=abc; Path=/; HttpOnly", "pref=dark; Domain=example.com; Path=/; Max-Age=3600", "evil=1; Domain=other.com", "old=x; Expires=Thu, 01 Jan 2026 00:00:00 GMT"], "https://api.example.com/v1/login", now);
@@ -110,4 +110,17 @@ for (const [kind, file] of [["collections", "collections.json"], ["history", "hi
   const json = JSON.parse(readFileSync(join(here, "desktop-storage", file), "utf8"));
   assert.deepEqual(format.normalize(kind, json), json, `${file} reads and writes unchanged`);
 }
+// Globals: Postman's file and HITOP's export read in, merged (incoming wins,
+// secret or plain as it says), exported without secret values.
+const pg = JSON.stringify({ name: "G", _postman_variable_scope: "globals", values: [{ key: "a", value: "1" }, { key: "s", value: "v", type: "secret" }, { key: "off", value: "x", enabled: false }] });
+assert.ok(isPostmanGlobals(JSON.parse(pg)) && !isPostmanGlobals({ name: "E", values: [] }));
+assert.deepEqual(parseGlobals(pg), { variables: { a: "1", s: "v" }, secrets: ["s"] });
+assert.deepEqual(parseGlobals(JSON.stringify({ variables: { b: 2 }, secrets: ["t"] })), { variables: { b: "2", t: "" }, secrets: ["t"] });
+const merged = mergeGlobals({ variables: { a: "old", s: "plain", t: "kept" }, secrets: ["t"] }, parseGlobals(pg));
+assert.deepEqual(merged, { variables: { a: "1", s: "v", t: "kept" }, secrets: ["s", "t"] });
+assert.deepEqual(exportableGlobals(merged), { variables: { a: "1" }, secrets: ["s", "t"] });
+assert.deepEqual(normalizeGlobals(null), { variables: {}, secrets: [] }, "storage from before globals reads as empty");
+assert.throws(() => parseGlobals("[]"));
+assert.deepEqual(format.normalize("globals", { variables: { x: "1" } }), { id: "globals", name: "globals", variables: { x: "1" } });
+
 console.log("unit checks passed");
