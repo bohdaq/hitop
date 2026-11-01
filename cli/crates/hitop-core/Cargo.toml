@@ -36,6 +36,10 @@ default = ["keychain", "native"]
 native = ["dep:reqwest", "dep:boa_engine", "dep:dirs"]
 # Off for targets without an OS keychain (the future wasm build).
 keychain = ["dep:keyring"]
+# The opt-in weekly usage ping (src/telemetry.rs). Off by default: the CLI and the
+# GitHub Release desktop builds turn it on; Mac App Store builds and the web app
+# (hitop-wasm) never contain it.
+telemetry = ["native"]
 
 [dev-dependencies]
 tempfile = "3"

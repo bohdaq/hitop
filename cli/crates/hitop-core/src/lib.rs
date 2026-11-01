@@ -14,3 +14,4 @@ pub mod runner;
 pub mod scripting;
 pub mod secrets;
 pub mod storage;
+pub mod telemetry;

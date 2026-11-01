@@ -11,4 +11,6 @@ pub mod run;
 pub mod secret;
 pub mod send;
 pub mod source;
+#[cfg(feature = "telemetry")]
+pub mod telemetry;
 pub mod variables;

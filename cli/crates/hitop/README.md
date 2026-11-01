@@ -67,6 +67,7 @@ hitop export MyAPI -o my-collection.json
 | `hitop history` | View request history |
 | `hitop import <files>... [--to <dir>]` | Import HITOP or Postman collections, Postman environments and globals; prints what didn't come over (see "From Postman") |
 | `hitop export <collection>` | Export a collection |
+| `hitop telemetry on/off/status` | The anonymous weekly usage ping: off unless you turn it on; `status` shows exactly what would be sent |
 | `hitop completions <shell>` | Generate shell completions |
 
 `run`, `requests`, `variables`, `export` and `send -c` take a path to a collection folder as well as a collection name.
@@ -201,6 +202,15 @@ hitop completions zsh > ~/.zfunc/_hitop
 # fish
 hitop completions fish > ~/.config/fish/completions/hitop.fish
 ```
+
+## Usage ping
+
+Off by default; nothing is sent until you run `hitop telemetry on`. Then, at most once a week, the next
+hitop command sends `POST https://hitop.rws8.tech/api/ping` with a random install id made on your machine,
+`"surface":"cli"`, the version and the OS family, and nothing else. `hitop telemetry status` prints that body,
+`hitop telemetry off` stops it and deletes the id. Builds without the default `telemetry` feature
+(`cargo install hitop --no-default-features`) don't contain the code at all. Details:
+[privacy policy](https://hitop.rws8.tech/privacy.html).
 
 ## Storage
 

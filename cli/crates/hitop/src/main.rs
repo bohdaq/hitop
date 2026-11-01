@@ -51,6 +51,10 @@ enum Cmd {
     Import(commands::import_export::ImportArgs),
     /// Export a collection to a file
     Export(commands::import_export::ExportArgs),
+    /// The anonymous weekly usage ping: off unless you turn it on
+    #[cfg(feature = "telemetry")]
+    #[command(subcommand)]
+    Telemetry(commands::telemetry::TelemetryCmd),
     /// Generate shell completions
     Completions {
         #[arg(value_enum)]
@@ -58,21 +62,36 @@ enum Cmd {
     },
 }
 
-fn main() -> Result<()> {
+fn main() {
     let cli = Cli::parse();
+    #[cfg(feature = "telemetry")]
+    let ping = match &cli.command {
+        Cmd::Telemetry(_) | Cmd::Completions { .. } => None,
+        _ => commands::telemetry::start(),
+    };
+    let code = dispatch(cli.command);
+    #[cfg(feature = "telemetry")]
+    commands::telemetry::finish(ping);
+    let _ = std::io::Write::flush(&mut std::io::stdout());
+    std::process::exit(code)
+}
 
-    match cli.command {
+/// Runs the command; the process exit code.
+fn dispatch(command: Cmd) -> i32 {
+    let result: Result<()> = match command {
         Cmd::Init(args) => commands::folder::run_init(args),
         Cmd::Convert(args) => commands::folder::run_convert(args),
         Cmd::Send(args) => commands::send::run(args),
         // 0 passed, 1 a request or assertion failed, 2 usage or config error.
-        Cmd::Run(args) => match commands::run::run(args) {
-            Ok(code) => std::process::exit(code),
-            Err(e) => {
-                eprintln!("{} {e:#}", "error:".red().bold());
-                std::process::exit(2)
+        Cmd::Run(args) => {
+            return match commands::run::run(args) {
+                Ok(code) => code,
+                Err(e) => {
+                    eprintln!("{} {e:#}", "error:".red().bold());
+                    2
+                }
             }
-        },
+        }
         Cmd::Collections(cmd) => commands::collections::run(cmd),
         Cmd::Requests(cmd) => commands::requests::run(cmd),
         Cmd::Variables(cmd) => commands::variables::run(cmd),
@@ -82,10 +101,20 @@ fn main() -> Result<()> {
         Cmd::History(args) => commands::history::run(args),
         Cmd::Import(args) => commands::import_export::run_import(args),
         Cmd::Export(args) => commands::import_export::run_export(args),
+        #[cfg(feature = "telemetry")]
+        Cmd::Telemetry(cmd) => commands::telemetry::run(cmd),
         Cmd::Completions { shell } => {
             let mut cmd = Cli::command();
             generate(shell, &mut cmd, "hitop", &mut std::io::stdout());
             Ok(())
+        }
+    };
+    match result {
+        Ok(()) => 0,
+        // What returning the error from main printed before.
+        Err(e) => {
+            eprintln!("Error: {e:?}");
+            1
         }
     }
 }
