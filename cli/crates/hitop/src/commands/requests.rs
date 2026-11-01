@@ -206,17 +206,20 @@ pub fn run(cmd: RequestsCmd) -> Result<()> {
         }
 
         RequestsCmd::Send { collection, request, show_headers, raw, env, secrets, cookies } => {
-            use hitop_core::{http, prepare::{prepare, variables, Draft}, scripting::run_post_request_script};
+            use hitop_core::{http, prepare::{prepare_in, variables, Draft, Scopes}, scripting::{run_post_request_script_with, PostRequestCtx}};
             use crate::output;
 
             let source = Source::open(&collection)?;
             let col = &source.collection;
             let req = find_req(col, &request)?.clone();
             let environment = source.environment(env.as_deref())?;
-            let secrets = super::secret::resolve(&source.workspace(), environment.as_ref(), &secrets)?;
+            let secret_flags = secrets;
+            let secrets = super::secret::resolve(&source.workspace(), environment.as_ref(), &secret_flags)?;
             let mut vars = variables(&col.variables, environment.as_ref());
             secrets.apply(&mut vars);
-            let masker = secrets.masker();
+            let (globals, global_secrets) = super::secret::resolve_globals(&source.workspace(), &source.globals()?, &secret_flags)?;
+            let mut scopes = Scopes { globals, upper: vars };
+            let masker = secrets.masker_with(&global_secrets);
             let masked = |e: anyhow::Error| anyhow::anyhow!(masker.mask(&format!("{e:#}")));
             let context_key = source.context_key();
 
@@ -236,22 +239,29 @@ pub fn run(cmd: RequestsCmd) -> Result<()> {
                 pre_request_script: &req.pre_request_script,
                 auth: req.auth.as_ref().or(col.auth.as_ref()),
             };
-            let pre = prepare(&draft, &vars, &context).map_err(masked)?;
+            let pre = prepare_in(&draft, &scopes, &context).map_err(masked)?;
+            scopes.apply(&pre.variables, &pre.globals);
+            let vars = scopes.merged();
             let (headers, body) = hitop_core::form::outgoing(&req, &pre.headers, &pre.body, &vars).map_err(masked)?;
+            let (sent_headers, sent_body) = (headers.clone(), String::from_utf8(body.clone()).unwrap_or_default());
             let workspace = source.workspace();
             let mut jar = super::cookies::open(&workspace, cookies)?;
             let opts = http::Options { timeout: None, jar: jar.as_mut() };
             let mut result = http::execute_opts(&req.method, &pre.url, &headers, body, opts).map_err(masked)?;
             super::cookies::save(&workspace, jar.as_ref())?;
 
-            let mut post = run_post_request_script(
+            let mut post = run_post_request_script_with(
                 &req.post_request_script,
-                &result.body,
-                &result.headers,
-                result.status,
-                result.duration_ms,
-                &vars,
-                &context,
+                &PostRequestCtx {
+                    response_body: &result.body,
+                    response_headers: &result.headers,
+                    status_code: result.status,
+                    duration_ms: result.duration_ms,
+                    variables: &vars,
+                    context: &context,
+                    request: Some(&hitop_core::scripting::SentRequest { url: pre.url.clone(), method: req.method.clone(), headers: sent_headers, body: sent_body }),
+                    globals: Some(&scopes.globals),
+                },
             )
             .map_err(masked)?;
             super::send::mask_output(&masker, &mut result, &mut post.tests);

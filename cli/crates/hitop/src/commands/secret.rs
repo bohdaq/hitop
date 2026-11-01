@@ -80,14 +80,46 @@ pub fn resolve(workspace: &str, environment: Option<&Environment>, flags: &Secre
     Ok(resolved.secrets)
 }
 
+/// The globals with their secret values filled in (env var
+/// `HITOP_SECRET_GLOBAL_<NAME>`, `--secret`, keychain `<workspace>/global/<name>`,
+/// prompt), and those secrets, for masking.
+pub fn resolve_globals(workspace: &str, globals: &Environment, flags: &SecretFlags) -> Result<(std::collections::HashMap<String, String>, Secrets)> {
+    let mut values = globals.variables.clone();
+    for s in &globals.secrets {
+        values.remove(s);
+    }
+    if globals.secrets.is_empty() {
+        return Ok((values, Secrets::default()));
+    }
+    // Only the flags for the globals' own secrets: others belong to the environment.
+    let pairs: Vec<(String, String)> = flags.pairs()?.into_iter().filter(|(k, _)| globals.secrets.contains(k)).collect();
+    let store = store();
+    let lookup = |k: &str| std::env::var(k).ok();
+    let prompt: &dyn Fn(&str) -> Option<String> = &ask;
+    let env = secrets::globals_lookup_env(globals);
+    let resolved = secrets::resolve(&Lookup { workspace, environment: Some(&env), flags: &pairs, store: store.as_ref(), lookup_env: &lookup, prompt: interactive().then_some(prompt) })
+        .map_err(|e| anyhow::anyhow!("{}", format!("{e:#}").replace(&format!("--env {}", secrets::GLOBALS_ENV), "--globals").replace("no value for secret", "no value for global secret")))?;
+    for note in &resolved.notes {
+        eprintln!("{} {note}", "note:".yellow());
+    }
+    resolved.secrets.apply(&mut values);
+    Ok((values, resolved.secrets))
+}
+
 #[derive(Args)]
+#[command(group(clap::ArgGroup::new("scope").required(true).args(["env", "globals"])))]
 pub struct Target {
     /// Environment the secret belongs to
     #[arg(short = 'e', long = "env")]
-    env: String,
+    env: Option<String>,
 
-    /// Collection folder (or collection name) whose environment it is;
-    /// global environments when left out
+    /// A secret of the globals instead of an environment
+    /// (env var HITOP_SECRET_GLOBAL_<NAME>)
+    #[arg(long)]
+    globals: bool,
+
+    /// Collection folder (or collection name) whose environment (or
+    /// globals.yaml) it is; global storage when left out
     #[arg(short = 'c', long)]
     collection: Option<String>,
 }
@@ -128,16 +160,24 @@ struct Place {
     workspace: String,
     env: Environment,
     folder: Option<PathBuf>,
+    /// The globals: `env` is them under the name [`secrets::GLOBALS_ENV`].
+    globals: Option<super::globals::Place>,
 }
 
 fn place(t: &Target) -> Result<Place> {
+    if t.globals {
+        let g = super::globals::Place::of(t.collection.as_deref())?;
+        let env = secrets::globals_lookup_env(&g.load()?);
+        return Ok(Place { workspace: g.workspace.clone(), env, folder: g.folder.clone(), globals: Some(g) });
+    }
+    let name = t.env.as_deref().context("--env or --globals")?;
     if let Some(c) = &t.collection {
         let source = Source::open(c)?;
-        let env = source.environment(Some(&t.env))?.context("no environment")?;
-        return Ok(Place { workspace: source.workspace(), env, folder: source.folder().map(|p| p.to_path_buf()) });
+        let env = source.environment(Some(name))?.context("no environment")?;
+        return Ok(Place { workspace: source.workspace(), env, folder: source.folder().map(|p| p.to_path_buf()), globals: None });
     }
-    let env = storage::load_environments()?.pick(Some(&t.env))?.cloned().context("no environment")?;
-    Ok(Place { workspace: secrets::GLOBAL_WORKSPACE.into(), env, folder: None })
+    let env = storage::load_environments()?.pick(Some(name))?.cloned().context("no environment")?;
+    Ok(Place { workspace: secrets::GLOBAL_WORKSPACE.into(), env, folder: None, globals: None })
 }
 
 fn keychain_error(e: StoreError, env: &str, name: &str) -> anyhow::Error {
@@ -174,6 +214,17 @@ pub fn run(cmd: SecretCmd) -> Result<()> {
                 None => read_value(&format!("{name} ({env})"))?,
             };
             store.set(&secrets::account(&p.workspace, env, &name), &value).map_err(|e| keychain_error(e, env, &name))?;
+            if let Some(g) = &p.globals {
+                let mut globals = g.load()?;
+                globals.variables.remove(&name);
+                if !globals.secrets.contains(&name) {
+                    globals.secrets.push(name.clone());
+                    globals.secrets.sort();
+                }
+                g.save(&globals)?;
+                println!("{} Stored global secret {} in the OS keychain", "✓".green(), name.bold());
+                return Ok(());
+            }
             match &p.folder {
                 Some(dir) => {
                     format::mark_secret(dir, env, &name)?;
@@ -213,7 +264,8 @@ pub fn run(cmd: SecretCmd) -> Result<()> {
             let p = place(&target)?;
             let env = p.env.name.as_str();
             if p.env.secrets.is_empty() {
-                println!("{}", format!("'{env}' has no secrets. Add one with: hitop secret set <name> --env {env}").dimmed());
+                let hint = if p.globals.is_some() { "The globals have no secrets. Add one with: hitop secret set <name> --globals".to_string() } else { format!("'{env}' has no secrets. Add one with: hitop secret set <name> --env {env}") };
+                println!("{}", hint.dimmed());
                 return Ok(());
             }
             let mut down: Option<StoreError> = None;

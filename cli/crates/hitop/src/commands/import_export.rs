@@ -73,22 +73,26 @@ pub fn run_import(args: ImportArgs) -> Result<()> {
             None => collections.extend(export::from_hitop(raw)?.into_iter().map(|c| (c, ImportReport::default()))),
         }
     }
-    // Globals are defaults in every environment imported with them, or an
-    // environment of their own when there is none.
-    if environments.is_empty() {
-        environments = std::mem::take(&mut globals);
-    }
-    for env in &mut environments {
-        for g in &globals {
-            postman::merge_globals(env, g);
-        }
-    }
-
     let workspace = match &args.to {
         Some(dir) => import_to_folder(dir, &mut collections, &mut environments, args.force)?,
         None => import_to_storage(&mut collections, &mut environments)?,
     };
     store_secrets(&workspace, &environments, args.to.as_deref());
+    // Postman globals go to hitop's globals: the folder's globals.yaml, or
+    // global storage's globals.json.
+    if !globals.is_empty() {
+        let place = super::globals::Place { workspace: workspace.clone(), folder: args.to.clone() };
+        let mut g = place.load()?;
+        let mut values = vec![];
+        for imported in &globals {
+            values.extend(postman::merge_into_globals(&mut g, imported));
+        }
+        place.save(&g)?;
+        super::globals::store_secret_values(&place, &values);
+        let n: usize = globals.iter().map(|i| i.environment.variables.len() + i.environment.secrets.len()).sum();
+        let at = args.to.as_ref().map(|d| d.join(format::GLOBALS).display().to_string()).unwrap_or_else(|| "globals".into());
+        println!("{} Imported {n} global{} into {at}", "✓".green(), if n == 1 { "" } else { "s" });
+    }
     for (c, report) in &collections {
         print_report(&c.name, report);
     }

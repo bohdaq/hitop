@@ -105,7 +105,14 @@ pub fn run(cmd: EnvCmd) -> Result<()> {
         EnvCmd::Import { file } => {
             let text = std::fs::read_to_string(&file)?;
             let v: serde_json::Value = serde_json::from_str(text.trim_start_matches('\u{feff}'))?;
-            if matches!(hitop_core::postman::detect(&v), Some(hitop_core::postman::Kind::Environment | hitop_core::postman::Kind::Globals)) {
+            if hitop_core::postman::detect(&v) == Some(hitop_core::postman::Kind::Globals) {
+                // Postman globals go to hitop's globals scope.
+                let place = super::globals::Place::of(None)?;
+                let n = super::globals::import_into(&place, &text)?;
+                println!("{} Imported {n} global{} (hitop globals show)", "✓".green(), if n == 1 { "" } else { "s" });
+                return Ok(());
+            }
+            if hitop_core::postman::detect(&v) == Some(hitop_core::postman::Kind::Environment) {
                 // Postman: `type: "secret"` values go to the keychain.
                 let mut imported = hitop_core::postman::import_environment(&text)?;
                 imported.environment.id = new_id();

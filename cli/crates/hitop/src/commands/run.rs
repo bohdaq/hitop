@@ -31,8 +31,9 @@ Exit codes:
   2  usage or configuration error (unknown collection or environment, bad flag,
      unreadable --env-file or --data, missing secret, reports not written)
 
-Variables, later ones win: collection, environment (--env or --env-file),
-the --data row, --var, then secrets. --var values are not masked: give secret
+Variables, later ones win: globals (a folder's globals.yaml, else
+`hitop globals`), collection, environment (--env or --env-file), the --data
+row, --var, then secrets. --var values are not masked: give secret
 values with --secret or HITOP_SECRET_<ENV>_<NAME>.
 
 Reports: --reporter junit writes <out>/junit.xml, --reporter json writes
@@ -130,6 +131,9 @@ struct Plan {
     workspaces: Vec<String>,
     environment: Option<Environment>,
     secrets: Secrets,
+    /// The globals (secret values filled in) and their secrets.
+    globals: HashMap<String, String>,
+    global_secrets: Secrets,
 }
 
 fn plan(args: &RunArgs) -> Result<Plan> {
@@ -145,7 +149,8 @@ fn plan(args: &RunArgs) -> Result<Plan> {
         };
         let secrets = secret::resolve(hitop_core::secrets::GLOBAL_WORKSPACE, environment.as_ref(), &args.secrets)?;
         let workspaces = collections.iter().map(|c| hitop_core::secrets::workspace_id(c, false)).collect();
-        return Ok(Plan { collections, workspaces, environment, secrets });
+        let (globals, global_secrets) = secret::resolve_globals(hitop_core::secrets::GLOBAL_WORKSPACE, &storage::load_globals()?, &args.secrets)?;
+        return Ok(Plan { collections, workspaces, environment, secrets, globals, global_secrets });
     }
     let source = Source::open(args.collection.as_deref().unwrap_or_default())?;
     let environment = match env_file {
@@ -153,7 +158,8 @@ fn plan(args: &RunArgs) -> Result<Plan> {
         None => source.environment(args.env.as_deref())?,
     };
     let secrets = secret::resolve(&source.workspace(), environment.as_ref(), &args.secrets)?;
-    Ok(Plan { workspaces: vec![source.workspace()], collections: vec![source.collection], environment, secrets })
+    let (globals, global_secrets) = secret::resolve_globals(&source.workspace(), &source.globals()?, &args.secrets)?;
+    Ok(Plan { workspaces: vec![source.workspace()], collections: vec![source.collection], environment, secrets, globals, global_secrets })
 }
 
 /// Runs and reports. Ok(0) when everything passed, Ok(1) when a request or
@@ -172,6 +178,8 @@ pub fn run(args: RunArgs) -> Result<i32> {
         stop_on_fail: args.bail,
         timeout: args.timeout.map(Duration::from_millis),
         overrides: HashMap::new(),
+        globals: plan.globals.clone(),
+        global_secrets: plan.global_secrets.clone(),
     };
 
     let mut builder = ReportBuilder::new(env!("CARGO_PKG_VERSION"));

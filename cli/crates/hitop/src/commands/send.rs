@@ -8,8 +8,8 @@ use hitop_core::{
     interpolation::interpolate,
     model::{Header, HistoryItem},
     params::append_query,
-    prepare::{prepare, variables, Draft},
-    scripting::run_post_request_script,
+    prepare::{prepare_in, variables, Draft, Scopes},
+    scripting::{run_post_request_script_with, PostRequestCtx},
     storage,
 };
 
@@ -104,7 +104,14 @@ pub fn run(args: SendArgs) -> Result<()> {
     let secrets = secret::resolve(&workspace, environment.as_ref(), &args.secrets)?;
     let mut variables = variables(&collection_vars, environment.as_ref());
     secrets.apply(&mut variables);
-    let masker = secrets.masker();
+    // Globals sit below everything else: a folder's globals.yaml, else global storage's.
+    let globals = match &source {
+        Some(s) => s.globals()?,
+        None => storage::load_globals()?,
+    };
+    let (globals, global_secrets) = secret::resolve_globals(&workspace, &globals, &args.secrets)?;
+    let mut scopes = Scopes { globals, upper: variables };
+    let masker = secrets.masker_with(&global_secrets);
 
     let headers: Vec<Header> = args
         .headers
@@ -122,8 +129,10 @@ pub fn run(args: SendArgs) -> Result<()> {
 
     let method = args.method.clone().unwrap_or_else(|| if args.form.is_empty() { "GET" } else { "POST" }.into());
     let draft = Draft { method: &method, url: &url, headers: &headers, body: &body, pre_request_script: &pre_script, auth: auth.as_ref() };
-    let pre = prepare(&draft, &variables, &context).map_err(|e| anyhow::anyhow!(masker.mask(&format!("{e:#}"))))?;
+    let pre = prepare_in(&draft, &scopes, &context).map_err(|e| anyhow::anyhow!(masker.mask(&format!("{e:#}"))))?;
     context.extend(pre.context_updates.clone());
+    scopes.apply(&pre.variables, &pre.globals);
+    let variables = scopes.merged();
 
     let mut headers = pre.headers.clone();
     let mut body = pre.body.clone().into_bytes();
@@ -134,19 +143,25 @@ pub fn run(args: SendArgs) -> Result<()> {
         }
         body = built.body;
     }
+    let (headers_sent, body_sent) = (headers.clone(), String::from_utf8(body.clone()).unwrap_or_default());
     let mut jar = cookies::open(&workspace, args.cookies)?;
     let opts = http::Options { timeout: None, jar: jar.as_mut() };
     let mut result = http::execute_opts(&method, &pre.url, &headers, body, opts).map_err(|e| anyhow::anyhow!(masker.mask(&format!("{e:#}"))))?;
     cookies::save(&workspace, jar.as_ref())?;
 
-    let mut post = run_post_request_script(
+    let sent = hitop_core::scripting::SentRequest { url: pre.url.clone(), method: method.clone(), headers: headers_sent, body: body_sent };
+    let mut post = run_post_request_script_with(
         &post_script,
-        &result.body,
-        &result.headers,
-        result.status,
-        result.duration_ms,
-        &variables,
-        &context,
+        &PostRequestCtx {
+            response_body: &result.body,
+            response_headers: &result.headers,
+            status_code: result.status,
+            duration_ms: result.duration_ms,
+            variables: &variables,
+            context: &context,
+            request: Some(&sent),
+            globals: Some(&scopes.globals),
+        },
     )
     .map_err(|e| anyhow::anyhow!(masker.mask(&format!("{e:#}"))))?;
     // Scripts saw the real values; whatever is printed or kept doesn't.

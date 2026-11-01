@@ -39,6 +39,9 @@ enum Cmd {
     /// Manage environments (variable sets such as dev, staging, prod)
     #[command(subcommand)]
     Env(commands::env::EnvCmd),
+    /// Manage the globals: variables below every collection's (globals.json, or a folder's globals.yaml)
+    #[command(subcommand)]
+    Globals(commands::globals::GlobalsCmd),
     /// Manage secret variables in the OS keychain
     #[command(subcommand)]
     Secret(commands::secret::SecretCmd),
@@ -96,6 +99,7 @@ fn dispatch(command: Cmd) -> i32 {
         Cmd::Requests(cmd) => commands::requests::run(cmd),
         Cmd::Variables(cmd) => commands::variables::run(cmd),
         Cmd::Env(cmd) => commands::env::run(cmd),
+        Cmd::Globals(cmd) => commands::globals::run(cmd),
         Cmd::Secret(cmd) => commands::secret::run(cmd),
         Cmd::Cookies(cmd) => commands::cookies::run(cmd),
         Cmd::History(args) => commands::history::run(args),

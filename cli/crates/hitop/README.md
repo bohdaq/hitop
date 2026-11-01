@@ -62,7 +62,8 @@ hitop export MyAPI -o my-collection.json
 | `hitop requests auth <collection> <request>` | Set (`--bearer`, `--basic`, `--api-key`) or clear (`--none`) a request's auth |
 | `hitop variables list/set/delete` | Manage collection variables |
 | `hitop env list/add/delete/show/set/unset/use/off/import/export` | Manage environments |
-| `hitop secret set/get/rm/ls --env <env>` | Secret variables in the OS keychain (`-c <folder>` for a folder's environment) |
+| `hitop secret set/get/rm/ls --env <env>` | Secret variables in the OS keychain (`-c <folder>` for a folder's environment; `--globals` for a secret global) |
+| `hitop globals show/set/unset/import/export [-c <folder>]` | The globals: variables below every collection's, in global storage or a folder's `globals.yaml` |
 | `hitop cookies ls/clear [-c <collection>]` | The cookies hitop keeps between requests (`--no-cookies` on `send`, `run`, `requests send` turns the jar off) |
 | `hitop history` | View request history |
 | `hitop import <files>... [--to <dir>]` | Import HITOP or Postman collections, Postman environments and globals; prints what didn't come over (see "From Postman") |
@@ -82,11 +83,11 @@ from the content. With `--to <dir>` it writes a collection folder; without it, g
   becomes `${name}`.
 - Environment values of Postman's `secret` type become secret variables: their values go to
   the OS keychain, never into a file (without a keychain hitop names the `HITOP_SECRET_*`
-  variable to set instead). Globals become defaults in every environment imported with them,
-  or an environment of their own.
-- Scripts keep working through hitop's `pm.*` shim: `pm.environment`, `pm.collectionVariables`,
-  `pm.globals` and `pm.variables` (one set of variables in hitop; values set by a script last
-  for the run), `pm.response`, `pm.request`, `pm.test`, a chai style `pm.expect`, and the old
+  variable to set instead). Globals go to hitop's globals: the folder's `globals.yaml` with
+  `--to`, else global storage (`hitop globals show`).
+- Scripts keep working through hitop's `pm.*` shim: `pm.environment`, `pm.collectionVariables`
+  and `pm.variables` (one set of variables in hitop), `pm.globals` (the globals scope; values set
+  by a script last for the run), `pm.response`, `pm.request`, `pm.test`, a chai style `pm.expect`, and the old
   `tests[...]`, `responseBody`, `responseCode` and `postman.*Variable` API.
 - What can't come over is listed after the import: every script line with a `pm.*` call the
   shim doesn't have (`pm.sendRequest`, `pm.cookies`, `postman.setNextRequest`, `require`, ...),
@@ -131,6 +132,14 @@ hitop send https://api.example.com/search --api-key api_key=k-1 --api-key-in que
 hitop requests add MyAPI --name "Me" --url '${baseUrl}/me' -H "Accept: application/json" --bearer '${token}'
 ```
 
+## Globals
+
+Globals are the lowest scope, as in Postman: globals < collection variables < environment < `--data` row <
+`--var` < values a script sets < secrets. Global storage has one set (`hitop globals set region eu`), a folder
+its own `globals.yaml`. A secret global (`hitop secret set apiKey --globals`) takes its value from
+`HITOP_SECRET_GLOBAL_<NAME>`, `--secret`, the keychain or a prompt, and still yields to an environment's
+value of the same name. `hitop globals export` writes `{variables, secrets}` without secret values.
+
 ## Secrets
 
 A secret variable has no value in collection files, JSON storage, history or exports; it is shown as `••••`.
@@ -169,7 +178,7 @@ hitop run ./my-api --env ci --iterations 3
 - `--reporter`: `cli` (default), `junit`, `json`, comma separated; files go to `--out` (default `hitop-reports`).
   The JSON report is versioned (`"reportVersion": 1`) and documented in
   [spec/run-report.md](https://github.com/bohdaq/hitop/blob/main/spec/run-report.md). Secret values are `••••` in every report.
-- Variables, later ones win: collection, environment (`--env` or `--env-file`), the `--data` row, `--var`, then secrets.
+- Variables, later ones win: globals, collection, environment (`--env` or `--env-file`), the `--data` row, `--var`, then secrets.
   `--var` values are not masked; use `--secret` or `HITOP_SECRET_<ENV>_<NAME>` for secrets.
 - `--bail` stops at the first failed request; without it every request runs. (Before 0.3 stopping was the default
   and `--no-stop-on-fail` turned it off; that flag is still accepted.)

@@ -42,6 +42,10 @@ pub struct ConvertArgs {
     /// array): read into the folder's environments/, or written from it
     #[arg(long, value_name = "FILE")]
     environments: Option<PathBuf>,
+    /// Globals JSON (`globals.json` from hitop's storage): read into the
+    /// folder's globals.yaml, or written from it
+    #[arg(long, value_name = "FILE")]
+    globals: Option<PathBuf>,
     /// Overwrite an existing collection folder or JSON file
     #[arg(long)]
     force: bool,
@@ -84,6 +88,12 @@ fn folder_to_json(args: &ConvertArgs) -> Result<()> {
         std::fs::write(path, serde_json::to_string_pretty(&envs)? + "\n").with_context(|| format!("writing {}", path.display()))?;
         println!("{} Wrote {} environment(s) to {}", "✓".green(), envs.environments.len(), path.display());
     }
+    if let Some(path) = &args.globals {
+        refuse_overwrite(path, args.force)?;
+        let g = folder.globals.clone().unwrap_or_else(Environment::globals);
+        std::fs::write(path, serde_json::to_string_pretty(&g)? + "\n").with_context(|| format!("writing {}", path.display()))?;
+        println!("{} Wrote the globals to {}", "✓".green(), path.display());
+    }
     Ok(())
 }
 
@@ -109,11 +119,27 @@ fn json_to_folder(args: &ConvertArgs) -> Result<()> {
     for existing in [format::MANIFEST, "requests", "environments"] {
         refuse_overwrite(&args.to.join(existing), args.force)?;
     }
-    let folder = format::Folder { collection, environments };
+    let globals = match &args.globals {
+        None => None,
+        Some(path) => {
+            refuse_overwrite(&args.to.join(format::GLOBALS), args.force)?;
+            let raw = std::fs::read_to_string(path).with_context(|| format!("reading {}", path.display()))?;
+            let mut v: serde_json::Value = serde_json::from_str(&raw).with_context(|| format!("{}", path.display()))?;
+            if let Some(o) = v.as_object_mut() {
+                o.insert("id".into(), hitop_core::model::GLOBALS_ID.into());
+                o.insert("name".into(), hitop_core::model::GLOBALS_ID.into());
+            }
+            Some(serde_json::from_value::<Environment>(v).with_context(|| format!("{}", path.display()))?)
+        }
+    };
+    let folder = format::Folder { collection, environments, globals };
     if args.environments.is_some() {
         format::write_folder(&args.to, &folder)?;
     } else {
         format::write_collection(&args.to, &folder.collection)?;
+        if let Some(g) = &folder.globals {
+            format::write_globals(&args.to, g)?;
+        }
     }
     println!(
         "{} Wrote '{}' ({} requests{}) to {}",

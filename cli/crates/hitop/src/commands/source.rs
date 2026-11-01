@@ -18,6 +18,8 @@ pub struct Source {
     pub collection: Collection,
     /// The folder's environments; None for a collection in global storage.
     pub environments: Option<Vec<Environment>>,
+    /// The folder's `globals.yaml` (None without one, or in global storage).
+    folder_globals: Option<Environment>,
     origin: Origin,
 }
 
@@ -36,12 +38,13 @@ impl Source {
             return Ok(Source {
                 collection: folder.collection,
                 environments: Some(folder.environments),
+                folder_globals: folder.globals,
                 origin: Origin::Folder(path.to_path_buf()),
             });
         }
         let all = storage::load_collections()?;
         if let Some(index) = all.iter().position(|c| c.name == arg) {
-            return Ok(Source { collection: all[index].clone(), environments: None, origin: Origin::Global { all, index } });
+            return Ok(Source { collection: all[index].clone(), environments: None, folder_globals: None, origin: Origin::Global { all, index } });
         }
         if looks_like_path(arg) || path.is_dir() {
             bail!("{arg} is not a collection folder (no hitop.yaml; create one with `hitop init {arg}`)");
@@ -79,6 +82,15 @@ impl Source {
                 }
             },
             (None, name) => Ok(storage::load_environments()?.pick(name)?.cloned()),
+        }
+    }
+
+    /// The globals scope: a folder's own `globals.yaml` (none: empty), or
+    /// global storage's `globals.json`.
+    pub fn globals(&self) -> Result<Environment> {
+        match &self.origin {
+            Origin::Folder(_) => Ok(self.folder_globals.clone().unwrap_or_else(Environment::globals)),
+            Origin::Global { .. } => storage::load_globals(),
         }
     }
 

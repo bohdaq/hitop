@@ -4,6 +4,7 @@ pub mod data;
 pub mod env;
 pub mod flags;
 pub mod folder;
+pub mod globals;
 pub mod history;
 pub mod import_export;
 pub mod requests;

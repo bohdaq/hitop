@@ -206,12 +206,22 @@ fn adyen_imports_folders_auth_and_secret_globals() {
         .args(["import", arg(&f.join("collection.json")), arg(&f.join("adyen.postman_globals.json")), "--to", arg(&dir)])
         .assert()
         .success()
-        .stdout(contains("Imported environment 'Adyen test globals'").and(contains("thing").not()));
+        .stdout(contains("Imported 2 globals into").and(contains("thing").not()))
+        // Without a keychain (HITOP_KEYCHAIN=off) it names the env var for the secret global.
+        .stderr(contains("HITOP_SECRET_GLOBAL_X_API_KEY").and(contains("hitop secret set X-API-Key --globals")));
     assert!(dir.join("requests/general/get3dsavailability/get-3d-secure-availability.yaml").is_file());
     let manifest = fs::read_to_string(dir.join("hitop.yaml")).unwrap();
     assert!(manifest.contains("auth:\n  type: apikey\n  key: X-API-Key\n  value: ${X-API-Key}"), "{manifest}");
-    assert!(!fs::read_to_string(dir.join("environments/adyen-test-globals.yaml")).unwrap().contains("dummy-api-key-2"));
+    // Postman globals are hitop globals now, not an environment.
+    let globals = fs::read_to_string(dir.join("globals.yaml")).unwrap();
+    assert_eq!(globals, "variables:\n  X-API-Key:\n    secret: true\n  YOUR_MERCHANT_ACCOUNT: HitopTest\n");
+    assert!(!dir.join("environments/adyen-test-globals.yaml").exists());
 
+    // The collection declares both names with empty values, and collection
+    // variables hide globals (in Postman too): remove them so the globals apply.
+    for key in ["X-API-Key", "YOUR_MERCHANT_ACCOUNT"] {
+        hitop(&home).args(["variables", "delete", arg(&dir), key]).assert().success();
+    }
     let server = MockServer::start();
     let calls = server.mock(|when, then| {
         when.method(POST).header("x-api-key", "dummy-api-key-2").body_includes("\"merchantAccount\": \"HitopTest\"");
@@ -220,8 +230,8 @@ fn adyen_imports_folders_auth_and_secret_globals() {
     let (code, report) = run(
         &home,
         &dir,
-        &["--env", "Adyen test globals", "--var", &format!("baseUrl={}", server.base_url())],
-        &[("HITOP_SECRET_ADYEN_TEST_GLOBALS_X_API_KEY", "dummy-api-key-2")],
+        &["--var", &format!("baseUrl={}", server.base_url())],
+        &[("HITOP_SECRET_GLOBAL_X_API_KEY", "dummy-api-key-2")],
     );
     assert_eq!(failures(&report), Vec::<String>::new());
     assert_eq!(code, 0);
