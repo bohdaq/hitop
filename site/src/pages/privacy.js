@@ -7,7 +7,7 @@ export const meta = {
   path: "/privacy.html",
   title: "Privacy policy · HITOP",
   description:
-    "HITOP has no accounts, analytics or tracking. Collections and history stay on your device. How the web app's request proxy handles your requests.",
+    "HITOP has no accounts or tracking. Collections and history stay on your device. How the web app's request proxy and the usage ping you can turn on work.",
 };
 
 export function render() {
@@ -15,7 +15,7 @@ export function render() {
     ${header(meta.path)}
     <main id="main" class="container page-text">
       <h1>Privacy policy</h1>
-      <p class="lead">HITOP does not collect, sell or share personal data, and you never need an account. Last updated 31 October 2026.</p>
+      <p class="lead">HITOP does not collect, sell or share personal data, and you never need an account. Last updated 1 November 2026.</p>
 
       <h2>What stays on your device</h2>
       <p>Everything you enter, including collections, requests, headers, variables, scripts and request history, is stored only on your device:</p>
@@ -39,7 +39,15 @@ export function render() {
       </ul>
 
       <h2>No tracking</h2>
-      <p>HITOP contains no analytics, crash reporting, advertising identifiers, third party SDKs, session recording or fingerprinting. The website sets no cookies. If you choose a light or dark theme, your browser keeps that choice in local storage under <code>hitop-theme</code>.</p>
+      <p>HITOP contains no analytics SDKs, crash reporting, advertising identifiers, third party SDKs, session recording or fingerprinting. The website sets no cookies. If you choose a light or dark theme, your browser keeps that choice in local storage under <code>hitop-theme</code>.</p>
+
+      <h2>Usage ping, only if you turn it on</h2>
+      <p>The CLI (from version 0.3.0) and the free desktop builds from GitHub can send one anonymous ping a week, only if you turn it on. It is off by default; the desktop app asks once, with No as the default answer, and the CLI only sends it after <code>hitop telemetry on</code>. The Mac App Store and iOS apps, the web app and the browser extensions don't contain this code at all.</p>
+      <ul>
+        <li>The ping holds a random install id made on your device, which surface it is (CLI or desktop), the version and the operating system family. Nothing else: no requests, URLs, collections or account.</li>
+        <li>It goes to <code>https://hitop.rws8.tech/api/ping</code>. The server keeps only daily counts. It uses the install id to count each install once a week, through a hash with a salt that is thrown away every week, so installs can't be followed from week to week. It doesn't store your IP address; the web server's access log records it with the time and the path, as for any page.</li>
+        <li>Turn it off at any time with <code>hitop telemetry off</code> or in the desktop app's settings. <code>hitop telemetry status</code> shows what would be sent.</li>
+      </ul>
 
       <h2>Children</h2>
       <p>HITOP does not knowingly collect information from anyone, including children under 13.</p>

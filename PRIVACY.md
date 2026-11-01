@@ -1,6 +1,6 @@
 # Privacy Policy for HITOP Chrome Extension
 
-**Last Updated:** January 8, 2025
+**Last Updated:** November 1, 2026
 
 ## Overview
 
@@ -67,6 +67,13 @@ You have the right to:
 - Access all data stored by the extension (via Export feature)
 - Delete all data (by uninstalling the extension or clearing browser data)
 - Control what data you save (you choose what to save in collections)
+
+## HITOP's other apps
+
+This file covers the browser extensions, which send nothing anywhere. The policy for every
+HITOP app, including the web app's request proxy and the weekly usage ping you can turn on in the CLI
+and the free desktop builds (off by default, never in the extensions, the web app or the App
+Store apps), is at https://hitop.rws8.tech/privacy.html.
 
 ## Changes to Privacy Policy
 
