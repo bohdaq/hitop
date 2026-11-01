@@ -341,6 +341,15 @@ lit-material-dialog.wide::part(container) { width: min(1100px, calc(100vw - 32px
 .ws-event.received .ws-dir { color: light-dark(#3f6b2a, #9fcf86); }
 .ws-event.system .ws-text { color: var(--md-sys-color-on-surface-variant); }
 .ws-event.error .ws-text, .ws-event.error .ws-dir { color: var(--md-sys-color-error); }
+.grpc-target { display: flex; flex-wrap: wrap; gap: var(--space-100); align-items: center; margin-bottom: var(--space-100); }
+.grpc-target .grpc-service { flex: 2 1 14rem; min-width: 0; }
+.grpc-target .grpc-method { flex: 1 1 10rem; min-width: 0; }
+.grpc-message .cm-scroller { min-height: 6lh !important; max-height: 40vh !important; }
+.grpc-protos, .grpc-imports, .grpc-source { display: block; margin-top: var(--space-200); }
+.grpc-desktop-only { margin: 0 0 var(--space-200); }
+.ws-event.grpc-event.message .ws-dir, .ws-event.grpc-event.status.ok .ws-dir { color: light-dark(#3f6b2a, #9fcf86); }
+.ws-event.grpc-event.status.bad .ws-text, .ws-event.grpc-event.status.bad .ws-dir { color: var(--md-sys-color-error); }
+.ws-event.grpc-event.headers .ws-text { color: var(--md-sys-color-on-surface-variant); }
 @media (max-width: 720px) {
   .ws-saved-row { grid-template-columns: minmax(0, 1fr) auto auto; }
   .ws-saved-row > :nth-child(2) { grid-column: 1 / -1; grid-row: 2; }

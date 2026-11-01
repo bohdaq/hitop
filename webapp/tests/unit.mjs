@@ -132,6 +132,9 @@ assert.deepEqual(format.normalize("collections", [{ id: 1, name: "c", requests: 
 // WebSocket: Rust keeps kind and websocket (subprotocols, named messages) as the web app saves them.
 const wsRequest = { id: 2, name: "Feed", url: "wss://x/feed", method: "GET", headers: [], body: "", preRequestScript: "", postRequestScript: "", kind: "websocket", websocket: { subprotocols: ["v2"], messages: [{ name: "hi", content: "hello ${who}" }] } };
 assert.deepEqual(format.normalize("collections", [{ id: 1, name: "c", requests: [wsRequest] }])[0].requests[0], wsRequest, "Rust keeps a WebSocket request as saved");
+// gRPC: Rust keeps kind and grpc (service, method, message, protos, importPaths, plaintext) as the web app saves them.
+const grpcRequest = { id: 3, name: "Hello", url: "${grpcHost}", method: "GET", headers: [{ name: "x-tenant", value: "t" }], body: "", preRequestScript: "", postRequestScript: "", kind: "grpc", grpc: { service: "a.Greeter", method: "SayHello", message: '{"name": "${who}"}', protos: ["protos/a.proto"], importPaths: ["protos/include"], plaintext: true } };
+assert.deepEqual(format.normalize("collections", [{ id: 1, name: "c", requests: [grpcRequest] }])[0].requests[0], grpcRequest, "Rust keeps a gRPC request as saved");
 const { schemaFromResponse, INTROSPECTION_QUERY } = await import("../src/graphql-schema.js");
 const { buildSchema, graphqlSync } = await import("graphql");
 const sdl = buildSchema("type Query { user(id: ID!): User } type User { name: String }");

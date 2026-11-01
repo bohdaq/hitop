@@ -69,16 +69,25 @@ export const isGraphql = (r) => r?.bodyType === "graphql" && (!r.bodyMode || r.b
 
 // A saved request that opens a WebSocket connection (hitop-core's `kind`).
 export const isWebsocket = (r) => r?.kind === "websocket";
+// A saved request that makes a gRPC call (hitop-core's `kind`).
+export const isGrpc = (r) => r?.kind === "grpc";
 // What request lists show in the method's place.
-export const methodLabel = (r) => (isWebsocket(r) ? "WS" : r.method);
+export const methodLabel = (r) => (isWebsocket(r) ? "WS" : isGrpc(r) ? "GRPC" : r.method);
 
 // Request fields the web app adds, as a tab carries them: a GraphQL request
 // shows the body mode "graphql", with its variables and operation name; a
-// WebSocket request its subprotocols and saved messages.
+// WebSocket request its subprotocols and saved messages; a gRPC request its
+// service, method, message and schema source.
 const EXTRA_FIELDS = (r) => ({
-  kind: isWebsocket(r) ? "websocket" : undefined,
+  kind: isWebsocket(r) ? "websocket" : isGrpc(r) ? "grpc" : undefined,
   subprotocols: r.websocket?.subprotocols ?? [],
   wsMessages: r.websocket?.messages ?? [],
+  grpcService: r.grpc?.service ?? "",
+  grpcMethod: r.grpc?.method ?? "",
+  grpcMessage: r.grpc?.message ?? "",
+  grpcProtos: r.grpc?.protos ?? [],
+  grpcImportPaths: r.grpc?.importPaths ?? [],
+  grpcPlaintext: !!r.grpc?.plaintext,
   bodyMode: isGraphql(r) ? "graphql" : r.bodyMode || "raw",
   formFields: r.formFields || [],
   disabledParams: r.disabledParams || [],
@@ -97,10 +106,31 @@ const SAVED_FIELDS = (t) => {
     disabledParams: t.disabledParams || [],
     graphql: Object.keys(graphql).length ? graphql : undefined,
     ...(t.bodyMode === "graphql" ? { bodyType: "graphql" } : {}),
-    kind: t.kind === "websocket" ? "websocket" : undefined,
+    kind: t.kind === "websocket" || t.kind === "grpc" ? t.kind : undefined,
     websocket: websocketFields(t),
+    grpc: grpcFields(t),
   };
 };
+
+// A tab's gRPC fields as saved (`grpc`), or undefined when it has none.
+// Kept when the request switches to HTTP, as the WebSocket ones are.
+function grpcFields(t) {
+  const g = {
+    service: t.grpcService || undefined,
+    method: t.grpcMethod || undefined,
+    message: t.grpcMessage || undefined,
+    protos: (t.grpcProtos || []).filter(Boolean),
+    importPaths: (t.grpcImportPaths || []).filter(Boolean),
+    plaintext: t.grpcPlaintext || undefined,
+  };
+  if (!g.protos.length) delete g.protos;
+  if (!g.importPaths.length) delete g.importPaths;
+  for (const k of Object.keys(g)) if (g[k] === undefined) delete g[k];
+  return Object.keys(g).length ? g : undefined;
+}
+
+// The log of a gRPC tab keeps this many entries.
+const GRPC_LOG_MAX = 500;
 
 // A tab's subprotocols and saved messages as saved (`websocket`), or
 // undefined when it has neither. Kept when the request switches to HTTP.
@@ -199,6 +229,7 @@ const headersObject = (headers) => {
 function autoTitle(tab) {
   if (tab.loadedRequestId) return tab.title;
   try {
+    if (tab.kind === "grpc") return `GRPC ${tab.grpcMethod || tab.url}`;
     return `${tab.kind === "websocket" ? "WS" : tab.method} ${new URL(tab.url).pathname || "/"}`;
   } catch {
     return "New request";
@@ -236,6 +267,11 @@ export class Store extends EventTarget {
     // bytes? }], conn }. Memory only: the log holds filled-in values
     // (tokens), so it is never saved, and connections end with the page.
     this.sockets = new Map();
+    // gRPC by tab id: { status: idle | running | done, log: [{ time, kind:
+    // sent | headers | message | status | error | system, text, ok? }],
+    // call, schema: { services, source } | null, schemaLoading,
+    // schemaError }. Memory only, as the WebSocket log.
+    this.grpcTabs = new Map();
     // What the main area shows: the request tabs, all collections, one
     // collection, or one collection's variables.
     this.view = { kind: "request", collectionId: null };
@@ -346,6 +382,12 @@ export class Store extends EventTarget {
     this.emit();
   }
 
+  // The tab with this id, which may no longer be the current one.
+  updateTabById(id, updates) {
+    const at = this.tabs.findIndex((t) => t.id === id);
+    if (at !== -1) this.updateTab(updates, at);
+  }
+
   selectTab(index) {
     this.currentTab = index;
     this.view = { kind: "request", collectionId: null };
@@ -365,6 +407,7 @@ export class Store extends EventTarget {
   closeTab(index) {
     if (this.tabs.length <= 1) return;
     this.wsDisconnect(this.tabs[index].id);
+    this.grpcCancel(this.tabs[index].id);
     const { tabs, newCurrentTab } = tabService.closeTab(this.tabs, index, this.currentTab);
     this.tabs = tabs;
     this.currentTab = newCurrentTab;
@@ -408,6 +451,7 @@ export class Store extends EventTarget {
     if (!request.graphql) delete request.graphql;
     if (!request.kind) delete request.kind;
     if (!request.websocket) delete request.websocket;
+    if (!request.grpc) delete request.grpc;
     if (request.bodyType === "graphql" && source.bodyMode !== "graphql") delete request.bodyType;
     this.collections = collectionService.addRequestToCollection(this.collections, collectionId, request);
     this.tabs = [...this.tabs, tabForRequest(request, collectionId)];
@@ -1091,6 +1135,7 @@ export class Store extends EventTarget {
       return;
     }
     if (tab.kind === "websocket") return this.wsConnect();
+    if (tab.kind === "grpc") return this.grpcCall();
     const source = {
       url: tab.url,
       method: tab.method,
@@ -1241,6 +1286,134 @@ export class Store extends EventTarget {
     this.wsSet(tabId, { log: [] });
   }
 
+  // --- gRPC -------------------------------------------------------------------
+  // Desktop only: the platform's `grpc` (Rust through Tauri) is null in a
+  // browser, which can't make gRPC calls.
+
+  grpcState(tabId = this.tab?.id) {
+    return this.grpcTabs.get(tabId) ?? { status: "idle", log: [], call: null, schema: null, schemaLoading: false, schemaError: null };
+  }
+
+  grpcSet(tabId, changes) {
+    this.grpcTabs = new Map(this.grpcTabs).set(tabId, { ...this.grpcState(tabId), ...changes });
+    this.emit();
+  }
+
+  grpcLog(tabId, entry) {
+    const g = this.grpcState(tabId);
+    this.grpcSet(tabId, { log: [...g.log, { time: new Date().toISOString(), ...entry }].slice(-GRPC_LOG_MAX) });
+  }
+
+  grpcClearLog(tabId = this.tab?.id) {
+    this.grpcSet(tabId, { log: [] });
+  }
+
+  // The server and schema source of a tab, variables filled in: the
+  // address, plaintext, metadata (enabled headers and header auth), the
+  // .proto files and import paths, and the collection's folder for
+  // relative paths (desktop folders are paths).
+  grpcServer(tab = this.tab) {
+    const variables = this.variables(tab.loadedCollectionId);
+    const fill = (text) => (text ? interpolateVariables(text, variables) : text);
+    const authed = applyAuth(tab.auth, { url: "", headers: (tab.headers || []).filter((h) => h.name && h.enabled !== false).map((h) => ({ name: fill(h.name), value: fill(h.value || "") })), body: "" }, fill);
+    const ref = tab.loadedCollectionId != null ? this.folderOf(tab.loadedCollectionId)?.ref : null;
+    return {
+      address: fill(tab.url.trim()),
+      plaintext: !!tab.grpcPlaintext,
+      metadata: authed.headers.map((h) => [h.name, h.value]),
+      protos: (tab.grpcProtos || []).map(fill).filter(Boolean),
+      importPaths: (tab.grpcImportPaths || []).map(fill).filter(Boolean),
+      baseDir: typeof ref === "string" ? ref : null,
+    };
+  }
+
+  // Reads the schema (reflection or the .proto files) for the service and
+  // method pickers.
+  async grpcLoadSchema() {
+    const tab = this.tab;
+    const id = tab.id;
+    const g = platform().grpc;
+    if (!g) return this.notify("gRPC is available in the desktop app and CLI.");
+    if (!tab.url.trim()) return this.notify("Enter the server address first (host:port).");
+    let server;
+    try {
+      server = this.grpcServer(tab);
+    } catch (e) {
+      return this.notify(`Schema not loaded: ${errorText(e)}`);
+    }
+    this.grpcSet(id, { schemaLoading: true, schemaError: null });
+    try {
+      const schema = await g.list(server);
+      this.grpcSet(id, { schema, schemaLoading: false });
+      const t = this.tabs.find((x) => x.id === id);
+      // Pick the first service and method when none is chosen yet.
+      if (t && !t.grpcService) {
+        const svc = schema.services.find((x) => !x.name.startsWith("grpc.reflection.")) ?? schema.services[0];
+        if (svc) this.updateTabById(id, { grpcService: svc.name, grpcMethod: svc.methods[0]?.name ?? "" });
+      }
+    } catch (e) {
+      this.grpcSet(id, { schemaLoading: false, schemaError: errorText(e) });
+    }
+  }
+
+  // Replaces the message with a template of the method's request message.
+  async grpcTemplate() {
+    const tab = this.tab;
+    const g = platform().grpc;
+    if (!g) return;
+    if (!tab.grpcService || !tab.grpcMethod) return this.notify("Pick a service and method first.");
+    try {
+      const d = await g.describe(this.grpcServer(tab), `${tab.grpcService}/${tab.grpcMethod}`);
+      if (d.template) this.updateTabById(tab.id, { grpcMessage: JSON.stringify(d.template, null, 2) });
+    } catch (e) {
+      this.notify(`No template: ${errorText(e)}`);
+    }
+  }
+
+  // Calls the tab's method with its message, variables filled in; the
+  // headers, messages and status go to the tab's log.
+  grpcCall() {
+    const tab = this.tab;
+    const id = tab.id;
+    const g = platform().grpc;
+    if (!g) return this.notify("gRPC is available in the desktop app and CLI.");
+    if (this.grpcState(id).status === "running") return;
+    if (!tab.grpcService || !tab.grpcMethod) return this.notify("Pick a service and method first (Load schema).");
+    let args;
+    try {
+      const fill = (text) => (text ? interpolateVariables(text, this.variables(tab.loadedCollectionId)) : text);
+      args = { ...this.grpcServer(tab), service: tab.grpcService, method: tab.grpcMethod, message: fill(tab.grpcMessage || "") };
+    } catch (e) {
+      return this.notify(`Not sent: ${errorText(e)}`);
+    }
+    this.grpcSet(id, { status: "running" });
+    this.grpcLog(id, { kind: "sent", text: `${args.service}/${args.method} ${args.message.trim() || "{}"}` });
+    const done = () => this.grpcSet(id, { status: "done", call: null });
+    const call = g.call(args, {
+      onHeaders: (metadata) => metadata.length && this.grpcLog(id, { kind: "headers", text: metadata.map(([k, v]) => `${k}: ${v}`).join("\n") }),
+      onMessage: (data) => this.grpcLog(id, { kind: "message", text: JSON.stringify(data, null, 2) }),
+      onStatus: ({ code, name, message, trailers }) => {
+        const head = code === 0 ? "OK" : `${name} (${code})${message ? `: ${message}` : ""}`;
+        const tail = (trailers || []).map(([k, v]) => `${k}: ${v}`).join("\n");
+        this.grpcLog(id, { kind: "status", ok: code === 0, text: tail ? `${head}\n${tail}` : head });
+        done();
+      },
+      onError: (message) => {
+        this.grpcLog(id, { kind: "error", text: message });
+        done();
+      },
+    });
+    if (this.grpcState(id).status === "running") this.grpcSet(id, { call });
+  }
+
+  grpcCancel(tabId = this.tab?.id) {
+    const g = this.grpcState(tabId);
+    if (g.status !== "running") return;
+    g.call?.cancel();
+    this.grpcSet(tabId, { status: "done", call: null });
+    this.grpcLog(tabId, { kind: "system", text: "Cancelled" });
+  }
+
   // Fetches the GraphQL schema of the current tab's endpoint by
   // introspection: its URL, headers, auth and cookies, through the same
   // transport as Send (proxy or direct; Rust on the desktop). The tab's
@@ -1301,7 +1474,7 @@ export class Store extends EventTarget {
     for (let i = 0; i < collection.requests.length; i++) {
       const request = collection.requests[i];
       // WebSocket requests connect on demand; a run skips them, as `hitop run` does.
-      if (isWebsocket(request)) continue;
+      if (isWebsocket(request) || isGrpc(request)) continue;
       try {
         const started = performance.now();
         const { prepared, res } = await this.dispatch(request, id);

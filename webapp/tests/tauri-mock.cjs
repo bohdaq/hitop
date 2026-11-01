@@ -14,6 +14,10 @@
 //             `telemetry = null` is a build without it (Mac App Store)
 //   websocket ws_connect/ws_send/ws_close through Node's WebSocket (headers
 //             sent, as Rust's client does), events on the page's channel
+//   grpc      grpc_list/grpc_describe/grpc_call/grpc_cancel against a canned
+//             server (`grpcServer`: the hitop.test.Greeter service of
+//             hitop-core's tests/fixtures/grpc, reflection on or off), as
+//             commands.rs answers: errors before calling, events on the channel
 //   cookies   hitop-core's jar (cookies.rs, same rules as features.js) in
 //             <config>/cookies/global.json
 const fs = require('fs');
@@ -158,6 +162,10 @@ class TauriMock {
     this.sockets = new Map();
     this.nextSocket = 0;
     this.wsConnects = [];
+    // The gRPC server the mock pretends to reach, and every call made.
+    this.grpcServer = { address: '127.0.0.1:50051', reflection: true };
+    this.grpcCalls = [];
+    this.grpcCancelled = [];
     this.telemetry = { enabled: false, asked: true, id: null, lastPing: null };
   }
 
@@ -294,6 +302,15 @@ class TauriMock {
       case 'ws_close':
         this.sockets.get(args.id)?.close(1000);
         return null;
+      case 'grpc_list':
+        return { ...this.grpcOpen(args.args), services: GRPC_SERVICES };
+      case 'grpc_describe':
+        return this.grpcDescribe(args.args, args.symbol);
+      case 'grpc_call':
+        return this.grpcCall(args.args, args.onEvent);
+      case 'grpc_cancel':
+        this.grpcCancelled.push(args.id);
+        return null;
       default:
         throw `unknown command ${cmd}`;
     }
@@ -359,10 +376,87 @@ class TauriMock {
     return { id, status: 101, protocol: ws.protocol || null, headers: [] };
   }
 
+  // commands.rs grpc_open: connect, then the schema from the .proto files
+  // (paths relative to baseDir; the greeter needs its import path) or
+  // reflection.
+  grpcOpen(a) {
+    const uri = /^https?:\/\//i.test(a.address) ? a.address : `${a.plaintext ? 'http' : 'https'}://${a.address}`;
+    const plain = /^http:/i.test(uri);
+    if (uri.replace(/^https?:\/\//i, '') !== this.grpcServer.address || !plain) throw `couldn't connect to ${uri}: transport error`;
+    if (!(a.protos || []).length) {
+      if (!this.grpcServer.reflection) throw 'server reflection failed: the server has no reflection service (grpc.reflection.v1 or v1alpha): give its .proto files';
+      return { source: 'reflection v1' };
+    }
+    const at = (p) => (path.isAbsolute(p) || !a.baseDir ? p : path.join(a.baseDir, p));
+    for (const p of a.protos) if (!fs.existsSync(at(p))) throw `no .proto file at ${at(p)}`;
+    const dirs = [...a.protos.map((p) => path.dirname(at(p))), ...(a.importPaths || []).map(at)];
+    if (!dirs.some((d) => fs.existsSync(path.join(d, 'common.proto')))) throw 'greeter.proto: import "common.proto" was not found';
+    return { source: 'protos' };
+  }
+
+  grpcDescribe(a, symbol) {
+    this.grpcOpen(a);
+    const [service, method] = symbol.split('/');
+    const m = GRPC_SERVICES.find((s) => s.name === service)?.methods.find((x) => x.name === method);
+    if (!m) throw `no service, method, message or enum '${symbol}' in the schema`;
+    return { description: `${m.fullName}\nrpc ${m.name}(${m.input}) returns (${m.output});`, template: GRPC_TEMPLATES[m.input] ?? {} };
+  }
+
+  async grpcCall(a, channel) {
+    this.grpcOpen(a);
+    const svc = GRPC_SERVICES.find((s) => s.name === a.service);
+    if (!svc) throw `no service '${a.service}' (the schema has: ${GRPC_SERVICES.map((s) => s.name).join(', ')})`;
+    const m = svc.methods.find((x) => x.name === a.method);
+    if (!m) throw `service ${svc.name} has no method '${a.method}' (it has: ${svc.methods.map((x) => x.name).join(', ')})`;
+    if (m.clientStreaming) throw `${m.fullName} is a bidirectional streaming method: hitop calls unary and server-streaming methods only`;
+    let msg;
+    try {
+      msg = JSON.parse(a.message.trim() || '{}');
+    } catch (e) {
+      throw `the message isn't a valid ${m.input}: ${e.message}`;
+    }
+    this.grpcCalls.push(a);
+    const id = this.grpcCalls.length;
+    const cb = Number(String(channel).replace('__CHANNEL__:', ''));
+    let index = 0;
+    const emit = (message) => this.deliver?.(cb, { message, index: index++ });
+    const meta = (name) => (a.metadata || []).find(([k]) => k.toLowerCase() === name)?.[1] ?? '';
+    const ok = { type: 'status', code: 0, name: 'OK', message: '', trailers: [] };
+    setTimeout(() => {
+      if (this.grpcCancelled.includes(id)) return;
+      if (m.name === 'Fail') return emit({ type: 'status', code: 5, name: 'NOT_FOUND', message: `no user named ${msg.name || ''}`, trailers: [['x-reason', 'test']] });
+      emit({ type: 'headers', metadata: [['x-served-by', 'hitop-test']] });
+      if (m.name === 'SayHello') emit({ type: 'message', data: { message: `Hello, ${msg.name || ''}`, tenant: meta('x-tenant'), authorization: meta('authorization'), index: 0 } });
+      else for (let i = 0; i < (msg.times || 0); i++) emit({ type: 'message', data: { message: `Hello #${i}, ${msg.name || ''}`, tenant: '', authorization: '', index: i } });
+      emit(ok);
+    }, 20);
+    return { id };
+  }
+
   cleanup() {
     for (const ws of this.sockets.values()) ws.close();
     fs.rmSync(this.dir, { recursive: true, force: true });
   }
 }
+
+// hitop-core's tests/fixtures/grpc/greeter.proto, as grpc::services lists it.
+const GRPC_METHOD = (name, input, output, clientStreaming, serverStreaming) => ({ name, fullName: `hitop.test.Greeter.${name}`, input, output, clientStreaming, serverStreaming });
+const GRPC_SERVICES = [
+  {
+    name: 'grpc.reflection.v1.ServerReflection',
+    methods: [{ name: 'ServerReflectionInfo', fullName: 'grpc.reflection.v1.ServerReflection.ServerReflectionInfo', input: 'grpc.reflection.v1.ServerReflectionRequest', output: 'grpc.reflection.v1.ServerReflectionResponse', clientStreaming: true, serverStreaming: true }],
+  },
+  {
+    name: 'hitop.test.Greeter',
+    methods: [
+      GRPC_METHOD('SayHello', 'hitop.test.HelloRequest', 'hitop.test.HelloReply', false, false),
+      GRPC_METHOD('StreamHellos', 'hitop.test.HelloRequest', 'hitop.test.HelloReply', false, true),
+      GRPC_METHOD('Fail', 'hitop.test.HelloRequest', 'hitop.test.HelloReply', false, false),
+      GRPC_METHOD('Chat', 'hitop.test.HelloRequest', 'hitop.test.HelloReply', true, true),
+    ],
+  },
+];
+// grpc::template of the request type.
+const GRPC_TEMPLATES = { 'hitop.test.HelloRequest': { name: '', times: 0, mood: 'MOOD_UNSPECIFIED', tag: { key: '' }, labels: [''], attributes: {}, email: '' } };
 
 module.exports = { TauriMock, listTree };

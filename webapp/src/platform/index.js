@@ -11,6 +11,9 @@
 //   websocket(url, { headers, protocols }, { onOpen({ protocol }), onMessage({ text } | { bytes }),
 //                            onError(message), onClose({ code, reason }) })  → { send(text), close() }
 //   websocketHeaders         true when websocket() sends the handshake headers (not in a browser)
+//   grpc                     null in a browser (no gRPC there), or { list(server) → { source, services },
+//                            describe(server, symbol) → { description, template }, call(args, { onHeaders(pairs),
+//                            onMessage(json), onStatus({ code, name, message, trailers }), onError(message) }) → { cancel() } }
 //   managesCookies(url)      true when the app's cookie jar applies (no browser cookie handling)
 //   cookies                  null (the app keeps its jar in localStorage), or { load(), save(cookies) }
 //                            for a native jar: send() then gets options.cookies and returns res.cookies

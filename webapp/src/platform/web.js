@@ -185,6 +185,8 @@ export function createPlatform() {
     // The browser's WebSocket: no handshake headers (browsers can't set them).
     websocketHeaders: false,
     websocket: browserWebSocket,
+    // gRPC needs HTTP/2 trailers, which a page can't read: desktop and CLI only.
+    grpc: null,
     // The browser handles cookies of direct requests itself (and hides them);
     // the proxy's answers carry Set-Cookie for the app's jar.
     managesCookies: usesProxy,

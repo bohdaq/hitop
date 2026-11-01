@@ -174,6 +174,51 @@ function rustWebSocket(url, { headers = [], protocols = [] } = {}, h) {
   };
 }
 
+// gRPC through Rust (grpc_* in commands.rs). A call's events come on a
+// Tauri channel as { message, index } (or { end, index }), put back in
+// order as for WebSocket; the last one is the status.
+const rustGrpc = {
+  list: (server) => invoke("grpc_list", { args: server }),
+  describe: (server, symbol) => invoke("grpc_describe", { args: server, symbol }),
+  call(args, h) {
+    const internals = window.__TAURI_INTERNALS__;
+    let id = null;
+    let cancelled = false;
+    let next = 0;
+    const early = new Map();
+    const deliver = (e) => {
+      if (cancelled) return;
+      if (e.type === "headers") h.onHeaders(e.metadata || []);
+      else if (e.type === "message") h.onMessage(e.data);
+      else if (e.type === "status") h.onStatus(e);
+    };
+    const callback = internals.transformCallback((payload) => {
+      if (!payload) return;
+      if ("end" in payload) return internals.unregisterCallback?.(callback);
+      early.set(payload.index, payload.message);
+      while (early.has(next)) {
+        const m = early.get(next);
+        early.delete(next);
+        next += 1;
+        deliver(m);
+      }
+    });
+    invoke("grpc_call", { args, onEvent: `__CHANNEL__:${callback}` }).then(
+      (started) => {
+        id = started.id;
+        if (cancelled) invoke("grpc_cancel", { id });
+      },
+      (e) => !cancelled && h.onError(String(e)),
+    );
+    return {
+      cancel: () => {
+        cancelled = true;
+        if (id !== null) invoke("grpc_cancel", { id });
+      },
+    };
+  },
+};
+
 export function createPlatform() {
   const cache = { collections: null, history: [], contexts: {}, environments: { environments: [], activeEnvironmentId: null }, cookies: [], globals: { variables: {}, secrets: [] } };
   // Secret globals' values, in the keychain as global/global/<name> (`hitop secret set --globals`).
@@ -302,6 +347,8 @@ export function createPlatform() {
     // Rust's client sends handshake headers and auth.
     websocketHeaders: true,
     websocket: rustWebSocket,
+    // gRPC calls (unary and server streaming) through hitop-core.
+    grpc: rustGrpc,
     // The Rust jar handles cookies (send passes options.cookies on), so the
     // page adds no Cookie header itself.
     managesCookies: () => false,

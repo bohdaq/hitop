@@ -12,6 +12,7 @@ import { AUTH_TYPES, emptyAuth, parseQuery, withQuery } from "../features.js";
 import { BODY_METHODS, METHODS } from "../store.js";
 import "./code-editor.js";
 import { socketHeaders, socketLine, socketLog, socketMessages } from "./websocket-view.js";
+import { grpcLine, grpcLog, grpcMessage, grpcMetadataNote, grpcSchema } from "./grpc-view.js";
 
 hljs.registerLanguage("json", json);
 hljs.registerLanguage("xml", xml);
@@ -93,8 +94,11 @@ export class HitopRequest extends LitElement {
   update(changed) {
     // A different tab starts on Headers, or on Body when it has one.
     if (changed.has("tab") && changed.get("tab")?.id !== this.tab?.id) {
-      this.section = this.tab?.kind === "websocket" ? BODY : this.tab?.requestBody && BODY_METHODS.includes(this.tab.method) ? BODY : this.tab?.url?.includes("?") ? PARAMS : HEADERS;
+      this.section = this.tab?.kind === "websocket" || this.tab?.kind === "grpc" ? BODY : this.tab?.requestBody && BODY_METHODS.includes(this.tab.method) ? BODY : this.tab?.url?.includes("?") ? PARAMS : HEADERS;
       this.responseSection = 0;
+    } else if (changed.has("tab") && this.tab?.kind === "grpc" && changed.get("tab")?.kind !== "grpc") {
+      // Switched to gRPC: the message, service and method come first.
+      this.section = BODY;
     }
     // The header editor rebuilds its rows whenever `entries` is set, and Lit
     // sets object properties on every render, so the binding is guarded:
@@ -325,23 +329,27 @@ export class HitopRequest extends LitElement {
     const paramCount = parseQuery(t.url || "").length + (t.disabledParams?.length ?? 0);
     const authType = t.auth?.type && t.auth.type !== "none" ? AUTH_TYPES.find(([v]) => v === t.auth.type)?.[1] : null;
     const socket = t.kind === "websocket";
+    const grpc = t.kind === "grpc";
     const saved = t.wsMessages?.length ?? 0;
+    // gRPC has no query: the first tab is the schema source instead.
     const labels = [
-      paramCount ? `Params (${paramCount})` : "Params",
+      grpc ? "Schema" : paramCount ? `Params (${paramCount})` : "Params",
       authType ? `Auth ●` : "Auth",
-      headerCount ? `Headers (${headerCount})` : "Headers",
-      ...(socket
-        ? [saved ? `Messages (${saved})` : "Messages"]
-        : ["Body", t.preRequestScript?.trim() ? "Script before ●" : "Script before", t.postRequestScript?.trim() ? "Script after ●" : "Script after"]),
+      grpc ? (headerCount ? `Metadata (${headerCount})` : "Metadata") : headerCount ? `Headers (${headerCount})` : "Headers",
+      ...(grpc
+        ? ["Message"]
+        : socket
+          ? [saved ? `Messages (${saved})` : "Messages"]
+          : ["Body", t.preRequestScript?.trim() ? "Script before ●" : "Script before", t.postRequestScript?.trim() ? "Script after ●" : "Script after"]),
     ];
-    if (socket && this.section > BODY) this.section = BODY;
+    if ((socket || grpc) && this.section > BODY) this.section = BODY;
     return html`
       <section class="editor" aria-label="Request details">
         <lit-material-tabs aria-label="Request details" .selected=${this.section} @change=${(e) => (this.section = e.target.selected)}>
           ${labels.map((label) => html`<lit-material-tab>${label}</lit-material-tab>`)}
         </lit-material-tabs>
         <div class="editor-panel">
-          ${this.section === PARAMS ? this.renderParams() : nothing}
+          ${this.section === PARAMS ? (grpc ? grpcSchema(this) : this.renderParams()) : nothing}
           ${this.section === AUTH ? this.renderAuth() : nothing}
           ${this.section === HEADERS
             ? html`<lit-material-key-value-editor
@@ -351,10 +359,11 @@ export class HitopRequest extends LitElement {
                 .entries=${guard([this.headerRowsVersion], () => this.headerRows)}
                 @change=${(e) => this.onHeaders(e)}
               ></lit-material-key-value-editor>
-              ${socket ? socketHeaders(this) : nothing}`
+              ${socket ? socketHeaders(this) : nothing} ${grpc ? grpcMetadataNote() : nothing}`
             : nothing}
           ${this.section === BODY && socket ? socketMessages(this) : nothing}
-          ${this.section === BODY && !socket
+          ${this.section === BODY && grpc ? grpcMessage(this) : nothing}
+          ${this.section === BODY && !socket && !grpc
             ? hasBody
               ? this.renderBody()
               : html`<lit-material-empty-state size="compact" headline=${`${t.method} requests have no body`}>
@@ -434,13 +443,14 @@ export class HitopRequest extends LitElement {
       </section>`;
   }
 
-  // Method, or WebSocket (a request kind of its own in hitop-core).
+  // Method, WebSocket or gRPC (request kinds of their own in hitop-core).
   methodSelect() {
     const t = this.tab;
-    const pick = (v) => (v === "WS" ? this.set({ kind: "websocket" }) : this.set({ method: v, kind: undefined }));
-    return html`<lit-material-select class="method" variant="outlined" label="Method" .value=${t.kind === "websocket" ? "WS" : t.method} @change=${(e) => pick(e.target.value)}>
+    const pick = (v) => (v === "WS" ? this.set({ kind: "websocket" }) : v === "GRPC" ? this.set({ kind: "grpc" }) : this.set({ method: v, kind: undefined }));
+    return html`<lit-material-select class="method" variant="outlined" label="Method" .value=${t.kind === "websocket" ? "WS" : t.kind === "grpc" ? "GRPC" : t.method} @change=${(e) => pick(e.target.value)}>
       ${METHODS.map((m) => html`<lit-material-select-option value=${m}>${m}</lit-material-select-option>`)}
       <lit-material-select-option value="WS">WebSocket</lit-material-select-option>
+      <lit-material-select-option value="GRPC">gRPC</lit-material-select-option>
     </lit-material-select>`;
   }
 
@@ -448,6 +458,7 @@ export class HitopRequest extends LitElement {
     const t = this.tab;
     if (!t) return nothing;
     if (t.kind === "websocket") return html`${socketLine(this, this.methodSelect())} ${this.renderEditor()} ${socketLog(this)}`;
+    if (t.kind === "grpc") return html`${grpcLine(this, this.methodSelect())} ${this.renderEditor()} ${grpcLog(this)}`;
     // novalidate: a URL that starts with a variable is no valid type="url"
     // value, and the browser would then refuse to submit (Send did nothing).
     return html`
