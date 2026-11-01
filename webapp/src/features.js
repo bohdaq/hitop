@@ -116,8 +116,14 @@ export function parseEnvironments(json) {
   return list.map((env, i) => {
     if (!env || typeof env !== "object") throw new Error(`item ${i + 1} is not an object`);
     const variables = {};
+    const postmanSecrets = [];
     if (Array.isArray(env.values)) {
-      for (const v of env.values) if (v?.key && v.enabled !== false) variables[v.key] = String(v.value ?? "");
+      for (const v of env.values) {
+        if (!v?.key || v.enabled === false) continue;
+        variables[v.key] = String(v.value ?? "");
+        // Postman's secret type: a secret here (masked, never exported).
+        if (v.type === "secret") postmanSecrets.push(v.key);
+      }
     } else if (env.variables && typeof env.variables === "object") {
       for (const [k, v] of Object.entries(env.variables)) variables[k] = String(v ?? "");
     } else {
@@ -126,6 +132,8 @@ export function parseEnvironments(json) {
     // HITOP's export lists secret names without their values.
     const secrets = secretNames(env);
     for (const n of secrets) variables[n] = "";
+    // A Postman secret keeps its value: in the browser it lives in storage, masked.
+    for (const n of postmanSecrets) if (!secrets.includes(n)) secrets.push(n);
     const out = { id: crypto.randomUUID(), name: String(env.name || `Environment ${i + 1}`), variables };
     if (secrets.length) out.secrets = secrets;
     return out;
@@ -198,8 +206,9 @@ export function makeAssert({ statusCode, text, headers, durationMs }) {
     equal(actual, expected, name = `${JSON.stringify(actual)} equals ${JSON.stringify(expected)}`) {
       record(name, JSON.stringify(actual) === JSON.stringify(expected), `got ${JSON.stringify(actual)}`);
     },
-    ok(condition, name = "condition is true") {
-      record(name, condition, "was false");
+    // `detail` explains a failure (pm.test passes chai's message).
+    ok(condition, name = "condition is true", detail) {
+      record(name, condition, detail || "was false");
     },
   };
   return { assert, results };

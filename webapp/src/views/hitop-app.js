@@ -8,6 +8,7 @@ import { mark } from "../../../site/src/brand/mark.js";
 import { icon } from "../icons.js";
 import { Store } from "../store.js";
 import { IS_TAURI, platform } from "../platform/index.js";
+import { issueText } from "../pm.js";
 import "./request-view.js";
 import "./collection-views.js";
 
@@ -127,12 +128,15 @@ export class HitopApp extends LitElement {
       s.saveRequest(this.field("name"), target?.id);
     }
     if (d.kind === "import") {
-      try {
-        s.importJson(this.field("json"));
-      } catch (err) {
-        this.dialog = { ...d, submitted: false, error: readableError(err, "a collection file") };
-        return;
-      }
+      // A Postman import may come back with things to check: show them.
+      s.importJson(this.field("json")).then(
+        (report) => {
+          if (report?.issues.length) this.dialog = { kind: "import-report", report };
+          else this.closeDialog();
+        },
+        (err) => (this.dialog = { ...d, submitted: false, error: readableError(err, "a collection file") }),
+      );
+      return;
     }
     this.closeDialog();
   }
@@ -236,6 +240,22 @@ export class HitopApp extends LitElement {
             ?error=${Boolean(d.error)} error-text=${d.error ?? ""}></lit-material-textarea>`;
         footer = actions("Replace and import", true);
         break;
+      case "import-report": {
+        const { name, issues } = d.report;
+        const scripts = issues.filter((i) => i.line).length;
+        headline = "Check after import";
+        body = html`
+          <p class="dialog-note">
+            ${name} is imported. ${issues.length === 1 ? "One thing" : `${issues.length} things`} didn't come over as they were${scripts
+              ? html`; ${scripts === 1 ? "one script line uses" : `${scripts} script lines use`} Postman calls HITOP doesn't run yet`
+              : ""}.
+          </p>
+          <ul class="import-report">
+            ${issues.map((i) => html`<li><span>${issueText(i)}</span>${i.text ? html`<code>${i.text}</code>` : nothing}</li>`)}
+          </ul>`;
+        footer = actions("Done");
+        break;
+      }
       case "export": {
         headline = "Export collections";
         const json = s.exportJson(this.exportFormat);

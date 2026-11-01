@@ -21,6 +21,14 @@ async function loadFormat() {
   return formatFromBytes(fs.readFileSync(WASM));
 }
 
+// scripting.rs: the pm.* shim, loaded only for scripts that may use it,
+// with the script in a function that receives pm and the legacy names.
+const PM_SHIM = fs.readFileSync(path.join(__dirname, '../../shared/pm-shim.js'), 'utf8');
+const usesPostmanApi = (script) => /\b(pm|postman|tests|responseBody|responseCode|responseTime|environment|globals)\b/.test(script);
+const SET_VAR = 'function (k, v) { __varUpdates[k] = v; if (v === null) delete __vars[k]; else __vars[k] = v; }';
+const withShim = (api, script) =>
+  `${PM_SHIM}\nconst __p = __hitopPm(${api});\n(function (pm, tests, postman, environment, globals, responseBody, responseCode, responseTime) {\n${script}\n}).call(undefined, __p.pm, __p.tests, __p.postman, __p.environment, __p.globals, __p.responseBody, __p.responseCode, __p.responseTime);\n__p.finish();\n`;
+
 // scripting.rs: run_pre_request_script's preamble and postamble.
 function preScript(a) {
   const src = `
@@ -30,6 +38,9 @@ const __ctxUpdates = {};
 let __url    = ${JSON.stringify(a.url)};
 let __body   = ${JSON.stringify(a.body)};
 let __headers = ${JSON.stringify(a.headers)};
+const __varUpdates = {};
+const __method = ${JSON.stringify(a.method)};
+function __removeHeader(name) { const n = String(name).toLowerCase(); __headers = __headers.filter(h => String(h[0]).toLowerCase() !== n); }
 function getVariable(k) { return __vars[k]; }
 function getContext(k)  { return __ctxUpdates[k] !== undefined ? __ctxUpdates[k] : __ctx[k]; }
 function setContext(k, v) { __ctxUpdates[k] = v; }
@@ -40,7 +51,9 @@ function setHeader(name, value) {
     for (let h of __headers) { if (h[0] === name) { h[1] = value; found = true; break; } }
     if (!found) __headers.push([name, value]);
 }
-${a.script}
+${usesPostmanApi(a.script)
+    ? withShim(`{ vars: __vars, setVar: ${SET_VAR}, assert: { ok: function () {} }, request: { get url() { return __url; }, method: __method, get headers() { return __headers; }, get body() { return __body; } }, setUrl: setUrl, setHeader: setHeader, removeHeader: __removeHeader, setBody: setBody, response: null }`, a.script)
+    : a.script}
 ;JSON.stringify({ url: __url, body: __body, headers: __headers, ctx: __ctxUpdates })`;
   let out;
   try {
@@ -67,6 +80,7 @@ const statusCode      = ${a.status_code};
 const __vars = ${JSON.stringify(a.variables || {})};
 const __ctx  = ${JSON.stringify(a.context || {})};
 const __ctxUpdates = {};
+const __varUpdates = {};
 function getVariable(k) { return __vars[k]; }
 function getContext(k)  { return __ctxUpdates[k] !== undefined ? __ctxUpdates[k] : __ctx[k]; }
 function setContext(k, v) { __ctxUpdates[k] = v; }
@@ -89,9 +103,11 @@ const assert = {
     },
     responseTime(ms) { __record("responds within " + ms + " ms", ${a.duration_ms || 0} <= Number(ms), "took ${a.duration_ms || 0} ms"); },
     equal(a, e, name) { __record(name === undefined ? JSON.stringify(a) + " equals " + JSON.stringify(e) : name, JSON.stringify(a) === JSON.stringify(e), "got " + JSON.stringify(a)); },
-    ok(c, name) { __record(name === undefined ? "condition is true" : name, c, "was false"); },
+    ok(c, name, detail) { __record(name === undefined ? "condition is true" : name, c, detail === undefined || detail === "" ? "was false" : detail); },
 };
-${a.script}
+${usesPostmanApi(a.script)
+    ? withShim(`{ vars: __vars, setVar: ${SET_VAR}, assert: assert, request: { url: "", method: "", headers: [], body: "" }, response: { code: statusCode, text: responseText, headers: responseHeaders, time: ${a.duration_ms || 0} } }`, a.script)
+    : a.script}
 ;JSON.stringify({ ctx: __ctxUpdates, tests: __tests })`;
   let out;
   try {

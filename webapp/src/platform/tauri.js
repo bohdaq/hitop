@@ -198,11 +198,11 @@ export function createPlatform() {
     scripts: {
       async pre({ script, url, method, headers, body, variables, context }) {
         const r = await invoke("run_pre_script", { args: { script, url, method, headers: headers.filter((h) => h.name).map((h) => [h.name, h.value]), body: body || "", variables, context } });
-        return { url: r.url, headers: r.headers.map(([name, value]) => ({ name, value })), body: r.body, contextUpdates: r.context_updates || {} };
+        return { url: r.url, headers: r.headers.map(([name, value]) => ({ name, value })), body: r.body, contextUpdates: r.context_updates || {}, variables: r.variables || {} };
       },
       async post({ script, text, headers, status, durationMs, variables, context }) {
         const r = await invoke("run_post_script", { args: { script, response_body: text, response_headers: headers, status_code: status, duration_ms: Math.round(durationMs || 0), variables, context } });
-        return { tests: r.tests || [], contextUpdates: r.context_updates || {} };
+        return { tests: r.tests || [], contextUpdates: r.context_updates || {}, variables: r.variables || {} };
       },
     },
     folders: {

@@ -9,8 +9,8 @@
     "build": "npm run wasm && VITE_HITOP_PROXY=/api/proxy vite build",
     "build:tauri": "npm run wasm && VITE_HITOP_PLATFORM=tauri vite build --outDir dist-tauri --base ./",
     "preview": "vite preview",
-    "test:unit": "npm run wasm && node tests/unit.mjs",
-    "test:e2e": "node tests/e2e.cjs && node tests/editing.cjs && node tests/features.cjs && node tests/extras.cjs && node tests/folders.cjs",
+    "test:unit": "npm run wasm && node tests/unit.mjs && node tests/pm.mjs",
+    "test:e2e": "node tests/e2e.cjs && node tests/editing.cjs && node tests/features.cjs && node tests/extras.cjs && node tests/folders.cjs && node tests/postman.cjs",
     "test:e2e:tauri": "HITOP_MODE=tauri npm run test:e2e"
   },
   "dependencies": {

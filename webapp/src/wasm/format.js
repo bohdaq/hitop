@@ -14,6 +14,8 @@ function api(m) {
     planSync: (existing, files) => call(m.planSync, existing, files),
     // JSON through hitop-core's model: what the desktop's Rust storage keeps.
     normalize: (kind, value) => call(m.normalize, kind, value),
+    // Postman collection JSON + { script: [[line, call, text]] } → { collection, report }.
+    importPostman: (json, scans) => call(m.importPostman, json, scans),
   };
 }
 

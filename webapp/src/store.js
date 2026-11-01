@@ -25,7 +25,13 @@ import {
   urlEncodedBody,
 } from "./features.js";
 import { platform } from "./platform/index.js";
+import { fillVariables, forWebApp, isPostmanCollection, loadShim, runScript, scriptScans, usesPostmanApi } from "./pm.js";
+import pmShimText from "../../shared/pm-shim.js?raw";
+import { loadFormat } from "./wasm/format.js";
 import { folderToZip, zipToFolder } from "./zip.js";
+
+// Postman's pm.* API for scripts (the shim the CLI and desktop run too).
+const pmShim = loadShim(pmShimText);
 
 const storage = () => platform().storage;
 const account = (workspace, env, name) => `${workspace}/${env}/${name}`;
@@ -164,6 +170,9 @@ export class Store extends EventTarget {
     // `environments` too, under ids from `folderEnvs` (env id → { collectionId, id }).
     this.folders = new Map();
     this.folderEnvs = new Map();
+    // Variables scripts set (pm.environment.set, ...), by collection id: they
+    // last until the page is reloaded, as in a CLI run. null unsets one.
+    this.scriptVariables = {};
     platform().onError?.((message) => this.notify(message));
     addEventListener("pagehide", () => this.save());
     this.ready = this.restoreFolders();
@@ -469,8 +478,20 @@ export class Store extends EventTarget {
     return collectionService.exportCollections(this.collections, format);
   }
 
-  importJson(json) {
-    let imported = collectionService.importCollections(json); // throws on bad JSON
+  // Returns the import report for a Postman collection (what hitop couldn't
+  // carry over, unsupported pm.* calls by script line), else null.
+  async importJson(json) {
+    let imported;
+    let report = null;
+    const parsed = JSON.parse(json.replace(/^\uFEFF/, "")); // throws on bad JSON
+    if (isPostmanCollection(parsed)) {
+      // hitop-core's importer (hitop-wasm), as `hitop import` runs it.
+      const out = (await loadFormat()).importPostman(json, scriptScans(pmShim, parsed));
+      imported = [forWebApp(out.collection)];
+      report = { name: out.collection.name, issues: out.report.issues || [] };
+    } else {
+      imported = collectionService.importCollections(json);
+    }
     // The desktop keeps ids as numbers (Rust's model); give string ids new ones.
     if (platform().name === "tauri") imported = imported.map((c) => ({ ...c, id: numericId(c.id), requests: (c.requests || []).map((r) => ({ ...r, id: numericId(r.id) })) }));
     this.closeAllFolders();
@@ -481,6 +502,7 @@ export class Store extends EventTarget {
     this.view = { kind: "request", collectionId: null };
     this.emit();
     this.notify(`Imported ${imported.length} collection${imported.length === 1 ? "" : "s"}`);
+    return report;
   }
 
   openHistoryItem(item) {
@@ -518,7 +540,16 @@ export class Store extends EventTarget {
   // The variables a request sees: its collection's, overridden by the
   // active environment's.
   variables(collectionId) {
-    return { ...collectionService.getCollectionVariables(this.collections, collectionId), ...(this.activeEnvironment?.variables ?? {}) };
+    const out = { ...collectionService.getCollectionVariables(this.collections, collectionId), ...(this.activeEnvironment?.variables ?? {}) };
+    for (const [k, v] of Object.entries(this.scriptVariables[collectionId] ?? {})) {
+      if (v === null) delete out[k];
+      else out[k] = v;
+    }
+    return out;
+  }
+
+  setScriptVariables(collectionId, updates) {
+    if (updates && Object.keys(updates).length) this.scriptVariables[collectionId] = { ...this.scriptVariables[collectionId], ...updates };
   }
 
   setActiveEnvironment(id) {
@@ -589,6 +620,7 @@ export class Store extends EventTarget {
       // The desktop runs scripts in Rust (boa), as the CLI does.
       const r = await native.pre({ script, url, method, headers, body, variables, context });
       for (const [k, v] of Object.entries(r.contextUpdates)) this.setContext(collectionId, k, v);
+      this.setScriptVariables(collectionId, r.variables);
       return { url: r.url, headers: r.headers, body: r.body };
     }
     const updates = {};
@@ -610,18 +642,32 @@ export class Store extends EventTarget {
       setUrl: (u) => (ctx.url = u),
       setBody: (b) => (ctx.body = b),
     };
-    new Function("ctx", `with(ctx) { ${script} }`)(ctx);
+    const vars = {};
+    runScript(pmShim, script, ctx, {
+      vars: { ...variables },
+      setVar: (k, v) => (vars[k] = v),
+      assert: { ok() {} },
+      request: { get url() { return ctx.url; }, method, get headers() { return ctx.headers.map((h) => [h.name, h.value]); }, get body() { return ctx.body; } },
+      setUrl: ctx.setUrl,
+      setHeader: ctx.setHeader,
+      removeHeader: (n) => (ctx.headers = ctx.headers.filter((h) => String(h.name).toLowerCase() !== String(n).toLowerCase())),
+      setBody: ctx.setBody,
+      response: null,
+    });
     for (const [k, v] of Object.entries(updates)) this.setContext(collectionId, k, v);
+    this.setScriptVariables(collectionId, vars);
     return { url: ctx.url, headers: ctx.headers, body: ctx.body };
   }
 
   // Returns the assert.* results (an empty list without a script).
-  async runPostScript(script, collectionId, text, headers, status, durationMs) {
+  // `sent` is the request as sent ({url, method, headers, body}), pm.request.
+  async runPostScript(script, collectionId, text, headers, status, durationMs, sent) {
     if (!script?.trim()) return [];
     const native = platform().scripts;
     if (native) {
       const r = await native.post({ script, text, headers, status, durationMs, variables: this.variables(collectionId), context: contextService.getCollectionContext(this.contexts, collectionId) });
       for (const [k, v] of Object.entries(r.contextUpdates)) this.setContext(collectionId, k, v);
+      this.setScriptVariables(collectionId, r.variables);
       return r.tests;
     }
     let parsed = text;
@@ -648,10 +694,18 @@ export class Store extends EventTarget {
       getResponseValue: (path) => path.split(".").reduce((v, k) => (v && typeof v === "object" ? v[k] : undefined), parsed),
       getResponseHeader: (name) => headers[name.toLowerCase()],
     };
+    const vars = {};
     try {
-      new Function("ctx", `with(ctx) { ${script} }`)(ctx);
+      runScript(pmShim, script, ctx, {
+        vars: { ...variables },
+        setVar: (k, v) => (vars[k] = v),
+        assert,
+        request: { url: sent?.url ?? "", method: sent?.method ?? "", headers: (sent?.headers ?? []).filter((h) => h.name).map((h) => [h.name, h.value]), body: typeof sent?.body === "string" ? sent.body : "" },
+        response: { code: status, text, headers, time: durationMs },
+      });
     } finally {
       for (const [k, v] of Object.entries(updates)) this.setContext(collectionId, k, v);
+      this.setScriptVariables(collectionId, vars);
     }
     return results;
   }
@@ -660,7 +714,10 @@ export class Store extends EventTarget {
   // request as sent. Auth comes before the script, so a script can override it.
   async prepare(source, collectionId) {
     const variables = this.variables(collectionId);
-    const interpolate = (text) => interpolateVariables(text, variables);
+    // A Postman script may set variables this request uses: the ones still
+    // missing are filled in after it runs.
+    const postman = usesPostmanApi(source.preRequestScript);
+    const interpolate = postman ? (text) => fillVariables(text, variables) : (text) => interpolateVariables(text, variables);
     const url = interpolate(source.url);
     const headers = (source.headers || []).map((h) => ({
       name: h.name ? interpolate(h.name) : "",
@@ -668,7 +725,11 @@ export class Store extends EventTarget {
     }));
     const body = source.body ? interpolate(source.body) : source.body;
     const authed = applyAuth(source.auth, { url, headers, body }, interpolate);
-    return this.runPreScript(source.preRequestScript, collectionId, source.method, authed.url, authed.headers, authed.body);
+    const out = await this.runPreScript(source.preRequestScript, collectionId, source.method, authed.url, authed.headers, authed.body);
+    if (!postman) return out;
+    const after = this.variables(collectionId);
+    const strict = (text) => (text ? interpolateVariables(text, after) : text);
+    return { url: strict(out.url), headers: out.headers.map((h) => ({ ...h, name: strict(h.name), value: strict(h.value) })), body: strict(out.body) };
   }
 
   // --- sending ----------------------------------------------------------------
@@ -747,7 +808,7 @@ export class Store extends EventTarget {
     this.emit();
     const started = performance.now();
     try {
-      const { res } = await this.dispatch(source, tab.loadedCollectionId);
+      const { prepared, res } = await this.dispatch(source, tab.loadedCollectionId);
       const headers = {};
       res.headers.forEach((v, k) => (headers[k] = v));
       const { data, type } = await readResponse(res);
@@ -776,7 +837,7 @@ export class Store extends EventTarget {
       this.history[this.history.length - 1].auth = cleanAuth(tab.auth);
       let tests = [];
       try {
-        tests = await this.runPostScript(tab.postRequestScript, tab.loadedCollectionId, data, headers, res.status, durationMs);
+        tests = await this.runPostScript(tab.postRequestScript, tab.loadedCollectionId, data, headers, res.status, durationMs, { ...prepared, method: tab.method });
       } catch (e) {
         tests = [...tests, { name: "Script after", pass: false, detail: e.message }];
         this.notify(`The script after the request failed: ${e.message}`);
@@ -818,7 +879,7 @@ export class Store extends EventTarget {
         res.headers.forEach((v, k) => (headers[k] = v));
         let tests = [];
         try {
-          tests = await this.runPostScript(request.postRequestScript, id, text, headers, res.status, duration);
+          tests = await this.runPostScript(request.postRequestScript, id, text, headers, res.status, duration, { ...prepared, method: request.method });
         } catch (e) {
           tests = [...tests, { name: "Script after", pass: false, detail: e.message }];
         }
