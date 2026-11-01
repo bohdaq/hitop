@@ -97,6 +97,9 @@ hitop export MyAPI -o my-collection.json
 | `hitop export <collection>` | Export a collection |
 | `hitop telemetry on/off/status` | The anonymous weekly usage ping: off unless you turn it on; `status` shows exactly what would be sent |
 | `hitop mcp [folder]` | MCP server over stdio for Claude Code, Cursor and other MCP clients: list, read, run, create and update requests, switch environments, a bounded WebSocket exchange, OpenAPI import and sync; secrets never returned ([guide](https://hitop.rws8.tech/terms/use-hitop-with-claude-code-and-cursor.html)) |
+| `hitop sync login/init/link/status/pull/push/resolve` | Share a collection folder with your team, end-to-end encrypted, through a hitop sync server (see "Sync") |
+| `hitop sync members/invite/accept/add/remove/role/trust` | Teams: invites, roles, device key fingerprints; removing someone rotates the key |
+| `hitop sync runner create` | A read-only runner credential for scheduled runs (`HITOP_SYNC_RUNNER`) |
 | `hitop completions <shell>` | Generate shell completions |
 
 `run`, `requests`, `variables`, `export` and `send -c` take a path to a collection folder as well as a collection name.
@@ -375,6 +378,34 @@ hitop schedule ./my-api --cron "*/30 * * * *" --env local          # prints a cr
   `HITOP_SECRET_*` variables set in the crontab.
 - Cron expressions have five fields (minute, hour, day of month, month, day of week) with `*`, numbers, ranges,
   steps and lists, or a single month or day name; hitop checks them before writing anything.
+
+## Sync
+
+```bash
+hitop sync login --email you@example.com          # a code is mailed to you; this device gets its own key pair
+hitop sync init -c ./my-api                        # share the folder: a new end-to-end encrypted workspace
+hitop sync invite ada@example.com --role editor -c ./my-api
+hitop sync members -c ./my-api                     # accepted invites with their key fingerprints
+hitop sync add ada@example.com --trust '<fingerprint>' -c ./my-api
+hitop sync push -c ./my-api                        # pull, then push your changes; `pull` only pulls
+hitop sync resolve requests/get.yaml --show -c ./my-api   # then --mine or --theirs
+hitop sync remove ada@example.com -c ./my-api      # new key, every file encrypted again
+```
+
+- Files are encrypted on the device (HPKE key wraps, XChaCha20-Poly1305) before they reach the
+  server, file names included; secret variable values never sync, only their names. The server
+  (`sync-server/`, AGPL, default `https://sync.hitop.rws8.tech`, or `--server` / `HITOP_SYNC_SERVER`)
+  sees ciphertext, sizes and who is in which workspace.
+- Keys are only shared with devices whose fingerprints you confirmed (`--trust`, or a prompt on a
+  terminal); a changed key is refused. The session and device key live in the OS keychain, or in
+  the file `HITOP_SYNC_KEY_FILE` names where there is none.
+- A request changed on both sides is a conflict until you resolve it; `hitop.yaml`, environments
+  and globals merge key by key. `push`, `pull` and `status` exit 1 while a conflict is open.
+- Scheduled runs: `hitop sync runner create -c ./my-api | gh secret set HITOP_SYNC_RUNNER`, then
+  `hitop schedule ./my-api --github --sync`: the job pulls the workspace read-only, then runs it.
+  `--cron ... --sync` pulls as this device before each run.
+- Guide: [Share a workspace with your team](https://hitop.rws8.tech/terms/share-a-workspace-with-your-team.html).
+  Design and limits: [THREAT_MODEL.md](https://github.com/bohdaq/hitop/blob/main/sync-server/THREAT_MODEL.md).
 
 ## Cookies and form bodies
 

@@ -1,7 +1,9 @@
 # hitop sync: threat model and encryption design
 
-Status: design and implementation for testing (T23). **Not externally reviewed.** An external
-review of this design and of `cli/crates/hitop-sync-crypto` is required before any public launch.
+Status: design and implementation for testing (server T23, clients and teams T24). **Not
+externally reviewed.** An external review of this design, of `cli/crates/hitop-sync-crypto` and of
+the clients (`hitop_core::sync`, `hitop sync` in the CLI, `webapp/src/sync.js`) is required before
+any public launch.
 
 ## What is protected
 
@@ -113,7 +115,73 @@ and `@hpke/core` in JavaScript. Every client implementation (the web app in T24)
 Sign-in protects *access to the ciphertext and the membership list*, not the contents. Anyone who
 takes over an account (mailbox compromise) can't decrypt anything without a device secret key, but
 can register a new device key; members must not wrap workspace keys for a device they haven't
-confirmed (T24: show device key fingerprints and require confirmation).
+confirmed, so the clients require a fingerprint check first (next section).
+
+## Clients (T24)
+
+All three clients (CLI, desktop, web app) run the same Rust for the decisions and the
+cryptography: `hitop_core::sync` (what to pull, push or flag) and `hitop-sync-crypto`; the web app
+and the desktop app through hitop-wasm, built for `wasm32-unknown-unknown` with randomness from
+`crypto.getRandomValues` (getrandom `wasm_js`). The web app runs `vectors/v1.json` through that
+build in its unit tests.
+
+- **What syncs**: a collection folder's files (`hitop.yaml`, `requests/**`, `environments/*`,
+  `globals.yaml`), one blob per file under a random 128-bit id. The plaintext of a blob is
+  `{"v":1,"path":...,"text":...}`, so file names are encrypted too. Environment files hold secret
+  variables as `{secret: true}`: **secret values never sync**, only their names (tests check the
+  server's database and the synced files for a secret value). Paths from the server are checked
+  against that layout before anything is written (no `..`, absolute, hidden or other paths), so a
+  member can't make another member's client write outside the folder.
+- **Device keys**: generated on the device. The CLI and the desktop keep the secret key and the
+  session in the OS keychain (CLI without a keychain: only in the file `HITOP_SYNC_KEY_FILE`
+  names, mode 0600). **The web app keeps them in the browser's localStorage**, like its other
+  secret values: anything that runs script on the web app's origin (an XSS bug, a malicious
+  extension) can read them. Prefer the desktop app or the CLI for sensitive workspaces.
+- **Fingerprints and trust on first use**: a fingerprint is the first 16 bytes of
+  SHA-256(`"hitop-sync/v1/fingerprint"` || public key), as eight groups of four hex digits. A
+  client wraps a workspace key only for device keys it has pinned (key id → public key), and pins a
+  key only after the person confirms its fingerprint (`--trust`, a terminal prompt, or the app's
+  Trust dialog). A pinned key id whose public key changes is refused outright. This addresses the
+  key-substitution risk below for every key wrapped *by* a client; see "unauthenticated wraps"
+  for the other direction.
+- **Versions**: the client asks for and opens blob *n* under associated data that includes *n*;
+  it ignores a change whose version isn't newer than what it already has, so the server can't
+  roll a known blob back.
+- **Conflicts** are decided on the client (three-way against the last synced text): `hitop.yaml`,
+  environments and globals merge key by key; a request changed on both sides is shown to the user
+  and never pushed until resolved. Two blobs for one path (a create race) converge on the smaller
+  blob id; the client whose blob lost merges and deletes it.
+
+## Teams (T24)
+
+- **Roles** (owner, editor, viewer) are checked by the server on every call (`tests/roles.rs`
+  runs every role, a runner credential, an outsider and a removed member against every
+  operation). As before, roles protect against mistakes, not against a member colluding with the
+  server: every role holds the workspace key.
+- **Invites** are a rendezvous, not a grant. The owner creates one (mailed through the server's
+  SMTP, or a link to share); the token is 32 random bytes, stored hashed, valid 7 days, accepted
+  once, and an emailed invite only by that address. Accepting gives nothing: the owner's client
+  then shows the invitee's device fingerprints and wraps the workspace key only after the owner
+  confirms them. The server alone can never add anyone.
+- **Removal** rotates the key in the same call (unchanged from T23), and the owner's client then
+  re-encrypts every live blob under the new epoch. What removal guarantees: the removed member's
+  sessions can't reach the workspace, their wrapped keys are deleted, and nothing written after
+  the rotation (including the re-encrypted copies) is readable with the keys they had
+  (`tests/roles.rs`, `a_removed_member_cant_decrypt_anything_written_after_the_rotation`). What it
+  can't do: take back what they already had. A removed member keeps every file and key epoch they
+  synced before; rotate any secret they could have seen. A removed member who kept old blobs from
+  the server's database can still open those old ciphertexts with the old key.
+- **Runner credentials** (scheduled runs in CI or cron): an account of its own
+  (`<id>@runner.invalid`, no sign-in, no other workspace, no new keys, no invites), the viewer role
+  in one workspace, one device key made by the owner's client, and a one-year session token. The
+  credential string (`hitop-runner-1.…`, the token and the device secret key) **decrypts the
+  workspace**: it belongs in a CI secret store only. Revoking it is a removal (key rotation).
+- **Server-side runs are not offered.** Running monitors on the sync server would need a key that
+  decrypts the workspace on the server, which is what end-to-end encryption rules out: the server
+  would see requests, responses and environment values while running them. The supported path is a
+  runner you control (`hitop schedule --github --sync`, or cron). An operator who wants the server
+  host to run monitors runs a runner credential there as a separate service, and that host can
+  then read the workspace; this is a choice for self-hosters, documented, never a default.
 
 ## What the server *can* do (accepted risks)
 
@@ -124,9 +192,17 @@ confirmed (T24: show device key fingerprints and require confirmation).
   can't detect a hidden blob they've never seen. A signed workspace manifest would close this (not
   in v1).
 - **Substitute public keys**: the server returns members' device public keys. A malicious server
-  could return its own key so an owner wraps the workspace key for it. Mitigation in clients
-  (T24): show key fingerprints when adding a member or device, and pin keys once confirmed (trust
-  on first use). This is the largest open risk and the first item for the external review.
+  could return its own key so an owner wraps the workspace key for it. Mitigation in the clients
+  (T24, done): fingerprints shown and confirmed before a key is used, pinned afterwards (trust on
+  first use); a changed key for a pinned id is refused. The first confirmation is only as good as
+  the channel people compare fingerprints over.
+- **Unauthenticated wraps**: HPKE base mode doesn't say who wrapped a key, so the server (or
+  anyone with a device's public key) can hand a device a workspace key of its own choosing. A
+  member whose client then writes would encrypt under a key the server knows. Existing blobs don't
+  open under a substituted key, which the client reports as an error, but a new member of an empty
+  workspace, or a device given a fake *next* epoch, can't tell. Closing this needs authenticated
+  wraps (HPKE Auth mode with the wrapping device's pinned key, or a signature over the wrap) and is
+  the first item for the external review together with key substitution.
 - **Role enforcement is advisory**: a malicious server can let a viewer write, but such a write
   still has to be encrypted with the workspace key, which only members have. Any member, viewer
   included, holds the key and could produce valid ciphertext; roles protect against honest
@@ -141,8 +217,11 @@ process's own TLS (the front proxy terminates TLS); post-quantum security (X2551
 
 ## Open items before a public launch
 
-1. External review of this design and of `cli/crates/hitop-sync-crypto`.
-2. Key fingerprints and trust-on-first-use pinning in the clients (T24).
-3. Consider a signed workspace manifest (hidden-blob and rollback detection) and per-member
-   signatures.
+1. External review of this design, of `cli/crates/hitop-sync-crypto` and of the clients
+   (`hitop_core::sync`, `cli/crates/hitop/src/commands/sync/`, `webapp/src/sync.js`).
+2. Authenticated wraps (see "Unauthenticated wraps").
+3. Consider a signed workspace manifest (hidden-blob detection) and per-member signatures.
 4. A recovery story for lost devices (a recovery key from `DeviceKeyPair::derive`, printed once).
+5. The web app's device key in localStorage (a non-extractable WebCrypto key can't be used by the
+   Rust HPKE code; an IndexedDB-wrapped key would only move the problem).
+6. Done in T24: key fingerprints and trust-on-first-use pinning in every client.
