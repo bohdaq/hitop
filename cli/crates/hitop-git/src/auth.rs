@@ -14,6 +14,16 @@ pub struct Auth {
     pub username: Option<String>,
 }
 
+/// The keychain account (service `hitop`) of the HTTPS token for `host`:
+/// `git/<host>/token`; its optional user name is `git/<host>/username`.
+pub fn token_account(host: &str) -> String {
+    format!("git/{host}/token")
+}
+
+pub fn username_account(host: &str) -> String {
+    format!("git/{host}/username")
+}
+
 /// One way of answering libgit2's credential question.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Method {
@@ -108,6 +118,12 @@ pub(crate) fn callbacks<'a>(auth: &'a Auth, tried: &'a std::cell::RefCell<Vec<Me
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn keychain_accounts() {
+        assert_eq!(token_account("github.com"), "git/github.com/token");
+        assert_eq!(username_account("github.com"), "git/github.com/username");
+    }
 
     #[test]
     fn https_tries_the_token_then_the_helper_then_gives_up() {

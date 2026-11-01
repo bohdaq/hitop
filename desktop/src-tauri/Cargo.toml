@@ -21,6 +21,8 @@ base64 = "0.22"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 hitop-core = { path = "../../cli/crates/hitop-core" }
+# The Git panel (status, commit, branches, pull/push, conflicts) over vendored libgit2.
+hitop-git = { path = "../../cli/crates/hitop-git" }
 
 [features]
 # The opt-in weekly usage ping (hitop-core's telemetry module). Off by default, so

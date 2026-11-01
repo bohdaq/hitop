@@ -21,7 +21,7 @@ pub mod json;
 mod merge;
 mod remote;
 
-pub use auth::{Auth, Method};
+pub use auth::{token_account, username_account, Auth, Method};
 pub use diff::{diff, Diff, Hunk, Line};
 pub use merge::{abort_merge, conflict, merge_branch, resolve, Conflict, MergeOutcome, Resolution};
 pub use remote::{fetch, pull, push, remote_host, PushOutcome};

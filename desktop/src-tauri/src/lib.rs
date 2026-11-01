@@ -1,4 +1,5 @@
 mod commands;
+mod git;
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
@@ -40,6 +41,10 @@ pub fn run() {
             commands::grpc_describe,
             commands::grpc_call,
             commands::grpc_cancel,
+            git::git,
+            git::git_token_status,
+            git::git_token_set,
+            git::git_token_delete,
         ])
         .manage(commands::Sockets::default())
         .manage(commands::GrpcCalls::default())
