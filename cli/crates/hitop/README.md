@@ -1,10 +1,11 @@
 # hitop
 
-The API client your terminal and your CI can both drive. One small Rust binary, collections as
-files in your repo, nothing in anyone's cloud.
+The API client your terminal, your CI and your AI agent can all drive. One small Rust binary,
+collections as files in your repo, nothing in anyone's cloud.
 
 Send requests, keep them in collection folders (YAML, one file per request), script them in
-JavaScript, import from Postman, and run them in CI with JUnit and JSON reports. The same
+JavaScript, import from Postman, run them in CI with JUnit and JSON reports, and let MCP clients such as
+Claude Code and Cursor use them through `hitop mcp`. The same
 collections open in the [web app](https://hitop.rws8.tech/app/) and the
 [desktop app](https://github.com/bohdaq/hitop/releases). No account, MIT licensed.
 
@@ -73,6 +74,7 @@ hitop export MyAPI -o my-collection.json
 | `hitop import <files>... [--to <dir>]` | Import HITOP or Postman collections, Postman environments and globals; prints what didn't come over (see "From Postman") |
 | `hitop export <collection>` | Export a collection |
 | `hitop telemetry on/off/status` | The anonymous weekly usage ping: off unless you turn it on; `status` shows exactly what would be sent |
+| `hitop mcp [folder]` | MCP server over stdio for Claude Code, Cursor and other MCP clients: list, read, run, create and update requests, switch environments; secrets never returned ([guide](https://hitop.rws8.tech/terms/use-hitop-with-claude-code-and-cursor.html)) |
 | `hitop completions <shell>` | Generate shell completions |
 
 `run`, `requests`, `variables`, `export` and `send -c` take a path to a collection folder as well as a collection name.

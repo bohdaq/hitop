@@ -22,6 +22,7 @@ Yaak is a fast desktop API client by the author of Insomnia, with REST, GraphQL,
 | **Postman import** | Collections, environments and globals; `pm.*` scripts through a compatibility layer, unsupported calls listed by line | A Postman migration guide; imports Postman, Insomnia, OpenAPI, Swagger and curl |
 | **Secrets** | OS keychain or environment variables | OS keychain, secrets encryption |
 | **Protocols** | HTTP. GraphQL, WebSocket and gRPC are planned | REST, GraphQL, gRPC, WebSocket, Server-Sent Events |
+| **AI tools** | `hitop mcp`: an MCP server over stdio for a collection folder | An MCP server and an agent skill for the CLI (docs) |
 | **Plugins** | None | Plugins for auth, template tags and the UI |
 
 ## The difference in practice
@@ -34,5 +35,5 @@ Yaak's files are a mirror of its app database, written by the app. HITOP's folde
 - Yaak repository: https://github.com/mountain-loop/yaak (MIT source, protocols, keychain, plugins)
 - Yaak CLI: https://yaak.app/docs/getting-started/cli-usage
 - Yaak directory and Git sync: https://yaak.app/docs/collaboration/local-directory-git-sync
-- Yaak docs index (migration guides): https://yaak.app/docs
+- Yaak docs index (migration guides, MCP server): https://yaak.app/docs
 - HITOP: https://github.com/bohdaq/hitop (MIT)

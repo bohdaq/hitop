@@ -1,7 +1,7 @@
 # HITOP
 
-**The API client your terminal and your CI can both drive. One small Rust binary, collections as
-files in your repo, nothing in anyone's cloud.**
+**The API client your terminal, your CI and your AI agent can all drive. One small Rust binary,
+collections as files in your repo, nothing in anyone's cloud.**
 
 HITOP sends HTTP requests, keeps them in collections, scripts them in JavaScript and runs them in
 order, with JUnit and JSON reports for CI. A collection is a folder of YAML files, one per request,
@@ -73,6 +73,9 @@ GitLab CI and any other runner: `ghcr.io/bohdaq/hitop:0.3.0` (distroless) or
 - **CI runner**: `hitop run` with `--env`, `--env-file`, `--var`, `--data` (CSV or JSON rows),
   `--iterations`, `--timeout`, `--bail`; reporters `cli`, `junit`, `json`
   ([report spec](spec/run-report.md)).
+- **MCP server**: `hitop mcp ./my-api` lets Claude Code, Cursor and other MCP clients list, read,
+  run, create and update requests and switch environments; secrets are never returned
+  ([guide](https://hitop.rws8.tech/terms/use-hitop-with-claude-code-and-cursor.html)).
 - **HTTP details**: auth presets (Bearer, Basic, API key), query parameters, JSON, form and
   multipart bodies, a cookie jar per workspace, request history.
 - **Privacy**: no account and no cloud. An anonymous weekly usage ping exists in the CLI and the
@@ -82,6 +85,7 @@ GitLab CI and any other runner: `ghcr.io/bohdaq/hitop:0.3.0` (distroless) or
 ## Guides
 
 - [Migrate from Postman](https://hitop.rws8.tech/terms/migrate-from-postman.html)
+- [Use hitop with Claude Code and Cursor](https://hitop.rws8.tech/terms/use-hitop-with-claude-code-and-cursor.html) (`hitop mcp`)
 - [Collections in git](https://hitop.rws8.tech/terms/collections-in-git.html)
 - [Run collections in CI](https://hitop.rws8.tech/terms/run-collections-in-ci.html),
   [GitHub Actions](https://hitop.rws8.tech/terms/run-hitop-in-github-actions.html),

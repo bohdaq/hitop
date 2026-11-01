@@ -35,7 +35,7 @@ const FAQ = [
   ["Can I bring my Postman collections?", "Yes. Import Postman v2.1 collections, and export back to Postman v2.1 or HITOP JSON."],
   ["Where is my data stored?", "On your device: browser storage for the web app and extensions, files for the Mac app and CLI, app storage on iOS. Nothing is synced to a server."],
   ["Does it work offline?", "The Mac app, the iOS app and the CLI work with no internet connection, which is handy for local and air gapped services."],
-  ["Can I run collections in CI?", html`Yes, with the CLI: <code>cargo install hitop</code>, then <code>hitop run MyAPI</code> runs a collection with its scripts and variables.`],
+  ["Can I run collections in CI?", html`Yes, with the CLI: <code>hitop run ./my-api --env ci --reporter junit</code> runs a collection folder from your repository with its scripts and variables and writes a JUnit report. On GitHub there is an <a href="/terms/run-hitop-in-github-actions.html">action</a>, and a Docker image for other pipelines.`],
 ];
 
 const TAGLINE = ["Your requests, keys and responses stay on your device.", "No account, no workspace sync, no tracking."];
@@ -141,8 +141,10 @@ export function render() {
       <section class="section container reveal library" aria-labelledby="cli-title">
         <div>
           <h2 id="cli-title" class="section-title">Run the same collections in CI</h2>
-          <p class="section-lead">The CLI is a single Rust binary. It runs collections with their pre and post request scripts, passes values from one request to the next, and works in any pipeline or shell script.</p>
+          <p class="section-lead">The CLI is a single Rust binary. It runs collections with their pre and post request scripts, passes values from one request to the next, and writes JUnit and JSON reports for any pipeline.</p>
+          <p class="section-lead"><code>hitop mcp</code> lets Claude Code, Cursor and other MCP clients list, run and edit the requests of a collection folder, with secrets masked.</p>
           <a class="text-link" href=${CRATE}>Install from crates.io ${unsafeHTML(icon("arrow-right"))}</a>
+          <a class="text-link" href="/terms/use-hitop-with-claude-code-and-cursor.html">Use hitop with Claude Code and Cursor ${unsafeHTML(icon("arrow-right"))}</a>
         </div>
         ${terminal()}
       </section>
