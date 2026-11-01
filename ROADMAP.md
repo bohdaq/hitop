@@ -139,7 +139,7 @@ Secret variables: `secret: true` in an environment file, with the value resolved
 | T9 | License notices, DCO, project policies | done | 51cd299; DCO verified on PR #1 | 2026-11-01 |
 | T10 | Opt-in telemetry | done (deploy pending) | server 032ec68, 15f4b4e (deployed); client a64c6c6, 4b8b898 | 2026-11-01 |
 | T11 | Launch readiness, release 0.3.0 / desktop 0.2.0 | todo | | |
-| T12 | `hitop mcp` | done (handoff) | 54f80e5, e1f8bdf; MCP directory listing text in section 6 | 2026-11-01 |
+| T12 | `hitop mcp` | done (handoff) | c0a55c8, 1d6986f, faad9aa; MCP directory listing text in section 6 | 2026-11-01 |
 | T13 | GraphQL | todo | | |
 | T14 | WebSocket | todo | | |
 | T15 | gRPC | todo | | |
