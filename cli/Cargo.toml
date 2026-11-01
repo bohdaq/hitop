@@ -2,6 +2,7 @@
 members = [
     "crates/hitop-core",
     "crates/hitop",
+    "crates/hitop-git",
 ]
 resolver = "2"
 

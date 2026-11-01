@@ -1,0 +1,33 @@
+[package]
+name = "hitop-git"
+description = "Git for hitop collection folders (the desktop app's Git panel), through libgit2"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+repository.workspace = true
+homepage.workspace = true
+# Used by the desktop app; not published.
+publish = false
+
+[dependencies]
+# libgit2 built from source (vendored-libgit2): the Mac App Store sandbox can't run the
+# `git` binary, and no system libgit2 is needed anywhere. libgit2 itself is
+# GPL-2.0 with the linking exception (linking it into MIT code is allowed); the crates are MIT OR Apache-2.0.
+git2 = { version = "0.21.0", default-features = false, features = ["vendored-libgit2", "cred"] }
+serde = { workspace = true }
+serde_json = { workspace = true }
+
+[features]
+# Remotes over HTTPS and SSH. HTTPS: WinHTTP on Windows, Secure Transport on macOS,
+# OpenSSL on Linux; SSH: libssh2 (WinCNG on Windows, OpenSSL elsewhere). OpenSSL is
+# vendored (built from source), so no system OpenSSL is needed. Without `net`, only
+# local and file:// remotes work (what the web app's e2e mock builds).
+default = ["net"]
+net = ["git2/https", "git2/ssh", "git2/vendored-openssl"]
+
+[dev-dependencies]
+tempfile = "3"
+
+[[example]]
+name = "git-json"
