@@ -54,7 +54,7 @@ const __ctx  = {};
 const __ctxUpdates = {{}};
 let __url    = {};
 let __body   = {};
-let __headers = [];
+let __headers = {};
 
 function getVariable(k) {{ return __vars[k]; }}
 function getContext(k)  {{ return __ctxUpdates[k] !== undefined ? __ctxUpdates[k] : __ctx[k]; }}
@@ -71,6 +71,8 @@ function setHeader(name, value) {{
         context_json,
         serde_json::to_string(&ctx.url)?,
         serde_json::to_string(&ctx.body)?,
+        // The script starts from the request's headers, as in the web app.
+        serde_json::to_string(&ctx.headers)?,
     );
 
     let postamble = r#"
@@ -81,7 +83,7 @@ JSON.stringify({ url: __url, body: __body, headers: __headers, ctx: __ctxUpdates
 
     let result = engine
         .eval(Source::from_bytes(full_script.as_bytes()))
-        .map_err(|e| anyhow!("pre-request script error: {}", e.to_string()))?;
+        .map_err(|e| anyhow!("pre-request script error: {}", e))?;
 
     let json_str = result
         .as_string()
@@ -101,7 +103,7 @@ JSON.stringify({ url: __url, body: __body, headers: __headers, ctx: __ctxUpdates
                 .filter_map(|h| {
                     let pair = h.as_array()?;
                     Some((
-                        pair.get(0)?.as_str()?.to_string(),
+                        pair.first()?.as_str()?.to_string(),
                         pair.get(1)?.as_str()?.to_string(),
                     ))
                 })
@@ -196,7 +198,7 @@ const assert = {{
 
     let result = engine
         .eval(Source::from_bytes(full_script.as_bytes()))
-        .map_err(|e| anyhow!("post-request script error: {}", e.to_string()))?;
+        .map_err(|e| anyhow!("post-request script error: {}", e))?;
 
     let json_str = result
         .as_string()
