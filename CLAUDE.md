@@ -44,6 +44,8 @@ hitop/
 │       │   ├── tests/format.rs     # golden files (tests/golden/, UPDATE_GOLDEN=1 regenerates) + proptest round trip
 │       │   └── tests/report_html.rs # golden report.html from tests/golden/report/report.json (UPDATE_GOLDEN=1), escaping of every field
 │       ├── hitop-wasm/         # format + model for the web app (wasm-bindgen =0.2.126), own workspace, not published
+│       ├── hitop-git/          # desktop Git panel: git2 0.21 + vendored libgit2 (feature `net`: https/ssh, vendored OpenSSL), not published;
+│       │                       # json.rs = the one entry point (desktop `git` command, examples/git-json for the e2e mock); tests on temp repos
 │       └── hitop/              # Binary crate (published to crates.io)
 │           ├── tests/run.rs    # hitop run: JUnit shape (roxmltree), JSON and HTML reports, exit codes, flags, masking
 │           ├── tests/schedule.rs # hitop schedule: exact workflow text, actionlint (HITOP_ACTIONLINT or PATH; required when CI is set), crontab line, exit codes
@@ -89,6 +91,7 @@ hitop/
 │   └── src-tauri/
 │       ├── src/
 │       │   ├── commands.rs     # All Tauri commands wrapping hitop-core
+│       │   ├── git.rs          # git {cmd,args} over hitop-git, git_token_status|set|delete (keychain git/<host>/token)
 │       │   └── lib.rs          # Command registration
 │       ├── Cargo.toml          # depends on hitop-core via path
 │       ├── tauri.conf.json     # Bundle ID: tech.rws8.hitop, category: Developer Tools; React frontend (../dist)
@@ -99,6 +102,7 @@ hitop/
 │   ├── src/store.js            # all app logic (port of frontend/src/App.jsx), same localStorage keys; folders, zip
 │   ├── src/platform/           # adapters: web.js (fetch/proxy, localStorage, File System Access), tauri.js (invoke), history.js;
 │   │                           # tauri-settings.js: desktop-only Settings page + first-run usage ping question
+│   │                           # tauri-git.js: desktop-only Git page for folder collections (status, diff, commit, pull/push, branches, conflicts)
 │   ├── scripts/check-no-telemetry.mjs # CI: dist/ and web.js have no usage ping (control: dist-tauri has the page)
 │   ├── src/pm.js               # Postman scripts: loads shared/pm-shim.js, runScript, import report helpers
 │   ├── src/views/openapi-dialogs.js # OpenAPI import (URL or paste), its report, Sync with OpenAPI (diff preview, apply)
@@ -248,6 +252,10 @@ hitop/
   Web app commands: `send_request` (proxy envelope; `cookies: true` uses hitop-core's `global` jar and returns it),
   `cookies_load|save`, `load_globals|save_globals`, `read_folder`, `write_folder` (optional `globals`), `secret_get|set|delete`, `write_file`, `telemetry_status|set`; dialog plugin.
   Script commands return script-set `variables`; `run_post_script` takes the sent `request` (pm.request)
+  Git (`src/git.rs`): `git {cmd, args: {path, ...}}` → `hitop_git::json::call` (status, diff, stage, unstage, discard, commit,
+  setIdentity, branches, createBranch, switchBranch, deleteBranch, mergeBranch, conflict, resolve, abortMerge, remoteHost,
+  fetch, pull, push); fetch/pull/push read the token from the keychain (`git/<host>/token`); `git_token_status|set|delete {path}`.
+  Pull = fetch + fast-forward or merge, never rebase. MAS sandbox: no SSH agent, credential helpers or ~/.gitconfig (HTTPS token, identity in the panel)
 - Cargo feature `telemetry` (not default): the usage ping. `release-desktop.yml` builds with `--features telemetry`;
   the MAS build (plain `tauri build`) must not; CI builds both and greps the binary for the endpoint
 - Dev: `cd desktop && npx tauri dev`
@@ -294,6 +302,10 @@ hitop/
   through `platform().send`: proxy on the web, Rust on the desktop); it adds a collection (never replaces), `inlineAuth: true`
   (no collection auth in the web app). "Sync with OpenAPI" on a collection with an `openapi` record: `previewOpenapiSync`
   (request ids go to Rust as positions and come back), then `applyOpenapiSync`; folder collections save through live sync
+- Git (desktop only): `platform().git` (null on the web) and the "Git" page from `platform/tauri-git.js`; it flushes folder
+  edits before each action (`store.flushFolder`) and re-reads the folder after pull/switch/merge/resolve (`store.reloadFolder`).
+  e2e `tests/git.cjs`: the mock's `git` runs `cli/target/debug/examples/git-json` (build: `cargo build -p hitop-git --example
+  git-json --no-default-features` in `cli/`, or `HITOP_GIT_JSON`) on temp repos with a bare remote
 - Secrets: environment `secrets` names, masked editor; `features.js` `exportableEnvironments()`/`maskSecrets()` for exports and run history
 - No telemetry in the web build: telemetry UI lives only in `platform/tauri-settings.js` (imported by tauri.js);
   `node scripts/check-no-telemetry.mjs` after both builds checks it. Adapter hooks `pages`/`onStart` add desktop-only pages

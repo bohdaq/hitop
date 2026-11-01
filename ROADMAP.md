@@ -147,7 +147,7 @@ Secret variables: `secret: true` in an environment file, with the value resolved
 | T17 | OpenAPI import and sync | done | 68d6a14, 3628f76, d1878c0, 45ac576, e5292df, ed397f1, a1fd78e, be02942 | 2026-11-01 |
 | T18 | Bring-your-own-key AI | dropped | owner decision | 2026-11-01 |
 | T19 | v1.0 hardening and release | todo | | |
-| T20 | Git UI in desktop | todo | | |
+| T20 | Git UI in desktop | done (handoff) | 3837aec, e3f5d49, 2229a15; macOS check in section 6 | 2026-11-01 |
 | T21 | Secret manager integrations | todo | | |
 | T22 | HTML reports and scheduled runs | done | 9c3302e, 7dd53a3, 2cdc097, 0638ca4; CI 41289440630 | 2026-11-01 |
 | T23 | Sync server (AGPL) | done (handoff) | 5cd2ac2, 9a8119f, 35f2775, f08bbce, a3b6c7d, ce07adf; deployed https://sync.hitop.rws8.tech | 2026-11-01 |
@@ -1130,6 +1130,80 @@ export PATH="$HOME/.cargo/bin:$PATH"
 - Status, diff, commit, pull, push, branches and conflict resolution for the open collection
   folder, through `git2` with vendored libgit2 (the MAS sandbox can't run the `git` binary).
 - **Done when:** tests on temp repos for commit, branch, merge conflict and resolution.
+- **Notes (2026-11-01, done; handoff: try it on macOS, section 6):**
+  - `cli/crates/hitop-git` (new, `publish = false`, in the cli workspace; no hitop-core dependency): git2 0.21.0 with
+    `vendored-libgit2` (libgit2 1.9.7 via libgit2-sys 0.18.8, built from source, no system libgit2 and no `git` binary). Default feature `net` =
+    git2 `https` + `ssh` + `vendored-openssl`. TLS by OS (read from libgit2-sys's build.rs): HTTPS uses WinHTTP on Windows,
+    Secure Transport on macOS, OpenSSL on Linux; SSH is libssh2 over WinCNG on Windows and OpenSSL elsewhere. OpenSSL
+    (3.6.3 via openssl-src, Apache-2.0) is vendored, so Linux and macOS builds need perl and make but no system OpenSSL. Without `net` only
+    local and file:// remotes work (what the e2e mock builds). `cargo deny ... check licenses` passes for cli and desktop
+    without a deny.toml change: cargo-deny reads the crates' fields (git2, libgit2-sys, libssh2-sys `MIT OR Apache-2.0`,
+    openssl-src `MIT/Apache-2.0`, openssl-sys `MIT`). The vendored C library libgit2 is GPL-2.0 with the linking exception,
+    which allows linking it into MIT code and shipping the result under any terms; no exception entry was needed.
+  - API (every function opens the repository that contains the folder, so a collection may be a subfolder of a repo):
+    `status` (branch, short head, upstream, ahead/behind, state, merge message, files with index/worktree change or
+    conflicted, identity from git config, remotes, the folder's prefix), `diff(file, staged)` (hunks of context/add/del/note
+    lines; untracked files as all new; binary flagged), `stage` (deleted files staged as removals; staging a conflicted file
+    resolves it), `unstage`, `discard` (back to HEAD, untracked deleted), `commit` (author and committer = git config
+    user.name/email; refuses an empty message, nothing staged and unresolved conflicts; during a merge it is the merge commit
+    with MERGE_HEAD as second parent), `set_identity` (repo-local user.name/email, for when the global config can't be read,
+    as in the MAS sandbox), `branches` (local with current/upstream/merged-into-current, remote without HEAD),
+    `create_branch` (optionally switching), `switch_branch` (safe checkout: local changes the switch would overwrite stop it;
+    a remote-only branch gets a tracking local branch), `delete_branch` (only merged into the current branch, never the
+    current one), `merge_branch`, `fetch`, `pull` (fetch, then fast-forward, else a merge commit, else stop with conflicts;
+    never rebases; a merge needs no uncommitted changes to tracked files; a branch without an upstream takes
+    `<remote>/<branch>`), `push` (to the upstream or `<remote>/<branch>`, which becomes the upstream; a remote with commits
+    the branch lacks is refused with "pull first"), `conflict(file)` (base, ours, theirs from the index stages and the
+    working-tree text with markers), `resolve(file, ours | theirs | content{text} | worktree)` (worktree refuses a file that
+    still has `<<<<<<<`/`>>>>>>>` lines), `abort_merge` (hard reset to HEAD). `json::call(cmd, args, auth)` is the single
+    entry point (camelCase command names, `{ok}`/`{error}` from `json::answer`).
+  - Remote auth (`Auth {token, username}` passed in; `auth::choose` is a pure function, unit-tested): SSH: user name
+    (URL's or `git`), then the SSH agent; HTTPS: the token as password (user name: saved one, the URL's, or
+    `x-access-token`), then git's credential helpers (`credential.helper`, run as programs); then the system default. Each
+    way is tried once, then the operation fails with a message naming what was tried (libgit2 asks again after every
+    failure, so without this a bad token loops). Limits: SSH host keys must already be in `~/.ssh/known_hosts` (libgit2
+    checks it; there is no prompt for a new host); no SSH key files or passphrases (agent only); no proxy settings beyond what
+    libgit2 reads; the MAS sandbox can't reach the SSH agent socket or `~/.ssh`, can't run credential helpers and can't read
+    `~/.gitconfig` (set the identity in the panel, use HTTPS with a token there). LFS, submodules, hooks, rebase, stash,
+    signing and partial (hunk) staging aren't supported.
+  - Desktop (`desktop/src-tauri/src/git.rs`, not in commands.rs): `git {cmd, args}` (async) → `hitop_git::json::call`;
+    fetch/pull/push read the token for the current remote's host from the OS keychain (service `hitop`, account
+    `git/<host>/token`, optional `git/<host>/username`; `hitop_git::token_account`). `git_token_status {path}` →
+    `{host, saved, username}` (host null for local/file:// remotes), `git_token_set {path, token, username}`,
+    `git_token_delete {path}`. Tokens never touch files. Checked with `cargo clippy --locked --all-targets` in a Debian
+    bookworm container (rust 1.91 + GTK/WebKit dev packages): clean apart from the existing unused `SecretStore` import in
+    commands.rs.
+  - Web app: `platform/tauri-git.js` (imported only by tauri.js, so neither the page nor its icons are in the web build;
+    `platform.git` is null in web.js): a "Git" sidebar page (and a Git button on a folder collection's page) for the open
+    folder collections (picker when there are several): branch bar with upstream, ↑ahead ↓behind, Fetch/Pull/Push;
+    Conflicts, Staged and Changes lists (Stage/Unstage/Discard per file, Stage all/Unstage all, click for the diff); diff
+    view; conflict view with ours/theirs/base, Take ours/Take theirs, an editable "Resolved text" (refuses markers) or Mark
+    resolved after editing the file elsewhere; merge banner with Abort merge; commit box (author shown; name/email form when
+    unset; "Commit merge" during a merge, prefilled with the merge message); branches (Switch, Merge into current, Delete when
+    merged, Check out for remote-only, New branch); Remote access (token for the HTTPS host, saved in the keychain). Before
+    each action the store writes pending folder edits (`store.flushFolder`); after actions that change files (pull, switch,
+    merge, resolve, discard, abort) it reads the folder again (`store.reloadFolder`, the folder wins).
+  - Tests: hitop-git 15 (temp repos, a local bare remote, global/system git config pointed at an empty dir): status with
+    untracked/modified/deleted, diffs, stage/unstage/discard, commit author and message, identity required, subfolder
+    collections, branch create/switch/delete-merged (unmerged and current refused, a switch blocked by local changes),
+    fetch + behind, pull fast-forward, rejected push then pull merge commit and push, dirty tree refused, new branch pushed
+    and tracked, remote-only branch checked out, conflict resolved by taking theirs (state, base/ours/theirs, commit
+    refused, markers refused, merge commit with two parents, push), conflict resolved by an edit in the file, given text,
+    ours and abort; auth chooser, host parsing, keychain accounts; json entry point. e2e `webapp/tests/git.cjs`: web mode
+    checks the panel is absent; Tauri mode (41 checks) runs the real hitop-git through the mock (`tauri-mock.cjs` `git`
+    spawns `cli/target/debug/examples/git-json`, built `--no-default-features`; `HITOP_GIT_JSON` overrides) on a copy of
+    `cli/fixtures/sample` with a bare remote and a teammate clone driven by the git CLI: status, edit in the app → diff,
+    stage, unstage, commit as the configured author, a README that isn't a collection file survives, push, branch create and
+    switch, fetch/behind, pull fast-forward that reloads the collection, a conflict resolved with Take theirs and Commit
+    merge, a second resolved with edited text (markers refused first), teammate pulls the merge, delete merged branch, token
+    saved to and removed from the keychain only. CI web job builds the example before the Tauri-mode e2e (rust-cache adds
+    `cli`).
+  - Open: opening a folder and editing one request also rewrites `hitop.yaml` (the writer drops an `order:` list that
+    matches the default order), an unrelated change in `git status` (format writer, T5 behaviour); open tabs keep their
+    content after a pull or switch changes the request underneath (the sidebar and collection reload); no YAML-aware
+    diff (plain lines); no commit history view; third-party notices (OpenSSL's Apache-2.0 NOTICE, libgit2's license) are
+    not yet bundled with the desktop app (nothing in the repo collects notices today); the MAS build links vendored OpenSSL
+    for libssh2 (export-compliance answers are the owner's, as for rustls today).
 
 #### T21 Secret manager integrations
 - References like `${secret:vault:path#key}`, `${secret:aws:name}`, `${secret:azure:vault/name}`
@@ -1293,6 +1367,7 @@ Agent appends here; owner ticks when done.
 | 2026-11-01 | T15 | Nothing to do now. Open questions for later: should `hitop mcp` get gRPC tools (list/describe/call, like the WebSocket question under T14), and should hitop support client-streaming and bidirectional gRPC calls and `--insecure` TLS? When you do the T5 check on your Mac, a gRPC request (method "gRPC") against a local server with reflection shows the service pickers and streams responses. | |
 | 2026-11-01 | T17 | Nothing to do now. Open question for later: should sync also merge header rows one by one (today a request whose headers you edited keeps all of them when the spec changes its headers), and should `hitop mcp` get an import or sync tool for OpenAPI? | |
 | 2026-11-01 | T22 | Nothing to do now. `--reporter html` and the html artifact in `hitop schedule --github` workflows reach users with the next CLI release (0.3.0 images don't have it); the guides already say "releases after 0.3.0". The guide changes go live with the next site deploy. | |
+| 2026-11-01 | T20 | When you do the T5 macOS check (web app overlay build), try the Git panel: open a collection folder that is a git clone with an HTTPS remote (for example a private GitHub repo), make sure it is in a clean state, then: (1) Collections → the folder → Git (or the sidebar's Git); the branch, upstream and ↑/↓ show; (2) edit a request, see it under Changes with its diff, Stage, write a message, Commit (author = your git config; in the sandboxed MAS build the app may not see `~/.gitconfig`: it then asks for a name and email and keeps them in the repo's `.git/config`); (3) Push: in the MAS build it fails without a token and says so (outside the sandbox git's credential helper, for example osxkeychain, may answer); paste a fine-grained token (contents read/write) under Remote access, Push again (macOS may ask for Keychain access once; `security find-generic-password -s hitop -a git/github.com/token` shows it); (4) make a commit on GitHub's web editor to the same line, Pull: a conflict appears; Take theirs or edit the text, Commit merge, Push; (5) create a branch, switch back, delete it after merging. Outside the MAS build, an SSH remote should work through your ssh-agent (the host must be in `~/.ssh/known_hosts`). Tell me what fails, especially anything the sandbox blocks. | |
 
 ## 7. Setup the owner does before the agent starts
 
