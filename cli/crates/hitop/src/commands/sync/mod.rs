@@ -683,7 +683,7 @@ fn members(dir: &Path, trust: &TrustArgs) -> Result<()> {
     println!("Workspace {ws_id}, key epoch {}, you are {}", info["epoch"], info["role"].as_str().unwrap_or(""));
     let mut missing = Vec::new();
     for m in info["members"].as_array().cloned().unwrap_or_default() {
-        let who = if m["runner"].as_bool().unwrap_or(false) { "runner credential".to_string() } else { m["email"].as_str().unwrap_or("").to_string() };
+        let who = if m["runner"].as_bool().unwrap_or(false) { format!("runner credential {}", m["userId"].as_str().unwrap_or("")) } else { m["email"].as_str().unwrap_or("").to_string() };
         println!("{:<32} {}", who, m["role"].as_str().unwrap_or(""));
         for k in m["keys"].as_array().cloned().unwrap_or_default() {
             let pk = unb64(k["publicKey"].as_str().unwrap_or(""))?;

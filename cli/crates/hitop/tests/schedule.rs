@@ -230,3 +230,46 @@ fn cron_prints_a_crontab_line_and_installs_nothing() {
     assert!(line.contains(&format!("--out '{}'/", repo.path().join("logs").display())), "{line}");
     assert!(!line.contains("--env"), "{line}");
 }
+
+#[test]
+fn sync_pulls_the_shared_collection_before_the_run() {
+    let (repo, dir) = repo();
+    let home = TempDir::new().unwrap();
+    let out = hitop(&home, repo.path())
+        .args(["schedule", "./apis/shop", "--github", "--sync", "--env", "local", "--hitop-version", "1.1.0", "--name", "Shared"])
+        .assert()
+        .code(0)
+        .get_output()
+        .clone();
+    let stdout = String::from_utf8(out.stdout).unwrap();
+    assert!(stdout.contains("hitop sync runner create -c './apis/shop' | gh secret set HITOP_SYNC_RUNNER"), "{stdout}");
+    let file = repo.path().join(".github/workflows/hitop-shared.yml");
+    let text = fs::read_to_string(&file).unwrap();
+    let pull = text.find("Pull the shared collection").expect("a pull step");
+    let run = text.find("uses: bohdaq/hitop-action@v1").unwrap();
+    assert!(pull < run, "{text}");
+    for needle in [
+        "          HITOP_SYNC_RUNNER: ${{ secrets.HITOP_SYNC_RUNNER }}\n",
+        "-e HITOP_SYNC_RUNNER -v \"$PWD:/work\" 'ghcr.io/bohdaq/hitop:1.1.0' sync pull -c 'apis/shop'\n",
+        "#   hitop sync runner create -c <folder> | gh secret set HITOP_SYNC_RUNNER\n",
+    ] {
+        assert!(text.contains(needle), "{needle}\n{text}");
+    }
+    // The credential is never in the file, only the secret's name.
+    assert!(!text.contains("hitop-runner-1."));
+    lint(&file);
+
+    // An image without hitop sync gets a note.
+    hitop(&home, repo.path())
+        .args(["schedule", "./apis/shop", "--github", "--sync", "--hitop-version", "1.0.0", "--name", "Old", "--force"])
+        .assert()
+        .code(0)
+        .stderr(contains("has no `hitop sync`"));
+
+    // cron: pull as this device, then run.
+    let out = hitop(&home, repo.path()).args(["schedule", "apis/shop", "--cron", "0 6 * * *", "--sync"]).assert().code(0).stderr(contains("HITOP_SYNC_RUNNER")).get_output().clone();
+    let line = String::from_utf8(out.stdout).unwrap();
+    let folder = dir.canonicalize().unwrap();
+    let pull = line.find(&format!(" sync pull -c '{}'", folder.display())).expect("a pull");
+    assert!(pull < line.find(" run '").unwrap(), "{line}");
+}

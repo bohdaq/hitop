@@ -67,6 +67,12 @@ pub struct ScheduleArgs {
     #[arg(long, value_name = "VERSION", requires = "github")]
     hitop_version: Option<String>,
 
+    /// Pull the shared collection (hitop sync) before each run. GitHub: with a read-only runner
+    /// credential from the repository secret HITOP_SYNC_RUNNER (`hitop sync runner create`);
+    /// cron: as this device, or HITOP_SYNC_RUNNER when set
+    #[arg(long)]
+    sync: bool,
+
     /// Directory for the cron runs' reports and log (default:
     /// $XDG_STATE_HOME/hitop/runs/<name>, else ~/.local/state/hitop/runs/<name>)
     #[arg(long, value_name = "DIR", conflicts_with = "github")]
@@ -82,6 +88,8 @@ struct Target {
     secret_vars: Vec<String>,
     /// For file names and job names: `[a-z0-9-]`.
     slug: String,
+    /// `hitop sync pull` before the run.
+    sync: bool,
 }
 
 fn target(args: &ScheduleArgs) -> Result<Target> {
@@ -133,7 +141,7 @@ fn target(args: &ScheduleArgs) -> Result<Target> {
     if slug.is_empty() {
         bail!("can't make a file name from '{base}'; pass --name");
     }
-    Ok(Target { collection: folder.collection.name.clone(), env: args.env.clone(), secret_vars: vars.into_iter().collect(), slug })
+    Ok(Target { collection: folder.collection.name.clone(), env: args.env.clone(), secret_vars: vars.into_iter().collect(), slug, sync: args.sync })
 }
 
 pub fn run(args: ScheduleArgs) -> Result<()> {
@@ -178,6 +186,13 @@ fn has_html_reporter(version: &str) -> bool {
     v > (0, 3, 0)
 }
 
+/// `hitop sync` came after 1.0.0.
+fn has_sync(version: &str) -> bool {
+    let core = version.trim_start_matches('v').split(['-', '+']).next().unwrap_or_default();
+    let mut parts = core.split('.').map(|p| p.parse::<u64>().unwrap_or(0));
+    (parts.next().unwrap_or(0), parts.next().unwrap_or(0), parts.next().unwrap_or(0)) > (1, 0, 0)
+}
+
 fn github(args: &ScheduleArgs, t: &Target, cron: &Cron) -> Result<()> {
     let (root, path) = repository(&args.folder)?;
     let version = args.hitop_version.clone().unwrap_or_else(|| env!("CARGO_PKG_VERSION").to_string());
@@ -190,6 +205,13 @@ fn github(args: &ScheduleArgs, t: &Target, cron: &Cron) -> Result<()> {
     std::fs::write(&file, text).with_context(|| format!("writing {}", file.display()))?;
     println!("{} {}", "Wrote".green(), file.display());
     println!("Runs at \"{}\" (UTC) and on demand from the Actions tab.", cron.expr);
+    if t.sync {
+        println!("Add the read-only runner credential as a repository secret:");
+        println!("  hitop sync runner create -c {} | gh secret set HITOP_SYNC_RUNNER", sh(&args.folder.to_string_lossy()));
+        if !has_sync(&version) {
+            eprintln!("{} hitop {version}'s image has no `hitop sync`; pass --hitop-version with a release after 1.0.0", "Note:".yellow().bold());
+        }
+    }
     if !t.secret_vars.is_empty() {
         println!("Add these repository secrets (Settings → Secrets and variables → Actions):");
         for v in &t.secret_vars {
@@ -232,6 +254,10 @@ fn workflow(t: &Target, cron: &Cron, path: &str, version: &str) -> Result<String
     let mut y = String::new();
     y.push_str(&format!("# Written by `hitop schedule --github` (hitop {}).\n", env!("CARGO_PKG_VERSION")));
     y.push_str(&format!("# Runs the hitop collection in {path} on a schedule ({} UTC) and on demand.\n", cron.expr));
+    if t.sync {
+        y.push_str("# The collection comes from hitop sync; add a read-only runner credential once:\n");
+        y.push_str("#   hitop sync runner create -c <folder> | gh secret set HITOP_SYNC_RUNNER\n");
+    }
     if !t.secret_vars.is_empty() {
         y.push_str("# Secret values come from repository secrets with the same names:\n");
         for v in &t.secret_vars {
@@ -248,6 +274,18 @@ fn workflow(t: &Target, cron: &Cron, path: &str, version: &str) -> Result<String
     y.push_str(&format!("    name: {}\n", yq(&title)?));
     y.push_str("    runs-on: ubuntu-24.04\n    timeout-minutes: 30\n    steps:\n");
     y.push_str("      - uses: actions/checkout@v6\n        with:\n          persist-credentials: false\n");
+    if t.sync {
+        // The runner credential decrypts the workspace in the job (read-only, this workspace
+        // only); HOME is the container's /tmp because the image runs as the runner's uid.
+        y.push_str("      - name: Pull the shared collection (hitop sync, read-only runner credential)\n");
+        y.push_str("        env:\n          HITOP_SYNC_RUNNER: ${{ secrets.HITOP_SYNC_RUNNER }}\n");
+        y.push_str("        run: |\n");
+        y.push_str(&format!(
+            "          docker run --rm --user \"$(id -u)\" -e HOME=/tmp -e HITOP_KEYCHAIN=off -e HITOP_SYNC_RUNNER -v \"$PWD:/work\" {} sync pull -c {}\n",
+            sh(&format!("ghcr.io/bohdaq/hitop:{version}")),
+            sh(path)
+        ));
+    }
     y.push_str(&format!("      - name: {}\n        id: hitop\n        uses: bohdaq/hitop-action@v1\n", yq(&format!("Run {title}"))?));
     if !t.secret_vars.is_empty() {
         y.push_str("        env:\n");
@@ -300,9 +338,12 @@ fn crontab(args: &ScheduleArgs, t: &Target, cron: &Cron) -> Result<()> {
         }
     };
     let exe = std::env::current_exe().context("finding the hitop binary")?;
-    let line = cron_line(cron, &exe, &folder, t.env.as_deref(), &log_dir);
+    let line = cron_line(cron, &exe, &folder, t.env.as_deref(), &log_dir, t.sync);
     println!("{line}");
     eprintln!("{} add the line above with `crontab -e` (cron runs it in the system time zone).", "Next:".bold());
+    if t.sync {
+        eprintln!("Before each run it pulls the shared collection (hitop sync) as this device; on a server, put a read-only runner credential in the crontab as HITOP_SYNC_RUNNER=... instead (`hitop sync runner create`).");
+    }
     eprintln!("Each run writes {}/<time>/ (junit.xml, report.json, report.html) and appends to {}/hitop.log.", log_dir.display(), log_dir.display());
     if !t.secret_vars.is_empty() {
         eprintln!("Secrets ({}): cron can't prompt, so keep them in the keychain (`hitop secret set <name> --env {} -c {}`; a cron job reads it only while you are logged in) or set the variables in the crontab or a file only you can read. Never put a value in the line itself.", t.secret_vars.join(", "), t.env.as_deref().unwrap_or("<env>"), sh(&folder.to_string_lossy()));
@@ -310,9 +351,13 @@ fn crontab(args: &ScheduleArgs, t: &Target, cron: &Cron) -> Result<()> {
     Ok(())
 }
 
-fn cron_line(cron: &Cron, exe: &Path, folder: &Path, env: Option<&str>, log_dir: &Path) -> String {
+fn cron_line(cron: &Cron, exe: &Path, folder: &Path, env: Option<&str>, log_dir: &Path, sync: bool) -> String {
     let log = log_dir.to_string_lossy();
-    let mut cmd = format!("mkdir -p {} && {} run {}", sh(&log), sh(&exe.to_string_lossy()), sh(&folder.to_string_lossy()));
+    let mut cmd = format!("mkdir -p {}", sh(&log));
+    if sync {
+        cmd.push_str(&format!(" && {} sync pull -c {} >> {} 2>&1", sh(&exe.to_string_lossy()), sh(&folder.to_string_lossy()), sh(&format!("{log}/hitop.log"))));
+    }
+    cmd.push_str(&format!(" && {} run {}", sh(&exe.to_string_lossy()), sh(&folder.to_string_lossy())));
     if let Some(e) = env {
         cmd.push_str(&format!(" --env {}", sh(e)));
     }
@@ -520,7 +565,7 @@ mod tests {
 
     #[test]
     fn crontab_line_escapes_percent_and_quotes() {
-        let line = cron_line(&ok("*/30 * * * *"), Path::new("/usr/bin/hitop"), Path::new("/home/a/it's api"), Some("prod"), Path::new("/var/log/h%"));
+        let line = cron_line(&ok("*/30 * * * *"), Path::new("/usr/bin/hitop"), Path::new("/home/a/it's api"), Some("prod"), Path::new("/var/log/h%"), false);
         assert_eq!(
             line,
             "*/30 * * * * mkdir -p '/var/log/h\\%' && '/usr/bin/hitop' run '/home/a/it'\\''s api' --env 'prod' --reporter cli,junit,json,html --out '/var/log/h\\%'/\"$(date -u +\\%Y\\%m\\%dT\\%H\\%M\\%SZ)\" >> '/var/log/h\\%/hitop.log' 2>&1"
