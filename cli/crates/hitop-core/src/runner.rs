@@ -126,7 +126,13 @@ pub fn run_collection_jar(
     let mut upper = variables(&collection.variables, environment);
     upper.extend(options.overrides.iter().map(|(k, v)| (k.clone(), v.clone())));
     secrets.apply(&mut upper);
-    let mut scopes = Scopes { globals: options.globals.clone(), upper };
+    // `token: ${secret:vault:...}` in a variable's value: the resolved
+    // reference (in `secrets`) takes its place.
+    secrets.expand_refs(&mut upper);
+    let mut globals = options.globals.clone();
+    secrets.expand_refs(&mut globals);
+    options.global_secrets.expand_refs(&mut globals);
+    let mut scopes = Scopes { globals, upper };
     let masker = secrets.masker_with(&options.global_secrets);
     let mut results = Vec::new();
 
@@ -231,6 +237,27 @@ mod tests {
         assert_eq!(results[0].url, "http://127.0.0.1:9/x?key=••••");
         let all = format!("{seen:?} {:?}", results);
         assert!(!all.contains("s3cr3t"), "{all}");
+    }
+
+    #[test]
+    fn secret_references_fill_requests_and_variable_values() {
+        use crate::secrets::Origin;
+        let collection = Collection {
+            requests: vec![Request { name: "r".into(), method: "GET".into(), url: "http://127.0.0.1:9/${secret:vault:kv/app#id}/${token}/${g}".into(), ..Default::default() }],
+            ..Default::default()
+        };
+        let env = Environment { id: "e".into(), name: "e".into(), variables: [("token".into(), "t-${secret:aws:api}".into())].into(), ..Default::default() };
+        let mut secrets = Secrets::default();
+        secrets.insert("secret:vault:kv/app#id", "vault-value".into(), Origin::SecretManager);
+        secrets.insert("secret:aws:api", "aws-value".into(), Origin::SecretManager);
+        secrets.insert("secret:op:v/i/f", "op-value".into(), Origin::SecretManager);
+        let options = RunOptions { globals: [("g".into(), "${secret:op:v/i/f}".into())].into(), ..Default::default() };
+        let mut sent = String::new();
+        let results = run_collection_opts(&collection, Some(&env), &secrets, &options, &mut |s| sent = s.url.clone());
+        assert_eq!(results[0].url, "http://127.0.0.1:9/••••/t-••••/••••");
+        assert_eq!(sent, results[0].url);
+        let all = format!("{results:?}");
+        assert!(!all.contains("-value"), "{all}");
     }
 
     #[test]

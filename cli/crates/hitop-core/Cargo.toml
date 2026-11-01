@@ -34,6 +34,9 @@ tokio-tungstenite = { version = "0.30", default-features = false, features = ["c
 futures-util = { version = "0.3", default-features = false, features = ["sink", "std"], optional = true }
 rustls = { version = "0.23", default-features = false, features = ["ring", "std", "tls12"], optional = true }
 webpki-roots = { version = "1", optional = true }
+# `${secret:aws:...}` (src/secret_managers.rs): SigV4's SHA-256 and HMAC. ring is
+# already in the tree through rustls, so the AWS SDK isn't needed.
+ring = { version = "0.17", optional = true }
 # gRPC calls (src/grpc.rs, feature `grpc`): tonic over rustls (ring, webpki roots), dynamic
 # messages through prost-reflect, schemas from server reflection (tonic-reflection's
 # generated v1 and v1alpha clients) or .proto files parsed at run time by protox (no protoc).
@@ -45,7 +48,7 @@ prost-reflect = { version = "0.16", features = ["serde"], optional = true }
 protox = { version = "0.10", optional = true }
 
 [features]
-default = ["keychain", "native", "websocket", "grpc"]
+default = ["keychain", "native", "websocket", "grpc", "secret-managers"]
 # HTTP (reqwest), scripts (boa), the runner and the JSON storage in the
 # config directory. Off for wasm32 (hitop-wasm: the format module and the
 # model in the web app).
@@ -54,6 +57,9 @@ native = ["dep:reqwest", "dep:boa_engine", "dep:dirs"]
 websocket = ["native", "dep:tokio", "dep:tokio-tungstenite", "dep:futures-util", "dep:rustls", "dep:webpki-roots"]
 # gRPC calls (src/grpc.rs's client): the CLI's `hitop grpc` and the desktop.
 grpc = ["native", "dep:tokio", "dep:futures-util", "dep:tonic", "dep:tonic-reflection", "dep:prost", "dep:prost-types", "dep:prost-reflect", "dep:protox"]
+# `${secret:vault|aws|azure|op:...}` references resolved at run time
+# (src/secret_managers.rs). Off for wasm32: the web app can't reach them.
+secret-managers = ["native", "dep:ring"]
 # Off for targets without an OS keychain (the future wasm build).
 keychain = ["dep:keyring"]
 # The opt-in weekly usage ping (src/telemetry.rs). Off by default: the CLI and the
@@ -65,6 +71,7 @@ telemetry = ["native"]
 tempfile = "3"
 tokio = { version = "1.54.1", features = ["rt-multi-thread", "macros", "net"] }
 proptest = "1"
+httpmock = "0.8.3"
 # tests/grpc.rs: a local tonic server (tests/support/grpc_server.rs) with reflection.
 tonic = { version = "0.14.6", default-features = false, features = ["transport", "router"] }
 tonic-reflection = { version = "0.14.6", default-features = false, features = ["server"] }

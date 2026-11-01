@@ -15,6 +15,8 @@ pub mod prepare;
 pub mod report;
 pub mod runner;
 pub mod scripting;
+pub mod secret_managers;
+pub mod secret_refs;
 pub mod secrets;
 pub mod snippet;
 pub mod storage;

@@ -202,6 +202,8 @@ pub enum Origin {
     Flag,
     Keychain,
     Prompt,
+    /// A `${secret:...}` reference resolved from Vault, AWS, Azure or 1Password.
+    SecretManager,
 }
 
 impl std::fmt::Display for Origin {
@@ -211,6 +213,7 @@ impl std::fmt::Display for Origin {
             Origin::Flag => "--secret",
             Origin::Keychain => "keychain",
             Origin::Prompt => "prompt",
+            Origin::SecretManager => "secret manager",
         })
     }
 }
@@ -236,6 +239,23 @@ impl Secrets {
 
     pub fn names(&self) -> impl Iterator<Item = &str> {
         self.values.keys().map(String::as_str)
+    }
+
+    /// Adds a value (a resolved `${secret:...}` reference, keyed by its inner text).
+    pub fn insert(&mut self, name: &str, value: String, origin: Origin) {
+        self.values.insert(name.into(), (value, origin));
+    }
+
+    /// Fills the `${secret:...}` references inside variable values (an
+    /// environment's `token: ${secret:vault:kv/app#token}`) with the values
+    /// resolved here; one with no value here is left as written.
+    pub fn expand_refs(&self, variables: &mut HashMap<String, String>) {
+        let lookup = |k: &str| self.get(k).map(str::to_string);
+        for v in variables.values_mut() {
+            if v.contains("${secret:") {
+                *v = crate::secret_refs::expand(v, &lookup);
+            }
+        }
     }
 
     /// Puts the secrets into a variable map, over any value already there.
