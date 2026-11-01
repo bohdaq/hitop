@@ -1,0 +1,116 @@
+//! hitop-core in the browser: the collection folder format (read and
+//! write YAML exactly as the CLI does) and the JSON model, through
+//! wasm-bindgen. Every function takes and returns JSON text, so the
+//! JavaScript side stays a thin wrapper (`webapp/src/wasm/format.js`).
+use hitop_core::format::{files, Folder};
+use hitop_core::model::{Collection, Environment, HistoryItem};
+use serde::{Deserialize, Serialize};
+use wasm_bindgen::prelude::*;
+
+/// `{collection, environments}`: a collection folder in memory.
+#[derive(Serialize, Deserialize)]
+struct FolderJson {
+    collection: Collection,
+    #[serde(default)]
+    environments: Vec<Environment>,
+}
+
+/// The desktop's `environments.json` (`hitop_core::storage::Environments`,
+/// which needs the `native` feature).
+#[derive(Serialize, Deserialize)]
+struct EnvironmentsJson {
+    #[serde(default)]
+    active: Option<String>,
+    #[serde(default)]
+    environments: Vec<Environment>,
+}
+
+fn err(e: impl std::fmt::Display) -> JsError {
+    JsError::new(&e.to_string())
+}
+
+fn chain(e: anyhow::Error) -> JsError {
+    JsError::new(&format!("{e:#}"))
+}
+
+pub fn read_files_json(files_json: &str, name: &str) -> anyhow::Result<String> {
+    let files: files::Files = serde_json::from_str(files_json)?;
+    let folder = files::read_files(&files, name)?;
+    Ok(serde_json::to_string(&FolderJson { collection: folder.collection, environments: folder.environments })?)
+}
+
+pub fn to_files_json(folder_json: &str) -> anyhow::Result<String> {
+    let f: FolderJson = serde_json::from_str(folder_json)?;
+    let files = files::to_files(&Folder { collection: f.collection, environments: f.environments })?;
+    Ok(serde_json::to_string(&files)?)
+}
+
+pub fn plan_sync_json(existing_json: &str, files_json: &str) -> anyhow::Result<String> {
+    let existing: Vec<String> = serde_json::from_str(existing_json)?;
+    let files: files::Files = serde_json::from_str(files_json)?;
+    Ok(serde_json::to_string(&files::plan_sync(&existing, &files)?)?)
+}
+
+pub fn normalize_json(kind: &str, json: &str) -> anyhow::Result<String> {
+    Ok(match kind {
+        "collections" => serde_json::to_string(&serde_json::from_str::<Vec<Collection>>(json)?)?,
+        "history" => serde_json::to_string(&serde_json::from_str::<Vec<HistoryItem>>(json)?)?,
+        "environments" => serde_json::to_string(&serde_json::from_str::<EnvironmentsJson>(json)?)?,
+        "folder" => serde_json::to_string(&serde_json::from_str::<FolderJson>(json)?)?,
+        other => anyhow::bail!("unknown kind {other}"),
+    })
+}
+
+/// Reads a collection folder from `{path: text}` JSON; `name` is used when
+/// `hitop.yaml` has none. Returns `{collection, environments}`.
+#[wasm_bindgen(js_name = readFiles)]
+pub fn read_files(files_json: &str, name: &str) -> Result<String, JsError> {
+    read_files_json(files_json, name).map_err(chain)
+}
+
+/// The files of `{collection, environments}` as `{path: text}` JSON.
+#[wasm_bindgen(js_name = toFiles)]
+pub fn to_files(folder_json: &str) -> Result<String, JsError> {
+    to_files_json(folder_json).map_err(chain)
+}
+
+/// What to write and remove in a folder that has `existing` paths so it
+/// holds `files`: `{write: {path: text}, remove: [path]}`.
+#[wasm_bindgen(js_name = planSync)]
+pub fn plan_sync(existing_json: &str, files_json: &str) -> Result<String, JsError> {
+    plan_sync_json(existing_json, files_json).map_err(chain)
+}
+
+/// Reads JSON into hitop-core's model and writes it back, as the desktop's
+/// storage commands do: `collections`, `history`, `environments`
+/// (`{active, environments}`) or `folder`. Fails where Rust would.
+#[wasm_bindgen]
+pub fn normalize(kind: &str, json: &str) -> Result<String, JsError> {
+    normalize_json(kind, json).map_err(err)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn folder_round_trip_through_json() {
+        let folder = r#"{"collection":{"id":1,"name":"Shop","requests":[{"id":2,"name":"Get user","url":"https://x/u","method":"GET","headers":[],"body":"","pinned":true}],"variables":{"a":"1"}},
+            "environments":[{"id":"dev","name":"dev","variables":{"t":"s3cr3t"},"secrets":["t"]}]}"#;
+        let files = to_files_json(folder).unwrap();
+        assert!(files.contains("requests/get-user.yaml") && !files.contains("s3cr3t"), "{files}");
+        let back: serde_json::Value = serde_json::from_str(&read_files_json(&files, "x").unwrap()).unwrap();
+        assert_eq!(back["collection"]["requests"][0]["pinned"], true);
+        assert_eq!(back["environments"][0]["secrets"][0], "t");
+        let plan: serde_json::Value = serde_json::from_str(&plan_sync_json(r#"["requests/old.yaml"]"#, &files).unwrap()).unwrap();
+        assert_eq!(plan["remove"][0], "requests/old.yaml");
+    }
+
+    #[test]
+    fn normalize_reads_what_rust_reads() {
+        let out = normalize_json("collections", r#"[{"id":"col-legacy","name":"c","requests":[]}]"#).unwrap();
+        assert!(out.starts_with(r#"[{"id":"#) && !out.contains("col-legacy"), "{out}");
+        assert!(normalize_json("history", r#"[{"id":1,"timestamp":"2026-10-31T18:16:10.537Z"}]"#).is_err(), "web history items need mapping first");
+        assert!(normalize_json("environments", r#"{"environments":[{"id":"a","name":"A"}]}"#).is_ok());
+    }
+}
