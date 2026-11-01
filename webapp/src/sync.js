@@ -80,6 +80,13 @@ export function withSyncFolders(base) {
     },
   };
   const links = () => readJson(STATE_KEY, {}).links ?? {};
+  const edit = (fn) => {
+    const d = readJson(STATE_KEY, {});
+    d.links ??= {};
+    d.states ??= {};
+    fn(d);
+    writeJson(STATE_KEY, d);
+  };
   return {
     pick: base?.pick,
     read: (ref) => (isSyncRef(ref) ? sync.read(ref) : base.read(ref)),
@@ -87,14 +94,41 @@ export function withSyncFolders(base) {
     label: (ref) => (isSyncRef(ref) ? "shared (hitop sync)" : base.label(ref)),
     async restore() {
       const own = base ? await base.restore() : [];
+      // Shared collections closed (deleted) in the app since the last start: their local copy goes.
+      edit((d) => {
+        for (const [id, l] of Object.entries(d.links)) {
+          if (!l.closed) continue;
+          if (l.ref && isSyncRef(l.ref)) syncFiles.drop(l.workspace);
+          delete d.states[l.workspace];
+          delete d.links[id];
+        }
+      });
       const shared = Object.entries(links())
         .filter(([, l]) => l.ref && isSyncRef(l.ref))
         .map(([collectionId, l]) => ({ collectionId: Number.isNaN(+collectionId) ? collectionId : +collectionId, ref: l.ref, connected: true }));
       return [...own.filter((o) => !shared.some((s) => s.collectionId === o.collectionId)), ...shared];
     },
     reconnect: (ref) => (isSyncRef(ref) ? Promise.resolve(true) : base.reconnect(ref)),
-    remember: (collectionId, ref) => (isSyncRef(ref) ? undefined : base?.remember(collectionId, ref)),
-    forget: (collectionId) => base?.forget(collectionId),
+    // Re-attached after a reload of its files: still shared.
+    remember: (collectionId, ref) => {
+      if (isSyncRef(ref)) {
+        edit((d) => (d.links[collectionId] = { workspace: ref.slice(SYNC_REF.length), ref }));
+        return undefined;
+      }
+      // A disk folder re-read (Git pull, branch switch) stays shared too.
+      edit((d) => {
+        if (d.links[collectionId]) delete d.links[collectionId].closed;
+      });
+      return base?.remember(collectionId, ref);
+    },
+    // Closed or deleted in the app: no longer synced here (the workspace on the server stays).
+    // Marked now and cleaned up on the next start, since a reload closes and re-attaches too.
+    forget: (collectionId) => {
+      edit((d) => {
+        if (d.links[collectionId]) d.links[collectionId].closed = true;
+      });
+      return base?.forget(collectionId);
+    },
   };
 }
 
@@ -122,7 +156,8 @@ export class SyncClient {
   }
 
   link(collectionId) {
-    return this.data.links[collectionId] ?? null;
+    const l = this.data.links[collectionId];
+    return l && !l.closed ? l : null;
   }
 
   state(ws) {
@@ -305,7 +340,12 @@ export class SyncClient {
     if (l?.ref && isSyncRef(l.ref)) syncFiles.set(l.workspace, files);
     else if (entry) await platform().folders.write(entry.ref, (await loadFormat()).readFiles(files, this.store.collection(collectionId)?.name ?? "Shared"));
     const id = await this.store.reloadFolder(collectionId);
-    if (id != null && id !== collectionId) this.update((d) => ((d.links[id] = d.links[collectionId]), delete d.links[collectionId]));
+    // reloadFolder closes and re-attaches the collection: keep it shared (under its new id when
+    // hitop.yaml changed it).
+    this.update((d) => {
+      delete d.links[collectionId];
+      d.links[id ?? collectionId] = { workspace: l.workspace, ...(l.ref ? { ref: l.ref } : {}) };
+    });
     return id ?? collectionId;
   }
 

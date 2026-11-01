@@ -245,6 +245,13 @@ async function syncServer() {
   await syncNow(bob);
   check('a removed member can no longer sync', (await alertText(bob)).includes('no such workspace'), await alertText(bob));
 
+  // Bob deletes his (now dead) copy: it stays gone after a reload.
+  await store(bob, 'const c = s.collections.find((c) => c.name === "Shop API"); s.deleteCollection(c.id); s.save();');
+  await bob.page.reload({ waitUntil: 'networkidle' });
+  await openSync(bob);
+  await settle(bob.page);
+  check('a deleted shared collection stays deleted', (await requests(bob, 'Shop API')) === null && (await S(bob).getByRole('button', { name: /Sync now/ }).count()) === 0 && (await bob.page.evaluate(() => Object.keys(localStorage).filter((k) => k.startsWith('hitop_sync_files:')).length)) === 0, JSON.stringify(await requests(bob, 'Shop API')));
+
   // The server never saw plaintext.
   const db = server.database();
   const leaked = ['e2e-sync.test', 'List orders', 'Get order', 'Shop API'].filter((s) => db.includes(Buffer.from(s)));
