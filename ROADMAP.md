@@ -128,7 +128,7 @@ Secret variables: `secret: true` in an environment file, with the value resolved
 | ID | Tranche | Status | Commits / release | Date |
 | --- | --- | --- | --- | --- |
 | T0 | Bootstrap and housekeeping | done | pricing list, DEV_PLAN pointer, CLAUDE.md; deployed | 2026-11-01 |
-| T1 | YAML collection format in hitop-core and CLI | todo | | |
+| T1 | YAML collection format in hitop-core and CLI | done | 9697b6d, 8b1b6de, df70ec0, edf04e5 | 2026-11-01 |
 | T2 | Secrets in the OS keychain | todo | | |
 | T3 | CI runner: reports, exit codes, flags | todo | | |
 | T4 | Postman migration: environments and pm.* | todo | | |
@@ -193,6 +193,35 @@ export PATH="$HOME/.cargo/bin:$PATH"
 - Write the spec to `spec/collection-format.md` (CC BY 4.0 header).
 - **Done when:** golden-file tests for every field; round-trip property test (JSON → folder →
   JSON is equal); `hitop run ./fixtures/sample` passes against a mock server; CI green.
+- **Notes (2026-11-01, done):**
+  - YAML crate: `yaml_serde` 0.10.7 (serde_yaml continued by the YAML organization, released
+    2026-08, no RustSec advisory, nor for its `libyaml-rs`). Rejected: `serde_yml` (RUSTSEC-2025-0068,
+    unsound, unpatched; its `libyml` is RUSTSEC-2025-0067), `serde_yaml`/`unsafe-libyaml`
+    (deprecated; RUSTSEC-2024-0449 unmaintained), `serde_norway` (last release 2024-12),
+    `serde-saphyr` (pulls figment, garde, validator, miette).
+  - Format additions beyond section 4, needed for a lossless round trip (all in the spec): `id` in
+    `hitop.yaml` and request files (left out when it equals the id derived from the path); the
+    request's path is its identity, kept in JSON as `file` only when it isn't the default slug;
+    `order` in `hitop.yaml`; `body.fields` for form and multipart; `bodyType` in JSON when a text
+    body's `type` differs from the inferred one; environment `secrets` list in JSON.
+  - Normalizations: blank header rows (the editor's placeholder) aren't written; `bodyMode: "raw"`
+    reads as no mode; environments come back in file name order. The property test compares
+    after these. A URL's query moves to `params` only when the URL rebuilds byte for byte.
+  - Model: every struct keeps unknown JSON keys (`extra`); new fields are skipped when empty, so
+    existing JSON storage reads and writes unchanged (tests in `model.rs`). Collection-level
+    default auth is applied by the runner; disabled headers aren't sent.
+  - Fixed on the way: a pre-request script dropped every header it didn't set (9697b6d).
+  - `hitop run <folder>` uses only the folder's `environments/`, and only with `--env`. The mock
+    test copies `cli/fixtures/sample` to a temp dir, adds `environments/mock.yaml` with the mock
+    port and runs `hitop run ./fixtures/sample --env mock` there (`--var` stays in T3).
+  - CI `cli` job now also runs `cargo clippy --all-targets -- -D warnings`.
+  - Tests: hitop-core 84 unit + 4 format (golden x3, proptest 512 cases); hitop 34 + 9 folder.
+  - Open for T5: web app storage may hold string ids (`"col-legacy"` in `legacy-storage.json`);
+    the Rust model's `u64` ids reject them, so `hitop convert` fails on such an export. The web
+    app also drops request fields it doesn't know (`file`, `examples`, `bodyType`, unknown keys)
+    when it saves a tab; fix both when the web app works on folders.
+  - Open for T26: files are YAML 1.2 (`on`/`yes` unquoted are strings); Yams must read them with
+    the 1.2 core schema or quote-sensitive values like `on` change meaning.
 
 #### T2 Secrets in the OS keychain
 - `hitop-core/src/secrets.rs` on top of `keyring`: resolve order from section 4. Headless Linux
