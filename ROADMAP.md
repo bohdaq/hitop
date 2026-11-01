@@ -138,7 +138,7 @@ Secret variables: `secret: true` in an environment file, with the value resolved
 | T8 | GitHub Action and GitLab template | done | 52f26f5, 0595081; cli-v0.3.0-rc.2; hitop-action aa873b7, 1223c47, tags v1, v1.0.0 | 2026-11-01 |
 | T9 | License notices, DCO, project policies | done | 51cd299; DCO verified on PR #1 | 2026-11-01 |
 | T10 | Opt-in telemetry | done | server 032ec68, 15f4b4e (deployed from a112885); client a64c6c6, 4b8b898, released in cli-v0.3.0 / desktop-v0.2.0 | 2026-11-01 |
-| T11 | Launch readiness, release 0.3.0 / desktop 0.2.0 | done (site deploy pending; handoffs) | bc1fdc0, f8a78e7, 7e2889f, e2f5788, ddcca14, 9327b37, b91e7b9, 31414f3; cli-v0.3.0, desktop-v0.2.0; hitop-action 37701e4, v1.0.1 | 2026-11-01 |
+| T11 | Launch readiness, release 0.3.0 / desktop 0.2.0 | done (handoffs) | bc1fdc0, f8a78e7, 7e2889f, e2f5788, ddcca14, 9327b37, b91e7b9, 31414f3; cli-v0.3.0, desktop-v0.2.0; hitop-action 37701e4, v1.0.1 | 2026-11-01 |
 | T12 | `hitop mcp` | done (handoff) | c0a55c8, 1d6986f, faad9aa; MCP directory listing text in section 6 | 2026-11-01 |
 | T13 | GraphQL | todo | | |
 | T14 | WebSocket | todo | | |
@@ -746,7 +746,7 @@ export PATH="$HOME/.cargo/bin:$PATH"
 - **Done when:** scenario test green in CI; releases published; live site updated.
   **Handoffs:** owner records the GIF if `vhs` can't run here, builds the MAS update, and posts
   the launch.
-- **Notes (2026-11-01, done; site deploy and handoffs open):**
+- **Notes (2026-11-01, done; handoffs open):**
   - Launch gate, two layers. `cli/crates/hitop/tests/launch_gate.rs`: `hitop import` of a Postman v2.1
     collection (`cli/fixtures/launch-gate/shop.postman_collection.json`, written for hitop) with two
     Postman environments (Staging, Local; `password` of type secret), then a run per environment against
@@ -796,8 +796,8 @@ export PATH="$HOME/.cargo/bin:$PATH"
     https://github.com/bohdaq/hitop/actions/runs/41278983311 green: `desktop-v0.2.0` with the universal dmg and
     app.tar.gz, msi, setup.exe, deb, rpm and AppImage, all named 0.2.0. hitop-action self-test on 0.3.0
     (81264f1): https://github.com/bohdaq/hitop-action/actions/runs/41279497845 green.
-  - Still open: the site deploy (comparison pages, guides, home page `hitop mcp` line, which links to T12's
-    guide, so both go out together); the handoffs in section 6.
+  - Site deployed from ec1b9cf on 2026-11-01 (with T12's guide); every home-page link returns 200. Still
+    open: the handoffs in section 6.
   - Launch drafts in `launch/` (README with where and when, Show HN, r/rust, r/webdev, This Week in Rust,
     Product Hunt). Nothing posted.
 
