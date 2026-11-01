@@ -1123,6 +1123,49 @@ export PATH="$HOME/.cargo/bin:$PATH"
 - Release CLI 1.0.0 and desktop 1.0.0; deploy.
 - **Done when:** fuzzers run clean for 30 minutes locally; releases published. **Handoffs:** MAS
   build 1.0; App Store price change ($9–19) if the owner wants it.
+- **Notes (2026-11-01, done; handoffs in section 6):**
+  - Format freeze: `spec/collection-format.md` and `spec/run-report.md` are **stable**; spec section 7 states the promise
+    (additive only within v1; unknown keys kept at the top level and on rows, an error inside `body`/`scripts`/`websocket`/
+    `grpc`/enabled params; unknown auth `type` is an error, unknown keys inside `auth` dropped; breaking = `format: 2`, refused
+    by v1 readers). Compatibility suite `spec/compat/v1/` (CC BY 4.0, README): minimal, http, graphql, websocket, grpc, openapi
+    (with its `spec.yaml`), secrets (environments, globals, `${secret:...}` refs), examples, unknown-keys, quirks (non-canonical:
+    `.yml`, flow style, numbers/booleans as strings, hidden and non-YAML files, a blank header row) and `run-report/report.json`.
+    `hitop-core/tests/compat.rs`: read each folder from disk and in memory = `expected.json`, write + read back, byte-identical
+    write for canonical cases, later `format` refused, v1 report keeps every key and type (native only). Case list only grows.
+  - Fuzzing: `cli/fuzz` (own workspace, nightly, hitop-core without `native`): `collection_yaml` (in-memory files; a folder that
+    reads must write and read back), `postman` (collection + environment/globals), `openapi` (import + sync, options from byte 0).
+    `fuzz/seed.sh` builds corpora from the repo fixtures (corpora/artifacts gitignored; one small seed in `fuzz/seeds/openapi`).
+    Workflow `fuzz.yml`: 60 s per target per push on nightly-2026-10-24, crash input uploaded. One crash found and fixed:
+    request files differing only in case (`liVe-prices.yaml` + `live-prices.yaml`) read fine but couldn't be written back →
+    both readers now refuse them (1b51e9f). Local 30-minute runs (nightly 2026-10-24, -O, 8-core box, all three in parallel),
+    all clean: collection_yaml 1801 s, 2,436,097 execs, peak RSS 346 MB (rerun from scratch after the fix); postman 1801 s,
+    1,699,348 execs, 561 MB; openapi 1801 s, 322,075 execs, 516 MB.
+  - Audits: `licenses.yml` now runs `cargo deny check licenses advisories` for cli, hitop-wasm, server, desktop (sync-server
+    already did) and `npm audit --omit=dev --audit-level=low` for desktop, webapp, site. Fixed: fflate 0.8.3 (GHSA-px8p-9vwx-vf98,
+    the one open Dependabot alert, #237; the "2 moderate" were this one plus closed ones — all others are `fixed`), plist 1.10.3 →
+    quick-xml 0.42 in the desktop (RUSTSEC-2026-0194/-0195), indicatif 0.18 (drops unmaintained number_prefix). tokio already
+    1.54.1 (latest) everywhere. Ignored with reasons in deny.toml, all "unmaintained", no vulnerability: bincode (syntect's bundled
+    dumps), zvariant/zvariant_derive/zbus_names (zbus 5 via keyring; merged into zbus 6), proc-macro-error and unic-* (Tauri 2
+    build-time). sync-server keeps its RSA Marvin ignore.
+  - Flaky WebSocket test fixed (fb37d84): the socket task dropped its channel ends in an unspecified order, so `events` could end
+    while the inbox still took a send. Reproduced 25/300 under load; after the fix 0/300.
+  - MAS bookmarks (a49eb5b): `desktop/src-tauri/src/bookmarks.rs` (objc2 0.6 + objc2-foundation 0.3, macOS only): inside the sandbox
+    (`APP_SANDBOX_CONTAINER_ID`) `read_folder`, `write_folder` and `git` first resolve the folder's security-scoped bookmark and start
+    accessing it once per launch (renewed when stale), or save one for a folder just picked (`<app data>/folder-bookmarks.json`);
+    outside the sandbox nothing happens; closing a folder collection calls `folder_forget`. Entitlement
+    `com.apple.security.files.bookmarks.app-scope` only in Entitlements.mas.plist (tauri.github.conf.json drops MAS entitlements).
+    Checked by a cross `cargo clippy --target aarch64-apple-darwin` of the module here and by the new CI job `desktop-macos`
+    (check + clippy on macos-14). Not run on a Mac: handoff. Only matters for the web-app overlay build (the React UI has no folders).
+  - Docs: comparison pages, README, home page (three tiles), launch drafts: GraphQL, WebSocket (CLI, web app without handshake
+    headers), gRPC (CLI) supported, the released desktop gets WebSocket/gRPC/Git with the new UI; OpenAPI, snippets, diff, secret
+    managers, HTML reports, `hitop schedule` listed. Guides pin 1.0.0. Site built into the repo only: **not deployed** (needed).
+  - Versions: workspace 1.0.0 (+ hitop-core dep; cli, hitop-wasm, fuzz, desktop locks hand-edited, `cargo metadata --locked` ok),
+    desktop 1.0.0 (tauri.conf.json, Cargo.toml, package.json, package-lock.json). Before tagging: cli `cargo test --locked` 351
+    passed, clippy (all targets; core `--no-default-features`), hitop-wasm test + clippy (native, wasm32), server tests 10, cargo
+    deny all workspaces, npm audit all three, `cargo publish --dry-run -p hitop-core`.
+  - Deviations: no cargo-audit binary here, cargo-deny advisories is the audit (same RustSec DB). Desktop clippy on Linux couldn't
+    run locally (no GTK dev libs); CI's desktop jobs cover it. `desktop-v1.0.0` on GitHub still ships the React UI
+    (release-desktop.yml unchanged until the owner's T5 check), so it has no folders, WebSocket, gRPC or Git panel.
 
 ### Phase 3: teams (v1.x)
 
