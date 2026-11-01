@@ -1,3 +1,4 @@
+#![cfg(feature = "native")]
 //! Run reports: the JSON report (`spec/run-report.md`, `reportVersion` 1)
 //! and JUnit XML, built from the runner's steps. Steps come from
 //! [`crate::runner::run_collection_with`] or `_opts` already masked, so a
