@@ -32,17 +32,19 @@ hitop/
 │       │       ├── interpolation.rs # ${variable} substitution
 │       │       ├── scripting.rs    # Pre/post request JS via boa_engine; loads the pm.* shim (PM_SHIM) for Postman scripts
 │       │       ├── runner.rs       # Sequential collection runner (RunOptions: bail, timeout, variable overrides)
-│       │       ├── report.rs       # run reports: JSON (spec/run-report.md, reportVersion 1) and JUnit XML, no deps
+│       │       ├── report.rs       # run reports: JSON (spec/run-report.md, reportVersion 1), JUnit XML and to_html (one page, no script, CSP loads nothing), no deps
 │       │       ├── export.rs       # HITOP and Postman v2.1 import/export
 │       │       ├── postman.rs      # Postman import: collections (folders, auth, scripts), environments, globals, ImportReport
 │       │       ├── openapi/        # OpenAPI 3.0/3.1 import (refs.rs: parse + local $ref, example.rs: schema → example) and sync.rs (three-way per field)
 │       │       ├── secrets.rs      # secret variables: resolve order, keychain (keyring), Masker (••••)
 │       │       └── format/         # collection folders (YAML, spec/collection-format.md) ⇄ the JSON model; files.rs: in memory (path → text)
 │       │   ├── pm-shim.js          # byte-for-byte copy of shared/pm-shim.js (packaged; a test checks they match)
-│       │   └── tests/format.rs     # golden files (tests/golden/, UPDATE_GOLDEN=1 regenerates) + proptest round trip
+│       │   ├── tests/format.rs     # golden files (tests/golden/, UPDATE_GOLDEN=1 regenerates) + proptest round trip
+│       │   └── tests/report_html.rs # golden report.html from tests/golden/report/report.json (UPDATE_GOLDEN=1), escaping of every field
 │       ├── hitop-wasm/         # format + model for the web app (wasm-bindgen =0.2.126), own workspace, not published
 │       └── hitop/              # Binary crate (published to crates.io)
-│           ├── tests/run.rs    # hitop run: JUnit shape (roxmltree), JSON report, exit codes, flags, masking
+│           ├── tests/run.rs    # hitop run: JUnit shape (roxmltree), JSON and HTML reports, exit codes, flags, masking
+│           ├── tests/schedule.rs # hitop schedule: exact workflow text, actionlint (HITOP_ACTIONLINT or PATH; required when CI is set), crontab line, exit codes
 │           ├── tests/postman.rs # hitop import --to of the fixtures/postman collections, run against httpmock
 │           ├── tests/openapi.rs # hitop import openapi (file, URL via httpmock), run, openapi sync keeping edits, --prune
 │           ├── tests/cookies_forms.rs # cookie jar across send/run, -F uploads, saved form bodies
@@ -58,7 +60,8 @@ hitop/
 │               ├── commands/source.rs # a collection argument: global name or folder path
 │               ├── commands/folder.rs # `hitop init`, `hitop convert`
 │               ├── commands/secret.rs # `hitop secret set|get|rm|ls`, the `--secret` flag
-│               ├── commands/run.rs # `hitop run`: reporters, iterations, --data, exit codes 0/1/2
+│               ├── commands/run.rs # `hitop run`: reporters (cli, junit, json, html), iterations, --data, exit codes 0/1/2
+│               ├── commands/schedule.rs # `hitop schedule <folder> --github | --cron`: workflow file or crontab line; cron validation
 │               ├── commands/data.rs # `--data` CSV (RFC 4180, hand written) and JSON rows
 │               ├── commands/cookies.rs # `hitop cookies ls|clear`, `--no-cookies`
 │               ├── commands/globals.rs # `hitop globals show|set|unset|import|export [-c folder]`
@@ -158,11 +161,16 @@ hitop/
   `<workspace>/<env>/<name>`), prompt on a TTY. `HITOP_KEYCHAIN=off` skips the keychain (CLI tests set it). Values are
   masked as `••••` in output, history and runner steps (`runner::run_collection_with`); hitop-core feature `keychain` (default)
 - CI runs: `hitop run <folder|name> --env <e> | --env-file <yaml>`, `--var k=v`, `--bail`, `--timeout <ms>`,
-  `--iterations <n>` or `--data <csv|json>`, `--reporter cli,junit,json --out <dir>` (`junit.xml`, `report.json`);
+  `--iterations <n>` or `--data <csv|json>`, `--reporter cli,junit,json,html --out <dir>` (`junit.xml`, `report.json`, `report.html`);
   exit 0 passed, 1 a request or assertion failed, 2 usage or config error (`main.rs` maps `run`'s Err to 2).
   Default is to run every request; `--no-stop-on-fail` is a hidden no-op. Variable order: collection, environment,
   data row, `--var`, secrets. A new hitop-core runtime dep also changes `desktop/src-tauri/Cargo.lock` (CI checks it `--locked`)
   and `cli/crates/hitop-wasm/Cargo.lock` (its own workspace; `npm run build` builds it `--locked`, so a stale lock breaks every web build)
+- Scheduled runs: `hitop schedule <folder> --github [--cron E] [--env E] [--secrets a,b] [--name N] [--force] [--hitop-version V]`
+  writes `<git root>/.github/workflows/hitop-<slug>.yml` (`bohdaq/hitop-action@v1`, `schedule:` + `workflow_dispatch:`, secrets as
+  `HITOP_SECRET_<ENV>_<NAME>: ${{ secrets.<same> }}`, default = the env's + globals.yaml's secret names; html artifact only for
+  versions > 0.3.0); `--cron` alone prints a crontab line (`current_exe`, `%` escaped, `--log-dir`). Errors exit 2. CI (cli job)
+  installs actionlint 1.7.12 (sha256-pinned) as `HITOP_ACTIONLINT` and lints generated workflows
 - Globals: lowest scope (globals < collection < environment < data row < `--var` < script-set < secrets);
   global storage `globals.json`, a folder's `globals.yaml` (spec 5a); `hitop globals ...`, `hitop secret ... --globals`
   (`HITOP_SECRET_GLOBAL_<NAME>`, keychain `<ws>/global/<name>`); Postman globals import into them;

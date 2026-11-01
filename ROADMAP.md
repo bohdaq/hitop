@@ -149,7 +149,7 @@ Secret variables: `secret: true` in an environment file, with the value resolved
 | T19 | v1.0 hardening and release | todo | | |
 | T20 | Git UI in desktop | todo | | |
 | T21 | Secret manager integrations | todo | | |
-| T22 | HTML reports and scheduled runs | todo | | |
+| T22 | HTML reports and scheduled runs | done | 9c3302e, 7dd53a3, 2cdc097, 0638ca4; CI 41289440630 | 2026-11-01 |
 | T23 | Sync server (AGPL) | done (handoff) | 5cd2ac2, 9a8119f, 35f2775, f08bbce, a3b6c7d, ce07adf; deployed https://sync.hitop.rws8.tech | 2026-11-01 |
 | T24 | Client sync, teams, cloud runs | todo | | |
 | T25 | SSO and audit log | todo | | |
@@ -1094,6 +1094,51 @@ export PATH="$HOME/.cargo/bin:$PATH"
 - `--reporter html` (a single self-contained file).
 - `hitop schedule` writes a scheduled GitHub Actions workflow or a cron entry for a collection.
 - **Done when:** HTML report snapshot test; generated workflow validates with `actionlint`.
+- **Notes (2026-11-01, done):**
+  - HTML: `Report::to_html` in hitop-core `report.rs` (no new dependency, so no lock changes), `--reporter html` →
+    `<out>/report.html`. One page: summary cards, `--bail` note, every collection, iteration (data row table), request
+    (`<details>`, failed ones open: method, status, duration bar, URL, file, response time, error, failure line,
+    assertions). Inline CSS, **no script**: the "Show failed requests only" switch is CSS `body:has(#failures-only:checked)`;
+    CSP `default-src 'none'; style-src 'unsafe-inline'; base-uri 'none'; form-action 'none'`, so it loads nothing and
+    works offline; light/dark via `prefers-color-scheme`. Every report string goes through one escaper (`& < > " '`,
+    C0 controls → U+FFFD); the only value in a `style` attribute is a computed integer. Masking: built from the same
+    masked `Report` as JSON/JUnit (CLI test `secrets_are_masked_in_every_report` now checks report.html too).
+  - Determinism: the page is a pure function of the `Report` (no clock), so the test hook is the fixture:
+    `hitop-core/tests/report_html.rs` renders `tests/golden/report/report.json` (2 collections, data iterations,
+    assertion/HTTP/connection failures, `bailed`, null/set environment and file) and compares with `report.html`
+    (`UPDATE_GOLDEN=1`). Escaping test: a hostile string (`"'><img onerror>…<script>…<!--&amp;\0`) appended to every
+    string field and every data key; asserts no raw payload, the exact escaped form, every tag on the page in an
+    allowlist, and even quote counts per tag. Checked visually in headless Chromium, light and dark, 1100 and 420 px.
+  - `hitop schedule <folder> --github`: workflow at the git root (nearest `.git` above the folder; error outside a repo),
+    `hitop-<slug>.yml` (slug of `--name`, else collection name + env), `actions/checkout@v6` (persist-credentials false),
+    `bohdaq/hitop-action@v1` with `version` = this hitop's (`--hitop-version`), `path` relative to the root, `env`,
+    `reporter: cli,junit,json` (plus `html` and an `actions/upload-artifact@v7` step `if: always()` for versions after
+    0.3.0, since 0.3.0 images lack it), `permissions: contents: read`, concurrency group, `timeout-minutes: 30`. Secrets:
+    `HITOP_SECRET_<ENV>_<NAME>: ${{ secrets.<same> }}` on the step (`secrets::env_var`), default = the env's and the
+    folder `globals.yaml`'s secret names, or `--secrets a,b` (needs `--env`; `NAME=value` refused). User strings go
+    through a YAML double-quote function that refuses `${{`. Refuses an existing file without `--force`. Prints the
+    `gh secret set` lines. `--cron` alone prints one crontab line (`current_exe()`, single-quoted absolute paths, `%` →
+    `\%`, `--out <log-dir>/<UTC time>`, appends to `<log-dir>/hitop.log`, default `$XDG_STATE_HOME` or
+    `~/.local/state/hitop/runs/<slug>`) and secret hints on stderr. Errors exit 2 (`main.rs`, like `run`).
+  - Cron validation (`commands/schedule.rs`, unit tests): 5 fields, `*`, numbers, `a-b`, `*/n`, `a-b/n`, lists, a lone
+    month/day name; bounds 0-59/0-23/1-31/1-12/0-6 (7 refused: "Sunday is 0"); `@daily` and `a/n` refused with a hint.
+    With `--github` the shortest gap must be ≥ 5 minutes (actionlint flags faster schedules).
+  - actionlint 1.7.12 (2026-03-30, sha256 `8aca8db9…a3d8` from the release's checksums file): CI `cli` job downloads and
+    checks it, exports `HITOP_ACTIONLINT`; `tests/schedule.rs` lints every generated workflow (skips locally without
+    it, fails when `CI` is set) and a CI step generates two workflows from `cli/fixtures/sample` and lints them.
+  - Docs: `spec/run-report.md` section 5 (HTML report), CLI README ("Scheduled runs", `html`), guides
+    run-hitop-in-github-actions (html artifact, "Run on a schedule"), run-collections-in-ci, run-hitop-in-gitlab-ci;
+    built into the site on next deploy (not deployed). CLI-only by nature (reports and schedules belong to `hitop run`).
+  - Tests: hitop-core report_html 3 (golden, self-contained, escaping) + report unit 7; hitop schedule unit 6 (cron valid/invalid,
+    intervals, slugs/versions, YAML quoting, crontab line) + tests/schedule.rs 5 (exact workflow + actionlint, html variant,
+    secrets, 10 usage errors, crontab); tests/run.rs 13 (html in the masking test, `html_report_is_one_escaped_page`). Full
+    `cargo test --locked`, clippy (`--all-targets`, core `--no-default-features`) clean. CI run 41289440630 green, its actionlint
+    steps included.
+  - Open: the html reporter reaches the image and the action with the next CLI release; until then generated workflows
+    pin 0.3.0 without html. hitop-action could upload `report.html` itself (an `html-artifact-name` input) — not done,
+    the guide shows the extra step.
+  - For T19: `hitop schedule` pins `CARGO_PKG_VERSION`, so a build between a version bump and its tag writes a workflow
+    for an image that isn't published yet; tag promptly after a bump (`--hitop-version` is the escape hatch).
 
 #### T23 Sync server (AGPL)
 - New `sync-server/` (Rust, SQLite by default, Postgres optional), AGPL-3.0.
@@ -1200,6 +1245,7 @@ Agent appends here; owner ticks when done.
 | 2026-11-01 | T11 | Optional: the hitop-action Marketplace listing still shows v1.0.0 as newest; open https://github.com/bohdaq/hitop-action/releases/tag/v1.0.1, Edit, tick "Publish this Action to the GitHub Marketplace", Update release. `v1` already points at v1.0.1. | |
 | 2026-11-01 | T14 | Nothing to do now. Open question for later: should `hitop mcp` get WebSocket tools (for example connect, send, read the next messages, close)? T14 left them out as scoped; MCP `run_request` refuses WebSocket requests and points to `hitop ws`. On your Mac, when you do the T5 check, a WebSocket request in the desktop app sends its headers and auth (the browser build can't). | |
 | 2026-11-01 | T17 | Nothing to do now. Open question for later: should sync also merge header rows one by one (today a request whose headers you edited keeps all of them when the spec changes its headers), and should `hitop mcp` get an import or sync tool for OpenAPI? | |
+| 2026-11-01 | T22 | Nothing to do now. `--reporter html` and the html artifact in `hitop schedule --github` workflows reach users with the next CLI release (0.3.0 images don't have it); the guides already say "releases after 0.3.0". The guide changes go live with the next site deploy. | |
 
 ## 7. Setup the owner does before the agent starts
 
