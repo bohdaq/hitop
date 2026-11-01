@@ -643,11 +643,12 @@ export class Store extends EventTarget {
       method: tab.method || "GET",
       headers: (tab.headers || []).filter((h) => h.name).map((h) => ({ name: h.name, value: h.value ?? "", ...(h.enabled === false ? { enabled: false } : {}) })),
       body: BODY_METHODS.includes(tab.method) ? tab.requestBody || "" : "",
-      ...EXTRA_FIELDS(tab),
+      ...SAVED_FIELDS(tab),
     };
     const auth = cleanAuth(tab.auth);
     if (auth) request.auth = auth;
-    if (!BODY_METHODS.includes(tab.method)) request.bodyMode = "raw";
+    // The web app sends a body only with these methods.
+    if (!BODY_METHODS.includes(tab.method)) Object.assign(request, { bodyMode: "raw", bodyType: undefined });
     return { request, variables: this.variables(tab.loadedCollectionId), secrets: showSecrets ? [] : this.secretNamesFor(tab.loadedCollectionId) };
   }
 

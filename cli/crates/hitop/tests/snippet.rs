@@ -105,6 +105,11 @@ fn folder(home: &TempDir, base: &str) {
         "name: Upload\nmethod: POST\nurl: ${base}/upload\nauth:\n  type: apikey\n  key: X-API-Key\n  value: k-123\nbody:\n  type: multipart\n  fields:\n  - name: title\n    value: '@not-a-file'\n  - name: note\n    value: hi ${user}\n",
     );
     write(&dir, "requests/note.yaml", "name: Note\nmethod: PATCH\nurl: ${base}/note\nbody:\n  type: text\n  content: \"plain text\\twith 'quotes'\"\n");
+    write(
+        &dir,
+        "requests/user.yaml",
+        "name: User\nmethod: POST\nurl: ${base}/graphql\nbody:\n  type: graphql\n  content: |\n    query User($id: ID!) {\n      user(id: $id) { name }\n    }\n  variables: |\n    {\"id\": \"${user}\"}\n  operationName: User\n",
+    );
     write(&dir, "requests/purge.yaml", "name: Purge\nmethod: PURGE\nurl: ${base}/assets/app.js\nheaders:\n- name: X-Tag\n  value: a\n- name: X-Tag\n  value: b\n");
 }
 
@@ -123,7 +128,7 @@ fn generated_curl_sends_what_hitop_sends() {
     let home = TempDir::new().unwrap();
     let (base, rx) = capture();
     folder(&home, &base);
-    for name in ["List", "Create", "Profile", "Upload", "Note", "Purge"] {
+    for name in ["List", "Create", "Profile", "Upload", "Note", "Purge", "User"] {
         hitop(&home).args(["requests", "send", "./api", name, "--env", "dev", "--no-cookies"]).env("HITOP_SECRET_DEV_TOKEN", SECRET).assert().success();
         let sent = normalize(&rx.recv().unwrap());
         let out = hitop(&home).args(["snippet", "./api", name, "--env", "dev", "--lang", "curl", "--show-secrets"]).env("HITOP_SECRET_DEV_TOKEN", SECRET).assert().success();

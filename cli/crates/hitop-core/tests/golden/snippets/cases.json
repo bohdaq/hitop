@@ -57,5 +57,16 @@
       "id": 6, "name": "Purge", "method": "PURGE", "url": "https://cdn.example.test/assets/app.js",
       "headers": [{ "name": "X-Tag", "value": "a" }, { "name": "X-Tag", "value": "b" }], "body": ""
     }
+  },
+  {
+    "name": "graphql-query",
+    "variables": { "base": "https://api.example.test", "userId": "7", "token": "never-printed" },
+    "secrets": ["token"],
+    "request": {
+      "id": 7, "name": "User", "method": "POST", "url": "${base}/graphql",
+      "headers": [], "body": "query User($id: ID!) {\n  user(id: $id) { name }\n}\n",
+      "bodyType": "graphql", "graphql": { "variables": "{\"id\": \"${userId}\"}", "operationName": "User" },
+      "auth": { "type": "bearer", "token": "${token}" }
+    }
   }
 ]

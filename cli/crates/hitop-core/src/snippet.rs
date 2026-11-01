@@ -12,6 +12,7 @@ use regex::Regex;
 
 use crate::auth;
 use crate::form;
+use crate::graphql;
 use crate::model::{Auth, Request};
 
 /// A snippet language.
@@ -196,6 +197,16 @@ fn build(request: &Request, collection_auth: Option<&Auth>, variables: &HashMap<
                 )
             }
         }
+        _ if request.is_graphql() => {
+            let op = request.graphql_operation().unwrap_or_default();
+            let (query, variables, name) = (fill(op.query), fill(op.variables), fill(op.operation_name));
+            if !has(&headers, "Content-Type") {
+                headers.push(("Content-Type".into(), graphql::CONTENT_TYPE.into()));
+            }
+            // A placeholder can leave the variables invalid JSON
+            // (`{"id": {{id}}}`): they go in as written then.
+            Body::Raw(graphql::request_body(&query, &variables, &name).unwrap_or_else(|_| graphql_body_unchecked(&query, &variables, &name)))
+        }
         _ if request.body.is_empty() => Body::None,
         _ => Body::Raw(fill(&request.body)),
     };
@@ -215,6 +226,19 @@ fn build(request: &Request, collection_auth: Option<&Auth>, variables: &HashMap<
         url = url.replace(&format!("%7B%7B{}%7D%7D", form::encode_component(name)), &placeholder(name));
     }
     Ok(Spec { method, url, headers, basic, body })
+}
+
+/// `graphql::request_body` without the variables check.
+fn graphql_body_unchecked(query: &str, variables: &str, operation_name: &str) -> String {
+    let mut out = format!("{{\"query\":{}", serde_json::Value::String(query.to_string()));
+    if !variables.trim().is_empty() {
+        out.push_str(&format!(",\"variables\":{}", variables.trim()));
+    }
+    if !operation_name.trim().is_empty() {
+        out.push_str(&format!(",\"operationName\":{}", serde_json::Value::String(operation_name.trim().to_string())));
+    }
+    out.push('}');
+    out
 }
 
 fn basic_header(user: &str, pass: &str) -> String {
@@ -675,6 +699,20 @@ mod tests {
         };
         let s = generate(Lang::Curl, &r, None, &HashMap::new(), &[]).unwrap();
         assert!(s.code.contains("'https://x/up?api_key=a%20b'") && s.code.contains("--form-string 'n=@v'") && !s.code.contains("Content-Type"), "{}", s.code);
+    }
+
+    #[test]
+    fn graphql_variables_with_a_placeholder_go_in_as_written() {
+        let r = Request {
+            method: "POST".into(),
+            url: "https://x/graphql".into(),
+            body: "{ me }".into(),
+            body_type: Some("graphql".into()),
+            graphql: Some(crate::model::Graphql { variables: "{\"id\": ${id}}".into(), ..Default::default() }),
+            ..Default::default()
+        };
+        let s = generate(Lang::Curl, &r, None, &HashMap::new(), &[]).unwrap();
+        assert!(s.code.contains(r#"--data-raw '{"query":"{ me }","variables":{"id": {{id}}}}'"#) && s.code.contains("Content-Type: application/json"), "{}", s.code);
     }
 
     #[test]
