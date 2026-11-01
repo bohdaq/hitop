@@ -135,7 +135,7 @@ Secret variables: `secret: true` in an environment file, with the value resolved
 | T5 | Desktop = web app; web folder import/export | todo | | |
 | T6 | Cookie jar and multipart in Rust and CLI | todo | | |
 | T7 | Release infra: GitHub Releases, Docker image | done | ee41820; dry run cli-v0.3.0-rc.1, desktop-v0.2.0-rc.1; deployed | 2026-11-01 |
-| T8 | GitHub Action and GitLab template | todo | | |
+| T8 | GitHub Action and GitLab template | handoff | 52f26f5, 0595081; cli-v0.3.0-rc.2; hitop-action aa873b7, 1223c47, tags v1, v1.0.0 | 2026-11-01 |
 | T9 | License notices, DCO, project policies | done | 51cd299; DCO verified on PR #1 | 2026-11-01 |
 | T10 | Opt-in telemetry | todo | | |
 | T11 | Launch readiness, release 0.3.0 / desktop 0.2.0 | todo | | |
@@ -399,6 +399,53 @@ export PATH="$HOME/.cargo/bin:$PATH"
   `.gitlab-ci.yml` template).
 - **Done when:** the action's self-test passes on GitHub. **Handoff:** owner ticks "Publish to
   Marketplace" on the release.
+- **Notes (2026-11-01, done; Marketplace handoff open):**
+  - `bohdaq/hitop-action` (MIT): composite action. `run.sh` runs `docker run --network host --user
+    $(id -u):$(id -g) -v $GITHUB_WORKSPACE:/work ghcr.io/bohdaq/hitop:<version> run ...` (user so the
+    reports belong to the runner user; `HOME=/tmp`, `HITOP_KEYCHAIN=off`), always exits 0 and writes the
+    outputs `exit-code`, `passed`, `report-dir`, `junit-file`, `report-file`; then `actions/upload-artifact@v7`
+    uploads `junit.xml` (artifact `hitop-junit`) and `actions/github-script@v9` runs `summary.js`, which
+    writes the job summary from `report.json` (reads only `reportVersion` 1, says so otherwise) and calls
+    `setFailed` unless the exit code is 0. Inputs: `version` (required, the image tag; no default so users
+    pin), `path`, `env`, `env-file`, `reporter` (`cli,junit,json`), `out`, `secrets` (lines `NAME=value` →
+    `--secret`, `::add-mask::`, shown as `••••` in the echoed command), `vars` (→ `--var`), `args`,
+    `artifact-name`, `summary`. Every `HITOP_*` env var of the step (so `HITOP_SECRET_<ENV>_<NAME>`) is
+    passed into the container by name. Linux runners only (needs Docker); README says to use the release
+    binary on macOS and Windows.
+  - Self-test `.github/workflows/self-test.yml` (push, PR, dispatch with a version): a Python mock server
+    (`test/mock_server.py`) on 127.0.0.1:8765, fixtures `test/fixtures/api` (secret via the input and via
+    `HITOP_SECRET_CI_TOKEN`, `--var`, `--timeout`) and `test/fixtures/failing` (assertion failure, HTTP 500,
+    connection refused, and `--bail`), plus exit code 2 (unknown env, empty version). Asserts outputs,
+    report contents, that no secret value reaches the reports, and that reports are removable. Green:
+    https://github.com/bohdaq/hitop-action/actions/runs/41268052937 (first run 41267938196 also green).
+  - JUnit rendering on GitHub (T3's deferred check), both on hitop's real `junit.xml`:
+    `dorny/test-reporter@v3` (`java-junit`): one suite per collection, one test per request, and each failure
+    as `AssertionError: status is 201: got 200`, `HttpStatus: HTTP 500`, `RequestError: <connection error>`.
+    v3 writes to the job summary by default; `use-actions-summary: false` makes a check run (needs `checks:
+    write`). `mikepenz/action-junit-report@v6`: a check run with 3 annotations titled
+    `<collection>.<request>` with the failure line as message; its summary table lists failed tests by their
+    message. Annotations sit on path `<collection>` line 1, since testcases have no `file` attribute (open item
+    below). No change needed to the JUnit shape.
+  - `--bail` and `<skipped/>`: decided not to add skipped testcases. The JUnit file records what ran, the JSON
+    report has `bailed: true`, and the action summary says the run stopped early; listing never-run requests
+    would need the runner to report the remaining order, a core change while T4 works in `cli/`. Documented in
+    the GitHub Actions guide. Revisit if a user asks.
+  - GitLab: the distroless image has no shell, so GitLab can't run `script:` in it. `release-cli.yml` now also
+    pushes `ghcr.io/bohdaq/hitop:<version>-debug` (and `:debug` on non-rc releases) from
+    `cli/docker/Dockerfile.debug` (distroless `static-debian12:debug`: busybox `sh`, root, so it can write
+    reports into the GitLab build dir), and the image job runs the smoke test on it plus `sh -c` with an
+    empty entrypoint. Template: `image: {name: ghcr.io/bohdaq/hitop:<version>-debug, entrypoint: [""]}`.
+    The guide also shows the static release binary in `alpine` with the `.sha256` check. Checked locally with
+    rc.2 the way GitLab runs it (`--entrypoint ""`, `sh -c`, project mounted): exit 0, reports written.
+  - `cli-v0.3.0-rc.2` on 52f26f5 (Release CLI run 41267320514 green): the first image with T3's reporters and
+    the first `-debug` image. Its binary still says `hitop 0.2.0` (workspace version is bumped in T11).
+  - Guides `site/content/guides/run-hitop-in-github-actions.md` and `run-hitop-in-gitlab-ci.md`
+    (`/terms/run-hitop-in-github-actions.html`, `/terms/run-hitop-in-gitlab-ci.html`), linked from
+    `run-collections-in-ci.md`; built, not deployed. The action README links the GitHub guide, so that link
+    works after the next site deploy. Docs pin `0.3.0-rc.2`; T11 changes them to `0.3.0` (and the action
+    self-test default `TEST_HITOP_VERSION`).
+  - Open for T11/T19: add a `file` attribute (the request's YAML path) to `<testcase>` so annotations land on
+    the request file in a pull request; spec section 4 would gain it as an addition within v1.
 
 #### T9 License notices, DCO, project policies
 - Keep MIT for everything that exists today (`LICENSE`, every `license` field). `sync-server/` (T23)
@@ -559,6 +606,7 @@ Agent appends here; owner ticks when done.
 | --- | --- | --- | --- |
 | 2026-11-01 | T2 | On your Mac (and a Windows or desktop Linux box if handy), check the keychain once: `hitop env add t2 && hitop secret set token --env t2` (macOS asks to allow access), then `hitop secret get token --env t2`, `hitop secret ls --env t2`, `hitop secret rm token --env t2`. The agent's machine and CI have no keychain, so only the fallback path is tested there. | |
 | 2026-11-01 | T3 | Open question, no action needed now: masking replaces every occurrence of a secret value, so a very short value (one to three characters) also masks those characters elsewhere in logs and reports (`token=t` turns every `t` into `••••`). Should hitop warn about, or refuse to mask, secrets shorter than some length? Until decided it masks them (safe side). | |
+| 2026-11-01 | T8 | Publish the action to the GitHub Marketplace: open https://github.com/bohdaq/hitop-action/releases/tag/v1.0.0, Edit, tick "Publish this Action to the GitHub Marketplace" (accept the agreement once), primary category **Testing**, secondary **Continuous integration**, then Update release. The name "Run hitop collection" (from `action.yml`) must be unique on the Marketplace; if taken, change `name:` in `action.yml` and retag v1. Listing text, if a field asks for it: "Run hitop API collections from your repository in GitHub Actions: pinned hitop image, JUnit artifact, job summary, secrets from repository secrets, and a failing check when a request fails." | |
 
 ## 7. Setup the owner does before the agent starts
 

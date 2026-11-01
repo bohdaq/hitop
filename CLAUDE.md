@@ -108,6 +108,15 @@ hitop/
 - Storage paths: `~/Library/Application Support/hitop/` (macOS), `~/.config/hitop/` (Linux)
 - `MAX_HISTORY = 50` in `storage.rs`
 
+### GitHub Action and images
+- `ghcr.io/bohdaq/hitop:<version>` is distroless static, nonroot, entrypoint `hitop`, workdir `/work`;
+  `<version>-debug` (`cli/docker/Dockerfile.debug`, busybox shell, root) is for GitLab CI (`entrypoint: [""]`).
+  Both pushed by `release-cli.yml`; `latest`/`debug` only on non-rc tags. Newest rc: `0.3.0-rc.2`
+- `bohdaq/hitop-action` (separate repo, MIT, tags `v1`, `v1.0.0`): composite action, `run.sh` (docker run
+  `--network host --user $(id -u)`), `summary.js` (job summary from report.json v1, sets the outcome from the
+  exit code), self-test with a local Python mock server. Move `v1` to each compatible release
+- Guides: `site/content/guides/run-hitop-in-github-actions.md`, `run-hitop-in-gitlab-ci.md`
+
 ### Desktop (`desktop/`)
 - Framework: Tauri 2.0, frontend: React 19 + MUI v7, build: Vite 6
 - Bundle ID: `com.bohdaq.hitop`

@@ -121,7 +121,9 @@ jobs:
         run: exit 1
 ```
 
-Each test is named after the request and grouped by collection; with `--data` or `--iterations` every iteration is its own suite. The failure message is the request's failure line (`status is 201: got 200`) and the details list every check. With `--bail` the run stops at the first failure, and requests that never ran are not in the report: the summary says the run stopped early.
+`dorny/test-reporter` writes its report to the job summary by default; with `use-actions-summary: false` it creates a check run, which needs the `checks: write` permission shown above. `mikepenz/action-junit-report` creates a check run with one annotation per failed request.
+
+Each test is named after the request and grouped by collection; with `--data` or `--iterations` every iteration is its own suite. The failure shows its kind and the request's failure line, such as `AssertionError: status is 201: got 200`, `HttpStatus: HTTP 500` or `RequestError` with the connection error. With `--bail` the run stops at the first failure, and requests that never ran are not in the report: the summary says the run stopped early.
 
 ## Test a server the job starts
 
