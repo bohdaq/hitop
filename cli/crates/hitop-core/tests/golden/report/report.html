@@ -1,0 +1,173 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'; base-uri 'none'; form-action 'none'">
+<meta name="referrer" content="no-referrer">
+<title>hitop run (failed)</title>
+<style>
+:root{color-scheme:light dark;--bg:#fff;--fg:#1b1d22;--muted:#5d6370;--line:#d9dce3;--card:#f5f6f8;--pass:#17803d;--pass-bg:#e3f5e9;--fail:#c4261d;--fail-bg:#fde7e5;--bar:#8aa4d6;--code:#eef0f4}
+@media (prefers-color-scheme:dark){:root{--bg:#121418;--fg:#e6e8ec;--muted:#9aa1ad;--line:#2c3038;--card:#1b1e24;--pass:#5fd38a;--pass-bg:#16301f;--fail:#ff7b72;--fail-bg:#3a1a19;--bar:#4f6aa3;--code:#22262e}}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--fg);font:14px/1.5 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif}
+.page{max-width:1100px;margin:0 auto;padding:24px 16px 48px}
+h1{font-size:22px;margin:0 0 4px}
+h2{font-size:18px;margin:32px 0 8px}
+h3{font-size:15px;margin:20px 0 8px;color:var(--muted)}
+.meta{color:var(--muted);margin:0 0 16px}
+.badge{display:inline-block;padding:1px 8px;border-radius:4px;font-size:12px;font-weight:600;vertical-align:middle}
+.badge.pass{background:var(--pass-bg);color:var(--pass)}
+.badge.fail{background:var(--fail-bg);color:var(--fail)}
+.cards{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:12px;margin:16px 0}
+.card{background:var(--card);border:1px solid var(--line);border-radius:6px;padding:12px}
+.card b{display:block;font-size:20px}
+.card span{color:var(--muted);font-size:12px}
+.note{background:var(--fail-bg);color:var(--fail);border-radius:6px;padding:8px 12px}
+.filter{display:inline-flex;gap:6px;align-items:center;margin:8px 0;cursor:pointer}
+body:has(#failures-only:checked) .req.pass{display:none}
+table.data{border-collapse:collapse;margin:0 0 8px}
+table.data td,table.data th{border:1px solid var(--line);padding:2px 8px;text-align:left;font-weight:normal}
+table.data th{color:var(--muted)}
+.req{border:1px solid var(--line);border-radius:6px;margin:6px 0;background:var(--bg)}
+.req.fail{border-color:var(--fail)}
+.req summary{display:grid;grid-template-columns:20px 64px minmax(0,1fr) 56px 140px;gap:8px;align-items:center;padding:6px 10px;cursor:pointer;list-style:none}
+.req summary::-webkit-details-marker{display:none}
+.mark.pass{color:var(--pass)}
+.mark.fail{color:var(--fail)}
+.method{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:12px;color:var(--muted)}
+.name{overflow-wrap:anywhere}
+.status{text-align:right;font-variant-numeric:tabular-nums}
+.time{font-size:12px;color:var(--muted);font-variant-numeric:tabular-nums}
+.time i{display:block;height:4px;border-radius:2px;background:var(--bar);margin-top:2px}
+.body{padding:4px 12px 10px 38px;border-top:1px solid var(--line)}
+.body dl{display:grid;grid-template-columns:max-content minmax(0,1fr);gap:2px 12px;margin:6px 0}
+.body dt{color:var(--muted)}
+.body dd{margin:0;overflow-wrap:anywhere}
+code{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:12px;background:var(--code);padding:1px 4px;border-radius:3px}
+.failure{color:var(--fail)}
+ul.asserts{list-style:none;padding:0;margin:6px 0}
+ul.asserts li{padding:1px 0}
+header.page{padding-bottom:0}
+main.page{padding-top:0}
+footer{margin-top:40px;color:var(--muted);font-size:12px}
+@media (max-width:640px){.req summary{grid-template-columns:20px minmax(0,1fr) 48px}.req summary .method,.req summary .time{display:none}}
+</style>
+</head>
+<body>
+<header class="page">
+<h1>hitop run <span class="badge fail">Failed</span></h1>
+<p class="meta">Started <time datetime="2026-11-01T12:00:00Z">2026-11-01T12:00:00Z</time> · 1.482 s · hitop 0.3.0</p>
+<p class="note">The run stopped at the first failure (--bail): later requests and iterations did not run.</p>
+<div class="cards">
+<div class="card"><b>3/6</b><span>requests passed</span></div>
+<div class="card"><b>3/5</b><span>assertions passed</span></div>
+<div class="card"><b>3</b><span>requests failed</span></div>
+<div class="card"><b>2</b><span>collections</span></div>
+<div class="card"><b>3</b><span>iterations</span></div>
+<div class="card"><b>1.482 s</b><span>duration</span></div>
+</div>
+<label class="filter"><input type="checkbox" id="failures-only"> Show failed requests only</label>
+</header>
+<main class="page">
+<section class="collection">
+<h2>Shop API <span class="badge fail">Failed</span></h2>
+<p class="meta">Environment <code>staging</code></p>
+<details class="req pass">
+<summary><span class="mark pass">✓</span><span class="method">GET</span><span class="name">Get user</span><span class="status">200</span><span class="time">47 ms<i style="width:35%"></i></span></summary>
+<div class="body">
+<dl>
+<dt>URL</dt><dd><code>https://api.example.com/users/1?key=••••</code></dd>
+<dt>File</dt><dd><code>shop-api/requests/get-user.yaml</code></dd>
+<dt>Response time</dt><dd>41 ms</dd>
+<dt>Duration</dt><dd>47 ms</dd>
+</dl>
+<ul class="asserts">
+<li><span class="mark pass">✓</span> status is 200</li>
+</ul>
+</div>
+</details>
+<details class="req fail" open>
+<summary><span class="mark fail">✗</span><span class="method">POST</span><span class="name">Create order</span><span class="status">200</span><span class="time">131 ms<i style="width:100%"></i></span></summary>
+<div class="body">
+<dl>
+<dt>URL</dt><dd><code>https://api.example.com/orders</code></dd>
+<dt>File</dt><dd><code>shop-api/requests/orders/create-order.yaml</code></dd>
+<dt>Response time</dt><dd>120 ms</dd>
+<dt>Duration</dt><dd>131 ms</dd>
+<dt>Failure</dt><dd class="failure">status is 201: got 200</dd>
+</dl>
+<ul class="asserts">
+<li><span class="mark fail">✗</span> status is 201: <span class="failure">got 200</span></li>
+<li><span class="mark pass">✓</span> id</li>
+</ul>
+</div>
+</details>
+<details class="req fail" open>
+<summary><span class="mark fail">✗</span><span class="method">GET</span><span class="name">Report</span><span class="status">500</span><span class="time">4 ms<i style="width:3%"></i></span></summary>
+<div class="body">
+<dl>
+<dt>URL</dt><dd><code>https://api.example.com/report</code></dd>
+<dt>File</dt><dd><code>shop-api/requests/report.yaml</code></dd>
+<dt>Response time</dt><dd>3 ms</dd>
+<dt>Duration</dt><dd>4 ms</dd>
+<dt>Failure</dt><dd class="failure">HTTP 500</dd>
+</dl>
+</div>
+</details>
+</section>
+<section class="collection">
+<h2>Users <span class="badge fail">Failed</span></h2>
+<p class="meta">No environment</p>
+<h3>Iteration 1 <span class="badge pass">passed</span> · <time datetime="2026-11-01T12:00:01Z">2026-11-01T12:00:01Z</time> · 20 ms</h3>
+<table class="data">
+<tr><th>id</th><th>user</th></tr>
+<tr><td>1</td><td>ada</td></tr>
+</table>
+<details class="req pass">
+<summary><span class="mark pass">✓</span><span class="method">GET</span><span class="name">Who</span><span class="status">200</span><span class="time">12 ms<i style="width:100%"></i></span></summary>
+<div class="body">
+<dl>
+<dt>URL</dt><dd><code>http://127.0.0.1:8765/who/ada</code></dd>
+<dt>Response time</dt><dd>9 ms</dd>
+<dt>Duration</dt><dd>12 ms</dd>
+</dl>
+<ul class="asserts">
+<li><span class="mark pass">✓</span> status is 200</li>
+</ul>
+</div>
+</details>
+<h3>Iteration 2 <span class="badge fail">failed</span> · <time datetime="2026-11-01T12:00:01Z">2026-11-01T12:00:01Z</time> · 1.250 s</h3>
+<table class="data">
+<tr><th>id</th><th>user</th></tr>
+<tr><td>2</td><td>bob</td></tr>
+</table>
+<details class="req pass">
+<summary><span class="mark pass">✓</span><span class="method">GET</span><span class="name">Who</span><span class="status">200</span><span class="time">10 ms<i style="width:1%"></i></span></summary>
+<div class="body">
+<dl>
+<dt>URL</dt><dd><code>http://127.0.0.1:8765/who/bob</code></dd>
+<dt>Response time</dt><dd>8 ms</dd>
+<dt>Duration</dt><dd>10 ms</dd>
+</dl>
+</div>
+</details>
+<details class="req fail" open>
+<summary><span class="mark fail">✗</span><span class="method">GET</span><span class="name">Slow</span><span class="status">—</span><span class="time">1.234 s<i style="width:100%"></i></span></summary>
+<div class="body">
+<dl>
+<dt>URL</dt><dd><code>http://127.0.0.1:8765/slow</code></dd>
+<dt>Duration</dt><dd>1.234 s</dd>
+<dt>Error</dt><dd class="failure">error sending request: operation timed out</dd>
+<dt>Failure</dt><dd class="failure">error sending request: operation timed out</dd>
+</dl>
+<ul class="asserts">
+<li><span class="mark fail">✗</span> status is 200: <span class="failure">failed</span></li>
+</ul>
+</div>
+</details>
+</section>
+<footer>Report format: hitop run report, version 1 (spec/run-report.md). Secret values show as ••••.</footer>
+</main>
+</body>
+</html>

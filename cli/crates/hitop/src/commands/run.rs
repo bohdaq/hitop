@@ -38,7 +38,8 @@ values with --secret or HITOP_SECRET_<ENV>_<NAME>.
 
 Reports: --reporter junit writes <out>/junit.xml, --reporter json writes
 <out>/report.json, format: https://github.com/bohdaq/hitop/blob/main/spec/run-report.md
-Secret values are •••• in both.
+--reporter html writes <out>/report.html, one page that works offline.
+Secret values are •••• in all of them.
 
 Cookies that responses set are sent with the later requests to the same site
 and kept for the next run (`hitop cookies ls|clear -c <collection>`);
@@ -52,6 +53,8 @@ pub enum Reporter {
     Junit,
     /// JSON report in <out>/report.json
     Json,
+    /// One self-contained HTML page in <out>/report.html
+    Html,
 }
 
 #[derive(Args)]
@@ -104,7 +107,7 @@ pub struct RunArgs {
     #[arg(long, value_enum, value_delimiter = ',', default_value = "cli")]
     reporter: Vec<Reporter>,
 
-    /// Directory for the junit and json reports
+    /// Directory for the junit, json and html reports
     #[arg(long, value_name = "DIR", default_value = "hitop-reports")]
     out: PathBuf,
 
@@ -286,6 +289,7 @@ fn write_reports(report: &Report, reporters: &[Reporter], out: &Path) -> Result<
             Reporter::Cli => None,
             Reporter::Junit => Some(("junit.xml", report.to_junit())),
             Reporter::Json => Some(("report.json", report.to_json())),
+            Reporter::Html => Some(("report.html", report.to_html())),
         })
         .collect();
     if files.is_empty() {

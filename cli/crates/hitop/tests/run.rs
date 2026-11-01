@@ -1,4 +1,4 @@
-//! `hitop run` for CI: reporters (cli, junit, json), exit codes and the run
+//! `hitop run` for CI: reporters (cli, junit, json, html), exit codes and the run
 //! flags (--env-file, --var, --bail, --timeout, --iterations, --data).
 //! HTTP goes to a local mock server only; the keychain is off.
 use std::fs;
@@ -203,19 +203,47 @@ fn secrets_are_masked_in_every_report() {
         let out_dir = format!("out{i}");
         let mut args = vec!["run", "./api"];
         args.extend(env_args);
-        args.extend(["--reporter", "cli,junit,json", "--out", &out_dir]);
+        args.extend(["--reporter", "cli,junit,json,html", "--out", &out_dir]);
         let out = hitop(&home, tmp.path()).args(&args).env("HITOP_SECRET_CI_TOKEN", SECRET).assert().code(1).get_output().clone();
         let junit = fs::read_to_string(tmp.path().join(&out_dir).join("junit.xml")).unwrap();
         let json = fs::read_to_string(tmp.path().join(&out_dir).join("report.json")).unwrap();
+        let html = fs::read_to_string(tmp.path().join(&out_dir).join("report.html")).unwrap();
         let log = format!("{}{}", String::from_utf8_lossy(&out.stdout), String::from_utf8_lossy(&out.stderr));
-        for (what, s) in [("junit", &junit), ("json", &json), ("log", &log)] {
+        for (what, s) in [("junit", &junit), ("json", &json), ("html", &html), ("log", &log)] {
             assert!(!s.contains(SECRET), "{what} holds the secret:\n{s}");
             assert!(s.contains("••••"), "{what} has no mask:\n{s}");
         }
-        assert!(junit.contains("key=••••") && json.contains("key=••••"), "{json}");
-        assert!(json.contains("token is ••••"), "{json}");
+        assert!(junit.contains("key=••••") && json.contains("key=••••") && html.contains("key=••••"), "{json}");
+        assert!(json.contains("token is ••••") && html.contains("token is ••••"), "{json}");
     }
     seen.assert_calls(2);
+}
+
+#[test]
+fn html_report_is_one_escaped_page() {
+    let server = MockServer::start();
+    server.mock(|when, then| {
+        when.path("/check");
+        then.status(200).body("<script>alert('body')</script>");
+    });
+    all_ok(&server);
+    let (home, tmp) = (TempDir::new().unwrap(), TempDir::new().unwrap());
+    folder(&tmp, &server.base_url());
+    hitop(&home, tmp.path())
+        .args(["run", "./api", "--env", "ci", "--secret", "token=tok-123", "--reporter", "html", "--out", "r"])
+        .assert()
+        .code(1)
+        .stderr(contains("report.html"));
+    // html alone: no other file.
+    let names: Vec<String> = fs::read_dir(tmp.path().join("r")).unwrap().map(|e| e.unwrap().file_name().to_string_lossy().into_owned()).collect();
+    assert_eq!(names, ["report.html"]);
+    let html = fs::read_to_string(tmp.path().join("r/report.html")).unwrap();
+    assert!(html.starts_with("<!DOCTYPE html>") && html.contains("default-src 'none'"));
+    // The request name "Check & <compare>" is escaped; no response body.
+    assert!(html.contains("Check &amp; &lt;compare&gt;"), "{html}");
+    assert!(!html.contains("<compare>") && !html.contains("<script") && !html.contains("alert("), "{html}");
+    assert!(html.contains("body contains &quot;yes&quot;"), "{html}");
+    assert!(html.contains("api/requests/check.yaml"), "{html}");
 }
 
 #[test]
@@ -231,7 +259,7 @@ fn usage_and_config_errors_exit_2() {
         (vec!["run", "./api", "--data", "none.csv"], "none.csv"),
         (vec!["run", "./api", "--data", "bad.csv"], "line 2"),
         (vec!["run", "./api", "--env-file", "none.yaml"], "none.yaml"),
-        (vec!["run", "./api", "--reporter", "html"], "invalid value"),
+        (vec!["run", "./api", "--reporter", "pdf"], "invalid value"),
         (vec!["run", "./api", "--env", "ci", "--env-file", "x.yaml"], "cannot be used with"),
         (vec!["run", "./api", "--iterations", "2", "--data", "bad.csv"], "cannot be used with"),
         (vec!["run", "./api", "--timeout", "0"], "invalid value"),

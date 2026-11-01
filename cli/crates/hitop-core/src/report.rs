@@ -358,6 +358,231 @@ impl Report {
     }
 }
 
+const HTML_STYLE: &str = r#"
+:root{color-scheme:light dark;--bg:#fff;--fg:#1b1d22;--muted:#5d6370;--line:#d9dce3;--card:#f5f6f8;--pass:#17803d;--pass-bg:#e3f5e9;--fail:#c4261d;--fail-bg:#fde7e5;--bar:#8aa4d6;--code:#eef0f4}
+@media (prefers-color-scheme:dark){:root{--bg:#121418;--fg:#e6e8ec;--muted:#9aa1ad;--line:#2c3038;--card:#1b1e24;--pass:#5fd38a;--pass-bg:#16301f;--fail:#ff7b72;--fail-bg:#3a1a19;--bar:#4f6aa3;--code:#22262e}}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--fg);font:14px/1.5 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif}
+.page{max-width:1100px;margin:0 auto;padding:24px 16px 48px}
+h1{font-size:22px;margin:0 0 4px}
+h2{font-size:18px;margin:32px 0 8px}
+h3{font-size:15px;margin:20px 0 8px;color:var(--muted)}
+.meta{color:var(--muted);margin:0 0 16px}
+.badge{display:inline-block;padding:1px 8px;border-radius:4px;font-size:12px;font-weight:600;vertical-align:middle}
+.badge.pass{background:var(--pass-bg);color:var(--pass)}
+.badge.fail{background:var(--fail-bg);color:var(--fail)}
+.cards{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:12px;margin:16px 0}
+.card{background:var(--card);border:1px solid var(--line);border-radius:6px;padding:12px}
+.card b{display:block;font-size:20px}
+.card span{color:var(--muted);font-size:12px}
+.note{background:var(--fail-bg);color:var(--fail);border-radius:6px;padding:8px 12px}
+.filter{display:inline-flex;gap:6px;align-items:center;margin:8px 0;cursor:pointer}
+body:has(#failures-only:checked) .req.pass{display:none}
+table.data{border-collapse:collapse;margin:0 0 8px}
+table.data td,table.data th{border:1px solid var(--line);padding:2px 8px;text-align:left;font-weight:normal}
+table.data th{color:var(--muted)}
+.req{border:1px solid var(--line);border-radius:6px;margin:6px 0;background:var(--bg)}
+.req.fail{border-color:var(--fail)}
+.req summary{display:grid;grid-template-columns:20px 64px minmax(0,1fr) 56px 140px;gap:8px;align-items:center;padding:6px 10px;cursor:pointer;list-style:none}
+.req summary::-webkit-details-marker{display:none}
+.mark.pass{color:var(--pass)}
+.mark.fail{color:var(--fail)}
+.method{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:12px;color:var(--muted)}
+.name{overflow-wrap:anywhere}
+.status{text-align:right;font-variant-numeric:tabular-nums}
+.time{font-size:12px;color:var(--muted);font-variant-numeric:tabular-nums}
+.time i{display:block;height:4px;border-radius:2px;background:var(--bar);margin-top:2px}
+.body{padding:4px 12px 10px 38px;border-top:1px solid var(--line)}
+.body dl{display:grid;grid-template-columns:max-content minmax(0,1fr);gap:2px 12px;margin:6px 0}
+.body dt{color:var(--muted)}
+.body dd{margin:0;overflow-wrap:anywhere}
+code{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:12px;background:var(--code);padding:1px 4px;border-radius:3px}
+.failure{color:var(--fail)}
+ul.asserts{list-style:none;padding:0;margin:6px 0}
+ul.asserts li{padding:1px 0}
+header.page{padding-bottom:0}
+main.page{padding-top:0}
+footer{margin-top:40px;color:var(--muted);font-size:12px}
+@media (max-width:640px){.req summary{grid-template-columns:20px minmax(0,1fr) 48px}.req summary .method,.req summary .time{display:none}}
+"#;
+
+impl Report {
+    /// One self-contained HTML page: inline CSS, no script, and a Content
+    /// Security Policy that forbids loading anything, so it works offline
+    /// and opens no connection. A pure function of the report (no clock),
+    /// so the same report gives the same bytes. Every string from the
+    /// report is escaped; secret values are already `••••`.
+    pub fn to_html(&self) -> String {
+        let mut h = String::with_capacity(16 * 1024);
+        let s = &self.summary;
+        let verdict = if self.passed { ("pass", "Passed") } else { ("fail", "Failed") };
+        h.push_str("<!DOCTYPE html>\n<html lang=\"en\">\n<head>\n<meta charset=\"utf-8\">\n");
+        h.push_str("<meta name=\"viewport\" content=\"width=device-width, initial-scale=1\">\n");
+        h.push_str("<meta http-equiv=\"Content-Security-Policy\" content=\"default-src 'none'; style-src 'unsafe-inline'; base-uri 'none'; form-action 'none'\">\n");
+        h.push_str("<meta name=\"referrer\" content=\"no-referrer\">\n");
+        let title = match self.collections.as_slice() {
+            [one] => format!("hitop run: {}", one.name),
+            _ => "hitop run".to_string(),
+        };
+        let _ = writeln!(h, "<title>{} ({})</title>", html(&title), verdict.1.to_lowercase());
+        let _ = writeln!(h, "<style>{HTML_STYLE}</style>\n</head>\n<body>");
+        let _ = writeln!(h, "<header class=\"page\">\n<h1>{} <span class=\"badge {}\">{}</span></h1>", html(&title), verdict.0, verdict.1);
+        let _ = writeln!(
+            h,
+            "<p class=\"meta\">Started <time datetime=\"{0}\">{0}</time> · {1} · {2} {3}</p>",
+            html(&self.started_at),
+            millis(self.duration_ms),
+            html(&self.tool.name),
+            html(&self.tool.version),
+        );
+        if self.bailed {
+            h.push_str("<p class=\"note\">The run stopped at the first failure (--bail): later requests and iterations did not run.</p>\n");
+        }
+        h.push_str("<div class=\"cards\">\n");
+        let card = |h: &mut String, value: String, label: &str| {
+            let _ = writeln!(h, "<div class=\"card\"><b>{value}</b><span>{label}</span></div>");
+        };
+        card(&mut h, format!("{}/{}", s.requests.passed, s.requests.total), "requests passed");
+        card(&mut h, format!("{}/{}", s.assertions.passed, s.assertions.total), "assertions passed");
+        card(&mut h, s.requests.failed.to_string(), "requests failed");
+        card(&mut h, s.collections.to_string(), if s.collections == 1 { "collection" } else { "collections" });
+        card(&mut h, s.iterations.to_string(), if s.iterations == 1 { "iteration" } else { "iterations" });
+        card(&mut h, millis(self.duration_ms), "duration");
+        h.push_str("</div>\n");
+        // Hides passing requests through CSS `:has()`, no script.
+        h.push_str("<label class=\"filter\"><input type=\"checkbox\" id=\"failures-only\"> Show failed requests only</label>\n");
+        h.push_str("</header>\n");
+        h.push_str("<main class=\"page\">\n");
+        for c in &self.collections {
+            let v = if c.passed { ("pass", "Passed") } else { ("fail", "Failed") };
+            let _ = writeln!(h, "<section class=\"collection\">\n<h2>{} <span class=\"badge {}\">{}</span></h2>", html(&c.name), v.0, v.1);
+            match &c.environment {
+                Some(e) => {
+                    let _ = writeln!(h, "<p class=\"meta\">Environment <code>{}</code></p>", html(e));
+                }
+                None => h.push_str("<p class=\"meta\">No environment</p>\n"),
+            }
+            let many = c.iterations.len() > 1;
+            for i in &c.iterations {
+                if many || i.data.is_some() {
+                    let v = if i.passed { ("pass", "passed") } else { ("fail", "failed") };
+                    let _ = writeln!(
+                        h,
+                        "<h3>Iteration {n} <span class=\"badge {c}\">{t}</span> · <time datetime=\"{at}\">{at}</time> · {d}</h3>",
+                        n = i.iteration,
+                        c = v.0,
+                        t = v.1,
+                        at = html(&i.started_at),
+                        d = millis(i.duration_ms),
+                    );
+                }
+                if let Some(data) = &i.data {
+                    h.push_str("<table class=\"data\">\n<tr>");
+                    for k in data.keys() {
+                        let _ = write!(h, "<th>{}</th>", html(k));
+                    }
+                    h.push_str("</tr>\n<tr>");
+                    for v in data.values() {
+                        let _ = write!(h, "<td>{}</td>", html(v));
+                    }
+                    h.push_str("</tr>\n</table>\n");
+                }
+                let longest = i.requests.iter().map(|r| r.duration_ms).max().unwrap_or(0).max(1);
+                for r in &i.requests {
+                    html_request(&mut h, r, longest);
+                }
+            }
+            h.push_str("</section>\n");
+        }
+        h.push_str("<footer>Report format: hitop run report, version 1 (spec/run-report.md). Secret values show as ••••.</footer>\n");
+        h.push_str("</main>\n</body>\n</html>\n");
+        h
+    }
+}
+
+fn html_request(h: &mut String, r: &RequestReport, longest: u64) {
+    let (class, mark) = if r.passed { ("pass", "✓") } else { ("fail", "✗") };
+    let open = if r.passed { "" } else { " open" };
+    let status = match r.status {
+        Some(s) => s.to_string(),
+        None => "—".to_string(),
+    };
+    // A whole number from 1 to 100: the only value in a style attribute.
+    let width = (r.duration_ms.saturating_mul(100) / longest).clamp(1, 100);
+    let _ = writeln!(
+        h,
+        "<details class=\"req {class}\"{open}>\n<summary><span class=\"mark {class}\">{mark}</span><span class=\"method\">{}</span><span class=\"name\">{}</span><span class=\"status\">{status}</span><span class=\"time\">{}<i style=\"width:{width}%\"></i></span></summary>",
+        html(&r.method),
+        html(&r.name),
+        millis(r.duration_ms),
+    );
+    h.push_str("<div class=\"body\">\n<dl>\n");
+    let _ = writeln!(h, "<dt>URL</dt><dd><code>{}</code></dd>", html(&r.url));
+    if let Some(f) = &r.file {
+        let _ = writeln!(h, "<dt>File</dt><dd><code>{}</code></dd>", html(f));
+    }
+    if let Some(ms) = r.response_time_ms {
+        let _ = writeln!(h, "<dt>Response time</dt><dd>{}</dd>", millis(ms));
+    }
+    let _ = writeln!(h, "<dt>Duration</dt><dd>{}</dd>", millis(r.duration_ms));
+    if let Some(e) = &r.error {
+        let _ = writeln!(h, "<dt>Error</dt><dd class=\"failure\">{}</dd>", html(e));
+    }
+    if let Some(f) = &r.failure {
+        let _ = writeln!(h, "<dt>Failure</dt><dd class=\"failure\">{}</dd>", html(f));
+    }
+    h.push_str("</dl>\n");
+    if !r.assertions.is_empty() {
+        h.push_str("<ul class=\"asserts\">\n");
+        for a in &r.assertions {
+            match &a.message {
+                None if a.passed => {
+                    let _ = writeln!(h, "<li><span class=\"mark pass\">✓</span> {}</li>", html(&a.name));
+                }
+                m => {
+                    let _ = writeln!(
+                        h,
+                        "<li><span class=\"mark fail\">✗</span> {}: <span class=\"failure\">{}</span></li>",
+                        html(&a.name),
+                        html(m.as_deref().unwrap_or("failed")),
+                    );
+                }
+            }
+        }
+        h.push_str("</ul>\n");
+    }
+    h.push_str("</div>\n</details>\n");
+}
+
+/// `182 ms`, `1.234 s`.
+fn millis(ms: u64) -> String {
+    if ms < 1000 {
+        format!("{ms} ms")
+    } else {
+        format!("{} s", seconds(ms))
+    }
+}
+
+/// HTML text and attribute values (always double-quoted): the five
+/// markup characters become references; NUL and other C0 controls but
+/// tab, newline and carriage return become U+FFFD, as HTML forbids them.
+fn html(s: &str) -> String {
+    let mut out = String::with_capacity(s.len());
+    for c in s.chars() {
+        match c {
+            '&' => out.push_str("&amp;"),
+            '<' => out.push_str("&lt;"),
+            '>' => out.push_str("&gt;"),
+            '"' => out.push_str("&quot;"),
+            '\'' => out.push_str("&#39;"),
+            '\t' | '\n' | '\r' => out.push(c),
+            c if c.is_control() => out.push('\u{FFFD}'),
+            _ => out.push(c),
+        }
+    }
+    out
+}
+
 /// The request line, then one line per assertion.
 fn case_text(r: &RequestReport) -> String {
     let mut s = match (r.status, &r.error) {

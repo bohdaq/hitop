@@ -1,0 +1,138 @@
+{
+  "reportVersion": 1,
+  "tool": { "name": "hitop", "version": "0.3.0" },
+  "startedAt": "2026-11-01T12:00:00Z",
+  "durationMs": 1482,
+  "passed": false,
+  "bailed": true,
+  "summary": {
+    "collections": 2,
+    "iterations": 3,
+    "requests": { "total": 6, "passed": 3, "failed": 3 },
+    "assertions": { "total": 5, "passed": 3, "failed": 2 }
+  },
+  "collections": [
+    {
+      "name": "Shop API",
+      "environment": "staging",
+      "passed": false,
+      "iterations": [
+        {
+          "iteration": 1,
+          "startedAt": "2026-11-01T12:00:00Z",
+          "durationMs": 182,
+          "data": null,
+          "passed": false,
+          "requests": [
+            {
+              "name": "Get user",
+              "method": "GET",
+              "url": "https://api.example.com/users/1?key=••••",
+              "passed": true,
+              "status": 200,
+              "responseTimeMs": 41,
+              "durationMs": 47,
+              "error": null,
+              "failure": null,
+              "assertions": [{ "name": "status is 200", "passed": true, "message": null }],
+              "file": "shop-api/requests/get-user.yaml"
+            },
+            {
+              "name": "Create order",
+              "method": "POST",
+              "url": "https://api.example.com/orders",
+              "passed": false,
+              "status": 200,
+              "responseTimeMs": 120,
+              "durationMs": 131,
+              "error": null,
+              "failure": "status is 201: got 200",
+              "assertions": [
+                { "name": "status is 201", "passed": false, "message": "got 200" },
+                { "name": "id", "passed": true, "message": null }
+              ],
+              "file": "shop-api/requests/orders/create-order.yaml"
+            },
+            {
+              "name": "Report",
+              "method": "GET",
+              "url": "https://api.example.com/report",
+              "passed": false,
+              "status": 500,
+              "responseTimeMs": 3,
+              "durationMs": 4,
+              "error": null,
+              "failure": "HTTP 500",
+              "assertions": [],
+              "file": "shop-api/requests/report.yaml"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "Users",
+      "environment": null,
+      "passed": false,
+      "iterations": [
+        {
+          "iteration": 1,
+          "startedAt": "2026-11-01T12:00:01Z",
+          "durationMs": 20,
+          "data": { "id": "1", "user": "ada" },
+          "passed": true,
+          "requests": [
+            {
+              "name": "Who",
+              "method": "GET",
+              "url": "http://127.0.0.1:8765/who/ada",
+              "passed": true,
+              "status": 200,
+              "responseTimeMs": 9,
+              "durationMs": 12,
+              "error": null,
+              "failure": null,
+              "assertions": [{ "name": "status is 200", "passed": true, "message": null }],
+              "file": null
+            }
+          ]
+        },
+        {
+          "iteration": 2,
+          "startedAt": "2026-11-01T12:00:01Z",
+          "durationMs": 1250,
+          "data": { "id": "2", "user": "bob" },
+          "passed": false,
+          "requests": [
+            {
+              "name": "Who",
+              "method": "GET",
+              "url": "http://127.0.0.1:8765/who/bob",
+              "passed": true,
+              "status": 200,
+              "responseTimeMs": 8,
+              "durationMs": 10,
+              "error": null,
+              "failure": null,
+              "assertions": [],
+              "file": null
+            },
+            {
+              "name": "Slow",
+              "method": "GET",
+              "url": "http://127.0.0.1:8765/slow",
+              "passed": false,
+              "status": null,
+              "responseTimeMs": null,
+              "durationMs": 1234,
+              "error": "error sending request: operation timed out",
+              "failure": "error sending request: operation timed out",
+              "assertions": [{ "name": "status is 200", "passed": false, "message": "failed" }],
+              "file": null
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}
