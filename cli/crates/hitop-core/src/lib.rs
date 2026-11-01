@@ -7,6 +7,7 @@ pub mod graphql;
 pub mod http;
 pub mod interpolation;
 pub mod model;
+pub mod openapi;
 pub mod params;
 pub mod postman;
 pub mod prepare;
