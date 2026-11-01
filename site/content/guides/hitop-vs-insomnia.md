@@ -18,11 +18,11 @@ Insomnia, by Kong, is a desktop client for APIs with three storage options (Loca
 | **Account** | None | The local Scratch Pad works without one; the project says accounts are needed for most capabilities |
 | **Storage** | A folder of YAML files, one per request, or local app storage | Local Vault, Git Sync (free for up to 3 users) and Cloud Sync (optionally end to end encrypted), in any combination |
 | **CLI** | `hitop`: one Rust binary (crates.io, static Linux builds, Docker image) | Inso CLI (`brew install inso`, downloads, Docker image `kong/inso`): runs tests and collections, lints specs |
-| **CI reports** | JUnit XML and a versioned JSON report | See the Inso CLI reference |
+| **CI reports** | JUnit XML, a versioned JSON report and a self-contained HTML page | See the Inso CLI reference |
 | **CI integrations** | GitHub Action `bohdaq/hitop-action`, GitLab CI template | Inso in any pipeline |
-| **API design** | None | Design documents, spec linting |
+| **API design** | No design or linting; OpenAPI 3.0 and 3.1 import, and sync with a newer spec that keeps your edits | Design documents, spec linting |
 | **Mock servers** | None | 1,000 requests per month on Essentials |
-| **Protocols** | HTTP. GraphQL, WebSocket and gRPC are planned | REST, GraphQL, WebSockets, Server-Sent Events, gRPC and other HTTP compatible protocols |
+| **Protocols** | HTTP everywhere. GraphQL (with schema completion) in the CLI and web app; WebSocket in the CLI and web app (a browser can't send handshake headers); gRPC, unary and server streaming, in the CLI. The desktop app gets all of them with its new UI (the web app in Tauri, in testing) | REST, GraphQL, WebSockets, Server-Sent Events, gRPC and other HTTP compatible protocols |
 
 ## The difference in practice
 

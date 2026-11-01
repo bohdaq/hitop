@@ -36,5 +36,6 @@ What it does today:
 - `hitop mcp` lets AI coding tools run and edit requests without seeing secrets.
 - A web app with no install, and desktop apps.
 
-It does HTTP only for now; GraphQL, WebSocket and gRPC are coming. Free and open source (MIT).
+The CLI speaks HTTP, GraphQL, WebSocket and gRPC, imports OpenAPI specs, and reads secrets from Vault, AWS,
+Azure and 1Password. Free and open source (MIT).
 I'd love to hear what's missing for your team to switch.

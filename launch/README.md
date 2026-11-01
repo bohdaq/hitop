@@ -1,7 +1,7 @@
 # Launch texts (drafts)
 
-Drafts for the owner to edit and post. Nothing here has been posted anywhere. Post once Phase 1 is
-live: CLI 0.3.0 on crates.io, desktop 0.2.0 on GitHub Releases, the site deployed with the
+Drafts for the owner to edit and post. Nothing here has been posted anywhere. Post once 1.0 is
+live: CLI 1.0.0 on crates.io, desktop 1.0.0 on GitHub Releases, the site deployed with the
 comparison pages and guides, and the demo GIF recorded (`vhs site/demo/demo.tape`).
 
 | File | Where | Notes |
@@ -14,6 +14,7 @@ comparison pages and guides, and the demo GIF recorded (`vhs site/demo/demo.tape
 
 Facts to keep true when editing: no account; MIT (sync server AGPL, not launched); the CLI and
 the free desktop builds have an anonymous weekly usage ping that is off unless turned on, and
-the web app and App Store builds don't contain it; HTTP only (GraphQL, WebSocket and gRPC are
-planned, not shipped); Postman scripts run through a `pm.*` layer, and `pm.sendRequest`,
+the web app and App Store builds don't contain it; HTTP and GraphQL, WebSocket in the CLI and web
+app (the browser without custom handshake headers), gRPC in the CLI, and the released desktop app
+has none of the three until its new UI ships; Postman scripts run through a `pm.*` layer, and `pm.sendRequest`,
 `postman.setNextRequest`, `require()` and OAuth 2.0 are not supported yet.

@@ -20,11 +20,12 @@ If your team uses Postman's cloud features (shared workspaces, monitors, publish
 | **License** | MIT (CLI, core library, desktop, web app) | Postman's own terms; Newman, the older runner, is Apache-2.0 |
 | **Where collections live** | A folder of YAML files, one file per request, or local app storage | Postman Cloud workspaces; Native Git keeps collections, environments and specs as files under `postman/` in a local Git repository and syncs to Postman Cloud |
 | **Command line runner** | `hitop`: one Rust binary (crates.io, static Linux builds, Docker image) | Postman CLI (`npm install -g postman-cli` or an install script); Newman (`npm install -g newman`) |
-| **CI reports** | JUnit XML and a versioned JSON report; exit codes 0, 1 and 2 | Newman: `cli`, `json` and `junit` reporters built in, HTML as a separate package; on the Postman pricing page, test result exports are not in the free plan |
+| **CI reports** | JUnit XML, a versioned JSON report and a self-contained HTML page; exit codes 0, 1 and 2; `hitop schedule` writes a scheduled GitHub Actions workflow or a crontab line | Newman: `cli`, `json` and `junit` reporters built in, HTML as a separate package; on the Postman pricing page, test result exports are not in the free plan |
 | **CI integrations** | GitHub Action `bohdaq/hitop-action`, GitLab CI template, Docker image `ghcr.io/bohdaq/hitop` | Postman CLI and Newman in any pipeline |
 | **Scripts** | JavaScript before and after each request, with a `pm.*` layer for Postman scripts (`pm.test`, `pm.expect`, `pm.response`, `pm.environment`, `pm.collectionVariables`, `pm.globals`, `pm.variables`) | JavaScript pre-request and test scripts with the `pm.*` API; public and private npm packages (pricing page) |
-| **Secrets** | Marked secret in the environment file, value in the OS keychain or an environment variable, never in the files; masked as `••••` in output and reports | Postman Local Vault and Shared Vault; Shared Vault is not in the free plan |
-| **Protocols** | HTTP (REST, any body). GraphQL, WebSocket and gRPC are planned | A multi-protocol client and runner (pricing page) |
+| **Secrets** | Marked secret in the environment file, value in the OS keychain or an environment variable, never in the files; references to HashiCorp Vault or OpenBao, AWS Secrets Manager, Azure Key Vault and 1Password resolved at run time; masked as `••••` in output and reports | Postman Local Vault and Shared Vault; Shared Vault is not in the free plan |
+| **Protocols** | HTTP everywhere. GraphQL (with schema completion) in the CLI and web app; WebSocket in the CLI and web app (a browser can't send handshake headers); gRPC, unary and server streaming, in the CLI. The desktop app gets all of them with its new UI (the web app in Tauri, in testing) | A multi-protocol client and runner (pricing page) |
+| **OpenAPI** | Import OpenAPI 3.0 and 3.1 specs into a collection folder, and sync it with a newer spec while keeping your edits | Imports OpenAPI and other API definitions (Postman docs) |
 | **Usage data** | An anonymous weekly ping in the CLI and the free desktop builds, off unless you turn it on; none in the web app or the App Store apps | See Postman's privacy policy |
 
 ## What moves over from Postman
@@ -36,7 +37,7 @@ See [Migrate from Postman](/terms/migrate-from-postman.html) for the steps.
 ## When Postman is the better fit
 
 - You need monitors, hosted mock servers, published documentation or API governance in one product.
-- Your requests use protocols other than HTTP today.
+- You need protocols beyond HTTP, GraphQL, WebSocket and gRPC, or WebSocket and gRPC in a released desktop app today.
 - Your scripts depend on `pm.sendRequest`, `postman.setNextRequest` or npm packages.
 
 ## When HITOP is the better fit
@@ -51,4 +52,5 @@ See [Migrate from Postman](/terms/migrate-from-postman.html) for the steps.
 - Postman CLI: https://learning.postman.com/docs/postman-cli/postman-cli-overview/ (install, "set up a project without an account")
 - Postman Native Git: https://learning.postman.com/docs/agent-mode/native-git/ (local Git repository, `postman/` folder, sync to Postman Cloud)
 - Newman: https://github.com/postmanlabs/newman (Apache-2.0, built in reporters)
+- Postman import: https://learning.postman.com/docs/getting-started/importing-and-exporting/importing-data/ (OpenAPI and other formats)
 - HITOP: https://github.com/bohdaq/hitop (MIT), [collection format](https://github.com/bohdaq/hitop/blob/main/spec/collection-format.md), [run report](https://github.com/bohdaq/hitop/blob/main/spec/run-report.md)

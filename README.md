@@ -61,7 +61,8 @@ GitLab CI and any other runner: `ghcr.io/bohdaq/hitop:0.3.0` (distroless) or
 
 - **Collections as files**: `hitop.yaml`, `requests/*.yaml` (subfolders are folders),
   `environments/*.yaml`, optional `globals.yaml`. Keys in a fixed order, so diffs stay small.
-  [Format spec](spec/collection-format.md) (CC BY 4.0).
+  [Format spec](spec/collection-format.md) (CC BY 4.0), stable since 1.0: version 1 only grows,
+  and every reader is tested against [its compatibility suite](spec/compat/v1/).
 - **Postman import**: collections v2.0 and v2.1 (folders, auth, scripts), environments and globals.
   Scripts run through a `pm.*` layer (`pm.test`, `pm.expect`, `pm.response`, `pm.environment`,
   `pm.collectionVariables`, `pm.globals`, `pm.variables`); the import lists, by line, anything it
@@ -71,13 +72,29 @@ GitLab CI and any other runner: `ghcr.io/bohdaq/hitop:0.3.0` (distroless) or
 - **Scripts**: JavaScript before and after each request: change the request, pass values to the
   next one, assert on the response.
 - **CI runner**: `hitop run` with `--env`, `--env-file`, `--var`, `--data` (CSV or JSON rows),
-  `--iterations`, `--timeout`, `--bail`; reporters `cli`, `junit`, `json`
-  ([report spec](spec/run-report.md)).
+  `--iterations`, `--timeout`, `--bail`; reporters `cli`, `junit`, `json` and `html` (one
+  self-contained page) ([report spec](spec/run-report.md)); `hitop schedule` writes a scheduled
+  GitHub Actions workflow or a crontab line.
 - **MCP server**: `hitop mcp ./my-api` lets Claude Code, Cursor and other MCP clients list, read,
   run, create and update requests and switch environments; secrets are never returned
   ([guide](https://hitop.rws8.tech/terms/use-hitop-with-claude-code-and-cursor.html)).
-- **HTTP details**: auth presets (Bearer, Basic, API key), query parameters, JSON, form and
-  multipart bodies, a cookie jar per workspace, request history.
+- **Protocols**: HTTP (auth presets for Bearer, Basic and API key, query parameters, JSON, form and
+  multipart bodies, a cookie jar per workspace, request history); GraphQL with variables and schema
+  completion (CLI and web app); WebSocket (`hitop ws`, and the web app, where a browser can't send
+  handshake headers); gRPC, unary and server streaming, through server reflection or `.proto` files
+  (`hitop grpc`). The desktop app gets WebSocket and gRPC with its new UI (the web app in Tauri,
+  in testing).
+- **OpenAPI**: `hitop import openapi` turns an OpenAPI 3.0 or 3.1 spec into a collection folder;
+  `hitop openapi sync` applies a newer spec and keeps your edits
+  ([guide](https://hitop.rws8.tech/terms/import-an-openapi-spec.html)).
+- **Code snippets and response diff**: `hitop snippet` writes the request as curl, fetch, Python,
+  Go, Java or Rust; the web app compares a response with a saved example or an earlier one.
+- **Secret managers**: `${secret:vault:...}`, `${secret:aws:...}`, `${secret:azure:...}` and
+  `${secret:op:...}` read HashiCorp Vault or OpenBao, AWS Secrets Manager, Azure Key Vault and
+  1Password at run time
+  ([guide](https://hitop.rws8.tech/terms/use-secrets-from-vault-aws-azure-and-1password.html)).
+- **Git panel**: status, diff, commit, pull, push, branches and conflicts for a collection folder,
+  in the desktop's new UI (in testing).
 - **Privacy**: no account and no cloud. An anonymous weekly usage ping exists in the CLI and the
   free desktop builds, off unless you turn it on (`hitop telemetry status` shows what it would
   send); the web app and App Store builds don't contain it.

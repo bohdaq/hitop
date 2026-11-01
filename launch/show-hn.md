@@ -24,11 +24,17 @@ should run it in CI.
   keychain or `HITOP_SECRET_<ENV>_<NAME>`, and are masked in output and reports.
 - `hitop mcp ./api` is an MCP server, so Claude Code or Cursor can list, run and edit requests
   without seeing secret values.
+- Besides HTTP: GraphQL, WebSocket (`hitop ws`) and gRPC (`hitop grpc`, by reflection or `.proto`
+  files). `hitop import openapi` builds a collection from an OpenAPI spec and `hitop openapi sync`
+  applies the next version without losing your edits.
+- Secrets can also be references to Vault, AWS Secrets Manager, Azure Key Vault or 1Password,
+  resolved at run time; `--reporter html` writes a one-page report and `hitop schedule` a
+  scheduled workflow.
 - There is also a web app (no install; it sends public requests through a small proxy so CORS isn't
   a problem) and a Tauri desktop app.
 
-It's a single Rust binary (reqwest with rustls, boa for JavaScript), MIT licensed, no account. It
-does HTTP only for now; GraphQL, WebSocket and gRPC are next.
+It's a single Rust binary (reqwest with rustls, boa for JavaScript, tonic for gRPC), MIT licensed,
+no account. The collection format is stable as of 1.0, with a compatibility suite.
 
 What I'd most like to hear: which Postman scripts break on import, and what your CI needs that the
 report doesn't give you yet.

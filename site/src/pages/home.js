@@ -18,6 +18,9 @@ const TILES = [
   ["brackets-curly", "Variables in every field", "Write ${baseUrl} or ${token} once per collection and use it in URLs, headers and bodies."],
   ["code", "Scripts before and after", "JavaScript runs before a request to set a signature or timestamp, and after it to pull a token out of the response for the next one."],
   ["clock-counter-clockwise", "History with timings", "The last 50 requests with status codes and times. Open one again with a click."],
+  ["plugs-connected", "HTTP, GraphQL, WebSocket, gRPC", "GraphQL with schema completion, WebSocket connections with saved messages (the web app and CLI), and gRPC calls from the CLI by server reflection or .proto files."],
+  ["file-code", "From OpenAPI or Postman", "Turn an OpenAPI 3.0 or 3.1 spec or a Postman export into a collection, then sync the next spec version without losing your edits."],
+  ["git-diff", "Code snippets and diffs", "Copy a request as curl, fetch, Python, Go, Java or Rust, and compare a response with a saved example or an earlier one."],
   ["shield-check", "Nothing to sign up for", "No account, no workspace sync, no analytics. Collections live on your device and move as a JSON file, or as Postman v2.1."],
 ];
 
@@ -35,7 +38,7 @@ const FAQ = [
   ["Can I bring my Postman collections?", "Yes. Import Postman v2.1 collections, and export back to Postman v2.1 or HITOP JSON."],
   ["Where is my data stored?", "On your device: browser storage for the web app and extensions, files for the Mac app and CLI, app storage on iOS. Nothing is synced to a server."],
   ["Does it work offline?", "The Mac app, the iOS app and the CLI work with no internet connection, which is handy for local and air gapped services."],
-  ["Can I run collections in CI?", html`Yes, with the CLI: <code>hitop run ./my-api --env ci --reporter junit</code> runs a collection folder from your repository with its scripts and variables and writes a JUnit report. On GitHub there is an <a href="/terms/run-hitop-in-github-actions.html">action</a>, and a Docker image for other pipelines.`],
+  ["Can I run collections in CI?", html`Yes, with the CLI: <code>hitop run ./my-api --env ci --reporter junit</code> runs a collection folder from your repository with its scripts and variables and writes a JUnit report (or JSON, or one HTML page). <code>hitop schedule</code> writes a scheduled workflow for you. On GitHub there is an <a href="/terms/run-hitop-in-github-actions.html">action</a>, and a Docker image for other pipelines.`],
 ];
 
 const TAGLINE = ["Your requests, keys and responses stay on your device.", "No account, no workspace sync, no tracking."];
