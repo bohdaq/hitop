@@ -44,7 +44,7 @@ enum Cmd {
     Secret(commands::secret::SecretCmd),
     /// View request history
     History(commands::history::HistoryArgs),
-    /// Import collections from a file
+    /// Import HITOP or Postman collections, Postman environments and globals
     Import(commands::import_export::ImportArgs),
     /// Export a collection to a file
     Export(commands::import_export::ExportArgs),

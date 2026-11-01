@@ -103,7 +103,19 @@ pub fn run(cmd: EnvCmd) -> Result<()> {
             println!("{} No environment active", "✓".green());
         }
         EnvCmd::Import { file } => {
-            let imported = parse(&std::fs::read_to_string(&file)?)?;
+            let text = std::fs::read_to_string(&file)?;
+            let v: serde_json::Value = serde_json::from_str(text.trim_start_matches('\u{feff}'))?;
+            if matches!(hitop_core::postman::detect(&v), Some(hitop_core::postman::Kind::Environment | hitop_core::postman::Kind::Globals)) {
+                // Postman: `type: "secret"` values go to the keychain.
+                let mut imported = hitop_core::postman::import_environment(&text)?;
+                imported.environment.id = new_id();
+                envs.environments.push(imported.environment.clone());
+                storage::save_environments(&envs)?;
+                println!("{} Imported 1 environment", "✓".green());
+                super::import_export::store_secrets(hitop_core::secrets::GLOBAL_WORKSPACE, &[imported], None);
+                return Ok(());
+            }
+            let imported = parse(&text)?;
             let n = imported.len();
             envs.environments.extend(imported);
             println!("{} Imported {} environment{}", "✓".green(), n, if n == 1 { "" } else { "s" });

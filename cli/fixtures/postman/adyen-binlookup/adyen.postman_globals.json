@@ -1,0 +1,9 @@
+{
+  "id": "6f3c1d6e-0000-4000-8000-000000000002",
+  "name": "Adyen test globals",
+  "values": [
+    { "key": "X-API-Key", "value": "dummy-api-key-2", "type": "secret", "enabled": true },
+    { "key": "YOUR_MERCHANT_ACCOUNT", "value": "HitopTest", "type": "default", "enabled": true }
+  ],
+  "_postman_variable_scope": "globals"
+}
