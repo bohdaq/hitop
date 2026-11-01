@@ -15,17 +15,23 @@ use tempfile::TempDir;
 const SECRET: &str = "s3cr3t-T0ken";
 const GLOBAL_SECRET: &str = "gl0bal-Pa55";
 
-const TOOLS: [&str; 9] = [
+const TOOLS: [&str; 12] = [
     "create_request",
     "get_request",
+    "import_openapi",
     "list_collections",
     "list_environments",
     "list_requests",
     "run_collection",
     "run_request",
+    "run_websocket",
     "set_environment",
+    "sync_openapi",
     "update_request",
 ];
+
+#[path = "support/ws_echo.rs"]
+mod ws_echo;
 
 struct Client {
     child: Child,
@@ -320,7 +326,7 @@ fn websocket_requests_are_shown_but_not_run() {
     let list = c.ok("list_requests", json!({}));
     assert!(list["requests"].as_array().unwrap().iter().any(|x| x["name"] == "Feed" && x["kind"] == "websocket"), "{list}");
     let e = c.err("run_request", json!({"request": "Feed", "environment": "other"}));
-    assert!(e.contains("WebSocket request") && e.contains("hitop ws"), "{e}");
+    assert!(e.contains("WebSocket request") && e.contains("run_websocket") && e.contains("hitop ws"), "{e}");
 }
 
 #[test]
@@ -411,4 +417,181 @@ fn a_path_that_is_no_folder_fails_to_start() {
     assert!(!out.status.success());
     assert!(String::from_utf8_lossy(&out.stderr).contains("hitop init"));
     assert!(out.stdout.is_empty());
+}
+
+#[test]
+fn run_websocket_sends_collects_within_bounds_and_masks_secrets() {
+    let (addr, seen) = ws_echo::echo_server();
+    let home = TempDir::new().unwrap();
+    let dir = home.path().join("live");
+    write(&dir, "hitop.yaml", "format: 1\nname: Live\nauth:\n  type: bearer\n  token: ${token}\n");
+    write(&dir, "environments/mock.yaml", &format!("variables:\n  host: '{addr}'\n  token:\n    secret: true\n"));
+    write(
+        &dir,
+        "requests/feed.yaml",
+        "name: Feed\nkind: websocket\nurl: ws://${host}/feed\nheaders:\n- name: X-Token\n  value: ${token}\nwebsocket:\n  subprotocols: [v1]\n  messages:\n  - name: hello\n    content: hello ${token}\n",
+    );
+    write(&dir, "requests/plain.yaml", "name: Plain\nmethod: GET\nurl: http://127.0.0.1:9/\n");
+    let mut c = Client::start(&home, &[dir.to_str().unwrap()], &[("HITOP_SECRET_MOCK_TOKEN", SECRET)]);
+    c.ok("set_environment", json!({"name": "mock"}));
+
+    // A saved request: its message by name, then texts, until 3 replies.
+    let r = c.ok("run_websocket", json!({"request": "Feed", "messages": ["hello"], "send": ["bin", "n=${n}"], "variables": {"n": "7"}, "count": 3}));
+    assert_eq!((r["protocol"].as_str(), r["received"].as_u64(), r["stopped"].as_str(), r["countReached"].as_bool()), (Some("v1"), Some(3), Some("count"), Some(true)), "{r}");
+    let events = r["events"].as_array().unwrap();
+    let kinds: Vec<&str> = events.iter().map(|e| e["event"].as_str().unwrap()).collect();
+    assert_eq!(&kinds[..6], ["sent", "sent", "sent", "received", "received", "received"], "{r}");
+    assert_eq!(events[0]["data"], "hello ••••", "{r}");
+    assert_eq!(events[3]["data"], "hello ••••");
+    assert_eq!(events[4]["binary"], "AP8=");
+    assert_eq!(events[5]["data"], "n=7");
+    assert!(events.last().unwrap()["event"] == "closed" && events.last().unwrap()["by"] == "hitop", "closed after the exchange: {r}");
+    // The server got the real values: header, collection auth, message.
+    assert_eq!(ws_echo::header(&seen, 0, "x-token").as_deref(), Some(SECRET));
+    assert_eq!(ws_echo::header(&seen, 0, "authorization"), Some(format!("Bearer {SECRET}")));
+
+    // A URL: no collection auth; listens for wait_ms when nothing comes.
+    let r = c.ok("run_websocket", json!({"url": format!("ws://{addr}/raw"), "send": ["quiet"], "wait_ms": 300}));
+    assert_eq!((r["received"].as_u64(), r["stopped"].as_str()), (Some(0), Some("wait")), "{r}");
+    assert_eq!(ws_echo::header(&seen, 1, "authorization"), None, "a URL gets no auth");
+
+    // The server closes; count not reached.
+    let r = c.ok("run_websocket", json!({"request": "Feed", "send": ["close"], "count": 5}));
+    let last = r["events"].as_array().unwrap().last().unwrap().clone();
+    assert_eq!((r["stopped"].as_str(), r["countReached"].as_bool(), last["code"].as_u64(), last["reason"].as_str()), (Some("closed"), Some(false), Some(4001), Some("bye")), "{r}");
+
+    // Refusals and failures are tool errors.
+    assert!(c.err("run_websocket", json!({"request": "Plain"})).contains("HTTP request"));
+    assert!(c.err("run_websocket", json!({})).contains("give `request`"));
+    assert!(c.err("run_websocket", json!({"request": "Feed", "url": "ws://x"})).contains("not both"));
+    assert!(c.err("run_websocket", json!({"url": "ws://127.0.0.1:9/x", "messages": ["hello"]})).contains("saved request"));
+    assert!(c.err("run_websocket", json!({"request": "Feed", "messages": ["nope"]})).contains("nope"));
+    assert!(!c.err("run_websocket", json!({"url": "ws://127.0.0.1:9/x", "timeout_ms": 2000})).is_empty());
+
+    let all = c.transcript.join("\n");
+    assert!(!all.contains(SECRET), "a secret value reached stdout:\n{all}");
+}
+
+const SPEC_V1: &str = r#"openapi: 3.0.3
+info: {title: Shop, version: "1"}
+servers: [{url: "https://shop.test/v1"}]
+paths:
+  /pets:
+    get:
+      operationId: listPets
+      summary: List pets
+      parameters:
+      - {name: X-Api-Version, in: header, required: true, example: "1"}
+      - {name: X-Client, in: header, required: true, example: mcp}
+      responses: {"200": {description: ok}}
+  /pets/{id}:
+    delete:
+      operationId: deletePet
+      summary: Delete a pet
+      parameters: [{name: id, in: path, required: true, schema: {type: integer}}]
+      responses: {"204": {description: ok}}
+"#;
+
+fn spec_v2() -> String {
+    SPEC_V1.replace("version: \"1\"", "version: \"2\"").replace("example: \"1\"}", "example: \"2\"}").replace(
+        "  /pets/{id}:\n    delete:\n      operationId: deletePet\n      summary: Delete a pet\n      parameters: [{name: id, in: path, required: true, schema: {type: integer}}]\n      responses: {\"204\": {description: ok}}\n",
+        "  /orders:\n    post:\n      operationId: createOrder\n      summary: Create an order\n      responses: {\"201\": {description: ok}}\n",
+    )
+}
+
+#[test]
+fn import_and_sync_openapi_stay_inside_the_workspace() {
+    let home = TempDir::new().unwrap();
+    let server = MockServer::start();
+    let mut spec = server.mock(|when, then| {
+        when.method(GET).path("/spec.yaml");
+        then.status(200).body(SPEC_V1);
+    });
+    let dir = home.path().join("api");
+    write(&dir, "hitop.yaml", "format: 1\nname: Api\n");
+    write(&dir, "environments/mock.yaml", "variables:\n  token:\n    secret: true\n");
+    write(&dir, "specs/v1.yaml", SPEC_V1);
+    write(home.path(), "outside.yaml", SPEC_V1);
+    let outside = home.path().join("outside.yaml");
+    let mut c = Client::start(&home, &[dir.to_str().unwrap()], &[("HITOP_SECRET_MOCK_TOKEN", SECRET)]);
+
+    // Paths outside the served folder, and places that aren't a new folder.
+    for (args, says) in [
+        (json!({"source": "../outside.yaml", "to": "shop"}), "inside the workspace"),
+        (json!({"source": outside.to_str().unwrap(), "to": "shop"}), "outside it"),
+        (json!({"source": "specs/v1.yaml", "to": "../shop"}), "inside the workspace"),
+        (json!({"source": "specs/v1.yaml", "to": home.path().join("x").to_str().unwrap()}), "outside it"),
+        (json!({"source": "specs/v1.yaml"}), "give `to`"),
+        (json!({"source": "specs/v1.yaml", "to": "."}), "served collection folder"),
+        (json!({"source": "specs/v1.yaml", "to": "requests/x"}), "served collection folder"),
+        (json!({"source": "specs/v1.yaml", "to": "specs"}), "not empty"),
+    ] {
+        let e = c.err("import_openapi", args.clone());
+        assert!(e.contains(says), "{args}: {e}");
+    }
+    assert!(!home.path().join("shop").exists() && !home.path().join("x").exists());
+
+    // From a file inside: a new collection folder.
+    let r = c.ok("import_openapi", json!({"source": "specs/v1.yaml", "to": "from-file"}));
+    assert_eq!((r["collection"].as_str(), r["requests"].as_u64()), (Some("Shop"), Some(2)), "{r}");
+    assert_eq!(r["report"]["mapped"]["operations"], 2);
+    assert!(dir.join("from-file/hitop.yaml").is_file() && dir.join("from-file/requests/list-pets.yaml").is_file());
+    assert!(c.err("import_openapi", json!({"source": "specs/v1.yaml", "to": "from-file"})).contains("already holds a collection"));
+    // From a URL: recorded, so sync finds the spec by itself.
+    c.ok("import_openapi", json!({"source": server.url("/spec.yaml"), "to": "shop"}));
+    let shop = dir.join("shop");
+    let list = shop.join("requests/list-pets.yaml");
+    let edited = fs::read_to_string(&list).unwrap().replace("  value: mcp\n", "  value: mcp\n- name: X-Mine\n  value: mine\n");
+    fs::write(&list, &edited).unwrap();
+    drop(c);
+
+    // A server on the imported folder: preview, apply, prune.
+    spec.delete();
+    server.mock(|when, then| {
+        when.method(GET).path("/spec.yaml");
+        then.status(200).body(spec_v2());
+    });
+    let mut c = Client::start(&home, &[shop.to_str().unwrap()], &[]);
+    let before = fs::read_to_string(&list).unwrap();
+    let r = c.ok("sync_openapi", json!({}));
+    assert_eq!((r["applied"].as_bool(), r["upToDate"].as_bool()), (Some(false), Some(false)), "{r}");
+    let d = &r["diff"];
+    assert_eq!(d["added"][0]["operationId"], "createOrder", "{d}");
+    assert_eq!(d["removed"][0]["operationId"], "deletePet", "{d}");
+    let changed = &d["changed"][0];
+    assert_eq!((changed["operationId"].as_str(), changed["updated"].clone()), (Some("listPets"), json!(["headers"])), "{changed}");
+    assert!(changed["rows"].as_array().unwrap().contains(&json!({"field": "headers", "name": "X-Api-Version", "change": "changed", "outcome": "updated"})), "{changed}");
+    assert!(changed["rows"].as_array().unwrap().contains(&json!({"field": "headers", "name": "X-Mine", "change": "added", "outcome": "yours"})), "{changed}");
+    assert_eq!(fs::read_to_string(&list).unwrap(), before, "a preview writes nothing");
+
+    let r = c.ok("sync_openapi", json!({"apply": true, "prune": false}));
+    assert_eq!(r["applied"], true, "{r}");
+    let after = fs::read_to_string(&list).unwrap();
+    assert!(after.contains("- name: X-Api-Version\n  value: '2'\n") && after.contains("- name: X-Mine\n  value: mine\n"), "{after}");
+    assert!(shop.join("requests/create-an-order.yaml").is_file() && shop.join("requests/delete-a-pet.yaml").is_file(), "removed operations stay without prune");
+    // `prune` without `apply` deletes nothing.
+    c.ok("sync_openapi", json!({"prune": true}));
+    assert!(shop.join("requests/delete-a-pet.yaml").is_file());
+    let r = c.ok("sync_openapi", json!({"apply": true, "prune": true}));
+    assert!(r["diff"]["pruned"] == true && !shop.join("requests/delete-a-pet.yaml").exists(), "{r}");
+    let r = c.ok("sync_openapi", json!({"apply": true}));
+    assert_eq!(r["upToDate"], true, "{r}");
+    // A spec file must be inside this workspace too.
+    assert!(c.err("sync_openapi", json!({"source": "../specs/v1.yaml"})).contains("inside the workspace"));
+    drop(c);
+
+    // Global storage: import without `to`, sync by name; the working
+    // directory bounds file paths.
+    let mut c = Client::start(&home, &[], &[]);
+    c.ok("import_openapi", json!({"source": server.url("/spec.yaml")}));
+    let cols = c.ok("list_collections", json!({}));
+    assert!(cols["collections"].as_array().unwrap().iter().any(|x| x["name"] == "Shop"), "{cols}");
+    let r = c.ok("sync_openapi", json!({"collection": "Shop"}));
+    assert_eq!(r["upToDate"], true, "{r}");
+    assert!(c.err("import_openapi", json!({"source": "/etc/hostname"})).contains("outside it"));
+    let file_import = c.ok("import_openapi", json!({"source": "outside.yaml", "to": "here"}));
+    assert_eq!(file_import["collection"], "Shop");
+    assert!(home.path().join("here/hitop.yaml").is_file());
+    let all = c.transcript.join("\n");
+    assert!(!all.contains(SECRET));
 }

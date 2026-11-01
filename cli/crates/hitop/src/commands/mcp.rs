@@ -12,10 +12,15 @@
 //!
 //! stdout is the protocol: nothing reached from here prints to it (notes
 //! from secret resolution go to stderr).
+//!
+//! `run_websocket` is one bounded exchange (connect, send, collect, close),
+//! never a session left open. File paths given to `import_openapi` and
+//! `sync_openapi` stay inside the workspace directory (the served folder, or
+//! the working directory with global storage).
 use std::collections::{BTreeMap, HashMap};
-use std::path::PathBuf;
+use std::path::{Component, Path, PathBuf};
 use std::sync::{Arc, Mutex};
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use anyhow::{bail, Context, Result};
 use clap::Args;
@@ -28,12 +33,18 @@ use schemars::JsonSchema;
 use serde::Deserialize;
 use serde_json::{json, Value};
 
+use base64::Engine;
 use hitop_core::{
-    model::{Auth, Collection, Environment, Header, Request},
+    format,
+    interpolation::interpolate,
+    model::{Auth, Collection, Environment, Header, Request, WebSocket, WEBSOCKET},
+    openapi,
+    prepare::Scopes,
     report::{ReportBuilder, RequestReport},
     runner::{self, RunOptions, RunStepResult},
     secrets::{Masker, Secrets},
     storage,
+    websocket::{self, Data, Event},
 };
 
 use super::cookies::{self, CookieFlags};
@@ -44,6 +55,11 @@ use super::source::Source;
 const MAX_BODY: usize = 64 * 1024;
 /// Time limit for each request unless the call gives `timeout_ms`.
 const DEFAULT_TIMEOUT_MS: u64 = 30_000;
+/// `run_websocket` bounds: messages collected, the whole exchange, and the
+/// bytes received.
+const WS_MAX_MESSAGES: usize = 100;
+const WS_MAX_TIME: Duration = Duration::from_secs(60);
+const WS_MAX_BYTES: usize = 256 * 1024;
 
 const INSTRUCTIONS: &str = "hitop: an HTTP API client. This server works on one workspace: a hitop \
 collection folder (hitop.yaml, requests/, environments/) or, without one, hitop's global storage. \
@@ -53,7 +69,10 @@ when a request runs (HITOP_SECRET_<ENV>_<NAME> env vars, the OS keychain, or ${s
 references already in the collection files) and every secret value \
 is shown as •••• in results. Variables, later ones win: globals, collection, environment, the call's \
 `variables`, variables set by scripts, secrets. Cookies that responses set are kept and sent like in \
-`hitop run`. There is no delete tool.";
+`hitop run`. run_websocket opens a WebSocket connection for one bounded exchange (send, collect replies, \
+close). import_openapi adds a collection from an OpenAPI spec; sync_openapi previews (and with `apply` \
+writes) a newer spec's changes, keeping your edits. There is no delete tool: sync_openapi removes requests \
+only when called with both `apply` and `prune`. File paths must be inside the workspace directory.";
 
 #[derive(Args)]
 pub struct McpArgs {
@@ -185,6 +204,40 @@ impl State {
 
     fn masker(&self) -> Masker {
         Masker::new(self.known.iter().map(String::as_str))
+    }
+
+    /// The directory file paths are confined to: the served folder, or the
+    /// working directory with global storage.
+    fn root(&self) -> Result<PathBuf> {
+        let dir = match &self.folder {
+            Some(d) => d.clone(),
+            None => std::env::current_dir()?,
+        };
+        dir.canonicalize().with_context(|| format!("the workspace directory {}", dir.display()))
+    }
+
+    /// `given` (relative to [`root`], or absolute) as a path inside the
+    /// workspace directory, which needn't exist yet; anything outside is
+    /// refused.
+    fn inside(&self, given: &str, what: &str) -> Result<PathBuf> {
+        let root = self.root()?;
+        let path = Path::new(given);
+        if given.trim().is_empty() || path.components().any(|c| matches!(c, Component::ParentDir)) {
+            bail!("{what} must be a path inside the workspace directory {} (no `..`)", root.display());
+        }
+        let full = if path.is_absolute() { path.to_path_buf() } else { root.join(path) };
+        // The nearest part that exists, with links resolved, must be inside.
+        let mut existing = full.as_path();
+        while !existing.exists() {
+            existing = existing.parent().context("no such directory")?;
+        }
+        let rest = full.strip_prefix(existing).unwrap_or(Path::new(""));
+        let real = existing.canonicalize()?;
+        let real = if rest.as_os_str().is_empty() { real } else { real.join(rest) };
+        if !real.starts_with(&root) {
+            bail!("{what} must be inside the workspace directory {}; {} is outside it", root.display(), given);
+        }
+        Ok(real)
     }
 
     /// Refuses input that holds a secret value: it would land in a file.
@@ -466,6 +519,54 @@ pub struct SetEnvironmentParams {
     pub name: Option<String>,
 }
 
+#[derive(Deserialize, JsonSchema)]
+pub struct RunWebsocketParams {
+    #[schemars(description = COLLECTION)]
+    pub collection: Option<String>,
+    /// A saved WebSocket request: its name (or file path in a folder). Give this or `url`.
+    pub request: Option<String>,
+    /// A ws:// or wss:// URL instead of a saved request; may contain ${variables}. A URL gets no auth (the collection's default auth is only for saved requests).
+    pub url: Option<String>,
+    /// Names of the saved request's messages to send after connecting, in order.
+    pub messages: Option<Vec<String>>,
+    /// Text messages to send after the saved ones, in order; may contain ${variables}.
+    pub send: Option<Vec<String>>,
+    /// Extra handshake headers.
+    pub headers: Option<Vec<HeaderInput>>,
+    /// Environment for this call only; the session's (set_environment) by default.
+    pub environment: Option<String>,
+    /// Variables for this call, like `hitop ws --var`: they override globals, collection and environment variables, but not secrets.
+    pub variables: Option<BTreeMap<String, String>>,
+    /// Close once this many messages have been received (at most 100).
+    pub count: Option<u64>,
+    /// How long to keep listening after the last message is sent, in milliseconds (default 1000, or 10000 with `count`). The whole exchange stops after 60 s.
+    pub wait_ms: Option<u64>,
+    /// Time limit for the handshake in milliseconds (default 10000).
+    pub timeout_ms: Option<u64>,
+}
+
+#[derive(Deserialize, JsonSchema)]
+pub struct ImportOpenapiParams {
+    /// The spec (OpenAPI 3.0 or 3.1, YAML or JSON): an http(s) URL, or a file path inside the workspace directory.
+    pub source: String,
+    /// The new collection folder to write, a path inside the workspace directory (such as specs/petstore). Required when the workspace is a folder; with global storage, leave it out to add the collection there.
+    pub to: Option<String>,
+    /// Every request at the top level instead of a folder per tag (default false).
+    pub flat: Option<bool>,
+}
+
+#[derive(Deserialize, JsonSchema)]
+pub struct SyncOpenapiParams {
+    #[schemars(description = COLLECTION)]
+    pub collection: Option<String>,
+    /// The newer spec: an http(s) URL, or a file path inside the workspace directory. Default: the URL the collection was imported from.
+    pub source: Option<String>,
+    /// Write the changes (default false: only return what would change).
+    pub apply: Option<bool>,
+    /// Also delete the requests of operations the spec no longer has (only with `apply`; default false: they are kept and listed).
+    pub prune: Option<bool>,
+}
+
 // ---- Tools -----------------------------------------------------------------
 
 impl Hitop {
@@ -567,7 +668,7 @@ impl Hitop {
             let (secrets, globals, global_secrets) = st.resolve(&source, env.as_ref(), &refs)?;
             let mut col = source.collection.clone();
             if request.is_websocket() {
-                bail!("'{}' is a WebSocket request: this server doesn't open WebSocket connections (use `hitop ws` in a terminal)", request.name);
+                bail!("'{}' is a WebSocket request: open it with run_websocket (or `hitop ws` in a terminal)", request.name);
             }
             if request.is_grpc() {
                 bail!("'{}' is a gRPC request: this server doesn't make gRPC calls (use `hitop grpc` in a terminal)", request.name);
@@ -766,6 +867,234 @@ impl Hitop {
         })
         .await
     }
+
+    #[tool(
+        description = "Open a WebSocket connection (a saved WebSocket request, or a ws:// or wss:// URL), send messages (the saved request's by name, then texts), collect what the server sends until `count` messages arrived or `wait_ms` passed, then close. Bounded: at most 100 messages, 256 KiB and 60 s; nothing stays open after the call. Returns every event (sent, received, closed, error) with the time since connecting; secret values are masked as ••••.",
+        annotations(read_only_hint = false, destructive_hint = false, idempotent_hint = false, open_world_hint = true)
+    )]
+    async fn run_websocket(&self, Parameters(p): Parameters<RunWebsocketParams>) -> CallToolResult {
+        self.call(move |st| {
+            let source = st.open(p.collection.as_deref())?;
+            let env = st.environment(&source, p.environment.as_deref())?;
+            let mut request = match (p.request.as_deref().filter(|r| !r.is_empty()), p.url.as_deref().filter(|u| !u.is_empty())) {
+                (Some(_), Some(_)) => bail!("give `request` or `url`, not both"),
+                (None, None) => bail!("give `request` (a saved WebSocket request) or `url` (ws:// or wss://)"),
+                (Some(name), None) => {
+                    let r = find(&source.collection, name)?;
+                    if !r.is_websocket() {
+                        bail!("'{}' is an HTTP request, not a WebSocket one: use run_request", r.name);
+                    }
+                    r.clone()
+                }
+                (None, Some(url)) => {
+                    if !p.messages.as_ref().is_none_or(Vec::is_empty) {
+                        bail!("`messages` names a saved request's messages: give `request`");
+                    }
+                    // No auth for a URL: the collection's credentials go only to its own requests.
+                    Request { name: url.to_string(), url: url.to_string(), method: "GET".into(), kind: Some(WEBSOCKET.into()), auth: Some(Auth::None), websocket: Some(WebSocket::default()), ..Default::default() }
+                }
+            };
+            request.headers.extend(headers_of(p.headers.unwrap_or_default()));
+            let mut refs = std::collections::BTreeSet::new();
+            hitop_core::secret_refs::find_in_request(&request, &mut refs);
+            refs_around(&source, env.as_ref(), &mut refs)?;
+            let (secrets, globals, _) = st.resolve(&source, env.as_ref(), &refs)?;
+            let mut upper = hitop_core::prepare::variables(&source.collection.variables, env.as_ref());
+            upper.extend(p.variables.unwrap_or_default());
+            secrets.apply(&mut upper);
+            let mut scopes = Scopes { globals, upper };
+            secret::fill_refs(&secrets, &mut scopes);
+            let vars = scopes.merged();
+            let target = websocket::target(&request, source.collection.auth.as_ref(), &vars)?;
+            let mut queue = p.messages.unwrap_or_default().iter().map(|name| websocket::message(&request, name, &vars)).collect::<Result<Vec<_>>>()?;
+            queue.extend(p.send.unwrap_or_default().iter().map(|t| interpolate(t, &vars)).collect::<Result<Vec<_>>>()?);
+            let count = p.count.map(|c| (c as usize).clamp(1, WS_MAX_MESSAGES));
+            let wait = Duration::from_millis(p.wait_ms.unwrap_or(if count.is_some() { 10_000 } else { 1_000 })).min(WS_MAX_TIME);
+            let timeout = Duration::from_millis(p.timeout_ms.unwrap_or(10_000).max(1)).min(WS_MAX_TIME);
+            tokio::runtime::Handle::current().block_on(ws_exchange(target, queue, count, wait, timeout))
+        })
+        .await
+    }
+
+    #[tool(
+        description = "Import an OpenAPI 3.0 or 3.1 spec (YAML or JSON; an http(s) URL or a file inside the workspace directory) as a new collection: a folder per tag, a request per operation, the first server as the baseUrl variable, security as auth, response examples as saved examples. Writes a new collection folder at `to` (inside the workspace directory; never over an existing collection), or with global storage and no `to`, adds the collection there. Returns what was mapped, skipped and worth checking.",
+        annotations(read_only_hint = false, destructive_hint = false, idempotent_hint = false, open_world_hint = true)
+    )]
+    async fn import_openapi(&self, Parameters(p): Parameters<ImportOpenapiParams>) -> CallToolResult {
+        self.call(move |st| {
+            let (text, url) = load_spec(st, &p.source)?;
+            let opts = openapi::Options { flat: p.flat.unwrap_or(false), source: url, inline_auth: false };
+            let (mut collection, report) = openapi::import(&text, &opts)?;
+            let folder = match p.to.as_deref().filter(|t| !t.is_empty()) {
+                Some(to) => {
+                    let dir = st.inside(to, "`to`")?;
+                    if let Some(served) = &st.folder {
+                        let served = served.canonicalize()?;
+                        if dir == served || dir.starts_with(served.join("requests")) || dir.starts_with(served.join("environments")) {
+                            bail!("`to` must be a new folder, not the served collection folder or its requests/ or environments/");
+                        }
+                    }
+                    if format::is_folder(&dir) {
+                        bail!("{to} already holds a collection; update it with sync_openapi");
+                    }
+                    if dir.exists() && std::fs::read_dir(&dir)?.next().is_some() {
+                        bail!("{to} is not empty; give a new folder");
+                    }
+                    collection.workspace = Some(hitop_core::secrets::new_workspace_id());
+                    format::write_collection(&dir, &collection)?;
+                    Some(dir)
+                }
+                None if st.folder.is_some() => bail!("give `to`: the new collection folder, inside the workspace directory"),
+                None => {
+                    let mut stored = storage::load_collections()?;
+                    collection.id = timestamp_id();
+                    if stored.iter().any(|c| c.name == collection.name) {
+                        collection.name = format!("{} (Imported)", collection.name);
+                    }
+                    stored.push(collection.clone());
+                    storage::save_collections(&stored)?;
+                    None
+                }
+            };
+            Ok(json!({
+                "collection": collection.name,
+                "folder": folder.map(|d| d.display().to_string()),
+                "requests": collection.requests.len(),
+                "report": report,
+            }))
+        })
+        .await
+    }
+
+    #[tool(
+        description = "Bring a collection imported from an OpenAPI spec up to a newer spec. By default only returns what would change: operations added, changed (fields and header/query rows updated from the spec, or kept because you edited them) and removed. With `apply` it writes the changes: your names, files, scripts, examples and edits stay. Requests of removed operations are kept unless both `apply` and `prune` are set.",
+        annotations(read_only_hint = false, destructive_hint = true, idempotent_hint = true, open_world_hint = true)
+    )]
+    async fn sync_openapi(&self, Parameters(p): Parameters<SyncOpenapiParams>) -> CallToolResult {
+        self.call(move |st| {
+            let mut source = st.open(p.collection.as_deref())?;
+            st.learn(&source);
+            let recorded = source.collection.extra.get("openapi").and_then(|r| r["source"].as_str()).map(str::to_string);
+            let spec = match p.source.filter(|s| !s.is_empty()).or(recorded) {
+                Some(s) => s,
+                None => bail!("give `source`: '{}' has no spec URL recorded (it was imported from a file, or not from a spec)", source.collection.name),
+            };
+            let (text, url) = load_spec(st, &spec)?;
+            let (apply, prune) = (p.apply.unwrap_or(false), p.prune.unwrap_or(false));
+            let synced = openapi::sync(&source.collection, &text, &openapi::Options { source: url, ..Default::default() }, prune)?;
+            let d = &synced.diff;
+            let write = apply && !(d.is_empty() && d.changed.is_empty());
+            if write {
+                source.collection = synced.collection.clone();
+                source.save()?;
+            }
+            Ok(json!({
+                "collection": source.collection.name,
+                "source": spec,
+                "applied": write,
+                "upToDate": d.is_empty() && d.changed.is_empty(),
+                "diff": d,
+                "skipped": synced.report.skipped,
+                "warnings": synced.report.warnings,
+            }))
+        })
+        .await
+    }
+}
+
+/// A spec's text: fetched (an http(s) URL, which is also returned to record)
+/// or read from a file inside the workspace directory.
+fn load_spec(st: &State, given: &str) -> Result<(String, Option<String>)> {
+    if given.starts_with("http://") || given.starts_with("https://") {
+        return super::openapi::load(given);
+    }
+    let path = st.inside(given, "`source`")?;
+    let text = std::fs::read_to_string(&path).with_context(|| format!("reading {given}"))?;
+    Ok((text, None))
+}
+
+/// One bounded WebSocket exchange: connect, send `queue`, collect until
+/// `count` messages, `wait` after the last send, a close, an error or a
+/// limit; then close. Every event with its time since the connection opened.
+async fn ws_exchange(target: websocket::Target, queue: Vec<String>, count: Option<usize>, wait: Duration, timeout: Duration) -> Result<Value> {
+    let conn = websocket::connect(&target, Some(timeout)).await?;
+    let started = Instant::now();
+    let ms = |at: Instant| at.duration_since(started).as_millis() as u64;
+    let stop_all = started + WS_MAX_TIME;
+    let websocket::Connection { opened, sender, mut events } = conn;
+    let mut log: Vec<Value> = vec![];
+    for text in queue {
+        sender.send(Data::Text(text.clone()))?;
+        log.push(json!({"event": "sent", "ms": ms(Instant::now()), "data": text}));
+    }
+    let (mut received, mut bytes, mut truncated) = (0usize, 0usize, false);
+    let deadline = (Instant::now() + wait).min(stop_all);
+    let mut closed = false;
+    let stopped = loop {
+        if count.is_some_and(|c| received >= c) {
+            break "count";
+        }
+        tokio::select! {
+            ev = events.recv() => match ev {
+                Some(Event::Message(data)) => {
+                    let size = match &data { Data::Text(t) => t.len(), Data::Binary(b) => b.len() };
+                    if bytes + size > WS_MAX_BYTES {
+                        truncated = true;
+                        break "bytes";
+                    }
+                    bytes += size;
+                    received += 1;
+                    log.push(match data {
+                        Data::Text(t) => json!({"event": "received", "ms": ms(Instant::now()), "data": t}),
+                        Data::Binary(b) => json!({"event": "received", "ms": ms(Instant::now()), "binary": base64::engine::general_purpose::STANDARD.encode(&b), "bytes": b.len()}),
+                    });
+                    if received >= WS_MAX_MESSAGES && count.is_none_or(|c| received < c) {
+                        truncated = true;
+                        break "messages";
+                    }
+                }
+                Some(Event::Closed { code, reason }) => {
+                    closed = true;
+                    log.push(json!({"event": "closed", "ms": ms(Instant::now()), "by": "server", "code": code, "reason": reason}));
+                    break "closed";
+                }
+                Some(Event::Error(e)) => {
+                    closed = true;
+                    log.push(json!({"event": "error", "ms": ms(Instant::now()), "message": e}));
+                    break "error";
+                }
+                None => {
+                    closed = true;
+                    break "closed";
+                }
+            },
+            _ = tokio::time::sleep_until(deadline.into()) => break if deadline == stop_all { "time" } else { "wait" },
+        }
+    };
+    if !closed {
+        sender.close();
+        // The closing handshake, briefly; later messages are dropped.
+        let until = tokio::time::Instant::now() + Duration::from_secs(2);
+        while let Ok(Some(ev)) = tokio::time::timeout_at(until, events.recv()).await {
+            if let Event::Closed { code, .. } = ev {
+                log.push(json!({"event": "closed", "ms": ms(Instant::now()), "by": "hitop", "code": code}));
+                break;
+            }
+        }
+    }
+    let mut out = json!({
+        "url": target.url,
+        "status": opened.status,
+        "protocol": opened.protocol,
+        "events": log,
+        "received": received,
+        "stopped": stopped,
+        "truncated": truncated,
+    });
+    if let Some(c) = count {
+        out["countReached"] = json!(received >= c);
+    }
+    Ok(out)
 }
 
 /// A request about to be saved holds no secret value.
