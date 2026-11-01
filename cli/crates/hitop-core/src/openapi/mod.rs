@@ -6,7 +6,7 @@
 //! parameters, a body from the spec's example or one built from the
 //! schema), security schemes collection or request auth, and response
 //! examples saved examples. Each request records the operation it came from
-//! under the `openapi` key (spec/collection-format.md, section 3a), and the
+//! under the `openapi` key (spec/collection-format.md, "OpenAPI source"), and the
 //! collection the spec under the same key in `hitop.yaml`; sync matches on
 //! it. What doesn't map is listed in the [`OpenApiReport`].
 //!
