@@ -131,9 +131,9 @@ pub fn run_collection_jar(
     let mut results = Vec::new();
 
     for request in &collection.requests {
-        // A WebSocket request opens a connection on demand (`hitop ws`);
-        // a run has nothing to send for it.
-        if request.is_websocket() {
+        // WebSocket and gRPC requests are made on demand (`hitop ws`,
+        // `hitop grpc`); a run has nothing to send for them.
+        if request.is_websocket() || request.is_grpc() {
             continue;
         }
         let started = Instant::now();
@@ -236,7 +236,10 @@ mod tests {
     #[test]
     fn websocket_requests_are_skipped() {
         let collection = Collection {
-            requests: vec![Request { name: "socket".into(), method: "GET".into(), url: "ws://127.0.0.1:9/".into(), kind: Some("websocket".into()), ..Default::default() }],
+            requests: vec![
+                Request { name: "socket".into(), method: "GET".into(), url: "ws://127.0.0.1:9/".into(), kind: Some("websocket".into()), ..Default::default() },
+                Request { name: "call".into(), method: "GET".into(), url: "127.0.0.1:9".into(), kind: Some("grpc".into()), ..Default::default() },
+            ],
             ..Default::default()
         };
         assert!(run_collection(&collection, None, false, &mut |_| panic!("no step")).is_empty());

@@ -1,0 +1,45 @@
+// The test service for hitop's gRPC client (tests/support/grpc_server.rs).
+syntax = "proto3";
+
+package hitop.test;
+
+import "google/protobuf/timestamp.proto";
+import "common.proto";
+
+service Greeter {
+  // Answers with a greeting, the x-tenant and authorization metadata it got.
+  rpc SayHello(HelloRequest) returns (HelloReply);
+  // Answers with `times` greetings.
+  rpc StreamHellos(HelloRequest) returns (stream HelloReply);
+  // Always fails: NOT_FOUND with an x-reason trailer.
+  rpc Fail(HelloRequest) returns (HelloReply);
+  // Not served; hitop refuses bidirectional methods before calling.
+  rpc Chat(stream HelloRequest) returns (stream HelloReply);
+}
+
+enum Mood {
+  MOOD_UNSPECIFIED = 0;
+  HAPPY = 1;
+}
+
+message HelloRequest {
+  string name = 1;
+  int32 times = 2;
+  Mood mood = 3;
+  hitop.common.Tag tag = 4;
+  repeated string labels = 5;
+  map<string, string> attributes = 6;
+  oneof contact {
+    string email = 7;
+    string phone = 8;
+  }
+}
+
+message HelloReply {
+  string message = 1;
+  string tenant = 2;
+  string authorization = 3;
+  int32 index = 4;
+  google.protobuf.Timestamp at = 5;
+  int64 count = 6;
+}

@@ -1,0 +1,8 @@
+// Imported by ../greeter.proto through an import path.
+syntax = "proto3";
+
+package hitop.common;
+
+message Tag {
+  string key = 1;
+}

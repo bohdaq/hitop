@@ -123,6 +123,9 @@ pub fn generate(lang: Lang, request: &Request, collection_auth: Option<&Auth>, v
     if request.is_websocket() {
         anyhow::bail!("'{}' is a WebSocket request: there is no HTTP snippet for it (connect with `hitop ws`)", request.name);
     }
+    if request.is_grpc() {
+        anyhow::bail!("'{}' is a gRPC request: there is no HTTP snippet for it (call it with `hitop grpc`)", request.name);
+    }
     let mut placeholders = Vec::new();
     let spec = build(request, collection_auth, variables, secrets, &mut placeholders)?;
     let code = match lang {
@@ -672,6 +675,8 @@ mod tests {
     fn no_snippet_for_websocket_requests() {
         let r = Request { name: "Feed".into(), url: "wss://x".into(), kind: Some("websocket".into()), ..Default::default() };
         assert!(generate(Lang::Curl, &r, None, &HashMap::new(), &[]).unwrap_err().to_string().contains("WebSocket"));
+        let r = Request { name: "Call".into(), url: "localhost:50051".into(), kind: Some("grpc".into()), ..Default::default() };
+        assert!(generate(Lang::Curl, &r, None, &HashMap::new(), &[]).unwrap_err().to_string().contains("gRPC"));
     }
 
     #[test]
