@@ -38,6 +38,8 @@ hitop/
 │       │       ├── postman.rs      # Postman import: collections (folders, auth, scripts), environments, globals, ImportReport
 │       │       ├── openapi/        # OpenAPI 3.0/3.1 import (refs.rs: parse + local $ref, example.rs: schema → example) and sync.rs (three-way per field)
 │       │       ├── secrets.rs      # secret variables: resolve order, keychain (keyring), Masker (••••)
+│       │       ├── secret_refs.rs  # ${secret:vault|aws|azure|op:...} references: find, parse, expand (no deps, also in hitop-wasm)
+│       │       ├── secret_managers.rs # feature `secret-managers`: Resolver for Vault/OpenBao KV, AWS (SigV4 on ring), Azure Key Vault, `op read`
 │       │       └── format/         # collection folders (YAML, spec/collection-format.md) ⇄ the JSON model; files.rs: in memory (path → text)
 │       │   ├── pm-shim.js          # byte-for-byte copy of shared/pm-shim.js (packaged; a test checks they match)
 │       │   ├── tests/grpc.rs       # gRPC client against tests/support/grpc_server.rs (tonic, reflection v1/v1alpha/none; fixtures/grpc/*.proto)
@@ -58,13 +60,14 @@ hitop/
 │           ├── tests/graphql.rs # send --graphql, saved graphql requests via run/requests send, Postman graphql import (httpmock)
 │           ├── tests/globals.rs # globals below collection/env, secret globals, pm.globals, import, convert
 │           ├── tests/mcp.rs    # hitop mcp: JSON-RPC over stdio for every tool (httpmock), no secret value anywhere on stdout
+│           ├── tests/secret_managers.rs # ${secret:...}: stub op/az on PATH + Key Vault mock; Vault dev and LocalStack (HITOP_TEST_VAULT_ADDR, HITOP_TEST_LOCALSTACK_URL; required on CI)
 │           ├── tests/telemetry.rs # nothing sent while off, at most once a week (HITOP_TELEMETRY_URL → httpmock)
 │           ├── tests/launch_gate.rs # T11 scenario: Postman import, two environments, login token via pm.environment.set, JUnit
 │           └── src/
 │               ├── main.rs         # clap CLI entry point
 │               ├── commands/source.rs # a collection argument: global name or folder path
 │               ├── commands/folder.rs # `hitop init`, `hitop convert`
-│               ├── commands/secret.rs # `hitop secret set|get|rm|ls`, the `--secret` flag
+│               ├── commands/secret.rs # `hitop secret set|get|rm|ls|check`, the `--secret` and `--no-secret-managers` flags, add_refs/fill_refs
 │               ├── commands/run.rs # `hitop run`: reporters (cli, junit, json, html), iterations, --data, exit codes 0/1/2
 │               ├── commands/schedule.rs # `hitop schedule <folder> --github | --cron`: workflow file or crontab line; cron validation
 │               ├── commands/data.rs # `--data` CSV (RFC 4180, hand written) and JSON rows
@@ -169,6 +172,15 @@ hitop/
   resolve order `HITOP_SECRET_<ENV>_<NAME>`, `--secret`, OS keychain (`keyring` 4, service `hitop`, account
   `<workspace>/<env>/<name>`), prompt on a TTY. `HITOP_KEYCHAIN=off` skips the keychain (CLI tests set it). Values are
   masked as `••••` in output, history and runner steps (`runner::run_collection_with`); hitop-core feature `keychain` (default)
+- Secret managers (spec §5b): `${secret:vault:mount/path#field}`, `${secret:aws:name|ARN#jsonKey}`, `${secret:azure:vault/name[/ver]}`,
+  `${secret:op:vault/item/field}` (or `op://`). The inner text is a variable name: `secret::add_refs` resolves the refs a command uses
+  (core `secret_refs::find_in_*`, scripts and examples skipped) into `Secrets` (Origin::SecretManager), `fill_refs`/`Secrets::expand_refs`
+  fill them, also inside variable values (the runner does it itself). Core `secret_managers::Resolver` (feature `secret-managers`, default;
+  `ring` for SigV4, no AWS SDK): per-run cache, 15 s HTTP / 60 s `op`/`az`/`aws` (`HITOP_SECRET_MANAGER_TIMEOUT`), errors name the ref.
+  Env: VAULT_ADDR/TOKEN/NAMESPACE (BAO_*, ~/.vault-token), AWS_* + ~/.aws (credential_process, `aws configure export-credentials`),
+  AZURE_TENANT_ID/CLIENT_ID/CLIENT_SECRET or `az`; `HITOP_AZURE_VAULT_URL` (`{vault}` template) and `HITOP_{OP,AZ,AWS}_BIN` are test hooks.
+  `--no-secret-managers` on every SecretFlags command and `hitop mcp`, `HITOP_SECRET_MANAGERS=off`. `hitop secret check [-c] [--env] [--list]`.
+  MCP resolves only refs in the workspace files (not a call's `variables`); snippets keep them as `{{secret:...}}` without `--show-secrets`
 - CI runs: `hitop run <folder|name> --env <e> | --env-file <yaml>`, `--var k=v`, `--bail`, `--timeout <ms>`,
   `--iterations <n>` or `--data <csv|json>`, `--reporter cli,junit,json,html --out <dir>` (`junit.xml`, `report.json`, `report.html`);
   exit 0 passed, 1 a request or assertion failed, 2 usage or config error (`main.rs` maps `run`'s Err to 2).
@@ -250,7 +262,7 @@ hitop/
   `grpc_describe {args, symbol}` → `{description, template}`, `grpc_call {args: {...server, service, method, message, maxTimeMs},
   onEvent: Channel}` → `{id}`, events `{type: headers|message|status}`; `grpc_cancel {id}` (state `GrpcCalls`).
   Web app commands: `send_request` (proxy envelope; `cookies: true` uses hitop-core's `global` jar and returns it),
-  `cookies_load|save`, `load_globals|save_globals`, `read_folder`, `write_folder` (optional `globals`), `secret_get|set|delete`, `write_file`, `telemetry_status|set`; dialog plugin.
+  `cookies_load|save`, `load_globals|save_globals`, `read_folder`, `write_folder` (optional `globals`), `secret_get|set|delete`, `secret_refs_resolve {refs}` (inner texts → values; errors one line per reference), `write_file`, `telemetry_status|set`; dialog plugin.
   Script commands return script-set `variables`; `run_post_script` takes the sent `request` (pm.request)
   Git (`src/git.rs`): `git {cmd, args: {path, ...}}` → `hitop_git::json::call` (status, diff, stage, unstage, discard, commit,
   setIdentity, branches, createBranch, switchBranch, deleteBranch, mergeBranch, conflict, resolve, abortMerge, remoteHost,
@@ -307,6 +319,9 @@ hitop/
   e2e `tests/git.cjs`: the mock's `git` runs `cli/target/debug/examples/git-json` (build: `cargo build -p hitop-git --example
   git-json --no-default-features` in `cli/`, or `HITOP_GIT_JSON`) on temp repos with a bare remote
 - Secrets: environment `secrets` names, masked editor; `features.js` `exportableEnvironments()`/`maskSecrets()` for exports and run history
+- Secret manager references: `features.js` `secretRefs()`/`withSecretRefs()`; `store.resolveRefs()` (in `prepare`, `wsConnect`, `grpcCall`) asks
+  `platform().resolveSecretRefs` (tauri.js → `secret_refs_resolve`; web.js `null` → the request isn't sent, the note names them);
+  values in `store.refValues` (memory, reset per send/run), merged by `variables()`, masked via `secretValuesFor()`; Code dialog keeps placeholders
 - No telemetry in the web build: telemetry UI lives only in `platform/tauri-settings.js` (imported by tauri.js);
   `node scripts/check-no-telemetry.mjs` after both builds checks it. Adapter hooks `pages`/`onStart` add desktop-only pages
 - Builds need the wasm32 target and the wasm-bindgen CLI 0.2.126 (`cargo install wasm-bindgen-cli --version 0.2.126 --locked`):

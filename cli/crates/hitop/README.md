@@ -87,6 +87,7 @@ hitop export MyAPI -o my-collection.json
 | `hitop variables list/set/delete` | Manage collection variables |
 | `hitop env list/add/delete/show/set/unset/use/off/import/export` | Manage environments |
 | `hitop secret set/get/rm/ls --env <env>` | Secret variables in the OS keychain (`-c <folder>` for a folder's environment; `--globals` for a secret global) |
+| `hitop secret check [-c <collection>] [--env <env>]` | List the `${secret:vault\|aws\|azure\|op:...}` references and test that each resolves (never prints a value) |
 | `hitop globals show/set/unset/import/export [-c <folder>]` | The globals: variables below every collection's, in global storage or a folder's `globals.yaml` |
 | `hitop cookies ls/clear [-c <collection>]` | The cookies hitop keeps between requests (`--no-cookies` on `send`, `run`, `requests send` turns the jar off) |
 | `hitop history` | View request history |
@@ -274,6 +275,34 @@ HITOP_SECRET_PROD_TOKEN=$TOKEN hitop run ./my-api --env prod   # CI: no keychain
 ```
 
 Without a keychain (headless Linux, or `HITOP_KEYCHAIN=off`) hitop says so and uses the env vars and `--secret`.
+
+### Secrets from Vault, AWS, Azure and 1Password
+
+Put a reference where a value goes, in a request or in a variable's value; hitop reads it when the
+request runs and masks it like any secret:
+
+```yaml
+# environments/prod.yaml
+variables:
+  token: ${secret:vault:secret/my-api#token}              # Vault or OpenBao, KV v2 or v1
+  dbPassword: ${secret:aws:prod/db#password}               # AWS Secrets Manager (#key of a JSON secret)
+  apiKey: ${secret:azure:my-vault/api-key}                 # Azure Key Vault
+  stripe: ${secret:op:Dev/Stripe/secret key}               # 1Password (op read op://Dev/Stripe/secret key)
+```
+
+| Manager | hitop uses |
+| --- | --- |
+| Vault | `VAULT_ADDR`, `VAULT_TOKEN` or `~/.vault-token`, `VAULT_NAMESPACE` (`BAO_*` too) |
+| AWS | `AWS_ACCESS_KEY_ID`/`AWS_SECRET_ACCESS_KEY`/`AWS_SESSION_TOKEN`, else the profile (`AWS_PROFILE`) in `~/.aws` with keys or `credential_process`, else `aws configure export-credentials` (SSO); region from the ARN, `AWS_REGION` or the profile; `AWS_ENDPOINT_URL` |
+| Azure | `AZURE_TENANT_ID`, `AZURE_CLIENT_ID`, `AZURE_CLIENT_SECRET`, else `az account get-access-token` |
+| 1Password | `op read` (sign in first, or set `OP_SERVICE_ACCOUNT_TOKEN`) |
+
+Each reference is read once per run; calls time out after 15 s (60 s for `op`, `az`, `aws`;
+`HITOP_SECRET_MANAGER_TIMEOUT=<seconds>`). An error names the reference, never the value.
+`--no-secret-managers` (or `HITOP_SECRET_MANAGERS=off`) turns them off. `hitop secret check -c ./my-api`
+lists every reference with where it is used and tests that each resolves, without printing a value
+(exit 1 if one doesn't; `--list` only lists). Snippets keep references as `{{secret:...}}` unless
+`--show-secrets`; `hitop mcp` resolves only the references already in the workspace files.
 
 ## Checks in CI
 

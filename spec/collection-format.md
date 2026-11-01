@@ -429,6 +429,36 @@ environment's value of the same name still wins over it.
   the run and shows through `pm.variables` unless another scope has the name.
 - Writers that don't handle globals leave an existing `globals.yaml` alone.
 
+## 5b. Secret manager references
+
+A string that is filled in with variables (URL, header names and values, body, auth fields,
+GraphQL query, variables and operation name, form fields, WebSocket and gRPC fields) and the value
+of any collection, environment or global variable may hold a reference to a secret in a secret
+manager. A reference is never resolved inside a script or a saved example.
+
+| Reference | Reads |
+| --- | --- |
+| `${secret:vault:<mount>/<path>[#<field>]}` | HashiCorp Vault or OpenBao, KV v2 or v1. On KV v2, `data/` after the mount may be left out. |
+| `${secret:aws:<name or ARN>[#<jsonKey>]}` | AWS Secrets Manager `SecretString`; `#jsonKey` picks a key of a JSON secret. |
+| `${secret:azure:<vault>/<name>[/<version>]}` | Azure Key Vault. A vault name with a dot is a host name (`myvault.vault.azure.cn`). |
+| `${secret:op:<vault>/<item>/[<section>/]<field>}` | 1Password, as `op read op://<vault>/<item>/...` reads it; `${secret:op://...}` works too. |
+
+- The text between `${` and `}` (`secret:vault:kv/app#token`) is the reference's name. A tool
+  resolves each reference at run time, before it fills in variables, and from then on treats the
+  name as a secret variable with that value: it fills `${secret:...}` wherever it appears, also
+  inside other variables' values (`token: ${secret:vault:kv/app#token}` in an environment), and
+  shows the value as `••••` wherever a secret would be masked (section 5). The value is never
+  written to a file, history, report or export; files keep the reference.
+- Without `#field`, a Vault secret with one field gives that field; with several it is an error
+  that lists the field names. A non-string JSON value is given as JSON text.
+- A reference that can't be resolved is an error that names the reference and the reason, never
+  a value. A tool may refuse to resolve references (hitop: `--no-secret-managers`,
+  `HITOP_SECRET_MANAGERS=off`); a request that uses one is then an error.
+- How a tool reaches each manager is the tool's concern. hitop uses `VAULT_ADDR`, `VAULT_TOKEN` (or
+  `~/.vault-token`), `VAULT_NAMESPACE`; the AWS credential chain (env vars, `~/.aws` profiles,
+  `credential_process`, the AWS CLI for SSO) and region; `AZURE_TENANT_ID`, `AZURE_CLIENT_ID`,
+  `AZURE_CLIENT_SECRET` or the `az` CLI; and the `op` CLI. A web app in a browser can't, and says so.
+
 ## 6. Ids and the JSON model
 
 hitop's JSON storage (`collections.json`, the web app's localStorage, HITOP
