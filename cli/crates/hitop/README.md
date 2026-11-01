@@ -39,6 +39,10 @@ hitop send https://api.example.com/graphql --graphql user.graphql --graphql-vars
 hitop ws wss://echo.example.com/socket
 hitop ws wss://echo.example.com/socket --send hello --send '{"op": "ping"}' --count 2 --json
 
+# gRPC: list services by reflection, call a method with a JSON message (exit 1 on a non-OK status)
+hitop grpc localhost:50051 list --plaintext
+hitop grpc api.example.com:443 shop.v1.Orders/GetOrder -d '{"id": "${orderId}"}' -H 'x-tenant: acme' -c ./my-api
+
 # Create a collection and save variables
 hitop collections add MyAPI
 hitop variables set MyAPI hostname https://api.example.com
@@ -77,6 +81,7 @@ hitop export MyAPI -o my-collection.json
 | `hitop collections list/add/delete/rename/duplicate` | Manage collections |
 | `hitop requests list/add/show/delete/rename/send` | Manage requests |
 | `hitop ws <url>` / `hitop ws <request> -c <collection>` | Open a WebSocket connection: send typed lines or `--send`/`--message` messages, print what arrives (see "WebSocket") |
+| `hitop grpc <host:port> <package.Service/Method>` / `list [service]` / `describe <symbol>`, `hitop grpc <request> -c <collection>` | Call a gRPC method (unary or server streaming), list and describe services; schema from reflection or `--proto` files (see "gRPC") |
 | `hitop snippet <collection> <request> --lang <lang>` | Print a saved request as code: `curl`, `fetch`, `python`, `go`, `java`, `rust` (see "Code snippets") |
 | `hitop requests auth <collection> <request>` | Set (`--bearer`, `--basic`, `--api-key`) or clear (`--none`) a request's auth |
 | `hitop variables list/set/delete` | Manage collection variables |
@@ -213,6 +218,38 @@ from stdin are sent (empty lines are skipped). After the last message (or the en
 listening for `--wait` ms (default 1000, or 30000 with `--count`), then closes. `--count N` exits once N
 messages arrived; exit code 1 when the connection fails or fewer than N arrived. `--timeout` limits the
 handshake (default 30000 ms). `hitop run` skips WebSocket requests.
+
+## gRPC
+
+A request saved with `kind: grpc` (the web app and desktop: method "gRPC") calls a gRPC method. `hitop grpc`
+takes a server address (`host:port` is TLS, add `--plaintext` for a local server; `http://host:port` and
+`https://host:port` say it themselves) and the method as `package.Service/Method`, or a saved request with
+`-c` (its address, service, method, message and schema source). Headers (`-H "name: value"`) and auth flags
+are sent as metadata, `${variables}` and secrets are filled in as for `hitop send`. The schema comes from the
+server's reflection service (`grpc.reflection.v1`, then `v1alpha`), or from `.proto` files with `--proto` (and
+`-I/--import-path` for their imports), parsed by hitop itself: no `protoc` needed.
+
+```bash
+# What the server has, and what a method takes (with a JSON template of the request)
+hitop grpc localhost:50051 list --plaintext
+hitop grpc localhost:50051 list shop.v1.Orders --plaintext
+hitop grpc localhost:50051 describe shop.v1.Orders/GetOrder --plaintext
+
+# Unary and server-streaming calls: the message as JSON, @file or - (stdin); -v shows response headers
+hitop grpc localhost:50051 shop.v1.Orders/GetOrder -d '{"id": "42"}' --plaintext -v
+hitop grpc localhost:50051 shop.v1.Orders/WatchOrders -d @watch.json --plaintext --json
+
+# Without reflection: the .proto files (a saved request's `protos` are relative to the collection folder)
+hitop grpc localhost:50051 shop.v1.Orders/GetOrder --proto protos/orders.proto -I protos/include --plaintext
+hitop grpc "Get order" -c ./my-api --env prod
+```
+
+Response messages go to stdout as JSON (proto3 JSON mapping, every field shown); the status, trailers and,
+with `-v`, the response headers go to stderr. `--json` prints one JSON object per event on stdout (`headers`,
+`message`, `status` with `code`, `name`, `message` and `trailers`). Exit code 1 when the status isn't `OK` or
+the server can't be reached (`UNAVAILABLE`). `--connect-timeout` limits connecting (default 10000 ms),
+`--max-time` is the call's deadline. Client-streaming and bidirectional methods are refused. `hitop run`
+skips gRPC requests, `requests send` and `snippet` refuse them; secret values are shown as `••••`.
 
 ## Globals
 

@@ -27,6 +27,7 @@ hitop/
 │       │       ├── form.rs         # urlencoded and multipart bodies; saved form requests (bodyMode) as sent
 │       │       ├── snippet.rs      # code snippets (curl, fetch, python, go, java, rust): secrets/missing vars as {{NAME}} (no native deps)
 │       │       ├── websocket.rs    # kind websocket: target()/message() fill in variables (no native deps); connect() tokio-tungstenite + rustls (feature `websocket`)
+│       │       ├── grpc.rs         # kind grpc: target() fills in variables, headers+auth → metadata (no native deps); connect/schema/services/describe/template/call: tonic + prost-reflect + protox (feature `grpc`)
 │       │       ├── graphql.rs      # GraphQL bodies: bodyType graphql + `graphql` {variables, operationName}, request_body() (no native deps)
 │       │       ├── telemetry.rs    # opt-in weekly usage ping, feature `telemetry` (telemetry.json per surface)
 │       │       ├── interpolation.rs # ${variable} substitution
@@ -39,6 +40,7 @@ hitop/
 │       │       ├── secrets.rs      # secret variables: resolve order, keychain (keyring), Masker (••••)
 │       │       └── format/         # collection folders (YAML, spec/collection-format.md) ⇄ the JSON model; files.rs: in memory (path → text)
 │       │   ├── pm-shim.js          # byte-for-byte copy of shared/pm-shim.js (packaged; a test checks they match)
+│       │   ├── tests/grpc.rs       # gRPC client against tests/support/grpc_server.rs (tonic, reflection v1/v1alpha/none; fixtures/grpc/*.proto)
 │       │   ├── tests/format.rs     # golden files (tests/golden/, UPDATE_GOLDEN=1 regenerates) + proptest round trip
 │       │   └── tests/report_html.rs # golden report.html from tests/golden/report/report.json (UPDATE_GOLDEN=1), escaping of every field
 │       ├── hitop-wasm/         # format + model for the web app (wasm-bindgen =0.2.126), own workspace, not published
@@ -50,6 +52,7 @@ hitop/
 │           ├── tests/cookies_forms.rs # cookie jar across send/run, -F uploads, saved form bodies
 │           ├── tests/snippet.rs # hitop snippet: curl, fetch, Python, Java, Go output run against a capture server = what requests send sends
 │           ├── tests/ws.rs     # hitop ws against a local tokio-tungstenite echo server: flags, stdin, --count/--wait/--json, saved requests, masking
+│           ├── tests/grpc.rs   # hitop grpc against hitop-core's test server (included by #[path]): calls, streaming, status, list/describe, --proto, saved requests
 │           ├── tests/graphql.rs # send --graphql, saved graphql requests via run/requests send, Postman graphql import (httpmock)
 │           ├── tests/globals.rs # globals below collection/env, secret globals, pm.globals, import, convert
 │           ├── tests/mcp.rs    # hitop mcp: JSON-RPC over stdio for every tool (httpmock), no secret value anywhere on stdout
@@ -67,6 +70,7 @@ hitop/
 │               ├── commands/globals.rs # `hitop globals show|set|unset|import|export [-c folder]`
 │               ├── commands/openapi.rs # `hitop import openapi <file|url>`, `hitop openapi sync <file|url> <folder> [--dry-run] [--prune]`
 │               ├── commands/ws.rs  # `hitop ws <url|request> [-c]`: stdin or --send/--message, --count, --wait, --timeout, --json
+│               ├── commands/grpc.rs # `hitop grpc <target> <Service/Method> | list [service] | describe <symbol>`, saved requests with -c
 │               ├── commands/mcp.rs # `hitop mcp [folder]`: MCP server over stdio (rmcp), the nine tools, masking
 │               ├── commands/telemetry.rs # `hitop telemetry on|off|status` and the background ping (feature `telemetry`)
 │               └── output.rs       # Colored output, syntect highlighting
@@ -102,6 +106,7 @@ hitop/
 │   ├── src/diff.js             # response diff: JSON by path (key order ignored), lines (LCS), headers; history response snapshots
 │   ├── src/views/tools-dialogs.js # Code dialog (hitop-wasm snippet) and Compare responses dialog
 │   ├── src/graphql-schema.js   # graphql-js: introspection query, schema from the answer (lazy)
+│   ├── src/views/grpc-view.js # gRPC tab: server, Schema (reflection/.proto), Metadata, Message (pickers, template), call log (store.grpcTabs)
 │   ├── src/views/websocket-view.js # WebSocket tab: connect, saved/typed messages, timestamped log (store.sockets, memory only)
 │   ├── src/views/code-editor-graphql.js # cm6-graphql: GraphQL language, completion, schema lint (own lazy chunk)
 │   ├── src/zip.js              # collection folder ⇄ .zip (fflate)
@@ -186,6 +191,15 @@ hitop/
   `-H`, `--protocol`, auth flags, `-m/--message <saved>` then `-s/--send <text>`, else stdin lines; `-n/--count`, `--wait <ms>`
   (default 1000, 30000 with --count), `--timeout`, `--json` (JSON lines); exit 1 on failure or count not reached. `hitop run`,
   `snippet` and MCP `run_request` skip or refuse WebSocket requests; MCP has no WebSocket tools (open)
+- gRPC: `kind: grpc` + `grpc: {service, method, message (JSON text), protos, importPaths, plaintext}` (spec §3 "gRPC"; the URL is the
+  address `host:port` (TLS unless plaintext) / `http://` / `https://`; headers and auth are the metadata). Core `grpc::target(request,
+  collection_auth, vars, base_dir)` (no native deps), then feature `grpc` (default; tonic 0.14.6 pinned in the locks, tls-ring +
+  webpki roots; prost-reflect 0.16 dynamic messages; protox 0.10 parses .proto at run time, no protoc): `connect`, `schema` (protos
+  or reflection v1 → v1alpha, missing deps fetched by file name), `services`, `describe`, `template`, `call` (unary/server streaming
+  via one code path → `Event::{Headers, Message, Status}`; client/bidi streaming refused). Not in hitop-wasm. `hitop grpc <target>
+  <Service/Method> [-d json|@file|-] [-H] [--proto f]… [-I dir]… [--plaintext] [--max-time] [--json] [-v]`, `list [service]`,
+  `describe <symbol>`, saved with `-c` (protos relative to the folder); exit 1 on non-OK. `run` skips, `requests send`/`snippet`/MCP
+  `run_request` refuse; MCP `get_request` shows `grpc`. Test server `hitop-core/tests/support/grpc_server.rs` (dynamic Greeter service)
 - Snippets: `hitop snippet <collection> <request> --lang curl|fetch|python|go|java|rust [-e env] [--show-secrets]`; core
   `snippet::generate(lang, request, collection_auth, variables, secrets)`; secret names and variables with no value become
   `{{NAME}}` (the CLI never resolves secrets without `--show-secrets`); one value per header name, as hitop sends; golden files
@@ -228,6 +242,9 @@ hitop/
   (`npm run build:webapp`, `dev:webapp`; CI checks it with `TAURI_CONFIG="$(cat tauri.webapp.conf.json)" cargo check`).
   WebSocket: `ws_connect {args: {url, headers, protocols, timeoutMs}, onEvent: Channel}` → `{id, status, protocol, headers}`, events
   `{type: message|closed|error}` (binary as base64) on the channel; `ws_send {id, data, binary?}`, `ws_close {id}` (state `Sockets`).
+  gRPC: `grpc_list {args: {address, plaintext, metadata, protos, importPaths, baseDir, timeoutMs}}` → `{source, services}`,
+  `grpc_describe {args, symbol}` → `{description, template}`, `grpc_call {args: {...server, service, method, message, maxTimeMs},
+  onEvent: Channel}` → `{id}`, events `{type: headers|message|status}`; `grpc_cancel {id}` (state `GrpcCalls`).
   Web app commands: `send_request` (proxy envelope; `cookies: true` uses hitop-core's `global` jar and returns it),
   `cookies_load|save`, `load_globals|save_globals`, `read_folder`, `write_folder` (optional `globals`), `secret_get|set|delete`, `write_file`, `telemetry_status|set`; dialog plugin.
   Script commands return script-set `variables`; `run_post_script` takes the sent `request` (pm.request)
@@ -262,6 +279,11 @@ hitop/
   Adapter `websocket(url, {headers, protocols}, handlers)`: web.js = browser WebSocket (no handshake headers; the page says so),
   tauri.js = Rust `ws_connect` over a Tauri channel (harness `transformCallback`/`runCallback`, mock `mock.deliver`). Runs skip them.
   e2e `tests/websocket.cjs` with a hand-written Node echo server
+- gRPC: method select "gRPC" sets tab `kind: "grpc"` (tab `grpcService`, `grpcMethod`, `grpcMessage`, `grpcProtos`, `grpcImportPaths`,
+  `grpcPlaintext`; saved as `kind` + `grpc`); `store.grpcLoadSchema/grpcTemplate/grpcCall/grpcCancel`, state in `store.grpcTabs`
+  (never saved). Adapter `grpc`: web.js = null (the page says "gRPC is available in the desktop app and CLI", Send off), tauri.js =
+  Rust `grpc_*` over a channel. Tab base dir for .proto paths = the collection's desktop folder path. Runs skip them. e2e
+  `tests/grpc.cjs` (Tauri mode: canned Greeter in tauri-mock.cjs)
 - Response diff and Code: history items keep `response` {status, headers, body ≤ 100 kB, truncated?, durationMs} (secrets masked;
   older items have none and aren't offered); "Save as example" appends {name, status, headers, body} to the saved request's
   `examples`; Compare picks current / examples / history (`store.compareSources()`); Code uses hitop-wasm `snippet` (`store.snippetInput()`)
@@ -299,7 +321,7 @@ hitop/
 - `Environment` — `secrets` lists secret variable names: CLI values in the keychain, web app values in `variables` (localStorage), never in files or exports
 - Globals — an `Environment` with id/name `globals` (`model::GLOBALS_ID`); web app `hitop_globals` `{variables, secrets}`; `format::Folder.globals` (None leaves globals.yaml alone)
 - `Request` — has `id`, `name`, `url`, `method`, `headers[]` (`enabled`), `body`, `preRequestScript`, `postRequestScript`,
-  `auth`, and the web app's `bodyMode`/`formFields`/`disabledParams`, plus `bodyType`, `graphql`, `kind`/`websocket`, `examples`, `file` (folder path)
+  `auth`, and the web app's `bodyMode`/`formFields`/`disabledParams`, plus `bodyType`, `graphql`, `kind`/`websocket`/`grpc`, `examples`, `file` (folder path)
 - Every model struct keeps unknown JSON keys (`#[serde(flatten)] extra`); new fields are skipped when empty, so old JSON reads and writes unchanged
 - ids are `u64`; old web app string ids (`"col-legacy"`) read as a number derived from them (`model.rs` `de_id`)
 - `HistoryItem` (history.json, CLI and desktop) keeps extra keys; the desktop web app maps its items onto it (`platform/history.js`)
