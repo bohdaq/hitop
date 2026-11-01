@@ -11,7 +11,7 @@ Copy this job into `.gitlab-ci.yml` and change the folder and environment:
 api-tests:
   stage: test
   image:
-    name: ghcr.io/bohdaq/hitop:0.3.0-debug
+    name: ghcr.io/bohdaq/hitop:1.0.0-debug
     entrypoint: [""]
   variables:
     HITOP_KEYCHAIN: "off"
@@ -28,7 +28,7 @@ api-tests:
 
 The job fails when a request fails, the merge request shows every request as a test in its test report, and the reports stay as job artifacts.
 
-In hitop releases after 0.3.0, add `html` to `--reporter` (`cli,junit,json,html`) and `hitop-reports/report.html` is kept with the other artifacts: one page per run that opens offline from the job's artifact browser. To run the job on a timetable, add a pipeline schedule under **Build → Pipeline schedules**; the job above runs in scheduled pipelines unchanged.
+From hitop 1.0.0, add `html` to `--reporter` (`cli,junit,json,html`) and `hitop-reports/report.html` is kept with the other artifacts: one page per run that opens offline from the job's artifact browser. To run the job on a timetable, add a pipeline schedule under **Build → Pipeline schedules**; the job above runs in scheduled pipelines unchanged.
 
 ## Why the debug image
 
@@ -68,7 +68,7 @@ GitLab `services:` are reached by their alias, not `localhost`. Point the collec
 ```yaml
 api-tests:
   image:
-    name: ghcr.io/bohdaq/hitop:0.3.0-debug
+    name: ghcr.io/bohdaq/hitop:1.0.0-debug
     entrypoint: [""]
   services:
     - name: registry.example.com/my-api:latest
@@ -89,7 +89,7 @@ If the job needs other tools too, use any image with a shell and add the static 
 api-tests:
   image: alpine:3.22
   variables:
-    HITOP_VERSION: 0.3.0
+    HITOP_VERSION: 1.0.0
     HITOP_KEYCHAIN: "off"
   before_script:
     - apk add --no-cache curl

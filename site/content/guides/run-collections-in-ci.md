@@ -20,7 +20,7 @@ A request passes when it was sent, the status is below 400, and every check in i
 Use the static binary from GitHub Releases, `cargo install hitop`, or the Docker image:
 
 ```
-docker run --rm -v "$PWD:/work" -w /work ghcr.io/bohdaq/hitop:0.3.0 run ./my-api --env ci
+docker run --rm -v "$PWD:/work" -w /work ghcr.io/bohdaq/hitop:1.0.0 run ./my-api --env ci
 ```
 
 On GitHub, the [hitop action](/terms/run-hitop-in-github-actions.html) does this in one step and adds a job summary. GitLab needs the image's `-debug` tag, which has a shell: see [Run hitop in GitLab CI](/terms/run-hitop-in-gitlab-ci.html).
@@ -48,7 +48,7 @@ hitop run ./my-api --env ci --reporter cli,junit,json --out reports
 -   **cli:** progress and results in the log (the default).
 -   **junit:** `reports/junit.xml`, one test suite per collection and one test case per request. Most CI systems show it as a test report: GitLab `artifacts:reports:junit`, Jenkins, Azure Pipelines, and test report actions on GitHub.
 -   **json:** `reports/report.json`, with totals, every request and every check. Its format is versioned (`"reportVersion": 1`) and documented in the [run report spec](https://github.com/bohdaq/hitop/blob/main/spec/run-report.md), so your own scripts can read it safely.
--   **html:** `reports/report.html`, one page for people: totals, every request with its timings, failure and checks. It is self-contained (no script, nothing loaded from the network) and follows the system's light or dark theme, so it works as a downloaded CI artifact. In hitop releases after 0.3.0.
+-   **html:** `reports/report.html`, one page for people: totals, every request with its timings, failure and checks. It is self-contained (no script, nothing loaded from the network) and follows the system's light or dark theme, so it works as a downloaded CI artifact. From hitop 1.0.0.
 
 Secret values never reach a report. Wherever one would appear, in a URL, an error or a check, it is shown as `••••`.
 

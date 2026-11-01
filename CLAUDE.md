@@ -44,6 +44,7 @@ hitop/
 │       │   ├── pm-shim.js          # byte-for-byte copy of shared/pm-shim.js (packaged; a test checks they match)
 │       │   ├── tests/grpc.rs       # gRPC client against tests/support/grpc_server.rs (tonic, reflection v1/v1alpha/none; fixtures/grpc/*.proto)
 │       │   ├── tests/format.rs     # golden files (tests/golden/, UPDATE_GOLDEN=1 regenerates) + proptest round trip
+│       │   ├── tests/compat.rs     # format v1 compatibility suite (spec/compat/v1/): read, in-memory read, round trip, canonical write; v1 report shape
 │       │   └── tests/report_html.rs # golden report.html from tests/golden/report/report.json (UPDATE_GOLDEN=1), escaping of every field
 │       ├── hitop-wasm/         # format + model for the web app (wasm-bindgen =0.2.126), own workspace, not published
 │       ├── hitop-git/          # desktop Git panel: git2 0.21 + vendored libgit2 (feature `net`: https/ssh, vendored OpenSSL), not published;
@@ -79,6 +80,7 @@ hitop/
 │               ├── commands/mcp.rs # `hitop mcp [folder]`: MCP server over stdio (rmcp), the nine tools, masking
 │               ├── commands/telemetry.rs # `hitop telemetry on|off|status` and the background ping (feature `telemetry`)
 │               └── output.rs       # Colored output, syntect highlighting
+│   ├── fuzz/                   # cargo fuzz (nightly, own workspace): collection_yaml, postman, openapi; seed.sh <target> <secs> (corpora from fixtures, not in git); workflow fuzz.yml
 │   ├── fixtures/sample/        # collection folder run by tests/folder.rs against httpmock
 │   ├── fixtures/postman/       # Conduit (MIT), newman sample (Apache-2.0), Adyen BIN lookup (MIT), vendored with licenses
 │   ├── fixtures/openapi/       # swagger-petstore 3.0 (Apache-2.0), Adyen Checkout v71 3.1 (MIT), Kubernetes apps/v1 3.0 (Apache-2.0); README with sources
@@ -144,7 +146,8 @@ hitop/
 │   ├── HiTop/                  # the live App Store iOS app ("HiTop HTTP Client", editor, own JSON storage); frozen, untouched
 │   ├── HitopKit/               # Swift package (MIT): format v1 reader (Yams 6.2.2), variables, secrets, scripts, URLSession runner, report.json
 │   └── HitopCompanion/         # SwiftUI companion (T26): XcodeGen project.yml, app + App Intents, WidgetKit widget, Shared/ (app group)
-├── spec/collection-format.md   # collection folder format v1 (CC BY 4.0)
+├── spec/collection-format.md   # collection folder format v1, stable since 1.0 (CC BY 4.0); section 7 = compatibility promise
+├── spec/compat/v1/             # compatibility suite: <case>/folder + expected.json (never changed, only added), run-report/report.json
 ├── shared/pm-shim.js           # the pm.* shim for Postman scripts, run by hitop-core (copy in the crate), the web app and HitopKit (copy in Resources/)
 ├── spec/run-report.md          # `hitop run --reporter json` report, reportVersion 1, and the JUnit shape (CC BY 4.0)
 ├── ROADMAP.md                  # agent work order to v1.x: decisions, rules, tranches T0–T26, status
@@ -158,7 +161,13 @@ hitop/
 ## Key technical facts
 
 ### Rust CLI (`cli/`)
-- Workspace version: `0.3.0` (both crates in sync; also `[workspace.dependencies] hitop-core` version)
+- Workspace version: `1.0.0` (hitop, hitop-core, hitop-git in sync; also `[workspace.dependencies] hitop-core` version; the locks of
+  hitop-wasm, cli/fuzz and desktop carry hitop-core's version too)
+- Format v1 is stable: additive changes only (spec section 7). A new request/collection key needs a new case in
+  `spec/compat/v1/` (the test writes its expected.json once; review, commit); existing cases never change
+- Fuzzing: `cd cli && fuzz/seed.sh <collection_yaml|postman|openapi> <seconds>` (nightly + cargo-fuzz; FUZZ_TOOLCHAIN);
+  CI `fuzz.yml` runs each 60 s on nightly-2026-10-24. Audits: `licenses.yml` runs `cargo deny check licenses advisories`
+  per workspace (ignores with reasons in deny.toml) and `npm audit --omit=dev` for desktop, webapp, site
 - Rust toolchain: `stable` via `cli/rust-toolchain.toml` — always use `~/.cargo/bin/cargo`, NOT Homebrew rustc
 - Run tests: `cd cli && ~/.cargo/bin/cargo test`; CI also runs `cargo clippy --all-targets -- -D warnings`
 - Postman: `hitop import <files>... [--to <dir>] [--force]` (collections, environments, globals detected by content;
@@ -245,7 +254,7 @@ hitop/
 ### GitHub Action and images
 - `ghcr.io/bohdaq/hitop:<version>` is distroless static, nonroot, entrypoint `hitop`, workdir `/work`;
   `<version>-debug` (`cli/docker/Dockerfile.debug`, busybox shell, root) is for GitLab CI (`entrypoint: [""]`).
-  Both pushed by `release-cli.yml`; `latest`/`debug` only on non-rc tags. Newest release: `0.3.0`
+  Both pushed by `release-cli.yml`; `latest`/`debug` only on non-rc tags. Newest release: `1.0.0`
 - `bohdaq/hitop-action` (separate repo, MIT, tags `v1` → `v1.0.1`, `v1.0.0`): composite action, `run.sh` (docker run
   `--network host --user $(id -u)`; a tag not on ghcr.io but already on the runner is used as is, since v1.0.1), `summary.js` (job summary from report.json v1, sets the outcome from the
   exit code), self-test with a local Python mock server. Move `v1` to each compatible release
@@ -278,7 +287,9 @@ hitop/
 - Build: `cd desktop && PATH="$HOME/.cargo/bin:$PATH" RUSTC="$HOME/.cargo/bin/rustc" npx tauri build`
 - All Tauri commands are in `src-tauri/src/commands.rs`
 - The frontend calls Rust via `invoke()` from `@tauri-apps/api/core`
-- MAS entitlements: sandbox + network.client + user-selected files
+- MAS entitlements: sandbox + network.client + user-selected files + bookmarks.app-scope. `src/bookmarks.rs` (macOS, objc2):
+  inside the sandbox (`APP_SANDBOX_CONTAINER_ID`) read_folder/write_folder/git first resolve the folder's security-scoped
+  bookmark (`<app data>/folder-bookmarks.json`) or save one; `folder_forget {path}` drops it. CI job `desktop-macos` compiles it
 - Icons generated from `site/public-assets/favicon.svg` via `rsvg-convert` + `npx tauri icon`
 
 ### Frontend (`frontend/`)
@@ -400,6 +411,6 @@ PATH="$HOME/.cargo/bin:$PATH" RUSTC="$HOME/.cargo/bin/rustc" ~/.cargo/bin/cargo 
 
 ## Crates.io
 
-- `hitop-core` and `hitop` 0.3.0, published to crates.io 2026-11-01 (tag `cli-v0.3.0`); 0.2.0 on 2026-10-31
-- Desktop 0.2.0 (tauri.conf.json, Cargo.toml, package.json): GitHub Release `desktop-v0.2.0`
+- `hitop-core` and `hitop` 1.0.0, published to crates.io 2026-11-01 (tag `cli-v1.0.0`); 0.3.0 and 0.2.0 before
+- Desktop 1.0.0 (tauri.conf.json, Cargo.toml, package.json): GitHub Release `desktop-v1.0.0` (React UI until the T5 switch)
 - To publish: bump `version` in `cli/Cargo.toml` (workspace), push, then push tag `cli-v<version>`; `.github/workflows/release-cli.yml` publishes core then hitop (needs the `CARGO_REGISTRY_TOKEN` secret)

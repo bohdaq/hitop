@@ -47,15 +47,15 @@ On GitHub:
 ```yaml
 - uses: bohdaq/hitop-action@v1
   with:
-    version: 0.3.0
+    version: 1.0.0
     path: shop-api
     env: Staging
   env:
     HITOP_SECRET_STAGING_PASSWORD: ${{ secrets.STAGING_PASSWORD }}
 ```
 
-GitLab CI and any other runner: `ghcr.io/bohdaq/hitop:0.3.0` (distroless) or
-`ghcr.io/bohdaq/hitop:0.3.0-debug` (with a shell).
+GitLab CI and any other runner: `ghcr.io/bohdaq/hitop:1.0.0` (distroless) or
+`ghcr.io/bohdaq/hitop:1.0.0-debug` (with a shell).
 
 ## What's in it
 

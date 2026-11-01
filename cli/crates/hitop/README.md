@@ -347,7 +347,7 @@ hitop schedule ./my-api --cron "*/30 * * * *" --env local          # prints a cr
 
 - `--github` writes a workflow at the root of the git repository the folder is in. It runs
   `bohdaq/hitop-action@v1` on `schedule:` and `workflow_dispatch:` (the "Run workflow" button) with this
-  hitop's version (`--hitop-version` to change it), uploads the JUnit file and, for hitop releases after 0.3.0, the HTML report.
+  hitop's version (`--hitop-version` to change it), uploads the JUnit file and, for hitop 1.0.0 and later, the HTML report.
   Secrets are passed as `HITOP_SECRET_<ENV>_<NAME>: ${{ secrets.HITOP_SECRET_<ENV>_<NAME> }}`: by default every
   secret variable of the environment and of the folder's `globals.yaml`, or the names in `--secrets a,b`. The
   command prints the `gh secret set` lines to run; no value is ever written. An existing workflow is kept unless
