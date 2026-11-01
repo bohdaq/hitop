@@ -148,7 +148,7 @@ Secret variables: `secret: true` in an environment file, with the value resolved
 | T18 | Bring-your-own-key AI | dropped | owner decision | 2026-11-01 |
 | T19 | v1.0 hardening and release | todo | | |
 | T20 | Git UI in desktop | done (handoff) | 3837aec, e3f5d49, 2229a15; macOS check in section 6 | 2026-11-01 |
-| T21 | Secret manager integrations | todo | | |
+| T21 | Secret manager integrations | done (handoff) | 47d72f0, b375fb8, bdd1f67, 9d12eaf, 7979fa5; CI 41306134755; real-account check in section 6 | 2026-11-01 |
 | T22 | HTML reports and scheduled runs | done | 9c3302e, 7dd53a3, 2cdc097, 0638ca4; CI 41289440630 | 2026-11-01 |
 | T23 | Sync server (AGPL) | done (handoff) | 5cd2ac2, 9a8119f, 35f2775, f08bbce, a3b6c7d, ce07adf; deployed https://sync.hitop.rws8.tech | 2026-11-01 |
 | T24 | Client sync, teams, cloud runs | todo | | |
@@ -1209,6 +1209,58 @@ export PATH="$HOME/.cargo/bin:$PATH"
 - References like `${secret:vault:path#key}`, `${secret:aws:name}`, `${secret:azure:vault/name}`
   and `${secret:op:item/field}`, resolved at run time in desktop and CLI.
 - **Done when:** tests against local dev servers (Vault dev mode, LocalStack) and a stubbed `op`.
+- **Notes (2026-11-01, done):**
+  - Syntax (spec §5b): `${secret:vault:<mount>/<path>[#field]}`, `${secret:aws:<name|ARN>[#jsonKey]}`,
+    `${secret:azure:<vault>/<name>[/<version>]}`, `${secret:op:<vault>/<item>/[<section>/]<field>}` or `${secret:op://...}`.
+    The inner text is a variable name, so interpolation, `prepare`, auth, GraphQL, snippets and every `Masker` needed no change:
+    a resolved reference goes into `Secrets` (`Origin::SecretManager`). References inside variable values
+    (`token: ${secret:vault:...}` in an environment) are filled by `Secrets::expand_refs` (the runner calls it; CLI sites through
+    `secret::fill_refs`). Scripts and saved examples are never scanned.
+  - Core: `secret_refs.rs` (find/parse/expand, no deps, compiled in hitop-wasm too) and `secret_managers.rs` behind the default
+    feature `secret-managers` (= `native` + `ring`). Vault/OpenBao: `sys/internal/ui/mounts/<path>` for mount + KV version (as the
+    vault CLI), fallback on `/data/` in the path when the token may not ask; VAULT_ADDR/TOKEN/NAMESPACE, BAO_*, `~/.vault-token`; one GET
+    per secret for several fields. AWS: SigV4 written here on `ring` (already in all three locks through rustls), checked against
+    the aws-sig-v4-test-suite `get-vanilla` vector and a GetSecretValue request signed by botocore 1.34; credentials env → `~/.aws`
+    profile keys or `credential_process` → `aws configure export-credentials --format process` (SSO, assumed roles); region from ARN,
+    AWS_REGION, AWS_DEFAULT_REGION, profile; AWS_ENDPOINT_URL[_SECRETS_MANAGER]. Azure: client credentials
+    (AZURE_TENANT_ID/CLIENT_ID/CLIENT_SECRET, AZURE_AUTHORITY_HOST) or `az account get-access-token --resource https://vault.azure.net`,
+    then REST `api-version=7.4`. 1Password: `op read <uri> --no-newline`. Subprocesses: stdin null (MCP's stdin is the protocol),
+    stdout read on a thread, killed at the timeout, errors carry stderr only. Timeouts 15 s HTTP / 60 s CLIs
+    (`HITOP_SECRET_MANAGER_TIMEOUT`). Cache per `Resolver` (one per run, per MCP tool call, per desktop send/run).
+  - Binary size/licenses: no new crate in any lock (cli lock +3 edges: ring for hitop-core, httpmock dev for hitop-core, reqwest dev for
+    hitop; desktop +1 edge), so no measurable growth beyond the code; `cargo deny ... check licenses` passes for cli and desktop.
+    The official AWS SDK was not used (it would add aws-smithy/aws-lc-rs and a C build to the static musl binaries).
+  - CLI: every command that fills variables (`send`, `run`, `requests send`, `ws`, `grpc`, `snippet --show-secrets`, `mcp`)
+    resolves the references its request(s), collection variables and auth, environment, globals, `--var` and data rows use, before
+    sending. `--no-secret-managers` lives on `SecretFlags` (so every such command) and on `hitop mcp`; `HITOP_SECRET_MANAGERS=off`;
+    either one makes a request that uses a reference an error listing them (exit 2 for run). `hitop secret check [-c] [--env]
+    [--list]`: every reference with where it is used, ✓/✗ with the reason, never a value; exit 1 when one fails. Snippets: references
+    become `{{secret:...}}` placeholders (also inside variable values) unless `--show-secrets`. MCP: resolves only references in the
+    workspace files, not in a tool call's `variables` (an AI client can't read arbitrary paths); values remembered for masking and for
+    `refuse_secrets` on create/update.
+  - Desktop: Tauri command `secret_refs_resolve {refs}` → `{inner: value}`, error = one line per failed reference. Web app:
+    `store.resolveRefs()` (in `prepare`, `wsConnect`, `grpcCall`, now async) gathers refs from the request (JSON walk, scripts
+    skipped) and the variables; values in `store.refValues` (memory, reset at each send and run), merged by `variables()`, masked via
+    `secretValuesFor()` in run results, history and response snapshots. The Code dialog always keeps references as placeholders.
+  - Tests: hitop-core unit 15 new (refs parse/find/expand 3; resolver: dates, SigV4 ×2, fields, AWS profiles/regions, missing config,
+    Vault KV v2/v1/fallback/namespace/token file against httpmock, Azure client credentials + `az` stub + 404, `op` stub, AWS
+    credential chain incl. credential_process and stub `aws`, command timeouts; runner 1). `hitop/tests/secret_managers.rs` 8: run
+    with op + Azure and the masking check across CLI output, junit.xml, report.json, report.html, history/config dir and the folder
+    files; send + requests send with history; errors naming references, `--no-secret-managers`, `HITOP_SECRET_MANAGERS=off`, unknown
+    manager; `secret check` (ok, `--list`, a failing one → exit 1); snippets; MCP run_request/run_collection; Vault dev (KV v2 with
+    and without `data/`, a KV v1 mount, `~/.vault-token`, wrong token) and LocalStack (JSON key, plain, ARN, missing secret). CI `cli`
+    job runs `hashicorp/vault:1.20.4` (dev mode is the image's default command) and `localstack/localstack:4.4` (no auth token
+    needed) as service containers; those two tests fail when `CI` is set without them, skip locally. Web: unit checks for
+    `secretRefs`/`withSecretRefs`; e2e `tests/secret-refs.cjs` (web: refused with the note, nothing sent; tauri: values sent, one resolve
+    call, nothing in history or storage files, environment keeps the reference, failing reference named).
+  - Deviations: "the browser shows them unresolved with a clear note" is implemented as: the request isn't sent and the note names the
+    references (sending `${secret:...}` text would be useless). The single request view shows the response as received, and the
+    WebSocket/gRPC logs show the URL/message as sent, as for environment secrets (T2 deviation). The React desktop (`desktop/src`,
+    `run_collection_cmd`) doesn't resolve references: it is frozen until the T5 switch. On macOS a Dock-launched desktop app doesn't see
+    shell env vars (VAULT_ADDR...), and the MAS sandbox can't run `op`/`az`/`aws`; documented in the guide, not tested (no Mac).
+    Real Azure, AWS, 1Password and HCP Vault were not exercised (no accounts): stubs, the mock and the dev servers stand in.
+  - Pre-existing flake seen once locally: hitop-core `websocket::client::tests::echoes_text_and_binary_with_headers_auth_and_subprotocols`
+    (`late` send after close succeeded); passed on rerun, not touched.
 
 #### T22 HTML reports and scheduled runs
 - `--reporter html` (a single self-contained file).
@@ -1368,6 +1420,7 @@ Agent appends here; owner ticks when done.
 | 2026-11-01 | T17 | Nothing to do now. Open question for later: should sync also merge header rows one by one (today a request whose headers you edited keeps all of them when the spec changes its headers), and should `hitop mcp` get an import or sync tool for OpenAPI? | |
 | 2026-11-01 | T22 | Nothing to do now. `--reporter html` and the html artifact in `hitop schedule --github` workflows reach users with the next CLI release (0.3.0 images don't have it); the guides already say "releases after 0.3.0". The guide changes go live with the next site deploy. | |
 | 2026-11-01 | T20 | When you do the T5 macOS check (web app overlay build), try the Git panel: open a collection folder that is a git clone with an HTTPS remote (for example a private GitHub repo), make sure it is in a clean state, then: (1) Collections → the folder → Git (or the sidebar's Git); the branch, upstream and ↑/↓ show; (2) edit a request, see it under Changes with its diff, Stage, write a message, Commit (author = your git config; in the sandboxed MAS build the app may not see `~/.gitconfig`: it then asks for a name and email and keeps them in the repo's `.git/config`); (3) Push: in the MAS build it fails without a token and says so (outside the sandbox git's credential helper, for example osxkeychain, may answer); paste a fine-grained token (contents read/write) under Remote access, Push again (macOS may ask for Keychain access once; `security find-generic-password -s hitop -a git/github.com/token` shows it); (4) make a commit on GitHub's web editor to the same line, Pull: a conflict appears; Take theirs or edit the text, Commit merge, Push; (5) create a branch, switch back, delete it after merging. Outside the MAS build, an SSH remote should work through your ssh-agent (the host must be in `~/.ssh/known_hosts`). Tell me what fails, especially anything the sandbox blocks. | |
+| 2026-11-01 | T21 | Optional, with accounts you have: put one reference per manager you use into a test folder's environment (`token: ${secret:vault:secret/x#token}`, `${secret:aws:name#key}`, `${secret:azure:<vault>/<name>}`, `${secret:op:<vault>/<item>/<field>}`), sign in as usual (`vault login`, `aws sso login`, `az login`, `op signin`) and run `hitop secret check -c <folder>`: each should show ✓ (no value printed); tell me any that fails and its message. Agents had only Vault dev mode, LocalStack, stubs and mocks. On the Mac with the T5 check: does the desktop app opened from the Dock resolve a Vault reference (it doesn't see shell env vars like VAULT_ADDR; `~/.vault-token` alone isn't enough without the address), and does the MAS build run `op`/`az` (expected: sandbox blocks them)? Open question: should the desktop get a Settings field for VAULT_ADDR and friends? | |
 
 ## 7. Setup the owner does before the agent starts
 
