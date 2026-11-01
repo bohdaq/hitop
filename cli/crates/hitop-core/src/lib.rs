@@ -14,5 +14,6 @@ pub mod report;
 pub mod runner;
 pub mod scripting;
 pub mod secrets;
+pub mod snippet;
 pub mod storage;
 pub mod telemetry;

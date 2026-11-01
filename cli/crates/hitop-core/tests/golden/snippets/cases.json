@@ -1,0 +1,61 @@
+[
+  {
+    "name": "get-query-bearer",
+    "variables": { "base": "https://api.example.test", "token": "tok-123" },
+    "request": {
+      "id": 1, "name": "List users", "method": "GET", "url": "${base}/users?page=2&q=a%20b",
+      "headers": [{ "name": "Accept", "value": "application/json" }, { "name": "X-Off", "value": "1", "enabled": false }, { "name": "", "value": "" }],
+      "body": "", "auth": { "type": "bearer", "token": "${token}" }
+    }
+  },
+  {
+    "name": "post-json-basic",
+    "variables": { "base": "https://api.example.test" },
+    "request": {
+      "id": 2, "name": "Create item", "method": "POST", "url": "${base}/items",
+      "headers": [{ "name": "Content-Type", "value": "application/json" }],
+      "body": "{\n  \"name\": \"it's \\\"quoted\\\"\",\n  \"path\": \"C:\\\\tmp\",\n  \"shell\": \"$HOME `id`\",\n  \"city\": \"Kraków\"\n}",
+      "auth": { "type": "basic", "username": "ada", "password": "p'w\"d" }
+    }
+  },
+  {
+    "name": "urlencoded-apikey-query",
+    "variables": { "base": "https://api.example.test", "key": "never-printed" },
+    "secrets": ["key"],
+    "request": {
+      "id": 3, "name": "Update profile", "method": "PUT", "url": "${base}/profile",
+      "headers": [], "body": "", "bodyMode": "urlencoded",
+      "formFields": [{ "key": "name", "value": "Ada Lovelace" }, { "key": "note", "value": "a&b=c/é" }, { "key": "off", "value": "x", "enabled": false }],
+      "auth": { "type": "apikey", "key": "api_key", "value": "${key}", "in": "query" }
+    }
+  },
+  {
+    "name": "multipart-apikey-header",
+    "variables": { "base": "https://api.example.test" },
+    "request": {
+      "id": 4, "name": "Upload", "method": "POST", "url": "${base}/upload",
+      "headers": [{ "name": "Content-Type", "value": "multipart/form-data" }], "body": "", "bodyMode": "multipart",
+      "formFields": [{ "key": "title", "value": "@not-a-file" }, { "key": "avatar", "value": "", "type": "file", "fileName": "photo.png" }],
+      "auth": { "type": "apikey", "key": "X-API-Key", "value": "k-123", "in": "header" }
+    }
+  },
+  {
+    "name": "secrets-placeholders",
+    "variables": { "base": "https://api.example.test", "token": "s3cr3t-value" },
+    "secrets": ["token"],
+    "request": {
+      "id": 5, "name": "Patch note", "method": "PATCH", "url": "${base}/tenants/${tenant}/note",
+      "headers": [{ "name": "X-Trace", "value": "t-1" }], "body": "plain text\twith a tab",
+      "auth": { "type": "bearer", "token": "${token}" }
+    }
+  },
+  {
+    "name": "custom-method",
+    "variables": {},
+    "collectionAuth": { "type": "basic", "username": "svc", "password": "" },
+    "request": {
+      "id": 6, "name": "Purge", "method": "PURGE", "url": "https://cdn.example.test/assets/app.js",
+      "headers": [{ "name": "X-Tag", "value": "a" }, { "name": "X-Tag", "value": "b" }], "body": ""
+    }
+  }
+]
