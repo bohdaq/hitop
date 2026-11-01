@@ -214,6 +214,9 @@ export PATH="$HOME/.cargo/bin:$PATH"
   - `hitop run <folder>` uses only the folder's `environments/`, and only with `--env`. The mock
     test copies `cli/fixtures/sample` to a temp dir, adds `environments/mock.yaml` with the mock
     port and runs `hitop run ./fixtures/sample --env mock` there (`--var` stays in T3).
+  - Paths work in `run`, `requests *`, `variables *`, `export` and `send -c`. `collections
+    list/add/delete/rename/duplicate` and `import` still manage global storage only (a folder is
+    renamed in `hitop.yaml`, deleted with `rm`).
   - CI `cli` job now also runs `cargo clippy --all-targets -- -D warnings`.
   - Tests: hitop-core 84 unit + 4 format (golden x3, proptest 512 cases); hitop 34 + 9 folder.
   - Open for T5: web app storage may hold string ids (`"col-legacy"` in `legacy-storage.json`);

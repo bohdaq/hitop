@@ -84,7 +84,7 @@ hitop/
 - Rust toolchain: `stable` via `cli/rust-toolchain.toml` — always use `~/.cargo/bin/cargo`, NOT Homebrew rustc
 - Run tests: `cd cli && ~/.cargo/bin/cargo test`; CI also runs `cargo clippy --all-targets -- -D warnings`
 - Collection folders: `hitop init [dir]`, `hitop convert <json> <dir>` / `<dir> <json>` (`--environments`, `-c`, `--force`);
-  every command taking a collection name also takes a folder path (`hitop run ./my-api --env local`); a folder uses only its own `environments/`
+  `run`, `requests`, `variables`, `export`, `send -c` also take a folder path (`hitop run ./my-api --env local`); a folder uses only its own `environments/`
 - YAML crate: `yaml_serde` (serde_yaml continued by the YAML org); HTTP tests use `httpmock` 0.8, never the public internet
 - Publish: `cd cli && cargo publish -p hitop-core` then `cargo publish -p hitop`
 - HTTP client: `reqwest 0.12` blocking + rustls (no OpenSSL)

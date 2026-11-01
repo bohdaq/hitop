@@ -64,7 +64,7 @@ hitop export MyAPI -o my-collection.json
 | `hitop export <collection>` | Export a collection |
 | `hitop completions <shell>` | Generate shell completions |
 
-Every command that takes a collection name also takes a path to a collection folder.
+`run`, `requests`, `variables`, `export` and `send -c` take a path to a collection folder as well as a collection name.
 
 ## Collections in git
 
