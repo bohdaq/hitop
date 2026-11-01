@@ -1,0 +1,39 @@
+[Unit]
+Description=hitop sync server (end-to-end encrypted workspace sync, AGPL-3.0-or-later)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+DynamicUser=yes
+# Listener: plain HTTP on loopback; the front proxy (rws) terminates TLS.
+Environment=RWS_CONFIG_IP=127.0.0.1
+Environment=RWS_CONFIG_PORT=7881
+Environment=RWS_CONFIG_LOG_FORMAT=off
+# A 4 MiB blob is ~5.4 MiB as base64 in JSON; refuse anything far bigger before it is read.
+Environment=RWS_CONFIG_MAX_BODY_SIZE_IN_BYTES=6291456
+# The database lives in the state directory, never in the working directory.
+StateDirectory=hitop-sync
+StateDirectoryMode=0700
+Environment=HITOP_SYNC_DATABASE=sqlite:/var/lib/hitop-sync/sync.db
+# HITOP_SYNC_PUBLIC_URL, HITOP_SYNC_RP_ID, HITOP_SYNC_RP_ORIGINS, HITOP_SYNC_ALLOWED_ORIGINS,
+# SMTP_URL, SMTP_TLS_SERVER_NAME, SMTP_FROM (root-only file).
+EnvironmentFile=/etc/hitop-sync/env
+WorkingDirectory=/var/lib/hitop-sync
+ExecStart=/usr/local/bin/hitop-sync-server
+Restart=on-failure
+RestartSec=2
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+PrivateTmp=true
+PrivateDevices=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX
+MemoryMax=512M
+TasksMax=256
+
+[Install]
+WantedBy=multi-user.target

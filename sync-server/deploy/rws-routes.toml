@@ -1,0 +1,39 @@
+# Added to /etc/rws/rws.config.toml on bohdan-prod-donotdelete, ABOVE the old-docs-* redirect
+# routes (those match any host). Nothing existing changes.
+#
+# [acme] domains: append "sync.hitop.rws8.tech" only once its A record resolves to 168.119.17.57:
+# every name shares one certificate (mail.rws8.tech too), so a name that fails validation fails
+# the whole order. See deploy/README.md step 3 for moving the old certificate aside.
+
+[[upstream]]
+name     = "hitop-sync"
+backends = ["127.0.0.1:7881"]
+
+# Sign-in mails and passkey ceremonies: tight per IP limits.
+[[route]]
+  name = "hitop-sync-auth"
+
+  [route.match]
+  host = "sync.hitop.rws8.tech"
+  path = "/v1/auth/*"
+
+  [route.action]
+  type     = "proxy"
+  upstream = "hitop-sync"
+
+  [route.middleware]
+  rate_limit = { max_requests = 20, window_secs = 60 }
+
+[[route]]
+  name = "hitop-sync"
+
+  [route.match]
+  host = "sync.hitop.rws8.tech"
+  path = "/*"
+
+  [route.action]
+  type     = "proxy"
+  upstream = "hitop-sync"
+
+  [route.middleware]
+  rate_limit = { max_requests = 600, window_secs = 60 }
