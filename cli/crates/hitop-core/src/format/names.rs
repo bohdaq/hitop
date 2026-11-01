@@ -53,6 +53,19 @@ pub fn check_rel_path(path: &str) -> Result<()> {
     Ok(())
 }
 
+/// Request files whose paths differ only in case (`Get.yaml`, `get.yaml`) are
+/// one file on macOS and Windows, so a writer can't keep both: a reader
+/// refuses them the way it refuses `a.yaml` next to `a.yml`.
+pub fn check_case_clash<'a>(paths: impl IntoIterator<Item = &'a String>) -> Result<()> {
+    let mut seen: std::collections::HashMap<String, &String> = std::collections::HashMap::new();
+    for p in paths {
+        if let Some(prev) = seen.insert(p.to_lowercase(), p) {
+            bail!("requests/{prev} and requests/{p} differ only in case; rename one");
+        }
+    }
+    Ok(())
+}
+
 /// The file for every request: the explicit one, or the slug of its name
 /// at the top level, numbered (`-2`, `-3`) when taken. Explicit files are
 /// reserved first, so a default name never takes one.

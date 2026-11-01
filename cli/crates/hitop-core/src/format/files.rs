@@ -56,6 +56,7 @@ pub fn read_files(files: &Files, name: &str) -> Result<Folder> {
     check_extra(&manifest.extra, COLLECTION_KEYS, MANIFEST)?;
 
     let requests_by_path = yaml_files(files, REQUESTS, true)?;
+    names::check_case_clash(requests_by_path.keys())?;
     let mut ordered: Vec<String> = vec![];
     let mut seen = BTreeSet::new();
     for entry in &manifest.order {
@@ -244,6 +245,11 @@ mod tests {
         assert_eq!(f.environments.len(), 1);
         files.insert("requests/a.yml".into(), "url: x\n".into());
         assert!(read_files(&files, "x").unwrap_err().to_string().contains("same request"));
+        files.remove("requests/a.yml");
+        // Found by the collection_yaml fuzz target: these can't both be written.
+        files.insert("requests/A.yaml".into(), "url: y\n".into());
+        assert_eq!(read_files(&files, "x").unwrap_err().to_string(), "requests/A and requests/a differ only in case; rename one");
+        files.remove("requests/A.yaml");
         assert!(read_files(&Files::new(), "x").unwrap_err().to_string().contains("not a collection folder"));
         let newer: Files = [("hitop.yaml".to_string(), "format: 9\n".to_string())].into();
         assert!(read_files(&newer, "x").unwrap_err().to_string().contains("newer hitop"));

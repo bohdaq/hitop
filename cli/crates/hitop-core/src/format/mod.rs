@@ -111,6 +111,7 @@ pub fn read_folder(dir: &Path) -> Result<Folder> {
     check_extra(&manifest.extra, COLLECTION_KEYS, MANIFEST)?;
 
     let files = yaml_files(&dir.join(REQUESTS), true)?;
+    names::check_case_clash(files.keys())?;
     let mut ordered: Vec<String> = vec![];
     let mut seen = BTreeSet::new();
     for entry in &manifest.order {
