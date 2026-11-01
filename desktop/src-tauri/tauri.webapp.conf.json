@@ -1,0 +1,8 @@
+{
+  "build": {
+    "beforeDevCommand": "npm --prefix ../webapp run dev:tauri",
+    "beforeBuildCommand": "npm --prefix ../webapp run build:tauri",
+    "devUrl": "http://localhost:1421",
+    "frontendDist": "../../webapp/dist-tauri"
+  }
+}

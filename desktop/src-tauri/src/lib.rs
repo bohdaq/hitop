@@ -4,6 +4,7 @@ mod commands;
 pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_shell::init())
+        .plugin(tauri_plugin_dialog::init())
         .invoke_handler(tauri::generate_handler![
             commands::load_collections,
             commands::save_collections,
@@ -18,6 +19,13 @@ pub fn run() {
             commands::run_post_script,
             commands::interpolate_template,
             commands::run_collection_cmd,
+            commands::send_request,
+            commands::read_folder,
+            commands::write_folder,
+            commands::secret_get,
+            commands::secret_set,
+            commands::secret_delete,
+            commands::write_file,
         ])
         .run(tauri::generate_context!())
         .expect("error running hitop desktop app");

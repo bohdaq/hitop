@@ -3,8 +3,13 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use tauri::Emitter;
 
+use base64::{engine::general_purpose::STANDARD as B64, Engine};
+use hitop_core::secrets::SecretStore;
 use hitop_core::{
+    format,
     http,
+    model::Environment,
+    secrets,
     interpolation::interpolate,
     model::{Collection, HistoryItem, TestResult},
     runner,
@@ -241,4 +246,96 @@ pub fn run_collection_cmd(
             },
         })
         .collect())
+}
+
+// ── The Lit web app (webapp/, built with `npm run build:tauri`) ───────────────
+
+/// A request as the web app's HITOP proxy takes it, so the app sends the
+/// same envelope on the web and here.
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SendArgs {
+    pub method: String,
+    pub url: String,
+    #[serde(default)]
+    pub headers: Vec<(String, String)>,
+    #[serde(default)]
+    pub body: Option<String>,
+    /// `base64` when `body` holds bytes (multipart with files).
+    #[serde(default)]
+    pub body_encoding: Option<String>,
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SendResult {
+    pub status: u16,
+    pub status_text: String,
+    pub url: String,
+    /// Every header, repeats (Set-Cookie) apart.
+    pub headers: Vec<(String, String)>,
+    pub body: String,
+    /// `base64` when the body isn't UTF-8.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub body_encoding: Option<String>,
+    pub time_ms: u64,
+}
+
+#[tauri::command(async)]
+pub fn send_request(args: SendArgs) -> Result<SendResult, String> {
+    let body = match (args.body, args.body_encoding.as_deref()) {
+        (None, _) => vec![],
+        (Some(b), Some("base64")) => B64.decode(b).map_err(|e| format!("invalid base64 body: {e}"))?,
+        (Some(b), _) => b.into_bytes(),
+    };
+    let r = http::send(&args.method, &args.url, &args.headers, body).map_err(|e| format!("{e:#}"))?;
+    let (body, body_encoding) = match String::from_utf8(r.body) {
+        Ok(text) => (text, None),
+        Err(e) => (B64.encode(e.into_bytes()), Some("base64".to_string())),
+    };
+    Ok(SendResult { status: r.status, status_text: r.status_text, url: r.url, headers: r.headers, body, body_encoding, time_ms: r.duration_ms })
+}
+
+#[derive(Serialize)]
+pub struct FolderResult {
+    pub collection: Collection,
+    pub environments: Vec<Environment>,
+}
+
+/// Reads a collection folder (hitop.yaml, requests/, environments/).
+#[tauri::command(async)]
+pub fn read_folder(path: String) -> Result<FolderResult, String> {
+    let f = format::read_folder(std::path::Path::new(&path)).map_err(|e| format!("{e:#}"))?;
+    Ok(FolderResult { collection: f.collection, environments: f.environments })
+}
+
+/// Writes a collection folder: changed files only, stale request and
+/// environment files removed. Secret values are never written.
+#[tauri::command(async)]
+pub fn write_folder(path: String, collection: Collection, environments: Vec<Environment>) -> Result<(), String> {
+    format::write_folder(std::path::Path::new(&path), &format::Folder { collection, environments }).map_err(|e| format!("{e:#}"))
+}
+
+/// Secret values in the OS keychain (service `hitop`, account
+/// `<workspace>/<env>/<name>`, as the CLI uses them).
+#[tauri::command(async)]
+pub fn secret_get(account: String) -> Result<Option<String>, String> {
+    secrets::os_store().get(&account).map_err(|e| e.to_string())
+}
+
+#[tauri::command(async)]
+pub fn secret_set(account: String, value: String) -> Result<(), String> {
+    secrets::os_store().set(&account, &value).map_err(|e| e.to_string())
+}
+
+#[tauri::command(async)]
+pub fn secret_delete(account: String) -> Result<bool, String> {
+    secrets::os_store().delete(&account).map_err(|e| e.to_string())
+}
+
+/// Writes an export to the path the save dialog gave (`data` is base64).
+#[tauri::command(async)]
+pub fn write_file(path: String, data: String) -> Result<(), String> {
+    let bytes = B64.decode(data).map_err(|e| format!("invalid base64: {e}"))?;
+    std::fs::write(&path, bytes).map_err(|e| format!("writing {path}: {e}"))
 }
