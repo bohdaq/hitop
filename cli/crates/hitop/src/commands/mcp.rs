@@ -245,6 +245,12 @@ fn request_view(r: &Request) -> Value {
         if let Some(g) = &r.graphql {
             o.insert("graphql".into(), json!({"variables": g.variables, "operationName": g.operation_name}));
         }
+        if let Some(k) = &r.kind {
+            o.insert("kind".into(), json!(k));
+        }
+        if let Some(w) = &r.websocket {
+            o.insert("websocket".into(), json!({"subprotocols": w.subprotocols, "messages": w.messages.iter().map(|m| json!({"name": m.name, "content": m.content})).collect::<Vec<_>>()}));
+        }
         if let Some(mode) = &r.body_mode {
             o.insert("bodyMode".into(), json!(mode));
             o.insert("formFields".into(), json!(r.form_fields.iter().map(|f| json!({"key": f.key, "value": f.value, "type": f.kind, "enabled": f.enabled})).collect::<Vec<_>>()));
@@ -487,7 +493,13 @@ impl Hitop {
             let col = &source.collection;
             Ok(json!({
                 "collection": col.name,
-                "requests": col.requests.iter().map(|r| json!({"name": r.name, "method": r.method, "url": r.url, "file": r.file})).collect::<Vec<_>>(),
+                "requests": col.requests.iter().map(|r| {
+                    let mut v = json!({"name": r.name, "method": r.method, "url": r.url, "file": r.file});
+                    if let Some(k) = &r.kind {
+                        v["kind"] = json!(k);
+                    }
+                    v
+                }).collect::<Vec<_>>(),
             }))
         })
         .await
@@ -518,7 +530,11 @@ impl Hitop {
             let env = st.environment(&source, p.environment.as_deref())?;
             let (secrets, globals, global_secrets) = st.resolve(&source, env.as_ref())?;
             let mut col = source.collection.clone();
-            col.requests = vec![find(&source.collection, &p.request)?.clone()];
+            let request = find(&source.collection, &p.request)?;
+            if request.is_websocket() {
+                bail!("'{}' is a WebSocket request: this server doesn't open WebSocket connections (use `hitop ws` in a terminal)", request.name);
+            }
+            col.requests = vec![request.clone()];
             let options = options(p.variables, p.timeout_ms, globals, global_secrets);
             let ws = source.workspace();
             let mut jar = cookies::open(&ws, CookieFlags::default())?;

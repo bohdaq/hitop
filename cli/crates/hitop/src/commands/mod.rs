@@ -17,3 +17,4 @@ pub mod source;
 #[cfg(feature = "telemetry")]
 pub mod telemetry;
 pub mod variables;
+pub mod ws;

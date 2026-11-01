@@ -47,7 +47,9 @@ rpassword = "7.5"
 # `hitop mcp`: the official MCP SDK, stdio transport only.
 rmcp = { version = "3.8", default-features = false, features = ["server", "macros", "transport-io"] }
 schemars = "1"
-tokio = { version = "1", features = ["rt-multi-thread", "macros", "io-std"] }
+tokio = { version = "1", features = ["rt-multi-thread", "macros", "io-std", "sync", "time", "net"] }
+# `hitop ws`: binary messages as base64 in --json output.
+base64 = "0.22"
 syntect = { version = "5", default-features = false, features = ["default-syntaxes", "default-themes", "html", "regex-fancy"] }
 
 [features]
@@ -61,3 +63,6 @@ httpmock = "0.8.3"
 predicates = "3"
 roxmltree = "0.21.2"
 tempfile = "3"
+# tests/ws.rs: a local WebSocket echo server.
+tokio-tungstenite = { version = "0.30", default-features = false, features = ["handshake"] }
+futures-util = { version = "0.3", default-features = false, features = ["sink", "std"] }

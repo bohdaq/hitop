@@ -309,6 +309,21 @@ fn a_missing_secret_is_a_tool_error_and_the_server_keeps_going() {
 }
 
 #[test]
+fn websocket_requests_are_shown_but_not_run() {
+    let home = TempDir::new().unwrap();
+    let dir = folder(&home, "http://127.0.0.1:9");
+    write(&dir, "requests/feed.yaml", "name: Feed\nkind: websocket\nurl: ws://127.0.0.1:9/feed\nwebsocket:\n  subprotocols: [v1]\n  messages:\n  - name: hi\n    content: hello\n");
+    let mut c = Client::start(&home, &[dir.to_str().unwrap()], &[("HITOP_SECRET_GLOBAL_GPASS", GLOBAL_SECRET)]);
+    let r = c.ok("get_request", json!({"request": "Feed"}));
+    assert_eq!(r["kind"], "websocket");
+    assert_eq!(r["websocket"], json!({"subprotocols": ["v1"], "messages": [{"name": "hi", "content": "hello"}]}));
+    let list = c.ok("list_requests", json!({}));
+    assert!(list["requests"].as_array().unwrap().iter().any(|x| x["name"] == "Feed" && x["kind"] == "websocket"), "{list}");
+    let e = c.err("run_request", json!({"request": "Feed", "environment": "other"}));
+    assert!(e.contains("WebSocket request") && e.contains("hitop ws"), "{e}");
+}
+
+#[test]
 fn global_storage_active_environment_and_cookies_across_calls() {
     let home = TempDir::new().unwrap();
     let server = MockServer::start();

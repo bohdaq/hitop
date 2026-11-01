@@ -60,6 +60,8 @@ enum Cmd {
     #[cfg(feature = "telemetry")]
     #[command(subcommand)]
     Telemetry(commands::telemetry::TelemetryCmd),
+    /// Open a WebSocket connection: send typed lines or --send messages, print what arrives (exit 1 if it fails or --count isn't reached)
+    Ws(commands::ws::WsArgs),
     /// Serve a collection folder (or global storage) to AI tools over MCP (stdio)
     Mcp(commands::mcp::McpArgs),
     /// Generate shell completions
@@ -100,6 +102,15 @@ fn dispatch(command: Cmd) -> i32 {
             }
         }
         Cmd::Snippet(args) => commands::snippet::run(args),
+        Cmd::Ws(args) => {
+            return match commands::ws::run(args) {
+                Ok(code) => code,
+                Err(e) => {
+                    eprintln!("{} {e:#}", "error:".red().bold());
+                    1
+                }
+            }
+        }
         Cmd::Collections(cmd) => commands::collections::run(cmd),
         Cmd::Requests(cmd) => commands::requests::run(cmd),
         Cmd::Variables(cmd) => commands::variables::run(cmd),

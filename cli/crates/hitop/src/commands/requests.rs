@@ -103,7 +103,7 @@ pub fn run(cmd: RequestsCmd) -> Result<()> {
                 println!(
                     "  {} {} {}  {}",
                     "•".cyan(),
-                    r.method.bold(),
+                    if r.is_websocket() { "WS" } else { r.method.as_str() }.bold(),
                     r.name.bold(),
                     r.url.dimmed()
                 );
@@ -160,7 +160,11 @@ pub fn run(cmd: RequestsCmd) -> Result<()> {
             let col = &source.collection;
             let req = find_req(col, &request)?;
             println!("{}: {}", "Name".bold(), req.name);
-            println!("{}: {}", "Method".bold(), req.method);
+            if req.is_websocket() {
+                println!("{}: WebSocket", "Kind".bold());
+            } else {
+                println!("{}: {}", "Method".bold(), req.method);
+            }
             println!("{}: {}", "URL".bold(), req.url);
             let headers: Vec<_> = req.headers.iter().filter(|h| !h.name.is_empty()).collect();
             for h in headers {
@@ -171,6 +175,14 @@ pub fn run(cmd: RequestsCmd) -> Result<()> {
             }
             if !req.body.is_empty() {
                 println!("{}: {}", "Body".bold(), req.body);
+            }
+            if let Some(w) = &req.websocket {
+                if !w.subprotocols.is_empty() {
+                    println!("{}: {}", "Subprotocols".bold(), w.subprotocols.join(", "));
+                }
+                for m in &w.messages {
+                    println!("{}: {}: {}", "Message".bold(), m.name, m.content);
+                }
             }
             if !req.pre_request_script.is_empty() {
                 println!("{}: {}", "Pre-request script".bold(), req.pre_request_script);
@@ -212,6 +224,9 @@ pub fn run(cmd: RequestsCmd) -> Result<()> {
             let source = Source::open(&collection)?;
             let col = &source.collection;
             let req = find_req(col, &request)?.clone();
+            if req.is_websocket() {
+                bail!("'{}' is a WebSocket request: open it with `hitop ws '{}' -c {collection}`", req.name, req.name);
+            }
             let environment = source.environment(env.as_deref())?;
             let secret_flags = secrets;
             let secrets = super::secret::resolve(&source.workspace(), environment.as_ref(), &secret_flags)?;
