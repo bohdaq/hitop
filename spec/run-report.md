@@ -12,7 +12,8 @@ The hitop code that implements it is MIT licensed.
 Reference implementation: `cli/crates/hitop-core/src/report.rs`.
 
 `hitop run <collection> --reporter json --out <dir>` writes `<dir>/report.json`
-(and `--reporter junit` writes `<dir>/junit.xml`, section 4). Tools that read
+(and `--reporter junit` writes `<dir>/junit.xml`, section 4, and
+`--reporter html` writes `<dir>/report.html`, section 5). Tools that read
 the result of a run, such as the GitHub Action's job summary, read this file.
 
 ## 1. Stability
@@ -183,3 +184,27 @@ Response bodies and headers are not part of the report.
   request line followed by every assertion, `✓` passed and `✗` failed with
   its message. A passing request lists the same in `<system-out>`.
 - `timestamp` is UTC without a zone suffix (`2026-11-01T12:00:00`).
+
+## 5. HTML report
+
+`report.html` is the same report (sections 2 and 3) as one page for
+people: summary, every collection and iteration (with its `--data` row),
+every request with its method, status, timings, URL, file, error, failure
+line and assertions. Failed requests start expanded; a "Show failed
+requests only" checkbox hides the rest.
+
+- **Self-contained.** Inline CSS, no script, no images, fonts or links to
+  load. A `Content-Security-Policy` of `default-src 'none'; style-src
+  'unsafe-inline'` means a browser opens no connection for it, so it works
+  offline and as a CI artifact. Light and dark follow
+  `prefers-color-scheme`.
+- **Escaped.** Every string from the report (names, URLs, messages, data
+  rows, file paths) is HTML-escaped (`& < > " '`); control characters
+  other than tab and newlines become U+FFFD. Only whole numbers from the
+  report go into a `style` attribute.
+- **Masked.** It holds what `report.json` holds: secret values are `••••`,
+  response bodies and headers are not in it.
+- **Deterministic.** The page is a function of the report alone (no clock,
+  no random ids): the same report gives the same bytes.
+- The markup and styles are not an interface: tools should read
+  `report.json`. Added after hitop 0.3.0.

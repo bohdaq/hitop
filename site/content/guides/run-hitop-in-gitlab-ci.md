@@ -28,6 +28,8 @@ api-tests:
 
 The job fails when a request fails, the merge request shows every request as a test in its test report, and the reports stay as job artifacts.
 
+In hitop releases after 0.3.0, add `html` to `--reporter` (`cli,junit,json,html`) and `hitop-reports/report.html` is kept with the other artifacts: one page per run that opens offline from the job's artifact browser. To run the job on a timetable, add a pipeline schedule under **Build → Pipeline schedules**; the job above runs in scheduled pipelines unchanged.
+
 ## Why the debug image
 
 GitLab runs a job's `script:` through a shell inside the job image. The plain `ghcr.io/bohdaq/hitop:<version>` image is distroless: it holds the hitop binary and nothing else, not even a shell, so GitLab can't run a script in it. Every release therefore also has a `<version>-debug` tag: the same static binary on the distroless debug base, which adds a small busybox shell and runs as root, so it can write reports into the project directory. `entrypoint: [""]` replaces the image's `hitop` entrypoint so GitLab can start its shell.

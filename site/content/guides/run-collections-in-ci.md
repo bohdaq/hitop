@@ -48,8 +48,13 @@ hitop run ./my-api --env ci --reporter cli,junit,json --out reports
 -   **cli:** progress and results in the log (the default).
 -   **junit:** `reports/junit.xml`, one test suite per collection and one test case per request. Most CI systems show it as a test report: GitLab `artifacts:reports:junit`, Jenkins, Azure Pipelines, and test report actions on GitHub.
 -   **json:** `reports/report.json`, with totals, every request and every check. Its format is versioned (`"reportVersion": 1`) and documented in the [run report spec](https://github.com/bohdaq/hitop/blob/main/spec/run-report.md), so your own scripts can read it safely.
+-   **html:** `reports/report.html`, one page for people: totals, every request with its timings, failure and checks. It is self-contained (no script, nothing loaded from the network) and follows the system's light or dark theme, so it works as a downloaded CI artifact. In hitop releases after 0.3.0.
 
 Secret values never reach a report. Wherever one would appear, in a URL, an error or a check, it is shown as `••••`.
+
+## Run on a schedule
+
+`hitop schedule ./my-api --github --env prod` writes a GitHub Actions workflow that runs the folder every day and on demand (see [Run hitop in GitHub Actions](/terms/run-hitop-in-github-actions.html)). On your own machine or a server, `hitop schedule ./my-api --cron "*/30 * * * *" --env local` prints a crontab line instead: it keeps every run's reports in a folder of their own and appends the output to a log; add it with `crontab -e`.
 
 ## Environments and variables
 

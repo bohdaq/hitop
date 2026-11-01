@@ -73,6 +73,7 @@ hitop export MyAPI -o my-collection.json
 | `hitop convert <json> <dir>` / `hitop convert <dir> <json>` | Convert a HITOP JSON export to a collection folder, or back |
 | `hitop run <collection>` | Run all requests in a collection sequentially (reports, data files and exit codes: see "Checks in CI") |
 | `hitop run --all` | Run every collection |
+| `hitop schedule <folder> --github` / `--cron "<expr>"` | Run a collection folder on a schedule: write a GitHub Actions workflow, or print a crontab line (see "Scheduled runs") |
 | `hitop collections list/add/delete/rename/duplicate` | Manage collections |
 | `hitop requests list/add/show/delete/rename/send` | Manage requests |
 | `hitop ws <url>` / `hitop ws <request> -c <collection>` | Open a WebSocket connection: send typed lines or `--send`/`--message` messages, print what arrives (see "WebSocket") |
@@ -251,13 +252,15 @@ exits with a code a pipeline can use:
 ```bash
 hitop send https://api.example.com/health --post-script "assert.status(200); assert.responseTime(500)"
 hitop run ./my-api --env ci --reporter cli,junit,json --out reports   # reports/junit.xml, reports/report.json
+hitop run ./my-api --env ci --reporter html     # hitop-reports/report.html, one page to open in a browser
 hitop run ./my-api --env-file ci.yaml --var base=https://preview.example.com --timeout 5000 --bail
 hitop run ./my-api --env ci --data users.csv     # one iteration per row (CSV with a header row, or a JSON array of objects)
 hitop run ./my-api --env ci --iterations 3
 ```
 
-- `--reporter`: `cli` (default), `junit`, `json`, comma separated; files go to `--out` (default `hitop-reports`).
-  The JSON report is versioned (`"reportVersion": 1`) and documented in
+- `--reporter`: `cli` (default), `junit`, `json`, `html`, comma separated; files go to `--out` (default `hitop-reports`).
+  `html` writes `report.html`: one self-contained page (inline CSS, no script, loads nothing, light and dark)
+  with the summary, every request, its timings, failure and assertions. The JSON report is versioned (`"reportVersion": 1`) and documented in
   [spec/run-report.md](https://github.com/bohdaq/hitop/blob/main/spec/run-report.md). Secret values are `••••` in every report.
   Run from a folder, each JUnit `<testcase>` and each request in `report.json` carries its file
   (`file="my-api/requests/get-user.yaml"`: the folder as given, then `requests/<file>.yaml`), so CI
@@ -267,6 +270,28 @@ hitop run ./my-api --env ci --iterations 3
 - `--bail` stops at the first failed request; without it every request runs. (Before 0.3 stopping was the default
   and `--no-stop-on-fail` turned it off; that flag is still accepted.)
 - `--timeout <ms>` limits each request; a slower one fails the run with a timeout.
+
+## Scheduled runs
+
+```bash
+hitop schedule ./my-api --github --env prod                        # .github/workflows/hitop-my-api-prod.yml, daily 06:00 UTC
+hitop schedule ./my-api --github --env prod --cron "0 */6 * * *" --force
+hitop schedule ./my-api --cron "*/30 * * * *" --env local          # prints a crontab line; add it with crontab -e
+```
+
+- `--github` writes a workflow at the root of the git repository the folder is in. It runs
+  `bohdaq/hitop-action@v1` on `schedule:` and `workflow_dispatch:` (the "Run workflow" button) with this
+  hitop's version (`--hitop-version` to change it), uploads the JUnit file and, for hitop releases after 0.3.0, the HTML report.
+  Secrets are passed as `HITOP_SECRET_<ENV>_<NAME>: ${{ secrets.HITOP_SECRET_<ENV>_<NAME> }}`: by default every
+  secret variable of the environment and of the folder's `globals.yaml`, or the names in `--secrets a,b`. The
+  command prints the `gh secret set` lines to run; no value is ever written. An existing workflow is kept unless
+  you pass `--force`. GitHub runs schedules in UTC, at most every 5 minutes.
+- `--cron` alone prints one crontab line and installs nothing: absolute paths, `%` escaped for cron, every run's
+  `junit.xml`, `report.json` and `report.html` in `<log dir>/<time>/`, output appended to `<log dir>/hitop.log`
+  (`--log-dir`, default `~/.local/state/hitop/runs/<name>`). Secrets come from the keychain or
+  `HITOP_SECRET_*` variables set in the crontab.
+- Cron expressions have five fields (minute, hour, day of month, month, day of week) with `*`, numbers, ranges,
+  steps and lists, or a single month or day name; hitop checks them before writing anything.
 
 ## Cookies and form bodies
 

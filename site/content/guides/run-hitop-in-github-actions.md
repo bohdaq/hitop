@@ -125,6 +125,40 @@ jobs:
 
 Each test is named after the request and grouped by collection; with `--data` or `--iterations` every iteration is its own suite. The failure shows its kind and the request's failure line, such as `AssertionError: status is 201: got 200`, `HttpStatus: HTTP 500` or `RequestError` with the connection error. With `--bail` the run stops at the first failure, and requests that never ran are not in the report: the summary says the run stopped early.
 
+## Keep an HTML report
+
+In hitop releases after 0.3.0, `--reporter html` writes `report.html`: one page with the totals, every request with its status, timings, failure and checks, and a switch to show only what failed. It loads nothing from the network, so it opens straight from a downloaded artifact. The action uploads only the JUnit file, so upload the page yourself; `if: always()` keeps it when the run fails:
+
+```yaml
+      - uses: bohdaq/hitop-action@v1
+        id: hitop
+        with:
+          version: 0.4.0
+          path: ./my-api
+          env: staging
+          reporter: cli,junit,json,html
+      - uses: actions/upload-artifact@v7
+        if: always() && steps.hitop.outputs.report-dir != ''
+        with:
+          name: hitop-report
+          path: ${{ steps.hitop.outputs.report-dir }}/report.html
+```
+
+Secret values are `••••` in the page, as in every other report, and response bodies are not in it.
+
+## Run on a schedule
+
+`hitop schedule` writes the workflow for you, at the root of the repository the folder is in:
+
+```
+hitop schedule ./my-api --github --env prod
+hitop schedule ./my-api --github --env prod --cron "0 */6 * * *" --force
+```
+
+The workflow `.github/workflows/hitop-my-api-prod.yml` runs on `schedule:` (every day at 06:00 UTC unless you pass `--cron`) and on `workflow_dispatch:`, so the Actions tab has a "Run workflow" button. It pins the hitop version that wrote it, passes each secret variable of the environment (and of the folder's `globals.yaml`) as `HITOP_SECRET_<ENV>_<NAME>: ${{ secrets.HITOP_SECRET_<ENV>_<NAME> }}`, and prints the `gh secret set` commands that add them. Pick the secrets with `--secrets token,api_key`. No value is ever written to the file. With a hitop release after 0.3.0 it also uploads the HTML report. An existing workflow is kept unless you pass `--force`, and every generated workflow passes [actionlint](https://github.com/rhysd/actionlint) in hitop's own CI.
+
+GitHub runs schedules in UTC and at most every 5 minutes, and turns them off in public repositories with no activity for 60 days. hitop checks the cron expression before it writes anything.
+
 ## Test a server the job starts
 
 The container shares the runner's network, so a collection can call a server started earlier in the job on `localhost`:
