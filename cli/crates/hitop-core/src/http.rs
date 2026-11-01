@@ -5,6 +5,7 @@ use anyhow::Result;
 use reqwest::blocking::Client;
 use reqwest::header::{HeaderMap, HeaderName, HeaderValue};
 
+use crate::cookies::{self, Jar};
 use crate::model::RequestResult;
 
 static CLIENT: std::sync::OnceLock<Client> = std::sync::OnceLock::new();
@@ -36,6 +37,39 @@ pub fn execute_with(
     body: &str,
     timeout: Option<Duration>,
 ) -> Result<RequestResult> {
+    execute_opts(method, url, headers, body.as_bytes().to_vec(), Options { timeout, jar: None })
+}
+
+/// How [`execute_opts`] and [`send_with`] send a request.
+#[derive(Default)]
+pub struct Options<'a> {
+    /// Time limit for the whole request (connect, send and reading the body).
+    pub timeout: Option<Duration>,
+    /// Cookies: the jar's go out with the request (unless it has a `Cookie`
+    /// header already) and the response's `Set-Cookie` lines go in.
+    pub jar: Option<&'a mut Jar>,
+}
+
+/// The jar's `Cookie` header for `url`, when the request has none.
+fn jar_cookie(jar: &Option<&mut Jar>, url: &str, headers: &[(String, String)]) -> Option<String> {
+    let jar = jar.as_ref()?;
+    if headers.iter().any(|(k, v)| k.eq_ignore_ascii_case("cookie") && !v.is_empty()) {
+        return None;
+    }
+    let value = jar.header(&reqwest::Url::parse(url).ok()?, cookies::now_ms());
+    (!value.is_empty()).then_some(value)
+}
+
+fn jar_store(jar: &mut Option<&mut Jar>, resp: &reqwest::blocking::Response) {
+    if let Some(jar) = jar {
+        let lines: Vec<&str> = resp.headers().get_all(reqwest::header::SET_COOKIE).iter().filter_map(|v| v.to_str().ok()).collect();
+        jar.merge(lines, resp.url(), cookies::now_ms());
+    }
+}
+
+/// [`execute_with`] for a body of bytes (form and multipart bodies), with a
+/// cookie jar.
+pub fn execute_opts(method: &str, url: &str, headers: &[(String, String)], body: Vec<u8>, mut opts: Options) -> Result<RequestResult> {
     let mut header_map = HeaderMap::new();
     for (k, v) in headers {
         if k.is_empty() {
@@ -48,22 +82,28 @@ pub fn execute_with(
             header_map.insert(name, value);
         }
     }
+    if let Some(cookie) = jar_cookie(&opts.jar, url, headers) {
+        if let Ok(value) = HeaderValue::from_str(&cookie) {
+            header_map.insert(reqwest::header::COOKIE, value);
+        }
+    }
 
     let method = reqwest::Method::from_bytes(method.to_uppercase().as_bytes())
         .unwrap_or(reqwest::Method::GET);
 
     let mut req = client().request(method, url).headers(header_map);
-    if let Some(t) = timeout {
+    if let Some(t) = opts.timeout {
         req = req.timeout(t);
     }
 
     if !body.is_empty() {
-        req = req.body(body.to_string());
+        req = req.body(body);
     }
 
     let start = Instant::now();
     let resp = req.send()?;
     let duration_ms = start.elapsed().as_millis() as u64;
+    jar_store(&mut opts.jar, &resp);
 
     let status = resp.status().as_u16();
 
@@ -76,7 +116,7 @@ pub fn execute_with(
     }
 
     // A body cut off by the timeout is an error, not an empty body.
-    let body = match (timeout, resp.text()) {
+    let body = match (opts.timeout, resp.text()) {
         (_, Ok(b)) => b,
         (Some(_), Err(e)) if e.is_timeout() => return Err(e.into()),
         (_, Err(_)) => String::new(),
@@ -106,6 +146,11 @@ pub struct Response {
 /// repeated response headers. Empty header names are skipped; an invalid
 /// header is an error rather than silently dropped.
 pub fn send(method: &str, url: &str, headers: &[(String, String)], body: Vec<u8>) -> Result<Response> {
+    send_with(method, url, headers, body, Options::default())
+}
+
+/// [`send`] with a timeout and a cookie jar.
+pub fn send_with(method: &str, url: &str, headers: &[(String, String)], body: Vec<u8>, mut opts: Options) -> Result<Response> {
     let mut header_map = HeaderMap::new();
     for (k, v) in headers {
         if k.is_empty() {
@@ -115,13 +160,20 @@ pub fn send(method: &str, url: &str, headers: &[(String, String)], body: Vec<u8>
         let value = HeaderValue::from_str(v).map_err(|_| anyhow::anyhow!("invalid value for header {k}"))?;
         header_map.append(name, value);
     }
+    if let Some(cookie) = jar_cookie(&opts.jar, url, headers) {
+        header_map.insert(reqwest::header::COOKIE, HeaderValue::from_str(&cookie).map_err(|_| anyhow::anyhow!("invalid cookie in the jar"))?);
+    }
     let method = reqwest::Method::from_bytes(method.to_uppercase().as_bytes()).map_err(|_| anyhow::anyhow!("invalid method {method:?}"))?;
     let mut req = client().request(method, url).headers(header_map);
+    if let Some(t) = opts.timeout {
+        req = req.timeout(t);
+    }
     if !body.is_empty() {
         req = req.body(body);
     }
     let start = Instant::now();
     let resp = req.send()?;
+    jar_store(&mut opts.jar, &resp);
     let status = resp.status();
     let final_url = resp.url().to_string();
     let headers = resp

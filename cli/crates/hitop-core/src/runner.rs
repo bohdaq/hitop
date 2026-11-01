@@ -5,6 +5,8 @@ use anyhow::Result;
 use serde_json::Value;
 
 use crate::{
+    cookies::Jar,
+    form,
     http,
     model::{Collection, Environment, RequestResult, TestResult},
     prepare::{apply_updates, prepare, variables, Draft},
@@ -100,6 +102,19 @@ pub fn run_collection_opts(
     options: &RunOptions,
     on_step: &mut dyn FnMut(&RunStepResult),
 ) -> Vec<RunStepResult> {
+    run_collection_jar(collection, environment, secrets, options, None, on_step)
+}
+
+/// [`run_collection_opts`] with a cookie jar: cookies set by one response are
+/// sent with the next requests (and stay in `jar` for the caller to save).
+pub fn run_collection_jar(
+    collection: &Collection,
+    environment: Option<&Environment>,
+    secrets: &Secrets,
+    options: &RunOptions,
+    mut jar: Option<&mut Jar>,
+    on_step: &mut dyn FnMut(&RunStepResult),
+) -> Vec<RunStepResult> {
     let stop_on_fail = options.stop_on_fail;
     let mut context: HashMap<String, Value> = HashMap::new();
     let mut variables = variables(&collection.variables, environment);
@@ -129,13 +144,18 @@ pub fn run_collection_opts(
                 duration_ms: 0,
             },
             Ok(pre) => {
+                let mut sent_parts = (pre.headers.clone(), pre.body.clone().into_bytes());
                 context.extend(pre.context_updates.clone());
                 // Variables a script sets (pm.environment.set, ...) last for the run.
                 apply_updates(&mut variables, &pre.variables);
-                let result = http::execute_with(&request.method, &pre.url, &pre.headers, &pre.body, options.timeout);
+                let result = form::outgoing(request, &pre.headers, &pre.body, &variables).and_then(|(h, b)| {
+                    sent_parts = (h.clone(), b.clone());
+                    http::execute_opts(&request.method, &pre.url, &h, b, http::Options { timeout: options.timeout, jar: jar.as_deref_mut() })
+                });
+                let (headers, body) = sent_parts;
                 let mut tests = vec![];
                 if let Ok(resp) = &result {
-                    let sent = SentRequest { url: pre.url.clone(), method: request.method.clone(), headers: pre.headers.clone(), body: pre.body.clone() };
+                    let sent = SentRequest { url: pre.url.clone(), method: request.method.clone(), headers, body: String::from_utf8(body).unwrap_or_default() };
                     match run_post_request_script_with(
                         &request.post_request_script,
                         &PostRequestCtx {
