@@ -6,7 +6,9 @@
 //!   there is no keychain; never anywhere else;
 //! - `pins.json`: device keys confirmed by fingerprint (key id → public key), trust on first use;
 //! - `links.json`: collection folder → workspace;
-//! - `state/<workspace>.json`: [`hitop_core::sync::State`] of each linked folder.
+//! - `state/<workspace>.json`: [`hitop_core::sync::State`] of each linked folder;
+//! - `audit-heads.json`: the last audit-log head each workspace's `hitop sync audit --verify`
+//!   saw (workspace → seq and hash), so a rewritten log is noticed next time.
 //!
 //! A runner (CI, cron) uses `HITOP_SYNC_RUNNER` instead: one value holding a runner credential
 //! (`hitop sync runner create` prints it), read-only and for one workspace.
@@ -164,6 +166,17 @@ pub fn load_pins() -> Result<Pins> {
 
 pub fn save_pins(pins: &Pins) -> Result<()> {
     write_json(&dir()?.join("pins.json"), pins)
+}
+
+/// An audit-log row this computer has verified: workspace → (seq, hash).
+pub type AuditHeads = BTreeMap<String, (i64, String)>;
+
+pub fn load_audit_heads() -> Result<AuditHeads> {
+    read_json(&dir()?.join("audit-heads.json"))
+}
+
+pub fn save_audit_heads(heads: &AuditHeads) -> Result<()> {
+    write_json(&dir()?.join("audit-heads.json"), heads)
 }
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]

@@ -3,7 +3,9 @@
 //! `hitop-sync-crypto`; this file is the command line around them. Secret values never sync:
 //! environment files carry only their names.
 
+mod audit;
 mod client;
+mod sso;
 mod store;
 
 use std::collections::BTreeMap;
@@ -23,10 +25,19 @@ use store::{Account, Link, RunnerCredential, Secret};
 
 #[derive(Subcommand)]
 pub enum SyncCmd {
-    /// Sign in by email (a code is mailed to you) and register this device's key
+    /// Sign in by email (a code is mailed to you) or with single sign-on (--sso), and register
+    /// this device's key
     Login {
+        /// Your address (with --sso: optional, a hint for the sign-in page)
+        #[arg(long, required_unless_present = "sso")]
+        email: Option<String>,
+        /// Sign in with the server's identity provider (SSO) in a browser
         #[arg(long)]
-        email: String,
+        sso: bool,
+        /// With --sso: don't open a browser here; print the link and paste the code shown after
+        /// signing in (for SSH sessions)
+        #[arg(long, requires = "sso")]
+        no_browser: bool,
         /// The code from the sign-in mail (asked for on a terminal when left out)
         #[arg(long)]
         code: Option<String>,
@@ -128,6 +139,31 @@ pub enum SyncCmd {
     /// Runner credentials for scheduled runs (CI, cron)
     #[command(subcommand)]
     Runner(RunnerCmd),
+    /// The workspace's audit log (owners): sign-ins aside, who added, removed or invited whom,
+    /// role changes, key rotations, runner credentials. --verify checks its hash chain here
+    Audit {
+        /// Print the events as JSON
+        #[arg(long)]
+        json: bool,
+        /// Recompute the log's hash chain on this computer and compare it with what it saw last
+        /// time (exit 1 when it is broken)
+        #[arg(long)]
+        verify: bool,
+        /// Your own account's events (sign-ins, failed sign-ins, keys) instead of a workspace's
+        #[arg(long, conflicts_with = "verify")]
+        mine: bool,
+        /// Only this event (member_added, signin_failed, key_rotated, ...)
+        #[arg(long)]
+        event: Option<String>,
+        /// Only events by this address
+        #[arg(long)]
+        actor: Option<String>,
+        /// At most this many events, newest first (0 = all)
+        #[arg(long, default_value_t = 50)]
+        limit: usize,
+        #[command(flatten)]
+        folder: FolderArgs,
+    },
 }
 
 #[derive(Subcommand)]
@@ -163,7 +199,13 @@ pub struct TrustArgs {
 
 pub fn run(cmd: SyncCmd) -> Result<i32> {
     match cmd {
-        SyncCmd::Login { email, code, server, name } => login(&email, code, server, name).map(|_| 0),
+        SyncCmd::Login { email, sso, no_browser, code, server, name } => {
+            if sso {
+                sso_login(email.as_deref(), no_browser, server, name).map(|_| 0)
+            } else {
+                login(email.as_deref().unwrap_or_default(), code, server, name).map(|_| 0)
+            }
+        }
         SyncCmd::Logout => logout().map(|_| 0),
         SyncCmd::Whoami => whoami().map(|_| 0),
         SyncCmd::Ls => ls().map(|_| 0),
@@ -186,6 +228,20 @@ pub fn run(cmd: SyncCmd) -> Result<i32> {
         SyncCmd::Role { email, role, folder } => set_role(&folder.path(), &email, &role).map(|_| 0),
         SyncCmd::Trust { fingerprints, folder } => trust_cmd(&folder.path(), &fingerprints).map(|_| 0),
         SyncCmd::Runner(RunnerCmd::Create { name, folder }) => runner_create(&folder.path(), &name).map(|_| 0),
+        SyncCmd::Audit { json, verify, mine, event, actor, limit, folder } => {
+            let filter = audit::Filter { event, actor, limit };
+            if mine {
+                let s = session()?;
+                audit::run(&s.api, None, filter, json, false)?;
+            } else {
+                let t = target(&folder.path())?;
+                if t.runner {
+                    bail!("a runner credential can't read the audit log");
+                }
+                audit::run(&t.api, Some(&t.workspace), filter, json, verify)?;
+            }
+            Ok(0)
+        }
     }
 }
 
@@ -237,6 +293,21 @@ fn login(email: &str, code: Option<String>, server: Option<String>, name: Option
     };
     let code = code.rsplit('#').next().unwrap_or(&code).trim().to_string();
     let r = anon.call("POST", "/v1/auth/email/verify", Some(json!({ "token": code })))?;
+    finish_login(&server, &r, email, name)
+}
+
+fn sso_login(email: Option<&str>, no_browser: bool, server: Option<String>, name: Option<String>) -> Result<()> {
+    let server = server.unwrap_or_else(default_server);
+    let anon = Api::new(&server, None)?;
+    let r = sso::sign_in(&anon, email, no_browser, interactive(), ask)?;
+    let email = r["user"]["email"].as_str().unwrap_or("").to_string();
+    finish_login(&server, &r, &email, name)
+}
+
+/// After a sign-in (`r` = `{session, user}`): keep this device's key or register a new one, and
+/// save the account.
+fn finish_login(server: &str, r: &Value, email: &str, name: Option<String>) -> Result<()> {
+    let server = server.to_string();
     let session = r["session"].as_str().context("no session in the answer")?.to_string();
     let user_id = r["user"]["id"].as_str().unwrap_or("").to_string();
     let api = Api::new(&server, Some(session.clone()))?;

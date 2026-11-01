@@ -1,7 +1,8 @@
 //! `hitop sync` end to end: two clients with separate config directories and key files against a
 //! real sync server on localhost (the sync-server binary from `HITOP_SYNC_SERVER_BIN`; skipped
 //! without it locally, required when `CI` is set). Create, edit, conflict, resolve, delete; teams
-//! (invite, accept, trust, add, remove with rotation); a runner credential.
+//! (invite, accept, trust, add, remove with rotation); a runner credential; the audit log; and
+//! `login --sso` against Keycloak when `HITOP_SYNC_TEST_KEYCLOAK` is set (sync-server/tests/keycloak.rs).
 
 use std::io::{BufRead, BufReader};
 use std::path::{Path, PathBuf};
@@ -33,6 +34,11 @@ fn free_port() -> u16 {
 // The child is waited for in SyncServer's Drop, which clippy can't see.
 #[allow(clippy::zombie_processes)]
 fn server() -> Option<SyncServer> {
+    server_with(&[])
+}
+
+#[allow(clippy::zombie_processes)]
+fn server_with(envs: &[(&str, String)]) -> Option<SyncServer> {
     let Some(bin) = std::env::var_os("HITOP_SYNC_SERVER_BIN") else {
         assert!(std::env::var_os("CI").is_none(), "HITOP_SYNC_SERVER_BIN must be set on CI (cargo build in sync-server/)");
         eprintln!("HITOP_SYNC_SERVER_BIN not set: skipped");
@@ -50,6 +56,7 @@ fn server() -> Option<SyncServer> {
         .env("HITOP_SYNC_RP_ORIGINS", format!("http://localhost:{port}"))
         .env("HITOP_SYNC_DATABASE", format!("sqlite:{}", dir.path().join("sync.db").display()))
         .env("HITOP_SYNC_MAIL", "log")
+        .envs(envs.iter().map(|(k, v)| (*k, v.as_str())))
         .current_dir(dir.path())
         .stdout(Stdio::null())
         .stderr(Stdio::piped())
@@ -329,6 +336,29 @@ fn two_clients_sync_a_folder_end_to_end() {
     let o = Client::out(ci.cmd().env("HITOP_SYNC_RUNNER", &cred).args(["sync", "pull", "-c", r.to_str().unwrap()]).output().unwrap());
     assert_eq!(o.code, 0, "{}", o.stderr);
     assert!(r.join("requests/after.yaml").exists());
+
+    // The owner reads the audit log of all that and checks its chain on this computer.
+    let log = ada.ok(&["sync", "audit", "--limit", "0", "-c", a.to_str().unwrap()]);
+    for event in ["workspace_created", "invite_created", "invite_accepted", "member_added", "runner_created", "member_removed", "key_rotated"] {
+        assert!(log.contains(event), "{event} in\n{log}");
+    }
+    let rows: serde_json::Value = serde_json::from_str(&ada.ok(&["sync", "audit", "--json", "--event", "member_removed", "-c", a.to_str().unwrap()])).unwrap();
+    assert_eq!(rows.as_array().unwrap().len(), 1);
+    assert_eq!(rows[0]["detail"]["email"], "bob@example.com");
+    assert!(ada.ok(&["sync", "audit", "--verify", "--limit", "1", "-c", a.to_str().unwrap()]).contains("audit log intact"));
+    // Twice: the second run also checks the head the first one saw.
+    assert!(ada.ok(&["sync", "audit", "--verify", "--limit", "1", "-c", a.to_str().unwrap()]).contains("audit log intact"));
+    let mine = ada.ok(&["sync", "audit", "--mine"]);
+    assert!(mine.contains("signin") && mine.contains("device_key_added"), "{mine}");
+    // Only owners: a viewer is refused, a removed member sees nothing.
+    let o = cy.run(&["sync", "audit", "-c", cf.to_str().unwrap()]);
+    assert_eq!(o.code, 2);
+    assert!(o.stderr.contains("owner"), "{}", o.stderr);
+    assert_eq!(bob.run(&["sync", "audit", "-c", b.to_str().unwrap()]).code, 2);
+    // This server has no SSO.
+    let o = Client::new(&server).run(&["sync", "login", "--sso", "--server", &server.url]);
+    assert_eq!(o.code, 2);
+    assert!(o.stderr.contains("no single sign-on"), "{}", o.stderr);
 }
 
 #[test]
@@ -355,4 +385,82 @@ fn sync_commands_explain_what_is_missing() {
     let o = Command::cargo_bin("hitop").unwrap().env("HITOP_SYNC_RUNNER", "nonsense").args(["sync", "pull"]).output().unwrap();
     assert_eq!(o.status.code(), Some(2));
     assert!(String::from_utf8_lossy(&o.stderr).contains("runner credential"));
+}
+
+/// Keycloak's login form, as a browser fills it: returns where Keycloak redirects to.
+fn keycloak_login(authorize: &str, username: &str, password: &str) -> String {
+    let http = reqwest::blocking::Client::builder().redirect(reqwest::redirect::Policy::none()).build().unwrap();
+    let res = http.get(authorize).send().unwrap();
+    let cookies: Vec<String> = res.headers().get_all("set-cookie").iter().map(|v| v.to_str().unwrap().split(';').next().unwrap().to_string()).collect();
+    let page = res.text().unwrap();
+    let form = &page[page.find("id=\"kc-form-login\"").expect("Keycloak's login form")..];
+    let action = &form[form.find("action=\"").unwrap() + 8..];
+    let action = action[..action.find('"').unwrap()].replace("&amp;", "&");
+    let res = http.post(action).header("Cookie", cookies.join("; ")).form(&[("username", username), ("password", password)]).send().unwrap();
+    assert_eq!(res.status().as_u16(), 302);
+    res.headers()["location"].to_str().unwrap().to_string()
+}
+
+#[test]
+fn sso_login_through_keycloak() {
+    let Some(kc) = std::env::var("HITOP_SYNC_TEST_KEYCLOAK").ok().filter(|s| !s.is_empty()) else {
+        eprintln!("HITOP_SYNC_TEST_KEYCLOAK not set: skipped");
+        return;
+    };
+    let secret = TempDir::new().unwrap();
+    let secret_file = secret.path().join("client-secret");
+    std::fs::write(&secret_file, "hitop-sync-test-secret\n").unwrap();
+    let Some(server) = server_with(&[
+        ("HITOP_SYNC_OIDC_ISSUER", format!("{}/realms/hitop", kc.trim_end_matches('/'))),
+        ("HITOP_SYNC_OIDC_CLIENT_ID", "hitop-sync".into()),
+        ("HITOP_SYNC_OIDC_CLIENT_SECRET_FILE", secret_file.display().to_string()),
+        ("HITOP_SYNC_OIDC_ALLOWED_DOMAINS", "corp.test".into()),
+        ("HITOP_SYNC_SSO_REQUIRED", "1".into()),
+    ]) else {
+        return;
+    };
+    let alice = Client::new(&server);
+    let mut child = std::process::Command::new(assert_cmd::cargo::cargo_bin("hitop"));
+    for (k, v) in alice.cmd().get_envs() {
+        match v {
+            Some(v) => child.env(k, v),
+            None => child.env_remove(k),
+        };
+    }
+    let mut child = child
+        .current_dir(alice.home.path())
+        .env("HITOP_NO_BROWSER", "1")
+        .args(["sync", "login", "--sso", "--name", "ci laptop"])
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .unwrap();
+    // The CLI prints the provider's link (no browser here) and listens on loopback.
+    let mut stderr = BufReader::new(child.stderr.take().unwrap());
+    let mut link = String::new();
+    while !link.contains("/protocol/openid-connect/auth") {
+        link.clear();
+        assert!(stderr.read_line(&mut link).unwrap() > 0, "no sign-in link");
+    }
+    // The browser: Keycloak's login, back to the server's callback, then to the CLI's listener.
+    let callback = keycloak_login(link.trim(), "alice", "alice-test-pw");
+    assert!(callback.starts_with(&format!("{}/v1/auth/sso/callback?", server.url)), "{callback}");
+    let http = reqwest::blocking::Client::builder().redirect(reqwest::redirect::Policy::none()).build().unwrap();
+    let res = http.get(&callback).send().unwrap();
+    assert_eq!(res.status().as_u16(), 302, "{}", res.text().unwrap_or_default());
+    let to_cli = res.headers()["location"].to_str().unwrap().to_string();
+    assert!(to_cli.starts_with("http://127.0.0.1:") && to_cli.contains("?sso="), "{to_cli}");
+    let page = reqwest::blocking::get(&to_cli).unwrap().text().unwrap();
+    assert!(page.contains("Signed in"), "{page}");
+    let out = child.wait_with_output().unwrap();
+    assert!(out.status.success(), "{}", String::from_utf8_lossy(&out.stdout));
+    assert!(String::from_utf8_lossy(&out.stdout).contains("as alice@corp.test"));
+    assert!(alice.ok(&["sync", "whoami"]).contains("alice@corp.test"));
+    // SSO is required for corp.test: no mailed links.
+    let o = alice.run(&["sync", "login", "--email", "alice@corp.test"]);
+    assert_eq!(o.code, 2);
+    assert!(o.stderr.contains("single sign-on"), "{}", o.stderr);
+    // The sign-in is in her account log.
+    let mine = alice.ok(&["sync", "audit", "--mine", "--json"]);
+    assert!(mine.contains("\"sso_linked\"") && mine.contains("\"method\": \"sso\""), "{mine}");
 }
