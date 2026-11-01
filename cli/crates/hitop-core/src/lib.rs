@@ -5,6 +5,7 @@ pub mod http;
 pub mod interpolation;
 pub mod model;
 pub mod params;
+pub mod postman;
 pub mod prepare;
 pub mod report;
 pub mod runner;

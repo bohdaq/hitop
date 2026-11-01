@@ -1,7 +1,7 @@
 use anyhow::Result;
 use serde_json::{json, Value};
 
-use crate::model::{Collection, Header, Request};
+use crate::model::Collection;
 
 pub fn to_hitop(collections: &[Collection]) -> Result<String> {
     Ok(serde_json::to_string_pretty(collections)?)
@@ -69,90 +69,16 @@ pub fn to_postman(collection: &Collection) -> Result<String> {
     Ok(serde_json::to_string_pretty(&out)?)
 }
 
+/// A Postman collection as a HITOP collection; [`crate::postman`] has the
+/// details and the report of what couldn't be carried over.
 pub fn from_postman(json: &str) -> Result<Collection> {
-    let v: Value = serde_json::from_str(json)?;
-
-    let name = v["info"]["name"].as_str().unwrap_or("Imported").to_string();
-
-    let requests: Vec<Request> = v["item"]
-        .as_array()
-        .unwrap_or(&vec![])
-        .iter()
-        .map(|item| {
-            let req = &item["request"];
-            let method = req["method"].as_str().unwrap_or("GET").to_string();
-            let url = req["url"]["raw"].as_str()
-                .or_else(|| req["url"].as_str())
-                .unwrap_or("")
-                .to_string();
-            let req_name = item["name"].as_str().unwrap_or("Request").to_string();
-            let headers: Vec<Header> = req["header"]
-                .as_array()
-                .unwrap_or(&vec![])
-                .iter()
-                .map(|h| Header::new(h["key"].as_str().unwrap_or(""), h["value"].as_str().unwrap_or("")))
-                .collect();
-            let body = req["body"]["raw"].as_str().unwrap_or("").to_string();
-            let script = |listen: &str| -> String {
-                item["event"]
-                    .as_array()
-                    .and_then(|events| events.iter().find(|e| e["listen"] == listen))
-                    .map(|e| match &e["script"]["exec"] {
-                        Value::Array(lines) => lines.iter().filter_map(|l| l.as_str()).collect::<Vec<_>>().join("\n"),
-                        Value::String(s) => s.clone(),
-                        _ => String::new(),
-                    })
-                    .unwrap_or_default()
-            };
-            let auth = crate::auth::from_postman(&req["auth"]).or_else(|| crate::auth::from_postman(&v["auth"]));
-
-            Request {
-                id: generate_id(),
-                name: req_name,
-                url,
-                method,
-                headers,
-                body,
-                pre_request_script: script("prerequest"),
-                post_request_script: script("test"),
-                auth,
-                ..Default::default()
-            }
-        })
-        .collect();
-
-    let variables = v["variable"]
-        .as_array()
-        .unwrap_or(&vec![])
-        .iter()
-        .filter_map(|var| {
-            let k = var["key"].as_str()?.to_string();
-            let v = var["value"].as_str().unwrap_or("").to_string();
-            Some((k, v))
-        })
-        .collect();
-
-    Ok(Collection {
-        id: generate_id(),
-        name,
-        requests,
-        variables,
-        ..Default::default()
-    })
-}
-
-fn generate_id() -> u64 {
-    use std::time::{SystemTime, UNIX_EPOCH};
-    SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .unwrap_or_default()
-        .as_millis() as u64
+    Ok(crate::postman::import_collection(json)?.0)
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::model::Header;
+    use crate::model::{Header, Request};
 
     fn sample_collection() -> Collection {
         Collection {

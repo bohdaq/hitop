@@ -75,16 +75,17 @@ pub fn to_postman(auth: Option<&Auth>) -> Option<Value> {
     }
 }
 
-/// A Postman v2.1 `auth` object as a preset (`None` for unsupported types).
+/// A Postman `auth` object as a preset (`None` for unsupported types).
+/// v2.1 lists `[{key, value}]`; v2.0 has a `{key: value}` map.
 pub fn from_postman(auth: &Value) -> Option<Auth> {
     let kind = auth["type"].as_str()?;
     let get = |k: &str| -> String {
-        auth[kind]
-            .as_array()
-            .and_then(|a| a.iter().find(|p| p["key"] == k))
-            .and_then(|p| p["value"].as_str())
-            .unwrap_or("")
-            .to_string()
+        let v = match &auth[kind] {
+            Value::Array(a) => a.iter().find(|p| p["key"] == k).map(|p| &p["value"]),
+            Value::Object(m) => m.get(k),
+            _ => None,
+        };
+        v.and_then(|v| v.as_str()).unwrap_or("").to_string()
     };
     match kind {
         "bearer" => Some(Auth::Bearer { token: get("token") }),
@@ -139,5 +140,7 @@ mod tests {
             assert_eq!(from_postman(&to_postman(Some(&auth)).unwrap()), Some(auth));
         }
         assert!(to_postman(Some(&Auth::None)).is_none());
+        let v20 = json!({"type": "basic", "basic": {"username": "u", "password": "p"}});
+        assert_eq!(from_postman(&v20), Some(Auth::Basic { username: "u".into(), password: "p".into() }));
     }
 }
