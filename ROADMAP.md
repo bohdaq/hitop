@@ -136,7 +136,7 @@ Secret variables: `secret: true` in an environment file, with the value resolved
 | T6 | Cookie jar and multipart in Rust and CLI | todo | | |
 | T7 | Release infra: GitHub Releases, Docker image | todo | | |
 | T8 | GitHub Action and GitLab template | todo | | |
-| T9 | License notices, DCO, project policies | todo | | |
+| T9 | License notices, DCO, project policies | done | 51cd299; DCO verified on PR #1 | 2026-11-01 |
 | T10 | Opt-in telemetry | todo | | |
 | T11 | Launch readiness, release 0.3.0 / desktop 0.2.0 | todo | | |
 | T12 | `hitop mcp` | todo | | |
@@ -289,6 +289,13 @@ export PATH="$HOME/.cargo/bin:$PATH"
   AGPL-compatible crates; MIT crates must not pull GPL or AGPL dependencies).
 - **Done when:** `cargo deny check licenses` passes in CI; a test PR without sign-off fails the DCO
   check.
+- Notes (done 2026-11-01): `deny.toml` at the root; run it as
+  `cargo deny --config deny.toml --manifest-path <ws>/Cargo.toml check licenses` (the `--config`
+  flag must come before `check`). Workflows `licenses.yml` (matrix cli, server, desktop) and
+  `dco.yml` (script job, bots exempt). Test PR #1 failed on an unsigned commit and passed after
+  `--amend -s`; closed, branch deleted. Private vulnerability reporting enabled on the repo. Add
+  `sync-server` to the `licenses.yml` matrix in T23 with its own AGPL-aware deny config. Commit
+  with `git commit -s` from now on.
 
 #### T10 Opt-in telemetry
 - `hitop-core/src/telemetry.rs`: when enabled, at most one ping per week: random install id,
