@@ -81,6 +81,12 @@ hitop/
 ├── server/                     # hitop-server: rws app serving the site + POST /api/proxy
 │   └── src/guard.rs            # address/port policy for the proxy (SSRF guard)
 ├── deploy/                     # build.sh, install.sh, systemd unit, front rws routes, README
+├── sync-server/                # hitop sync (AGPL-3.0-or-later, own LICENSE/deny.toml): rws app, SQLite or Postgres
+│   ├── src/                    # api.rs (routing, CORS), auth.rs (magic link, passkeys), workspaces.rs (members, wraps, rotation), blobs.rs (CAS + version vectors), db.rs
+│   ├── crates/hitop-sync-crypto/ # MIT client crypto: HPKE key wrap + XChaCha20-Poly1305 blobs; vectors/v1.json
+│   ├── tests/                  # auth, sync, plaintext (server never sees plaintext), no_crypto_in_server, postgres
+│   ├── deploy/                 # hitop-sync.service, install.sh, rws-routes.toml (sync.hitop.rws8.tech)
+│   └── THREAT_MODEL.md, README.md (self-host guide), Dockerfile
 ├── spec/collection-format.md   # collection folder format v1 (CC BY 4.0)
 ├── spec/run-report.md          # `hitop run --reporter json` report, reportVersion 1, and the JUnit shape (CC BY 4.0)
 ├── ROADMAP.md                  # agent work order to v1.x: decisions, rules, tranches T0–T26, status
@@ -164,6 +170,13 @@ hitop/
 - Build all: `./deploy/build.sh`; server tests: `cd server && cargo test`
 - Old URLs must keep working: `/privacy.html` (App Store privacy URL), `/pricing.html`, `/app.html`, `/terms/*.html`
 - App Store: macOS "HiTop API Client" id6785294166 ($4.99, macOS 12+), iOS "HiTop HTTP Client" id6785326628 ($2.99, iOS 17+)
+
+### Sync server (`sync-server/`)
+- Own Cargo workspace: `hitop-sync-server` (AGPL) + `crates/hitop-sync-crypto` (MIT, dev-dependency of the server only)
+- Tests: `cd sync-server && cargo test --workspace`; Postgres: `HITOP_SYNC_TEST_POSTGRES=postgres://... cargo test --features postgres --test postgres`
+- Licenses: `cargo deny --config sync-server/deny.toml --manifest-path sync-server/Cargo.toml --workspace check licenses advisories`, and the root `deny.toml` with `--exclude hitop-sync-server` for the MIT crate
+- Live at https://sync.hitop.rws8.tech (VM, `hitop-sync.service`, 127.0.0.1:7881, env `/etc/hitop-sync/env`, DB `/var/lib/private/hitop-sync/sync.db`); deploy: copy the release binary + `deploy/` and run `deploy/install.sh`
+- `rws --check` on the VM needs `/etc/rws/admin.env` loaded (admin token), or it fails on any config
 
 ### Data model
 - `Collection` — has `id`, `name`, `requests[]`, `variables` (HashMap, `#[serde(default)]`), optional default `auth`, optional `workspace` (keychain key)

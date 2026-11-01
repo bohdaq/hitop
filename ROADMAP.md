@@ -150,7 +150,7 @@ Secret variables: `secret: true` in an environment file, with the value resolved
 | T20 | Git UI in desktop | todo | | |
 | T21 | Secret manager integrations | todo | | |
 | T22 | HTML reports and scheduled runs | todo | | |
-| T23 | Sync server (AGPL) | todo | | |
+| T23 | Sync server (AGPL) | done (handoff) | 5cd2ac2, 9a8119f, 35f2775, f08bbce, a3b6c7d, ce07adf; deployed https://sync.hitop.rws8.tech | 2026-11-01 |
 | T24 | Client sync, teams, cloud runs | todo | | |
 | T25 | SSO and audit log | todo | | |
 | T26 | iOS companion code | todo | | |
@@ -644,6 +644,59 @@ export PATH="$HOME/.cargo/bin:$PATH"
 - **Done when:** server tests for auth, blob versioning and conflicts; test vectors pass in Rust and in the web app; a test that the server never
   sees plaintext; deployed and reachable.
   **Handoff:** external review of the encryption design and code before any public launch.
+- **Notes (2026-11-01, done; email sign-in waits on the SMTP handoff in section 6):**
+  - Layout: `sync-server/` is its own Cargo workspace: `hitop-sync-server` (AGPL-3.0-or-later,
+    `sync-server/LICENSE` is the GNU text) and `crates/hitop-sync-crypto` (MIT, its own LICENSE).
+    The crypto crate lives here, not in `cli/`, so T23 never touched the cli lock other agents were
+    editing; T24 adds it to the clients (a path dependency, or move it into the cli workspace).
+    The server links it only as a dev-dependency (tests play the clients);
+    `tests/no_crypto_in_server.rs` fails if the server ever depends on it, `hpke`,
+    `chacha20poly1305` or `x25519-dalek`.
+  - Crates: `hpke` 0.15.1 (features x25519 + chacha only; no paid audit, Cloudflare reviewed 0.8),
+    `chacha20poly1305` 0.11 (NCC audit 2020), `webauthn-rs` 0.6.2 (MPL-2.0; passkeys, UV
+    required), `rusqlite` 0.41 bundled, `postgres` 0.19 (feature `postgres`), `lettre` 0.11 with
+    rustls + webpki-roots (no OpenSSL), rust-web-server 18.19 like hitop-server. Dev: the
+    `softpasskey` authenticator from `webauthn-authenticator-rs` for a real passkey round trip.
+  - Construction (THREAT_MODEL.md, byte layouts in `vectors/v1.json`): blob envelope `0x01 || u32
+    epoch || 24-byte nonce || XChaCha20-Poly1305 ct`, AAD = `"hitop-sync/v1/blob"` + length-prefixed
+    workspace id and blob id + u64 version + u32 epoch; key wrap = HPKE base mode
+    DHKEM(X25519, HKDF-SHA256) / HKDF-SHA256 / ChaCha20-Poly1305 with info =
+    `"hitop-sync/v1/wrap"` + workspace id + epoch. Removing a member is one call that must carry the
+    next epoch's key wrapped for exactly every remaining device; old-epoch writes then get 409
+    `stale_epoch`. Writes are compare-and-swap on `version = current + 1` plus a version vector that
+    must descend from the stored one; otherwise 409 with the current state.
+  - Test vectors: blobs both ways, wraps in the open direction (DeriveKeyPair recipients), and
+    failure cases; checked by `published_test_vectors` and, once by hand, by `@noble/ciphers` 1.3
+    and `@hpke/core` 1.7 in Node (all matched). The web app run of them is T24.
+  - Tests: crypto 6 (+1 ignored generator); server 3 unit, auth 9 (magic link once/expiry/rate
+    limit/hashes only, sessions, passkey register + sign-in + replay + wrong origin, no files
+    served, CORS), sync 5 (wraps for every device, versions and conflicts, malformed writes and
+    quotas, roles, removal with rotation), plaintext 1 (database files and every answer hold no
+    plaintext, workspace key or device secret), dependency 1, Postgres 1 (CI service container).
+  - Deploy (VM, all backed up): `/usr/local/bin/hitop-sync-server`, `hitop-sync.service`
+    (DynamicUser, DB in `/var/lib/private/hitop-sync`, 127.0.0.1:7881), `/etc/hitop-sync/env`
+    (created; public URL, rp id `hitop.rws8.tech`, CORS for the web app, `SMTP_TLS_SERVER_NAME`,
+    `SMTP_FROM`). Front rws: upstream + two routes (rate limits 20/min on `/v1/auth/*`, 600/min
+    otherwise) and the ACME name; backups `rws.config.toml.bak-hitop-20261101-032639`,
+    `cert.pem`/`key.pem.bak-sync-20261101-032639`. `rws --check` needs the service's
+    `admin.env` loaded (the admin token), otherwise it fails even on the current config. Cert move
+    with `rws-mail-cert.path` stopped: new certificate in ~18 s, then mail reloaded; rws8.tech,
+    git, hitop, php, mta-sts, mail 465/587/993 all checked before and after. Reachability:
+    checked through the front rws with `--resolve` on the VM; neither this workstation nor the
+    stage cluster can reach 168.119.17.57 directly (existing sites included), but Let's Encrypt
+    validated the name from outside.
+  - Deviations: `/etc/hitop-sync/env` had no `SMTP_URL` (the directory didn't exist), so email
+    sign-in answers 503 `mail_off` on the VM until the owner adds it (handoff). STARTTLS to
+    127.0.0.1:587 verifies as mail.rws8.tech, so only the line is missing. The licenses check is a
+    separate `sync-server` job (two policies: AGPL for the server, the root MIT `deny.toml` with
+    `--exclude hitop-sync-server` for the crypto crate) instead of a matrix entry.
+    `sync-server/deny.toml` ignores RUSTSEC-2023-0071 (rsa Marvin attack, through webauthn-rs):
+    the server only verifies RSA signatures and holds no RSA private key. Docker image: Dockerfile
+    only (built and smoke-tested locally, 34 MB, distroless); no publish workflow yet.
+  - Open for T24: key fingerprints and trust-on-first-use pinning in the clients (the server
+    hands out public keys; THREAT_MODEL.md, "accepted risks"); random blob ids; re-encrypt old
+    blobs after a rotation; passkey sign-in from the web app needs `hitop.rws8.tech` as rp id
+    (set) and the web app origin (set).
 
 #### T24 Client sync, teams, cloud runs
 - Sync in desktop, CLI and web app; conflict UI; invites; roles owner, editor and viewer.
@@ -676,6 +729,8 @@ Agent appends here; owner ticks when done.
 | 2026-11-01 | T3 | Open question, no action needed now: masking replaces every occurrence of a secret value, so a very short value (one to three characters) also masks those characters elsewhere in logs and reports (`token=t` turns every `t` into `••••`). Should hitop warn about, or refuse to mask, secrets shorter than some length? Until decided it masks them (safe side). | |
 | 2026-11-01 | T8 | Publish the action to the GitHub Marketplace: open https://github.com/bohdaq/hitop-action/releases/tag/v1.0.0, Edit, tick "Publish this Action to the GitHub Marketplace" (accept the agreement once), primary category **Testing**, secondary **Continuous integration**, then Update release. The name "Run hitop collection" (from `action.yml`) must be unique on the Marketplace; if taken, change `name:` in `action.yml` and retag v1. Listing text, if a field asks for it: "Run hitop API collections from your repository in GitHub Actions: pinned hitop image, JUnit artifact, job summary, secrets from repository secrets, and a failing check when a request fails." || done 2026-11-01: https://github.com/marketplace/actions/run-hitop-collection |
 | 2026-11-01 | T5 | On your Mac, build the desktop with the web app: `cd webapp && npm ci && cd ../desktop && npm ci && npm run build:webapp` (needs `rustup target add wasm32-unknown-unknown` and `cargo install wasm-bindgen-cli --version 0.2.126 --locked`; for the MAS package use your usual signing, the overlay only changes the frontend). Check: (1) your existing collections, environments and history from the React app and the CLI show up; (2) send to a public host and to `http://localhost:<port>` (no CORS errors), a multipart file upload, a cookie set then sent back; (3) a post script with `assert.*` and `setContext` across a collection run; (4) Environments: add a secret, quit and reopen, the value is still there and `hitop secret ls --env <env>` shows it in the Keychain (macOS asks for access once); (5) Collections → Open folder on a `hitop init` folder, edit and save a request, check the YAML changed on disk (`git diff`); quit and reopen: the folder comes back (in the sandboxed MAS build it may ask you to open it again: tell me if so); (6) Export as zip and Import zip; Export dialog saves JSON; (7) the app runs on the oldest macOS you support (12, Safari 16.4 WebKit needed; if 12 without updates fails, say so). If all pass, say so and the React `desktop/src` gets deleted and `release-desktop.yml` switched to the overlay. | |
+| 2026-11-01 | T23 | Put the SMTP password on the VM: `/etc/hitop-sync/env` exists (root, 0600) but has no `SMTP_URL` line, so email sign-in at https://sync.hitop.rws8.tech answers 503. Add `SMTP_URL=smtp://noreply%40rws8.tech:<password>@127.0.0.1:587` (or `smtp://noreply:<password>@...` if the account logs in without the domain; percent-encode special characters in the password), then `sudo systemctl restart hitop-sync`. `SMTP_TLS_SERVER_NAME=mail.rws8.tech` is already there (STARTTLS on 127.0.0.1:587 verifies as mail.rws8.tech). Test: `curl --resolve sync.hitop.rws8.tech:443:127.0.0.1 -XPOST https://sync.hitop.rws8.tech/v1/auth/email -d '{"email":"<you>"}'` and `journalctl -u hitop-sync` shows "sign-in mail sent". | |
+| 2026-11-01 | T23 | Before any public launch of hitop sync: get an external review of the encryption design (`sync-server/THREAT_MODEL.md`) and code (`sync-server/crates/hitop-sync-crypto`, plus the T24 clients). Top item for the reviewer: the server hands out members' public keys, so key substitution is the open risk until clients pin fingerprints. | |
 
 ## 7. Setup the owner does before the agent starts
 
