@@ -70,7 +70,8 @@ the result of a run, such as the GitHub Action's job summary, read this file.
               "failure": null,
               "assertions": [
                 { "name": "status is 200", "passed": true, "message": null }
-              ]
+              ],
+              "file": "shop-api/requests/get-user.yaml"
             },
             {
               "name": "Create order",
@@ -85,7 +86,8 @@ the result of a run, such as the GitHub Action's job summary, read this file.
               "assertions": [
                 { "name": "status is 201", "passed": false, "message": "got 200" },
                 { "name": "id", "passed": true, "message": null }
-              ]
+              ],
+              "file": "shop-api/requests/orders/create-order.yaml"
             }
           ]
         }
@@ -147,6 +149,7 @@ every assertion passed.
 | `error` | string or null | Why the request wasn't sent or answered: connection, timeout (`--timeout`), a missing variable, a script error. |
 | `failure` | string or null | One line on why the request failed (the `error`, the failed assertions joined by `; `, or `HTTP <status>`); null when it passed. |
 | `assertions` | array | The post-request script's `assert.*` results, in order. |
+| `file` | string or null | The request's file when the collection ran from a collection folder: the folder as given on the command line (without a leading `./`, `/` as separator), then `requests/<file>.yaml` (`api/requests/orders/create-order.yaml`); null for a collection in global storage. Added in hitop 0.3.0; reports from earlier versions don't have the key. |
 
 ### Assertion
 
@@ -168,7 +171,11 @@ Response bodies and headers are not part of the report.
   `<collection> (iteration <n>)`. Its `<properties>` hold `iteration`,
   `environment` and the data row as `data.<name>`.
 - One `<testcase name classname time>` per request; `classname` is the
-  collection name, `time` in seconds.
+  collection name, `time` in seconds. When the request has a `file` (see
+  the Request table) the testcase also has `file="<path>"`, so CI tools can
+  put annotations on the request file; run hitop from the repository root
+  with a relative folder path to get repository-relative paths. Added in
+  hitop 0.3.0, within version 1.
 - A failed request holds exactly one child: `<error type="RequestError">`
   when no response came, otherwise `<failure type="AssertionError">` (an
   assertion failed) or `<failure type="HttpStatus">` (status 400 or above).

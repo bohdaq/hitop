@@ -109,6 +109,12 @@ pub struct RequestReport {
     /// One line on why the request failed, or null when it passed.
     pub failure: Option<String>,
     pub assertions: Vec<AssertionReport>,
+    /// The request's file when the collection was run from a folder: the
+    /// folder as given on the command line, then `requests/<file>.yaml`
+    /// (`api/requests/orders/create.yaml`); null otherwise. Added in hitop
+    /// 0.3.0, within reportVersion 1. Older reports have no key.
+    #[serde(default)]
+    pub file: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -160,6 +166,7 @@ impl RequestReport {
             error,
             failure,
             assertions,
+            file: None,
         }
     }
 }
@@ -171,6 +178,8 @@ pub struct ReportBuilder {
     iteration_start: Option<(SystemTime, Instant)>,
     tool_version: String,
     collections: Vec<CollectionReport>,
+    /// The last collection's request files, by request index.
+    files: Vec<String>,
 }
 
 impl ReportBuilder {
@@ -182,6 +191,7 @@ impl ReportBuilder {
             iteration_start: None,
             tool_version: tool_version.into(),
             collections: vec![],
+            files: vec![],
         }
     }
 
@@ -193,6 +203,13 @@ impl ReportBuilder {
             passed: true,
             iterations: vec![],
         });
+        self.files.clear();
+    }
+
+    /// The last collection's request files, in request order (a folder
+    /// run): each request's report and `<testcase>` get its `file`.
+    pub fn request_files(&mut self, files: Vec<String>) {
+        self.files = files;
     }
 
     /// Marks the start of an iteration, for its timestamp and duration.
@@ -207,7 +224,13 @@ impl ReportBuilder {
             self.collection("", None);
         }
         let col = self.collections.last_mut().expect("a collection");
-        let requests: Vec<RequestReport> = steps.iter().map(RequestReport::from_step).collect();
+        // Steps are the collection's requests in order (a prefix of them
+        // when the run stopped early), so the index finds the file.
+        let requests: Vec<RequestReport> = steps
+            .iter()
+            .enumerate()
+            .map(|(i, s)| RequestReport { file: self.files.get(i).cloned(), ..RequestReport::from_step(s) })
+            .collect();
         let passed = requests.iter().all(|r| r.passed);
         col.passed &= passed;
         col.iterations.push(IterationReport {
@@ -306,9 +329,10 @@ impl Report {
                 }
                 x.push_str("    </properties>\n");
                 for r in &i.requests {
+                    let file = r.file.as_deref().map(|f| format!(" file=\"{}\"", attr(f))).unwrap_or_default();
                     let _ = write!(
                         x,
-                        "    <testcase name=\"{}\" classname=\"{}\" time=\"{}\">",
+                        "    <testcase name=\"{}\" classname=\"{}\" time=\"{}\"{file}>",
                         attr(&r.name),
                         attr(&c.name),
                         seconds(r.duration_ms)
@@ -497,6 +521,35 @@ mod tests {
         assert!(x.contains("<error message=\"connection refused\" type=\"RequestError\">"));
         assert!(x.contains("<failure message=\"HTTP 500\" type=\"HttpStatus\">"));
         assert!(x.contains("<property name=\"environment\" value=\"dev\"/>"));
+    }
+
+    #[test]
+    fn request_files_reach_the_report_and_junit() {
+        let mut b = ReportBuilder::new("1");
+        b.collection("A", None);
+        b.request_files(vec!["api/requests/log-in.yaml".into(), "api/requests/a&b.yaml".into(), "api/requests/unrun.yaml".into()]);
+        b.start_iteration();
+        b.iteration(None, &[step("log in", Some(200), &[]), step("a&b", Some(500), &[])]);
+        // A collection without files (global storage) has none.
+        b.collection("B", None);
+        b.start_iteration();
+        b.iteration(None, &[step("x", Some(200), &[])]);
+        let r = b.finish(false);
+        let reqs = &r.collections[0].iterations[0].requests;
+        assert_eq!(reqs[0].file.as_deref(), Some("api/requests/log-in.yaml"));
+        assert_eq!(r.collections[1].iterations[0].requests[0].file, None);
+        let x = r.to_junit();
+        assert!(x.contains("<testcase name=\"log in\" classname=\"A\" time=\"1.234\" file=\"api/requests/log-in.yaml\">"), "{x}");
+        assert!(x.contains("file=\"api/requests/a&amp;b.yaml\""), "{x}");
+        assert!(x.contains("<testcase name=\"x\" classname=\"B\" time=\"1.234\">"), "{x}");
+        // JSON: null without a file; a report without the key still reads.
+        let json: serde_json::Value = serde_json::from_str(&r.to_json()).unwrap();
+        assert_eq!(json["collections"][0]["iterations"][0]["requests"][0]["file"], "api/requests/log-in.yaml");
+        assert!(json["collections"][1]["iterations"][0]["requests"][0]["file"].is_null());
+        let mut old = json.clone();
+        old["collections"][0]["iterations"][0]["requests"][0].as_object_mut().unwrap().remove("file");
+        let back: Report = serde_json::from_value(old).unwrap();
+        assert_eq!(back.collections[0].iterations[0].requests[0].file, None);
     }
 
     #[test]

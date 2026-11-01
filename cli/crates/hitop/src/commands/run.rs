@@ -134,6 +134,8 @@ struct Plan {
     /// The globals (secret values filled in) and their secrets.
     globals: HashMap<String, String>,
     global_secrets: Secrets,
+    /// Each collection's request files (a folder run), else empty.
+    files: Vec<Vec<String>>,
 }
 
 fn plan(args: &RunArgs) -> Result<Plan> {
@@ -150,7 +152,8 @@ fn plan(args: &RunArgs) -> Result<Plan> {
         let secrets = secret::resolve(hitop_core::secrets::GLOBAL_WORKSPACE, environment.as_ref(), &args.secrets)?;
         let workspaces = collections.iter().map(|c| hitop_core::secrets::workspace_id(c, false)).collect();
         let (globals, global_secrets) = secret::resolve_globals(hitop_core::secrets::GLOBAL_WORKSPACE, &storage::load_globals()?, &args.secrets)?;
-        return Ok(Plan { collections, workspaces, environment, secrets, globals, global_secrets });
+        let files = vec![vec![]; collections.len()];
+        return Ok(Plan { collections, workspaces, environment, secrets, globals, global_secrets, files });
     }
     let source = Source::open(args.collection.as_deref().unwrap_or_default())?;
     let environment = match env_file {
@@ -159,7 +162,40 @@ fn plan(args: &RunArgs) -> Result<Plan> {
     };
     let secrets = secret::resolve(&source.workspace(), environment.as_ref(), &args.secrets)?;
     let (globals, global_secrets) = secret::resolve_globals(&source.workspace(), &source.globals()?, &args.secrets)?;
-    Ok(Plan { workspaces: vec![source.workspace()], collections: vec![source.collection], environment, secrets, globals, global_secrets })
+    let files = match source.folder() {
+        Some(dir) => request_files(dir, &source.collection)?,
+        None => vec![],
+    };
+    Ok(Plan {
+        workspaces: vec![source.workspace()],
+        collections: vec![source.collection],
+        environment,
+        secrets,
+        globals,
+        global_secrets,
+        files: vec![files],
+    })
+}
+
+/// Where each request of a folder lives, for the reports' `file`: the
+/// folder as given (without a leading `./`, `/` separators), then
+/// `requests/<file>.yaml` (or `.yml` when that is the file on disk).
+fn request_files(dir: &Path, collection: &Collection) -> Result<Vec<String>> {
+    let input: Vec<(&str, Option<&str>)> = collection.requests.iter().map(|r| (r.name.as_str(), r.file.as_deref())).collect();
+    let mut prefix = dir.to_string_lossy().replace('\\', "/");
+    while let Some(rest) = prefix.strip_prefix("./") {
+        prefix = rest.to_string();
+    }
+    let prefix = prefix.trim_end_matches('/');
+    let prefix = if prefix.is_empty() || prefix == "." { String::new() } else { format!("{prefix}/") };
+    Ok(format::names::assign_files(&input)?
+        .into_iter()
+        .map(|f| {
+            let yml = dir.join("requests").join(format!("{f}.yml"));
+            let ext = if !dir.join("requests").join(format!("{f}.yaml")).is_file() && yml.is_file() { "yml" } else { "yaml" };
+            format!("{prefix}requests/{f}.{ext}")
+        })
+        .collect())
 }
 
 /// Runs and reports. Ok(0) when everything passed, Ok(1) when a request or
@@ -184,11 +220,12 @@ pub fn run(args: RunArgs) -> Result<i32> {
 
     let mut builder = ReportBuilder::new(env!("CARGO_PKG_VERSION"));
     let mut bailed = false;
-    'collections: for (col, workspace) in plan.collections.iter().zip(&plan.workspaces) {
+    'collections: for ((col, workspace), files) in plan.collections.iter().zip(&plan.workspaces).zip(&plan.files) {
         // Cookies carry over between requests and iterations, and are kept
         // for the next run (`hitop cookies clear` empties the jar).
         let mut jar = cookies::open(workspace, args.cookies)?;
         builder.collection(&col.name, env.map(|e| e.name.as_str()));
+        builder.request_files(files.clone());
         if show {
             println!("{} {}", "▶".cyan(), col.name.bold());
         }
