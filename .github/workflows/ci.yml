@@ -126,6 +126,87 @@ jobs:
         working-directory: webapp
         run: node scripts/check-no-telemetry.mjs
 
+  launch-gate:
+    # ROADMAP T11: a Postman user's first CI run, through the container image built from this
+    # commit and bohdaq/hitop-action. Import a collection and two environments, run each
+    # environment (logging in, the token passed on by pm.environment.set), check the JUnit file.
+    name: Launch gate (Postman import, environments, login, action, JUnit)
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: x86_64-unknown-linux-musl
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: cli
+          key: musl
+      - name: Build hitop (static, as in the release image)
+        working-directory: cli
+        env:
+          CARGO_PROFILE_DEV_DEBUG: "0"
+        run: |
+          sudo apt-get update && sudo apt-get install -y musl-tools
+          cargo build --locked -p hitop --target x86_64-unknown-linux-musl
+      - name: Image ghcr.io/bohdaq/hitop:launch-gate (cli/docker/Dockerfile, only on this runner)
+        run: |
+          mkdir -p image/amd64
+          cp cli/target/x86_64-unknown-linux-musl/debug/hitop image/amd64/hitop
+          docker build --build-arg TARGETARCH=amd64 -t ghcr.io/bohdaq/hitop:launch-gate -f cli/docker/Dockerfile image
+          docker run --rm ghcr.io/bohdaq/hitop:launch-gate --version
+      - name: Start the Staging and Local APIs
+        run: |
+          python3 cli/fixtures/launch-gate/mock_server.py 8781 staging "$STAGING_PASSWORD" &
+          python3 cli/fixtures/launch-gate/mock_server.py 8782 local "$LOCAL_PASSWORD" &
+          for port in 8781 8782; do
+            for _ in $(seq 40); do curl -fs "http://127.0.0.1:$port/health" && break; sleep 0.25; done
+          done
+        env:
+          STAGING_PASSWORD: launch-gate-staging-pw
+          LOCAL_PASSWORD: launch-gate-local-pw
+      - name: Import the Postman collection and environments in the container
+        run: |
+          docker run --rm --user "$(id -u):$(id -g)" -e HOME=/tmp -e HITOP_KEYCHAIN=off -v "$PWD:/work" \
+            ghcr.io/bohdaq/hitop:launch-gate import \
+            cli/fixtures/launch-gate/shop.postman_collection.json \
+            cli/fixtures/launch-gate/staging.postman_environment.json \
+            cli/fixtures/launch-gate/local.postman_environment.json --to shop-api
+          ls -R shop-api
+      - name: Run on Staging (secret from the secrets input)
+        id: staging
+        uses: bohdaq/hitop-action@v1
+        with:
+          version: launch-gate
+          path: shop-api
+          env: Staging
+          secrets: |
+            password=launch-gate-staging-pw
+          out: reports/staging
+          artifact-name: launch-gate-staging
+      - name: Switch to Local (secret from HITOP_SECRET_LOCAL_PASSWORD)
+        id: local
+        uses: bohdaq/hitop-action@v1
+        env:
+          HITOP_SECRET_LOCAL_PASSWORD: launch-gate-local-pw
+        with:
+          version: launch-gate
+          path: shop-api
+          env: Local
+          out: reports/local
+          artifact-name: launch-gate-local
+      - name: The JUnit reports
+        env:
+          STAGING_EXIT: ${{ steps.staging.outputs.exit-code }}
+          LOCAL_EXIT: ${{ steps.local.outputs.exit-code }}
+        run: |
+          test "$STAGING_EXIT" = 0
+          test "$LOCAL_EXIT" = 0
+          python3 cli/fixtures/launch-gate/check_junit.py reports/staging/junit.xml Staging 8781
+          python3 cli/fixtures/launch-gate/check_junit.py reports/local/junit.xml Local 8782
+          ! grep -r -e launch-gate-staging-pw -e launch-gate-local-pw reports
+
   extension:
     name: Browser extension build
     runs-on: ubuntu-24.04
