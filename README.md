@@ -246,8 +246,10 @@ hitop/
 
 ## Contributing
 
-Contributions are welcome! Please feel free to submit a Pull Request.
+Contributions are welcome. See [CONTRIBUTING.md](CONTRIBUTING.md): commits are signed off
+(`git commit -s`), and security issues go through [SECURITY.md](SECURITY.md).
 
 ## License
 
-MIT — see the [LICENSE](LICENSE) file for details.
+MIT, see [LICENSE](LICENSE). The sync server (`sync-server/`) is AGPL-3.0-or-later and the
+collection format spec (`spec/`) is CC BY 4.0. The name is covered by [TRADEMARK.md](TRADEMARK.md).

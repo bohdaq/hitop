@@ -4,6 +4,7 @@ version = "0.1.0"
 edition = "2021"
 description = "HITOP desktop app"
 authors = ["Bohdan Tsap <bohdaq@gmail.com>"]
+license = "MIT"
 
 [lib]
 name = "hitop_desktop_lib"

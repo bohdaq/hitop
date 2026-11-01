@@ -1,0 +1,25 @@
+# Dependency licenses for every Rust workspace (policy in deny.toml).
+name: Licenses
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  cargo-deny:
+    name: cargo deny (${{ matrix.workspace }})
+    runs-on: ubuntu-24.04
+    strategy:
+      fail-fast: false
+      matrix:
+        workspace: [cli, server, desktop/src-tauri]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: taiki-e/install-action@v2
+        with:
+          tool: cargo-deny
+      - run: cargo deny --config deny.toml --manifest-path ${{ matrix.workspace }}/Cargo.toml check licenses
