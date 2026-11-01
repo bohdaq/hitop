@@ -144,7 +144,7 @@ Secret variables: `secret: true` in an environment file, with the value resolved
 | T14 | WebSocket | done | ac00903, 743db7d, 538401a, 2eac6a7, 0e23002, 61ea4c0, 8938060 | 2026-11-01 |
 | T15 | gRPC | todo | | |
 | T16 | Response diff and code snippets | done | 5c550ac, 9b88ff5, 0d4caa8, 8acd583, 344d07d | 2026-11-01 |
-| T17 | OpenAPI import and sync | todo | | |
+| T17 | OpenAPI import and sync | done | 68d6a14, 3628f76, d1878c0, 45ac576, docs (this push) | 2026-11-01 |
 | T18 | Bring-your-own-key AI | dropped | owner decision | 2026-11-01 |
 | T19 | v1.0 hardening and release | todo | | |
 | T20 | Git UI in desktop | todo | | |
@@ -1000,6 +1000,71 @@ export PATH="$HOME/.cargo/bin:$PATH"
   examples, auth).
 - **Done when:** fixtures (Petstore plus two large public specs) import; sync test preserves
   edits.
+- **Notes (2026-11-01, done):**
+  - Core `hitop-core/src/openapi/` (pure Rust, no `native`, in hitop-wasm): `refs.rs` parses JSON or YAML (yaml_serde
+    `Value`, merge keys applied, non-string keys such as `200:` stringified) and follows local `$ref`s as JSON pointers
+    (`~0`/`~1`, percent-decoding; loops of refs are an error, refs into other files reported as skipped). `example.rs`
+    builds examples from schemas: `example`, 3.1 `examples`, `const`, `default` (not an empty `{}`/`[]`), `enum`, then
+    by type; `allOf` merged, first non-null `oneOf`/`anyOf`, 3.1 type lists, `readOnly` left out of request bodies; a
+    `$ref` back into itself stops (depth 12, 4000 values cap). Parameters get explicit values only (example, default,
+    enum), never `string`/`0`. Swagger 2.0 and non-3.x are refused with a message.
+  - Mapping: title → name; first server (variables at defaults; relative URL resolved against the spec's URL, or a
+    warning) → `baseUrl`; first tag → folder (`--flat`: one level), in the spec's tag order then path order; name =
+    summary, else operationId, else `METHOD /path`; path params `${name}` + collection variables; required query in
+    the URL, optional ones `disabledParams`; header params (Accept, Content-Type, Authorization skipped) on when
+    required; cookie params skipped. Bodies: JSON (`+json`, and `*/*` with a schema as Kubernetes has) with a
+    `Content-Type` header, urlencoded and multipart (binary → file field), XML/text from a string example; optional
+    DELETE/GET bodies left out; other types skipped. Security: top-level → collection auth, operation-level when it
+    differs (`security: []` → `{type: none}`); with no top-level `security` and every operation using the same one, it
+    becomes the collection's. Variables `${<scheme>}` (`${<scheme>Username}`/`Password` for basic). Schemes several
+    at once, OAuth 2, OpenID Connect, cookie keys, mutual TLS reported per scheme with use counts; unused schemes left
+    out. Response `example`/`examples` → saved examples `{name: "<code> <summary|description>", status, body, source:
+    openapi}`; `externalValue` reported. Webhooks and callbacks reported.
+  - Record (spec section 3 "OpenAPI source", additive like T13/T14 top-level keys: 0.3.0 keeps it as an unknown key):
+    request `openapi: {operation, operationId, synced: {method, url, params, headers, body, auth, examples}}`, collection
+    `openapi: {source (URLs only), version, flat, synced: {baseUrl, auth}}`. `synced` values are FNV-1a 53-bit hex of each
+    field normalized (blank header rows and row extras dropped), so a web app save or folder round trip doesn't look
+    like an edit.
+  - Sync (`openapi::sync`, three-way per field): match by operationId, then `METHOD /path`; spec changed + request still
+    at base → updated; spec changed + edited → kept (listed); base becomes the new spec either way. Names, files,
+    scripts, user examples (no `source: openapi`), environments untouched; spec examples replaced, user ones kept after
+    them. Added operations get unique files next to the existing ones; removed ones listed, deleted only with `prune`.
+    Collection: `baseUrl` and auth by the same rule, new path variables added (never removed), record updated.
+    `SyncDiff {added, changed (updated/kept), removed, pruned, unchanged, collection}`.
+  - CLI: `hitop import openapi <file|url> [--to] [--force] [--flat]` (a subcommand of `import` with
+    `args_conflicts_with_subcommands`, so `hitop import a.json b.json` parses as before) and `hitop import <spec>` by
+    content; `hitop openapi sync <file|url> <folder> [--dry-run] [--prune]` (+ `hitop openapi import`). URLs through
+    `http::send_with` (60 s). Report: mapped line, skipped, to check; exit 0. Sync writes only `hitop.yaml` and
+    `requests/` (`write_collection`).
+  - Web app and desktop: Import dialog accepts a pasted spec (wasm `isOpenapi`) and has "Load an OpenAPI spec from a
+    URL" (dialog `openapi-import`, URL through `platform().send`: proxy for public hosts on the web, Rust on the
+    desktop); OpenAPI adds a collection (Postman/HITOP JSON still replaces), with `inlineAuth` because the web app has
+    no collection auth, and shows the report (mapped, Not imported, To check). Collections with a record get "Sync with
+    OpenAPI" (URL prefilled from the record, paste, prune checkbox) → Preview (counts and +/~/- rows with kept edits) →
+    Apply (or Back). Request ids travel to Rust as positions and come back, so string web ids and open tabs survive.
+    Code in `webapp/src/views/openapi-dialogs.js`; no new Tauri commands.
+  - Fixtures (`cli/fixtures/openapi/`, README with URL, commit and license): swagger-petstore `openapi.yaml` (3.0.4,
+    Apache-2.0, 19 operations), Adyen `CheckoutService-v71.yaml` (3.1.0, MIT, 805 KB, 28 operations, 143 examples),
+    Kubernetes `apis__apps__v1_openapi.json` (3.0.0, Apache-2.0, 919 KB, 77 operations), vendored unchanged.
+  - Tests: hitop-core 10 unit (`openapi/tests.rs`: mapping of a spec with every feature, YAML int keys, cycles and ref
+    loops, pointer escapes, Swagger refusal, relative servers, flat + inline auth, folder round trip of the record, sync
+    keeping name/file/scripts/assertion/auth/example/body edits while applying URL/header/example/baseUrl changes,
+    prune) + `tests/openapi.rs` 3 (each fixture: counts, key mappings, folder round trip unchanged, no-op sync); CLI
+    `tests/openapi.rs` 3 (Petstore `--to`, `--force` needed, detection, run against httpmock with the API key header;
+    URL import with recorded source, 404, global storage; sync of edited files: dry run writes nothing, apply keeps
+    renamed file + scripts + auth + body, adds, reports removed, second sync clean, `--prune`, non-imported folder
+    refused); hitop-wasm 1; web `tests/pm.mjs` (the three fixtures through wasm, same counts, no-op sync); e2e
+    `tests/openapi.cjs` (URL import via the dialog link and report, pasted YAML added, edits, sync preview/apply,
+    prune, run of the synced collection against a local Node server) in web and Tauri mode. Full e2e suite green in
+    both modes locally; clippy (workspace, core without default features, wasm32) and `cargo deny check licenses` clean.
+    No new crates.
+  - Guide `site/content/guides/import-an-openapi-spec.md` (/terms/import-an-openapi-spec.html); CLI README "From OpenAPI".
+  - Deviations: JSON maps are sorted (serde_json without `preserve_order`), so requests within a folder follow path
+    order and generated example bodies list keys alphabetically (the same on every surface). Field-level merge: adding
+    one header of your own makes the spec's later header changes "kept" for that request. A file path source isn't
+    recorded (only URLs), so the web app's sync dialog is prefilled only for URL imports.
+  - Open: external `$ref`s (other files/URLs) aren't fetched; OAuth 2 flows aren't set up (no OAuth in hitop); XML
+    bodies aren't generated from schemas; `hitop mcp` has no OpenAPI tool; `cargo fuzz` target for the importer is T19's.
 
 #### T18 Bring-your-own-key AI
 - Dropped by the owner on 2026-11-01. Skip it; nothing later depends on it.
@@ -1133,6 +1198,7 @@ Agent appends here; owner ticks when done.
 | 2026-11-01 | T11 | Post the launch when you're ready (agents never post): drafts in `launch/` (Show HN, r/rust, r/webdev, This Week in Rust as a PR, Product Hunt), with where and when in `launch/README.md`. Best after the site deploy and the GIF. | |
 | 2026-11-01 | T11 | Optional: the hitop-action Marketplace listing still shows v1.0.0 as newest; open https://github.com/bohdaq/hitop-action/releases/tag/v1.0.1, Edit, tick "Publish this Action to the GitHub Marketplace", Update release. `v1` already points at v1.0.1. | |
 | 2026-11-01 | T14 | Nothing to do now. Open question for later: should `hitop mcp` get WebSocket tools (for example connect, send, read the next messages, close)? T14 left them out as scoped; MCP `run_request` refuses WebSocket requests and points to `hitop ws`. On your Mac, when you do the T5 check, a WebSocket request in the desktop app sends its headers and auth (the browser build can't). | |
+| 2026-11-01 | T17 | Nothing to do now. Open question for later: should sync also merge header rows one by one (today a request whose headers you edited keeps all of them when the spec changes its headers), and should `hitop mcp` get an import or sync tool for OpenAPI? | |
 
 ## 7. Setup the owner does before the agent starts
 
