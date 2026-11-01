@@ -1,8 +1,12 @@
 # hitop
 
-HTTP API client CLI — send requests, run collections, and script with JavaScript from the terminal.
+The API client your terminal and your CI can both drive. One small Rust binary, collections as
+files in your repo, nothing in anyone's cloud.
 
-Same feature set as the [hitop desktop app](https://github.com/bohdaq/hitop), but from your shell.
+Send requests, keep them in collection folders (YAML, one file per request), script them in
+JavaScript, import from Postman, and run them in CI with JUnit and JSON reports. The same
+collections open in the [web app](https://hitop.rws8.tech/app/) and the
+[desktop app](https://github.com/bohdaq/hitop/releases). No account, MIT licensed.
 
 ## Install
 
@@ -178,6 +182,9 @@ hitop run ./my-api --env ci --iterations 3
 - `--reporter`: `cli` (default), `junit`, `json`, comma separated; files go to `--out` (default `hitop-reports`).
   The JSON report is versioned (`"reportVersion": 1`) and documented in
   [spec/run-report.md](https://github.com/bohdaq/hitop/blob/main/spec/run-report.md). Secret values are `••••` in every report.
+  Run from a folder, each JUnit `<testcase>` and each request in `report.json` carries its file
+  (`file="my-api/requests/get-user.yaml"`: the folder as given, then `requests/<file>.yaml`), so CI
+  annotations land on the request file.
 - Variables, later ones win: globals, collection, environment (`--env` or `--env-file`), the `--data` row, `--var`, then secrets.
   `--var` values are not masked; use `--secret` or `HITOP_SECRET_<ENV>_<NAME>` for secrets.
 - `--bail` stops at the first failed request; without it every request runs. (Before 0.3 stopping was the default
