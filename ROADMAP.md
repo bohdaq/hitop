@@ -147,7 +147,7 @@ Secret variables: `secret: true` in an environment file, with the value resolved
 | T17 | OpenAPI import and sync | done | 68d6a14, 3628f76, d1878c0, 45ac576, e5292df, ed397f1, a1fd78e, be02942 | 2026-11-01 |
 | T18 | Bring-your-own-key AI | dropped | owner decision | 2026-11-01 |
 | T19 | v1.0 hardening and release | todo | | |
-| T20 | Git UI in desktop | done (handoff) | 3837aec, e3f5d49, 2229a15; macOS check in section 6 | 2026-11-01 |
+| T20 | Git UI in desktop | done (handoff) | 3837aec, e3f5d49, 2229a15; CI 41306134755; macOS check in section 6 | 2026-11-01 |
 | T21 | Secret manager integrations | done (handoff) | 47d72f0, b375fb8, bdd1f67, 9d12eaf, 7979fa5; CI 41306134755; real-account check in section 6 | 2026-11-01 |
 | T22 | HTML reports and scheduled runs | done | 9c3302e, 7dd53a3, 2cdc097, 0638ca4; CI 41289440630 | 2026-11-01 |
 | T23 | Sync server (AGPL) | done (handoff) | 5cd2ac2, 9a8119f, 35f2775, f08bbce, a3b6c7d, ce07adf; deployed https://sync.hitop.rws8.tech | 2026-11-01 |
