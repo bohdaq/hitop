@@ -136,6 +136,7 @@ fn a_later_format_version_is_refused_not_guessed() {
     assert!(files::read_files(&mem, "x").is_err());
 }
 
+#[cfg(feature = "native")]
 /// Every key in `a` is in `b` with a value of the same JSON type (arrays
 /// compared element by element), so a v1 reader of `a` can read `b`.
 fn same_shape(a: &Value, b: &Value, at: &str) {
@@ -160,6 +161,7 @@ fn same_shape(a: &Value, b: &Value, at: &str) {
 /// `spec/compat/v1/run-report/report.json` is a version 1 report (spec/run-report.md).
 /// Today's report model reads it and writes every one of its keys back with the
 /// same type: fields may be added within v1, never removed or retyped.
+#[cfg(feature = "native")] // the report model is native-only
 #[test]
 fn the_v1_run_report_reads_and_keeps_every_field() {
     let text = fs::read_to_string(compat_dir().join("run-report/report.json")).unwrap();
