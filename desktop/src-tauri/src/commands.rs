@@ -4,7 +4,8 @@ use serde_json::Value;
 use tauri::Emitter;
 
 use base64::{engine::general_purpose::STANDARD as B64, Engine};
-use hitop_core::secrets::SecretStore;
+use hitop_core::cookies::Jar;
+use hitop_core::secrets::{SecretStore, GLOBAL_WORKSPACE};
 use hitop_core::{
     format,
     http,
@@ -13,7 +14,7 @@ use hitop_core::{
     interpolation::interpolate,
     model::{Collection, HistoryItem, TestResult},
     runner,
-    scripting::{run_post_request_script, run_pre_request_script, PreRequestCtx},
+    scripting::{run_post_request_script_with, run_pre_request_script, PostRequestCtx, PreRequestCtx, SentRequest, VariableUpdates},
     storage,
 };
 
@@ -109,6 +110,8 @@ pub struct PreScriptResult {
     pub headers: Vec<(String, String)>,
     pub body: String,
     pub context_updates: HashMap<String, Value>,
+    /// Variables the script set (`pm.environment.set`, ...); `null` unsets one.
+    pub variables: VariableUpdates,
 }
 
 #[tauri::command]
@@ -127,6 +130,7 @@ pub fn run_pre_script(args: PreScriptArgs) -> Result<PreScriptResult, String> {
             headers: r.headers,
             body: r.body,
             context_updates: r.context_updates,
+            variables: r.variables,
         })
         .map_err(|e| e.to_string())
 }
@@ -141,27 +145,46 @@ pub struct PostScriptArgs {
     pub duration_ms: u64,
     pub variables: HashMap<String, String>,
     pub context: HashMap<String, Value>,
+    /// The request as sent, for `pm.request`.
+    #[serde(default)]
+    pub request: Option<SentRequestArgs>,
+}
+
+#[derive(Deserialize)]
+pub struct SentRequestArgs {
+    #[serde(default)]
+    pub url: String,
+    #[serde(default)]
+    pub method: String,
+    #[serde(default)]
+    pub headers: Vec<(String, String)>,
+    #[serde(default)]
+    pub body: String,
 }
 
 #[derive(Serialize)]
 pub struct PostScriptResult {
     pub context_updates: HashMap<String, Value>,
     pub tests: Vec<TestResult>,
+    /// Variables the script set, as in [`PreScriptResult::variables`].
+    pub variables: VariableUpdates,
 }
 
 #[tauri::command]
 pub fn run_post_script(args: PostScriptArgs) -> Result<PostScriptResult, String> {
-    run_post_request_script(
-        &args.script,
-        &args.response_body,
-        &args.response_headers,
-        args.status_code,
-        args.duration_ms,
-        &args.variables,
-        &args.context,
-    )
-    .map(|r| PostScriptResult { context_updates: r.context_updates, tests: r.tests })
-    .map_err(|e| e.to_string())
+    let sent = args.request.map(|r| SentRequest { url: r.url, method: r.method, headers: r.headers, body: r.body });
+    let ctx = PostRequestCtx {
+        response_body: &args.response_body,
+        response_headers: &args.response_headers,
+        status_code: args.status_code,
+        duration_ms: args.duration_ms,
+        variables: &args.variables,
+        context: &args.context,
+        request: sent.as_ref(),
+    };
+    run_post_request_script_with(&args.script, &ctx)
+        .map(|r| PostScriptResult { context_updates: r.context_updates, tests: r.tests, variables: r.variables })
+        .map_err(|e| e.to_string())
 }
 
 // ── Variable interpolation ────────────────────────────────────────────────────
@@ -264,6 +287,10 @@ pub struct SendArgs {
     /// `base64` when `body` holds bytes (multipart with files).
     #[serde(default)]
     pub body_encoding: Option<String>,
+    /// Use the cookie jar (hitop-core's, workspace `global`, shared with
+    /// `hitop send`): send its cookies, keep the ones the response sets.
+    #[serde(default)]
+    pub cookies: bool,
 }
 
 #[derive(Serialize)]
@@ -279,6 +306,9 @@ pub struct SendResult {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub body_encoding: Option<String>,
     pub time_ms: u64,
+    /// The jar after the response, when the request used it.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub cookies: Option<Jar>,
 }
 
 #[tauri::command(async)]
@@ -288,12 +318,27 @@ pub fn send_request(args: SendArgs) -> Result<SendResult, String> {
         (Some(b), Some("base64")) => B64.decode(b).map_err(|e| format!("invalid base64 body: {e}"))?,
         (Some(b), _) => b.into_bytes(),
     };
-    let r = http::send(&args.method, &args.url, &args.headers, body).map_err(|e| format!("{e:#}"))?;
+    let mut jar = if args.cookies { Some(Jar::load(GLOBAL_WORKSPACE).map_err(|e| format!("{e:#}"))?) } else { None };
+    let r = http::send_with(&args.method, &args.url, &args.headers, body, http::Options { timeout: None, jar: jar.as_mut() }).map_err(|e| format!("{e:#}"))?;
+    if let Some(j) = &jar {
+        j.save(GLOBAL_WORKSPACE).map_err(|e| format!("{e:#}"))?;
+    }
     let (body, body_encoding) = match String::from_utf8(r.body) {
         Ok(text) => (text, None),
         Err(e) => (B64.encode(e.into_bytes()), Some("base64".to_string())),
     };
-    Ok(SendResult { status: r.status, status_text: r.status_text, url: r.url, headers: r.headers, body, body_encoding, time_ms: r.duration_ms })
+    Ok(SendResult { status: r.status, status_text: r.status_text, url: r.url, headers: r.headers, body, body_encoding, time_ms: r.duration_ms, cookies: jar })
+}
+
+/// The cookie jar the web app shows on its Cookies page (workspace `global`).
+#[tauri::command(async)]
+pub fn cookies_load() -> Result<Jar, String> {
+    Jar::load(GLOBAL_WORKSPACE).map_err(|e| format!("{e:#}"))
+}
+
+#[tauri::command(async)]
+pub fn cookies_save(cookies: Jar) -> Result<(), String> {
+    cookies.save(GLOBAL_WORKSPACE).map_err(|e| format!("{e:#}"))
 }
 
 #[derive(Serialize)]

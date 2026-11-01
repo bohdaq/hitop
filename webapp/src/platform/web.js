@@ -149,6 +149,8 @@ export function createPlatform() {
     // The browser handles cookies of direct requests itself (and hides them);
     // the proxy's answers carry Set-Cookie for the app's jar.
     managesCookies: usesProxy,
+    cookies: null,
+    cookiesNote: "Applies to requests that go through the HITOP proxy. For localhost your browser keeps cookies itself. Cookies stay in this browser.",
     usesProxy,
     scripts: null,
     folders: folders(),

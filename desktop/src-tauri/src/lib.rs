@@ -20,6 +20,8 @@ pub fn run() {
             commands::interpolate_template,
             commands::run_collection_cmd,
             commands::send_request,
+            commands::cookies_load,
+            commands::cookies_save,
             commands::read_folder,
             commands::write_folder,
             commands::secret_get,

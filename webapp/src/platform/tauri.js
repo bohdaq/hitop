@@ -12,6 +12,7 @@ import { historyFromRust, historyToRust } from "./history.js";
 const invoke = (cmd, args = {}) => window.__TAURI_INTERNALS__.invoke(cmd, args);
 
 const FOLDERS_KEY = "hitop_folders";
+const COOKIES_KEY = "hitop_cookies";
 const GLOBAL = "global";
 
 const account = (workspace, env, name) => `${workspace}/${env}/${name}`;
@@ -58,6 +59,8 @@ async function send(url, options = {}) {
       headers: headerPairs(options.headers),
       body: binary ? toBase64(options.body) : (options.body ?? null),
       ...(binary ? { bodyEncoding: "base64" } : {}),
+      // hitop-core's cookie jar (shared with `hitop send`) sends and keeps cookies.
+      cookies: Boolean(options.cookies),
     },
   });
   const text = r.bodyEncoding === "base64" ? new TextDecoder().decode(fromBase64(r.body)) : r.body;
@@ -68,6 +71,8 @@ async function send(url, options = {}) {
     url: r.url,
     headers: new NativeHeaders(r.headers),
     timeMs: r.timeMs,
+    // The jar after this response (when the request used it).
+    cookies: r.cookies,
     text: async () => text,
     json: async () => JSON.parse(text),
   };
@@ -115,7 +120,7 @@ async function loadSecretValues(accounts) {
 // --- the adapter ---------------------------------------------------------------------
 
 export function createPlatform() {
-  const cache = { collections: null, history: [], contexts: {}, environments: { environments: [], activeEnvironmentId: null } };
+  const cache = { collections: null, history: [], contexts: {}, environments: { environments: [], activeEnvironmentId: null }, cookies: [] };
   const last = {};
   let knownSecrets = {};
   let report = (message) => console.error(message);
@@ -142,12 +147,28 @@ export function createPlatform() {
       folderIds = new Set(ids);
     },
     async init() {
-      const [collections, history, contexts, envs] = await Promise.all([
+      const [collections, history, contexts, envs, cookies] = await Promise.all([
         invoke("load_collections").catch(() => null),
         invoke("load_history").catch(() => []),
         invoke("load_contexts").catch(() => ({})),
         invoke("load_environments").catch(() => ({ active: null, environments: [] })),
+        invoke("cookies_load").catch(() => []),
       ]);
+      cache.cookies = Array.isArray(cookies) ? cookies : [];
+      // Before the Rust jar, the desktop kept cookies in the window's
+      // localStorage (as the web app does): move them over once.
+      if (!cache.cookies.length) {
+        try {
+          const old = JSON.parse(localStorage.getItem(COOKIES_KEY) || "[]");
+          if (Array.isArray(old) && old.length) {
+            await invoke("cookies_save", { cookies: old });
+            cache.cookies = old;
+          }
+          localStorage.removeItem(COOKIES_KEY);
+        } catch {
+          // nothing stored, or not readable: start empty
+        }
+      }
       cache.collections = collections?.length ? collections : null;
       cache.history = historyFromRust(history);
       cache.contexts = contexts && typeof contexts === "object" ? contexts : {};
@@ -192,16 +213,24 @@ export function createPlatform() {
       },
     },
     send,
-    // reqwest keeps no cookies: the app's jar does, for every request.
-    managesCookies: () => true,
+    // The Rust jar handles cookies (send passes options.cookies on), so the
+    // page adds no Cookie header itself.
+    managesCookies: () => false,
+    cookies: {
+      load: () => cache.cookies,
+      save: (cookies) => write("cookies", "cookies_save", { cookies }),
+    },
+    cookiesNote: "Applies to every request. The desktop app keeps cookies in hitop's settings folder, in the same jar as the CLI's hitop send (see hitop cookies ls).",
     usesProxy: () => false,
     scripts: {
       async pre({ script, url, method, headers, body, variables, context }) {
         const r = await invoke("run_pre_script", { args: { script, url, method, headers: headers.filter((h) => h.name).map((h) => [h.name, h.value]), body: body || "", variables, context } });
         return { url: r.url, headers: r.headers.map(([name, value]) => ({ name, value })), body: r.body, contextUpdates: r.context_updates || {}, variables: r.variables || {} };
       },
-      async post({ script, text, headers, status, durationMs, variables, context }) {
-        const r = await invoke("run_post_script", { args: { script, response_body: text, response_headers: headers, status_code: status, duration_ms: Math.round(durationMs || 0), variables, context } });
+      async post({ script, text, headers, status, durationMs, sent, variables, context }) {
+        // pm.request: the request as sent (a multipart body with files is bytes: left out).
+        const request = sent && { url: sent.url ?? "", method: sent.method ?? "", headers: (sent.headers ?? []).filter((h) => h.name).map((h) => [h.name, h.value]), body: typeof sent.body === "string" ? sent.body : "" };
+        const r = await invoke("run_post_script", { args: { script, response_body: text, response_headers: headers, status_code: status, duration_ms: Math.round(durationMs || 0), variables, context, request } });
         return { tests: r.tests || [], contextUpdates: r.context_updates || {}, variables: r.variables || {} };
       },
     },

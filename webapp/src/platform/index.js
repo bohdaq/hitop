@@ -9,6 +9,9 @@
 //   storage                  load*/save* for collections, tabs, history, contexts, environments
 //   send(url, options)       a fetch-like response; `headers.pairs` keeps repeated headers
 //   managesCookies(url)      true when the app's cookie jar applies (no browser cookie handling)
+//   cookies                  null (the app keeps its jar in localStorage), or { load(), save(cookies) }
+//                            for a native jar: send() then gets options.cookies and returns res.cookies
+//   cookiesNote              which requests the jar applies to and where it is kept
 //   scripts                  null (scripts run in the page) or { pre(args), post(args) }, async
 //   folders                  null, or { pick, create, read, write, restore, remember, forget, label }
 //   saveFile(name, data, type)  data is text or bytes

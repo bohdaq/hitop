@@ -365,7 +365,7 @@ export class HitopCookies extends LightElement {
           <lit-material-switch aria-label="Keep and send cookies" ?checked=${s.cookieJarEnabled} @change=${(e) => s.setCookieJarEnabled(e.target.checked)}></lit-material-switch>
           <span>Keep cookies from responses and send them with later requests to the same site</span>
         </label>
-        <p class="page-lead">Applies to requests that go through the HITOP proxy. For localhost your browser keeps cookies itself. Cookies stay in this browser.</p>
+        <p class="page-lead">${platform().cookiesNote}</p>
         ${byDomain.size
           ? [...byDomain].map(
               ([domain, cookies]) => html`

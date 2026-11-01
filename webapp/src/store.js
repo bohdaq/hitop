@@ -156,7 +156,8 @@ export class Store extends EventTarget {
     this.environments = envs.environments;
     this.activeEnvironmentId = this.environments.some((e) => e.id === envs.activeEnvironmentId) ? envs.activeEnvironmentId : null;
     const jar = loadCookies();
-    this.cookies = jar.cookies;
+    // The desktop keeps the jar in Rust (hitop-core), the web app in localStorage.
+    this.cookies = platform().cookies ? platform().cookies.load() : jar.cookies;
     this.cookieJarEnabled = jar.enabled;
     // Files picked for multipart fields, by field id. Never stored: a page
     // reload asks for them again.
@@ -201,8 +202,9 @@ export class Store extends EventTarget {
     const globalEnvs = this.environments.filter((e) => !this.folderEnvs.has(e.id));
     st.saveEnvironments(globalEnvs, globalEnvs.some((e) => e.id === this.activeEnvironmentId) ? this.activeEnvironmentId : null);
     this.syncFolders();
+    if (platform().cookies) platform().cookies.save(this.cookies);
     try {
-      localStorage.setItem(COOKIES_KEY, JSON.stringify(this.cookies));
+      if (!platform().cookies) localStorage.setItem(COOKIES_KEY, JSON.stringify(this.cookies));
       localStorage.setItem(COOKIE_JAR_KEY, this.cookieJarEnabled ? "on" : "off");
     } catch {
       // Storage full or blocked: the jar lasts for this page only.
@@ -665,7 +667,7 @@ export class Store extends EventTarget {
     if (!script?.trim()) return [];
     const native = platform().scripts;
     if (native) {
-      const r = await native.post({ script, text, headers, status, durationMs, variables: this.variables(collectionId), context: contextService.getCollectionContext(this.contexts, collectionId) });
+      const r = await native.post({ script, text, headers, status, durationMs, sent, variables: this.variables(collectionId), context: contextService.getCollectionContext(this.contexts, collectionId) });
       for (const [k, v] of Object.entries(r.contextUpdates)) this.setContext(collectionId, k, v);
       this.setScriptVariables(collectionId, r.variables);
       return r.tests;
@@ -768,7 +770,7 @@ export class Store extends EventTarget {
       const cookie = cookieHeader(this.cookies, prepared.url);
       if (cookie) headers.push({ name: "Cookie", value: cookie });
     }
-    const options = { method: source.method, headers: headersObject(headers) };
+    const options = { method: source.method, headers: headersObject(headers), ...(p.cookies ? { cookies: this.cookieJarEnabled } : {}) };
     if (body && BODY_METHODS.includes(source.method)) options.body = body;
     let res;
     try {
@@ -780,6 +782,7 @@ export class Store extends EventTarget {
         e.message = "Couldn't reach the server. Requests to localhost and private networks go straight from your browser, so the server must allow CORS from this site; the desktop and mobile apps don't need it.";
       throw e;
     }
+    if (Array.isArray(res.cookies)) this.cookies = res.cookies;
     if (jar && this.cookieJarEnabled && res.headers.pairs) {
       const lines = res.headers.pairs.filter(([k]) => k.toLowerCase() === "set-cookie").map(([, v]) => v);
       if (lines.length) this.cookies = mergeCookies(this.cookies, lines, res.url || prepared.url);

@@ -78,6 +78,12 @@ const settle = (p) => p.waitForTimeout(400);
   await settle(p);
   const cookiesPage = await p.locator('main').innerText();
   check('cookies page lists it', cookiesPage.includes('httpbin.org') && cookiesPage.includes('session'));
+  if (h.mock) {
+    // The desktop: hitop-core's jar in Rust adds the header and keeps the cookie.
+    const out = last();
+    check('[tauri] Rust jar sends the cookie, not the page', out.cookies === true && !out.headers.some(([k]) => k.toLowerCase() === 'cookie'), JSON.stringify(out.headers));
+    check('[tauri] jar kept in cookies/global.json', h.mock.loadJar().some((c) => c.name === 'session' && c.domain === 'httpbin.org'), JSON.stringify(h.mock.loadJar()));
+  }
   await p.getByRole('switch', { name: 'Keep and send cookies' }).click();
   await settle(p);
   await p.locator('aside').getByRole('button', { name: /New request/ }).first().click();

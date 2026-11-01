@@ -74,13 +74,8 @@ function api() {
   await p.locator('.run h2', { hasText: 'Last run' }).waitFor({ timeout: 30000 });
   const run = await p.locator('.run').innerText();
   const passed = (run.match(/1 of 1 tests passed/g) || []).length;
-  if (TAURI) {
-    // The desktop's script commands don't pass script-set variables back yet
-    // (desktop/src-tauri/src/commands.rs), so Me has no token to send.
-    check('[tauri] pm.test runs in Rust', passed === 1 && run.includes("'token' not found"), run.replace(/\n/g, ' | ').slice(0, 300));
-  } else {
-    check('pm.environment.set carries the token to the next request', passed === 2 && !/\b401\b/.test(run), run.replace(/\n/g, ' | ').slice(0, 300));
-  }
+  // In the desktop the script commands (Rust) pass script-set variables back too.
+  check(`${TAURI ? '[tauri] ' : ''}pm.environment.set carries the token to the next request`, passed === 2 && !/\b401\b/.test(run), run.replace(/\n/g, ' | ').slice(0, 300));
 
   check('no page errors', errors.length === 0, errors.join(' || '));
   server.close();

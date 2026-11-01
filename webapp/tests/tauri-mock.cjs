@@ -9,6 +9,8 @@
 //   scripts   the same JavaScript preamble scripting.rs runs in boa, in node:vm
 //   folders   real directories, read and written by hitop-core in WASM
 //   secrets   an in-memory keychain
+//   cookies   hitop-core's jar (cookies.rs, same rules as features.js) in
+//             <config>/cookies/global.json
 const fs = require('fs');
 const os = require('os');
 const path = require('path');
@@ -54,14 +56,14 @@ function setHeader(name, value) {
 ${usesPostmanApi(a.script)
     ? withShim(`{ vars: __vars, setVar: ${SET_VAR}, assert: { ok: function () {} }, request: { get url() { return __url; }, method: __method, get headers() { return __headers; }, get body() { return __body; } }, setUrl: setUrl, setHeader: setHeader, removeHeader: __removeHeader, setBody: setBody, response: null }`, a.script)
     : a.script}
-;JSON.stringify({ url: __url, body: __body, headers: __headers, ctx: __ctxUpdates })`;
+;JSON.stringify({ url: __url, body: __body, headers: __headers, ctx: __ctxUpdates, vars: __varUpdates })`;
   let out;
   try {
     out = JSON.parse(vm.runInNewContext(src, {}, { timeout: 2000 }));
   } catch (e) {
     throw `pre-request script error: ${e.message}`;
   }
-  return { url: typeof out.url === 'string' ? out.url : a.url, headers: out.headers, body: typeof out.body === 'string' ? out.body : a.body, context_updates: out.ctx };
+  return { url: typeof out.url === 'string' ? out.url : a.url, headers: out.headers, body: typeof out.body === 'string' ? out.body : a.body, context_updates: out.ctx, variables: out.vars };
 }
 
 // scripting.rs: run_post_request_script.
@@ -106,16 +108,16 @@ const assert = {
     ok(c, name, detail) { __record(name === undefined ? "condition is true" : name, c, detail === undefined || detail === "" ? "was false" : detail); },
 };
 ${usesPostmanApi(a.script)
-    ? withShim(`{ vars: __vars, setVar: ${SET_VAR}, assert: assert, request: { url: "", method: "", headers: [], body: "" }, response: { code: statusCode, text: responseText, headers: responseHeaders, time: ${a.duration_ms || 0} } }`, a.script)
+    ? withShim(`{ vars: __vars, setVar: ${SET_VAR}, assert: assert, request: ${JSON.stringify(a.request || { url: '', method: '', headers: [], body: '' })}, response: { code: statusCode, text: responseText, headers: responseHeaders, time: ${a.duration_ms || 0} } }`, a.script)
     : a.script}
-;JSON.stringify({ ctx: __ctxUpdates, tests: __tests })`;
+;JSON.stringify({ ctx: __ctxUpdates, tests: __tests, vars: __varUpdates })`;
   let out;
   try {
     out = JSON.parse(vm.runInNewContext(src, {}, { timeout: 2000 }));
   } catch (e) {
     throw `post-request script error: ${e.message}`;
   }
-  return { context_updates: out.ctx, tests: out.tests };
+  return { context_updates: out.ctx, tests: out.tests, variables: out.vars };
 }
 
 function listTree(dir, base = dir, out = {}) {
@@ -147,7 +149,23 @@ class TauriMock {
 
   async ready() {
     this.format = await loadFormat();
+    this.jar = await import(path.join(__dirname, '../src/features.js'));
     return this;
+  }
+
+  get jarFile() {
+    return path.join(this.config, 'cookies', 'global.json');
+  }
+
+  loadJar() {
+    return fs.existsSync(this.jarFile) ? JSON.parse(fs.readFileSync(this.jarFile, 'utf8')) : [];
+  }
+
+  // cookies.rs Jar::save: an empty jar removes the file.
+  saveJar(cookies) {
+    if (!cookies.length) return fs.rmSync(this.jarFile, { force: true });
+    fs.mkdirSync(path.dirname(this.jarFile), { recursive: true });
+    fs.writeFileSync(this.jarFile, JSON.stringify(cookies, null, 2));
   }
 
   file(name) {
@@ -195,6 +213,10 @@ class TauriMock {
         return this.write('environments.json', f.normalize('environments', args.environments));
       case 'send_request':
         return this.send(args.args);
+      case 'cookies_load':
+        return this.loadJar();
+      case 'cookies_save':
+        return this.saveJar(args.cookies);
       case 'run_pre_script':
         return preScript(args.args);
       case 'run_post_script':
@@ -242,15 +264,26 @@ class TauriMock {
     this.sent.push(a);
     const started = Date.now();
     const body = a.body == null ? undefined : a.bodyEncoding === 'base64' ? Buffer.from(a.body, 'base64') : a.body;
+    const jar = a.cookies ? this.loadJar() : null;
+    const headers0 = a.headers.filter(([k]) => k);
+    if (jar && !headers0.some(([k, v]) => k.toLowerCase() === 'cookie' && v)) {
+      const cookie = this.jar.cookieHeader(jar, a.url);
+      if (cookie) headers0.push(['Cookie', cookie]);
+    }
     let res;
     try {
-      res = await fetch(a.url, { method: a.method, headers: a.headers.filter(([k]) => k), body: ['GET', 'HEAD'].includes(a.method) ? undefined : body, redirect: 'follow' });
+      res = await fetch(a.url, { method: a.method, headers: headers0, body: ['GET', 'HEAD'].includes(a.method) ? undefined : body, redirect: 'follow' });
     } catch (e) {
       throw `error sending request for url (${a.url}): ${e.cause?.message ?? e.message}`;
     }
     const headers = [];
     res.headers.forEach((v, k) => k !== 'set-cookie' && headers.push([k, v]));
     for (const c of res.headers.getSetCookie()) headers.push(['set-cookie', c]);
+    let cookies;
+    if (jar) {
+      cookies = this.jar.mergeCookies(jar, res.headers.getSetCookie(), res.url || a.url);
+      this.saveJar(cookies);
+    }
     const bytes = Buffer.from(await res.arrayBuffer());
     let text;
     try {
@@ -258,7 +291,7 @@ class TauriMock {
     } catch {
       text = null;
     }
-    return { status: res.status, statusText: res.statusText, url: res.url, headers, body: text ?? bytes.toString('base64'), ...(text == null ? { bodyEncoding: 'base64' } : {}), timeMs: Date.now() - started };
+    return { status: res.status, statusText: res.statusText, url: res.url, headers, body: text ?? bytes.toString('base64'), ...(text == null ? { bodyEncoding: 'base64' } : {}), timeMs: Date.now() - started, ...(cookies ? { cookies } : {}) };
   }
 
   cleanup() {
