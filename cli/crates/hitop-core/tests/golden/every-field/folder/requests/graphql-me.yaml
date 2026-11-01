@@ -4,7 +4,12 @@ url: ${base}/graphql
 body:
   type: graphql
   content: |-
-    query {
-      me { id name }
+    query Me($id: ID!) {
+      me(id: $id) { id name }
     }
+  variables: |-
+    {
+      "id": "${userId}"
+    }
+  operationName: Me
 id: 1793470569736006

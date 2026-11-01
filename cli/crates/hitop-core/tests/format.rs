@@ -7,7 +7,7 @@ use std::fs;
 use std::path::{Path, PathBuf};
 
 use hitop_core::format::{self, Folder};
-use hitop_core::model::{ApiKeyLocation, Auth, Collection, Environment, FormField, Header, Param, Request};
+use hitop_core::model::{ApiKeyLocation, Auth, Collection, Environment, FormField, Graphql, Header, Param, Request};
 use proptest::prelude::*;
 
 fn golden_dir() -> PathBuf {
@@ -81,6 +81,7 @@ fn golden_covers_every_field() {
         "type: json", "type: xml", "type: text", "type: graphql", "type: form", "type: multipart", "type: file",
         "content: |", "fields:", "scripts:", "pre:", "post: |", "examples:", "type: bearer", "type: basic",
         "type: apikey", "in: query", "type: none", "secret: true", "pinned: true", "color: teal", "region: eu",
+        "variables: |", "operationName:",
     ] {
         assert!(all.contains(key), "no golden file has `{key}`");
     }
@@ -186,8 +187,10 @@ fn request() -> impl Strategy<Value = Request> {
         prop::collection::vec(json_value(), 0..2),
         prop::option::of(("[a-z]{1,6}", "[a-z0-9-]{1,8}").prop_map(|(d, f)| format!("{d}/{f}"))),
         extra(),
+        // GraphQL variables and operation name: kept on any body, empty means none.
+        prop::option::of((text(), text()).prop_map(|(variables, operation_name)| Graphql { variables, operation_name, ..Default::default() })),
     );
-    (core, rows, more).prop_map(|((id, name, url, method), (headers, body, pre, post, auth, mode), (form_fields, disabled_params, body_type, examples, file, extra))| {
+    (core, rows, more).prop_map(|((id, name, url, method), (headers, body, pre, post, auth, mode), (form_fields, disabled_params, body_type, examples, file, extra, graphql))| {
         let mut r = Request {
             id,
             name,
@@ -202,6 +205,7 @@ fn request() -> impl Strategy<Value = Request> {
             form_fields,
             disabled_params,
             body_type: None,
+            graphql: graphql.filter(|g| !g.is_empty()),
             examples,
             file,
             extra,

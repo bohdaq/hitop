@@ -4,6 +4,7 @@ use std::collections::HashMap;
 
 use hitop_core::{
     form,
+    graphql::Operation,
     http,
     interpolation::interpolate,
     model::{Header, HistoryItem},
@@ -35,6 +36,19 @@ pub struct SendArgs {
     /// Request body
     #[arg(short = 'b', long)]
     body: Option<String>,
+
+    /// Send a GraphQL query read from FILE (- reads standard input), as a
+    /// JSON POST of {query, variables, operationName}
+    #[arg(long, value_name = "FILE|-", conflicts_with_all = ["body", "form"])]
+    graphql: Option<String>,
+
+    /// GraphQL variables: a JSON object, inline or @file; ${variables} work in it
+    #[arg(long, value_name = "JSON|@FILE", requires = "graphql")]
+    graphql_vars: Option<String>,
+
+    /// GraphQL operation to run, when the query has more than one
+    #[arg(long, value_name = "NAME", requires = "graphql")]
+    operation_name: Option<String>,
 
     /// Form field, sent as multipart/form-data: NAME=VALUE, or NAME=@FILE
     /// with an optional ;type=MIME (repeatable)
@@ -127,8 +141,17 @@ pub fn run(args: SendArgs) -> Result<()> {
     let post_script = script_arg(&args.post_script)?;
     let auth = args.auth.auth()?;
 
-    let method = args.method.clone().unwrap_or_else(|| if args.form.is_empty() { "GET" } else { "POST" }.into());
-    let draft = Draft { method: &method, url: &url, headers: &headers, body: &body, pre_request_script: &pre_script, auth: auth.as_ref() };
+    let query = match args.graphql.as_deref() {
+        None => None,
+        Some("-") => Some(std::io::read_to_string(std::io::stdin()).map_err(|e| anyhow::anyhow!("--graphql -: reading standard input: {e}"))?),
+        Some(path) => Some(std::fs::read_to_string(path).map_err(|e| anyhow::anyhow!("--graphql: reading {path}: {e}"))?),
+    };
+    let graphql_vars = script_arg(&args.graphql_vars)?;
+    let operation_name = args.operation_name.clone().unwrap_or_default();
+    let graphql = query.as_deref().map(|query| Operation { query, variables: &graphql_vars, operation_name: &operation_name });
+
+    let method = args.method.clone().unwrap_or_else(|| if args.form.is_empty() && graphql.is_none() { "GET" } else { "POST" }.into());
+    let draft = Draft { method: &method, url: &url, headers: &headers, body: &body, pre_request_script: &pre_script, auth: auth.as_ref(), graphql };
     let pre = prepare_in(&draft, &scopes, &context).map_err(|e| anyhow::anyhow!(masker.mask(&format!("{e:#}"))))?;
     context.extend(pre.context_updates.clone());
     scopes.apply(&pre.variables, &pre.globals);

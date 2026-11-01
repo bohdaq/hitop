@@ -40,7 +40,9 @@ pub fn to_postman(collection: &Collection) -> Result<String> {
                 "method": r.method,
                 "header": headers,
                 "url": { "raw": r.url },
-                "body": if r.body.is_empty() { json!(null) } else {
+                "body": if let Some(op) = r.graphql_operation() {
+                    json!({ "mode": "graphql", "graphql": { "query": op.query, "variables": op.variables } })
+                } else if r.body.is_empty() { json!(null) } else {
                     json!({ "mode": "raw", "raw": r.body })
                 }
             });

@@ -72,8 +72,9 @@
       "method": "POST",
       "url": "${base}/graphql",
       "headers": [],
-      "body": "query {\n  me { id name }\n}",
-      "bodyType": "graphql"
+      "body": "query Me($id: ID!) {\n  me(id: $id) { id name }\n}",
+      "bodyType": "graphql",
+      "graphql": { "variables": "{\n  \"id\": \"${userId}\"\n}", "operationName": "Me" }
     },
     {
       "id": 1793470569736007,

@@ -231,14 +231,7 @@ pub fn run(cmd: RequestsCmd) -> Result<()> {
                 .map(|m| m.iter().map(|(k, v)| (k.clone(), v.clone())).collect())
                 .unwrap_or_default();
 
-            let draft = Draft {
-                method: &req.method,
-                url: &req.url,
-                headers: &req.headers,
-                body: &req.body,
-                pre_request_script: &req.pre_request_script,
-                auth: req.auth.as_ref().or(col.auth.as_ref()),
-            };
+            let draft = Draft::of(&req, col.auth.as_ref());
             let pre = prepare_in(&draft, &scopes, &context).map_err(masked)?;
             scopes.apply(&pre.variables, &pre.globals);
             let vars = scopes.merged();

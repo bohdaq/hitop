@@ -132,15 +132,8 @@ pub fn run_collection_jar(
 
     for request in &collection.requests {
         let started = Instant::now();
-        let draft = Draft {
-            method: &request.method,
-            url: &request.url,
-            headers: &request.headers,
-            body: &request.body,
-            pre_request_script: &request.pre_request_script,
-            // A request's own auth (even `none`) wins over the collection's.
-            auth: request.auth.as_ref().or(collection.auth.as_ref()),
-        };
+        // A request's own auth (even `none`) wins over the collection's.
+        let draft = Draft::of(request, collection.auth.as_ref());
         let step = match prepare_in(&draft, &scopes, &context) {
             Err(e) => RunStepResult {
                 request_name: request.name.clone(),

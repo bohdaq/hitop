@@ -242,6 +242,9 @@ fn request_view(r: &Request) -> Value {
         if let Some(t) = &r.body_type {
             o.insert("bodyType".into(), json!(t));
         }
+        if let Some(g) = &r.graphql {
+            o.insert("graphql".into(), json!({"variables": g.variables, "operationName": g.operation_name}));
+        }
         if let Some(mode) = &r.body_mode {
             o.insert("bodyMode".into(), json!(mode));
             o.insert("formFields".into(), json!(r.form_fields.iter().map(|f| json!({"key": f.key, "value": f.value, "type": f.kind, "enabled": f.enabled})).collect::<Vec<_>>()));

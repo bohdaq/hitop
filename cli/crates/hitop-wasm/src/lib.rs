@@ -116,6 +116,15 @@ pub fn import_postman(json: &str, scans_json: &str) -> Result<String, JsError> {
     import_postman_json(json, scans_json).map_err(chain)
 }
 
+/// The JSON body of a GraphQL request whose `${variables}` are filled in
+/// (`{"query","variables","operationName"}`), built by the same code as the
+/// CLI's (`hitop_core::graphql::request_body`). Fails when the variables
+/// aren't a JSON object.
+#[wasm_bindgen(js_name = graphqlBody)]
+pub fn graphql_body(query: &str, variables: &str, operation_name: &str) -> Result<String, JsError> {
+    hitop_core::graphql::request_body(query, variables, operation_name).map_err(chain)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -142,6 +151,16 @@ mod tests {
         assert_eq!(out["collection"]["requests"][0]["url"], "${b}/x");
         assert_eq!(out["report"]["issues"][0]["what"], "pm.sendRequest");
         assert_eq!(out["report"]["issues"][0]["location"], "a (post-request script)");
+    }
+
+    #[test]
+    fn graphql_requests_round_trip() {
+        let folder = r#"{"collection":{"id":1,"name":"G","requests":[{"id":2,"name":"Me","url":"https://x/graphql","method":"POST","headers":[],"body":"{ me }","bodyType":"graphql","graphql":{"variables":"{\"a\": 1}","operationName":"Me"}}]}}"#;
+        let files = to_files_json(folder).unwrap();
+        assert!(files.contains("operationName: Me"), "{files}");
+        let back: serde_json::Value = serde_json::from_str(&read_files_json(&files, "x").unwrap()).unwrap();
+        assert_eq!(back["collection"]["requests"][0]["graphql"], serde_json::json!({"variables": "{\"a\": 1}", "operationName": "Me"}));
+        assert_eq!(hitop_core::graphql::request_body("{ me }", "{\"a\": 1}", "Me").unwrap(), r#"{"query":"{ me }","variables":{"a": 1},"operationName":"Me"}"#);
     }
 
     #[test]

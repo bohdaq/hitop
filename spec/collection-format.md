@@ -140,7 +140,8 @@ URL is written exactly as typed.
 | `type` | Content | Sent as |
 | --- | --- | --- |
 | `none` | | no body |
-| `json`, `text`, `xml`, `graphql` | `content`: the body text | the text, after `${variable}` substitution |
+| `json`, `text`, `xml` | `content`: the body text | the text, after `${variable}` substitution |
+| `graphql` | `content`: the query; `variables`: JSON text of an object (optional); `operationName` (optional) | `application/json`: `{"query", "variables", "operationName"}` (below) |
 | `form` | `fields`: rows | `application/x-www-form-urlencoded` |
 | `multipart` | `fields`: rows; a row with `type: file` is a file | `multipart/form-data` |
 
@@ -151,8 +152,39 @@ body type was switched), and a text body may carry `fields`; neither is sent.
 Without a `body` key the request has no body. For text bodies the `type` is
 a label: hitop infers it from the `Content-Type` header (`json`, `xml`, other
 types are `text`) or, without one, from the content (valid JSON object or
-array → `json`, starts with `<` → `xml`, else `text`). GraphQL bodies are sent
-as text until GraphQL support lands (T13).
+array → `json`, starts with `<` → `xml`, else `text`). `graphql` is never
+inferred: it is always written.
+
+### GraphQL
+
+```yaml
+body:
+  type: graphql
+  content: |
+    query User($id: ID!) {
+      user(id: $id) { name }
+    }
+  variables: |
+    {"id": "${userId}"}
+  operationName: User
+```
+
+A `graphql` body is sent the GraphQL-over-HTTP way: a JSON object with
+`query` (the `content`), `variables` and `operationName`, in that order, with
+`Content-Type: application/json` unless a header of the request sets a
+`Content-Type`. `${variables}` are substituted in the query, the variables
+text and the operation name first; the query is then encoded as a JSON
+string and the variables text, which must then be a JSON object (or `null`,
+or empty), goes in as written. Empty `variables` and `operationName` are left
+out of the body. Use the method the server expects (normally `POST`).
+
+`variables` is text, not a YAML map, so it can hold `${variables}` where
+JSON allows no string (`{"limit": ${limit}}`) and comes back exactly as
+typed. `variables` and `operationName` may also stay on a body of another
+type (kept from before the body type was switched); they are then not sent.
+Both keys were added to version 1 after its first release: readers from
+before them (hitop 0.3.0 and older) refuse a file that has them (unknown
+keys inside `body` are an error), and read every file without them.
 
 ## 4. Auth
 
@@ -247,6 +279,7 @@ that only exist in one place are carried in JSON as:
 | `bodyMode` (`multipart`, `urlencoded`; `raw` is the default) and `formFields` | `body.type` and `body.fields` |
 | `disabledParams` | `params` rows with `enabled: false` |
 | `bodyType` | `body.type` of a text body, kept only when it differs from the inferred type |
+| `graphql` (`{variables, operationName}`; the query is `body`, `bodyType` is `graphql`) | `body.variables` and `body.operationName` |
 | `file` | the request's path, kept only when it differs from the default for its name |
 | `secrets` (environment) | variables written as `{secret: true}` |
 | the globals (`globals.json`, or `globals` beside `collection` and `environments`) | `globals.yaml` (section 5a) |

@@ -212,6 +212,11 @@ pub struct Request {
     /// graphql, ...).
     #[serde(rename = "bodyType", default, skip_serializing_if = "Option::is_none")]
     pub body_type: Option<String>,
+    /// A GraphQL request's variables and operation name (the query is
+    /// `body`, `bodyType` is `graphql`). Kept when the body type changes, as
+    /// the form fields are; sent only for a GraphQL body.
+    #[serde(default, deserialize_with = "de_graphql", skip_serializing_if = "Option::is_none")]
+    pub graphql: Option<Graphql>,
     /// Saved responses.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub examples: Vec<serde_json::Value>,
@@ -244,6 +249,24 @@ fn de_id<'de, D: serde::Deserializer<'de>>(d: D) -> Result<u64, D::Error> {
 fn de_body_mode<'de, D: serde::Deserializer<'de>>(d: D) -> Result<Option<String>, D::Error> {
     let mode: Option<String> = Option::deserialize(d)?;
     Ok(mode.filter(|m| m != "raw" && !m.is_empty()))
+}
+
+/// `graphql: {}` (nothing in it) reads as no `graphql`.
+fn de_graphql<'de, D: serde::Deserializer<'de>>(d: D) -> Result<Option<Graphql>, D::Error> {
+    let g: Option<Graphql> = Option::deserialize(d)?;
+    Ok(g.filter(|g| !g.is_empty()))
+}
+
+/// What a GraphQL request sends besides its query (see `graphql.rs`).
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+pub struct Graphql {
+    /// JSON text of an object, as typed; may contain `${variables}`.
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub variables: String,
+    #[serde(rename = "operationName", default, skip_serializing_if = "String::is_empty")]
+    pub operation_name: String,
+    #[serde(flatten)]
+    pub extra: Extra,
 }
 
 /// A query parameter row.

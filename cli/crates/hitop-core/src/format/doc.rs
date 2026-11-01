@@ -116,6 +116,11 @@ pub struct BodyDoc {
     pub kind: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub content: Option<String>,
+    /// GraphQL variables: JSON text (a block scalar), not a YAML map.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub variables: Option<String>,
+    #[serde(rename = "operationName", default, skip_serializing_if = "Option::is_none")]
+    pub operation_name: Option<String>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub fields: Vec<RowDoc>,
 }

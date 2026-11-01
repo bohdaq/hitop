@@ -382,7 +382,7 @@ impl Importer<'_> {
             post_request_script: join_scripts(&scripts.post),
             ..Default::default()
         };
-        self.body(&req["body"], &mut request, &mut headers, location);
+        self.body(&req["body"], &mut request, location);
         request.headers = headers;
         request.auth = match self.auth(&req["auth"], &format!("{location} (auth)")) {
             Some(a) => Some(a),
@@ -410,7 +410,7 @@ impl Importer<'_> {
         request
     }
 
-    fn body(&mut self, body: &Value, request: &mut Request, headers: &mut Vec<Header>, location: &str) {
+    fn body(&mut self, body: &Value, request: &mut Request, location: &str) {
         if body["disabled"] == true {
             return;
         }
@@ -434,13 +434,18 @@ impl Importer<'_> {
                 }
             }
             Some("graphql") => {
-                // Sent as the usual JSON POST body until GraphQL lands (T13).
+                // Query and variables kept apart: sent as GraphQL (crate::graphql).
                 let g = &body["graphql"];
-                let variables: Value = g["variables"].as_str().and_then(|s| serde_json::from_str(s).ok()).unwrap_or(json!({}));
-                let text = serde_json::to_string_pretty(&json!({ "query": scalar(&g["query"]), "variables": variables })).unwrap_or_default();
-                request.body = self.convert(&text, location);
-                if !headers.iter().any(|h| h.name.eq_ignore_ascii_case("content-type")) {
-                    headers.push(Header::new("Content-Type", "application/json"));
+                request.body = self.convert(&scalar(&g["query"]), location);
+                request.body_type = Some(crate::graphql::BODY_TYPE.into());
+                let variables = match &g["variables"] {
+                    Value::String(s) => s.clone(),
+                    Value::Null => String::new(),
+                    other => serde_json::to_string_pretty(other).unwrap_or_default(),
+                };
+                let variables = self.convert(&variables, location);
+                if !variables.trim().is_empty() {
+                    request.graphql = Some(crate::model::Graphql { variables, ..Default::default() });
                 }
             }
             Some(other) => self.report.push(location, format!("{other} body"), ""),
@@ -575,6 +580,25 @@ mod tests {
         assert_eq!(back.requests[0].post_request_script, c.requests[0].post_request_script);
         let text = std::fs::read_to_string(dir.path().join("requests/orders/create-order.yaml")).unwrap();
         assert!(!text.contains("\nid:"), "ids are the derived ones: {text}");
+    }
+
+    #[test]
+    fn graphql_bodies_stay_graphql() {
+        let text = r#"{"info": {"name": "G", "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"},
+            "item": [{"name": "Me", "request": {"method": "POST", "url": "{{base}}/graphql",
+              "body": {"mode": "graphql", "graphql": {"query": "query Me($id: ID) { me(id: $id) { name } }", "variables": "{\"id\": \"{{uid}}\"}"}}}},
+              {"name": "Plain", "request": {"method": "POST", "url": "{{base}}/graphql", "body": {"mode": "graphql", "graphql": {"query": "{ ping }"}}}}]}"#;
+        let (c, report) = import_collection(text).unwrap();
+        assert!(report.is_empty(), "{report:?}");
+        let me = &c.requests[0];
+        assert_eq!(me.body, "query Me($id: ID) { me(id: $id) { name } }");
+        assert_eq!(me.body_type.as_deref(), Some("graphql"));
+        assert_eq!(me.graphql.as_ref().unwrap().variables, r#"{"id": "${uid}"}"#);
+        assert!(me.headers.is_empty(), "the Content-Type comes with the GraphQL body when sent");
+        assert!(c.requests[1].is_graphql() && c.requests[1].graphql.is_none());
+        // Back out to Postman as a GraphQL body.
+        let out: Value = serde_json::from_str(&crate::export::to_postman(&c).unwrap()).unwrap();
+        assert_eq!(out["item"][0]["request"]["body"], json!({"mode": "graphql", "graphql": {"query": me.body, "variables": r#"{"id": "${uid}"}"#}}));
     }
 
     #[test]

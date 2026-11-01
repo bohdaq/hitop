@@ -32,6 +32,9 @@ hitop send https://api.example.com/users \
 # Form fields and file uploads (multipart/form-data; --urlencoded for a plain form)
 hitop send https://api.example.com/upload -F title=Q3 -F file=@report.csv -F 'logo=@logo.bin;type=image/png'
 
+# GraphQL: the query from a file (or - for stdin), sent as a JSON POST of {query, variables, operationName}
+hitop send https://api.example.com/graphql --graphql user.graphql --graphql-vars '{"id": "${userId}"}' -c ./my-api
+
 # Create a collection and save variables
 hitop collections add MyAPI
 hitop variables set MyAPI hostname https://api.example.com

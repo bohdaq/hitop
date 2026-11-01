@@ -4,7 +4,7 @@ use serde_json::Value;
 
 use super::doc::{BodyDoc, EnvironmentDoc, RequestDoc, RowDoc, ScriptsDoc};
 use super::names;
-use crate::model::{Environment, Extra, FormField, Header, Param, Request};
+use crate::model::{Environment, Extra, FormField, Graphql, Header, Param, Request};
 use crate::params::{append_query, parse_query, with_query};
 
 /// Keys the JSON model or the YAML files give a meaning to. An unknown key
@@ -12,7 +12,7 @@ use crate::params::{append_query, parse_query, with_query};
 /// would be read back as something else.
 const REQUEST_KEYS: &[&str] = &[
     "id", "name", "url", "method", "headers", "body", "preRequestScript", "postRequestScript", "auth", "bodyMode",
-    "formFields", "disabledParams", "bodyType", "examples", "file", "params", "scripts",
+    "formFields", "disabledParams", "bodyType", "examples", "file", "params", "scripts", "graphql",
 ];
 const ROW_KEYS: &[&str] = &["key", "name", "value", "type", "enabled"];
 pub const COLLECTION_KEYS: &[&str] = &["id", "name", "workspace", "requests", "variables", "auth", "format", "order"];
@@ -119,10 +119,20 @@ pub fn request_to_doc(r: &Request, file: &str) -> Result<RequestDoc> {
         Some(other) => other.to_string(),
     };
     let fields = r.form_fields.iter().map(field_to_row).collect::<Result<Vec<_>>>()?;
-    let body = if kind == "none" && r.body.is_empty() && fields.is_empty() {
+    let graphql = r.graphql.clone().unwrap_or_default();
+    if let Some(k) = graphql.extra.keys().next() {
+        bail!("request '{}': graphql: the key '{k}' has no place in a collection folder", r.name);
+    }
+    let body = if kind == "none" && r.body.is_empty() && fields.is_empty() && graphql.is_empty() {
         None
     } else {
-        Some(BodyDoc { kind, content: (!r.body.is_empty()).then(|| r.body.clone()), fields })
+        Some(BodyDoc {
+            kind,
+            content: (!r.body.is_empty()).then(|| r.body.clone()),
+            variables: (!graphql.variables.is_empty()).then_some(graphql.variables),
+            operation_name: (!graphql.operation_name.is_empty()).then_some(graphql.operation_name),
+            fields,
+        })
     };
 
     let scripts = if r.pre_request_script.is_empty() && r.post_request_script.is_empty() {
@@ -175,9 +185,11 @@ pub fn doc_to_request(d: RequestDoc, file: &str) -> Result<Request> {
         })
         .collect::<Result<_>>()?;
 
-    let (mut body, mut body_mode, mut body_type, mut form_fields) = (String::new(), None, None, vec![]);
+    let (mut body, mut body_mode, mut body_type, mut form_fields, mut graphql) = (String::new(), None, None, vec![], None);
     if let Some(b) = d.body {
         body = b.content.unwrap_or_default();
+        let g = Graphql { variables: b.variables.unwrap_or_default(), operation_name: b.operation_name.unwrap_or_default(), extra: Extra::new() };
+        graphql = (!g.is_empty()).then_some(g);
         form_fields = b.fields.into_iter().map(row_to_field).collect::<Result<_>>()?;
         if RAW_TYPES.contains(&b.kind.as_str()) {
             if b.kind != infer_body_type(&headers, &body) {
@@ -205,6 +217,7 @@ pub fn doc_to_request(d: RequestDoc, file: &str) -> Result<Request> {
         form_fields,
         disabled_params,
         body_type,
+        graphql,
         examples: d.examples,
         file: Some(file.to_string()),
         extra: d.extra,
