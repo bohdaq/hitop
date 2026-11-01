@@ -15,6 +15,11 @@ Environment=RWS_CONFIG_DIRECTORY_LISTING=false
 Environment=HITOP_ALLOWED_ORIGINS=https://hitop.rws8.tech,https://hitop.168-119-17-57.sslip.io
 # The host's own public address: the proxy must not call back into the front rws.
 Environment=HITOP_DENY_IPS=168.119.17.57
+# Opt-in usage pings (POST /api/ping): daily counts only, in /var/lib/hitop-server.
+StateDirectory=hitop-server
+Environment=HITOP_TELEMETRY_DIR=/var/lib/hitop-server
+# HITOP_STATS_TOKEN for GET /api/stats (root-only file, created by install.sh).
+EnvironmentFile=-/etc/hitop-server/env
 WorkingDirectory=/var/www/hitop
 ExecStart=/usr/local/bin/hitop-server
 Restart=on-failure

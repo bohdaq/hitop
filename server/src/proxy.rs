@@ -151,7 +151,7 @@ impl Proxy {
         // Browsers always send Origin on POST: this keeps other sites' pages
         // from using the proxy. (curl can fake it; the rate limit covers that.)
         let origin = request.header("origin").map(|h| h.value.to_string()).unwrap_or_default();
-        if !self.origins.iter().any(|o| *o == origin) {
+        if !self.origins.contains(&origin) {
             return error(s.n403_forbidden, "requests must come from the HITOP web app");
         }
         if request.body.len() > MAX_REQUEST_BODY + 1024 {
