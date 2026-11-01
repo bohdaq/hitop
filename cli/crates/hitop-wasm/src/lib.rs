@@ -125,6 +125,42 @@ pub fn graphql_body(query: &str, variables: &str, operation_name: &str) -> Resul
     hitop_core::graphql::request_body(query, variables, operation_name).map_err(chain)
 }
 
+/// `{request, collectionAuth?, variables, secrets}`: what a snippet is made of.
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct SnippetInput {
+    request: hitop_core::model::Request,
+    #[serde(default)]
+    collection_auth: Option<hitop_core::model::Auth>,
+    #[serde(default)]
+    variables: std::collections::HashMap<String, String>,
+    #[serde(default)]
+    secrets: Vec<String>,
+}
+
+pub fn snippet_json(input_json: &str, lang: &str) -> anyhow::Result<String> {
+    use hitop_core::snippet::{generate, Lang};
+    let lang = Lang::parse(lang).ok_or_else(|| anyhow::anyhow!("unknown language {lang}"))?;
+    let input: SnippetInput = serde_json::from_str(input_json)?;
+    let s = generate(lang, &input.request, input.collection_auth.as_ref(), &input.variables, &input.secrets)?;
+    Ok(serde_json::to_string(&serde_json::json!({ "code": s.code, "placeholders": s.placeholders }))?)
+}
+
+/// A code snippet (curl, fetch, python, go, java, rust) for a request, as
+/// `{code, placeholders}`. Secret names and variables without a value are
+/// written as `{{NAME}}`; hitop-core's generator, as `hitop snippet` runs it.
+#[wasm_bindgen]
+pub fn snippet(input_json: &str, lang: &str) -> Result<String, JsError> {
+    snippet_json(input_json, lang).map_err(chain)
+}
+
+/// The snippet languages as `[{id, label}]`, in menu order.
+#[wasm_bindgen(js_name = snippetLanguages)]
+pub fn snippet_languages() -> String {
+    let langs: Vec<_> = hitop_core::snippet::Lang::ALL.iter().map(|l| serde_json::json!({ "id": l.id(), "label": l.label() })).collect();
+    serde_json::Value::Array(langs).to_string()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -169,5 +205,16 @@ mod tests {
         assert!(out.starts_with(r#"[{"id":"#) && !out.contains("col-legacy"), "{out}");
         assert!(normalize_json("history", r#"[{"id":1,"timestamp":"2026-10-31T18:16:10.537Z"}]"#).is_err(), "web history items need mapping first");
         assert!(normalize_json("environments", r#"{"environments":[{"id":"a","name":"A"}]}"#).is_ok());
+    }
+
+    #[test]
+    fn snippet_hides_secrets() {
+        let input = r#"{"request":{"id":1,"name":"r","url":"${base}/x","method":"GET","headers":[{"name":"X-Key","value":"${key}"}],"body":""},
+            "variables":{"base":"https://api.test","key":"s3cr3t"},"secrets":["key"]}"#;
+        let out: serde_json::Value = serde_json::from_str(&snippet_json(input, "curl").unwrap()).unwrap();
+        assert_eq!(out["code"], "curl 'https://api.test/x' \\\n  -H 'X-Key: {{key}}'\n");
+        assert_eq!(out["placeholders"][0], "key");
+        assert!(snippet_json(input, "cobol").is_err());
+        assert!(snippet_languages().contains(r#""id":"rust""#));
     }
 }
