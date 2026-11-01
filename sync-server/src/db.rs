@@ -409,6 +409,27 @@ mod tests {
     use super::*;
 
     #[test]
+    fn a_t23_database_migrates_to_the_current_schema() {
+        // What the VM has: migration 1 only, with an account in it.
+        let dir = std::env::temp_dir().join(format!("hitop-sync-db-v1-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("t.db");
+        {
+            let conn = rusqlite::Connection::open(&path).unwrap();
+            conn.execute_batch("CREATE TABLE schema_version (version BIGINT NOT NULL); INSERT INTO schema_version (version) VALUES (1);").unwrap();
+            conn.execute_batch(&MIGRATIONS[0].replace("{BLOB}", "BLOB")).unwrap();
+            conn.execute("INSERT INTO users (id, email, created_at) VALUES ('u1', 'a@example.com', 1)", []).unwrap();
+        }
+        let db = Db::open(&format!("sqlite:{}", path.display())).unwrap();
+        let rows = db.tx(|tx| tx.query("SELECT id, runner_of FROM users", &[])).unwrap();
+        assert_eq!((rows[0].text(0), rows[0].text(1)), ("u1".to_string(), String::new()), "existing accounts are people");
+        db.tx(|tx| tx.query("SELECT id, workspace_id, token_hash, accepted_by FROM invites", &[])).unwrap();
+        let v = db.tx(|tx| tx.query("SELECT MAX(version) FROM schema_version", &[])).unwrap();
+        assert_eq!(v[0].int(0), MIGRATIONS.len() as i64);
+        std::fs::remove_dir_all(dir).unwrap();
+    }
+
+    #[test]
     fn migrates_once_and_rolls_back_on_error() {
         let dir = std::env::temp_dir().join(format!("hitop-sync-db-{}", std::process::id()));
         std::fs::create_dir_all(&dir).unwrap();
