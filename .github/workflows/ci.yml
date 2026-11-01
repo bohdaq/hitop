@@ -30,7 +30,29 @@ jobs:
           workspaces: |
             cli
             cli/crates/hitop-wasm
+      - name: actionlint (tests/schedule.rs lints the workflows hitop schedule writes)
+        env:
+          ACTIONLINT_VERSION: 1.7.12
+          ACTIONLINT_SHA256: 8aca8db96f1b94770f1b0d72b6dddcb1ebb8123cb3712530b08cc387b349a3d8
+        run: |
+          dir="$RUNNER_TEMP/actionlint"
+          mkdir -p "$dir"
+          tgz="actionlint_${ACTIONLINT_VERSION}_linux_amd64.tar.gz"
+          curl -fsSL -o "$dir/$tgz" "https://github.com/rhysd/actionlint/releases/download/v${ACTIONLINT_VERSION}/$tgz"
+          echo "$ACTIONLINT_SHA256  $dir/$tgz" | sha256sum -c -
+          tar -xzf "$dir/$tgz" -C "$dir" actionlint
+          "$dir/actionlint" --version
+          echo "HITOP_ACTIONLINT=$dir/actionlint" >> "$GITHUB_ENV"
       - run: cargo test --locked
+      - name: hitop schedule --github output passes actionlint
+        run: |
+          repo="$RUNNER_TEMP/schedule-repo"
+          mkdir -p "$repo/.git"
+          cp -r fixtures/sample "$repo/sample"
+          cargo run --locked -q -p hitop -- schedule "$repo/sample" --github --env prod
+          cargo run --locked -q -p hitop -- schedule "$repo/sample" --github --env local --cron "*/30 8-18 * * 1-5" --hitop-version 1.0.0
+          ls "$repo/.github/workflows"
+          "$HITOP_ACTIONLINT" "$repo"/.github/workflows/*.yml
       - run: cargo clippy --locked --all-targets -- -D warnings
       - name: hitop-core without the native feature (what the web app builds)
         run: cargo clippy --locked -p hitop-core --no-default-features --all-targets -- -D warnings

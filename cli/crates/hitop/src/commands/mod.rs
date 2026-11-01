@@ -11,6 +11,7 @@ pub mod mcp;
 pub mod openapi;
 pub mod requests;
 pub mod run;
+pub mod schedule;
 pub mod secret;
 pub mod send;
 pub mod snippet;
