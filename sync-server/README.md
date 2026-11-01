@@ -95,9 +95,23 @@ JSON over HTTPS; `Authorization: Bearer <session>`; binary fields are base64url 
 | `POST /v1/workspaces/:ws/members {email, role, wraps}` | add a member (owner) |
 | `DELETE /v1/workspaces/:ws/members/:user {epoch, wraps}` | remove a member **and** rotate the key (owner) |
 | `POST /v1/workspaces/:ws/rotate {epoch, wraps}` | rotate the key (owner) |
+| `PUT /v1/workspaces/:ws/members/:user {role}` | change a role (owner; a workspace keeps one owner) |
+| `POST /v1/workspaces/:ws/invites {email?, role}` | invite (owner): mailed when `email` is set, else a link; 7 days → `{id, token, link, mailed}` |
+| `GET /v1/workspaces/:ws/invites`; `DELETE .../invites/:id` | open invites, accepted ones with the account's device keys (owner) |
+| `POST /v1/invites/accept {token}` | accept (signed in, with a device key); the owner then adds you with the wrapped key |
+| `POST /v1/workspaces/:ws/runners {name, publicKey, wrapped}` | a runner credential for scheduled runs (owner): viewer of this workspace only, one-year token |
 | `GET /v1/workspaces/:ws/changes?since=<seq>` | blobs changed after `seq` |
 | `GET /v1/workspaces/:ws/blobs/:id` | envelope + version, vv, epoch |
 | `PUT /v1/workspaces/:ws/blobs/:id {version, vv, epoch, content \| deleted}` | write version n+1 (owner, editor) |
+
+Invites can't add anyone by themselves: only a member's client can wrap the workspace key for the
+new member's devices, after checking their fingerprints. Runner accounts (`<id>@runner.invalid`)
+can't sign in, register keys, accept invites, create workspaces or look up other accounts;
+removing one (`DELETE .../members/:user` with the rotated key) deletes it and its session.
+
+Upgrading from 0.1.0 (T23): the server migrates the database on start (migration 2 adds
+`users.runner_of` and the `invites` table, SQLite and Postgres); back up first (`deploy/install.sh`
+does).
 
 A write must name the next version and a version vector that descends from the stored one, under
 the current epoch; otherwise 409 with the current state (`conflict` or `stale_epoch`): fetch,

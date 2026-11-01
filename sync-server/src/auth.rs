@@ -20,23 +20,40 @@ const MAX_PASSKEYS: i64 = 20;
 pub struct User {
     pub id: String,
     pub email: String,
+    /// For a runner account (a scoped credential for scheduled runs, teams.rs): the one
+    /// workspace it reads. Empty for people.
+    pub runner_of: String,
+}
+
+/// Runner accounts get addresses under this reserved domain (RFC 2606), so no mail reaches them.
+pub const RUNNER_DOMAIN: &str = "runner.invalid";
+
+impl User {
+    /// Refuses runner accounts: they read one workspace and do nothing else.
+    pub fn person(&self) -> Result<(), ApiError> {
+        if self.runner_of.is_empty() {
+            Ok(())
+        } else {
+            Err(ApiError::forbidden("a runner credential can only read its workspace"))
+        }
+    }
 }
 
 /// The signed-in user, from `Authorization: Bearer <session>`.
 pub fn authenticate(state: &State, tx: &mut Tx, request: &Request) -> Result<User, ApiError> {
     let token = bearer(request).ok_or_else(ApiError::unauthorized)?;
     let row = tx.query_one(
-        "SELECT u.id, u.email FROM sessions s JOIN users u ON u.id = s.user_id WHERE s.token_hash = $1 AND s.expires_at > $2",
+        "SELECT u.id, u.email, u.runner_of FROM sessions s JOIN users u ON u.id = s.user_id WHERE s.token_hash = $1 AND s.expires_at > $2",
         &[token_hash(&token).into(), state.now().into()],
     )?;
     let row = row.ok_or_else(ApiError::unauthorized)?;
-    Ok(User { id: row.text(0), email: row.text(1) })
+    Ok(User { id: row.text(0), email: row.text(1), runner_of: row.text(2) })
 }
 
 fn normalize_email(email: &str) -> Result<String, ApiError> {
     let email = email.trim().to_lowercase();
     let ok = email.len() <= 254 && !email.chars().any(|c| c.is_control() || c.is_whitespace()) && email.parse::<lettre::Address>().is_ok();
-    if !ok {
+    if !ok || email.ends_with(&format!("@{RUNNER_DOMAIN}")) {
         return Err(ApiError::bad("email is not a valid address"));
     }
     Ok(email)
@@ -115,9 +132,9 @@ pub fn email_verify(state: &State, request: &Request, _: &PathParams) -> ApiResu
         tx.execute("UPDATE magic_links SET used = 1 WHERE token_hash = $1", &[hash.into()])?;
         let email = row.text(0);
         let user = match tx.query_one("SELECT id FROM users WHERE email = $1", &[(&email).into()])? {
-            Some(r) => User { id: r.text(0), email },
+            Some(r) => User { id: r.text(0), email, runner_of: String::new() },
             None => {
-                let user = User { id: Uuid::new_v4().to_string(), email };
+                let user = User { id: Uuid::new_v4().to_string(), email, runner_of: String::new() };
                 tx.execute("INSERT INTO users (id, email, created_at) VALUES ($1, $2, $3)", &[(&user.id).into(), (&user.email).into(), now.into()])?;
                 user
             }
@@ -183,6 +200,7 @@ fn take(state: &State, id: &str) -> Result<Ceremony, ApiError> {
 pub fn passkey_register_start(state: &State, request: &Request, _: &PathParams) -> ApiResult {
     let (user, existing) = state.db.tx(|tx| {
         let user = authenticate(state, tx, request)?;
+        user.person()?;
         let existing = user_passkeys(tx, &user.id)?;
         Ok::<_, ApiError>((user, existing))
     })?;
@@ -286,6 +304,6 @@ pub fn passkey_login_finish(state: &State, request: &Request, _: &PathParams) ->
             }
         }
         let email = tx.query_one("SELECT email FROM users WHERE id = $1", &[(&user_id).into()])?.map(|r| r.text(0)).unwrap_or_default();
-        new_session(state, tx, &User { id: user_id.clone(), email })
+        new_session(state, tx, &User { id: user_id.clone(), email, runner_of: String::new() })
     })
 }

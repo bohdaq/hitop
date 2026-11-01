@@ -203,7 +203,13 @@ impl SyncApp {
             ("POST", "/v1/workspaces/:ws/wraps", crate::workspaces::add_wraps),
             ("POST", "/v1/workspaces/:ws/members", crate::workspaces::add_member),
             ("DELETE", "/v1/workspaces/:ws/members/:user", crate::workspaces::remove_member),
+            ("PUT", "/v1/workspaces/:ws/members/:user", crate::teams::set_role),
             ("POST", "/v1/workspaces/:ws/rotate", crate::workspaces::rotate),
+            ("GET", "/v1/workspaces/:ws/invites", crate::teams::list),
+            ("POST", "/v1/workspaces/:ws/invites", crate::teams::create),
+            ("DELETE", "/v1/workspaces/:ws/invites/:id", crate::teams::delete),
+            ("POST", "/v1/invites/accept", crate::teams::accept),
+            ("POST", "/v1/workspaces/:ws/runners", crate::teams::create_runner),
             ("GET", "/v1/workspaces/:ws/changes", crate::blobs::changes),
             ("GET", "/v1/workspaces/:ws/blobs/:id", crate::blobs::get),
             ("PUT", "/v1/workspaces/:ws/blobs/:id", crate::blobs::put),
@@ -254,6 +260,8 @@ impl Application for SyncApp {
             json_response(204, &Json::Null)
         } else if request.method == "GET" && path == "/signin" {
             crate::routes::signin_page()
+        } else if request.method == "GET" && path == "/invite" {
+            crate::routes::invite_page()
         } else if request.body.len() > self.state.config.max_request_bytes() {
             error_response(&ApiError::new(413, "too_large", "request body too large"))
         } else {

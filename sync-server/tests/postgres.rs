@@ -52,3 +52,32 @@ fn postgres_sync_flow() {
     assert_eq!(s.call("GET", &format!("/v1/workspaces/{WS}"), Some(&bob.session), None).status, 404);
     assert_eq!(s.call("POST", "/v1/auth/logout", Some(&bob.session), None).status, 204);
 }
+
+#[test]
+fn postgres_teams_flow() {
+    let Some(url) = database("teams") else {
+        eprintln!("HITOP_SYNC_TEST_POSTGRES not set: skipped");
+        return;
+    };
+    let s = Server::with("pg-teams", |c| c.database = url.clone());
+    let ada = Device::new(&s, "ada@example.com");
+    let key = create_workspace(&s, &ada, WS);
+    let inv = s.call("POST", &format!("/v1/workspaces/{WS}/invites"), Some(&ada.session), Some(json!({ "email": "bob@example.com", "role": "viewer" })));
+    assert_eq!(inv.status, 201, "{}", inv.json);
+    let bob = Device::new(&s, "bob@example.com");
+    assert_eq!(s.call("POST", "/v1/invites/accept", Some(&bob.session), Some(json!({ "token": inv.json["token"] }))).status, 200);
+    let list = s.call("GET", &format!("/v1/workspaces/{WS}/invites"), Some(&ada.session), None);
+    assert_eq!(list.json["invites"][0]["accepted"]["email"], "bob@example.com");
+    let w = wraps_for(&[(bob.key_id.clone(), bob.keys.public_key().to_vec())], WS, 1, &key);
+    assert_eq!(s.call("POST", &format!("/v1/workspaces/{WS}/members"), Some(&ada.session), Some(json!({ "email": "bob@example.com", "role": "viewer", "wraps": w }))).status, 201);
+    assert_eq!(s.call("PUT", &format!("/v1/workspaces/{WS}/members/{}", bob.user_id), Some(&ada.session), Some(json!({ "role": "editor" }))).status, 200);
+    let kp = crypto::DeviceKeyPair::generate();
+    let wrapped = crypto::wrap_key(&kp.public_key(), WS, 1, &key).unwrap();
+    let r = s.call("POST", &format!("/v1/workspaces/{WS}/runners"), Some(&ada.session), Some(json!({ "publicKey": b64(&kp.public_key()), "wrapped": b64(&wrapped) })));
+    assert_eq!(r.status, 201, "{}", r.json);
+    let token = r.json["token"].as_str().unwrap().to_string();
+    assert_eq!(s.call("GET", &format!("/v1/workspaces/{WS}"), Some(&token), None).json["role"], "viewer");
+    assert_eq!(s.call("POST", "/v1/workspaces", Some(&token), Some(json!({ "id": WS, "wraps": [] }))).status, 403);
+    assert_eq!(s.call("DELETE", &format!("/v1/workspaces/{WS}"), Some(&ada.session), None).status, 204);
+    assert_eq!(s.call("GET", "/v1/me", Some(&token), None).status, 401);
+}

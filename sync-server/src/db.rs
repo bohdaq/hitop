@@ -250,7 +250,7 @@ impl Tx<'_> {
 }
 
 /// Schema migrations, in order; `{BLOB}` becomes BLOB or BYTEA. Never edit a released entry: add
-/// a new one.
+/// a new one. 1: T23 (accounts, workspaces, blobs). 2: T24 teams (invites, runner accounts).
 const MIGRATIONS: &[&str] = &[r"
 CREATE TABLE users (
   id TEXT PRIMARY KEY,
@@ -322,6 +322,21 @@ CREATE TABLE blobs (
   PRIMARY KEY (workspace_id, id)
 );
 CREATE INDEX blobs_seq ON blobs(workspace_id, seq);
+", r"
+ALTER TABLE users ADD COLUMN runner_of TEXT NOT NULL DEFAULT '';
+CREATE TABLE invites (
+  id TEXT PRIMARY KEY,
+  workspace_id TEXT NOT NULL REFERENCES workspaces(id) ON DELETE CASCADE,
+  token_hash TEXT NOT NULL UNIQUE,
+  email TEXT NOT NULL,
+  role TEXT NOT NULL,
+  created_by TEXT NOT NULL,
+  created_at BIGINT NOT NULL,
+  expires_at BIGINT NOT NULL,
+  accepted_by TEXT NOT NULL DEFAULT '',
+  accepted_at BIGINT NOT NULL DEFAULT 0
+);
+CREATE INDEX invites_workspace ON invites(workspace_id);
 "];
 
 impl Db {

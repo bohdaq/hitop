@@ -9,6 +9,7 @@ pub mod config;
 pub mod db;
 pub mod mail;
 mod routes;
+pub mod teams;
 pub mod workspaces;
 
 pub use api::{State, SyncApp};

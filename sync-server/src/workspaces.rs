@@ -69,7 +69,7 @@ pub fn membership(tx: &mut Tx, ws: &str, user: &User) -> Result<Workspace, ApiEr
     Ok(Workspace { id: row.text(0), epoch: row.int(1), seq: row.int(2), bytes: row.int(3), role: Role::parse(&row.text(4))? })
 }
 
-fn require(ws: &Workspace, role: Role) -> Result<(), ApiError> {
+pub(crate) fn require(ws: &Workspace, role: Role) -> Result<(), ApiError> {
     if ws.role < role {
         return Err(ApiError::forbidden(format!("this needs the {} role", role.as_str())));
     }
@@ -79,12 +79,12 @@ fn require(ws: &Workspace, role: Role) -> Result<(), ApiError> {
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields, rename_all = "camelCase")]
 pub struct WrapIn {
-    key_id: String,
-    wrapped: String,
+    pub(crate) key_id: String,
+    pub(crate) wrapped: String,
 }
 
 /// Checks that `wraps` holds exactly one well-formed wrapped key for each device key of `users`.
-fn exact_wraps(tx: &mut Tx, users: &[String], wraps: &[WrapIn]) -> Result<Vec<(String, Vec<u8>)>, ApiError> {
+pub(crate) fn exact_wraps(tx: &mut Tx, users: &[String], wraps: &[WrapIn]) -> Result<Vec<(String, Vec<u8>)>, ApiError> {
     let mut expected = BTreeSet::new();
     for user in users {
         for row in tx.query("SELECT id FROM device_keys WHERE user_id = $1", &[user.into()])? {
@@ -115,7 +115,7 @@ fn exact_wraps(tx: &mut Tx, users: &[String], wraps: &[WrapIn]) -> Result<Vec<(S
     Ok(given.into_iter().collect())
 }
 
-fn insert_wraps(tx: &mut Tx, ws: &str, epoch: i64, wraps: &[(String, Vec<u8>)]) -> Result<(), ApiError> {
+pub(crate) fn insert_wraps(tx: &mut Tx, ws: &str, epoch: i64, wraps: &[(String, Vec<u8>)]) -> Result<(), ApiError> {
     for (key_id, wrapped) in wraps {
         tx.execute(
             "INSERT INTO wraps (workspace_id, epoch, key_id, wrapped) VALUES ($1, $2, $3, $4) ON CONFLICT (workspace_id, epoch, key_id) DO NOTHING",
@@ -147,6 +147,7 @@ pub fn add_device_key(state: &State, request: &Request, _: &PathParams) -> ApiRe
     let name: String = input.name.trim().chars().take(64).collect();
     state.db.tx(|tx| {
         let user = authenticate(state, tx, request)?;
+        user.person()?;
         let count = tx.query_one("SELECT COUNT(*) FROM device_keys WHERE user_id = $1", &[(&user.id).into()])?.map_or(0, |r| r.int(0));
         if count >= MAX_KEYS_PER_USER {
             return Err(ApiError::bad("this account has the maximum number of device keys"));
@@ -164,7 +165,7 @@ pub fn add_device_key(state: &State, request: &Request, _: &PathParams) -> ApiRe
 pub fn user_keys(state: &State, request: &Request, _: &PathParams) -> ApiResult {
     let email = query(request).get("email").map(|e| e.trim().to_lowercase()).unwrap_or_default();
     state.db.tx(|tx| {
-        authenticate(state, tx, request)?;
+        authenticate(state, tx, request)?.person()?;
         let Some(row) = tx.query_one("SELECT id FROM users WHERE email = $1", &[(&email).into()])? else {
             return Err(ApiError::not_found("no account with this address"));
         };
@@ -202,6 +203,7 @@ pub fn create(state: &State, request: &Request, _: &PathParams) -> ApiResult {
     }
     state.db.tx(|tx| {
         let user = authenticate(state, tx, request)?;
+        user.person()?;
         if tx.query_one("SELECT id FROM workspaces WHERE id = $1", &[(&input.id).into()])?.is_some() {
             return Err(ApiError::conflict("exists", "a workspace with this id exists", json!({})));
         }
@@ -229,7 +231,7 @@ pub fn get(state: &State, request: &Request, params: &PathParams) -> ApiResult {
         let user = authenticate(state, tx, request)?;
         let ws = membership(tx, id, &user)?;
         let rows = tx.query(
-            "SELECT m.user_id, u.email, m.role FROM members m JOIN users u ON u.id = m.user_id WHERE m.workspace_id = $1 ORDER BY u.email",
+            "SELECT m.user_id, u.email, m.role, u.runner_of FROM members m JOIN users u ON u.id = m.user_id WHERE m.workspace_id = $1 ORDER BY u.email",
             &[id.into()],
         )?;
         let mut members = Vec::new();
@@ -242,6 +244,7 @@ pub fn get(state: &State, request: &Request, params: &PathParams) -> ApiResult {
                 "userId": r.text(0),
                 "email": r.text(1),
                 "role": r.text(2),
+                "runner": !r.text(3).is_empty(),
                 "keys": keys.iter().map(|k| json!({ "id": k.text(0), "name": k.text(1), "publicKey": b64(&k.bytes(2)), "hasKey": k.int(3) > 0 })).collect::<Vec<_>>(),
             }));
         }
@@ -256,10 +259,12 @@ pub fn delete(state: &State, request: &Request, params: &PathParams) -> ApiResul
         let user = authenticate(state, tx, request)?;
         let ws = membership(tx, id, &user)?;
         require(&ws, Role::Owner)?;
-        for table in ["blobs", "wraps", "members"] {
+        for table in ["blobs", "wraps", "invites", "members"] {
             tx.execute(&format!("DELETE FROM {table} WHERE workspace_id = $1"), &[id.into()])?;
         }
         tx.execute("DELETE FROM workspaces WHERE id = $1", &[id.into()])?;
+        // Runner accounts exist for one workspace only.
+        tx.execute("DELETE FROM users WHERE runner_of = $1", &[id.into()])?;
         Ok((204, Json::Null))
     })
 }
@@ -341,9 +346,12 @@ pub fn add_member(state: &State, request: &Request, params: &PathParams) -> ApiR
         let user = authenticate(state, tx, request)?;
         let ws = membership(tx, id, &user)?;
         require(&ws, Role::Owner)?;
-        let Some(row) = tx.query_one("SELECT id FROM users WHERE email = $1", &[(&email).into()])? else {
+        let Some(row) = tx.query_one("SELECT id, runner_of FROM users WHERE email = $1", &[(&email).into()])? else {
             return Err(ApiError::not_found("no account with this address (they sign in once first)"));
         };
+        if !row.text(1).is_empty() {
+            return Err(ApiError::bad("runner credentials belong to one workspace (POST .../runners makes one)"));
+        }
         let new_id = row.text(0);
         if tx.query_one("SELECT role FROM members WHERE workspace_id = $1 AND user_id = $2", &[id.into(), (&new_id).into()])?.is_some() {
             return Err(ApiError::conflict("already_member", "already a member", json!({})));
@@ -354,6 +362,7 @@ pub fn add_member(state: &State, request: &Request, params: &PathParams) -> ApiR
         }
         tx.execute("INSERT INTO members (workspace_id, user_id, role) VALUES ($1, $2, $3)", &[id.into(), (&new_id).into(), role.as_str().into()])?;
         insert_wraps(tx, id, ws.epoch, &wraps)?;
+        tx.execute("DELETE FROM invites WHERE workspace_id = $1 AND accepted_by = $2", &[id.into(), (&new_id).into()])?;
         Ok((201, json!({ "userId": new_id, "role": role.as_str(), "epoch": ws.epoch })))
     })
 }
@@ -399,6 +408,8 @@ pub fn remove_member(state: &State, request: &Request, params: &PathParams) -> A
         tx.execute("DELETE FROM members WHERE workspace_id = $1 AND user_id = $2", &[id.into(), (&removed).into()])?;
         tx.execute("DELETE FROM wraps WHERE workspace_id = $1 AND key_id IN (SELECT id FROM device_keys WHERE user_id = $2)", &[id.into(), (&removed).into()])?;
         rotate_to(tx, &ws, &input)?;
+        // A removed runner credential stops existing (its sessions and key go with it).
+        tx.execute("DELETE FROM users WHERE id = $1 AND runner_of = $2", &[(&removed).into(), id.into()])?;
         Ok((200, json!({ "removed": removed, "epoch": input.epoch })))
     })
 }
