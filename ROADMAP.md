@@ -133,11 +133,11 @@ Secret variables: `secret: true` in an environment file, with the value resolved
 | T3 | CI runner: reports, exit codes, flags | done | 3ee1091, ea5b43c, 8304dcc, aa5f226 | 2026-11-01 |
 | T4 | Postman migration: environments and pm.* | done | cee58cb, 56bda1c, c629096, 1eaf04e, e4ed688, 53a0156 | 2026-11-01 |
 | T5 | Desktop = web app; web folder import/export | handoff | a1e7704, 767f0d2, c7ae8f5, 37a6385, 54611a7, f527ceb; macOS check in section 6 | 2026-11-01 |
-| T6 | Cookie jar and multipart in Rust and CLI | todo | | |
+| T6 | Cookie jar and multipart in Rust and CLI | done | a87f4ac, cb20c93, eacc7fb | 2026-11-01 |
 | T7 | Release infra: GitHub Releases, Docker image | done | ee41820; dry run cli-v0.3.0-rc.1, desktop-v0.2.0-rc.1; deployed | 2026-11-01 |
 | T8 | GitHub Action and GitLab template | done | 52f26f5, 0595081; cli-v0.3.0-rc.2; hitop-action aa873b7, 1223c47, tags v1, v1.0.0 | 2026-11-01 |
 | T9 | License notices, DCO, project policies | done | 51cd299; DCO verified on PR #1 | 2026-11-01 |
-| T10 | Opt-in telemetry | todo | | |
+| T10 | Opt-in telemetry | done (deploy pending) | server 032ec68, 15f4b4e (deployed); client a64c6c6, 4b8b898 | 2026-11-01 |
 | T11 | Launch readiness, release 0.3.0 / desktop 0.2.0 | todo | | |
 | T12 | `hitop mcp` | todo | | |
 | T13 | GraphQL | todo | | |
@@ -502,6 +502,41 @@ export PATH="$HOME/.cargo/bin:$PATH"
 - Cookie jar in the Rust transport (persisted per workspace), used by desktop and CLI.
 - CLI multipart and form bodies (`-F name=value`, `-F file=@path`).
 - **Done when:** mock-server tests for cookies across requests and multipart file upload; CI green.
+- **Notes (2026-11-01, done):**
+  - Core: `cookies.rs` (native) ports the web app's jar (`features.js` `parseSetCookie`,
+    `mergeCookies`, `cookieHeader`): host-only vs `Domain`, default path = request directory, `Path`,
+    `Secure`, `Expires` (HTTP dates parsed by hand) and `Max-Age` (wins), past expiry deletes, longest
+    path first; the same JSON shape (camelCase, `expires` in ms or null), so the web app's cookies load
+    as they are. The unit test repeats `webapp/tests/unit.mjs`'s cases. Persisted per workspace (the
+    keychain's workspace id: `global` for global storage, a folder's `workspace`) in
+    `<config>/hitop/cookies/<workspace>.json`; an empty jar removes the file. `http::execute_opts` /
+    `send_with` take `Options { timeout, jar }` (old functions unchanged); the jar adds `Cookie` only
+    when the request has none and reads every `Set-Cookie` of the final response with its final URL.
+    `form.rs`: `urlencoded` (`encodeURIComponent` rules), `multipart` (random boundary checked against
+    the parts), `request_body`/`outgoing` for saved `bodyMode` `urlencoded`/`multipart` requests.
+    `runner::run_collection_jar` takes the jar; `run_collection_opts` is unchanged. No new crates.
+  - CLI: `send -F name=value`, `-F name=@path[;type=mime]` (type guessed from the extension otherwise),
+    `--urlencoded`; `-F` without `-X` means POST; values get `${variables}`, files are read as bytes.
+    `run` and `requests send` now send saved form and multipart bodies (they went out empty before,
+    including Postman `urlencoded`/`formdata` imports). Cookies: `send`, `run` (across requests and
+    iterations; the jar is saved after each collection) and `requests send` use the workspace's jar;
+    `--no-cookies` turns it off; `hitop cookies ls|clear [-c <collection|folder>]`.
+  - Desktop (Lit web app in Tauri): requests use the Rust jar (`global` workspace, so the desktop and
+    `hitop send` without `-c` share it). `send_request` takes `cookies: bool` and returns the jar;
+    `cookies_load`/`cookies_save` back the Cookies page (platform `cookies`, `cookiesNote`); the old
+    `hitop_cookies` localStorage jar moves to Rust once. The web app keeps its own jar (proxied requests).
+  - T4 desktop gaps fixed: `run_pre_script`/`run_post_script` return `variables`, `run_post_script`
+    takes the sent `request` for `pm.request` (`tauri.js` passes `sent`); the Tauri mock does both; the
+    `[tauri]` Postman check now expects the token to reach the next request.
+  - Open: cookies set on a redirect reqwest follows are lost (only the final response counts, as with
+    the web proxy); folder collections in the desktop share the `global` jar rather than their own
+    workspace's; file rows of saved multipart requests have no file in a collection, so `hitop run`
+    sends an empty part named after `fileName` (as the web app does after a reload).
+  - Tests: hitop-core 131 unit (cookies 4, form 3 new) + 4 format; hitop 3 + 34 cli + 3 cookies_forms
+    (jar across `send`s, `cookies ls/clear`, `--no-cookies`, own Cookie header wins; a folder run with a
+    urlencoded login, cookie, multipart text fields and JSON; `-F` text + CSV + binary file, `;type=`,
+    `--urlencoded`, errors) + 9 folder + 5 postman + 12 run + 7 secrets; e2e both modes, new `[tauri]`
+    checks that the Rust jar (not the page) sends the cookie and keeps it in `cookies/global.json`.
 
 #### T7 Release infra: GitHub Releases, Docker image
 - `desktop-v*` tag → `tauri-apps/tauri-action` matrix: macOS universal `.dmg`, Windows
@@ -618,6 +653,45 @@ export PATH="$HOME/.cargo/bin:$PATH"
 - Update `PRIVACY.md` and the site privacy page.
 - **Done when:** server tests for de-duplication and that no IP is stored; client test that
   nothing is sent while off; deployed.
+- **Notes (2026-11-01, client done; the coordinator deploys):**
+  - Server half: 032ec68 (`server/src/telemetry.rs`, deployed), privacy page 15f4b4e. The client matches
+    the page as written; no page change was needed.
+  - Core `telemetry.rs` behind hitop-core feature `telemetry` (= `native`, off by default, so hitop-wasm
+    and the desktop default build don't have it). Settings `<config>/hitop/telemetry.json`, per surface
+    (`{"cli": {...}, "desktop": {...}}`: `enabled`, `asked`, `id`, `lastPing`), so `hitop telemetry on`
+    never turns on the desktop and the reverse. On makes the id (32 hex digits from
+    `secrets::new_workspace_id`), off deletes the id and the last ping time. The body is exactly
+    `{"id","surface","version","os"}` (os `macos|linux|windows|other`), POST with reqwest, 3 s timeout,
+    no Origin or Cookie. The attempt is recorded before sending, so an offline machine tries once a week,
+    not on every command. `HITOP_TELEMETRY_URL` overrides the endpoint (tests).
+  - CLI: feature `telemetry` on by default (`--no-default-features` builds have no code). `hitop
+    telemetry on|off|status`; status prints the endpoint and the exact body (a placeholder id while off),
+    the last and next date. The ping runs in a thread at the start of any other command (not `telemetry`
+    or `completions`); `main` waits up to 3 s for it at the end. A command that exits through
+    `process::exit` (a failed `send` assertion) may cut it off; it then counts as that week's. `main`
+    now maps errors to exit 1 itself (same `Error: ...` text) so it can wait.
+  - Desktop: crate feature `telemetry` (not default: a plain `tauri build`, the MAS build, has no ping);
+    `release-desktop.yml` passes `--features telemetry`. Commands `telemetry_status` / `telemetry_set`
+    exist in both builds and fail without the feature; the startup ping runs in a thread from `setup`.
+    The version is tauri.conf.json's. Web app (Tauri adapter only): `platform/tauri-settings.js`, a
+    Settings page in the sidebar (switch plus the exact body) and a first-run `confirm` (No has the
+    focus; Escape and a click outside count as No; either answer is stored). The page and question show
+    only when `telemetry_status` answers, so the MAS build embeds them dormant; the endpoint string lives
+    only in Rust. Generic adapter hooks: `pages`, `onStart`.
+  - Checks: `webapp/scripts/check-no-telemetry.mjs` (CI web job): `dist/` has no `api/ping`, `telemetry`,
+    `usage ping` or `hitop-settings`; `platform/web.js` has no telemetry path; control: `dist-tauri` has
+    the page and no endpoint. CI desktop job builds the MAS configuration (no feature) and fails if the
+    binary has `hitop.rws8.tech/api/ping`, `/api/ping`, `HITOP_TELEMETRY_URL` or `telemetry.json`, then
+    builds with `--features telemetry` and requires them (control).
+  - The GitHub Release desktop builds still ship the React UI (T5 switch pending the macOS check), which
+    has no toggle, so nothing can turn the ping on there until the switch; that matches the page.
+  - Tests: hitop-core 3 telemetry unit (off by default and per surface, once a week, dates); hitop 2
+    `tests/telemetry.rs` against httpmock: nothing sent while off (also after on then off, and no file
+    written while off), and on: `telemetry` itself sends nothing, the next command sends once with the
+    exact body, three more commands send nothing, 8 days later it sends again, a failed ping isn't
+    retried that week. e2e `tests/settings.cjs` (both modes): web has no page and no question; Tauri:
+    the question, No focused, Escape = No, asked once, the page shows and toggles, a build without the
+    ping has neither.
 
 #### T11 Launch readiness, release 0.3.0 / desktop 0.2.0
 - Launch-gate scenario as an automated test: import a Postman collection and environment, switch
@@ -800,6 +874,7 @@ Agent appends here; owner ticks when done.
 | 2026-11-01 | T8 | Publish the action to the GitHub Marketplace: open https://github.com/bohdaq/hitop-action/releases/tag/v1.0.0, Edit, tick "Publish this Action to the GitHub Marketplace" (accept the agreement once), primary category **Testing**, secondary **Continuous integration**, then Update release. The name "Run hitop collection" (from `action.yml`) must be unique on the Marketplace; if taken, change `name:` in `action.yml` and retag v1. Listing text, if a field asks for it: "Run hitop API collections from your repository in GitHub Actions: pinned hitop image, JUnit artifact, job summary, secrets from repository secrets, and a failing check when a request fails." || done 2026-11-01: https://github.com/marketplace/actions/run-hitop-collection |
 | 2026-11-01 | T5 | On your Mac, build the desktop with the web app: `cd webapp && npm ci && cd ../desktop && npm ci && npm run build:webapp` (needs `rustup target add wasm32-unknown-unknown` and `cargo install wasm-bindgen-cli --version 0.2.126 --locked`; for the MAS package use your usual signing, the overlay only changes the frontend). Check: (1) your existing collections, environments and history from the React app and the CLI show up; (2) send to a public host and to `http://localhost:<port>` (no CORS errors), a multipart file upload, a cookie set then sent back; (3) a post script with `assert.*` and `setContext` across a collection run; (4) Environments: add a secret, quit and reopen, the value is still there and `hitop secret ls --env <env>` shows it in the Keychain (macOS asks for access once); (5) Collections → Open folder on a `hitop init` folder, edit and save a request, check the YAML changed on disk (`git diff`); quit and reopen: the folder comes back (in the sandboxed MAS build it may ask you to open it again: tell me if so); (6) Export as zip and Import zip; Export dialog saves JSON; (7) the app runs on the oldest macOS you support (12, Safari 16.4 WebKit needed; if 12 without updates fails, say so). If all pass, say so and the React `desktop/src` gets deleted and `release-desktop.yml` switched to the overlay. | |
 | 2026-11-01 | T23 | Put the SMTP password on the VM: `/etc/hitop-sync/env` exists (root, 0600) but has no `SMTP_URL` line, so email sign-in at https://sync.hitop.rws8.tech answers 503. Add `SMTP_URL=smtp://noreply%40rws8.tech:<password>@127.0.0.1:587` (or `smtp://noreply:<password>@...` if the account logs in without the domain; percent-encode special characters in the password), then `sudo systemctl restart hitop-sync`. `SMTP_TLS_SERVER_NAME=mail.rws8.tech` is already there (STARTTLS on 127.0.0.1:587 verifies as mail.rws8.tech). Test: `curl --resolve sync.hitop.rws8.tech:443:127.0.0.1 -XPOST https://sync.hitop.rws8.tech/v1/auth/email -d '{"email":"<you>"}'` and `journalctl -u hitop-sync` shows "sign-in mail sent". || done 2026-11-01: owner added SMTP_URL; test sign-in mail to noreply@rws8.tech delivered (HTTP 202, postfix local delivery) |
+| 2026-11-01 | T10 | Nothing to do now; for the MAS build after the T5 switch: build it as today (plain `tauri build`, no `--features telemetry`), so it has no usage ping and the App Store "Data Not Collected" label stays true. CI checks that configuration on every push. | |
 | 2026-11-01 | T23 | Before any public launch of hitop sync: get an external review of the encryption design (`sync-server/THREAT_MODEL.md`) and code (`sync-server/crates/hitop-sync-crypto`, plus the T24 clients). Top item for the reviewer: the server hands out members' public keys, so key substitution is the open risk until clients pin fingerprints. | |
 
 ## 7. Setup the owner does before the agent starts

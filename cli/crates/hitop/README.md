@@ -179,8 +179,8 @@ hitop run ./my-api --env ci --iterations 3
 
 Cookies a response sets are sent with later requests to the same site, the way a browser does
 (domain, path, `Secure`, `Expires`/`Max-Age`; the same rules as the web app). Each workspace has its
-own jar, kept between runs: `hitop send` without `-c` uses the global one (shared with the desktop
-app), a collection or folder its own. `hitop cookies ls -c ./my-api` lists them, `hitop cookies clear`
+own jar, kept between runs: collections in global storage and `hitop send` without `-c` share the
+global one (also the desktop app's), each collection folder has its own. `hitop cookies ls -c ./my-api` lists them, `hitop cookies clear`
 empties a jar, and `--no-cookies` sends none and keeps none. A request's own `Cookie` header wins.
 Only the final response's `Set-Cookie` lines count: cookies set on a redirect hitop follows are not kept.
 

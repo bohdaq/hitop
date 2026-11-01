@@ -22,7 +22,10 @@ hitop/
 │       │   └── src/
 │       │       ├── model.rs        # Collection, Request, Header, HistoryItem structs
 │       │       ├── storage.rs      # Load/save collections, history, contexts
-│       │       ├── http.rs         # reqwest blocking client (rustls, no OpenSSL)
+│       │       ├── http.rs         # reqwest blocking client (rustls, no OpenSSL); execute_opts/send_with: timeout + cookie jar
+│       │       ├── cookies.rs      # cookie jar per workspace (<config>/hitop/cookies/<ws>.json), web app rules and JSON shape
+│       │       ├── form.rs         # urlencoded and multipart bodies; saved form requests (bodyMode) as sent
+│       │       ├── telemetry.rs    # opt-in weekly usage ping, feature `telemetry` (telemetry.json per surface)
 │       │       ├── interpolation.rs # ${variable} substitution
 │       │       ├── scripting.rs    # Pre/post request JS via boa_engine; loads the pm.* shim (PM_SHIM) for Postman scripts
 │       │       ├── runner.rs       # Sequential collection runner (RunOptions: bail, timeout, variable overrides)
@@ -37,6 +40,8 @@ hitop/
 │       └── hitop/              # Binary crate (published to crates.io)
 │           ├── tests/run.rs    # hitop run: JUnit shape (roxmltree), JSON report, exit codes, flags, masking
 │           ├── tests/postman.rs # hitop import --to of the fixtures/postman collections, run against httpmock
+│           ├── tests/cookies_forms.rs # cookie jar across send/run, -F uploads, saved form bodies
+│           ├── tests/telemetry.rs # nothing sent while off, at most once a week (HITOP_TELEMETRY_URL → httpmock)
 │           └── src/
 │               ├── main.rs         # clap CLI entry point
 │               ├── commands/source.rs # a collection argument: global name or folder path
@@ -44,6 +49,8 @@ hitop/
 │               ├── commands/secret.rs # `hitop secret set|get|rm|ls`, the `--secret` flag
 │               ├── commands/run.rs # `hitop run`: reporters, iterations, --data, exit codes 0/1/2
 │               ├── commands/data.rs # `--data` CSV (RFC 4180, hand written) and JSON rows
+│               ├── commands/cookies.rs # `hitop cookies ls|clear`, `--no-cookies`
+│               ├── commands/telemetry.rs # `hitop telemetry on|off|status` and the background ping (feature `telemetry`)
 │               └── output.rs       # Colored output, syntect highlighting
 │   ├── fixtures/sample/        # collection folder run by tests/folder.rs against httpmock
 │   └── fixtures/postman/       # Conduit (MIT), newman sample (Apache-2.0), Adyen BIN lookup (MIT), vendored with licenses
@@ -66,7 +73,9 @@ hitop/
 │       └── Entitlements.mas.inherit.plist  # MAS child process entitlements
 ├── webapp/                     # hitop.rws8.tech/app/: Lit + lit-material, reuses frontend/src/services
 │   ├── src/store.js            # all app logic (port of frontend/src/App.jsx), same localStorage keys; folders, zip
-│   ├── src/platform/           # adapters: web.js (fetch/proxy, localStorage, File System Access), tauri.js (invoke), history.js
+│   ├── src/platform/           # adapters: web.js (fetch/proxy, localStorage, File System Access), tauri.js (invoke), history.js;
+│   │                           # tauri-settings.js: desktop-only Settings page + first-run usage ping question
+│   ├── scripts/check-no-telemetry.mjs # CI: dist/ and web.js have no usage ping (control: dist-tauri has the page)
 │   ├── src/pm.js               # Postman scripts: loads shared/pm-shim.js, runScript, import report helpers
 │   ├── src/wasm/format.js      # hitop-wasm wrapper; src/wasm/pkg/ is built by scripts/build-wasm.mjs (gitignored)
 │   ├── src/zip.js              # collection folder ⇄ .zip (fflate)
@@ -123,6 +132,11 @@ hitop/
   Default is to run every request; `--no-stop-on-fail` is a hidden no-op. Variable order: collection, environment,
   data row, `--var`, secrets. A new hitop-core runtime dep also changes `desktop/src-tauri/Cargo.lock` (CI checks it `--locked`)
   and `cli/crates/hitop-wasm/Cargo.lock` (its own workspace; `npm run build` builds it `--locked`, so a stale lock breaks every web build)
+- Cookies: `send`, `run`, `requests send` keep a jar per workspace (`global` without `-c`, shared with the desktop);
+  `hitop cookies ls|clear [-c]`, `--no-cookies`. Forms: `send -F name=value -F file=@path[;type=mime]`, `--urlencoded`;
+  `run`/`requests send` send saved `bodyMode` urlencoded/multipart bodies (`form::outgoing`)
+- Usage ping: hitop-core feature `telemetry` (off by default; the CLI crate's default feature turns it on);
+  `hitop telemetry on|off|status`; never sent unless on, at most weekly; `HITOP_TELEMETRY_URL` points tests at a mock
 - YAML crate: `yaml_serde` (serde_yaml continued by the YAML org); HTTP tests use `httpmock` 0.8, never the public internet
 - Publish: `cd cli && cargo publish -p hitop-core` then `cargo publish -p hitop`
 - HTTP client: `reqwest 0.12` blocking + rustls (no OpenSSL)
@@ -145,7 +159,11 @@ hitop/
 - Two frontends until the owner's macOS check (ROADMAP T5): React `desktop/src` (default config, what
   `release-desktop.yml` ships) and the Lit web app via `--config src-tauri/tauri.webapp.conf.json`
   (`npm run build:webapp`, `dev:webapp`; CI checks it with `TAURI_CONFIG="$(cat tauri.webapp.conf.json)" cargo check`).
-  Web app commands: `send_request` (proxy envelope), `read_folder`, `write_folder`, `secret_get|set|delete`, `write_file`; dialog plugin
+  Web app commands: `send_request` (proxy envelope; `cookies: true` uses hitop-core's `global` jar and returns it),
+  `cookies_load|save`, `read_folder`, `write_folder`, `secret_get|set|delete`, `write_file`, `telemetry_status|set`; dialog plugin.
+  Script commands return script-set `variables`; `run_post_script` takes the sent `request` (pm.request)
+- Cargo feature `telemetry` (not default): the usage ping. `release-desktop.yml` builds with `--features telemetry`;
+  the MAS build (plain `tauri build`) must not; CI builds both and greps the binary for the endpoint
 - Dev: `cd desktop && npx tauri dev`
 - Build: `cd desktop && PATH="$HOME/.cargo/bin:$PATH" RUSTC="$HOME/.cargo/bin/rustc" npx tauri build`
 - All Tauri commands are in `src-tauri/src/commands.rs`
@@ -170,6 +188,8 @@ hitop/
 - Postman collections import through hitop-wasm `importPostman` (same importer and report as the CLI); scripts that
   mention pm/postman/tests/... run with the shim; script-set variables live in `store.scriptVariables` until reload
 - Secrets: environment `secrets` names, masked editor; `features.js` `exportableEnvironments()`/`maskSecrets()` for exports and run history
+- No telemetry in the web build: telemetry UI lives only in `platform/tauri-settings.js` (imported by tauri.js);
+  `node scripts/check-no-telemetry.mjs` after both builds checks it. Adapter hooks `pages`/`onStart` add desktop-only pages
 - Builds need the wasm32 target and the wasm-bindgen CLI 0.2.126 (`cargo install wasm-bindgen-cli --version 0.2.126 --locked`):
   `npm run build` (web, `/app/`, proxy), `npm run build:tauri` (`dist-tauri/`, no proxy). `npm run test:e2e:tauri` runs every
   e2e suite against `dist-tauri` with a mocked invoke (no server needed); new e2e suites use `tests/harness.cjs` so they run in both modes
