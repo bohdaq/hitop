@@ -432,5 +432,7 @@ Checked 2026-11-01:
       account over `smtp://…@127.0.0.1:587`, so check the certificate against `mail.rws8.tech`): DNS A record `sync.hitop.rws8.tech` → 168.119.17.57, and an SMTP
       mailbox for magic links (for example `noreply@rws8.tech`) with its password placed on the VM
       in `/etc/hitop-sync/env` as `SMTP_URL`.
-- [ ] Optional: a Swift toolchain on this workstation for T26 tests; an Anthropic API key in
+- [x] Swift 6.4.2 via swiftly (2026-11-01; `swift test` works; non-login shells need
+      `. ~/.local/share/swiftly/env.sh`).
+- [ ] Optional: an Anthropic API key in
       `~/.config/hitop-dev/anthropic.key` if you want T18 checked against the real API too.
