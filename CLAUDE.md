@@ -64,6 +64,7 @@ hitop/
 ├── server/                     # hitop-server: rws app serving the site + POST /api/proxy
 │   └── src/guard.rs            # address/port policy for the proxy (SSRF guard)
 ├── deploy/                     # build.sh, install.sh, systemd unit, front rws routes, README
+├── ROADMAP.md                  # agent work order to v1.x: decisions, rules, tranches T0–T26, status
 ├── docs/CNAME                  # only file left: keeps GitHub Pages 301ing bohdaq.github.io/hitop/* → hitop.rws8.tech
 └── CLAUDE.md                   # This file
 ```
@@ -137,11 +138,10 @@ PATH="$HOME/.cargo/bin:$PATH" RUSTC="$HOME/.cargo/bin/rustc" ~/.cargo/bin/cargo 
 
 ## App Store status
 
-- Apple Developer account: active (renewed June 2025)
-- Bundle ID `com.bohdaq.hitop` — needs to be registered at developer.apple.com
-- Entitlements and icon set ready
+- Both apps are live: macOS "HiTop API Client" and iOS "HiTop HTTP Client" (ids under "Website and proxy")
+- Bundle ID `com.bohdaq.hitop`; MAS entitlements and icon set in `desktop/src-tauri/`
 - Privacy policy: `https://hitop.rws8.tech/privacy.html` (old Pages URL redirects there)
-- Next step: register App ID → create certificates → sign and build → upload via Transporter
+- A desktop update needs a signed MAS build from the owner's Mac (upload via Transporter)
 
 ---
 

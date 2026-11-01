@@ -18,6 +18,7 @@ const INCLUDED = [
   "Collection variables with ${name} in URLs, headers and bodies",
   "JavaScript before and after each request",
   "Request history with status codes and timings",
+  "Environments, auth presets, query parameter toggles and test assertions in the web app, the Mac app and the CLI",
   "Highlighted JSON, XML and HTML responses",
   "Import and export as HITOP JSON or Postman v2.1",
   "No account and no sign up",
@@ -36,7 +37,7 @@ export function render() {
     <main id="main">
       <section class="container page-hero">
         <h1 class="hero-heading">Free where you test, <br />paid once where you live</h1>
-        <p class="lead">Every version has the full feature set. You pay only for the native apps, once, with no subscription.</p>
+        <p class="lead">The core features work in every version. You pay only for the native apps, once, with no subscription.</p>
       </section>
 
       <section class="section container" aria-labelledby="plans-title">

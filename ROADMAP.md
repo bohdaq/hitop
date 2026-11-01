@@ -111,7 +111,7 @@ Secret variables: `secret: true` in an environment file, with the value resolved
 
 | ID | Tranche | Status | Commits / release | Date |
 | --- | --- | --- | --- | --- |
-| T0 | Bootstrap and housekeeping | todo | | |
+| T0 | Bootstrap and housekeeping | done | pricing list, DEV_PLAN pointer, CLAUDE.md; deployed | 2026-11-01 |
 | T1 | YAML collection format in hitop-core and CLI | todo | | |
 | T2 | Secrets in the OS keychain | todo | | |
 | T3 | CI runner: reports, exit codes, flags | todo | | |
