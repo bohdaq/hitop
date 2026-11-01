@@ -146,7 +146,7 @@ Secret variables: `secret: true` in an environment file, with the value resolved
 | T16 | Response diff and code snippets | done | 5c550ac, 9b88ff5, 0d4caa8, 8acd583, 344d07d | 2026-11-01 |
 | T17 | OpenAPI import and sync | done | 68d6a14, 3628f76, d1878c0, 45ac576, e5292df, ed397f1, a1fd78e, be02942 | 2026-11-01 |
 | T18 | Bring-your-own-key AI | dropped | owner decision | 2026-11-01 |
-| T19 | v1.0 hardening and release | todo | | |
+| T19 | v1.0 hardening and release | done (handoffs) | fb37d84, 1b51e9f, 8503242, addb6db, e6babe2, a49eb5b, 27d6ce7, ce257e8, 26715ba, e4ca5e2, 274fb75; cli-v1.0.0, desktop-v1.0.0; hitop-action c623e3b; site not deployed | 2026-11-01 |
 | T20 | Git UI in desktop | done (handoff) | 3837aec, e3f5d49, 2229a15; CI 41306134755; macOS check in section 6 | 2026-11-01 |
 | T21 | Secret manager integrations | done (handoff) | 47d72f0, b375fb8, bdd1f67, 9d12eaf, 7979fa5; CI 41306134755; real-account check in section 6 | 2026-11-01 |
 | T22 | HTML reports and scheduled runs | done | 9c3302e, 7dd53a3, 2cdc097, 0638ca4; CI 41289440630 | 2026-11-01 |
@@ -1163,6 +1163,19 @@ export PATH="$HOME/.cargo/bin:$PATH"
     desktop 1.0.0 (tauri.conf.json, Cargo.toml, package.json, package-lock.json). Before tagging: cli `cargo test --locked` 351
     passed, clippy (all targets; core `--no-default-features`), hitop-wasm test + clippy (native, wasm32), server tests 10, cargo
     deny all workspaces, npm audit all three, `cargo publish --dry-run -p hitop-core`.
+  - Dependabot: the two moderate alerts were #237 fflate (webapp, fixed by 0.8.3) and #190 glib 0.18 (GHSA-wrw7-89jp-8q8g,
+    unsound `VariantStrIter`, fixed in glib 0.20) in the desktop lock: glib comes from Tauri 2's GTK 3 stack (gtk-rs 0.18) on
+    Linux and Tauri has no release on newer gtk-rs, and hitop never uses `VariantStrIter`; it stays open until Tauri moves
+    (cargo-deny reports it as informational "unsound", which doesn't fail the check).
+  - Releases on 1416bad (CI 41312937372 green; on 88d7c74 the e2e job failed once on jsonplaceholder and passed on rerun,
+    run 41311581124): Release CLI https://github.com/bohdaq/hitop/actions/runs/41312973145 green: crates.io hitop and
+    hitop-core 1.0.0, GitHub Release `cli-v1.0.0` with the five archives and `.sha256`, `ghcr.io/bohdaq/hitop:1.0.0`, `:latest`,
+    `:1.0.0-debug`, `:debug` (amd64 + arm64; `docker run ghcr.io/bohdaq/hitop:1.0.0 --version` → `hitop 1.0.0`). The first
+    cli-v1.0.0 run (41312515815, on 88d7c74) stopped in its test job before publishing anything: release-cli.yml's check job
+    lacked actionlint and the Vault/LocalStack services the tests need on CI since T21/T22; fixed in 274fb75 and the
+    unpublished tag moved to 1416bad. Release desktop https://github.com/bohdaq/hitop/actions/runs/41312516061 green (tag on
+    88d7c74): dmg (universal), app.tar.gz, msi, setup.exe, deb, rpm, AppImage, all 1.0.0. hitop-action c623e3b: README and
+    self-test default 1.0.0 (no action code change, so no v1.0.2 and `v1` stays on v1.0.1).
   - Deviations: no cargo-audit binary here, cargo-deny advisories is the audit (same RustSec DB). Desktop clippy on Linux couldn't
     run locally (no GTK dev libs); CI's desktop jobs cover it. `desktop-v1.0.0` on GitHub still ships the React UI
     (release-desktop.yml unchanged until the owner's T5 check), so it has no folders, WebSocket, gRPC or Git panel.
@@ -1511,21 +1524,7 @@ Agent appends here; owner ticks when done.
 | 2026-11-01 | T22 | Nothing to do now. `--reporter html` and the html artifact in `hitop schedule --github` workflows reach users with the next CLI release (0.3.0 images don't have it); the guides already say "releases after 0.3.0". The guide changes go live with the next site deploy. | |
 | 2026-11-01 | T20 | When you do the T5 macOS check (web app overlay build), try the Git panel: open a collection folder that is a git clone with an HTTPS remote (for example a private GitHub repo), make sure it is in a clean state, then: (1) Collections → the folder → Git (or the sidebar's Git); the branch, upstream and ↑/↓ show; (2) edit a request, see it under Changes with its diff, Stage, write a message, Commit (author = your git config; in the sandboxed MAS build the app may not see `~/.gitconfig`: it then asks for a name and email and keeps them in the repo's `.git/config`); (3) Push: in the MAS build it fails without a token and says so (outside the sandbox git's credential helper, for example osxkeychain, may answer); paste a fine-grained token (contents read/write) under Remote access, Push again (macOS may ask for Keychain access once; `security find-generic-password -s hitop -a git/github.com/token` shows it); (4) make a commit on GitHub's web editor to the same line, Pull: a conflict appears; Take theirs or edit the text, Commit merge, Push; (5) create a branch, switch back, delete it after merging. Outside the MAS build, an SSH remote should work through your ssh-agent (the host must be in `~/.ssh/known_hosts`). Tell me what fails, especially anything the sandbox blocks. | |
 | 2026-11-01 | T21 | Optional, with accounts you have: put one reference per manager you use into a test folder's environment (`token: ${secret:vault:secret/x#token}`, `${secret:aws:name#key}`, `${secret:azure:<vault>/<name>}`, `${secret:op:<vault>/<item>/<field>}`), sign in as usual (`vault login`, `aws sso login`, `az login`, `op signin`) and run `hitop secret check -c <folder>`: each should show ✓ (no value printed); tell me any that fails and its message. Agents had only Vault dev mode, LocalStack, stubs and mocks. On the Mac with the T5 check: does the desktop app opened from the Dock resolve a Vault reference (it doesn't see shell env vars like VAULT_ADDR; `~/.vault-token` alone isn't enough without the address), and does the MAS build run `op`/`az` (expected: sandbox blocks them)? Open question: should the desktop get a Settings field for VAULT_ADDR and friends? | |
-| 2026-11-01 | T26 | Build and ship the iOS companion (agents can't build for Apple platforms). On a Mac with Xcode 16+: (1) `cd ios/HitopKit && swift test` (42 tests; JavaScriptCore runs the scripts there; `HITOP_BIN=<path to hitop> swift test` adds the CLI comparison, `HITOP_TEST_KEYCHAIN=1` also writes and deletes one real keychain item). (2) `brew install xcodegen && cd ios/HitopCompanion && xcodegen && open HitopCompanion.xcodeproj`. (3) Decide: a new App Store app (keep bundle ids `hitop.rws8.tech.HitopCompanion` and `hitop.rws8.tech.HitopCompanion.Widget`, create them and the app group `group.hitop.rws8.tech.companion` in the developer portal, enable App Groups on both ids) or the next version of "HiTop HTTP Client" (then set `PRODUCT_BUNDLE_IDENTIFIER` to `hitop.rws8.tech.HiTop` and the widget to `hitop.rws8.tech.HiTop.Widget` in `project.yml`, and keep `ios/HiTop` only as history). Team is `XD7JHZ5DB3` as in the HiTop project. If you change the app group, change it in both `.entitlements` files and `Shared/Library.swift` (`AppGroup.id`). (4) On a device: open a collection folder from iCloud Drive (for example a `hitop init` folder or `cli/fixtures/sample` with a `local` environment pointing at a server you can reach), run one request and the collection, switch environment, set a secret in Secrets… and run `prod`, pin it (swipe) and add the "hitop runs" widget, run "Run hitop collection" and "Get last hitop run status" in Shortcuts. Check that a folder still opens after a relaunch and after the folder is renamed in Files. (5) App Review: the app has `NSAllowsArbitraryLoads` (as HiTop does; an API client calls hosts the user names) and a local network usage string; privacy label "Data Not Collected" holds (no telemetry, no network calls but the user's requests). Both targets carry a `PrivacyInfo.xcprivacy` (no tracking, no collected data; required-reason APIs: app-group UserDefaults `1C8F.1`, file metadata in the user-picked folder `3B52.1`): check the reasons against Apple's current list when you archive. The icon is a copy of HiTop's. Tell me what fails to compile: the app sources were written without an Apple SDK. | |
-
-## 7. Setup the owner does before the agent starts
-
-Checked 2026-11-01:
-
-- [x] Open changes in `webapp/` committed (UI review fixes, 49ceefe).
-- [x] Disk: 88 GB free.
-- [x] Empty public repo `bohdaq/hitop-action` exists.
-- [x] `CARGO_REGISTRY_TOKEN` works (published 0.2.0 on 2026-10-31). Owner confirmed (2026-11-01)
-      it is valid until at least mid-2027.
-- [x] Deploy path works through the tunnel pod (`deploy/README.md`), used 2026-11-01.
-- [x] Before T23 (Phase 3), done 2026-11-01 (DNS verified; SMTP uses the existing `noreply`
-      account over `smtp://…@127.0.0.1:587`, so check the certificate against `mail.rws8.tech`): DNS A record `sync.hitop.rws8.tech` → 168.119.17.57, and an SMTP
-      mailbox for magic links (for example `noreply@rws8.tech`) with its password placed on the VM
-      in `/etc/hitop-sync/env` as `SMTP_URL`.
-- [x] Swift 6.4.2 via swiftly (2026-11-01; `swift test` works; non-login shells need
-      `. ~/.local/share/swiftly/env.sh`).
+| 2026-11-01 | T19 | Mac App Store 1.0: on your Mac, from tag `desktop-v1.0.0`, build as before with plain `tauri build` (no `--features telemetry`), sign with your MAS identity and `Entitlements.mas.plist` (it now also has `com.apple.security.files.bookmarks.app-scope`), upload with Transporter. If the T5 check passed, build the web app overlay (`npm run build:webapp`) so the folders, WebSocket, gRPC and Git features are in it. | |
+| 2026-11-01 | T19 | Check the security-scoped bookmarks in the sandboxed MAS (overlay) build: Collections → Open folder on a `hitop init` folder, edit a request, quit, reopen: the folder comes back without asking and saves still work (also a Git panel action on it). Then rename or move the folder in Finder and relaunch: it should still open (stale bookmark renewed) or ask to open it again, never crash. `~/Library/Containers/tech.rws8.hitop/Data/Library/Application Support/tech.rws8.hitop/folder-bookmarks.json` should list the folder; closing the collection removes it. Tell me what the Console shows for `hitop:` lines if it fails. | |
+| 2026-11-01 | T19 | Optional: the App Store price change for 1.0 ($9–19 was the plan; today Mac $4.99, iOS $2.99), in App Store Connect, if you want it. Agents don't change prices. | |
+| 2026-11-01 | T19 | Deploy the site (`deploy/deploy.sh`): the comparison pages, README-linked guides and the home page now describe 1.0 (protocols, OpenAPI, snippets, secret managers, HTML reports, schedule) and pin 1.0.0. Not deployed by this tranche on request. Optional: the hitop-action Marketplace listing still shows v1.0.0/v1.0.1; nothing changed in the action. | |
