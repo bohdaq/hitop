@@ -151,8 +151,14 @@ jobs:
             server
             cli/crates/hitop-wasm
             cli
+            sync-server
       - name: Build site, web app and server
         run: ./deploy/build.sh
+      # tests/sync.cjs: two people in the app against a real sync server (web and desktop modes).
+      - name: Sync server for tests/sync.cjs
+        run: |
+          cargo build --locked --manifest-path sync-server/Cargo.toml
+          echo "HITOP_SYNC_SERVER_BIN=$GITHUB_WORKSPACE/sync-server/target/debug/hitop-sync-server" >> "$GITHUB_ENV"
       - name: Unit checks
         working-directory: webapp
         run: npm run test:unit

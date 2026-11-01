@@ -10,6 +10,7 @@ import { platform } from "../platform/index.js";
 import { testList } from "./request-view.js";
 import { methodLabel } from "../store.js";
 import { syncButton } from "./openapi-dialogs.js";
+import { isSyncRef } from "../sync.js";
 
 class LightElement extends LitElement {
   createRenderRoot() {
@@ -57,7 +58,7 @@ export class HitopCollections extends LightElement {
             <lit-material-button variant="outlined" ?disabled=${!s.collections.length || run.running} @click=${() => s.runAll()}>
               ${icon("play")} ${run.running ? `Running ${run.completed + 1} of ${s.collections.filter((c) => c.requests?.length).length}` : "Run all"}
             </lit-material-button>
-            ${platform().folders
+            ${platform().folders?.pick
               ? html`<lit-material-button variant="outlined" @click=${() => s.openFolder()}>${icon("folder-open")} Open folder</lit-material-button>`
               : nothing}
             <lit-material-button variant="outlined" @click=${() => this.querySelector("#zip-input").click()}>${icon("file-zip")} Import zip</lit-material-button>
@@ -71,7 +72,7 @@ export class HitopCollections extends LightElement {
           </div>
         </header>
         <p class="page-lead">A collection folder holds one YAML file per request, for git and for <code>hitop run</code> in CI.
-          ${platform().folders ? "Open one to work on its files directly, or import a .zip of one." : "Import a .zip of one here; to work on a folder directly, use Chrome, Edge or the desktop app."}</p>
+          ${platform().folders?.pick ? "Open one to work on its files directly, or import a .zip of one." : "Import a .zip of one here; to work on a folder directly, use Chrome, Edge or the desktop app."}</p>
         ${summary
           ? html`<lit-material-alert variant=${summary.failedCount ? "warning" : "success"}>
               <span slot="title">${summary.failedCount ? "The run stopped at a failed request" : "Every request succeeded"}</span>
@@ -136,11 +137,11 @@ export class HitopCollection extends LightElement {
                 ? folder.error
                   ? html`<span>Couldn't save to ${folder.label}: ${folder.error}</span>`
                   : html`<span>Saved to the folder ${folder.label} as you edit.</span>
-                      ${platform().git ? html`<lit-material-button variant="text" @click=${() => this.app.go("git", c.id)}>Git</lit-material-button>` : nothing}`
+                      ${platform().git && !isSyncRef(folder.ref) ? html`<lit-material-button variant="text" @click=${() => this.app.go("git", c.id)}>Git</lit-material-button>` : nothing}`
                 : html`<span>Was opened from the folder ${folder.label}. Reconnect to read it again and keep saving there.</span>
                     <lit-material-button variant="text" @click=${() => s.reconnectFolder(c.id)}>Reconnect folder</lit-material-button>`}
             </p>`
-          : platform().folders
+          : platform().folders?.pick
             ? html`<p class="folder-status">
                 <lit-material-button variant="text" @click=${() => s.saveToFolder(c.id)}>${icon("folder-open")} Save to folder</lit-material-button>
               </p>`

@@ -1606,7 +1606,7 @@ export class Store extends EventTarget {
 
   async openFolder() {
     const f = platform().folders;
-    if (!f) return;
+    if (!f?.pick) return;
     let ref;
     try {
       ref = await f.pick();
@@ -1632,7 +1632,7 @@ export class Store extends EventTarget {
   async saveToFolder(collectionId) {
     const f = platform().folders;
     const col = this.collection(collectionId);
-    if (!f || !col) return;
+    if (!f?.pick || !col) return;
     let ref;
     try {
       ref = await f.pick();

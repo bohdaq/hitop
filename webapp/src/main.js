@@ -27,5 +27,10 @@ import "@lit-material/text-field";
 import { initPlatform } from "./platform/index.js";
 
 // Storage loads before the app starts (the desktop reads it from Rust).
-await initPlatform();
+const p = await initPlatform();
+// hitop sync (web and desktop): shared collections kept in app storage, and the Sync page.
+const { withSyncFolders } = await import("./sync.js");
+const { syncPage } = await import("./views/sync-view.js");
+p.folders = withSyncFolders(p.folders);
+p.pages = [...(p.pages ?? []), syncPage];
 await import("./views/hitop-app.js");

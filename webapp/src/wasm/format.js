@@ -28,6 +28,26 @@ function api(m) {
     snippet: (input, lang) => call(m.snippet, input, lang),
     // [{ id, label }] in menu order.
     snippetLanguages: () => JSON.parse(m.snippetLanguages()),
+    // hitop sync (src/sync.js): hitop-core's sync plan and hitop-sync-crypto, as the CLI runs
+    // them. Keys and envelopes are base64url strings.
+    sync: {
+      plan: (local, state, remote, me) => call(m.syncPlan, local, state, remote, String(me)),
+      pushed: (state, push) => call(m.syncPushed, state, push),
+      resolve: (state, path, keepMine) => JSON.parse(m.syncResolve(JSON.stringify(state), String(path), Boolean(keepMine))),
+      isSyncedPath: (path) => m.syncIsSyncedPath(String(path)),
+      keygen: () => JSON.parse(m.syncKeygen()),
+      publicKey: (secret) => m.syncPublicKey(secret),
+      fingerprint: (publicKey) => m.syncFingerprint(publicKey),
+      newKey: () => m.syncNewKey(),
+      randomId: () => m.syncRandomId(),
+      wrap: (publicKey, workspace, epoch, key) => m.syncWrap(publicKey, workspace, epoch, key),
+      unwrap: (secret, workspace, epoch, wrapped) => m.syncUnwrap(secret, workspace, epoch, wrapped),
+      blobEpoch: (envelope) => m.syncBlobEpoch(envelope),
+      seal: (key, workspace, blob, version, epoch, path, text) => m.syncSeal(key, workspace, blob, BigInt(version), epoch, path, text),
+      open: (key, workspace, blob, version, envelope) => JSON.parse(m.syncOpen(key, workspace, blob, BigInt(version), envelope)),
+      // vectors/v1.json through this build; returns how many cases passed.
+      checkVectors: (json) => m.syncCheckVectors(typeof json === "string" ? json : JSON.stringify(json)),
+    },
   };
 }
 

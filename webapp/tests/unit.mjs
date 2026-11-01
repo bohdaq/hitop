@@ -188,4 +188,38 @@ assert.throws(() => schemaFromResponse('{"errors": [{"message": "introspection i
   assert.equal(withSecretRefs(same, {}), same);
 }
 
+// --- T24: hitop sync in WASM: the published crypto vectors, fingerprints, the plan ---
+{
+  const sync = format.sync;
+  const vectors = readFileSync(join(here, "../../cli/crates/hitop-sync-crypto/vectors/v1.json"), "utf8");
+  assert.ok(sync.checkVectors(vectors) >= 10, "every published test vector passes in the WASM build");
+  // The fingerprint of 32 zero bytes, as hitop-sync-crypto's test pins it.
+  assert.equal(sync.fingerprint("AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"), "62bd a406 8c54 b947 3e40 132e dd07 fbd2");
+  // Keys, wraps and blobs round trip, and are bound to their context.
+  const dev = sync.keygen();
+  assert.equal(sync.publicKey(dev.secret), dev.publicKey);
+  const ws = sync.randomId();
+  assert.match(ws, /^[0-9a-f]{32}$/);
+  const key = sync.newKey();
+  const wrapped = sync.wrap(dev.publicKey, ws, 1, key);
+  assert.equal(sync.unwrap(dev.secret, ws, 1, wrapped), key);
+  assert.throws(() => sync.unwrap(dev.secret, ws, 2, wrapped), "another epoch");
+  assert.throws(() => sync.unwrap(sync.keygen().secret, ws, 1, wrapped), "another device");
+  const env = sync.seal(key, ws, "b1", 3, 1, "requests/a.yaml", "name: A\n");
+  assert.equal(sync.blobEpoch(env), 1);
+  assert.deepEqual(sync.open(key, ws, "b1", 3, env), { path: "requests/a.yaml", text: "name: A\n" });
+  assert.throws(() => sync.open(key, ws, "b1", 4, env), "another version");
+  assert.throws(() => sync.open(key, ws, "b2", 3, env), "another blob");
+  // The same plan as the CLI: a new file is pushed, a server path outside the folder is skipped.
+  const empty = { seq: 0, entries: {}, conflicts: {}, losers: {} };
+  const plan = sync.plan({ "hitop.yaml": "format: 1\n", "notes.txt": "x" }, empty, [{ blob: "x", version: 1, vv: { a: 1 }, deleted: false, path: "../evil.yaml", text: "x" }], "me");
+  assert.deepEqual(plan.push.map((p) => p.path), ["hitop.yaml"]);
+  assert.equal(plan.skipped.length, 1);
+  assert.deepEqual(plan.write, {});
+  const st = sync.pushed(plan.state, plan.push[0]);
+  assert.equal(st.entries["hitop.yaml"].version, 1);
+  assert.equal(sync.isSyncedPath("requests/a.yaml"), true);
+  assert.equal(sync.isSyncedPath("../a.yaml"), false);
+}
+
 console.log("unit checks passed");
