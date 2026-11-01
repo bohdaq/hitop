@@ -160,8 +160,6 @@ pub fn run(args: GrpcArgs) -> Result<i32> {
         Some(_) => Action::Call,
     };
 
-    let (vars, masker) = session_variables(source.as_ref(), args.env.as_deref(), &args.vars, &args.secrets)?;
-    let masked = |e: anyhow::Error| anyhow!(masker.mask(&format!("{e:#}")));
 
     let mut request = saved.unwrap_or_else(|| Request { name: args.target.clone(), url: args.target.clone(), method: "GET".into(), kind: Some(GRPC.into()), ..Default::default() });
     for h in &args.headers {
@@ -183,6 +181,10 @@ pub fn run(args: GrpcArgs) -> Result<i32> {
     if args.plaintext {
         g.plaintext = true;
     }
+    let mut refs = std::collections::BTreeSet::new();
+    hitop_core::secret_refs::find_in_request(&request, &mut refs);
+    let (vars, masker) = session_variables(source.as_ref(), args.env.as_deref(), &args.vars, &args.secrets, refs)?;
+    let masked = |e: anyhow::Error| anyhow!(masker.mask(&format!("{e:#}")));
     let default_auth = source.as_ref().and_then(|s| s.collection.auth.clone());
     let base = source.as_ref().and_then(|s| s.folder()).map(PathBuf::from);
     let mut target = grpc::target(&request, default_auth.as_ref(), &vars, base.as_deref()).map_err(masked)?;

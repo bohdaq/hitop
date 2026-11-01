@@ -49,7 +49,8 @@ const INSTRUCTIONS: &str = "hitop: an HTTP API client. This server works on one 
 collection folder (hitop.yaml, requests/, environments/) or, without one, hitop's global storage. \
 Requests are found by name (or by their file path in a folder, such as orders/create-order). \
 Reference variables as ${name}; never put secret values in requests: secret variables are resolved \
-when a request runs (HITOP_SECRET_<ENV>_<NAME> env vars or the OS keychain) and every secret value \
+when a request runs (HITOP_SECRET_<ENV>_<NAME> env vars, the OS keychain, or ${secret:vault|aws|azure|op:...} \
+references already in the collection files) and every secret value \
 is shown as •••• in results. Variables, later ones win: globals, collection, environment, the call's \
 `variables`, variables set by scripts, secrets. Cookies that responses set are kept and sent like in \
 `hitop run`. There is no delete tool.";
@@ -58,6 +59,10 @@ is shown as •••• in results. Variables, later ones win: globals, collect
 pub struct McpArgs {
     /// Collection folder to serve (omit to serve global storage)
     folder: Option<PathBuf>,
+
+    /// Don't resolve ${secret:vault|aws|azure|op:...} references (also HITOP_SECRET_MANAGERS=off)
+    #[arg(long)]
+    no_secret_managers: bool,
 }
 
 /// What the session remembers between calls.
@@ -68,6 +73,8 @@ struct State {
     environment: Option<String>,
     /// Every secret value resolved in this session, masked in all output.
     known: Vec<String>,
+    /// `--no-secret-managers`.
+    no_secret_managers: bool,
 }
 
 #[derive(Clone)]
@@ -77,7 +84,8 @@ pub struct Hitop {
 }
 
 pub fn run(args: McpArgs) -> Result<()> {
-    let state = State::new(args.folder)?;
+    let mut state = State::new(args.folder)?;
+    state.no_secret_managers = args.no_secret_managers;
     let runtime = tokio::runtime::Builder::new_multi_thread().enable_all().build()?;
     runtime.block_on(async move {
         let server = Hitop { state: Arc::new(Mutex::new(state)), tool_router: Hitop::tool_router() };
@@ -99,7 +107,7 @@ impl State {
             // Global storage starts with the active environment, as `hitop run` does.
             None => storage::load_environments()?.pick(None)?.map(|e| e.name.clone()),
         };
-        Ok(State { folder, environment, known: vec![] })
+        Ok(State { folder, environment, known: vec![], no_secret_managers: false })
     }
 
     fn open(&self, collection: Option<&str>) -> Result<Source> {
@@ -145,10 +153,13 @@ impl State {
 
     /// Resolves the environment's and the globals' secrets, remembering the
     /// values for masking.
-    fn resolve(&mut self, source: &Source, env: Option<&Environment>) -> Result<(Secrets, HashMap<String, String>, Secrets)> {
+    /// `refs`: the `${secret:...}` references to resolve (each tool call
+    /// resolves them afresh, so a rotated value is picked up).
+    fn resolve(&mut self, source: &Source, env: Option<&Environment>, refs: &std::collections::BTreeSet<String>) -> Result<(Secrets, HashMap<String, String>, Secrets)> {
         let ws = source.workspace();
-        let flags = SecretFlags::default();
-        let secrets = secret::resolve(&ws, env, &flags).map_err(no_flag_hint)?;
+        let flags = SecretFlags { no_secret_managers: self.no_secret_managers, ..Default::default() };
+        let mut secrets = secret::resolve(&ws, env, &flags).map_err(no_flag_hint)?;
+        secret::add_refs(&mut secrets, refs, &flags)?;
         self.remember(&secrets);
         let (globals, global_secrets) = secret::resolve_globals(&ws, &source.globals()?, &flags).map_err(no_flag_hint)?;
         self.remember(&global_secrets);
@@ -158,7 +169,7 @@ impl State {
     /// [`resolve`] for masking only: a secret without a value is fine here.
     fn learn(&mut self, source: &Source) {
         if let Ok(env) = self.environment(source, None) {
-            let _ = self.resolve(source, env.as_ref());
+            let _ = self.resolve(source, env.as_ref(), &Default::default());
         }
     }
 
@@ -184,6 +195,21 @@ impl State {
         }
         Ok(())
     }
+}
+
+/// The `${secret:...}` references in the collection's variables and auth,
+/// the environment and the globals. Not the call's `variables`: a client
+/// may only use references the workspace files already hold.
+fn refs_around(source: &Source, env: Option<&Environment>, refs: &mut std::collections::BTreeSet<String>) -> Result<()> {
+    hitop_core::secret_refs::find_in_variables(&source.collection.variables, refs);
+    if let Some(auth) = &source.collection.auth {
+        hitop_core::secret_refs::find_in_json(&serde_json::to_value(auth)?, refs);
+    }
+    if let Some(e) = env {
+        hitop_core::secret_refs::find_in_environment(e, refs);
+    }
+    hitop_core::secret_refs::find_in_environment(&source.globals()?, refs);
+    Ok(())
 }
 
 /// A missing secret's error without the `--secret` hint: there are no flags
@@ -534,9 +560,12 @@ impl Hitop {
         self.call(move |st| {
             let source = st.open(p.collection.as_deref())?;
             let env = st.environment(&source, p.environment.as_deref())?;
-            let (secrets, globals, global_secrets) = st.resolve(&source, env.as_ref())?;
-            let mut col = source.collection.clone();
             let request = find(&source.collection, &p.request)?;
+            let mut refs = std::collections::BTreeSet::new();
+            hitop_core::secret_refs::find_in_request(request, &mut refs);
+            refs_around(&source, env.as_ref(), &mut refs)?;
+            let (secrets, globals, global_secrets) = st.resolve(&source, env.as_ref(), &refs)?;
+            let mut col = source.collection.clone();
             if request.is_websocket() {
                 bail!("'{}' is a WebSocket request: this server doesn't open WebSocket connections (use `hitop ws` in a terminal)", request.name);
             }
@@ -567,7 +596,10 @@ impl Hitop {
             }
             let source = st.open(p.collection.as_deref())?;
             let env = st.environment(&source, p.environment.as_deref())?;
-            let (secrets, globals, global_secrets) = st.resolve(&source, env.as_ref())?;
+            let mut refs = std::collections::BTreeSet::new();
+            hitop_core::secret_refs::find_in_collection(&source.collection, &mut refs);
+            refs_around(&source, env.as_ref(), &mut refs)?;
+            let (secrets, globals, global_secrets) = st.resolve(&source, env.as_ref(), &refs)?;
             let bail_on_fail = p.bail.unwrap_or(false);
             let mut options = options(p.variables, p.timeout_ms, globals, global_secrets);
             options.stop_on_fail = bail_on_fail;

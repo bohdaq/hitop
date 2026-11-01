@@ -19,6 +19,26 @@ jobs:
     defaults:
       run:
         working-directory: cli
+    # Dev servers for tests/secret_managers.rs (${secret:vault:...}, ${secret:aws:...}).
+    services:
+      vault:
+        image: hashicorp/vault:1.20.4
+        env:
+          VAULT_DEV_ROOT_TOKEN_ID: dev-root
+          VAULT_DEV_LISTEN_ADDRESS: 0.0.0.0:8200
+          SKIP_SETCAP: "true"
+        ports: ["8200:8200"]
+        options: --health-cmd "wget -qO- http://127.0.0.1:8200/v1/sys/health" --health-interval 2s --health-timeout 5s --health-retries 15
+      localstack:
+        image: localstack/localstack:4.4
+        env:
+          SERVICES: secretsmanager
+        ports: ["4566:4566"]
+        options: --health-cmd "curl -fs http://localhost:4566/_localstack/health" --health-interval 3s --health-timeout 5s --health-retries 30
+    env:
+      HITOP_TEST_VAULT_ADDR: http://127.0.0.1:8200
+      HITOP_TEST_VAULT_TOKEN: dev-root
+      HITOP_TEST_LOCALSTACK_URL: http://127.0.0.1:4566
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable

@@ -260,11 +260,19 @@ pub fn run(cmd: RequestsCmd) -> Result<()> {
             }
             let environment = source.environment(env.as_deref())?;
             let secret_flags = secrets;
-            let secrets = super::secret::resolve(&source.workspace(), environment.as_ref(), &secret_flags)?;
+            let mut secrets = super::secret::resolve(&source.workspace(), environment.as_ref(), &secret_flags)?;
             let mut vars = variables(&col.variables, environment.as_ref());
             secrets.apply(&mut vars);
             let (globals, global_secrets) = super::secret::resolve_globals(&source.workspace(), &source.globals()?, &secret_flags)?;
             let mut scopes = Scopes { globals, upper: vars };
+            let mut refs = std::collections::BTreeSet::new();
+            hitop_core::secret_refs::find_in_request(&req, &mut refs);
+            if let Some(auth) = &col.auth {
+                hitop_core::secret_refs::find_in_json(&serde_json::to_value(auth)?, &mut refs);
+            }
+            super::secret::refs_in_vars([&scopes.upper, &scopes.globals], &mut refs);
+            super::secret::add_refs(&mut secrets, &refs, &secret_flags)?;
+            super::secret::fill_refs(&secrets, &mut scopes);
             let masker = secrets.masker_with(&global_secrets);
             let masked = |e: anyhow::Error| anyhow::anyhow!(masker.mask(&format!("{e:#}")));
             let context_key = source.context_key();

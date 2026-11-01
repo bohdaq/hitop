@@ -177,13 +177,15 @@ fn var_pairs(vars: &[String]) -> Result<HashMap<String, String>> {
 /// Variables for a connection or call (`hitop ws`, `hitop grpc`), as for
 /// `hitop send`: globals < collection < environment < --var < secrets; and
 /// the masker for every secret value resolved.
-pub(crate) fn session_variables(source: Option<&Source>, env: Option<&str>, vars: &[String], flags: &SecretFlags) -> Result<(HashMap<String, String>, Masker)> {
+/// `refs`: the `${secret:...}` references the request itself uses; those in
+/// variable values are added here.
+pub(crate) fn session_variables(source: Option<&Source>, env: Option<&str>, vars: &[String], flags: &SecretFlags, mut refs: std::collections::BTreeSet<String>) -> Result<(HashMap<String, String>, Masker)> {
     let environment = match source {
         Some(s) => s.environment(env)?,
         None => storage::load_environments()?.pick(env)?.cloned(),
     };
     let workspace = source.map(|s| s.workspace()).unwrap_or_else(|| hitop_core::secrets::GLOBAL_WORKSPACE.into());
-    let secrets = secret::resolve(&workspace, environment.as_ref(), flags)?;
+    let mut secrets = secret::resolve(&workspace, environment.as_ref(), flags)?;
     let collection_vars = source.map(|s| s.collection.variables.clone()).unwrap_or_default();
     let mut upper = variables(&collection_vars, environment.as_ref());
     upper.extend(var_pairs(vars)?);
@@ -193,7 +195,14 @@ pub(crate) fn session_variables(source: Option<&Source>, env: Option<&str>, vars
         None => storage::load_globals()?,
     };
     let (globals, global_secrets) = secret::resolve_globals(&workspace, &globals, flags)?;
-    Ok((Scopes { globals, upper }.merged(), secrets.masker_with(&global_secrets)))
+    let mut scopes = Scopes { globals, upper };
+    if let Some(auth) = source.and_then(|s| s.collection.auth.as_ref()) {
+        hitop_core::secret_refs::find_in_json(&serde_json::to_value(auth)?, &mut refs);
+    }
+    secret::refs_in_vars([&scopes.upper, &scopes.globals], &mut refs);
+    secret::add_refs(&mut secrets, &refs, flags)?;
+    secret::fill_refs(&secrets, &mut scopes);
+    Ok((scopes.merged(), secrets.masker_with(&global_secrets)))
 }
 
 /// The exit code: 0, or 1 when the connection failed or --count wasn't reached.
@@ -214,9 +223,6 @@ pub fn run(args: WsArgs) -> Result<i32> {
         bail!("--message sends a saved request's message: give -c <collection> and the request's name");
     }
 
-    let (vars, masker) = session_variables(source.as_ref(), args.env.as_deref(), &args.vars, &args.secrets)?;
-    let out = Out { json: args.json, tty: std::io::stdout().is_terminal(), masker };
-    let masked = |e: anyhow::Error| anyhow!(out.m(&format!("{e:#}")));
 
     let mut request = saved.unwrap_or_else(|| Request { name: args.target.clone(), url: args.target.clone(), method: "GET".into(), kind: Some(WEBSOCKET.into()), ..Default::default() });
     for h in &args.headers {
@@ -229,6 +235,11 @@ pub fn run(args: WsArgs) -> Result<i32> {
     if !args.protocols.is_empty() {
         request.websocket.get_or_insert_with(WebSocket::default).subprotocols = args.protocols.clone();
     }
+    let mut refs = secret::refs_in(args.send.iter().map(String::as_str));
+    hitop_core::secret_refs::find_in_request(&request, &mut refs);
+    let (vars, masker) = session_variables(source.as_ref(), args.env.as_deref(), &args.vars, &args.secrets, refs)?;
+    let out = Out { json: args.json, tty: std::io::stdout().is_terminal(), masker };
+    let masked = |e: anyhow::Error| anyhow!(out.m(&format!("{e:#}")));
     let default_auth = source.as_ref().and_then(|s| s.collection.auth.clone());
     let target = websocket::target(&request, default_auth.as_ref(), &vars).map_err(masked)?;
     let mut queue = args.messages.iter().map(|name| websocket::message(&request, name, &vars)).collect::<Result<Vec<_>>>().map_err(masked)?;

@@ -211,7 +211,18 @@ pub fn run(args: RunArgs) -> Result<i32> {
     };
     let reporters = &args.reporter;
     let show = reporters.contains(&Reporter::Cli);
-    let plan = plan(&args)?;
+    let mut plan = plan(&args)?;
+    // ${secret:vault|aws|azure|op:...}: resolved once for the whole run.
+    let mut refs = std::collections::BTreeSet::new();
+    for col in &plan.collections {
+        hitop_core::secret_refs::find_in_collection(col, &mut refs);
+    }
+    if let Some(e) = &plan.environment {
+        hitop_core::secret_refs::find_in_environment(e, &mut refs);
+    }
+    let row_maps: Vec<HashMap<String, String>> = rows.iter().flatten().map(|r| r.iter().map(|(k, v)| (k.clone(), v.clone())).collect()).collect();
+    secret::refs_in_vars(row_maps.iter().chain([&plan.globals, &vars]), &mut refs);
+    secret::add_refs(&mut plan.secrets, &refs, &args.secrets)?;
     let env = plan.environment.as_ref();
     let options = RunOptions {
         stop_on_fail: args.bail,

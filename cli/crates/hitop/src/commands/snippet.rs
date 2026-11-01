@@ -51,17 +51,33 @@ pub fn run(args: SnippetArgs) -> Result<()> {
     let mut secret_names: Vec<String> = environment.iter().flat_map(|e| e.secrets.iter().cloned()).chain(globals.secrets.iter().cloned()).collect();
     secret_names.sort();
     secret_names.dedup();
+    // ${secret:vault|aws|azure|op:...} references: resolved only with --show-secrets.
+    let mut refs = std::collections::BTreeSet::new();
+    hitop_core::secret_refs::find_in_request(req, &mut refs);
+    if let Some(auth) = &col.auth {
+        hitop_core::secret_refs::find_in_json(&serde_json::to_value(auth)?, &mut refs);
+    }
+    hitop_core::secret_refs::find_in_variables(&vars, &mut refs);
     if args.show_secrets {
         let workspace = source.workspace();
         let (_, global_secrets) = super::secret::resolve_globals(&workspace, &globals, &args.secrets)?;
         global_secrets.apply(&mut vars);
-        super::secret::resolve(&workspace, environment.as_ref(), &args.secrets)?.apply(&mut vars);
+        let mut secrets = super::secret::resolve(&workspace, environment.as_ref(), &args.secrets)?;
+        super::secret::add_refs(&mut secrets, &refs, &args.secrets)?;
+        secrets.apply(&mut vars);
+        secrets.expand_refs(&mut vars);
         secret_names.clear();
     } else {
         // Never the stored value, not even a stale one in a JSON environment.
         for s in &secret_names {
             vars.remove(s);
         }
+        // A reference inside a variable's value becomes the placeholder too.
+        let placeholder = |r: &str| Some(hitop_core::snippet::placeholder(r));
+        for v in vars.values_mut() {
+            *v = hitop_core::secret_refs::expand(v, &placeholder);
+        }
+        secret_names.extend(refs);
     }
     let snippet = generate(args.lang, req, col.auth.as_ref(), &vars, &secret_names)?;
     print!("{}", snippet.code);

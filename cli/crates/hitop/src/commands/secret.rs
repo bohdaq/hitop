@@ -1,6 +1,9 @@
-//! `hitop secret set|get|rm|ls --env <env>` and the `--secret NAME=value`
-//! flag. Values live in the OS keychain (service `hitop`, account
-//! `<workspace>/<env>/<name>`), never in collection files or JSON storage.
+//! `hitop secret set|get|rm|ls --env <env>`, `hitop secret check` and the
+//! `--secret NAME=value` / `--no-secret-managers` flags. Values live in the
+//! OS keychain (service `hitop`, account `<workspace>/<env>/<name>`) or in a
+//! secret manager (`${secret:vault|aws|azure|op:...}` references), never in
+//! collection files or JSON storage.
+use std::collections::{BTreeMap, BTreeSet, HashMap};
 use std::io::{IsTerminal, Read};
 use std::path::PathBuf;
 
@@ -11,7 +14,10 @@ use colored::Colorize;
 use hitop_core::{
     format,
     model::Environment,
-    secrets::{self, env_var, Lookup, NoStore, SecretStore, Secrets, StoreError},
+    prepare::Scopes,
+    secret_managers::{self, Resolver},
+    secret_refs,
+    secrets::{self, env_var, Lookup, NoStore, Origin, SecretStore, Secrets, StoreError},
     storage,
 };
 
@@ -24,6 +30,11 @@ pub struct SecretFlags {
     /// HITOP_SECRET_<ENV>_<NAME> env var where shell history is kept.
     #[arg(long = "secret", value_name = "NAME=VALUE")]
     pub secret: Vec<String>,
+
+    /// Don't resolve ${secret:vault|aws|azure|op:...} references (also
+    /// HITOP_SECRET_MANAGERS=off); a request that uses one is an error
+    #[arg(long)]
+    pub no_secret_managers: bool,
 }
 
 impl SecretFlags {
@@ -106,6 +117,155 @@ pub fn resolve_globals(workspace: &str, globals: &Environment, flags: &SecretFla
     Ok((values, resolved.secrets))
 }
 
+/// Resolves the `${secret:...}` references in `refs` (inner texts) into
+/// `secrets` (origin "secret manager"), so they are filled in and masked like
+/// every other secret. Every reference that fails is named in the error.
+pub fn add_refs(secrets: &mut Secrets, refs: &BTreeSet<String>, flags: &SecretFlags) -> Result<()> {
+    let refs: BTreeSet<String> = refs.iter().filter(|r| secrets.get(r).is_none()).cloned().collect();
+    if refs.is_empty() {
+        return Ok(());
+    }
+    if flags.no_secret_managers || !secret_managers::enabled() {
+        let list: Vec<String> = refs.iter().map(|r| secret_refs::display(r)).collect();
+        let why = if flags.no_secret_managers { "--no-secret-managers" } else { "HITOP_SECRET_MANAGERS=off" };
+        bail!("secret manager references are turned off ({why}), but these are used: {}", list.join(", "));
+    }
+    let (values, errors) = Resolver::from_env().resolve_all(&refs);
+    if !errors.is_empty() {
+        bail!("could not resolve {} secret reference{}:\n  {}", errors.len(), if errors.len() == 1 { "" } else { "s" }, errors.join("\n  "));
+    }
+    for (name, value) in values {
+        secrets.insert(&name, value, Origin::SecretManager);
+    }
+    Ok(())
+}
+
+/// The references in variable values (collection, environment, globals, `--var`, data rows).
+pub fn refs_in_vars<'a>(maps: impl IntoIterator<Item = &'a HashMap<String, String>>, out: &mut BTreeSet<String>) {
+    for m in maps {
+        secret_refs::find_in_variables(m, out);
+    }
+}
+
+/// The references in strings (flags of `hitop send`, `ws`, `grpc`).
+pub fn refs_in<'a>(texts: impl IntoIterator<Item = &'a str>) -> BTreeSet<String> {
+    let mut out = BTreeSet::new();
+    for t in texts {
+        secret_refs::find(t, &mut out);
+    }
+    out
+}
+
+/// Puts resolved references into the variables: as variables of their own
+/// (`${secret:...}` in a request) and inside other variables' values.
+pub fn fill_refs(secrets: &Secrets, scopes: &mut Scopes) {
+    secrets.apply(&mut scopes.upper);
+    secrets.expand_refs(&mut scopes.upper);
+    secrets.expand_refs(&mut scopes.globals);
+}
+
+#[derive(Args)]
+pub struct CheckArgs {
+    /// Collection folder (or collection name); every collection in global storage when left out
+    #[arg(short = 'c', long)]
+    collection: Option<String>,
+
+    /// Only this environment's variables (default: every environment)
+    #[arg(short = 'e', long = "env")]
+    env: Option<String>,
+
+    /// Don't resolve, only list the references
+    #[arg(long)]
+    list: bool,
+}
+
+/// `hitop secret check`: every `${secret:...}` reference of a collection, its
+/// environments and globals, where it is used, and whether it resolves.
+/// Never prints a value.
+fn check(args: CheckArgs) -> Result<()> {
+    let mut found: BTreeMap<String, BTreeSet<String>> = BTreeMap::new();
+    let mut note = |refs: BTreeSet<String>, place: String| {
+        for r in refs {
+            found.entry(r).or_default().insert(place.clone());
+        }
+    };
+    let (collections, environments, globals) = match &args.collection {
+        Some(c) => {
+            let source = Source::open(c)?;
+            let envs = match &source.environments {
+                Some(e) => e.clone(),
+                None => storage::load_environments()?.environments,
+            };
+            let globals = source.globals()?;
+            (vec![source.collection], envs, globals)
+        }
+        None => (storage::load_collections()?, storage::load_environments()?.environments, storage::load_globals()?),
+    };
+    for col in &collections {
+        for r in &col.requests {
+            let mut refs = BTreeSet::new();
+            secret_refs::find_in_request(r, &mut refs);
+            note(refs, format!("request '{}'", r.name));
+        }
+        let mut refs = BTreeSet::new();
+        secret_refs::find_in_variables(&col.variables, &mut refs);
+        if let Some(auth) = &col.auth {
+            secret_refs::find_in_json(&serde_json::to_value(auth)?, &mut refs);
+        }
+        note(refs, format!("collection '{}'", col.name));
+    }
+    let mut env_seen = false;
+    for e in &environments {
+        if args.env.as_deref().is_some_and(|n| n != e.name) {
+            continue;
+        }
+        env_seen = true;
+        let mut refs = BTreeSet::new();
+        secret_refs::find_in_environment(e, &mut refs);
+        note(refs, format!("environment '{}'", e.name));
+    }
+    if let (Some(name), false) = (&args.env, env_seen) {
+        bail!("no environment '{name}'");
+    }
+    let mut refs = BTreeSet::new();
+    secret_refs::find_in_environment(&globals, &mut refs);
+    note(refs, "globals".into());
+
+    if found.is_empty() {
+        println!("{}", "No ${secret:...} references found.".dimmed());
+        return Ok(());
+    }
+    let off = !args.list && !secret_managers::enabled();
+    if off {
+        eprintln!("{} HITOP_SECRET_MANAGERS=off: listing only", "note:".yellow());
+    }
+    let mut resolver = Resolver::from_env();
+    let mut failed = 0;
+    for (r, places) in &found {
+        let places: Vec<&str> = places.iter().map(String::as_str).collect();
+        let shown = secret_refs::display(r);
+        if args.list || off {
+            println!("  {}  {}", shown.bold(), places.join(", ").dimmed());
+            continue;
+        }
+        match resolver.resolve(r) {
+            Ok(_) => println!("  {} {}  {}", "✓".green(), shown.bold(), places.join(", ").dimmed()),
+            Err(e) => {
+                failed += 1;
+                let why = e.strip_prefix(&shown).unwrap_or(&e).trim_start();
+                println!("  {} {}  {}\n      {}", "✗".red(), shown.bold(), places.join(", ").dimmed(), why.red());
+            }
+        }
+    }
+    if failed > 0 {
+        bail!("{failed} of {} secret references did not resolve", found.len());
+    }
+    if !args.list && !off {
+        println!("{} {} secret reference{} resolved", "✓".green(), found.len(), if found.len() == 1 { "" } else { "s" });
+    }
+    Ok(())
+}
+
 #[derive(Args)]
 #[command(group(clap::ArgGroup::new("scope").required(true).args(["env", "globals"])))]
 pub struct Target {
@@ -148,6 +308,10 @@ pub enum SecretCmd {
         #[command(flatten)]
         target: Target,
     },
+    /// List the ${secret:vault|aws|azure|op:...} references of a collection,
+    /// its environments and globals, and check that each one resolves (never
+    /// prints a value; exit 1 if one doesn't)
+    Check(CheckArgs),
     /// List the environment's secrets and where each value comes from (never
     /// the values)
     Ls {
@@ -204,8 +368,12 @@ fn read_value(label: &str) -> Result<String> {
 }
 
 pub fn run(cmd: SecretCmd) -> Result<()> {
+    if let SecretCmd::Check(args) = cmd {
+        return check(args);
+    }
     let store = store();
     match cmd {
+        SecretCmd::Check(_) => unreachable!(),
         SecretCmd::Set { name, value, target } => {
             let p = place(&target)?;
             let env = p.env.name.as_str();

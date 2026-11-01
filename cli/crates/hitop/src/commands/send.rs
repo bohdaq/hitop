@@ -115,7 +115,7 @@ pub fn run(args: SendArgs) -> Result<()> {
         None => storage::load_environments()?.pick(args.env.as_deref())?.cloned(),
     };
     let workspace = source.as_ref().map(|s| s.workspace()).unwrap_or_else(|| hitop_core::secrets::GLOBAL_WORKSPACE.into());
-    let secrets = secret::resolve(&workspace, environment.as_ref(), &args.secrets)?;
+    let mut secrets = secret::resolve(&workspace, environment.as_ref(), &args.secrets)?;
     let mut variables = variables(&collection_vars, environment.as_ref());
     secrets.apply(&mut variables);
     // Globals sit below everything else: a folder's globals.yaml, else global storage's.
@@ -125,7 +125,6 @@ pub fn run(args: SendArgs) -> Result<()> {
     };
     let (globals, global_secrets) = secret::resolve_globals(&workspace, &globals, &args.secrets)?;
     let mut scopes = Scopes { globals, upper: variables };
-    let masker = secrets.masker_with(&global_secrets);
 
     let headers: Vec<Header> = args
         .headers
@@ -152,6 +151,16 @@ pub fn run(args: SendArgs) -> Result<()> {
 
     let method = args.method.clone().unwrap_or_else(|| if args.form.is_empty() && graphql.is_none() { "GET" } else { "POST" }.into());
     let draft = Draft { method: &method, url: &url, headers: &headers, body: &body, pre_request_script: &pre_script, auth: auth.as_ref(), graphql };
+    // ${secret:vault|aws|azure|op:...} in the request or in a variable's value.
+    let auth_json = auth.as_ref().map(serde_json::to_value).transpose()?.unwrap_or_default();
+    let header_texts = headers.iter().flat_map(|h| [h.name.as_str(), h.value.as_str()]);
+    let graphql_texts = [query.as_deref().unwrap_or_default(), graphql_vars.as_str(), operation_name.as_str()];
+    let mut refs = secret::refs_in([url.as_str(), body.as_str()].into_iter().chain(header_texts).chain(graphql_texts).chain(args.form.iter().map(String::as_str)));
+    hitop_core::secret_refs::find_in_json(&auth_json, &mut refs);
+    secret::refs_in_vars([&scopes.upper, &scopes.globals], &mut refs);
+    secret::add_refs(&mut secrets, &refs, &args.secrets)?;
+    secret::fill_refs(&secrets, &mut scopes);
+    let masker = secrets.masker_with(&global_secrets);
     let pre = prepare_in(&draft, &scopes, &context).map_err(|e| anyhow::anyhow!(masker.mask(&format!("{e:#}"))))?;
     context.extend(pre.context_updates.clone());
     scopes.apply(&pre.variables, &pre.globals);
