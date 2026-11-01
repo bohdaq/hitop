@@ -5,6 +5,7 @@ import { LitElement, html, nothing } from "lit";
 import { confirm } from "@lit-material/confirm";
 import { icon } from "../icons.js";
 import { DEFAULT_SERVER, SyncClient } from "../sync.js";
+import { platform } from "../platform/index.js";
 
 const errorText = (e) => (e && e.message) || String(e);
 
@@ -30,6 +31,8 @@ class HitopSync extends LitElement {
     invite: { state: true },
     runner: { state: true },
     awaitingCode: { state: true },
+    ssoUrl: { state: true },
+    audit: { state: true },
   };
 
   createRenderRoot() {
@@ -99,7 +102,28 @@ class HitopSync extends LitElement {
               this.awaitingCode = true;
               this.note = "Check your mail for the sign-in code.";
             })}>Send code</lit-material-button>
+          <lit-material-button variant="outlined" ?disabled=${Boolean(this.busy)}
+            @click=${() => this.run("sso", async () => {
+              this.ssoUrl = await this.sync.startSso(this.field("sync-server"), this.field("sync-email"));
+              this.awaitingCode = false;
+              // The web app opens it in a new tab; the desktop app shows the link to open.
+              if (platform().name !== "tauri") window.open(this.ssoUrl, "_blank", "noopener,noreferrer");
+              this.note = "Sign in on your organization's page, then paste the code it shows here.";
+            })}>Sign in with SSO</lit-material-button>
         </div>
+        ${this.ssoUrl
+          ? html`<p class="hint">Sign-in page (open it in a browser if it didn't open): <a href=${this.ssoUrl} target="_blank" rel="noopener noreferrer">open</a></p>
+              <pre class="code-preview" aria-label="SSO sign-in link">${this.ssoUrl}</pre>
+              <div class="sync-form">
+                <lit-material-text-field id="sync-sso-code" variant="outlined" label="Code shown after signing in"></lit-material-text-field>
+                <lit-material-button variant="filled" ?disabled=${Boolean(this.busy)}
+                  @click=${() => this.run("signin", async () => {
+                    await this.sync.finishSso(this.field("sync-sso-code"));
+                    this.ssoUrl = null;
+                    await this.refresh();
+                  })}>Sign in</lit-material-button>
+              </div>`
+          : nothing}
         ${this.awaitingCode
           ? html`<div class="sync-form">
               <lit-material-text-field id="sync-code" variant="outlined" label="Code from the mail"></lit-material-text-field>
@@ -221,6 +245,7 @@ class HitopSync extends LitElement {
       this.team = await this.sync.members(c.id);
       this.invite = null;
       this.runner = null;
+      this.audit = null;
     });
   }
 
@@ -296,6 +321,7 @@ class HitopSync extends LitElement {
         : nothing}
       ${owner ? this.renderInvites(c) : nothing}
       ${owner ? this.renderRuns(c) : nothing}
+      ${owner ? this.renderAudit(c) : nothing}
     </div>`;
   }
 
@@ -344,6 +370,29 @@ class HitopSync extends LitElement {
       ${this.runner
         ? html`<p class="hint">Shown once. It decrypts this workspace: put it in your CI's secret store as HITOP_SYNC_RUNNER, nowhere else. Remove the runner under Members to revoke it.</p>
             <pre class="code-preview" aria-label="Runner credential">${this.runner.credential}</pre>`
+        : nothing}`;
+  }
+
+  renderAudit(c) {
+    const a = this.audit;
+    const when = (t) => new Date(t * 1000).toISOString().replace("T", " ").replace(/\.\d+Z$/, " UTC");
+    const detail = (d) => (d && Object.keys(d).length ? JSON.stringify(d) : "");
+    return html`<h3>Audit log</h3>
+      <p class="hint">Team actions in this workspace: members added and removed, role changes, invites, key rotations, runner credentials. The server keeps it for a year; each entry is chained to the one before, so an edited or deleted entry shows.</p>
+      <lit-material-button variant="outlined" ?disabled=${Boolean(this.busy)} @click=${() => this.run("audit", async () => {
+        this.audit = await this.sync.audit(c.id);
+      })}>${a ? "Reload" : "Show"} audit log</lit-material-button>
+      ${a
+        ? html`<p class=${a.check.ok ? "hint" : "sync-note"} role="status" aria-label="Audit chain">${a.check.ok ? `Chain intact: ${a.check.checked} entries checked by the server.` : `Chain broken: ${a.check.problem}`}</p>
+            <table class="sync-audit" aria-label=${`Audit log of ${c.name}`}>
+              <thead><tr><th>Time</th><th>Event</th><th>By</th><th>Details</th></tr></thead>
+              <tbody>
+                ${a.events.map((e) => html`<tr>
+                  <td>${when(e.at)}</td><td><code>${e.event}</code></td><td>${e.actor.email || "-"}${e.ip ? html`<br><span class="hint">${e.ip}</span>` : nothing}</td><td class="hint">${detail(e.detail)}</td>
+                </tr>`)}
+              </tbody>
+            </table>
+            ${a.more ? html`<p class="hint">Older entries: <code>hitop sync audit --limit 0</code>.</p>` : nothing}`
         : nothing}`;
   }
 

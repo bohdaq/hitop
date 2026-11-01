@@ -3,7 +3,9 @@
 // (HITOP_SYNC_SERVER_BIN, the sync-server binary; skipped without it unless CI is set). Sign in,
 // share a collection, invite, trust and add, open it on the other side, edit both ways, a
 // conflict resolved both ways (View both, Take theirs, Keep mine), delete, a runner credential,
-// and removing the member. The server's database never holds a URL or a request name.
+// and removing the member; the owner's audit log; Sign in with SSO (against Keycloak when
+// HITOP_SYNC_TEST_KEYCLOAK is set, see sync-server/tests/keycloak.rs). The server's database never
+// holds a URL or a request name.
 //   BASE=http://localhost:7879 HITOP_SYNC_SERVER_BIN=../sync-server/target/debug/hitop-sync-server node tests/sync.cjs
 const { spawn } = require('child_process');
 const fs = require('fs');
@@ -21,7 +23,7 @@ const freePort = () => new Promise((resolve) => {
   });
 });
 
-async function syncServer() {
+async function syncServer(extraEnv = {}) {
   const bin = process.env.HITOP_SYNC_SERVER_BIN;
   if (!bin) {
     if (process.env.CI) throw new Error('HITOP_SYNC_SERVER_BIN must be set on CI');
@@ -45,6 +47,7 @@ async function syncServer() {
       HITOP_SYNC_MAIL: 'log',
       // The web app's origin (the browser calls the server directly).
       HITOP_SYNC_ALLOWED_ORIGINS: new URL(BASE).origin,
+      ...extraEnv,
     },
     stdio: ['ignore', 'ignore', 'pipe'],
   });
@@ -245,12 +248,60 @@ async function syncServer() {
   await syncNow(bob);
   check('a removed member can no longer sync', (await alertText(bob)).includes('no such workspace'), await alertText(bob));
 
+  // The owner's audit log shows the team actions above, and its chain checks out.
+  await S(ada).getByRole('button', { name: 'Show audit log' }).click();
+  await idle(ada);
+  const auditText = await S(ada).locator('.sync-audit').innerText().catch(() => '');
+  check('the owner sees the audit log', ['workspace_created', 'invite_accepted', 'member_added', 'runner_created', 'member_removed', 'key_rotated'].every((e) => auditText.includes(e)) && auditText.includes('bob@example.com'), auditText.slice(0, 400) + (await alertText(ada)));
+  check('the audit chain is intact', (await S(ada).getByLabel('Audit chain').innerText()).includes('Chain intact'), await S(ada).getByLabel('Audit chain').innerText().catch(() => ''));
+
   // Bob deletes his (now dead) copy: it stays gone after a reload.
   await store(bob, 'const c = s.collections.find((c) => c.name === "Shop API"); s.deleteCollection(c.id); s.save();');
   await bob.page.reload({ waitUntil: 'networkidle' });
   await openSync(bob);
   await settle(bob.page);
   check('a deleted shared collection stays deleted', (await requests(bob, 'Shop API')) === null && (await S(bob).getByRole('button', { name: /Sync now/ }).count()) === 0 && (await bob.page.evaluate(() => Object.keys(localStorage).filter((k) => k.startsWith('hitop_sync_files:')).length)) === 0, JSON.stringify(await requests(bob, 'Shop API')));
+
+  // Sign in with SSO: this server has none.
+  await S(bob).getByRole('button', { name: 'Sign out' }).click();
+  await idle(bob);
+  await S(bob).getByLabel('Sync server').fill(server.url);
+  await S(bob).getByRole('button', { name: 'Sign in with SSO' }).click();
+  await idle(bob);
+  check('Sign in with SSO on a server without it says so', (await alertText(bob)).includes('no single sign-on'), await alertText(bob));
+  const kc = process.env.HITOP_SYNC_TEST_KEYCLOAK;
+  if (kc) {
+    // A second server signing in with Keycloak; the sign-in page runs in a real browser tab.
+    const secretFile = path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'hitop-sso-')), 'secret');
+    fs.writeFileSync(secretFile, 'hitop-sync-test-secret\n');
+    const sso = await syncServer({ HITOP_SYNC_OIDC_ISSUER: `${kc.replace(/\/+$/, '')}/realms/hitop`, HITOP_SYNC_OIDC_CLIENT_ID: 'hitop-sync', HITOP_SYNC_OIDC_CLIENT_SECRET_FILE: secretFile });
+    await S(bob).getByLabel('Sync server').fill(sso.url);
+    const popup = TAURI ? null : bob.page.context().waitForEvent('page');
+    await S(bob).getByRole('button', { name: 'Sign in with SSO' }).click();
+    await idle(bob);
+    const link = (await S(bob).getByLabel('SSO sign-in link').innerText()).trim();
+    let tab;
+    if (popup) tab = await popup;
+    else {
+      tab = await bob.page.context().newPage();
+      await tab.goto(link);
+    }
+    await tab.waitForSelector('#username', { timeout: 30000 });
+    await tab.fill('#username', 'alice');
+    await tab.fill('#password', 'alice-test-pw');
+    await tab.click('#kc-login');
+    await tab.waitForSelector('code', { timeout: 30000 });
+    const ssoCode = (await tab.locator('code').innerText()).trim();
+    check('the provider sends the browser back to the server, which shows a one-time code', ssoCode.length > 30 && (await tab.content()).includes('alice@corp.test'), ssoCode.slice(0, 10));
+    await tab.close();
+    await S(bob).getByLabel('Code shown after signing in').fill(ssoCode);
+    await S(bob).getByRole('button', { name: 'Sign in', exact: true }).click();
+    await idle(bob);
+    check('Sign in with SSO', (await S(bob).locator('.page-lead').first().innerText()).includes('alice@corp.test'), (await alertText(bob)) + (await S(bob).locator('.page-lead').first().innerText()));
+    sso.stop();
+  } else {
+    console.log('[sync] HITOP_SYNC_TEST_KEYCLOAK not set: the SSO sign-in with Keycloak is skipped');
+  }
 
   // The server never saw plaintext.
   const db = server.database();

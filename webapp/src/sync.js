@@ -225,10 +225,15 @@ export class SyncClient {
 
   // --- account ------------------------------------------------------------------------
 
-  async startSignIn(server, email) {
+  serverUrl(server) {
     server = (server || DEFAULT_SERVER).trim().replace(/\/+$/, "");
     const u = new URL(server);
     if (u.protocol !== "https:" && !["localhost", "127.0.0.1", "[::1]"].includes(u.hostname)) throw new Error("The sync server must be https:// (http:// only for localhost)");
+    return server;
+  }
+
+  async startSignIn(server, email) {
+    server = this.serverUrl(server);
     const r = await this.http(server, "POST", "/v1/auth/email", { email });
     if (r.status !== 202) throw new SyncError(r.status, r.json);
     this.pending = { server, email };
@@ -240,6 +245,42 @@ export class SyncClient {
     code = String(code).trim().split("#").pop();
     const r = await this.http(server, "POST", "/v1/auth/email/verify", { token: code });
     if (r.status !== 200) throw new SyncError(r.status, r.json);
+    await this.completeSignIn(server, r, email, deviceName);
+    this.pending = null;
+  }
+
+  // Single sign-on: the sync server signs in with its identity provider. The page it opens ends
+  // on the server, which shows a one-time code to paste here; finishing also needs a verifier
+  // that never leaves this page, so a code seen by anyone else is useless to them.
+  async ssoInfo(server) {
+    const r = await this.http(this.serverUrl(server), "GET", "/v1/auth/sso");
+    return r.status === 200 && r.json?.enabled ? r.json : null;
+  }
+
+  async startSso(server, email) {
+    server = this.serverUrl(server);
+    const bytes = crypto.getRandomValues(new Uint8Array(32));
+    const verifier = Array.from(bytes, (b) => b.toString(16).padStart(2, "0")).join("");
+    const digest = new Uint8Array(await crypto.subtle.digest("SHA-256", new TextEncoder().encode(verifier)));
+    const challenge = btoa(String.fromCharCode(...digest)).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
+    const r = await this.http(server, "POST", "/v1/auth/sso/start", { challenge, ...(email ? { email } : {}) });
+    if (r.status === 404) throw new Error("This sync server has no single sign-on; sign in by email");
+    if (r.status !== 200) throw new SyncError(r.status, r.json);
+    this.pendingSso = { server, verifier, url: r.json.url };
+    return r.json.url;
+  }
+
+  async finishSso(code, deviceName) {
+    const { server, verifier } = this.pendingSso ?? {};
+    if (!server) throw new Error("Start the SSO sign-in first");
+    const r = await this.http(server, "POST", "/v1/auth/sso/finish", { code: String(code).trim(), verifier });
+    if (r.status !== 200) throw new SyncError(r.status, r.json);
+    await this.completeSignIn(server, r, r.json.user.email, deviceName);
+    this.pendingSso = null;
+  }
+
+  // After a sign-in (`r.json` = {session, user}): keep this device's key or register one.
+  async completeSignIn(server, r, email, deviceName) {
     const session = r.json.session;
     const w = (await loadFormat()).sync;
     // The same account on this device again keeps its key.
@@ -261,7 +302,6 @@ export class SyncClient {
     await this.saveSecret(server, { session, secret });
     writeJson(ACCOUNT_KEY, { server, email: r.json.user.email ?? email, userId: r.json.user.id, keyId, deviceName: name });
     this.update((d) => (d.pins[keyId] = w.publicKey(secret)));
-    this.pending = null;
   }
 
   async signOut() {
@@ -563,6 +603,14 @@ export class SyncClient {
       if (!(await this.put(ws, { path: b.path, blob: b.blob, version: b.version + 1, vv, text: b.text }, next, keys[next]))) n++;
     }
     return { epoch: next, reencrypted: n };
+  }
+
+  // The workspace's audit log (owners), newest first, and the server's check of its hash chain.
+  async audit(collectionId, { limit = 50, event = "" } = {}) {
+    const ws = this.link(collectionId).workspace;
+    const q = new URLSearchParams({ limit: String(limit), ...(event ? { event } : {}) });
+    const [log, check] = await Promise.all([this.api("GET", `/v1/workspaces/${ws}/audit?${q}`), this.api("GET", `/v1/workspaces/${ws}/audit/verify`)]);
+    return { events: log.events, more: log.next !== null, check };
   }
 
   async setRole(collectionId, userId, role) {
