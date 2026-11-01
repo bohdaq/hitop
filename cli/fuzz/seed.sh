@@ -50,6 +50,10 @@ done
 if [ $# -ge 1 ]; then
   target=$1
   seconds=${2:-60}
+  toolchain=${FUZZ_TOOLCHAIN:-nightly}
+  # The host's own target: a cargo-fuzz built for musl (cargo binstall) would default to musl,
+  # which the sanitizers don't support.
+  host=$(rustc "+$toolchain" -vV | sed -n 's/^host: //p')
   cd "$cli"
-  exec cargo "+${FUZZ_TOOLCHAIN:-nightly}" fuzz run -O "$target" -- -max_total_time="$seconds" -timeout=25 -rss_limit_mb=2048 -print_final_stats=1
+  exec cargo "+$toolchain" fuzz run -O --target "$host" "$target" -- -max_total_time="$seconds" -timeout=25 -rss_limit_mb=2048 -print_final_stats=1
 fi
