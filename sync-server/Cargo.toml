@@ -1,5 +1,5 @@
 [workspace]
-members = [".", "crates/hitop-sync-crypto"]
+members = ["."]
 resolver = "2"
 
 [package]
@@ -35,7 +35,7 @@ webauthn-rs = "0.6"
 [dev-dependencies]
 # Tests act as the clients: they encrypt with the client crate and check the server only ever
 # holds ciphertext. The server itself never links it (see tests/no_crypto_in_server.rs).
-hitop-sync-crypto = { path = "crates/hitop-sync-crypto" }
+hitop-sync-crypto = { path = "../cli/crates/hitop-sync-crypto" }
 webauthn-authenticator-rs = { version = "0.6", default-features = false, features = ["softpasskey"] }
 
 [profile.release]

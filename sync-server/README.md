@@ -6,7 +6,7 @@ version vectors and wrapped keys only. Design and limits: [THREAT_MODEL.md](THRE
 
 - `hitop-sync-server` (this crate): **AGPL-3.0-or-later** ([LICENSE](LICENSE)). If you run a
   modified version for others, offer them its source.
-- `crates/hitop-sync-crypto`: the client-side encryption the CLI, desktop app and web app use.
+- `cli/crates/hitop-sync-crypto`: the client-side encryption the CLI, desktop app and web app use.
   **MIT**, like the clients. The server doesn't link it.
 
 Status: for testing. No accounts for sale, no public service yet; a test instance runs at

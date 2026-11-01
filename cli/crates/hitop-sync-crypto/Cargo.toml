@@ -6,8 +6,9 @@ authors = ["Bohdan Tsap <bohdaq@gmail.com>"]
 license = "MIT"
 description = "Client-side end-to-end encryption for hitop sync: HPKE key wrapping and XChaCha20-Poly1305 blobs"
 repository = "https://github.com/bohdaq/hitop"
-# Published with the clients in T24.
-publish = false
+# Published to crates.io before hitop (release-cli.yml), which depends on it for `hitop sync`.
+keywords = ["hpke", "encryption", "e2ee", "sync"]
+categories = ["cryptography"]
 
 [dependencies]
 hpke = { version = "0.15.1", default-features = false, features = ["alloc", "getrandom", "x25519", "chacha"] }

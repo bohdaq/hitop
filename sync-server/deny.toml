@@ -1,8 +1,8 @@
 # cargo deny for sync-server/ (AGPL-3.0-or-later). The server may link anything whose license is
 # compatible with the AGPL: the permissive set from ../deny.toml, MPL-2.0 (webauthn-rs), and the
-# GPL-3.0/AGPL-3.0 family. The MIT client crate (crates/hitop-sync-crypto) is checked separately
-# against ../deny.toml, so it can't pick up a copyleft dependency:
-#   cargo deny --config deny.toml --manifest-path sync-server/Cargo.toml --exclude hitop-sync-server check licenses
+# GPL-3.0/AGPL-3.0 family. The MIT client crate (cli/crates/hitop-sync-crypto, a dev-dependency
+# here) lives in the cli workspace and is checked there against ../deny.toml, so it can't pick up
+# a copyleft dependency:
 #   cargo deny --config sync-server/deny.toml --manifest-path sync-server/Cargo.toml --workspace check licenses
 [graph]
 all-features = true

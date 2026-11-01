@@ -1,7 +1,7 @@
 # hitop sync: threat model and encryption design
 
 Status: design and implementation for testing (T23). **Not externally reviewed.** An external
-review of this design and of `crates/hitop-sync-crypto` is required before any public launch.
+review of this design and of `cli/crates/hitop-sync-crypto` is required before any public launch.
 
 ## What is protected
 
@@ -91,7 +91,7 @@ may also re-encrypt everything after a removal.
 
 ### Test vectors
 
-`crates/hitop-sync-crypto/vectors/v1.json` has blob vectors (both directions, fixed nonce), key
+`cli/crates/hitop-sync-crypto/vectors/v1.json` has blob vectors (both directions, fixed nonce), key
 wrap vectors (open direction; HPKE encapsulation is randomized, and the recipient key pair comes
 from RFC 9180 DeriveKeyPair on a published IKM), and cases that must fail (flipped bit, wrong
 version, wrong blob id, wrong key, wrong epoch, wrong recipient, wrong workspace). The Rust test
@@ -141,7 +141,7 @@ process's own TLS (the front proxy terminates TLS); post-quantum security (X2551
 
 ## Open items before a public launch
 
-1. External review of this design and of `crates/hitop-sync-crypto`.
+1. External review of this design and of `cli/crates/hitop-sync-crypto`.
 2. Key fingerprints and trust-on-first-use pinning in the clients (T24).
 3. Consider a signed workspace manifest (hidden-blob and rollback detection) and per-member
    signatures.

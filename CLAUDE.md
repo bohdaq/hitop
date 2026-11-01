@@ -47,6 +47,7 @@ hitop/
 │       │   ├── tests/compat.rs     # format v1 compatibility suite (spec/compat/v1/): read, in-memory read, round trip, canonical write; v1 report shape
 │       │   └── tests/report_html.rs # golden report.html from tests/golden/report/report.json (UPDATE_GOLDEN=1), escaping of every field
 │       ├── hitop-wasm/         # format + model for the web app (wasm-bindgen =0.2.126), own workspace, not published
+│       ├── hitop-sync-crypto/  # MIT client crypto for hitop sync: HPKE key wrap + XChaCha20-Poly1305 blobs; vectors/v1.json (published before hitop)
 │       ├── hitop-git/          # desktop Git panel: git2 0.21 + vendored libgit2 (feature `net`: https/ssh, vendored OpenSSL), not published;
 │       │                       # json.rs = the one entry point (desktop `git` command, examples/git-json for the e2e mock); tests on temp repos
 │       └── hitop/              # Binary crate (published to crates.io)
@@ -138,7 +139,6 @@ hitop/
 ├── deploy/                     # build.sh, install.sh, systemd unit, front rws routes, README
 ├── sync-server/                # hitop sync (AGPL-3.0-or-later, own LICENSE/deny.toml): rws app, SQLite or Postgres
 │   ├── src/                    # api.rs (routing, CORS), auth.rs (magic link, passkeys), workspaces.rs (members, wraps, rotation), blobs.rs (CAS + version vectors), db.rs
-│   ├── crates/hitop-sync-crypto/ # MIT client crypto: HPKE key wrap + XChaCha20-Poly1305 blobs; vectors/v1.json
 │   ├── tests/                  # auth, sync, plaintext (server never sees plaintext), no_crypto_in_server, postgres
 │   ├── deploy/                 # hitop-sync.service, install.sh, rws-routes.toml (sync.hitop.rws8.tech)
 │   └── THREAT_MODEL.md, README.md (self-host guide), Dockerfile
@@ -366,9 +366,9 @@ hitop/
 - App Store: macOS "HiTop API Client" id6785294166 ($4.99, macOS 12+), iOS "HiTop HTTP Client" id6785326628 ($2.99, iOS 17+)
 
 ### Sync server (`sync-server/`)
-- Own Cargo workspace: `hitop-sync-server` (AGPL) + `crates/hitop-sync-crypto` (MIT, dev-dependency of the server only)
+- Own Cargo workspace: `hitop-sync-server` (AGPL); the MIT client crate `cli/crates/hitop-sync-crypto` is in the cli workspace and only a dev-dependency here
 - Tests: `cd sync-server && cargo test --workspace`; Postgres: `HITOP_SYNC_TEST_POSTGRES=postgres://... cargo test --features postgres --test postgres`
-- Licenses: `cargo deny --config sync-server/deny.toml --manifest-path sync-server/Cargo.toml --workspace check licenses advisories`, and the root `deny.toml` with `--exclude hitop-sync-server` for the MIT crate
+- Licenses: `cargo deny --config sync-server/deny.toml --manifest-path sync-server/Cargo.toml --workspace check licenses advisories` (the MIT crypto crate is checked with the cli workspace)
 - Live at https://sync.hitop.rws8.tech (VM, `hitop-sync.service`, 127.0.0.1:7881, env `/etc/hitop-sync/env`, DB `/var/lib/private/hitop-sync/sync.db`); deploy: copy the release binary + `deploy/` and run `deploy/install.sh`
 - `rws --check` on the VM needs `/etc/rws/admin.env` loaded (admin token), or it fails on any config
 

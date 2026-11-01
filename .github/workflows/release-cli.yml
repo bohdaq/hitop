@@ -1,6 +1,6 @@
 name: Release CLI
 
-# A tag like cli-v0.3.0 publishes hitop-core, then hitop, to crates.io (CARGO_REGISTRY_TOKEN
+# A tag like cli-v0.3.0 publishes hitop-sync-crypto (when its version is new), hitop-core, then hitop, to crates.io (CARGO_REGISTRY_TOKEN
 # secret), builds hitop for five targets, attaches them to a GitHub Release and pushes the
 # multi-arch image ghcr.io/bohdaq/hitop:<version> and :latest, plus <version>-debug and :debug
 # (cli/docker/Dockerfile.debug: busybox shell, for GitLab CI and other shell-based runners).
@@ -85,7 +85,20 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
       - name: Dry run (pre-release tag)
         if: needs.check.outputs.prerelease == 'true'
-        run: cargo publish --locked --dry-run -p hitop-core
+        run: cargo publish --locked --dry-run -p hitop-sync-crypto && cargo publish --locked --dry-run -p hitop-core
+      # hitop sync's client crypto: versioned on its own, so publish it only when crates.io
+      # doesn't have this version yet.
+      - name: Publish hitop-sync-crypto (when its version is new)
+        if: needs.check.outputs.prerelease != 'true'
+        run: |
+          v=$(cargo metadata --no-deps --format-version 1 | jq -r '.packages[] | select(.name == "hitop-sync-crypto") | .version')
+          if curl -fsS -A "hitop-release (github.com/bohdaq/hitop)" "https://crates.io/api/v1/crates/hitop-sync-crypto/$v" >/dev/null 2>&1; then
+            echo "hitop-sync-crypto $v is already on crates.io"
+          else
+            cargo publish --locked -p hitop-sync-crypto
+          fi
+        env:
+          CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
       - name: Publish hitop-core
         if: needs.check.outputs.prerelease != 'true'
         run: cargo publish --locked -p hitop-core
