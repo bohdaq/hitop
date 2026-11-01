@@ -2,21 +2,18 @@
 // cookie jar and the code editor, against a running hitop-server. Uses
 // httpbin.org, which echoes what it receives.
 //   BASE=http://localhost:7879 node tests/extras.cjs
-const { chromium } = require('playwright');
-const BASE = process.env.BASE || 'http://localhost:7879';
-const results = [];
-const check = (name, ok, extra = '') => results.push(`${ok ? 'PASS' : 'FAIL'} ${name}${extra ? ' — ' + extra : ''}`);
+const { launch, checker } = require('./harness.cjs');
+const { results, check } = checker();
 const settle = (p) => p.waitForTimeout(400);
 
 (async () => {
-  const b = await chromium.launch();
-  const p = await b.newPage({ viewport: { width: 1280, height: 900 } });
+  const h = await launch({ viewport: { width: 1280, height: 900 }, results });
+  const p = h.page;
   const errors = [];
   p.on('pageerror', (e) => errors.push(e.message));
-  const sent = [];
-  p.on('request', (r) => r.url().includes('/api/proxy') && sent.push(JSON.parse(r.postData())));
+  const sent = h.sent;
   const last = () => sent[sent.length - 1];
-  const tab = () => p.evaluate(() => JSON.parse(localStorage.getItem('hitop_tabs'))[+localStorage.getItem('hitop_current_tab')]);
+  const tab = async () => (await h.stored.tabs()).tab;
   const section = (name) => p.getByRole('tab', { name: new RegExp(`^${name}`) }).click();
   const send = async () => {
     await p.getByRole('button', { name: 'Send' }).click();
@@ -25,7 +22,7 @@ const settle = (p) => p.waitForTimeout(400);
   };
   const responseJson = async () => JSON.parse(await p.locator('.response-body').evaluate((el) => el.textContent.replace(/^JSON\s*(Copy)?/, '')));
 
-  await p.goto(BASE + '/app/', { waitUntil: 'networkidle' });
+  await p.goto(h.url, { waitUntil: 'networkidle' });
 
   // Parameter toggles
   await p.getByLabel('URL').fill('https://httpbin.org/get?keep=1&drop=2');
@@ -99,9 +96,7 @@ const settle = (p) => p.waitForTimeout(400);
   check('script text stored', (await tab()).preRequestScript === "const id = getContext('id');\nsetUrl(", JSON.stringify((await tab()).preRequestScript));
 
   check('no page errors', errors.length === 0, errors.join(' || '));
-  console.log(results.join('\n'));
-  await b.close();
-  if (results.some((r) => r.startsWith('FAIL'))) process.exit(1);
+  await h.finish();
 })().catch((e) => {
   console.log(results.join('\n'));
   console.error('CRASH', e.message.split('\n')[0]);

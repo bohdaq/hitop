@@ -1,23 +1,26 @@
 // End-to-end check of the web app against a running hitop-server (the proxy
-// must allow the origin). Seeds localStorage with data the React app wrote
-// (tests/legacy-storage.json), so it also proves the storage format is unchanged.
+// must allow the origin). Seeds the storage with data an older version wrote:
+// the React web app's localStorage (tests/legacy-storage.json), or in Tauri
+// mode the React desktop's and CLI's files (tests/desktop-storage/), so it
+// also proves old data still loads and is kept in its shape.
 //   BASE=http://localhost:7879 npm run test:e2e  [-- <screenshot dir>]
+//   HITOP_MODE=tauri node tests/e2e.cjs
 // Needs network: requests go to example.com and jsonplaceholder.typicode.com.
-const { chromium } = require('playwright');
 const fs = require('fs');
-const BASE = process.env.BASE || 'http://localhost:7879';
+const path = require('path');
+const { launch, checker } = require('./harness.cjs');
 const out = process.argv[2] || require('os').tmpdir();
-const fixture = JSON.parse(fs.readFileSync(require('path').join(__dirname, 'legacy-storage.json'), 'utf8'));
-const results = [];
-const check = (name, ok, extra = '') => { results.push(`${ok ? 'PASS' : 'FAIL'} ${name}${extra ? ' — ' + extra : ''}`); };
+const fixture = JSON.parse(fs.readFileSync(path.join(__dirname, 'legacy-storage.json'), 'utf8'));
+const { results, check } = checker();
 (async () => {
-  const b = await chromium.launch();
-  const ctx = await b.newContext({ viewport: { width: 1280, height: 860 } });
-  await ctx.addInitScript((f) => { if (!sessionStorage.getItem('seeded')) { for (const [k, v] of Object.entries(f)) localStorage.setItem(k, v); sessionStorage.setItem('seeded', '1'); } }, fixture);
-  const p = await ctx.newPage();
+  const h = await launch({ seed: fixture, tauriSeed: path.join(__dirname, 'desktop-storage'), results });
+  const p = h.page;
+  // The Billing API collection's id in each fixture.
+  const billingId = h.tauri ? '2' : 'col-legacy';
   const errors = []; p.on('pageerror', e => errors.push(e.message)); p.on('console', m => m.type() === 'error' && errors.push(m.text()));
-  const proxied = []; p.on('request', r => r.url().includes('/api/proxy') && proxied.push(JSON.parse(r.postData())));
-  await p.goto(BASE + '/app/', { waitUntil: 'networkidle' });
+  const proxied = h.sent;
+  h.mock?.keychain.set('global/Prod/token', 'tok-1');
+  await p.goto(h.url, { waitUntil: 'networkidle' });
 
   // 1. Old data renders
   const side = await p.locator('aside.sidebar').innerText();
@@ -62,10 +65,18 @@ const check = (name, ok, extra = '') => { results.push(`${ok ? 'PASS' : 'FAIL'} 
   await p.waitForTimeout(300);
 
   // 6. Storage stays in the old shape (React app can read it back)
-  const ls = await p.evaluate(() => ({ c: JSON.parse(localStorage.getItem('hitop_collections')), t: JSON.parse(localStorage.getItem('hitop_tabs')), ctx: JSON.parse(localStorage.getItem('hitop_contexts')) }));
+  await p.waitForTimeout(400);
+  const ls = { c: await h.stored.collections(), t: (await h.stored.tabs()).tabs, ctx: await h.stored.contexts() };
   const billing = ls.c.find(c => c.name === 'Billing API');
   check('storage shape unchanged', billing && billing.variables.token === 'abc' && billing.requests.every(r => 'url' in r && 'headers' in r && 'body' in r) && ls.t.every(t => 'requestBody' in t && 'loadedCollectionId' in t), '');
-  check('context persisted', ls.ctx['col-legacy']?.postId === 101, JSON.stringify(ls.ctx));
+  check('context persisted', ls.ctx[billingId]?.postId === 101, JSON.stringify(ls.ctx));
+  if (h.tauri) {
+    const hist = await h.stored.history();
+    check('[tauri] history kept in the Rust shape, with the old entry', hist.some((x) => x.url.endsWith('/todos/1') && x.status_code === 200) && hist.some((x) => x.url === 'https://example.com/' && typeof x.timestamp === 'number' && x.headers), JSON.stringify(hist.map((x) => x.url)));
+    const envs = await h.stored.environments();
+    const options = await p.locator('aside .env-select lit-material-select-option').allInnerTexts();
+    check('[tauri] old desktop environments load, secret values stay in the keychain', options.includes('Prod') && envs.list[0]?.secrets?.[0] === 'token' && !JSON.stringify(envs).includes('tok-1') && h.mock.keychain.get('global/Prod/token') === 'tok-1', `${options} ${JSON.stringify(envs)}`);
+  }
 
   // 7. Export → import round trip (Postman)
   await p.locator('aside').getByRole('button', { name: 'Export' }).click();
@@ -87,7 +98,5 @@ const check = (name, ok, extra = '') => { results.push(`${ok ? 'PASS' : 'FAIL'} 
   check('no horizontal scroll at 390px', !hscroll);
 
   check('no console errors', errors.length === 0, errors.slice(0, 3).join(' || '));
-  console.log(results.join('\n'));
-  await b.close();
-  if (results.some((r) => r.startsWith('FAIL'))) process.exit(1);
+  await h.finish();
 })().catch(e => { console.log(results.join('\n')); console.error('CRASH', e.message); process.exit(1); });

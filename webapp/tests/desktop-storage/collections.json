@@ -1,0 +1,63 @@
+[
+  {
+    "id": 1,
+    "name": "Default",
+    "requests": [
+      {
+        "id": 1793470569736000,
+        "name": "New Request",
+        "url": "",
+        "method": "GET",
+        "headers": [
+          {
+            "name": "",
+            "value": ""
+          }
+        ],
+        "body": "",
+        "preRequestScript": "",
+        "postRequestScript": ""
+      }
+    ],
+    "variables": {}
+  },
+  {
+    "id": 2,
+    "name": "Billing API",
+    "requests": [
+      {
+        "id": 3,
+        "name": "Create post",
+        "url": "${base-url}/posts",
+        "method": "POST",
+        "headers": [
+          {
+            "name": "Content-Type",
+            "value": "application/json"
+          },
+          {
+            "name": "Authorization",
+            "value": "Bearer ${token}"
+          }
+        ],
+        "body": "{\"title\":\"hello\"}",
+        "preRequestScript": "",
+        "postRequestScript": "setContext('postId', getResponseValue('id'));"
+      },
+      {
+        "id": 4,
+        "name": "Get post",
+        "url": "${base-url}/posts/1",
+        "method": "GET",
+        "headers": [],
+        "body": "",
+        "preRequestScript": "setHeader('X-Prev', String(getContext('postId')));",
+        "postRequestScript": ""
+      }
+    ],
+    "variables": {
+      "base-url": "https://jsonplaceholder.typicode.com",
+      "token": "abc"
+    }
+  }
+]

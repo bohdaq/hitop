@@ -24,11 +24,22 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
         with:
           components: clippy
+          targets: wasm32-unknown-unknown
       - uses: Swatinem/rust-cache@v2
         with:
-          workspaces: cli
+          workspaces: |
+            cli
+            cli/crates/hitop-wasm
       - run: cargo test --locked
       - run: cargo clippy --locked --all-targets -- -D warnings
+      - name: hitop-core without the native feature (what the web app builds)
+        run: cargo clippy --locked -p hitop-core --no-default-features --all-targets -- -D warnings
+      - name: hitop-wasm (its own workspace)
+        working-directory: cli/crates/hitop-wasm
+        run: |
+          cargo test --locked
+          cargo clippy --locked --all-targets -- -D warnings
+          cargo clippy --locked --target wasm32-unknown-unknown -- -D warnings
 
   server:
     name: Site server and proxy
@@ -53,9 +64,16 @@ jobs:
         with:
           node-version: 22
       - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: wasm32-unknown-unknown
+      - uses: taiki-e/install-action@v2
+        with:
+          tool: wasm-bindgen@0.2.126
       - uses: Swatinem/rust-cache@v2
         with:
-          workspaces: server
+          workspaces: |
+            server
+            cli/crates/hitop-wasm
       - name: Build site, web app and server
         run: ./deploy/build.sh
       - name: Unit checks
@@ -74,6 +92,9 @@ jobs:
       - name: End-to-end checks (they call example.com, jsonplaceholder.typicode.com and httpbin.org)
         working-directory: webapp
         run: BASE=http://localhost:7879 npm run test:e2e
+      - name: Web app built for the desktop (Tauri adapter, mocked invoke)
+        working-directory: webapp
+        run: npm run build:tauri && npm run test:e2e:tauri
 
   extension:
     name: Browser extension build
@@ -98,9 +119,16 @@ jobs:
         with:
           node-version: 22
       - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: wasm32-unknown-unknown
+      - uses: taiki-e/install-action@v2
+        with:
+          tool: wasm-bindgen@0.2.126
       - uses: Swatinem/rust-cache@v2
         with:
-          workspaces: desktop/src-tauri
+          workspaces: |
+            desktop/src-tauri
+            cli/crates/hitop-wasm
       - name: Tauri's Linux libraries
         run: |
           sudo apt-get update
@@ -108,5 +136,12 @@ jobs:
       - name: Frontend (Tauri embeds ../dist)
         working-directory: desktop
         run: npm ci && npm run build
-      - working-directory: desktop/src-tauri
+      - name: React desktop (what release-desktop.yml ships until the switch)
+        working-directory: desktop/src-tauri
         run: cargo check --locked
+      - name: Web app for the desktop (webapp, npm run build:tauri)
+        working-directory: webapp
+        run: npm ci && npm run build:tauri
+      - name: Desktop with the web app (tauri.webapp.conf.json)
+        working-directory: desktop/src-tauri
+        run: TAURI_CONFIG="$(cat tauri.webapp.conf.json)" cargo check --locked

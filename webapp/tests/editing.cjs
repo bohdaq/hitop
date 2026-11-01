@@ -2,19 +2,17 @@
 // the header, body, script and variable editors keeps focus and saves every
 // character; Enter submits dialogs; a HEAD response still shows its status.
 //   BASE=http://localhost:7879 node tests/editing.cjs
-const { chromium } = require('playwright');
-const BASE = process.env.BASE || 'http://localhost:7879';
-const results = [];
-const check = (name, ok, extra = '') => results.push(`${ok ? 'PASS' : 'FAIL'} ${name}${extra ? ' — ' + extra : ''}`);
+const { launch, checker } = require('./harness.cjs');
+const { results, check } = checker();
 const settle = (p) => p.waitForTimeout(400); // saves are batched every 250 ms
 
 (async () => {
-  const b = await chromium.launch();
-  const p = await b.newPage({ viewport: { width: 1280, height: 900 } });
+  const h = await launch({ viewport: { width: 1280, height: 900 }, results });
+  const p = h.page;
   const errors = [];
   p.on('pageerror', (e) => errors.push(e.message));
-  await p.goto(BASE + '/app/', { waitUntil: 'networkidle' });
-  const tab = () => p.evaluate(() => JSON.parse(localStorage.getItem('hitop_tabs'))[+localStorage.getItem('hitop_current_tab')]);
+  await p.goto(h.url, { waitUntil: 'networkidle' });
+  const tab = async () => (await h.stored.tabs()).tab;
   const focusedTag = () => p.evaluate(() => { let a = document.activeElement; while (a?.shadowRoot?.activeElement) a = a.shadowRoot.activeElement; return a?.localName; });
 
   await p.getByRole('button', { name: 'Add header' }).click();
@@ -62,11 +60,9 @@ const settle = (p) => p.waitForTimeout(400); // saves are batched every 250 ms
   await p.keyboard.press('Tab');
   await p.keyboard.type('https://api.example.com', { delay: 10 });
   await settle(p);
-  const vars = await p.evaluate(() => JSON.parse(localStorage.getItem('hitop_collections'))[0].variables);
+  const vars = (await h.stored.collections())[0].variables;
   check('variable typed in full, focus kept', vars.baseUrl === 'https://api.example.com' && (await focusedTag()) === 'input', JSON.stringify(vars));
 
   check('no page errors', errors.length === 0, errors.join(' || '));
-  console.log(results.join('\n'));
-  await b.close();
-  if (results.some((r) => r.startsWith('FAIL'))) process.exit(1);
+  await h.finish();
 })().catch((e) => { console.log(results.join('\n')); console.error('CRASH', e.message); process.exit(1); });

@@ -40,3 +40,70 @@ const masked = maskSecrets({ url: "https://x/?t=s3cr3t%20t0ken", headers: [{ nam
 assert.deepEqual(masked, { url: "https://x/?t=••••", headers: [{ name: "Authorization", value: "Bearer ••••" }], statusCode: 200 });
 assert.equal(maskSecrets("as is", []), "as is");
 console.log("features.js: all unit checks passed");
+
+// --- T5: hitop-core's format in WASM, zip files, the desktop's storage shapes ---
+import { readFileSync, readdirSync, statSync } from "node:fs";
+import { dirname, join, relative } from "node:path";
+import { fileURLToPath } from "node:url";
+import { formatFromBytes } from "../src/wasm/format.js";
+import { historyFromRust, historyToRust } from "../src/platform/history.js";
+
+const here = dirname(fileURLToPath(import.meta.url));
+const format = await formatFromBytes(readFileSync(join(here, "../src/wasm/pkg/hitop_wasm_bg.wasm")));
+const tree = (dir) => {
+  const out = {};
+  const walk = (d) => {
+    for (const n of readdirSync(d)) {
+      const p = join(d, n);
+      if (statSync(p).isDirectory()) walk(p);
+      else out[relative(dir, p).split("\\").join("/")] = readFileSync(p, "utf8");
+    }
+  };
+  walk(dir);
+  return out;
+};
+// The shared fixtures: hitop-core's golden folder must come out byte for byte.
+const golden = join(here, "../../cli/crates/hitop-core/tests/golden/every-field");
+const model = { collection: JSON.parse(readFileSync(join(golden, "collection.json"), "utf8")), environments: JSON.parse(readFileSync(join(golden, "environments.json"), "utf8")) };
+const goldenFiles = tree(join(golden, "folder"));
+assert.deepEqual(format.toFiles(model), goldenFiles, "the browser writes the golden folder exactly as the CLI does");
+const readBack = format.readFiles(goldenFiles, "folder");
+assert.deepEqual(format.toFiles(readBack), goldenFiles, "and reads it back to the same files");
+assert.throws(() => format.readFiles({ "hitop.yaml": "format: 2\n" }, "x"), /newer hitop/);
+
+// Old web app data with string ids converts (the T1 open item).
+const legacyCols = JSON.parse(JSON.parse(readFileSync(join(here, "legacy-storage.json"), "utf8")).hitop_collections);
+const legacyFiles = format.toFiles({ collection: legacyCols[1], environments: [] });
+assert.ok(legacyFiles["requests/create-post.yaml"].includes("url: ${base-url}/posts"), Object.keys(legacyFiles).join());
+
+// Zip: export, import, and a zip of the folder's contents only.
+const { zipToFiles } = await import("../src/zip.js");
+const { zipSync, strToU8 } = await import("fflate");
+{
+  const { files, name } = zipToFiles(zipSync({ "hitop.yaml": strToU8("format: 1\n"), "requests/a.yaml": strToU8("url: https://a\n"), "__MACOSX/._a.yaml": strToU8("x") }), "My API.zip");
+  assert.equal(name, "My API");
+  assert.deepEqual(Object.keys(files).sort(), ["hitop.yaml", "requests/a.yaml"]);
+  const nested = zipToFiles(zipSync({ "outer/my-api/hitop.yaml": strToU8("format: 1\n"), "outer/my-api/requests/b.yml": strToU8("url: x\n"), "outer/other.txt": strToU8("x") }));
+  assert.equal(nested.name, "my-api");
+  assert.deepEqual(Object.keys(nested.files).sort(), ["hitop.yaml", "requests/b.yml"]);
+  assert.throws(() => zipToFiles(zipSync({ "a.txt": strToU8("x") })), /no hitop.yaml/);
+  assert.throws(() => zipToFiles(new Uint8Array([1, 2, 3])), /isn't a zip/);
+}
+
+// The desktop's history.json: Rust's HistoryItem ⇄ the web app's items.
+const webItems = JSON.parse(JSON.parse(readFileSync(join(here, "legacy-storage.json"), "utf8")).hitop_history);
+const rust = historyToRust([...webItems, { id: 5, timestamp: "2026-11-01T00:00:00.000Z", url: "u", method: "POST", statusCode: 201, success: true, collectionName: "C", requestName: "R", isCollectionRun: true, headers: [], body: "b" }]);
+assert.deepEqual(format.normalize("history", rust), rust, "Rust reads and keeps every field");
+const backItems = historyFromRust(rust);
+assert.deepEqual(backItems[0], { ...webItems[0] }, "a web history item comes back as it was");
+assert.equal(backItems[1].collectionName, "C");
+const cli = historyFromRust(JSON.parse(readFileSync(join(here, "desktop-storage/history.json"), "utf8")));
+assert.equal(cli[0].statusCode, 200);
+assert.equal(cli[0].timestamp, new Date(1793470570537).toISOString(), "CLI history (ms timestamps) shows");
+
+// The old desktop's files read through Rust's model unchanged.
+for (const [kind, file] of [["collections", "collections.json"], ["history", "history.json"], ["environments", "environments.json"]]) {
+  const json = JSON.parse(readFileSync(join(here, "desktop-storage", file), "utf8"));
+  assert.deepEqual(format.normalize(kind, json), json, `${file} reads and writes unchanged`);
+}
+console.log("unit checks passed");

@@ -1,0 +1,13 @@
+[
+  {
+    "id": 1793470570537,
+    "timestamp": 1793470570537,
+    "url": "https://jsonplaceholder.typicode.com/todos/1",
+    "method": "GET",
+    "status_code": 200,
+    "success": true,
+    "collection_name": null,
+    "request_name": null,
+    "duration_ms": 143
+  }
+]

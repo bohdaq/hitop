@@ -1,0 +1,15 @@
+{
+  "active": null,
+  "environments": [
+    {
+      "id": "prod",
+      "name": "Prod",
+      "variables": {
+        "base": "https://api.example.com"
+      },
+      "secrets": [
+        "token"
+      ]
+    }
+  ]
+}
