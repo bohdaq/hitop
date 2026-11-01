@@ -323,7 +323,7 @@ export PATH="$HOME/.cargo/bin:$PATH"
     T8 writes the GitLab template.
   - Tests: hitop-core 103 unit (report 6, runner 1 new) + 4 format; hitop 3 unit (data) + 34 cli + 9 folder
     + 12 run + 7 secrets. `cargo deny` licenses ok. `cargo audit` isn't installed here; the only new crate is
-    the dev-dependency `roxmltree` 0.21.2, with no RustSec advisory.
+    the dev-dependency `roxmltree` 0.21.2, with no RustSec advisory (checked in rustsec/advisory-db).
 
 #### T4 Postman migration: environments and pm.*
 - Import Postman environment and globals JSON into environment files (secret type → `secret:

@@ -34,7 +34,8 @@ the --data row, --var, then secrets. --var values are not masked: give secret
 values with --secret or HITOP_SECRET_<ENV>_<NAME>.
 
 Reports: --reporter junit writes <out>/junit.xml, --reporter json writes
-<out>/report.json (format: spec/run-report.md). Secret values are •••• in both.";
+<out>/report.json, format: https://github.com/bohdaq/hitop/blob/main/spec/run-report.md
+Secret values are •••• in both.";
 
 #[derive(Clone, Copy, PartialEq, Eq, ValueEnum)]
 pub enum Reporter {
