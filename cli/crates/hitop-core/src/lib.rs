@@ -20,5 +20,6 @@ pub mod secret_refs;
 pub mod secrets;
 pub mod snippet;
 pub mod storage;
+pub mod sync;
 pub mod telemetry;
 pub mod websocket;
