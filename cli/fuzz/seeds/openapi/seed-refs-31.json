@@ -1,0 +1,9 @@
+{"openapi":"3.1.0","info":{"title":"Seed","version":"1"},"servers":[{"url":"/v1"}],
+"security":[{"key":[]}],
+"components":{"securitySchemes":{"key":{"type":"apiKey","in":"header","name":"X-Key"},"b":{"type":"http","scheme":"bearer"}},
+"parameters":{"id":{"name":"id","in":"path","required":true,"schema":{"type":"integer"}}},
+"schemas":{"Node":{"type":"object","properties":{"name":{"type":"string","example":"n"},"children":{"type":"array","items":{"$ref":"#/components/schemas/Node"}},"kind":{"enum":["a","b"]},"when":{"type":"string","format":"date-time"},"any":{"oneOf":[{"type":"number"},{"$ref":"#/components/schemas/Node"}]},"all":{"allOf":[{"type":"object","properties":{"x":{"type":["string","null"]}}}]}}}}},
+"paths":{"/nodes/{id}":{"parameters":[{"$ref":"#/components/parameters/id"}],
+"get":{"tags":["nodes"],"operationId":"getNode","parameters":[{"name":"q","in":"query","schema":{"type":"string"}},{"name":"X-Trace","in":"header","example":"t"}],"security":[{"b":[]}],"responses":{"200":{"description":"ok","content":{"application/json":{"schema":{"$ref":"#/components/schemas/Node"},"examples":{"one":{"value":{"name":"one"}}}}}}}},
+"put":{"tags":["nodes"],"requestBody":{"content":{"application/x-www-form-urlencoded":{"schema":{"type":"object","properties":{"a":{"type":"string"}}}}}},"responses":{"204":{"description":"none"}}}},
+"/upload":{"post":{"requestBody":{"content":{"multipart/form-data":{"schema":{"type":"object","properties":{"file":{"type":"string","format":"binary"}}}}}},"responses":{"default":{"description":"x"}}}}}}

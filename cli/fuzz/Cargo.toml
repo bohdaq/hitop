@@ -1,0 +1,40 @@
+[package]
+name = "hitop-fuzz"
+version = "0.0.0"
+edition = "2021"
+description = "cargo fuzz targets for hitop-core's readers (collection YAML, Postman, OpenAPI)"
+license = "MIT"
+publish = false
+
+# Its own workspace (nightly only, never part of the CLI build or `cargo publish`).
+[workspace]
+
+[package.metadata]
+cargo-fuzz = true
+
+[dependencies]
+libfuzzer-sys = "0.4"
+serde_json = "1"
+# The readers build without `native` (no reqwest, boa, tonic): what the web app runs.
+hitop-core = { path = "../crates/hitop-core", default-features = false }
+
+[[bin]]
+name = "collection_yaml"
+path = "fuzz_targets/collection_yaml.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "postman"
+path = "fuzz_targets/postman.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "openapi"
+path = "fuzz_targets/openapi.rs"
+test = false
+doc = false
+bench = false

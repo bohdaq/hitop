@@ -1,0 +1,48 @@
+# cargo fuzz targets for hitop-core's readers of untrusted input (cli/fuzz):
+# the collection folder YAML reader, the Postman importer and the OpenAPI
+# importer. Each runs for 60 seconds per push from the repository's fixtures;
+# a crash fails the job and uploads the input that caused it.
+name: Fuzz
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: fuzz-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  fuzz:
+    name: cargo fuzz (${{ matrix.target }})
+    runs-on: ubuntu-24.04
+    strategy:
+      fail-fast: false
+      matrix:
+        target: [collection_yaml, postman, openapi]
+    env:
+      FUZZ_TOOLCHAIN: nightly-2026-10-24
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: nightly-2026-10-24
+      - uses: taiki-e/install-action@v2
+        with:
+          tool: cargo-fuzz@0.13.2
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: cli/fuzz
+      - name: Run ${{ matrix.target }} for 60 seconds
+        run: cli/fuzz/seed.sh ${{ matrix.target }} 60
+      - name: Crash input
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: fuzz-${{ matrix.target }}-artifacts
+          path: cli/fuzz/artifacts
+          if-no-files-found: ignore
