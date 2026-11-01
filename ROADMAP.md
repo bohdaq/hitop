@@ -130,7 +130,7 @@ Secret variables: `secret: true` in an environment file, with the value resolved
 | T0 | Bootstrap and housekeeping | done | pricing list, DEV_PLAN pointer, CLAUDE.md; deployed | 2026-11-01 |
 | T1 | YAML collection format in hitop-core and CLI | done | 9697b6d, 8b1b6de, df70ec0, edf04e5 | 2026-11-01 |
 | T2 | Secrets in the OS keychain | done | accd2a4, 20951a8, 8104002, b15cb14 | 2026-11-01 |
-| T3 | CI runner: reports, exit codes, flags | todo | | |
+| T3 | CI runner: reports, exit codes, flags | done | 3ee1091, ea5b43c, 8304dcc, aa5f226 | 2026-11-01 |
 | T4 | Postman migration: environments and pm.* | todo | | |
 | T5 | Desktop = web app; web folder import/export | todo | | |
 | T6 | Cookie jar and multipart in Rust and CLI | todo | | |
@@ -291,6 +291,39 @@ export PATH="$HOME/.cargo/bin:$PATH"
   `--help` and the site guide.
 - **Done when:** a schema-shape test checks the JUnit XML (root `testsuites`, `testsuite`/`testcase` attributes, `failure` elements with messages); GitHub's test-report
   action renders it (checked in T8); CI green.
+- **Notes (2026-11-01, done):**
+  - Core: `report.rs` builds the JSON report and JUnit XML from the runner's masked steps, with no new
+    dependency (XML escaping, XML 1.0 character filtering and RFC 3339 timestamps written by hand), so
+    `desktop/src-tauri/Cargo.lock` is unchanged. `runner::run_collection_opts` takes `RunOptions`
+    (`stop_on_fail`, `timeout`, `overrides`); `run_collection` and `run_collection_with` are thin wrappers,
+    `RunStepResult` only gained `duration_ms` (the whole step). `http::execute_with` adds the timeout
+    (`execute` unchanged for the desktop). `format::read_environment_file` reads `--env-file`.
+  - JSON report: `spec/run-report.md` (CC BY 4.0). `reportVersion: 1`, `tool`, `startedAt`, `durationMs`,
+    `passed`, `bailed`, `summary` (collections, iterations, requests and assertions as total/passed/failed),
+    then `collections[] → iterations[] (data row) → requests[] (status, responseTimeMs, durationMs, error,
+    failure line) → assertions[] (name, passed, message)`. Fields may be added within v1; readers ignore
+    unknown keys; breaking changes bump the version. No response bodies.
+  - JUnit: `<testsuites>` → one `<testsuite>` per collection and iteration (`<properties>`: iteration,
+    environment, `data.<name>`) → one `<testcase>` per request (`classname` = collection). A failed request
+    has exactly one child: `<error type="RequestError">` (no response) or `<failure type="AssertionError">`
+    / `type="HttpStatus"`; `message` is the failure line, the text lists every assertion. Passing cases list
+    them in `<system-out>`. The shape test parses it with `roxmltree` (CLI dev-dependency, MIT/Apache).
+  - Exit codes: `main.rs` maps an `Err` from `run` to 2 (clap usage errors were already 2); request and
+    assertion failures are 1. In `--help` (`after_help`), the CLI README and the guide.
+  - Behaviour change: a run no longer stops at the first failed request by default; `--bail` does that
+    (across iterations and `--all` collections too). `--no-stop-on-fail` stays as a hidden, accepted no-op.
+  - Decisions: variable order collection < environment (`--env` or `--env-file`, which conflict) < data row
+    < `--var` < secrets; `--var` is not masked (documented). `--iterations` and `--data` conflict (one
+    iteration per row). Script context starts empty in every iteration. `--timeout` is per request.
+    `--out` defaults to `hitop-reports`; the `cli` reporter alone writes no files. `--data`: CSV with a
+    header row (RFC 4180, parser in `commands/data.rs`, no crate) or a JSON array of objects (values turned
+    into strings).
+  - Site guide `site/content/guides/run-collections-in-ci.md` (`/terms/run-collections-in-ci.html`), built,
+    not deployed. A GitLab example was left out: the ghcr image is distroless (no shell for `script:`), and
+    T8 writes the GitLab template.
+  - Tests: hitop-core 103 unit (report 6, runner 1 new) + 4 format; hitop 3 unit (data) + 34 cli + 9 folder
+    + 12 run + 7 secrets. `cargo deny` licenses ok. `cargo audit` isn't installed here; the only new crate is
+    the dev-dependency `roxmltree` 0.21.2, with no RustSec advisory.
 
 #### T4 Postman migration: environments and pm.*
 - Import Postman environment and globals JSON into environment files (secret type → `secret:
@@ -525,6 +558,7 @@ Agent appends here; owner ticks when done.
 | Date | Tranche | What the owner needs to do | Done |
 | --- | --- | --- | --- |
 | 2026-11-01 | T2 | On your Mac (and a Windows or desktop Linux box if handy), check the keychain once: `hitop env add t2 && hitop secret set token --env t2` (macOS asks to allow access), then `hitop secret get token --env t2`, `hitop secret ls --env t2`, `hitop secret rm token --env t2`. The agent's machine and CI have no keychain, so only the fallback path is tested there. | |
+| 2026-11-01 | T3 | Open question, no action needed now: masking replaces every occurrence of a secret value, so a very short value (one to three characters) also masks those characters elsewhere in logs and reports (`token=t` turns every `t` into `••••`). Should hitop warn about, or refuse to mask, secrets shorter than some length? Until decided it masks them (safe side). | |
 
 ## 7. Setup the owner does before the agent starts
 

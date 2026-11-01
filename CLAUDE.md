@@ -25,17 +25,21 @@ hitop/
 │       │       ├── http.rs         # reqwest blocking client (rustls, no OpenSSL)
 │       │       ├── interpolation.rs # ${variable} substitution
 │       │       ├── scripting.rs    # Pre/post request JS via boa_engine
-│       │       ├── runner.rs       # Sequential collection runner
+│       │       ├── runner.rs       # Sequential collection runner (RunOptions: bail, timeout, variable overrides)
+│       │       ├── report.rs       # run reports: JSON (spec/run-report.md, reportVersion 1) and JUnit XML, no deps
 │       │       ├── export.rs       # HITOP and Postman v2.1 import/export
 │       │       ├── secrets.rs      # secret variables: resolve order, keychain (keyring), Masker (••••)
 │       │       └── format/         # collection folders (YAML, spec/collection-format.md) ⇄ the JSON model
 │       │   └── tests/format.rs     # golden files (tests/golden/, UPDATE_GOLDEN=1 regenerates) + proptest round trip
 │       └── hitop/              # Binary crate (published to crates.io)
+│           ├── tests/run.rs    # hitop run: JUnit shape (roxmltree), JSON report, exit codes, flags, masking
 │           └── src/
 │               ├── main.rs         # clap CLI entry point
 │               ├── commands/source.rs # a collection argument: global name or folder path
 │               ├── commands/folder.rs # `hitop init`, `hitop convert`
 │               ├── commands/secret.rs # `hitop secret set|get|rm|ls`, the `--secret` flag
+│               ├── commands/run.rs # `hitop run`: reporters, iterations, --data, exit codes 0/1/2
+│               ├── commands/data.rs # `--data` CSV (RFC 4180, hand written) and JSON rows
 │               └── output.rs       # Colored output, syntect highlighting
 │   └── fixtures/sample/        # collection folder run by tests/folder.rs against httpmock
 ├── desktop/                    # Tauri 2.0 desktop app
@@ -72,6 +76,7 @@ hitop/
 │   └── src/guard.rs            # address/port policy for the proxy (SSRF guard)
 ├── deploy/                     # build.sh, install.sh, systemd unit, front rws routes, README
 ├── spec/collection-format.md   # collection folder format v1 (CC BY 4.0)
+├── spec/run-report.md          # `hitop run --reporter json` report, reportVersion 1, and the JUnit shape (CC BY 4.0)
 ├── ROADMAP.md                  # agent work order to v1.x: decisions, rules, tranches T0–T26, status
 ├── docs/CNAME                  # only file left: keeps GitHub Pages 301ing bohdaq.github.io/hitop/* → hitop.rws8.tech
 └── CLAUDE.md                   # This file
@@ -91,6 +96,11 @@ hitop/
   resolve order `HITOP_SECRET_<ENV>_<NAME>`, `--secret`, OS keychain (`keyring` 4, service `hitop`, account
   `<workspace>/<env>/<name>`), prompt on a TTY. `HITOP_KEYCHAIN=off` skips the keychain (CLI tests set it). Values are
   masked as `••••` in output, history and runner steps (`runner::run_collection_with`); hitop-core feature `keychain` (default)
+- CI runs: `hitop run <folder|name> --env <e> | --env-file <yaml>`, `--var k=v`, `--bail`, `--timeout <ms>`,
+  `--iterations <n>` or `--data <csv|json>`, `--reporter cli,junit,json --out <dir>` (`junit.xml`, `report.json`);
+  exit 0 passed, 1 a request or assertion failed, 2 usage or config error (`main.rs` maps `run`'s Err to 2).
+  Default is to run every request; `--no-stop-on-fail` is a hidden no-op. Variable order: collection, environment,
+  data row, `--var`, secrets. A new hitop-core runtime dep also changes `desktop/src-tauri/Cargo.lock` (CI checks it `--locked`)
 - YAML crate: `yaml_serde` (serde_yaml continued by the YAML org); HTTP tests use `httpmock` 0.8, never the public internet
 - Publish: `cd cli && cargo publish -p hitop-core` then `cargo publish -p hitop`
 - HTTP client: `reqwest 0.12` blocking + rustls (no OpenSSL)
