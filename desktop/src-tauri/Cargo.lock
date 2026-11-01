@@ -1994,6 +1994,8 @@ dependencies = [
  "base64 0.22.1",
  "hitop-core",
  "hitop-git",
+ "objc2",
+ "objc2-foundation",
  "serde",
  "serde_json",
  "tauri",

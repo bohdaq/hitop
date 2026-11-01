@@ -26,7 +26,11 @@ fn auth_for(path: &str) -> hitop_git::Auth {
 }
 
 #[tauri::command(async)]
-pub fn git(cmd: String, args: Value) -> Result<Value, String> {
+pub fn git(app: tauri::AppHandle, cmd: String, args: Value) -> Result<Value, String> {
+    // The Mac App Store sandbox: reopen the folder from its saved bookmark first.
+    if let Ok(path) = path_of(&args) {
+        crate::bookmarks::access(&app, &path);
+    }
     let auth = if hitop_git::json::REMOTE_COMMANDS.contains(&cmd.as_str()) { auth_for(&path_of(&args)?) } else { hitop_git::Auth::default() };
     hitop_git::json::call(&cmd, &args, &auth).map_err(|e| e.0)
 }

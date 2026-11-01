@@ -347,3 +347,28 @@ jobs:
             swift test 2>&1 | tee /tmp/swift-test.log
             if grep -E "Test Case .* skipped" /tmp/swift-test.log; then echo "tests were skipped"; exit 1; fi
           '
+
+  desktop-macos:
+    # The macOS-only code (src/bookmarks.rs: security-scoped bookmarks for the Mac App
+    # Store sandbox, objc2) compiles only here. The MAS build is a plain `tauri build`.
+    name: Desktop app compiles on macOS (MAS configuration)
+    runs-on: macos-14
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: desktop/src-tauri
+      - name: Frontend (Tauri embeds ../dist)
+        working-directory: desktop
+        run: npm ci && npm run build
+      - name: cargo check and clippy (no telemetry feature, as the MAS build)
+        working-directory: desktop/src-tauri
+        run: |
+          cargo check --locked
+          cargo clippy --locked -- -D warnings

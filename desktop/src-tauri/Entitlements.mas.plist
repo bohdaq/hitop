@@ -11,5 +11,8 @@
     <!-- Read/write files the user explicitly opens or saves (import/export collections) -->
     <key>com.apple.security.files.user-selected.read-write</key>
     <true/>
+    <!-- Security-scoped bookmarks: reopen a collection folder the user picked, on later launches -->
+    <key>com.apple.security.files.bookmarks.app-scope</key>
+    <true/>
 </dict>
 </plist>

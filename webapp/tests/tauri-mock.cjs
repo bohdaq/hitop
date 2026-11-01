@@ -299,6 +299,9 @@ class TauriMock {
         return null;
       case 'secret_delete':
         return this.keychain.delete(args.account);
+      case 'folder_forget':
+        // Mac App Store bookmarks: nothing to do outside the sandbox.
+        return null;
       case 'write_file':
         fs.writeFileSync(args.path, Buffer.from(args.data, 'base64'));
         this.writes.push(args.path);

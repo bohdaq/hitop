@@ -24,6 +24,12 @@ hitop-core = { path = "../../cli/crates/hitop-core" }
 # The Git panel (status, commit, branches, pull/push, conflicts) over vendored libgit2.
 hitop-git = { path = "../../cli/crates/hitop-git" }
 
+# Mac App Store build: security-scoped bookmarks so the sandboxed app can reopen
+# collection folders on the next launch (src/bookmarks.rs). Same versions Tauri uses.
+[target.'cfg(target_os = "macos")'.dependencies]
+objc2 = "0.6"
+objc2-foundation = { version = "0.3", default-features = false, features = ["std", "NSArray", "NSData", "NSError", "NSString", "NSURL"] }
+
 [features]
 # The opt-in weekly usage ping (hitop-core's telemetry module). Off by default, so
 # the Mac App Store build (a plain `tauri build`) doesn't contain it;

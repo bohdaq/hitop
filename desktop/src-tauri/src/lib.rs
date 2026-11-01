@@ -1,3 +1,4 @@
+mod bookmarks;
 mod commands;
 mod git;
 
@@ -41,6 +42,7 @@ pub fn run() {
             commands::grpc_describe,
             commands::grpc_call,
             commands::grpc_cancel,
+            bookmarks::folder_forget,
             git::git,
             git::git_token_status,
             git::git_token_set,

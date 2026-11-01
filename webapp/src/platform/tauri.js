@@ -408,7 +408,10 @@ export function createPlatform() {
       },
       forget(collectionId) {
         try {
-          localStorage.setItem(FOLDERS_KEY, JSON.stringify(JSON.parse(localStorage.getItem(FOLDERS_KEY) || "[]").filter((f) => f.collectionId !== collectionId)));
+          const list = JSON.parse(localStorage.getItem(FOLDERS_KEY) || "[]");
+          // The Mac App Store build's saved folder access goes with it.
+          for (const f of list.filter((f) => f.collectionId === collectionId)) invoke("folder_forget", { path: f.path }).catch(() => {});
+          localStorage.setItem(FOLDERS_KEY, JSON.stringify(list.filter((f) => f.collectionId !== collectionId)));
         } catch {
           // nothing stored
         }

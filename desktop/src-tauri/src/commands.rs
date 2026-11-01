@@ -5,7 +5,7 @@ use tauri::Emitter;
 
 use base64::{engine::general_purpose::STANDARD as B64, Engine};
 use hitop_core::cookies::Jar;
-use hitop_core::secrets::{SecretStore, GLOBAL_WORKSPACE};
+use hitop_core::secrets::GLOBAL_WORKSPACE;
 use hitop_core::{
     format,
     http,
@@ -378,7 +378,8 @@ pub struct FolderResult {
 
 /// Reads a collection folder (hitop.yaml, requests/, environments/).
 #[tauri::command(async)]
-pub fn read_folder(path: String) -> Result<FolderResult, String> {
+pub fn read_folder(app: tauri::AppHandle, path: String) -> Result<FolderResult, String> {
+    crate::bookmarks::access(&app, &path);
     let f = format::read_folder(std::path::Path::new(&path)).map_err(|e| format!("{e:#}"))?;
     Ok(FolderResult { collection: f.collection, environments: f.environments, globals: f.globals })
 }
@@ -386,7 +387,8 @@ pub fn read_folder(path: String) -> Result<FolderResult, String> {
 /// Writes a collection folder: changed files only, stale request and
 /// environment files removed. Secret values are never written.
 #[tauri::command(async)]
-pub fn write_folder(path: String, collection: Collection, environments: Vec<Environment>, globals: Option<Environment>) -> Result<(), String> {
+pub fn write_folder(app: tauri::AppHandle, path: String, collection: Collection, environments: Vec<Environment>, globals: Option<Environment>) -> Result<(), String> {
+    crate::bookmarks::access(&app, &path);
     // Without `globals` an existing globals.yaml is left as it is.
     format::write_folder(std::path::Path::new(&path), &format::Folder { collection, environments, globals }).map_err(|e| format!("{e:#}"))
 }
