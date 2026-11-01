@@ -1529,6 +1529,7 @@ dependencies = [
  "httpmock",
  "indicatif",
  "predicates",
+ "prost-reflect",
  "rmcp",
  "roxmltree",
  "rpassword",
@@ -1539,6 +1540,9 @@ dependencies = [
  "tempfile",
  "tokio",
  "tokio-tungstenite",
+ "tonic",
+ "tonic-reflection",
+ "tower",
 ]
 
 [[package]]

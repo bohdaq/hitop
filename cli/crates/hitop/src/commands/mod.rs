@@ -5,6 +5,7 @@ pub mod env;
 pub mod flags;
 pub mod folder;
 pub mod globals;
+pub mod grpc;
 pub mod history;
 pub mod import_export;
 pub mod mcp;

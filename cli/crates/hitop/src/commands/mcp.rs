@@ -251,6 +251,12 @@ fn request_view(r: &Request) -> Value {
         if let Some(w) = &r.websocket {
             o.insert("websocket".into(), json!({"subprotocols": w.subprotocols, "messages": w.messages.iter().map(|m| json!({"name": m.name, "content": m.content})).collect::<Vec<_>>()}));
         }
+        if let Some(g) = &r.grpc {
+            o.insert(
+                "grpc".into(),
+                json!({"service": g.service, "method": g.method, "message": g.message, "protos": g.protos, "importPaths": g.import_paths, "plaintext": g.plaintext}),
+            );
+        }
         if let Some(mode) = &r.body_mode {
             o.insert("bodyMode".into(), json!(mode));
             o.insert("formFields".into(), json!(r.form_fields.iter().map(|f| json!({"key": f.key, "value": f.value, "type": f.kind, "enabled": f.enabled})).collect::<Vec<_>>()));
@@ -533,6 +539,9 @@ impl Hitop {
             let request = find(&source.collection, &p.request)?;
             if request.is_websocket() {
                 bail!("'{}' is a WebSocket request: this server doesn't open WebSocket connections (use `hitop ws` in a terminal)", request.name);
+            }
+            if request.is_grpc() {
+                bail!("'{}' is a gRPC request: this server doesn't make gRPC calls (use `hitop grpc` in a terminal)", request.name);
             }
             col.requests = vec![request.clone()];
             let options = options(p.variables, p.timeout_ms, globals, global_secrets);

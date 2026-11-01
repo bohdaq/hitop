@@ -103,7 +103,14 @@ pub fn run(cmd: RequestsCmd) -> Result<()> {
                 println!(
                     "  {} {} {}  {}",
                     "•".cyan(),
-                    if r.is_websocket() { "WS" } else { r.method.as_str() }.bold(),
+                    if r.is_websocket() {
+                        "WS"
+                    } else if r.is_grpc() {
+                        "GRPC"
+                    } else {
+                        r.method.as_str()
+                    }
+                    .bold(),
                     r.name.bold(),
                     r.url.dimmed()
                 );
@@ -162,6 +169,8 @@ pub fn run(cmd: RequestsCmd) -> Result<()> {
             println!("{}: {}", "Name".bold(), req.name);
             if req.is_websocket() {
                 println!("{}: WebSocket", "Kind".bold());
+            } else if req.is_grpc() {
+                println!("{}: gRPC", "Kind".bold());
             } else {
                 println!("{}: {}", "Method".bold(), req.method);
             }
@@ -182,6 +191,25 @@ pub fn run(cmd: RequestsCmd) -> Result<()> {
                 }
                 for m in &w.messages {
                     println!("{}: {}: {}", "Message".bold(), m.name, m.content);
+                }
+            }
+            if let Some(g) = &req.grpc {
+                if !g.service.is_empty() || !g.method.is_empty() {
+                    println!("{}: {}/{}", "Method".bold(), g.service, g.method);
+                }
+                if !g.message.is_empty() {
+                    println!("{}: {}", "Message".bold(), g.message.trim_end());
+                }
+                if g.protos.is_empty() {
+                    println!("{}: server reflection", "Schema".bold());
+                } else {
+                    println!("{}: {}", "Protos".bold(), g.protos.join(", "));
+                }
+                if !g.import_paths.is_empty() {
+                    println!("{}: {}", "Import paths".bold(), g.import_paths.join(", "));
+                }
+                if g.plaintext {
+                    println!("{}: yes", "Plaintext".bold());
                 }
             }
             if !req.pre_request_script.is_empty() {
@@ -226,6 +254,9 @@ pub fn run(cmd: RequestsCmd) -> Result<()> {
             let req = find_req(col, &request)?.clone();
             if req.is_websocket() {
                 bail!("'{}' is a WebSocket request: open it with `hitop ws '{}' -c {collection}`", req.name, req.name);
+            }
+            if req.is_grpc() {
+                bail!("'{}' is a gRPC request: call it with `hitop grpc '{}' -c {collection}`", req.name, req.name);
             }
             let environment = source.environment(env.as_deref())?;
             let secret_flags = secrets;

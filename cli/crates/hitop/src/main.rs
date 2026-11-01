@@ -67,6 +67,8 @@ enum Cmd {
     Telemetry(commands::telemetry::TelemetryCmd),
     /// Open a WebSocket connection: send typed lines or --send messages, print what arrives (exit 1 if it fails or --count isn't reached)
     Ws(commands::ws::WsArgs),
+    /// Call a gRPC method (unary or server streaming), or list and describe a server's services (exit 1 on a status other than OK)
+    Grpc(commands::grpc::GrpcArgs),
     /// Serve a collection folder (or global storage) to AI tools over MCP (stdio)
     Mcp(commands::mcp::McpArgs),
     /// Generate shell completions
@@ -119,6 +121,15 @@ fn dispatch(command: Cmd) -> i32 {
         }
         Cmd::Ws(args) => {
             return match commands::ws::run(args) {
+                Ok(code) => code,
+                Err(e) => {
+                    eprintln!("{} {e:#}", "error:".red().bold());
+                    1
+                }
+            }
+        }
+        Cmd::Grpc(args) => {
+            return match commands::grpc::run(args) {
                 Ok(code) => code,
                 Err(e) => {
                     eprintln!("{} {e:#}", "error:".red().bold());

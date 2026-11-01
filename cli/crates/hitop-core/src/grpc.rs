@@ -147,7 +147,7 @@ mod client {
     use base64::Engine;
     use prost::Message as _;
     use prost_reflect::{
-        Cardinality, DescriptorPool, DynamicMessage, EnumDescriptor, FieldDescriptor, Kind, MessageDescriptor, MethodDescriptor, SerializeOptions, ServiceDescriptor,
+        Cardinality, DynamicMessage, EnumDescriptor, FieldDescriptor, Kind, MessageDescriptor, MethodDescriptor, SerializeOptions, ServiceDescriptor,
     };
     use serde_json::{json, Map, Value};
     use tokio::sync::mpsc;
@@ -156,6 +156,9 @@ mod client {
     use tonic::transport::{Channel, ClientTlsConfig, Endpoint};
 
     use super::{code_name, endpoint, Target};
+
+    /// The schema type, for callers that keep one (the desktop between calls).
+    pub use prost_reflect::DescriptorPool;
 
     const B64: base64::engine::GeneralPurpose = base64::engine::general_purpose::STANDARD;
 

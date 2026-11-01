@@ -66,3 +66,8 @@ tempfile = "3"
 # tests/ws.rs: a local WebSocket echo server.
 tokio-tungstenite = { version = "0.30", default-features = false, features = ["handshake"] }
 futures-util = { version = "0.3", default-features = false, features = ["sink", "std"] }
+# tests/grpc.rs: hitop-core's local tonic test server (tests/support/grpc_server.rs).
+tonic = { version = "0.14.6", default-features = false, features = ["transport", "router"] }
+tonic-reflection = { version = "0.14.6", default-features = false, features = ["server"] }
+tower = { version = "0.5", default-features = false, features = ["util"] }
+prost-reflect = { version = "0.16", features = ["serde"] }

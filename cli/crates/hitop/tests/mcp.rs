@@ -324,6 +324,19 @@ fn websocket_requests_are_shown_but_not_run() {
 }
 
 #[test]
+fn grpc_requests_are_shown_but_not_run() {
+    let home = TempDir::new().unwrap();
+    let dir = folder(&home, "http://127.0.0.1:9");
+    write(&dir, "requests/hello.yaml", "name: Hello\nkind: grpc\nurl: 127.0.0.1:9\ngrpc:\n  service: a.Greeter\n  method: SayHello\n  message: '{}'\n  plaintext: true\n");
+    let mut c = Client::start(&home, &[dir.to_str().unwrap()], &[("HITOP_SECRET_GLOBAL_GPASS", GLOBAL_SECRET)]);
+    let r = c.ok("get_request", json!({"request": "Hello"}));
+    assert_eq!(r["kind"], "grpc");
+    assert_eq!(r["grpc"], json!({"service": "a.Greeter", "method": "SayHello", "message": "{}", "protos": [], "importPaths": [], "plaintext": true}));
+    let e = c.err("run_request", json!({"request": "Hello", "environment": "other"}));
+    assert!(e.contains("gRPC request") && e.contains("hitop grpc"), "{e}");
+}
+
+#[test]
 fn global_storage_active_environment_and_cookies_across_calls() {
     let home = TempDir::new().unwrap();
     let server = MockServer::start();

@@ -92,7 +92,7 @@ struct Out {
     masker: Masker,
 }
 
-fn now() -> String {
+pub(crate) fn now() -> String {
     let t = SystemTime::now();
     let ms = t.duration_since(UNIX_EPOCH).map(|d| d.subsec_millis()).unwrap_or(0);
     let s = hitop_core::report::rfc3339(t);
@@ -174,6 +174,28 @@ fn var_pairs(vars: &[String]) -> Result<HashMap<String, String>> {
         .collect()
 }
 
+/// Variables for a connection or call (`hitop ws`, `hitop grpc`), as for
+/// `hitop send`: globals < collection < environment < --var < secrets; and
+/// the masker for every secret value resolved.
+pub(crate) fn session_variables(source: Option<&Source>, env: Option<&str>, vars: &[String], flags: &SecretFlags) -> Result<(HashMap<String, String>, Masker)> {
+    let environment = match source {
+        Some(s) => s.environment(env)?,
+        None => storage::load_environments()?.pick(env)?.cloned(),
+    };
+    let workspace = source.map(|s| s.workspace()).unwrap_or_else(|| hitop_core::secrets::GLOBAL_WORKSPACE.into());
+    let secrets = secret::resolve(&workspace, environment.as_ref(), flags)?;
+    let collection_vars = source.map(|s| s.collection.variables.clone()).unwrap_or_default();
+    let mut upper = variables(&collection_vars, environment.as_ref());
+    upper.extend(var_pairs(vars)?);
+    secrets.apply(&mut upper);
+    let globals = match source {
+        Some(s) => s.globals()?,
+        None => storage::load_globals()?,
+    };
+    let (globals, global_secrets) = secret::resolve_globals(&workspace, &globals, flags)?;
+    Ok((Scopes { globals, upper }.merged(), secrets.masker_with(&global_secrets)))
+}
+
 /// The exit code: 0, or 1 when the connection failed or --count wasn't reached.
 pub fn run(args: WsArgs) -> Result<i32> {
     let source = args.collection.as_deref().map(Source::open).transpose()?;
@@ -192,24 +214,8 @@ pub fn run(args: WsArgs) -> Result<i32> {
         bail!("--message sends a saved request's message: give -c <collection> and the request's name");
     }
 
-    // Variables as for `hitop send`: globals < collection < environment < --var < secrets.
-    let environment = match &source {
-        Some(s) => s.environment(args.env.as_deref())?,
-        None => storage::load_environments()?.pick(args.env.as_deref())?.cloned(),
-    };
-    let workspace = source.as_ref().map(|s| s.workspace()).unwrap_or_else(|| hitop_core::secrets::GLOBAL_WORKSPACE.into());
-    let secrets = secret::resolve(&workspace, environment.as_ref(), &args.secrets)?;
-    let collection_vars = source.as_ref().map(|s| s.collection.variables.clone()).unwrap_or_default();
-    let mut upper = variables(&collection_vars, environment.as_ref());
-    upper.extend(var_pairs(&args.vars)?);
-    secrets.apply(&mut upper);
-    let globals = match &source {
-        Some(s) => s.globals()?,
-        None => storage::load_globals()?,
-    };
-    let (globals, global_secrets) = secret::resolve_globals(&workspace, &globals, &args.secrets)?;
-    let vars = Scopes { globals, upper }.merged();
-    let out = Out { json: args.json, tty: std::io::stdout().is_terminal(), masker: secrets.masker_with(&global_secrets) };
+    let (vars, masker) = session_variables(source.as_ref(), args.env.as_deref(), &args.vars, &args.secrets)?;
+    let out = Out { json: args.json, tty: std::io::stdout().is_terminal(), masker };
     let masked = |e: anyhow::Error| anyhow!(out.m(&format!("{e:#}")));
 
     let mut request = saved.unwrap_or_else(|| Request { name: args.target.clone(), url: args.target.clone(), method: "GET".into(), kind: Some(WEBSOCKET.into()), ..Default::default() });
