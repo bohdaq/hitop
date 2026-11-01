@@ -1,0 +1,135 @@
+{
+  "description": [
+    "hitop sync encryption test vectors, format 1. All byte strings are lower-case hex. Integers are big endian.",
+    "blob aad = \"hitop-sync/v1/blob\" || u16 len(workspaceId) || workspaceId (UTF-8) || u16 len(blobId) || blobId (UTF-8) || u64 version || u32 epoch",
+    "blob envelope = 0x01 || u32 epoch || nonce (24) || XChaCha20-Poly1305(key, nonce, aad, plaintext) (ciphertext || 16-byte tag)",
+    "wrap: HPKE RFC 9180 base mode, KEM 0x0020 DHKEM(X25519, HKDF-SHA256), KDF 0x0001 HKDF-SHA256, AEAD 0x0003 ChaCha20-Poly1305",
+    "wrap info = \"hitop-sync/v1/wrap\" || u16 len(workspaceId) || workspaceId || u32 epoch; aad empty; plaintext = the 32-byte workspace key",
+    "wrapped = enc (32) || sealed key (32) || tag (16); recipient key pair = DeriveKeyPair(recipientIkm)",
+    "wraps are checked in the open direction only (encapsulation is randomized); blobs both ways",
+    "every entry in blobFailures and wrapFailures must fail to decrypt"
+  ],
+  "blobs": [
+    {
+      "name": "request file, epoch 1",
+      "key": "000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f",
+      "workspaceId": "3f6c1a9e0b7d4c2a8e5f1b3d7a9c0e24",
+      "blobId": "b1f0c3e2a4d6",
+      "version": 1,
+      "epoch": 1,
+      "nonce": "404142434445464748494a4b4c4d4e4f5051525354555657",
+      "plaintext": "6e616d653a2047657420757365720a6d6574686f643a204745540a75726c3a2068747470733a2f2f6170692e6578616d706c652e636f6d2f75736572732f310a",
+      "aad": "6869746f702d73796e632f76312f626c6f6200203366366331613965306237643463326138653566316233643761396330653234000c623166306333653261346436000000000000000100000001",
+      "envelope": "0100000001404142434445464748494a4b4c4d4e4f5051525354555657ba586815eac03e73fbd4f2cdcaee6ffff7cec5ab776373dd2f65f7307b6819b07e8d761e26a8ab3f9ec29d626fa2bb9ceb0718c60cead9b3c38f6d86609d7d5eb2c58c685954dc1b81b9a588d7908423"
+    },
+    {
+      "name": "empty plaintext",
+      "key": "000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f",
+      "workspaceId": "3f6c1a9e0b7d4c2a8e5f1b3d7a9c0e24",
+      "blobId": "b1f0c3e2a4d6",
+      "version": 2,
+      "epoch": 1,
+      "nonce": "404142434445464748494a4b4c4d4e4f5051525354555657",
+      "plaintext": "",
+      "aad": "6869746f702d73796e632f76312f626c6f6200203366366331613965306237643463326138653566316233643761396330653234000c623166306333653261346436000000000000000200000001",
+      "envelope": "0100000001404142434445464748494a4b4c4d4e4f50515253545556579b2e75a03dff4eb60c7b712a723e148c"
+    },
+    {
+      "name": "after rotation, epoch 2",
+      "key": "a0a1a2a3a4a5a6a7a8a9aaabacadaeafb0b1b2b3b4b5b6b7b8b9babbbcbdbebf",
+      "workspaceId": "3f6c1a9e0b7d4c2a8e5f1b3d7a9c0e24",
+      "blobId": "9d8c7b6a5f4e",
+      "version": 7,
+      "epoch": 2,
+      "nonce": "404142434445464748494a4b4c4d4e4f5051525354555657",
+      "plaintext": "756e69636f64653a20f09f949220d0bad0bbd18ed187",
+      "aad": "6869746f702d73796e632f76312f626c6f6200203366366331613965306237643463326138653566316233643761396330653234000c396438633762366135663465000000000000000700000002",
+      "envelope": "0100000002404142434445464748494a4b4c4d4e4f50515253545556578cd41632ea67d3d5204e741caa8c6fe51795aa0cb0cc60042ecdeab7995ed98e8d3efb248be1"
+    }
+  ],
+  "blobFailures": [
+    {
+      "name": "flipped ciphertext bit",
+      "key": "000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f",
+      "workspaceId": "3f6c1a9e0b7d4c2a8e5f1b3d7a9c0e24",
+      "blobId": "b1f0c3e2a4d6",
+      "version": 1,
+      "epoch": 1,
+      "envelope": "0100000001404142434445464748494a4b4c4d4e4f5051525354555657bb586815eac03e73fbd4f2cdcaee6ffff7cec5ab776373dd2f65f7307b6819b07e8d761e26a8ab3f9ec29d626fa2bb9ceb0718c60cead9b3c38f6d86609d7d5eb2c58c685954dc1b81b9a588d7908423"
+    },
+    {
+      "name": "replayed as version 2",
+      "key": "000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f",
+      "workspaceId": "3f6c1a9e0b7d4c2a8e5f1b3d7a9c0e24",
+      "blobId": "b1f0c3e2a4d6",
+      "version": 2,
+      "epoch": 1,
+      "envelope": "0100000001404142434445464748494a4b4c4d4e4f5051525354555657ba586815eac03e73fbd4f2cdcaee6ffff7cec5ab776373dd2f65f7307b6819b07e8d761e26a8ab3f9ec29d626fa2bb9ceb0718c60cead9b3c38f6d86609d7d5eb2c58c685954dc1b81b9a588d7908423"
+    },
+    {
+      "name": "moved to another blob id",
+      "key": "000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f",
+      "workspaceId": "3f6c1a9e0b7d4c2a8e5f1b3d7a9c0e24",
+      "blobId": "another-blob",
+      "version": 1,
+      "epoch": 1,
+      "envelope": "0100000001404142434445464748494a4b4c4d4e4f5051525354555657ba586815eac03e73fbd4f2cdcaee6ffff7cec5ab776373dd2f65f7307b6819b07e8d761e26a8ab3f9ec29d626fa2bb9ceb0718c60cead9b3c38f6d86609d7d5eb2c58c685954dc1b81b9a588d7908423"
+    },
+    {
+      "name": "wrong key",
+      "key": "a0a1a2a3a4a5a6a7a8a9aaabacadaeafb0b1b2b3b4b5b6b7b8b9babbbcbdbebf",
+      "workspaceId": "3f6c1a9e0b7d4c2a8e5f1b3d7a9c0e24",
+      "blobId": "b1f0c3e2a4d6",
+      "version": 1,
+      "epoch": 1,
+      "envelope": "0100000001404142434445464748494a4b4c4d4e4f5051525354555657ba586815eac03e73fbd4f2cdcaee6ffff7cec5ab776373dd2f65f7307b6819b07e8d761e26a8ab3f9ec29d626fa2bb9ceb0718c60cead9b3c38f6d86609d7d5eb2c58c685954dc1b81b9a588d7908423"
+    }
+  ],
+  "wraps": [
+    {
+      "name": "member A, epoch 1",
+      "recipientIkm": "101112131415161718191a1b1c1d1e1f202122232425262728292a2b2c2d2e2f",
+      "recipientSecret": "303a8876f79f9bd354ffed3fe481f685c73e761c20d33b682395694235e69673",
+      "recipientPublic": "1d682f8bb8b6fea684a63bd478009bc62050d365c18a68803261a055b162925e",
+      "workspaceId": "3f6c1a9e0b7d4c2a8e5f1b3d7a9c0e24",
+      "epoch": 1,
+      "info": "6869746f702d73796e632f76312f777261700020336636633161396530623764346332613865356631623364376139633065323400000001",
+      "wrapped": "d9cefb28398e9e4c365890f288ca2cd5afae2f75b69b7de9ec1485d03c0d3853a882f73fabb8abb002f6a170506ffc3be14af49b1b6f413e8d8acf67f8eec3e511917148487a9f8892d2955de6d02da2",
+      "workspaceKey": "000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f"
+    },
+    {
+      "name": "member B, epoch 2",
+      "recipientIkm": "f0efeeedecebeae9e8e7e6e5e4e3e2e1e0dfdedddcdbdad9d8d7d6d5d4d3d2d1",
+      "recipientSecret": "083fa79413c29c84b42ded66093afe878176dd618bed75f0edeff3e86a96de74",
+      "recipientPublic": "883fd08410297bb4d62a9381659867bede5a6f179aee54dc092a2e6dc946cf23",
+      "workspaceId": "3f6c1a9e0b7d4c2a8e5f1b3d7a9c0e24",
+      "epoch": 2,
+      "info": "6869746f702d73796e632f76312f777261700020336636633161396530623764346332613865356631623364376139633065323400000002",
+      "wrapped": "76e3799470c93d7f84549d5b13ad55310435402da3390bf013e4b03ca74aea39b3b6b9a5f5dfcde7c29333ae81c7ade4b5779158029045e34ca6ffd08b2fc7e7a644820143a2916f718fcb5c0d7d8760",
+      "workspaceKey": "a0a1a2a3a4a5a6a7a8a9aaabacadaeafb0b1b2b3b4b5b6b7b8b9babbbcbdbebf"
+    }
+  ],
+  "wrapFailures": [
+    {
+      "name": "wrong epoch",
+      "recipientSecret": "303a8876f79f9bd354ffed3fe481f685c73e761c20d33b682395694235e69673",
+      "workspaceId": "3f6c1a9e0b7d4c2a8e5f1b3d7a9c0e24",
+      "epoch": 2,
+      "wrapped": "d9cefb28398e9e4c365890f288ca2cd5afae2f75b69b7de9ec1485d03c0d3853a882f73fabb8abb002f6a170506ffc3be14af49b1b6f413e8d8acf67f8eec3e511917148487a9f8892d2955de6d02da2"
+    },
+    {
+      "name": "wrong recipient",
+      "recipientSecret": "083fa79413c29c84b42ded66093afe878176dd618bed75f0edeff3e86a96de74",
+      "workspaceId": "3f6c1a9e0b7d4c2a8e5f1b3d7a9c0e24",
+      "epoch": 1,
+      "wrapped": "d9cefb28398e9e4c365890f288ca2cd5afae2f75b69b7de9ec1485d03c0d3853a882f73fabb8abb002f6a170506ffc3be14af49b1b6f413e8d8acf67f8eec3e511917148487a9f8892d2955de6d02da2"
+    },
+    {
+      "name": "wrong workspace",
+      "recipientSecret": "303a8876f79f9bd354ffed3fe481f685c73e761c20d33b682395694235e69673",
+      "workspaceId": "00000000000000000000000000000000",
+      "epoch": 1,
+      "wrapped": "d9cefb28398e9e4c365890f288ca2cd5afae2f75b69b7de9ec1485d03c0d3853a882f73fabb8abb002f6a170506ffc3be14af49b1b6f413e8d8acf67f8eec3e511917148487a9f8892d2955de6d02da2"
+    }
+  ]
+}
