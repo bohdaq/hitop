@@ -1,6 +1,6 @@
 // Where the app runs: `web` (the browser: fetch or the HITOP proxy, and
 // localStorage) or `tauri` (the desktop app: Rust through Tauri's invoke).
-// The build picks one: `npm run build:tauri` sets VITE_HITOP_PLATFORM, and
+// The build picks one: `npm run build:tauri` sets VITE_HITOP_PLATFORM (webapp/.env.tauri, `vite --mode tauri`), and
 // Vite drops the other adapter from the bundle.
 //
 // An adapter has:

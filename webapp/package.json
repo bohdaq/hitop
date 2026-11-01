@@ -5,9 +5,9 @@
   "scripts": {
     "wasm": "node scripts/build-wasm.mjs",
     "dev": "npm run wasm && vite",
-    "dev:tauri": "npm run wasm && VITE_HITOP_PLATFORM=tauri vite --port 1421 --strictPort",
+    "dev:tauri": "npm run wasm && vite --mode tauri --port 1421 --strictPort",
     "build": "npm run wasm && VITE_HITOP_PROXY=/api/proxy vite build",
-    "build:tauri": "npm run wasm && VITE_HITOP_PLATFORM=tauri vite build --outDir dist-tauri --base ./",
+    "build:tauri": "npm run wasm && vite build --mode tauri --outDir dist-tauri --base ./",
     "preview": "vite preview",
     "test:unit": "npm run wasm && node tests/unit.mjs && node tests/pm.mjs",
     "test:e2e": "node tests/e2e.cjs && node tests/editing.cjs && node tests/features.cjs && node tests/extras.cjs && node tests/folders.cjs && node tests/postman.cjs && node tests/settings.cjs && node tests/globals.cjs && node tests/graphql.cjs && node tests/diff-code.cjs && node tests/websocket.cjs && node tests/grpc.cjs && node tests/openapi.cjs && node tests/git.cjs && node tests/secret-refs.cjs",
