@@ -4,6 +4,7 @@ mod output;
 use anyhow::Result;
 use clap::{CommandFactory, Parser, Subcommand};
 use clap_complete::{generate, Shell};
+use colored::Colorize;
 
 #[derive(Parser)]
 #[command(
@@ -24,7 +25,7 @@ enum Cmd {
     Convert(commands::folder::ConvertArgs),
     /// Send a single HTTP request
     Send(commands::send::SendArgs),
-    /// Run a collection or all collections
+    /// Run a collection or all collections, with reports for CI (exit codes: 0 passed, 1 failed, 2 usage or config error)
     Run(commands::run::RunArgs),
     /// Manage collections
     #[command(subcommand)]
@@ -61,7 +62,14 @@ fn main() -> Result<()> {
         Cmd::Init(args) => commands::folder::run_init(args),
         Cmd::Convert(args) => commands::folder::run_convert(args),
         Cmd::Send(args) => commands::send::run(args),
-        Cmd::Run(args) => commands::run::run(args),
+        // 0 passed, 1 a request or assertion failed, 2 usage or config error.
+        Cmd::Run(args) => match commands::run::run(args) {
+            Ok(code) => std::process::exit(code),
+            Err(e) => {
+                eprintln!("{} {e:#}", "error:".red().bold());
+                std::process::exit(2)
+            }
+        },
         Cmd::Collections(cmd) => commands::collections::run(cmd),
         Cmd::Requests(cmd) => commands::requests::run(cmd),
         Cmd::Variables(cmd) => commands::variables::run(cmd),

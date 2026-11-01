@@ -50,4 +50,5 @@ syntect = { version = "5", default-features = false, features = ["default-syntax
 assert_cmd = "2"
 httpmock = "0.8.3"
 predicates = "3"
+roxmltree = "0.21.2"
 tempfile = "3"

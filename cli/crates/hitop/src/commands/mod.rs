@@ -1,4 +1,5 @@
 pub mod collections;
+pub mod data;
 pub mod env;
 pub mod flags;
 pub mod folder;
