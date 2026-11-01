@@ -1,0 +1,29 @@
+openapi: 3.0.3
+info:
+  title: Orders
+  version: 2.0.0
+servers:
+- url: https://orders.example.test/v2
+paths:
+  /orders:
+    get:
+      operationId: listOrders
+      summary: List orders
+      parameters:
+      - name: X-Api-Version
+        in: header
+        required: true
+        example: '2'
+      - name: X-Tenant
+        in: header
+        required: true
+        example: acme
+      - name: status
+        in: query
+        example: open
+      - name: limit
+        in: query
+        example: 20
+      responses:
+        '200':
+          description: ok

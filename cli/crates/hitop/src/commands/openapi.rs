@@ -140,6 +140,16 @@ fn op_line(c: &openapi::OpChange) -> String {
     }
 }
 
+/// One header or query row of a row-by-row merge, as the diff lists it.
+pub fn row_line(r: &openapi::RowChange) -> String {
+    let what = if r.field == "headers" { "header" } else { "query parameter" };
+    match r.outcome.as_str() {
+        "updated" => format!("{what} {} {} by the spec: updated", r.name, r.change),
+        "kept" => format!("{what} {} {} by the spec: kept yours", r.name, r.change),
+        _ => format!("{what} {} {} by you: kept", r.name, r.change),
+    }
+}
+
 pub fn run_sync(args: SyncArgs) -> Result<()> {
     let dir = &args.folder;
     let folder = format::read_folder(dir)?;
@@ -163,6 +173,15 @@ pub fn run_sync(args: SyncArgs) -> Result<()> {
             parts.push("operation renamed".into());
         }
         println!("  {} {}  {}: {}", "~".yellow(), op_line(c), c.name, parts.join("; "));
+        for r in &c.rows {
+            let sign = match (r.outcome.as_str(), r.change.as_str()) {
+                ("updated", "added") => "+".green(),
+                ("updated", "removed") => "-".red(),
+                ("updated", _) => "~".yellow(),
+                _ => "=".normal(),
+            };
+            println!("      {sign} {}", row_line(r));
+        }
     }
     for r in &d.removed {
         let what = if d.pruned { "removed from the spec: deleted".to_string() } else { "removed from the spec: kept (--prune deletes it)".to_string() };

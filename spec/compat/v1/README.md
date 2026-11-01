@@ -30,6 +30,7 @@ Each case directory holds:
 | `websocket` | `kind: websocket`, subprotocols, saved messages with an unknown row key |
 | `grpc` | `kind: grpc`, metadata, protos and import paths, plaintext; reflection over TLS |
 | `openapi` | an OpenAPI import (`spec.yaml`, by `hitop import openapi`): the `openapi` records and `source: openapi` examples |
+| `openapi-rows` | an OpenAPI import by hitop 1.1: the request record's per-row hashes (`openapi.rows`) for headers and query parameters |
 | `secrets` | secret variables in environments and globals, `globals.yaml`, secret manager references (`${secret:vault|aws|azure|op:...}`) |
 | `examples` | saved responses with extra keys |
 | `unknown-keys` | unknown keys on the collection, a request, an environment and rows (kept and written back) |

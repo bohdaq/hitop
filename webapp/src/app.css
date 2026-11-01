@@ -194,6 +194,7 @@ lit-material-code-block::part(pre) { max-height: 60vh; overflow: auto; font-fami
 .openapi-diff b { font-family: var(--font-mono); }
 .openapi-diff .diff-add b { color: var(--md-sys-color-primary); }
 .openapi-diff .diff-del b { color: var(--md-sys-color-error); }
+.openapi-diff .diff-row span { padding-inline-start: 1.5rem; }
 .dialog-link { justify-self: start; }
 .history-item {
   display: grid; grid-template-columns: auto auto minmax(0, 1fr) auto; align-items: center; gap: var(--space-100);

@@ -400,3 +400,78 @@ fn sync_needs_an_imported_collection() {
     let e = sync(&Collection { name: "Plain".into(), ..Default::default() }, SHOP, &Options::default(), false).unwrap_err().to_string();
     assert!(e.contains("wasn't imported from an OpenAPI spec"), "{e}");
 }
+
+/// getPet's header and query rows after a release: X-Trace's example
+/// changes, X-Tenant and `limit` are new, `verbose` gets a default.
+fn shop_v3() -> String {
+    SHOP.replace(
+        "      - {name: verbose, in: query, schema: {type: boolean}}\n",
+        "      - {name: verbose, in: query, schema: {type: boolean, default: false}}\n      - {name: limit, in: query, example: 10}\n",
+    )
+    .replace("      - {name: X-Trace, in: header, required: true, example: abc}", "      - {name: X-Trace, in: header, required: true, example: xyz}\n      - {name: X-Tenant, in: header, required: true, example: t1}")
+}
+
+#[test]
+fn sync_merges_header_and_query_rows_one_by_one() {
+    let (c, _) = shop();
+    let folder = files::to_files(&Folder { collection: c, ..Default::default() }).unwrap();
+    let mut c = files::read_files(&folder, "x").unwrap().collection;
+    {
+        let get = c.requests.iter_mut().find(|r| r.name == "Get a pet").unwrap();
+        get.headers.push(crate::model::Header::new("X-Mine", "1"));
+        let verbose = get.disabled_params.iter_mut().find(|p| p.key == "verbose").unwrap();
+        verbose.value = "true".into();
+    }
+    let folder = files::to_files(&Folder { collection: c, ..Default::default() }).unwrap();
+    let c = files::read_files(&folder, "x").unwrap().collection;
+
+    let s = sync(&c, &shop_v3(), &Options::default(), false).unwrap();
+    let get = s.diff.changed.iter().find(|c| c.operation_id.as_deref() == Some("getPet")).unwrap_or_else(|| panic!("{:?}", s.diff));
+    assert_eq!(get.updated, ["params", "headers"], "{get:?}");
+    assert_eq!(get.kept, ["params"], "{get:?}");
+    let rows: Vec<(&str, &str, &str, &str)> = get.rows.iter().map(|r| (r.field.as_str(), r.name.as_str(), r.change.as_str(), r.outcome.as_str())).collect();
+    assert_eq!(
+        rows,
+        [
+            ("params", "verbose", "changed", "kept"),
+            ("params", "limit", "added", "updated"),
+            ("headers", "X-Trace", "changed", "updated"),
+            ("headers", "X-Tenant", "added", "updated"),
+            ("headers", "X-Mine", "added", "yours"),
+        ]
+    );
+    let r = req(&s.collection, "Get a pet");
+    let headers: Vec<(&str, &str)> = r.headers.iter().map(|h| (h.name.as_str(), h.value.as_str())).collect();
+    assert_eq!(headers, [("X-Trace", "xyz"), ("X-Tenant", "t1"), ("X-Mine", "1")], "your header stays, the spec's change and new header land");
+    let params: Vec<(&str, &str)> = r.disabled_params.iter().map(|p| (p.key.as_str(), p.value.as_str())).collect();
+    assert_eq!(params, [("verbose", "true"), ("limit", "10")], "your value stays, the new parameter lands");
+
+    // Written and read back, the next sync of the same spec has nothing to do.
+    let folder = files::to_files(&Folder { collection: s.collection.clone(), ..Default::default() }).unwrap();
+    let again = sync(&files::read_files(&folder, "x").unwrap().collection, &shop_v3(), &Options::default(), false).unwrap();
+    assert!(again.diff.changed.iter().all(|c| c.operation_id.as_deref() != Some("getPet")), "{:?}", again.diff);
+
+    // The spec removes X-Trace later: it goes, your X-Mine stays.
+    let v4 = shop_v3().replace("      - {name: X-Trace, in: header, required: true, example: xyz}\n", "");
+    let later = sync(&s.collection, &v4, &Options::default(), false).unwrap();
+    let r = req(&later.collection, "Get a pet");
+    assert_eq!(r.headers.iter().map(|h| h.name.as_str()).collect::<Vec<_>>(), ["X-Tenant", "X-Mine"]);
+    let get = later.diff.changed.iter().find(|c| c.operation_id.as_deref() == Some("getPet")).unwrap();
+    assert!(get.rows.iter().any(|r| (r.name.as_str(), r.change.as_str(), r.outcome.as_str()) == ("X-Trace", "removed", "updated")), "{get:?}");
+}
+
+#[test]
+fn a_record_without_row_hashes_keeps_edited_headers_whole() {
+    let (mut c, _) = shop();
+    let get = c.requests.iter_mut().find(|r| r.name == "Get a pet").unwrap();
+    get.headers.push(crate::model::Header::new("X-Mine", "1"));
+    // As 1.0 wrote the record: no `rows`.
+    get.extra.get_mut("openapi").unwrap().as_object_mut().unwrap().remove("rows");
+    let s = sync(&c, &shop_v3(), &Options::default(), false).unwrap();
+    let get = s.diff.changed.iter().find(|c| c.operation_id.as_deref() == Some("getPet")).unwrap();
+    assert!(get.kept.contains(&"headers".to_string()) && get.rows.iter().all(|r| r.field != "headers"), "{get:?}");
+    assert_eq!(req(&s.collection, "Get a pet").headers.iter().map(|h| h.value.as_str()).collect::<Vec<_>>(), ["abc", "1"]);
+    // The record now has row hashes: the next spec change merges by row.
+    let rec: OpRecord = serde_json::from_value(req(&s.collection, "Get a pet").extra["openapi"].clone()).unwrap();
+    assert!(rec.rows["headers"].contains_key("x-trace"));
+}

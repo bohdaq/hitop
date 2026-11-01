@@ -120,7 +120,10 @@ paths:
       tags: [pets]
       operationId: listPets
       summary: List pets
-      parameters: [{name: limit, in: query, required: true, example: 10}]
+      parameters:
+      - {name: limit, in: query, required: true, example: 10}
+      - {name: X-Api-Version, in: header, required: true, example: "1"}
+      - {name: X-Client, in: header, required: true, example: cli}
       responses: {"200": {description: ok}}
     post:
       tags: [pets]
@@ -139,7 +142,8 @@ paths:
 
 fn v2() -> String {
     V1.replace("version: \"1\"", "version: \"2\"")
-        .replace("example: 10}]", "example: 20}]")
+        .replace("example: 10}", "example: 20}")
+        .replace("example: \"1\"}", "example: \"2\"}")
         .replace("example: {name: Rex}", "example: {name: Rex, kind: dog}")
         .replace(
             "  /pets/{id}:\n    delete:\n      tags: [pets]\n      operationId: deletePet\n      summary: Delete a pet\n",
@@ -157,10 +161,11 @@ fn sync_keeps_edits_to_the_files() {
     let req = |p: &str| dir.join("requests").join(p);
     assert_eq!(yaml_files(&dir.join("requests")), ["pets/add-a-pet.yaml", "pets/delete-a-pet.yaml", "pets/list-pets.yaml"]);
 
-    // Edits: a script and an assertion, an auth override, a rename (name and
-    // file), and an environment.
+    // Edits: a script and an assertion, an auth override, a header of your
+    // own, a rename (name and file), and an environment.
     let list = fs::read_to_string(req("pets/list-pets.yaml")).unwrap();
-    let list = list.replace("name: List pets\n", "name: All my pets\n").replace(
+    assert!(list.contains("headers:\n- name: X-Api-Version\n  value: '1'\n- name: X-Client\n  value: cli\n"), "{list}");
+    let list = list.replace("name: List pets\n", "name: All my pets\n").replace("  value: cli\n", "  value: cli\n- name: X-Mine\n  value: mine\n").replace(
         "openapi:\n",
         "auth:\n  type: bearer\n  token: ${token}\nscripts:\n  pre: setHeader('X-Run', '1');\n  post: assert.status(200);\nopenapi:\n",
     );
@@ -184,7 +189,10 @@ fn sync_keeps_edits_to_the_files() {
         .stdout(
             contains("dry run")
                 .and(contains("+ GET /pets/{id} (getPet)  Get a pet → requests/pets/get-a-pet.yaml"))
-                .and(contains("~ GET /pets (listPets)  All my pets: updated url"))
+                .and(contains("~ GET /pets (listPets)  All my pets: updated url, headers\n"))
+                // Row by row: the spec's change to one header, your own header.
+                .and(contains("      ~ header X-Api-Version changed by the spec: updated\n"))
+                .and(contains("      = header X-Mine added by you: kept\n"))
                 .and(contains("~ POST /pets (addPet)  Add a pet: kept your body (the spec changed it too)"))
                 .and(contains("- DELETE /pets/{id} (deletePet)  Delete a pet: removed from the spec: kept (--prune deletes it)"))
                 .and(contains("2 added, 2 changed, 1 removed, 0 unchanged")),
@@ -193,7 +201,8 @@ fn sync_keeps_edits_to_the_files() {
 
     hitop(&home).args(["openapi", "sync", arg(&spec2), arg(&dir)]).assert().success().stdout(contains("Updated"));
     let mine = fs::read_to_string(req("mine/all.yaml")).unwrap();
-    assert!(mine.contains("name: All my pets\n") && mine.contains("value: '20'"), "{mine}");
+    assert!(mine.contains("name: All my pets\n") && mine.contains("- name: limit\n  value: '20'"), "{mine}");
+    assert!(mine.contains("- name: X-Api-Version\n  value: '2'\n- name: X-Client\n  value: cli\n- name: X-Mine\n  value: mine\n"), "both outcomes: {mine}");
     assert!(mine.contains("pre: setHeader('X-Run', '1');") && mine.contains("post: assert.status(200);") && mine.contains("token: ${token}"), "{mine}");
     assert!(fs::read_to_string(req("pets/add-a-pet.yaml")).unwrap().contains("\"name\": \"Fido\""));
     assert!(req("pets/get-a-pet.yaml").is_file() && req("pets/patch-a-pet.yaml").is_file());

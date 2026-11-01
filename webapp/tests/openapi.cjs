@@ -23,7 +23,10 @@ paths:
       tags: [pets]
       operationId: listPets
       summary: List pets
-      parameters: [{name: limit, in: query, required: true, example: ${v2 ? 20 : 10}}]
+      parameters:
+      - {name: limit, in: query, required: true, example: ${v2 ? 20 : 10}}
+      - {name: X-Api-Version, in: header, required: true, example: "${v2 ? 2 : 1}"}
+      - {name: X-Client, in: header, required: true, example: web}
       responses:
         "200":
           description: ok
@@ -119,7 +122,7 @@ function api() {
             variables: { ...c.variables, key: 'k-1', token: 't-1' },
             requests: c.requests.map((r) =>
               r.name === 'List pets'
-                ? { ...r, name: 'All my pets', preRequestScript: "setHeader('X-Run', '1');", postRequestScript: 'assert.status(200);' }
+                ? { ...r, name: 'All my pets', preRequestScript: "setHeader('X-Run', '1');", postRequestScript: 'assert.status(200);', headers: [...r.headers, { name: 'X-Mine', value: 'mine', enabled: true }] }
                 : r.name === 'Add a pet'
                   ? { ...r, body: '{"name": "Fido"}', auth: { type: 'bearer', token: '${token}' } }
                   : r,
@@ -143,6 +146,11 @@ function api() {
   const diff = await dialog.innerText();
   check('preview: counts', diff.includes('1 added, 2 changed, 1 removed, 0 unchanged'), diff.replace(/\n/g, ' | ').slice(0, 500));
   check('preview: added, changed with kept edits, removed', diff.includes('GET /pets/{id} (getPet)') && /All my pets: updated url/.test(diff) && diff.includes('Add a pet: kept your body') && diff.includes('Delete a pet: gone from the spec, kept'), diff.replace(/\n/g, ' | ').slice(0, 600));
+  check(
+    'preview: header rows one by one (the spec changed one, you added one)',
+    diff.includes('Header X-Api-Version') && diff.includes('header X-Api-Version changed by the spec: updated') && diff.includes('header X-Mine added by you: kept') && /All my pets: updated url, headers/.test(diff),
+    diff.replace(/\n/g, ' | ').slice(0, 800),
+  );
   check('nothing changes before Apply', (await shop()).requests.length === 3);
   await dialog.getByRole('button', { name: 'Apply' }).click();
   await settle(p);
@@ -152,6 +160,8 @@ function api() {
   const add = col.requests.find((r) => r.openapi?.operationId === 'addPet');
   check('edits survive: name, scripts', mine?.name === 'All my pets' && mine.preRequestScript === "setHeader('X-Run', '1');" && mine.postRequestScript === 'assert.status(200);', JSON.stringify(mine));
   check("spec changes apply where you didn't edit", mine?.url === '${baseUrl}/pets?limit=20', mine?.url);
+  const rows = (mine?.headers ?? []).filter((x) => x.name).map((x) => `${x.name}=${x.value}`).join(',');
+  check("both header outcomes: the spec's new value and your own header", rows === 'X-Api-Version=2,X-Client=web,X-Mine=mine', rows);
   check('your body and auth override stay', add?.body === '{"name": "Fido"}' && add?.auth?.type === 'bearer', JSON.stringify(add));
   check('the new operation is added, the removed one kept', col.requests.some((r) => r.openapi?.operationId === 'getPet' && r.url === '${baseUrl}/pets/${id}') && col.requests.some((r) => r.name === 'Delete a pet'), col.requests.map((r) => r.name).join(', '));
   check('the record moves to the new version', col.openapi?.version === '2' && col.openapi?.source === `${base}/v2.yaml`, JSON.stringify(col.openapi));

@@ -1,0 +1,73 @@
+{
+  "collection": {
+    "id": 4646556820529043,
+    "name": "Orders",
+    "openapi": {
+      "synced": {
+        "auth": "1bc4ba528108e4",
+        "baseUrl": "17eef38eaeeeaa"
+      },
+      "version": "2.0.0"
+    },
+    "requests": [
+      {
+        "body": "",
+        "disabledParams": [
+          {
+            "key": "status",
+            "value": "open"
+          },
+          {
+            "key": "limit",
+            "value": "20"
+          }
+        ],
+        "headers": [
+          {
+            "name": "X-Api-Version",
+            "value": "2"
+          },
+          {
+            "name": "X-Tenant",
+            "value": "acme"
+          }
+        ],
+        "id": 6189243579184802,
+        "method": "GET",
+        "name": "List orders",
+        "openapi": {
+          "operation": "GET /orders",
+          "operationId": "listOrders",
+          "rows": {
+            "headers": {
+              "x-api-version": "f84ca3ca03237",
+              "x-tenant": "18c1245cf77a7"
+            },
+            "params": {
+              "limit": "1711853f007327",
+              "status": "68417f999231"
+            }
+          },
+          "synced": {
+            "auth": "1bc4ba528108e4",
+            "body": "e94b0e218e482",
+            "examples": "12b07b5ecb5a5",
+            "headers": "2d7429bc27418",
+            "method": "184fae9dabc84f",
+            "params": "1509f6ede41a84",
+            "url": "14f0960dfb1ee3"
+          }
+        },
+        "postRequestScript": "",
+        "preRequestScript": "",
+        "url": "${baseUrl}/orders"
+      }
+    ],
+    "variables": {
+      "baseUrl": "https://orders.example.test/v2"
+    },
+    "workspace": "005db9d86e634d9ff987347f666f5844"
+  },
+  "environments": [],
+  "globals": null
+}

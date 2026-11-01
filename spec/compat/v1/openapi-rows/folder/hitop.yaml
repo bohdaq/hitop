@@ -1,0 +1,10 @@
+format: 1
+name: Orders
+workspace: 005db9d86e634d9ff987347f666f5844
+variables:
+  baseUrl: https://orders.example.test/v2
+openapi:
+  synced:
+    auth: 1bc4ba528108e4
+    baseUrl: 17eef38eaeeeaa
+  version: 2.0.0

@@ -1,0 +1,33 @@
+name: List orders
+method: GET
+url: ${baseUrl}/orders
+params:
+- name: status
+  value: open
+  enabled: false
+- name: limit
+  value: '20'
+  enabled: false
+headers:
+- name: X-Api-Version
+  value: '2'
+- name: X-Tenant
+  value: acme
+openapi:
+  operation: GET /orders
+  operationId: listOrders
+  rows:
+    headers:
+      x-api-version: f84ca3ca03237
+      x-tenant: 18c1245cf77a7
+    params:
+      limit: 1711853f007327
+      status: 68417f999231
+  synced:
+    auth: 1bc4ba528108e4
+    body: e94b0e218e482
+    examples: 12b07b5ecb5a5
+    headers: 2d7429bc27418
+    method: 184fae9dabc84f
+    params: 1509f6ede41a84
+    url: 14f0960dfb1ee3

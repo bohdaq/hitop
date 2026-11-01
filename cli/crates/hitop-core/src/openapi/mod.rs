@@ -30,7 +30,7 @@ mod sync;
 mod tests;
 
 pub use refs::parse;
-pub use sync::{sync, CollectionChange, OpChange, SyncDiff, Synced};
+pub use sync::{sync, CollectionChange, OpChange, RowChange, SyncDiff, Synced};
 
 use example::Side;
 use refs::{RefError, Resolver};
@@ -111,6 +111,11 @@ pub struct OpRecord {
     pub operation_id: Option<String>,
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
     pub synced: BTreeMap<String, String>,
+    /// Header and query parameter rows as imported, one hash per row
+    /// (`headers: {x-trace: <hash>}`), so sync merges them one by one.
+    /// Records written before 1.1 have none.
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub rows: BTreeMap<String, BTreeMap<String, String>>,
 }
 
 /// The record on the collection.
@@ -297,6 +302,7 @@ fn build(spec: &Value, opts: &Options) -> Result<Built> {
     }
     for op in &mut ops {
         op.record.synced = sync::request_hashes(&op.request);
+        op.record.rows = sync::request_rows(&op.request);
     }
     report.mapped.variables = variables.keys().cloned().collect();
     let mut synced = BTreeMap::new();
@@ -657,7 +663,7 @@ impl<'a> OpCtx<'a, '_> {
         if op.get("callbacks").is_some() {
             report.skip(self.operation, "callbacks (requests the API sends back)");
         }
-        BuiltOp { record: OpRecord { operation: self.operation.to_string(), operation_id, synced: BTreeMap::new() }, request, file: String::new() }
+        BuiltOp { record: OpRecord { operation: self.operation.to_string(), operation_id, synced: BTreeMap::new(), rows: BTreeMap::new() }, request, file: String::new() }
     }
 
     fn body(&self, body: &'a Value, request: &mut Request, headers: &mut Vec<Header>, report: &mut OpenApiReport) {

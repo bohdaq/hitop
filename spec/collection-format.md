@@ -257,9 +257,12 @@ examples:
 openapi:
   operation: GET /pets/{petId}
   operationId: getPet
+  rows:
+    headers:
+      x-trace: f84ca3ca03237
   synced:
     url: 221e9cd838898
-    headers: 12b07b5ecb5a5
+    headers: 1c5a416c2e8c43
 ```
 
 A request imported from an OpenAPI spec records the operation it came from
@@ -278,6 +281,7 @@ openapi:
 | `openapi.operation` (request) | `METHOD /path` as in the spec. |
 | `openapi.operationId` (request) | The operation's `operationId`, when it has one. |
 | `openapi.synced` (request) | A hash of each spec-owned field as last imported: `method`, `url`, `params`, `headers`, `body`, `auth`, `examples`. |
+| `openapi.rows` (request, since hitop 1.1) | A hash of each header row (`headers`, keyed by the name in lower case) and each query parameter row of `params` (keyed by the key as written) as last imported; the second row of one name is `name#2`. Rows hash `[value, enabled]` (headers) or `value` (parameters). |
 | `openapi.source` (`hitop.yaml`) | The spec's URL, when it was imported from one. |
 | `openapi.version` (`hitop.yaml`) | The spec's `info.version`. |
 | `openapi.flat` (`hitop.yaml`) | `true` when requests were imported without a folder per tag. |
@@ -292,6 +296,14 @@ spec's. The hash is FNV-1a 64 (low 53 bits, lower-case hex) of the field's
 JSON in hitop's model, with blank header rows and keys other than name,
 value and enabled left out of rows; a tool that can't compute it may leave
 `synced` out, and a sync then keeps every field as edited.
+
+Headers and query parameters merge row by row where `openapi.rows` is
+present (or the field had no rows): a row the user added, edited or removed
+stays as the user has it, and each row the spec added, changed or removed is
+applied when the user's row still has the hashed value (a new row goes after
+the spec's row before it). A record without `rows` (written before hitop
+1.1) keeps an edited `headers` or `params` field whole, as above; the sync
+writes `rows`, so the next one merges by row.
 
 `openapi` is a top-level key added to version 1 after its first release.
 Readers from before it (hitop 0.3.0 and older) keep it as an unknown key and

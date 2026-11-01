@@ -118,7 +118,7 @@ fn every_v1_case_reads_round_trips_and_writes_back() {
     let cases = cases();
     let names: Vec<String> = cases.iter().map(|c| c.file_name().unwrap().to_string_lossy().to_string()).collect();
     // Removing a case breaks the promise; this list only grows.
-    for required in ["examples", "graphql", "grpc", "http", "minimal", "openapi", "quirks", "secrets", "unknown-keys", "websocket"] {
+    for required in ["examples", "graphql", "grpc", "http", "minimal", "openapi", "openapi-rows", "quirks", "secrets", "unknown-keys", "websocket"] {
         assert!(names.iter().any(|n| n == required), "spec/compat/v1/{required} is missing");
     }
     for case in &cases {

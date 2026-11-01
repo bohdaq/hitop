@@ -51,6 +51,20 @@ function opLine(c) {
   return c.operationId ? `${c.operation} (${c.operationId})` : c.operation;
 }
 
+// A header or query row of a row-by-row merge (hitop-core sync RowChange),
+// in the words of the CLI's `hitop openapi sync`.
+export function rowText(r) {
+  const what = r.field === "headers" ? "header" : "query parameter";
+  if (r.outcome === "updated") return `${what} ${r.name} ${r.change} by the spec: updated`;
+  if (r.outcome === "kept") return `${what} ${r.name} ${r.change} by the spec: kept yours`;
+  return `${what} ${r.name} ${r.change} by you: kept`;
+}
+
+function rowSign(r) {
+  if (r.outcome !== "updated") return "=";
+  return r.change === "added" ? "+" : r.change === "removed" ? "-" : "~";
+}
+
 function diffBody(p) {
   const d = p.diff;
   const row = (sign, c, text) => html`<li class=${`diff-${sign === "+" ? "add" : sign === "-" ? "del" : "chg"}`}><span><b>${sign}</b> ${opLine(c)}</span><code>${text}</code></li>`;
@@ -65,7 +79,11 @@ function diffBody(p) {
       ? html`<p class="dialog-note">The collection is up to date.</p>`
       : html`<ul class="import-report openapi-diff">
           ${d.added.map((c) => row("+", c, `${c.name} (new)`))}
-          ${d.changed.map((c) => row("~", c, `${c.name}: ${changedText(c)}`))}
+          ${d.changed.map(
+            (c) => html`${row("~", c, `${c.name}: ${changedText(c)}`)}${(c.rows ?? []).map(
+              (r) => html`<li class=${`diff-row diff-${r.outcome === "updated" ? (r.change === "added" ? "add" : r.change === "removed" ? "del" : "chg") : "keep"}`}><span><b>${rowSign(r)}</b> ${r.field === "headers" ? "Header" : "Query"} ${r.name}</span><code>${rowText(r)}</code></li>`,
+            )}`,
+          )}
           ${d.removed.map((c) => row("-", c, `${c.name}: gone from the spec, ${d.pruned ? "deleted" : "kept"}`))}
           ${cc.updated?.length ? html`<li><span>Collection</span><code>updated ${cc.updated.join(", ")}</code></li>` : nothing}
           ${cc.kept?.length ? html`<li><span>Collection</span><code>kept your ${cc.kept.join(", ")}</code></li>` : nothing}
