@@ -10,7 +10,6 @@ public class Main {
         HttpClient client = HttpClient.newHttpClient();
         HttpRequest request = HttpRequest.newBuilder()
             .uri(URI.create("https://cdn.example.test/assets/app.js"))
-            .header("X-Tag", "a")
             .header("X-Tag", "b")
             .header("Authorization", "Basic " + Base64.getEncoder().encodeToString("svc:".getBytes(StandardCharsets.UTF_8)))
             .method("PURGE", HttpRequest.BodyPublishers.noBody())

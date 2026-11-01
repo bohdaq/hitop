@@ -11,7 +11,6 @@ func main() {
 	if err != nil {
 		panic(err)
 	}
-	req.Header.Add("X-Tag", "a")
 	req.Header.Add("X-Tag", "b")
 	req.SetBasicAuth("svc", "")
 

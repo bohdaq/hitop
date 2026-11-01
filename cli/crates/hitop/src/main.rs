@@ -27,6 +27,8 @@ enum Cmd {
     Send(commands::send::SendArgs),
     /// Run a collection or all collections, with reports for CI (exit codes: 0 passed, 1 failed, 2 usage or config error)
     Run(commands::run::RunArgs),
+    /// Print a saved request as code: curl, fetch, python, go, java or rust (secrets as {{NAME}})
+    Snippet(commands::snippet::SnippetArgs),
     /// Manage collections
     #[command(subcommand)]
     Collections(commands::collections::CollectionsCmd),
@@ -97,6 +99,7 @@ fn dispatch(command: Cmd) -> i32 {
                 }
             }
         }
+        Cmd::Snippet(args) => commands::snippet::run(args),
         Cmd::Collections(cmd) => commands::collections::run(cmd),
         Cmd::Requests(cmd) => commands::requests::run(cmd),
         Cmd::Variables(cmd) => commands::variables::run(cmd),

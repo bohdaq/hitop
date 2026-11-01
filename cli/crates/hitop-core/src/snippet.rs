@@ -199,6 +199,15 @@ fn build(request: &Request, collection_auth: Option<&Auth>, variables: &HashMap<
         _ if request.body.is_empty() => Body::None,
         _ => Body::Raw(fill(&request.body)),
     };
+    // hitop sends one value per header name, the last one (a header map).
+    let mut unique: Vec<(String, String)> = Vec::new();
+    for (k, v) in headers {
+        match unique.iter_mut().find(|(n, _)| n.eq_ignore_ascii_case(&k)) {
+            Some(slot) => *slot = (k, v),
+            None => unique.push((k, v)),
+        }
+    }
+    let headers = unique;
     *placeholders = cell.into_inner();
     // An API key in the query is percent-encoded: keep its placeholder readable.
     let mut url = url;
@@ -352,25 +361,16 @@ fn fetch(spec: &Spec) -> String {
     out.push_str(&format!("const response = await fetch({}, {{\n", q(&spec.url)));
     out.push_str(&format!("  method: {},\n", q(&spec.method)));
     if !headers.is_empty() {
-        let mut names: Vec<&str> = spec.headers.iter().map(|(k, _)| k.as_str()).collect();
-        names.sort_by_key(|n| n.to_ascii_lowercase());
-        let dupes = names.windows(2).any(|w| w[0].eq_ignore_ascii_case(w[1]));
-        if dupes {
-            out.push_str("  headers: [\n");
-            for (k, v) in &headers {
-                out.push_str(&format!("    [{k}, {v}],\n"));
-            }
-            out.push_str("  ],\n");
-        } else {
-            out.push_str("  headers: {\n");
-            for (k, v) in &headers {
-                out.push_str(&format!("    {k}: {v},\n"));
-            }
-            out.push_str("  },\n");
+        out.push_str("  headers: {\n");
+        for (k, v) in &headers {
+            out.push_str(&format!("    {k}: {v},\n"));
         }
+        out.push_str("  },\n");
     }
     match &spec.body {
         Body::None => {}
+        // A string body gets text/plain from fetch; bytes go out with no Content-Type, as from hitop.
+        Body::Raw(text) if content_type(spec).is_none() => out.push_str(&format!("  body: new TextEncoder().encode({}),\n", q(text))),
         Body::Raw(text) | Body::UrlEncoded(text) => out.push_str(&format!("  body: {},\n", q(text))),
         Body::Multipart(_) => out.push_str("  body: form,\n"),
     }
@@ -396,16 +396,8 @@ fn python(spec: &Spec) -> String {
     let mut args = vec![q(&spec.method), "url".to_string()];
     if !spec.headers.is_empty() {
         out.push_str("headers = {\n");
-        let mut seen: Vec<String> = Vec::new();
         for (k, v) in &spec.headers {
-            // A dict keeps one value per name: join repeats as one header.
-            if seen.iter().any(|s| s.eq_ignore_ascii_case(k)) {
-                continue;
-            }
-            seen.push(k.clone());
-            let all: Vec<&str> = spec.headers.iter().filter(|(n, _)| n.eq_ignore_ascii_case(k)).map(|(_, v)| v.as_str()).collect();
-            let value = if all.len() > 1 { all.join(", ") } else { v.clone() };
-            out.push_str(&format!("    {}: {},\n", q(k), q(&value)));
+            out.push_str(&format!("    {}: {},\n", q(k), q(v)));
         }
         out.push_str("}\n");
         args.push("headers=headers".into());

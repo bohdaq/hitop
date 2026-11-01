@@ -2,7 +2,7 @@ import requests
 
 url = "https://cdn.example.test/assets/app.js"
 headers = {
-    "X-Tag": "a, b",
+    "X-Tag": "b",
 }
 
 response = requests.request("PURGE", url, headers=headers, auth=("svc", ""))

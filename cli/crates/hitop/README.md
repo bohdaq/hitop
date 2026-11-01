@@ -67,6 +67,7 @@ hitop export MyAPI -o my-collection.json
 | `hitop run --all` | Run every collection |
 | `hitop collections list/add/delete/rename/duplicate` | Manage collections |
 | `hitop requests list/add/show/delete/rename/send` | Manage requests |
+| `hitop snippet <collection> <request> --lang <lang>` | Print a saved request as code: `curl`, `fetch`, `python`, `go`, `java`, `rust` (see "Code snippets") |
 | `hitop requests auth <collection> <request>` | Set (`--bearer`, `--basic`, `--api-key`) or clear (`--none`) a request's auth |
 | `hitop variables list/set/delete` | Manage collection variables |
 | `hitop env list/add/delete/show/set/unset/use/off/import/export` | Manage environments |
@@ -210,6 +211,20 @@ otherwise); add `--urlencoded` for `application/x-www-form-urlencoded`. Saved re
 multipart body (`body.type: form` / `multipart` in a folder, or from the web app or a Postman import) go
 out as one in `hitop run` and `requests send`; a file row has no file in a collection, so it goes out as an
 empty part, as in the web app after a reload.
+
+## Code snippets
+
+`hitop snippet ./my-api "Create order" --lang python --env dev` prints the request as code for curl,
+JavaScript `fetch` (Node, top-level `await`), Python `requests`, Go `net/http`, Java `HttpClient` or
+Rust `reqwest` (blocking). The request is addressed as in `hitop requests send`, variables come from
+the globals, the collection and the environment (`--env`, else the active one), and auth, headers,
+query parameters and raw, form and multipart bodies are written the way hitop sends them (one value
+per header name; no `Content-Type` that hitop wouldn't send). Scripts are not run.
+
+Secret variables are never resolved by default: they are written as a `{{NAME}}` placeholder, as are
+variables with no value, and stderr lists them. `--show-secrets` writes the values instead, resolved
+like `requests send` does (`HITOP_SECRET_<ENV>_<NAME>`, `--secret`, keychain, prompt); treat that
+output as a secret. The web app's Code panel uses the same generator (hitop-core through hitop-wasm).
 
 ## Shell completions
 
