@@ -120,6 +120,9 @@ enum Part {
 
 /// The snippet for `request` (its own auth, else `collection_auth`).
 pub fn generate(lang: Lang, request: &Request, collection_auth: Option<&Auth>, variables: &HashMap<String, String>, secrets: &[String]) -> anyhow::Result<Snippet> {
+    if request.is_websocket() {
+        anyhow::bail!("'{}' is a WebSocket request: there is no HTTP snippet for it (connect with `hitop ws`)", request.name);
+    }
     let mut placeholders = Vec::new();
     let spec = build(request, collection_auth, variables, secrets, &mut placeholders)?;
     let code = match lang {
@@ -663,6 +666,12 @@ mod tests {
         assert!(!s.code.contains("s3cr3t"), "{}", s.code);
         assert!(s.code.contains("https://api.test/u?k={{key}}") && s.code.contains("Bearer {{token}}"), "{}", s.code);
         assert_eq!(s.placeholders, vec!["key".to_string(), "token".to_string()]);
+    }
+
+    #[test]
+    fn no_snippet_for_websocket_requests() {
+        let r = Request { name: "Feed".into(), url: "wss://x".into(), kind: Some("websocket".into()), ..Default::default() };
+        assert!(generate(Lang::Curl, &r, None, &HashMap::new(), &[]).unwrap_err().to_string().contains("WebSocket"));
     }
 
     #[test]
