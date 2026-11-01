@@ -7,7 +7,7 @@ use std::fs;
 use std::path::{Path, PathBuf};
 
 use hitop_core::format::{self, Folder};
-use hitop_core::model::{ApiKeyLocation, Auth, Collection, Environment, FormField, Graphql, Header, Param, Request, WebSocket, WsMessage};
+use hitop_core::model::{ApiKeyLocation, Auth, Collection, Environment, FormField, Graphql, Grpc, Header, Param, Request, WebSocket, WsMessage};
 use proptest::prelude::*;
 
 fn golden_dir() -> PathBuf {
@@ -82,6 +82,7 @@ fn golden_covers_every_field() {
         "content: |", "fields:", "scripts:", "pre:", "post: |", "examples:", "type: bearer", "type: basic",
         "type: apikey", "in: query", "type: none", "secret: true", "pinned: true", "color: teal", "region: eu",
         "variables: |", "operationName:", "kind: websocket", "subprotocols:", "messages:",
+        "kind: grpc", "service:", "message: |", "protos:", "importPaths:", "plaintext: true",
     ] {
         assert!(all.contains(key), "no golden file has `{key}`");
     }
@@ -201,8 +202,14 @@ fn request() -> impl Strategy<Value = Request> {
             )
                 .prop_map(|(subprotocols, messages)| WebSocket { subprotocols, messages, ..Default::default() }),
         ),
+        // A gRPC request's section, also kept on any request.
+        prop::option::of(
+            (text(), text(), text(), prop::collection::vec(text(), 0..3), prop::collection::vec(text(), 0..2), any::<bool>()).prop_map(
+                |(service, method, message, protos, import_paths, plaintext)| Grpc { service, method, message, protos, import_paths, plaintext, ..Default::default() },
+            ),
+        ),
     );
-    (core, rows, more, socket).prop_map(|((id, name, url, method), (headers, body, pre, post, auth, mode), (form_fields, disabled_params, body_type, examples, file, extra, graphql), (kind, websocket))| {
+    (core, rows, more, socket).prop_map(|((id, name, url, method), (headers, body, pre, post, auth, mode), (form_fields, disabled_params, body_type, examples, file, extra, graphql), (kind, websocket, grpc))| {
         let mut r = Request {
             id,
             name,
@@ -220,6 +227,7 @@ fn request() -> impl Strategy<Value = Request> {
             graphql: graphql.filter(|g| !g.is_empty()),
             kind: kind.map(String::from),
             websocket: websocket.filter(|w| !w.is_empty()),
+            grpc: grpc.filter(|g| !g.is_empty()),
             examples,
             file,
             extra,

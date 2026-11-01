@@ -19,4 +19,5 @@ order:
 - uploads/avatar
 - orders/delete-order
 - live-prices
+- say-hello
 color: teal

@@ -1,0 +1,21 @@
+name: Say hello
+kind: grpc
+method: GET
+url: ${grpcHost}:50051
+headers:
+- name: x-tenant
+  value: ${tenant}
+grpc:
+  service: hitop.test.Greeter
+  method: SayHello
+  message: |
+    {
+      "name": "${user}",
+      "times": 2
+    }
+  protos:
+  - protos/greeter.proto
+  importPaths:
+  - protos/include
+  plaintext: true
+id: 1793470569736010

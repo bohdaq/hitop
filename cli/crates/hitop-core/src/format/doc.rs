@@ -72,7 +72,7 @@ pub struct CollectionDoc {
 pub struct RequestDoc {
     #[serde(default)]
     pub name: Option<String>,
-    /// `websocket` for a WebSocket request; left out for HTTP.
+    /// `websocket` or `grpc`; left out for HTTP.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub kind: Option<String>,
     #[serde(default = "get")]
@@ -89,6 +89,8 @@ pub struct RequestDoc {
     pub body: Option<BodyDoc>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub websocket: Option<WebSocketDoc>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub grpc: Option<GrpcDoc>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub scripts: Option<ScriptsDoc>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
@@ -143,6 +145,25 @@ pub struct WebSocketDoc {
     pub subprotocols: Vec<String>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub messages: Vec<MessageDoc>,
+}
+
+/// A gRPC request's `grpc` section.
+#[derive(Debug, Default, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct GrpcDoc {
+    #[serde(default, deserialize_with = "stringish", skip_serializing_if = "String::is_empty")]
+    pub service: String,
+    #[serde(default, deserialize_with = "stringish", skip_serializing_if = "String::is_empty")]
+    pub method: String,
+    /// JSON text (a block scalar), not a YAML map, so `${variables}` work anywhere.
+    #[serde(default, deserialize_with = "stringish", skip_serializing_if = "String::is_empty")]
+    pub message: String,
+    #[serde(default, skip_serializing_if = "Vec::is_empty", deserialize_with = "strings")]
+    pub protos: Vec<String>,
+    #[serde(rename = "importPaths", default, skip_serializing_if = "Vec::is_empty", deserialize_with = "strings")]
+    pub import_paths: Vec<String>,
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub plaintext: bool,
 }
 
 /// A saved WebSocket message row.

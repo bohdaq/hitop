@@ -2,9 +2,9 @@
 use anyhow::{anyhow, bail, Result};
 use serde_json::Value;
 
-use super::doc::{BodyDoc, EnvironmentDoc, MessageDoc, RequestDoc, RowDoc, ScriptsDoc, WebSocketDoc};
+use super::doc::{BodyDoc, EnvironmentDoc, GrpcDoc, MessageDoc, RequestDoc, RowDoc, ScriptsDoc, WebSocketDoc};
 use super::names;
-use crate::model::{Environment, Extra, FormField, Graphql, Header, Param, Request, WebSocket, WsMessage};
+use crate::model::{Environment, Extra, FormField, Graphql, Grpc, Header, Param, Request, WebSocket, WsMessage};
 use crate::params::{append_query, parse_query, with_query};
 
 /// Keys the JSON model or the YAML files give a meaning to. An unknown key
@@ -13,7 +13,7 @@ use crate::params::{append_query, parse_query, with_query};
 const REQUEST_KEYS: &[&str] = &[
     "id", "name", "url", "method", "headers", "body", "preRequestScript", "postRequestScript", "auth", "bodyMode",
     "formFields", "disabledParams", "bodyType", "examples", "file", "params", "scripts", "graphql",
-    "kind", "websocket",
+    "kind", "websocket", "grpc",
 ];
 const MESSAGE_KEYS: &[&str] = &["name", "content"];
 const ROW_KEYS: &[&str] = &["key", "name", "value", "type", "enabled"];
@@ -155,6 +155,23 @@ pub fn request_to_doc(r: &Request, file: &str) -> Result<RequestDoc> {
         }
     };
 
+    let grpc = match &r.grpc {
+        None => None,
+        Some(g) => {
+            if let Some(k) = g.extra.keys().next() {
+                bail!("request '{}': grpc: the key '{k}' has no place in a collection folder", r.name);
+            }
+            (!g.is_empty()).then(|| GrpcDoc {
+                service: g.service.clone(),
+                method: g.method.clone(),
+                message: g.message.clone(),
+                protos: g.protos.clone(),
+                import_paths: g.import_paths.clone(),
+                plaintext: g.plaintext,
+            })
+        }
+    };
+
     let scripts = if r.pre_request_script.is_empty() && r.post_request_script.is_empty() {
         None
     } else {
@@ -171,6 +188,7 @@ pub fn request_to_doc(r: &Request, file: &str) -> Result<RequestDoc> {
         auth: r.auth.clone(),
         body,
         websocket,
+        grpc,
         scripts,
         examples: r.examples.clone(),
         id: (r.id != names::request_id(file)).then_some(r.id),
@@ -237,6 +255,18 @@ pub fn doc_to_request(d: RequestDoc, file: &str) -> Result<Request> {
             Some(WebSocket { subprotocols: w.subprotocols, messages, extra: Extra::new() }).filter(|w| !w.is_empty())
         }
     };
+    let grpc = d
+        .grpc
+        .map(|g| Grpc {
+            service: g.service,
+            method: g.method,
+            message: g.message,
+            protos: g.protos,
+            import_paths: g.import_paths,
+            plaintext: g.plaintext,
+            extra: Extra::new(),
+        })
+        .filter(|g| !g.is_empty());
     let kind = d.kind.filter(|k| k != "http" && !k.is_empty());
     let scripts = d.scripts.unwrap_or_default();
     let name = d.name.unwrap_or_else(|| file.rsplit('/').next().unwrap_or(file).to_string());
@@ -257,6 +287,7 @@ pub fn doc_to_request(d: RequestDoc, file: &str) -> Result<Request> {
         graphql,
         kind,
         websocket,
+        grpc,
         examples: d.examples,
         file: Some(file.to_string()),
         extra: d.extra,

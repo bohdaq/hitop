@@ -227,6 +227,10 @@ pub struct Request {
     /// headers and auth are the request's own).
     #[serde(default, deserialize_with = "de_websocket", skip_serializing_if = "Option::is_none")]
     pub websocket: Option<WebSocket>,
+    /// A gRPC request's service, method, message and schema source (its
+    /// URL is the server address; headers and auth are sent as metadata).
+    #[serde(default, deserialize_with = "de_grpc", skip_serializing_if = "Option::is_none")]
+    pub grpc: Option<Grpc>,
     /// Saved responses.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub examples: Vec<serde_json::Value>,
@@ -276,6 +280,56 @@ fn de_kind<'de, D: serde::Deserializer<'de>>(d: D) -> Result<Option<String>, D::
 fn de_websocket<'de, D: serde::Deserializer<'de>>(d: D) -> Result<Option<WebSocket>, D::Error> {
     let w: Option<WebSocket> = Option::deserialize(d)?;
     Ok(w.filter(|w| !w.is_empty()))
+}
+
+/// `grpc: {}` (nothing in it) reads as no `grpc`.
+fn de_grpc<'de, D: serde::Deserializer<'de>>(d: D) -> Result<Option<Grpc>, D::Error> {
+    let g: Option<Grpc> = Option::deserialize(d)?;
+    Ok(g.filter(|g| !g.is_empty()))
+}
+
+/// The `kind` of a gRPC request.
+pub const GRPC: &str = "grpc";
+
+/// What a gRPC request carries besides its address, metadata and auth.
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+pub struct Grpc {
+    /// The service's full name (`package.Service`).
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub service: String,
+    /// The method's name in the service.
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub method: String,
+    /// The request message as JSON text (proto3 JSON mapping); may contain
+    /// `${variables}`.
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub message: String,
+    /// `.proto` files the schema comes from, relative to the collection
+    /// folder; none means server reflection.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub protos: Vec<String>,
+    /// Directories imports in `protos` are looked up in, relative to the
+    /// collection folder (each file's own directory is always searched).
+    #[serde(rename = "importPaths", default, skip_serializing_if = "Vec::is_empty")]
+    pub import_paths: Vec<String>,
+    /// HTTP/2 without TLS for a `host:port` address (`http://` addresses
+    /// are always plaintext, `https://` never).
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub plaintext: bool,
+    #[serde(flatten)]
+    pub extra: Extra,
+}
+
+impl Grpc {
+    pub fn is_empty(&self) -> bool {
+        self.service.is_empty()
+            && self.method.is_empty()
+            && self.message.is_empty()
+            && self.protos.is_empty()
+            && self.import_paths.is_empty()
+            && !self.plaintext
+            && self.extra.is_empty()
+    }
 }
 
 /// The `kind` of a WebSocket request.

@@ -132,6 +132,25 @@
           { "name": "ping", "content": "ping", "pinned": true }
         ]
       }
+    },
+    {
+      "id": 1793470569736010,
+      "name": "Say hello",
+      "method": "GET",
+      "url": "${grpcHost}:50051",
+      "headers": [
+        { "name": "x-tenant", "value": "${tenant}" }
+      ],
+      "body": "",
+      "kind": "grpc",
+      "grpc": {
+        "service": "hitop.test.Greeter",
+        "method": "SayHello",
+        "message": "{\n  \"name\": \"${user}\",\n  \"times\": 2\n}\n",
+        "protos": ["protos/greeter.proto"],
+        "importPaths": ["protos/include"],
+        "plaintext": true
+      }
     }
   ]
 }

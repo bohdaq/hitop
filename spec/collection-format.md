@@ -114,7 +114,7 @@ examples:
 | Key | Default | Meaning |
 | --- | --- | --- |
 | `name` | the file name | Display name. |
-| `kind` | `http` | `websocket` for a WebSocket request (below). Left out for HTTP. |
+| `kind` | `http` | `websocket` for a WebSocket request, `grpc` for a gRPC call (below). Left out for HTTP. |
 | `method` | `GET` | HTTP method, as written. |
 | `url` | empty | URL; may contain `${variables}`. |
 | `params` | none | Query parameters: rows of `name`, `value`, `enabled`. Enabled rows are appended to `url` in order; disabled rows are kept but not sent. |
@@ -122,6 +122,7 @@ examples:
 | `auth` | none | Auth preset (section 4). `{type: none}` turns off the collection's default auth. |
 | `body` | none | `type` and `content` or `fields`, see below. |
 | `websocket` | none | A WebSocket request's `subprotocols` and saved `messages` (below). |
+| `grpc` | none | A gRPC request's `service`, `method`, `message` and schema source (below). |
 | `scripts.pre` / `scripts.post` | empty | Pre-request and post-request JavaScript (hitop's script API: `setHeader`, `setUrl`, `setBody`, `getVariable`, `getContext`, `setContext`, `getResponseValue`, `assert.*`). |
 | `examples` | none | Saved responses, free-form maps. |
 | `id` | derived from the path | Numeric id used by hitop's JSON storage (section 6). |
@@ -293,6 +294,61 @@ value and enabled left out of rows; a tool that can't compute it may leave
 Readers from before it (hitop 0.3.0 and older) keep it as an unknown key and
 write it back; nothing about sending the request depends on it.
 
+### gRPC
+
+```yaml
+name: Say hello
+kind: grpc
+url: ${grpcHost}:50051
+headers:
+- name: x-tenant
+  value: ${tenant}
+auth:
+  type: bearer
+  token: ${token}
+grpc:
+  service: hitop.test.Greeter
+  method: SayHello
+  message: |
+    {
+      "name": "${user}",
+      "times": 2
+    }
+  protos:
+  - protos/greeter.proto
+  importPaths:
+  - protos/include
+  plaintext: true
+```
+
+A request with `kind: grpc` makes a gRPC call. `url` is the server address:
+`host:port` (TLS unless `plaintext` is set), `http://host:port` (always
+plaintext) or `https://host:port` (always TLS). The request's enabled
+`headers` are sent as gRPC metadata (names are lowercased by HTTP/2; a name
+ending in `-bin` takes a base64 value) and `auth` applies as for HTTP (a
+bearer token becomes `authorization` metadata; an API key `in: query` is not
+sent, gRPC has no query). `${variables}` are substituted in the address,
+metadata, auth and message. `method`, `params`, `body` and `scripts` are
+kept but not used.
+
+| Key | Default | Meaning |
+| --- | --- | --- |
+| `grpc.service` | empty | The service's full name, `package.Service`. |
+| `grpc.method` | empty | The method's name in the service. Unary and server-streaming methods are called; client-streaming and bidirectional ones are refused. |
+| `grpc.message` | empty (`{}`) | The request message as JSON text in the proto3 JSON mapping (a string, usually a block scalar, so `${variables}` work anywhere in it). |
+| `grpc.protos` | none | `.proto` files the schema comes from, relative to the collection folder (absolute paths work too). None means the schema comes from the server's reflection service (`grpc.reflection.v1`, then `v1alpha`). |
+| `grpc.importPaths` | none | Directories `import`s are looked up in, relative to the collection folder. Each listed file's own directory is always searched first; the well-known `google/protobuf/*.proto` files are built in. |
+| `grpc.plaintext` | `false` | HTTP/2 without TLS for a `host:port` address. |
+
+Unknown keys directly under `grpc` are an error. Collection runs
+(`hitop run`) skip gRPC requests; tools call them on demand (the CLI's
+`hitop grpc`, the desktop app). Browsers can't make gRPC calls (they can't
+use HTTP/2 trailers), so the web app keeps gRPC requests but doesn't send them.
+
+`kind: grpc` and `grpc` were added to version 1 after the WebSocket keys.
+They are top-level keys, so older readers keep them as unknown keys and
+write them back, but treat the request as an HTTP `GET`.
+
 ## 4. Auth
 
 The same objects as hitop's JSON storage. Values may contain `${variables}`.
@@ -387,7 +443,8 @@ that only exist in one place are carried in JSON as:
 | `disabledParams` | `params` rows with `enabled: false` |
 | `bodyType` | `body.type` of a text body, kept only when it differs from the inferred type |
 | `graphql` (`{variables, operationName}`; the query is `body`, `bodyType` is `graphql`) | `body.variables` and `body.operationName` |
-| `kind` (`websocket`; `http` and none mean HTTP) and `websocket` (`{subprotocols, messages: [{name, content}]}`) | `kind` and `websocket` |
+| `kind` (`websocket`, `grpc`; `http` and none mean HTTP) and `websocket` (`{subprotocols, messages: [{name, content}]}`) | `kind` and `websocket` |
+| `grpc` (`{service, method, message, protos, importPaths, plaintext}`) | `grpc` |
 | `file` | the request's path, kept only when it differs from the default for its name |
 | `secrets` (environment) | variables written as `{secret: true}` |
 | the globals (`globals.json`, or `globals` beside `collection` and `environments`) | `globals.yaml` (section 5a) |

@@ -265,6 +265,17 @@ mod tests {
     }
 
     #[test]
+    fn grpc_requests_round_trip() {
+        let folder = r#"{"collection":{"id":1,"name":"G","requests":[{"id":2,"name":"Hello","url":"localhost:50051","method":"GET","headers":[],"body":"","kind":"grpc","grpc":{"service":"a.Greeter","method":"SayHello","message":"{\"name\": \"${who}\"}","protos":["greeter.proto"],"plaintext":true}}]}}"#;
+        let files = to_files_json(folder).unwrap();
+        assert!(files.contains("kind: grpc") && files.contains("protos:"), "{files}");
+        let back: serde_json::Value = serde_json::from_str(&read_files_json(&files, "x").unwrap()).unwrap();
+        let r = &back["collection"]["requests"][0];
+        assert_eq!(r["kind"], "grpc");
+        assert_eq!(r["grpc"], serde_json::json!({"service": "a.Greeter", "method": "SayHello", "message": "{\"name\": \"${who}\"}", "protos": ["greeter.proto"], "plaintext": true}));
+    }
+
+    #[test]
     fn normalize_reads_what_rust_reads() {
         let out = normalize_json("collections", r#"[{"id":"col-legacy","name":"c","requests":[]}]"#).unwrap();
         assert!(out.starts_with(r#"[{"id":"#) && !out.contains("col-legacy"), "{out}");

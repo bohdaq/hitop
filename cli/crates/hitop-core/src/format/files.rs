@@ -268,6 +268,21 @@ mod tests {
     }
 
     #[test]
+    fn grpc_requests() {
+        let files = |req: &str| -> Files { [("hitop.yaml".to_string(), "format: 1\n".to_string()), ("requests/g.yaml".to_string(), req.to_string())].into() };
+        let f = read_files(&files("kind: grpc\nurl: localhost:50051\ngrpc:\n  service: a.B\n  method: C\n  message: |\n    {\"n\": ${n}}\n  protos: [p/a.proto]\n  plaintext: true\n"), "x").unwrap();
+        let r = &f.collection.requests[0];
+        assert_eq!(r.kind.as_deref(), Some("grpc"));
+        let g = r.grpc.as_ref().unwrap();
+        assert_eq!((g.service.as_str(), g.method.as_str(), g.message.as_str()), ("a.B", "C", "{\"n\": ${n}}\n"));
+        assert_eq!((g.protos.as_slice(), g.plaintext), (&["p/a.proto".to_string()][..], true));
+        // An empty section is none; unknown keys in it are an error.
+        assert_eq!(read_files(&files("kind: grpc\ngrpc: {}\n"), "x").unwrap().collection.requests[0].grpc, None);
+        let err = read_files(&files("kind: grpc\ngrpc:\n  tls: true\n"), "x").unwrap_err();
+        assert!(format!("{err:#}").contains("tls"), "{err:#}");
+    }
+
+    #[test]
     fn sync_plan_keeps_extensions_and_removes_stale_files() {
         let files: Files = [("hitop.yaml", "m"), ("requests/a.yaml", "a"), ("requests/n/b.yaml", "b"), ("environments/dev.yaml", "d")]
             .into_iter()
