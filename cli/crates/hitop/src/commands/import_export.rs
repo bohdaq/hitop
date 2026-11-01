@@ -1,5 +1,5 @@
 use anyhow::{bail, Context, Result};
-use clap::{Args, ValueEnum};
+use clap::{Args, Subcommand, ValueEnum};
 use colored::Colorize;
 use serde_json::Value;
 use std::path::{Path, PathBuf};
@@ -18,9 +18,13 @@ pub enum Format {
 }
 
 #[derive(Args)]
+#[command(args_conflicts_with_subcommands = true, subcommand_negates_reqs = true)]
 pub struct ImportArgs {
+    #[command(subcommand)]
+    kind: Option<ImportKind>,
+
     /// JSON files: HITOP or Postman collections, Postman environments and
-    /// globals (detected from the content)
+    /// globals (detected from the content), or one OpenAPI spec
     #[arg(required = true)]
     files: Vec<PathBuf>,
 
@@ -39,6 +43,13 @@ pub struct ImportArgs {
     force: bool,
 }
 
+#[derive(Subcommand)]
+pub enum ImportKind {
+    /// An OpenAPI 3.0 or 3.1 spec (YAML or JSON, a file or an http(s) URL):
+    /// a folder per tag, a request per operation
+    Openapi(super::openapi::ImportOpenapiArgs),
+}
+
 #[derive(Args)]
 pub struct ExportArgs {
     /// Collection name or folder path
@@ -54,6 +65,21 @@ pub struct ExportArgs {
 }
 
 pub fn run_import(args: ImportArgs) -> Result<()> {
+    if let Some(ImportKind::Openapi(a)) = args.kind {
+        return super::openapi::run_import(a);
+    }
+    // An OpenAPI spec given like any other file.
+    if args.format.is_none() {
+        for file in &args.files {
+            let raw = std::fs::read_to_string(file).with_context(|| format!("reading {}", file.display()))?;
+            if hitop_core::openapi::detect(&raw) {
+                if args.files.len() > 1 {
+                    bail!("{} is an OpenAPI spec: import it on its own (hitop import openapi {})", file.display(), file.display());
+                }
+                return super::openapi::import_text(&raw, None, args.to.as_deref(), args.force, false);
+            }
+        }
+    }
     let mut collections: Vec<(Collection, ImportReport)> = vec![];
     let mut environments: Vec<ImportedEnvironment> = vec![];
     let mut globals: Vec<ImportedEnvironment> = vec![];
@@ -99,7 +125,7 @@ pub fn run_import(args: ImportArgs) -> Result<()> {
     Ok(())
 }
 
-fn import_to_folder(dir: &Path, collections: &mut [(Collection, ImportReport)], environments: &mut [ImportedEnvironment], force: bool) -> Result<String> {
+pub(super) fn import_to_folder(dir: &Path, collections: &mut [(Collection, ImportReport)], environments: &mut [ImportedEnvironment], force: bool) -> Result<String> {
     if collections.len() > 1 {
         bail!("--to writes one collection; {} found in the files", collections.len());
     }
@@ -138,7 +164,7 @@ fn import_to_folder(dir: &Path, collections: &mut [(Collection, ImportReport)], 
     Ok(secrets::workspace_id(&collection, true))
 }
 
-fn import_to_storage(collections: &mut [(Collection, ImportReport)], environments: &mut [ImportedEnvironment]) -> Result<String> {
+pub(super) fn import_to_storage(collections: &mut [(Collection, ImportReport)], environments: &mut [ImportedEnvironment]) -> Result<String> {
     if !collections.is_empty() {
         let mut stored = storage::load_collections()?;
         for (col, _) in collections.iter_mut() {

@@ -52,8 +52,11 @@ enum Cmd {
     Cookies(commands::cookies::CookiesCmd),
     /// View request history
     History(commands::history::HistoryArgs),
-    /// Import HITOP or Postman collections, Postman environments and globals
+    /// Import HITOP or Postman collections, Postman environments and globals, or an OpenAPI spec (`hitop import openapi <file|url>`)
     Import(commands::import_export::ImportArgs),
+    /// OpenAPI specs: `hitop openapi sync <file|url> <folder>` updates a folder imported from one
+    #[command(subcommand)]
+    Openapi(commands::openapi::OpenapiCmd),
     /// Export a collection to a file
     Export(commands::import_export::ExportArgs),
     /// The anonymous weekly usage ping: off unless you turn it on
@@ -120,6 +123,7 @@ fn dispatch(command: Cmd) -> i32 {
         Cmd::Cookies(cmd) => commands::cookies::run(cmd),
         Cmd::History(args) => commands::history::run(args),
         Cmd::Import(args) => commands::import_export::run_import(args),
+        Cmd::Openapi(cmd) => commands::openapi::run(cmd),
         Cmd::Export(args) => commands::import_export::run_export(args),
         Cmd::Mcp(args) => commands::mcp::run(args),
         #[cfg(feature = "telemetry")]
