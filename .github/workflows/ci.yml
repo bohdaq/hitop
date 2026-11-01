@@ -55,6 +55,33 @@ jobs:
           workspaces: server
       - run: cargo test --locked
 
+  sync-server:
+    name: Sync server and client crypto
+    runs-on: ubuntu-24.04
+    defaults:
+      run:
+        working-directory: sync-server
+    services:
+      postgres:
+        image: postgres:17-alpine
+        env:
+          POSTGRES_PASSWORD: ci
+        ports: ["5432:5432"]
+        options: --health-cmd pg_isready --health-interval 2s --health-timeout 5s --health-retries 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: sync-server
+      - run: cargo test --locked --workspace
+      - run: cargo test --locked --features postgres --test postgres
+        env:
+          HITOP_SYNC_TEST_POSTGRES: postgres://postgres:ci@127.0.0.1:5432/postgres
+      - run: cargo clippy --locked --workspace --all-targets --all-features -- -D warnings
+
   web:
     name: Site and web app (end to end)
     runs-on: ubuntu-24.04
