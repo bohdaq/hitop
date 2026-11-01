@@ -21,6 +21,10 @@ dirs = { workspace = true }
 thiserror = { workspace = true }
 anyhow = { workspace = true }
 regex = "1"
+# serde_yaml is deprecated and serde_yml is unsound (RUSTSEC-2025-0068);
+# yaml_serde is serde_yaml continued by the YAML organization.
+yaml_serde = "0.10.7"
 
 [dev-dependencies]
 tempfile = "3"
+proptest = "1"

@@ -1,0 +1,10 @@
+name: GraphQL me
+method: POST
+url: ${base}/graphql
+body:
+  type: graphql
+  content: |-
+    query {
+      me { id name }
+    }
+id: 1793470569736006

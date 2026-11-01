@@ -1,0 +1,23 @@
+name: Create order
+method: POST
+url: ${base}/orders
+headers:
+- name: Content-Type
+  value: application/json
+auth:
+  type: basic
+  username: shop
+  password: ${password}
+body:
+  type: json
+  content: |-
+    {
+      "product": 42,
+      "quantity": 1
+    }
+scripts:
+  pre: setHeader('Idempotency-Key', String(Date.now()));
+  post: |-
+    assert.status(201);
+    setContext('orderId', getResponseValue('id'));
+id: 1793470569736003

@@ -1,0 +1,15 @@
+name: Order as XML
+method: PUT
+url: ${base}/orders/${orderId}
+auth:
+  type: apikey
+  key: X-API-Key
+  value: ${apiKey}
+  in: header
+body:
+  type: xml
+  content: |
+    <order>
+      <quantity>2</quantity>
+    </order>
+id: 1793470569736004

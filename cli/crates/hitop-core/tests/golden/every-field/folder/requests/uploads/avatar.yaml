@@ -1,0 +1,15 @@
+name: Upload avatar
+method: POST
+url: ${base}/avatar
+body:
+  type: multipart
+  fields:
+  - name: file
+    value: ''
+    type: file
+    fileName: avatar.png
+    id: f1
+  - name: caption
+    value: me
+    id: f2
+id: 1793470569736008

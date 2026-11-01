@@ -1,0 +1,14 @@
+[
+  {
+    "id": "dev",
+    "name": "dev",
+    "variables": { "base": "http://localhost:8080", "user": "dev" }
+  },
+  {
+    "id": "env-1793470569736100",
+    "name": "Production",
+    "variables": { "base": "https://api.example.test", "user": "shop" },
+    "secrets": ["apiKey", "password", "token"],
+    "region": "eu"
+  }
+]

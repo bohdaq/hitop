@@ -78,7 +78,7 @@ pub fn from_postman(json: &str) -> Result<Collection> {
         .as_array()
         .unwrap_or(&vec![])
         .iter()
-        .filter_map(|item| {
+        .map(|item| {
             let req = &item["request"];
             let method = req["method"].as_str().unwrap_or("GET").to_string();
             let url = req["url"]["raw"].as_str()
@@ -90,10 +90,7 @@ pub fn from_postman(json: &str) -> Result<Collection> {
                 .as_array()
                 .unwrap_or(&vec![])
                 .iter()
-                .map(|h| Header {
-                    name: h["key"].as_str().unwrap_or("").to_string(),
-                    value: h["value"].as_str().unwrap_or("").to_string(),
-                })
+                .map(|h| Header::new(h["key"].as_str().unwrap_or(""), h["value"].as_str().unwrap_or("")))
                 .collect();
             let body = req["body"]["raw"].as_str().unwrap_or("").to_string();
             let script = |listen: &str| -> String {
@@ -109,7 +106,7 @@ pub fn from_postman(json: &str) -> Result<Collection> {
             };
             let auth = crate::auth::from_postman(&req["auth"]).or_else(|| crate::auth::from_postman(&v["auth"]));
 
-            Some(Request {
+            Request {
                 id: generate_id(),
                 name: req_name,
                 url,
@@ -119,7 +116,8 @@ pub fn from_postman(json: &str) -> Result<Collection> {
                 pre_request_script: script("prerequest"),
                 post_request_script: script("test"),
                 auth,
-            })
+                ..Default::default()
+            }
         })
         .collect();
 
@@ -139,6 +137,7 @@ pub fn from_postman(json: &str) -> Result<Collection> {
         name,
         requests,
         variables,
+        ..Default::default()
     })
 }
 
@@ -165,11 +164,8 @@ mod tests {
                     name: "Get todos".to_string(),
                     url: "https://example.com/todos".to_string(),
                     method: "GET".to_string(),
-                    headers: vec![Header { name: "Accept".to_string(), value: "application/json".to_string() }],
-                    body: String::new(),
-                    pre_request_script: String::new(),
-                    post_request_script: String::new(),
-                    auth: None,
+                    headers: vec![Header::new("Accept", "application/json")],
+                    ..Default::default()
                 },
                 Request {
                     id: 11,
@@ -178,12 +174,11 @@ mod tests {
                     method: "POST".to_string(),
                     headers: vec![],
                     body: r#"{"title":"test"}"#.to_string(),
-                    pre_request_script: String::new(),
-                    post_request_script: String::new(),
-                    auth: None,
+                    ..Default::default()
                 },
             ],
             variables: [("host".to_string(), "https://example.com".to_string())].into(),
+            ..Default::default()
         }
     }
 

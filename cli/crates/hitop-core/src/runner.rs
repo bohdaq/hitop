@@ -45,7 +45,8 @@ pub fn run_collection(
             headers: &request.headers,
             body: &request.body,
             pre_request_script: &request.pre_request_script,
-            auth: request.auth.as_ref(),
+            // A request's own auth (even `none`) wins over the collection's.
+            auth: request.auth.as_ref().or(collection.auth.as_ref()),
         };
         let step = match prepare(&draft, &variables, &context) {
             Err(e) => RunStepResult {

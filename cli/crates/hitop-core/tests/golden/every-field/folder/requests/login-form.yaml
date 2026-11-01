@@ -1,0 +1,14 @@
+name: Login form
+method: POST
+url: ${base}/login
+auth:
+  type: none
+body:
+  type: form
+  fields:
+  - name: user
+    value: ${user}
+  - name: remember
+    value: '1'
+    enabled: false
+id: 1793470569736007

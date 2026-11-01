@@ -1,0 +1,12 @@
+name: Production
+id: env-1793470569736100
+variables:
+  apiKey:
+    secret: true
+  base: https://api.example.test
+  password:
+    secret: true
+  token:
+    secret: true
+  user: shop
+region: eu

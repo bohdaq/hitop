@@ -1,0 +1,20 @@
+format: 1
+name: Shop API
+id: 1793470569736000
+variables:
+  base: https://api.example.test
+  version: '2'
+auth:
+  type: bearer
+  token: ${token}
+order:
+- list-products
+- odd-url
+- orders/create-order
+- orders/update-order
+- note
+- graphql-me
+- login-form
+- uploads/avatar
+- orders/delete-order
+color: teal

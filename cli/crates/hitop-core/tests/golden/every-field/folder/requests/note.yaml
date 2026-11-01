@@ -1,0 +1,12 @@
+name: Note
+method: POST
+url: ${base}/notes
+auth:
+  type: apikey
+  key: api_key
+  value: ${apiKey}
+  in: query
+body:
+  type: text
+  content: plain text note
+id: 1793470569736005

@@ -1,0 +1,30 @@
+name: List products
+method: GET
+url: ${base}/v${version}/products#top
+params:
+- name: page
+  value: '1'
+- name: limit
+  value: '20'
+- name: sort
+  value: name
+- name: trace
+  value: on
+  enabled: false
+headers:
+- name: Accept
+  value: application/json
+- name: X-Debug
+  value: '1'
+  enabled: false
+scripts:
+  post: |
+    assert.status(200);
+    assert.ok(getResponseValue('items').length > 0, 'has items');
+examples:
+- body: '{"items":[]}'
+  headers:
+    content-type: application/json
+  name: 200 OK
+  status: 200
+id: 1793470569736001

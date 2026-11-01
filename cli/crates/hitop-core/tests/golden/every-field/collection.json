@@ -1,0 +1,116 @@
+{
+  "id": 1793470569736000,
+  "name": "Shop API",
+  "variables": {
+    "base": "https://api.example.test",
+    "version": "2"
+  },
+  "auth": { "type": "bearer", "token": "${token}" },
+  "color": "teal",
+  "requests": [
+    {
+      "id": 1793470569736001,
+      "name": "List products",
+      "method": "GET",
+      "url": "${base}/v${version}/products?page=1&limit=20&sort=name#top",
+      "headers": [
+        { "name": "Accept", "value": "application/json" },
+        { "name": "X-Debug", "value": "1", "enabled": false },
+        { "name": "", "value": "" }
+      ],
+      "body": "",
+      "preRequestScript": "",
+      "postRequestScript": "assert.status(200);\nassert.ok(getResponseValue('items').length > 0, 'has items');\n",
+      "disabledParams": [{ "key": "trace", "value": "on" }],
+      "examples": [
+        { "name": "200 OK", "status": 200, "headers": { "content-type": "application/json" }, "body": "{\"items\":[]}" }
+      ]
+    },
+    {
+      "id": 1793470569736002,
+      "name": "Odd URL",
+      "method": "GET",
+      "url": "${base}/search?q=a b&&x",
+      "headers": [],
+      "body": ""
+    },
+    {
+      "id": 1793470569736003,
+      "name": "Create order",
+      "method": "POST",
+      "url": "${base}/orders",
+      "headers": [{ "name": "Content-Type", "value": "application/json" }],
+      "body": "{\n  \"product\": 42,\n  \"quantity\": 1\n}",
+      "preRequestScript": "setHeader('Idempotency-Key', String(Date.now()));",
+      "postRequestScript": "assert.status(201);\nsetContext('orderId', getResponseValue('id'));",
+      "auth": { "type": "basic", "username": "shop", "password": "${password}" },
+      "file": "orders/create-order"
+    },
+    {
+      "id": 1793470569736004,
+      "name": "Order as XML",
+      "method": "PUT",
+      "url": "${base}/orders/${orderId}",
+      "headers": [],
+      "body": "<order>\n  <quantity>2</quantity>\n</order>\n",
+      "auth": { "type": "apikey", "key": "X-API-Key", "value": "${apiKey}", "in": "header" },
+      "file": "orders/update-order"
+    },
+    {
+      "id": 1793470569736005,
+      "name": "Note",
+      "method": "POST",
+      "url": "${base}/notes",
+      "headers": [],
+      "body": "plain text note",
+      "auth": { "type": "apikey", "key": "api_key", "value": "${apiKey}", "in": "query" }
+    },
+    {
+      "id": 1793470569736006,
+      "name": "GraphQL me",
+      "method": "POST",
+      "url": "${base}/graphql",
+      "headers": [],
+      "body": "query {\n  me { id name }\n}",
+      "bodyType": "graphql"
+    },
+    {
+      "id": 1793470569736007,
+      "name": "Login form",
+      "method": "POST",
+      "url": "${base}/login",
+      "headers": [],
+      "body": "",
+      "auth": { "type": "none" },
+      "bodyMode": "urlencoded",
+      "formFields": [
+        { "key": "user", "value": "${user}", "type": "text" },
+        { "key": "remember", "value": "1", "type": "text", "enabled": false }
+      ]
+    },
+    {
+      "id": 1793470569736008,
+      "name": "Upload avatar",
+      "method": "POST",
+      "url": "${base}/avatar",
+      "headers": [],
+      "body": "",
+      "bodyMode": "multipart",
+      "formFields": [
+        { "id": "f1", "key": "file", "value": "", "type": "file", "fileName": "avatar.png" },
+        { "id": "f2", "key": "caption", "value": "me", "type": "text" }
+      ],
+      "file": "uploads/avatar"
+    },
+    {
+      "id": 7,
+      "name": "Delete order",
+      "method": "DELETE",
+      "url": "${base}/orders/${orderId}",
+      "headers": [],
+      "body": "",
+      "pinned": true,
+      "file": "orders/delete-order"
+    }
+  ]
+}

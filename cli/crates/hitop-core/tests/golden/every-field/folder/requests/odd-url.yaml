@@ -1,0 +1,4 @@
+name: Odd URL
+method: GET
+url: ${base}/search?q=a b&&x
+id: 1793470569736002
