@@ -9,7 +9,6 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
 import "../src/components.js";
-import { favicon } from "../src/brand/mark.js";
 import { documentHtml, ORIGIN } from "../src/shell.js";
 import * as homePage from "../src/pages/home.js";
 import * as pricingPage from "../src/pages/pricing.js";
@@ -46,8 +45,8 @@ write(
   `<!doctype html><html lang="en"><head><meta charset="utf-8"><title>HITOP web app</title><link rel="canonical" href="${ORIGIN}/app/"><meta http-equiv="refresh" content="0; url=/app/"></head><body><a href="/app/">Open the HITOP web app</a></body></html>\n`,
 );
 
-write("favicon.svg", favicon());
-for (const f of ["apple-touch-icon.png", "favicon.png", "favicon-16x16.png", "favicon-32x32.png", "social-preview.png"]) {
+// The icons are renders of brand/logo.svg (brand/export.sh); favicon.svg is the master itself.
+for (const f of ["favicon.svg", "apple-touch-icon.png", "favicon.png", "favicon-16x16.png", "favicon-32x32.png", "social-preview.png"]) {
   copyFileSync(join(publicAssets, f), join(dist, f));
 }
 

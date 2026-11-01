@@ -22,24 +22,10 @@ cp -r frontend/build/* chrome-extension/app/
 
 # Step 4: Copy and resize icons
 echo "🎨 Copying icons..."
-if [ -f "frontend/public/logo192.png" ]; then
-  # Copy logo192 for 128x128 icon (will be scaled by browser)
-  cp frontend/public/logo192.png chrome-extension/icons/icon-128.png
-  
-  # Use sips to resize for different sizes (macOS only)
-  if command -v sips &> /dev/null; then
-    sips -z 16 16 frontend/public/logo192.png --out chrome-extension/icons/icon-16.png > /dev/null 2>&1
-    sips -z 48 48 frontend/public/logo192.png --out chrome-extension/icons/icon-48.png > /dev/null 2>&1
-    echo "✓ Icons resized with sips"
-  else
-    # Fallback: just copy the same file
-    cp frontend/public/logo192.png chrome-extension/icons/icon-16.png
-    cp frontend/public/logo192.png chrome-extension/icons/icon-48.png
-    echo "⚠️  sips not found, using original size (browser will scale)"
-  fi
-else
-  echo "⚠️  Warning: Icons not found, please add icons manually"
-fi
+# Renders of brand/logo.svg (brand/export.sh)
+cp brand/png/logo-16.png chrome-extension/icons/icon-16.png
+cp brand/png/logo-48.png chrome-extension/icons/icon-48.png
+cp brand/png/logo-128.png chrome-extension/icons/icon-128.png
 
 # Step 5: Copy manifest for Chrome
 echo "🔧 Copying Chrome manifest..."
@@ -50,11 +36,11 @@ else
   cat > chrome-extension/manifest.json << 'EOF'
 {
   "manifest_version": 3,
-  "name": "HITOP - HTTP Client",
+  "name": "HITOP",
   "version": "4.0.0",
-  "description": "A powerful HTTP client for testing APIs",
+  "description": "The API client your terminal, your CI and your AI agent can all drive.",
   "action": {
-    "default_title": "HITOP HTTP Client"
+    "default_title": "HITOP"
   },
   "icons": {
     "16": "icons/icon-16.png",

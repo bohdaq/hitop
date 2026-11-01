@@ -22,22 +22,9 @@ cp -r frontend/build/* extension/app/
 
 # Step 4: Copy and resize icons
 echo "🎨 Copying icons..."
-if [ -f "frontend/public/logo192.png" ]; then
-  # Copy logo192 for 96x96 icon (will be scaled by browser)
-  cp frontend/public/logo192.png extension/icons/icon-96.png
-  
-  # Use sips to resize for 48x48 icon (macOS only)
-  if command -v sips &> /dev/null; then
-    sips -z 48 48 frontend/public/logo192.png --out extension/icons/icon-48.png > /dev/null 2>&1
-    echo "✓ Icons resized with sips"
-  else
-    # Fallback: just copy the same file
-    cp frontend/public/logo192.png extension/icons/icon-48.png
-    echo "⚠️  sips not found, using original size (browser will scale)"
-  fi
-else
-  echo "⚠️  Warning: Icons not found, please add icons manually"
-fi
+# Renders of brand/logo.svg (brand/export.sh); icon-96.png has always been 192 x 192
+cp brand/png/logo-48.png extension/icons/icon-48.png
+cp brand/png/logo-192.png extension/icons/icon-96.png
 
 # Step 5: Update manifest for extension compatibility
 echo "🔧 Updating manifest..."

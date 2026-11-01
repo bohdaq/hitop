@@ -1,0 +1,11 @@
+<svg width="64" height="64" viewBox="0 0 64 64" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <!-- One-color HITOP mark: the disc with the H and play arrow cut out. Set fill (or CSS color) to recolor. -->
+  <defs>
+    <mask id="glyph">
+      <rect width="64" height="64" fill="white"/>
+      <path d="M 18 20 L 18 44 M 18 32 L 28 32 M 28 20 L 28 44" stroke="black" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"/>
+      <path d="M 36 24 L 36 40 L 48 32 Z" fill="black"/>
+    </mask>
+  </defs>
+  <circle cx="32" cy="32" r="30" fill="#1f1d2b" mask="url(#glyph)"/>
+</svg>

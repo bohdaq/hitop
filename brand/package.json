@@ -1,0 +1,14 @@
+{
+  "name": "hitop-brand",
+  "private": true,
+  "description": "Renders every HITOP icon in the repository from brand/logo.svg",
+  "license": "MIT",
+  "type": "module",
+  "scripts": {
+    "export": "node export.mjs",
+    "check": "node export.mjs --check"
+  },
+  "devDependencies": {
+    "@resvg/resvg-js": "2.6.2"
+  }
+}

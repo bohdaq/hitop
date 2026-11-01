@@ -267,6 +267,17 @@ jobs:
       - run: npm ci
       - run: npm run build:extension
 
+  brand:
+    name: Brand (icons from brand/logo.svg, one product name)
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: npm ci --prefix brand
+      - run: brand/check.sh
+
   desktop:
     name: Desktop app compiles
     runs-on: ubuntu-24.04
