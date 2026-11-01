@@ -266,6 +266,7 @@ hitop-code-editor { display: grid; gap: var(--space-50); }
 .cm-tooltip-lint { font-family: var(--font-sans); font-size: var(--text-sm); }
 
 /* Cookies */
+.env-secrets { display: grid; gap: var(--space-100); margin-top: var(--space-200); }
 .switch-row { display: flex; align-items: center; gap: var(--space-200); cursor: pointer; }
 .cookie-domain { display: grid; gap: var(--space-100); }
 .cookie-list li { --lit-material-text-field-min-width: 0; display: grid; grid-template-columns: minmax(80px, max-content) minmax(0, 1fr) auto auto; gap: var(--space-100); align-items: center; }

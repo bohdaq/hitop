@@ -5,6 +5,7 @@ import { guard } from "lit/directives/guard.js";
 import { repeat } from "lit/directives/repeat.js";
 import { confirm } from "@lit-material/confirm";
 import { icon } from "../icons.js";
+import { secretNames } from "../features.js";
 import { testList } from "./request-view.js";
 
 class LightElement extends LitElement {
@@ -180,14 +181,20 @@ customElements.define("hitop-collection", HitopCollection);
 customElements.define("hitop-variables", HitopVariables);
 
 export class HitopEnvironments extends LightElement {
-  static properties = { store: { attribute: false }, version: { attribute: false }, app: { attribute: false } };
+  static properties = { store: { attribute: false }, version: { attribute: false }, app: { attribute: false }, reveal: { state: true } };
 
-  change(e, env) {
+  // Two editors, one environment: plain variables and secrets (masked). Both
+  // write `variables`; the secrets editor also sets the `secrets` names.
+  change(e, env, secret) {
     const editor = e.target;
     if (!editor.valid) return;
-    const variables = editor.toObject();
-    this.json = `${env.id}:${JSON.stringify(variables)}`;
-    this.store.setEnvironmentVariables(env.id, variables);
+    const names = secretNames(env);
+    const own = editor.toObject();
+    const other = Object.fromEntries(Object.entries(env.variables).filter(([k]) => names.includes(k) !== secret));
+    const variables = secret ? { ...other, ...own } : { ...own, ...other };
+    const secrets = secret ? Object.keys(own) : names;
+    this.json = `${env.id}:${JSON.stringify(variables)}:${JSON.stringify(secrets)}`;
+    this.store.setEnvironmentVariables(env.id, variables, secrets);
   }
 
   render() {
@@ -196,10 +203,13 @@ export class HitopEnvironments extends LightElement {
     const env = s.environments.find((e) => e.id === selectedId);
     if (env) {
       // As with collection variables: new rows only when changed elsewhere.
-      const json = `${env.id}:${JSON.stringify(env.variables)}`;
+      const names = secretNames(env);
+      const json = `${env.id}:${JSON.stringify(env.variables)}:${JSON.stringify(names)}`;
       if (json !== this.json) {
         this.json = json;
-        this.rows = Object.entries(env.variables).map(([key, value]) => ({ key, value: String(value) }));
+        const rows = Object.entries(env.variables).map(([key, value]) => ({ key, value: String(value) }));
+        this.rows = rows.filter((r) => !names.includes(r.key));
+        this.secretRows = rows.filter((r) => names.includes(r.key));
         this.rowsVersion = (this.rowsVersion ?? 0) + 1;
       }
     }
@@ -240,8 +250,26 @@ export class HitopEnvironments extends LightElement {
                       key-pattern="[^}]+"
                       key-pattern-message="A name can't contain }"
                       .entries=${guard([this.rowsVersion], () => this.rows)}
-                      @change=${(e) => this.change(e, env)}
-                    ></lit-material-key-value-editor>`
+                      @change=${(e) => this.change(e, env, false)}
+                    ></lit-material-key-value-editor>
+                    <section class="env-secrets" aria-labelledby="env-secrets-title">
+                      <h2 id="env-secrets-title">Secrets</h2>
+                      <p class="hint">Secret values stay in this browser. They are masked here and in history, and never written to exports: an export keeps only their names.</p>
+                      <label class="switch-row">
+                        <lit-material-switch aria-label="Show secret values" ?checked=${this.reveal} @change=${(e) => (this.reveal = e.target.checked)}></lit-material-switch>
+                        <span>Show secret values</span>
+                      </label>
+                      <lit-material-key-value-editor
+                        key-label="Name"
+                        value-label="Value"
+                        add-label="Add secret"
+                        key-pattern="[^}]+"
+                        key-pattern-message="A name can't contain }"
+                        .maskValues=${!this.reveal}
+                        .entries=${guard([this.rowsVersion], () => this.secretRows)}
+                        @change=${(e) => this.change(e, env, true)}
+                      ></lit-material-key-value-editor>
+                    </section>`
                 : nothing}`
           : html`<lit-material-empty-state headline="No environments yet">
               Create Dev, Staging and Prod with the same variable names and different values, then switch between them in the sidebar.

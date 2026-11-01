@@ -61,6 +61,24 @@ const settle = (p) => p.waitForTimeout(400);
   const envs = await p.evaluate(() => ({ list: JSON.parse(localStorage.getItem('hitop_environments')), active: localStorage.getItem('hitop_active_environment') }));
   check('environment created and active', envs.list[0]?.name === 'Staging' && envs.list[0].variables.token === 'stg-123' && envs.active === envs.list[0].id, JSON.stringify(envs));
 
+  // A secret: masked in the editor, kept in localStorage, left out of the export
+  check('secrets note next to the switch', (await p.locator('.env-secrets').innerText()).includes('never written to exports'));
+  await p.getByRole('button', { name: 'Add secret' }).click();
+  await p.keyboard.type('apiSecret', { delay: 15 });
+  await p.keyboard.press('Tab');
+  await p.keyboard.type('sec-456', { delay: 15 });
+  await settle(p);
+  const secretInput = p.locator('.env-secrets input[autocomplete="off"]').last();
+  check('secret value masked', (await secretInput.getAttribute('type')) === 'password', await secretInput.getAttribute('type'));
+  await p.getByRole('switch', { name: 'Show secret values' }).click();
+  await settle(p);
+  check('secret value shown on request', (await secretInput.getAttribute('type')) === 'text', await secretInput.getAttribute('type'));
+  const stored = await p.evaluate(() => JSON.parse(localStorage.getItem('hitop_environments'))[0]);
+  check('secret kept in this browser', stored.variables.apiSecret === 'sec-456' && JSON.stringify(stored.secrets) === '["apiSecret"]' && stored.variables.token === 'stg-123', JSON.stringify(stored));
+  const [download] = await Promise.all([p.waitForEvent('download'), p.locator('.page-header').getByRole('button', { name: 'Export' }).click()]);
+  const exported = require('fs').readFileSync(await download.path(), 'utf8');
+  check('export keeps the secret name, not its value', !exported.includes('sec-456') && exported.includes('"apiSecret"') && exported.includes('stg-123'), exported.replace(/\s+/g, ' '));
+
   // Back to the request (the tab strip shows with the request view)
   await p.locator('aside').getByRole('button', { name: /New request/ }).first().click();
   await p.getByRole('tab', { name: /Script after/ }).click();
@@ -133,6 +151,22 @@ const settle = (p) => p.waitForTimeout(400);
   await p.locator('.run h2', { hasText: 'Last run' }).waitFor({ timeout: 30000 });
   const run = await p.locator('.run').innerText();
   check('collection run reports the failed assertion', run.includes('4 of 5 tests passed') && run.includes('two posts'), run.replace(/\n/g, ' | ').slice(0, 200));
+
+  // With a secret in the active environment, the run's history masks its value
+  await p.locator('aside').getByRole('button', { name: 'Environments' }).click();
+  await p.getByRole('button', { name: 'Use this environment' }).click();
+  await p.getByRole('button', { name: 'Add secret' }).click();
+  await p.keyboard.type('key', { delay: 15 });
+  await p.keyboard.press('Tab');
+  await p.keyboard.type('k-1', { delay: 15 });
+  await settle(p);
+  await p.locator('aside').getByRole('button', { name: col, exact: true }).first().click();
+  const before = await p.evaluate(() => JSON.parse(localStorage.getItem('hitop_history') || '[]').length);
+  await p.getByRole('button', { name: /Run collection/ }).click();
+  await p.waitForFunction((n) => JSON.parse(localStorage.getItem('hitop_history') || '[]').length > n, before, { timeout: 30000 });
+  await settle(p);
+  const runItem = await p.evaluate(() => JSON.parse(localStorage.getItem('hitop_history')).filter((h) => h.isCollectionRun).pop());
+  check('run history masks secret values', runItem.url.includes('X-API-Key=••••') && !JSON.stringify(runItem).includes('k-1'), runItem.url);
 
   check('no page errors', errors.length === 0, errors.join(' || '));
   console.log(results.join('\n'));

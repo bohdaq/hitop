@@ -16,12 +16,16 @@ import {
   cleanAuth,
   cookieHeader,
   emptyAuth,
+  exportableEnvironments,
   loadEnvironments,
   makeAssert,
+  maskSecrets,
   mergeCookies,
   multipartBody,
   parseEnvironments,
   saveEnvironments,
+  secretNames,
+  secretValues,
   urlEncodedBody,
 } from "./features.js";
 
@@ -499,8 +503,17 @@ export class Store extends EventTarget {
     this.emit();
   }
 
-  setEnvironmentVariables(id, variables) {
-    this.environments = this.environments.map((e) => (e.id === id ? { ...e, variables } : e));
+  // `secrets`, when given, is the new list of secret names; they must be
+  // keys of `variables`.
+  setEnvironmentVariables(id, variables, secrets) {
+    this.environments = this.environments.map((e) => {
+      if (e.id !== id) return e;
+      const next = { ...e, variables };
+      const names = (secrets ?? secretNames(e)).filter((n) => n in variables);
+      if (names.length) next.secrets = names;
+      else delete next.secrets;
+      return next;
+    });
     this.emit();
   }
 
@@ -518,7 +531,7 @@ export class Store extends EventTarget {
   }
 
   exportEnvironments() {
-    return JSON.stringify(this.environments.map(({ name, variables }) => ({ name, variables })), null, 2);
+    return JSON.stringify(exportableEnvironments(this.environments), null, 2);
   }
 
   // --- scripts --------------------------------------------------------------
@@ -734,7 +747,9 @@ export class Store extends EventTarget {
     this.run = { ...this.run, collectionId: id, results: [], running: true };
     this.emit();
     const results = [];
+    const secrets = secretValues(this.activeEnvironment);
     const push = (r) => {
+      r = maskSecrets(r, secrets);
       results.push(r);
       this.run = { ...this.run, results: [...results] };
       this.emit();
@@ -754,7 +769,9 @@ export class Store extends EventTarget {
         } catch (e) {
           tests = [...tests, { name: "Script after", pass: false, detail: e.message }];
         }
-        this.history = historyService.addToHistory(this.history, { ...historyService.createCollectionRunHistoryItem(request, prepared, res, collection.name, i), auth: request.auth });
+        // The run item keeps the request as sent: mask secret values in it.
+        const item = maskSecrets({ ...historyService.createCollectionRunHistoryItem(request, prepared, res, collection.name, i), auth: request.auth }, secrets);
+        this.history = historyService.addToHistory(this.history, item);
         const failed = tests.filter((t) => !t.pass);
         const success = res.ok && failed.length === 0;
         push({ requestName: request.name, method: request.method, url: prepared.url, statusCode: res.status, success, tests, response: failed.length ? failed.map((t) => `${t.name}: ${t.detail}`).join("; ") : text.slice(0, 200), duration });

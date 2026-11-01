@@ -123,7 +123,53 @@ export function parseEnvironments(json) {
     } else {
       throw new Error(`item ${i + 1} has no variables`);
     }
-    return { id: crypto.randomUUID(), name: String(env.name || `Environment ${i + 1}`), variables };
+    // HITOP's export lists secret names without their values.
+    const secrets = secretNames(env);
+    for (const n of secrets) variables[n] = "";
+    const out = { id: crypto.randomUUID(), name: String(env.name || `Environment ${i + 1}`), variables };
+    if (secrets.length) out.secrets = secrets;
+    return out;
+  });
+}
+
+// --- secrets ------------------------------------------------------------------------
+
+// An environment's `secrets` lists the names of its secret variables. In the
+// browser their values stay in `variables` (localStorage); they are masked
+// in the UI and in history and never written to an export. (The CLI and
+// desktop keep them in the OS keychain instead.)
+export const MASK = "••••";
+
+export function secretNames(env) {
+  return Array.isArray(env?.secrets) ? [...new Set(env.secrets.filter((n) => typeof n === "string" && n))] : [];
+}
+
+export function secretValues(env) {
+  return secretNames(env)
+    .map((n) => env.variables?.[n])
+    .filter((v) => typeof v === "string" && v !== "");
+}
+
+// Replaces every secret value (and its URL-encoded form) with MASK, in a
+// string or, recursively, in an object's strings.
+export function maskSecrets(value, secrets) {
+  if (!secrets?.length) return value;
+  const forms = [...new Set(secrets.flatMap((v) => [v, encodeURIComponent(v)]))].sort((a, b) => b.length - a.length);
+  const mask = (v) => {
+    if (typeof v === "string") return forms.reduce((text, f) => text.split(f).join(MASK), v);
+    if (Array.isArray(v)) return v.map(mask);
+    if (v && typeof v === "object") return Object.fromEntries(Object.entries(v).map(([k, x]) => [k, mask(x)]));
+    return v;
+  };
+  return mask(value);
+}
+
+// Environments as exported: secret names kept, their values left out.
+export function exportableEnvironments(environments) {
+  return environments.map((env) => {
+    const secrets = secretNames(env);
+    const variables = Object.fromEntries(Object.entries(env.variables ?? {}).filter(([k]) => !secrets.includes(k)));
+    return secrets.length ? { name: env.name, variables, secrets } : { name: env.name, variables };
   });
 }
 
