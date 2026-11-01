@@ -142,7 +142,7 @@ Secret variables: `secret: true` in an environment file, with the value resolved
 | T12 | `hitop mcp` | done (handoff) | c0a55c8, 1d6986f, faad9aa; MCP directory listing text in section 6 | 2026-11-01 |
 | T13 | GraphQL | done | 208583d, a78211d | 2026-11-01 |
 | T14 | WebSocket | done | ac00903, 743db7d, 538401a, 2eac6a7, 0e23002, 61ea4c0, 8938060 | 2026-11-01 |
-| T15 | gRPC | todo | | |
+| T15 | gRPC | done | 45b6c8a, c98955c, a018a6d, ac0c0ad, f22e395, c96f81f | 2026-11-01 |
 | T16 | Response diff and code snippets | done | 5c550ac, 9b88ff5, 0d4caa8, 8acd583, 344d07d | 2026-11-01 |
 | T17 | OpenAPI import and sync | done | 68d6a14, 3628f76, d1878c0, 45ac576, e5292df, ed397f1, a1fd78e, be02942 | 2026-11-01 |
 | T18 | Bring-your-own-key AI | dropped | owner decision | 2026-11-01 |
@@ -941,6 +941,52 @@ export PATH="$HOME/.cargo/bin:$PATH"
 - Unary and server-streaming calls in desktop and CLI (`tonic` + `prost-reflect`), schema from
   server reflection or imported `.proto` files. The web app shows "desktop and CLI only".
 - **Done when:** tests against a local tonic test server.
+- **Notes (2026-11-01, done):**
+  - Format (additive to v1, as T14): `kind: grpc` plus a top-level `grpc` section: `service` (`package.Service`), `method`,
+    `message` (JSON text, a block scalar like T13's GraphQL variables, so `${var}` works anywhere), `protos` and `importPaths`
+    (relative to the collection folder; none = server reflection), `plaintext`. Unknown keys under `grpc` are an error; 0.3.0
+    keeps both keys as unknown top-level keys. Golden `say-hello.yaml`, proptest generates `grpc`, hitop-wasm round trip, spec
+    section 3 "gRPC" and section 6. Deviation: no separate `metadata` field: the request's `headers` rows are the metadata and
+    `auth` applies (bearer/basic/header API key become metadata; an API key `in: query` is dropped), the T14 way.
+  - hitop-core `grpc.rs`: `target()` (no native deps) and, behind the new default feature `grpc` (not in hitop-wasm): tonic 0.14.6
+    (`channel`, `tls-ring`, `tls-webpki-roots`; pinned to 0.14.6 in the cli and desktop locks because 0.14.7–0.14.9 are days old),
+    tonic-reflection 0.14.6 (generated v1 and v1alpha clients), prost 0.14, prost-reflect 0.16.5 (`serde`: proto3 JSON mapping),
+    protox 0.10.0 (parses .proto at run time; well-known types built in; no protoc). All MIT/Apache; `cargo deny ... check
+    licenses` ok, no aws-lc or OpenSSL in the tree. `connect`, `schema` (protos, or reflection v1 then v1alpha on UNIMPLEMENTED;
+    dependencies the server leaves out are fetched by file name), `services`, `describe` (.proto-like text), `template` (every field,
+    first enum value, one list element, first oneof field, nested messages to depth 4, well-known types in their JSON form), `call`
+    (unary and server streaming through one `server_streaming` code path so trailers are read either way; events Headers, Message,
+    Status{code, name, message, trailers}; client-streaming/bidi refused before calling), `DynamicCodec`. Responses show default
+    fields; 64-bit ints are strings. Runner skips gRPC requests, `snippet` refuses them.
+  - CLI `hitop grpc <target> <package.Service/Method> [-d JSON|@file|-] [-H "name: value"] [--proto f]... [-I dir]... [--plaintext]
+    [--connect-timeout ms] [--max-time ms] [-v] [--json]`, `hitop grpc <target> list [service]`, `describe <symbol>` (with a message
+    template), saved requests with `-c` (protos relative to the folder; `-d`, a method argument, `-H`, `--proto` override). Messages
+    pretty JSON on stdout, status/trailers (and headers with -v) on stderr, `--json` = JSON lines; exit 1 on a non-OK status or an
+    unreachable server (UNAVAILABLE). Secrets masked in all output (incl. message bodies echoing them). `requests list` shows
+    `GRPC`, `requests show` the section; `requests send` and MCP `run_request` refuse, MCP `get_request` shows `grpc`. The shared
+    variable setup of `hitop ws` moved into `ws::session_variables` (used by both).
+  - Desktop: `grpc_list`, `grpc_describe`, `grpc_call` (Tauri channel; state `GrpcCalls`), `grpc_cancel`. Checked with
+    `cargo clippy --locked --all-targets` in a Debian bookworm container with the GTK/WebKit dev packages (only the existing unused
+    `SecretStore` import warning in commands.rs, not from T15) and by CI's desktop job.
+  - Web app: method "gRPC" (tab `kind: "grpc"`, `grpcService/Method/Message/Protos/ImportPaths/Plaintext`); tabs Schema
+    (reflection or .proto files + import paths, plaintext switch), Auth, Metadata, Message (service and RPC method pickers after
+    "Load schema", text fields before; "Template" fills the message from the input type; a note for client-streaming methods);
+    Send/Cancel; a timestamped log of sent, headers, messages, status with trailers, errors (`store.grpcTabs`, memory only). Desktop
+    folders give the base dir for relative .proto paths. In the browser: "gRPC is available in the desktop app and CLI
+    (`hitop grpc`)", Send and Load schema off; requests are still edited, saved and reopened. Runs skip them; sidebar shows `GRPC`.
+  - Tests: core `tests/grpc.rs` 9 against `tests/support/grpc_server.rs` (a hand-written tonic service on dynamic messages,
+    reflection v1, v1alpha or none, from `tests/fixtures/grpc/greeter.proto` + `include/common.proto`): reflection list/describe/
+    template, unary with metadata (headers, `-bin`, auth), server streaming, NOT_FOUND with trailers, v1alpha fallback, .proto files
+    (missing import, missing file), refusals (bidi, bad JSON, unknown method, bad base64), refused connection and TLS to a plaintext
+    server, saved request → call; plus unit tests (target, endpoints, method names), format, runner and snippet tests. CLI
+    `tests/grpc.rs` 7 (the same server via `#[path]`) + an MCP test. e2e `webapp/tests/grpc.cjs`: web 9 checks (the desktop-only
+    message, Send off, saved shape, reload), Tauri 22 (reflection pickers, template, unary, streaming, error status, bidi refused,
+    bad JSON, no reflection → .proto files and import paths, saved shape, nothing via the proxy) against a canned Greeter in
+    `tauri-mock.cjs`. Full Tauri e2e suite green (204 PASS) after rebasing over T17; unit checks green (Rust keeps a gRPC request).
+  - Open: MCP has no gRPC tools; client-streaming and bidirectional calls; history doesn't record gRPC calls; no `--insecure`
+    (self-signed TLS) or client certificates; the desktop reloads the schema on every call (no cache); Postman export writes a gRPC
+    request as a plain GET; scripts don't run for gRPC requests; the web app's gRPC e2e in Tauri mode uses a canned mock (the real
+    client path is covered by the Rust tests). No owner handoff beyond the open question in section 6.
 
 #### T16 Response diff and code snippets
 - Compare two responses (history items or saved examples) side by side, with JSON-aware diff.
@@ -1244,6 +1290,7 @@ Agent appends here; owner ticks when done.
 | 2026-11-01 | T11 | Post the launch when you're ready (agents never post): drafts in `launch/` (Show HN, r/rust, r/webdev, This Week in Rust as a PR, Product Hunt), with where and when in `launch/README.md`. Best after the site deploy and the GIF. | |
 | 2026-11-01 | T11 | Optional: the hitop-action Marketplace listing still shows v1.0.0 as newest; open https://github.com/bohdaq/hitop-action/releases/tag/v1.0.1, Edit, tick "Publish this Action to the GitHub Marketplace", Update release. `v1` already points at v1.0.1. | |
 | 2026-11-01 | T14 | Nothing to do now. Open question for later: should `hitop mcp` get WebSocket tools (for example connect, send, read the next messages, close)? T14 left them out as scoped; MCP `run_request` refuses WebSocket requests and points to `hitop ws`. On your Mac, when you do the T5 check, a WebSocket request in the desktop app sends its headers and auth (the browser build can't). | |
+| 2026-11-01 | T15 | Nothing to do now. Open questions for later: should `hitop mcp` get gRPC tools (list/describe/call, like the WebSocket question under T14), and should hitop support client-streaming and bidirectional gRPC calls and `--insecure` TLS? When you do the T5 check on your Mac, a gRPC request (method "gRPC") against a local server with reflection shows the service pickers and streams responses. | |
 | 2026-11-01 | T17 | Nothing to do now. Open question for later: should sync also merge header rows one by one (today a request whose headers you edited keeps all of them when the spec changes its headers), and should `hitop mcp` get an import or sync tool for OpenAPI? | |
 | 2026-11-01 | T22 | Nothing to do now. `--reporter html` and the html artifact in `hitop schedule --github` workflows reach users with the next CLI release (0.3.0 images don't have it); the guides already say "releases after 0.3.0". The guide changes go live with the next site deploy. | |
 
