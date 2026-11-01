@@ -50,7 +50,8 @@ impl Mailer {
             "smtps" => (Tls::Wrapper(params), 465),
             other => return Err(format!("SMTP_URL scheme {other} (use smtp:// or smtps://)")),
         };
-        let decode = |s: &str| url::form_urlencoded::parse(format!("x={s}").as_bytes()).next().map(|(_, v)| v.into_owned()).unwrap_or_default();
+        // Percent-decoding only: a '+' in a password stays a '+'.
+        let decode = |s: &str| percent_encoding::percent_decode_str(s).decode_utf8_lossy().into_owned();
         let user = decode(url.username());
         let password = url.password().map(decode).unwrap_or_default();
         let mut builder = SmtpTransport::builder_dangerous(host).port(url.port().unwrap_or(default_port)).tls(tls).timeout(Some(std::time::Duration::from_secs(20)));
@@ -90,5 +91,16 @@ impl Mailer {
                 });
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    #[test]
+    fn smtp_credentials_are_percent_decoded() {
+        let url = url::Url::parse("smtp://noreply%40rws8.tech:p%2Bw%3Ad+x@127.0.0.1:587").unwrap();
+        let decode = |s: &str| percent_encoding::percent_decode_str(s).decode_utf8_lossy().into_owned();
+        assert_eq!(decode(url.username()), "noreply@rws8.tech");
+        assert_eq!(decode(url.password().unwrap()), "p+w:d+x");
     }
 }
