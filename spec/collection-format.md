@@ -238,6 +238,61 @@ They are top-level keys, so readers from before them (hitop 0.3.0 and older)
 keep them as unknown keys and write them back, but treat the request as an
 HTTP `GET`.
 
+### OpenAPI source (`openapi`)
+
+```yaml
+# requests/pets/get-a-pet.yaml
+name: Get a pet
+method: GET
+url: ${baseUrl}/pets/${petId}
+examples:
+- name: 200 The pet
+  status: 200
+  body: '{"id": 7}'
+  source: openapi
+openapi:
+  operation: GET /pets/{petId}
+  operationId: getPet
+  synced:
+    url: 221e9cd838898
+    headers: 12b07b5ecb5a5
+```
+
+A request imported from an OpenAPI spec records the operation it came from
+under `openapi`, and the collection records the spec in `hitop.yaml`:
+
+```yaml
+openapi:
+  source: https://api.example.com/openapi.yaml
+  version: 1.4.0
+  synced:
+    baseUrl: 1bcca0eb6e5e4
+```
+
+| Key | Meaning |
+| --- | --- |
+| `openapi.operation` (request) | `METHOD /path` as in the spec. |
+| `openapi.operationId` (request) | The operation's `operationId`, when it has one. |
+| `openapi.synced` (request) | A hash of each spec-owned field as last imported: `method`, `url`, `params`, `headers`, `body`, `auth`, `examples`. |
+| `openapi.source` (`hitop.yaml`) | The spec's URL, when it was imported from one. |
+| `openapi.version` (`hitop.yaml`) | The spec's `info.version`. |
+| `openapi.flat` (`hitop.yaml`) | `true` when requests were imported without a folder per tag. |
+| `openapi.synced` (`hitop.yaml`) | Hashes of `baseUrl` (the collection variable holding the server URL) and of the collection's `auth`. |
+| `source: openapi` (saved example) | The example came from the spec; examples without it are the user's. |
+
+A sync with a newer spec matches requests by `operationId`, then by
+`operation`. A field whose spec value changed is updated when the request
+still has the value the hash was taken from, and kept otherwise (the user
+edited it). Names, files, scripts and the user's examples are never the
+spec's. The hash is FNV-1a 64 (low 53 bits, lower-case hex) of the field's
+JSON in hitop's model, with blank header rows and keys other than name,
+value and enabled left out of rows; a tool that can't compute it may leave
+`synced` out, and a sync then keeps every field as edited.
+
+`openapi` is a top-level key added to version 1 after its first release.
+Readers from before it (hitop 0.3.0 and older) keep it as an unknown key and
+write it back; nothing about sending the request depends on it.
+
 ## 4. Auth
 
 The same objects as hitop's JSON storage. Values may contain `${variables}`.
