@@ -154,6 +154,7 @@ Secret variables: `secret: true` in an environment file, with the value resolved
 | T24 | Client sync, teams, cloud runs | todo | | |
 | T25 | SSO and audit log | todo | | |
 | T26 | iOS companion code | done (handoff) | 981c736, c1bfa7f, 24c00c5, f3332cb; CI 41309724315 (HitopKit on Linux); Xcode build in section 6 | 2026-11-01 |
+| Brand | Brand unification (owner request 2026-11-01) | done (handoffs) | b924e03, ebc7438; hitop-action 8931565 (untagged) | 2026-11-01 |
 
 Common commands referenced below:
 
@@ -1502,6 +1503,47 @@ export PATH="$HOME/.cargo/bin:$PATH"
     floats print through Swift's formatter (`1e+16` → `1e16`, otherwise as serde_json); URLSession may
     refuse a body on GET (the CLI sends it); no cookie jar across runs (the CLI keeps one per workspace).
 
+#### Brand unification (owner request 2026-11-01)
+- Owner request: one product name, one tagline and one logo on every release (site, web app, desktop
+  GitHub and MAS builds, iOS apps, extensions, CLI help and READMEs, Docker labels, hitop-action).
+  Overrides the "don't touch frontend/, extension/, chrome-extension/, chrome-store-package/" rule for
+  names, titles, descriptions and icons only (no functional change there).
+- **Notes (2026-11-01, done; handoffs in section 6):**
+  - Name **HITOP** wherever an app name shows; `hitop` stays the command and every identifier (bundle
+    ids `tech.rws8.hitop`, `hitop.rws8.tech.HiTop`, `hitop.rws8.tech.HitopCompanion`, extension ids,
+    crates, paths, Xcode targets). Before → after: Firefox extension "HITOP - HTTP API Testing Tool" /
+    action "HITOP API Tester" / popup "HITOP - API Tester" → "HITOP"; Chrome manifests ("HITOP - HTTP
+    API Testing Tool", "HITOP - HTTP Client", "Open HITOP HTTP Client", "HITOP HTTP Client") → "HITOP";
+    PWA manifest "HITOP - HTTP Client" → "HITOP"; extension page `<title>`/OG "HITOP - HTTP Client |
+    Test REST APIs ..." → "HITOP"; Tauri window "HITOP — HTTP API Testing Tool" → "HITOP" (productName
+    was already HITOP); iOS app display name and sidebar "HiTop" → "HITOP"; companion "hitop" and
+    widget "hitop runs" → "HITOP Runs" (it is a separate App Store app by its bundle id today; two
+    home-screen icons both called HITOP would be indistinguishable; becomes "HITOP" if the owner ships
+    it as the next version of the iOS app, T26 handoff); Shortcuts "Run hitop collection" → "Run HITOP
+    collection"; CLI `--help` about, crate descriptions and READMEs, guide titles "Run/Use hitop ..." →
+    "HITOP"; Docker `image.title=HITOP` added.
+  - Tagline (T11 positioning line, 70 characters): "The API client your terminal, your CI and your AI
+    agent can all drive." in every description field: extension and PWA manifests, Tauri
+    shortDescription/longDescription, crate descriptions, `hitop --help`, Docker description.
+  - Logo: `brand/logo.svg` = the master (`site/public-assets/favicon.svg`, gradient #667eea → #764ba2).
+    Replaced the red-circle icons with renders at the same names and sizes: site favicon-16x16,
+    favicon-32x32, favicon.png (192), apple-touch-icon (180); frontend/public favicon.ico (16–256, six
+    images as before), logo192, logo512; desktop/src/logo192.png; extension/icons icon-48, icon-96
+    (192 × 192 as it always was); chrome-store-package favicon.ico, icons 16/48/128, logo192, logo512.
+    The site now serves the master as favicon.svg (it wrote the flat header mark); the flat
+    `#6b55d6` mark stays in the header and 404 (design system: no gradients). Tauri icons already
+    matched a fresh render (< 0.1 % pixels, anti-aliasing): left as they are. iOS app icons (purple,
+    opaque): left. Social preview already shows the purple mark and "HITOP": left.
+  - `brand/`: logo.svg, logo-mono.svg, png/ (16–1024, 300 for the Edge store logo), BRAND.md, export.sh
+    (resvg 2.6.2 pinned in brand/package-lock.json, so renders are byte-identical on every machine;
+    `--tauri` regenerates the desktop set with Tauri's generator), check.sh. CI job `brand`:
+    `export.sh --check` byte compare of every icon and a search for the old names. Build scripts copy
+    brand/png instead of `sips`; create-favicon.sh calls export.sh.
+  - hitop-action 8931565: action.yml name "Run HITOP collection", description, branding color purple
+    (was blue), README title. Not tagged (task scope), so the Marketplace shows it after the next release.
+  - Checked: extension build (`npm run build:extension`), `./deploy/build.sh` (site, web app, server
+    tests), web app unit + e2e (web and Tauri modes), `cargo test -p hitop`, desktop `cargo check`.
+
 ---
 
 ## 6. Handoffs and open questions
@@ -1532,3 +1574,7 @@ Agent appends here; owner ticks when done.
 | 2026-11-01 | T19 | Check the security-scoped bookmarks in the sandboxed MAS (overlay) build: Collections → Open folder on a `hitop init` folder, edit a request, quit, reopen: the folder comes back without asking and saves still work (also a Git panel action on it). Then rename or move the folder in Finder and relaunch: it should still open (stale bookmark renewed) or ask to open it again, never crash. `~/Library/Containers/tech.rws8.hitop/Data/Library/Application Support/tech.rws8.hitop/folder-bookmarks.json` should list the folder; closing the collection removes it. Tell me what the Console shows for `hitop:` lines if it fails. | |
 | 2026-11-01 | T19 | Optional: the App Store price change for 1.0 ($9–19 was the plan; today Mac $4.99, iOS $2.99), in App Store Connect, if you want it. Agents don't change prices. | |
 | 2026-11-01 | T19 | Deploy the site (`deploy/deploy.sh`): the comparison pages, README-linked guides and the home page now describe 1.0 (protocols, OpenAPI, snippets, secret managers, HTML reports, schedule) and pin 1.0.0. Not deployed by this tranche on request. Optional: the hitop-action Marketplace listing still shows v1.0.0/v1.0.1; nothing changed in the action. | |
+| 2026-11-01 | Brand | **App Store Connect, Mac app** (id6785294166, now "HiTop API Client"): with the next version, set App Name **HITOP** (if Apple says the name is taken, "HITOP API Client"), Subtitle (≤ 30) **API client for terminal and CI** (30 characters; your call), Promotional Text "The API client your terminal, your CI and your AI agent can all drive." The icon comes from the build (`desktop/src-tauri/icons/icon.icns`, already the purple mark); the next MAS build also carries the window title "HITOP". **iOS app** (id6785326628, now "HiTop HTTP Client"): App Name **HITOP** (fallback "HITOP HTTP Client"), same subtitle and promotional text; the home-screen name "HITOP" (`ios/HiTop` Info.plist) reaches devices with the next build you upload; icon unchanged (already purple). Name changes only apply when a new version is submitted. Afterwards tell me the final listing names and I update CLAUDE.md and the site links if the store URLs change. | |
+| 2026-11-01 | Brand | **Chrome Web Store** (item mmbpagencfjfgeicmeobbmeocdpeokdk): the listing name and summary come from the manifest: now "HITOP" and "The API client your terminal, your CI and your AI agent can all drive." The store rejects an unchanged version, so set `"version"` in `chrome-store-package/manifest.json` to 4.0.1, then `cd chrome-store-package && zip -r ../hitop-chrome-store.zip . -x '*.DS_Store' README.txt PRIVACY.md` and upload it (Package → Upload new package). Store icon: `brand/png/logo-128.png` (= `chrome-store-package/icons/icon-128.png`). Listing description: start it with the tagline. **Firefox AMO** (addons.mozilla.org/addon/hitop): set `"version"` in `extension/manifest.json` to 4.0.1, run `./build-extension.sh` (builds frontend/ and writes `hitop-firefox-extension.zip`), upload as a new version; listing Name "HITOP", Summary = the tagline, icon `brand/png/logo-128.png`. **Edge Add-ons**: the repository links no Edge listing; if one exists, upload the same Chrome zip, Name "HITOP", short description = the tagline, store logo `brand/png/logo-300.png`. Tell me the versions you uploaded so the manifests in the repo match. | |
+| 2026-11-01 | Brand | **GitHub repo social preview** (bohdaq/hitop → Settings → General → Social preview): upload `site/public-assets/social-preview.png` (1280 × 640, purple mark and "HITOP") if it isn't there already. Optional: repository About description = the tagline. **hitop-action Marketplace**: main now says "Run HITOP collection" with a purple badge (hitop-action 8931565), untagged. To show it on the Marketplace: tag `v1.0.2` on hitop-action main and move `v1` (or let an agent do it), then open the release, Edit, tick "Publish this Action to the GitHub Marketplace", Update release. The listing URL `.../marketplace/actions/run-hitop-collection` should stay (same name, other case); if GitHub asks for a new name, keep "Run HITOP collection". | |
+| 2026-11-01 | Brand | iOS companion naming (with the T26 build): it is called **HITOP Runs** (app and widget) because its bundle id makes it a second App Store app. If you ship it as the next version of the iOS app instead (T26 option), also set `CFBundleDisplayName` to `HITOP` in `ios/HitopCompanion/HitopCompanion/Info.plist`. For a new listing: App Name "HITOP Runs", subtitle "Run your API collections" (24). Shortcuts now say "Run HITOP collection" and "Get last HITOP run status". | |

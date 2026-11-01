@@ -132,7 +132,7 @@ hitop/
 │   ├── src/pages/              # home, pricing.html, privacy.html, 404, terms/ (guides)
 │   ├── content/guides/*.md     # the /terms/*.html guide articles (Markdown + front matter); hitop-vs-*.md comparisons carry a checked date and sources
 │   ├── demo/demo.tape          # vhs tape for the terminal GIF (vhs site/demo/demo.tape from the repo root)
-│   ├── public-assets/          # favicons, social preview; favicon.svg is also the desktop icon source
+│   ├── public-assets/          # favicons (renders of brand/logo.svg; favicon.svg = the master), social preview
 │   └── scripts/prerender.js    # npm run build → dist/
 ├── server/                     # hitop-server: rws app serving the site + POST /api/proxy
 │   └── src/guard.rs            # address/port policy for the proxy (SSRF guard)
@@ -143,13 +143,14 @@ hitop/
 │   ├── deploy/                 # hitop-sync.service, install.sh, rws-routes.toml (sync.hitop.rws8.tech)
 │   └── THREAT_MODEL.md, README.md (self-host guide), Dockerfile
 ├── ios/
-│   ├── HiTop/                  # the live App Store iOS app ("HiTop HTTP Client", editor, own JSON storage); frozen, untouched
+│   ├── HiTop/                  # the live App Store iOS app (listed as "HiTop HTTP Client", shown as HITOP; editor, own JSON storage); frozen but for names
 │   ├── HitopKit/               # Swift package (MIT): format v1 reader (Yams 6.2.2), variables, secrets, scripts, URLSession runner, report.json
 │   └── HitopCompanion/         # SwiftUI companion (T26): XcodeGen project.yml, app + App Intents, WidgetKit widget, Shared/ (app group)
 ├── spec/collection-format.md   # collection folder format v1, stable since 1.0 (CC BY 4.0); section 7 = compatibility promise
 ├── spec/compat/v1/             # compatibility suite: <case>/folder + expected.json (never changed, only added), run-report/report.json
 ├── shared/pm-shim.js           # the pm.* shim for Postman scripts, run by hitop-core (copy in the crate), the web app and HitopKit (copy in Resources/)
 ├── spec/run-report.md          # `hitop run --reporter json` report, reportVersion 1, and the JUnit shape (CC BY 4.0)
+├── brand/                      # logo.svg (master), logo-mono.svg, png/, BRAND.md (name, tagline, colors, asset map), export.sh, check.sh (CI job brand)
 ├── ROADMAP.md                  # agent work order to v1.x: decisions, rules, tranches T0–T26, status
 ├── launch/                     # launch text drafts for the owner (Show HN, Reddit, TWiR, Product Hunt); never posted by agents
 ├── docs/CNAME                  # only file left: keeps GitHub Pages 301ing bohdaq.github.io/hitop/* → hitop.rws8.tech
@@ -159,6 +160,14 @@ hitop/
 ---
 
 ## Key technical facts
+
+### Brand
+- The product and every app are called **HITOP** (window titles, display names, manifests, `<title>`, store names); `hitop` is
+  the command and every identifier (crates, bundle ids, extension ids, paths), which never change. iOS companion: "HITOP Runs"
+- Tagline (all description fields): "The API client your terminal, your CI and your AI agent can all drive."
+- Icons are renders of `brand/logo.svg` (gradient #667eea → #764ba2): edit the master, run `brand/export.sh`, commit. CI job `brand`
+  (`brand/check.sh`) fails when an icon differs from the render or an old app name (list in check.sh) comes back.
+  Details and the asset map: `brand/BRAND.md`
 
 ### Rust CLI (`cli/`)
 - Workspace version: `1.0.0` (hitop, hitop-core, hitop-git in sync; also `[workspace.dependencies] hitop-core` version; the locks of
@@ -290,7 +299,7 @@ hitop/
 - MAS entitlements: sandbox + network.client + user-selected files + bookmarks.app-scope. `src/bookmarks.rs` (macOS, objc2):
   inside the sandbox (`APP_SANDBOX_CONTAINER_ID`) read_folder/write_folder/git first resolve the folder's security-scoped
   bookmark (`<app data>/folder-bookmarks.json`) or save one; `folder_forget {path}` drops it. CI job `desktop-macos` compiles it
-- Icons generated from `site/public-assets/favicon.svg` via `rsvg-convert` + `npx tauri icon`
+- Icons from `brand/logo.svg`: `brand/export.sh --tauri` (Tauri's `icon` generator on `brand/png/logo-1024.png`)
 
 ### Frontend (`frontend/`)
 - Build tool: Vite 6 (migrated from CRA — zero vulnerabilities)
@@ -363,7 +372,7 @@ hitop/
 - Hosting: VM bohdan-prod-donotdelete (168.119.17.57) behind the front rws; see `deploy/README.md`
 - Build all: `./deploy/build.sh`; server tests: `cd server && cargo test`
 - Old URLs must keep working: `/privacy.html` (App Store privacy URL), `/pricing.html`, `/app.html`, `/terms/*.html`
-- App Store: macOS "HiTop API Client" id6785294166 ($4.99, macOS 12+), iOS "HiTop HTTP Client" id6785326628 ($2.99, iOS 17+)
+- App Store (listing names until the owner renames them to HITOP, ROADMAP section 6): macOS "HiTop API Client" id6785294166 ($4.99, macOS 12+), iOS "HiTop HTTP Client" id6785326628 ($2.99, iOS 17+)
 
 ### Sync server (`sync-server/`)
 - Own Cargo workspace: `hitop-sync-server` (AGPL); the MIT client crate `cli/crates/hitop-sync-crypto` is in the cli workspace and only a dev-dependency here
