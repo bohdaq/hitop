@@ -39,7 +39,7 @@ work started. Don't re-ask them.
 | Web app and files | localStorage stays the web app's store. Import and export of collection folders as `.zip`, plus "Open folder" where the File System Access API exists. |
 | Secrets | OS keychain first (macOS Keychain, Secret Service, Windows Credential Manager) through the `keyring` crate. Env vars cover CI and headless runs. |
 | MCP | `hitop mcp` over stdio: list, run, create and update requests, and read results. |
-| AI | Bring your own key: Anthropic or any OpenAI-compatible endpoint (including local models). hitop never resells tokens. |
+| AI | Dropped by the owner (2026-11-01): no AI features. MCP (T12) stays, so users can drive hitop from their own AI tools. |
 | Distribution | GitHub Releases (CLI binaries, free unsigned desktop builds), crates.io, a `ghcr.io/bohdaq/hitop` Docker image, and a GitHub Action in `bohdaq/hitop-action`. No Homebrew, winget, Scoop or AUR. |
 | Store builds | Mac $4.99 and iOS $2.99 stay until v1.0. The owner changes App Store prices. |
 | License | hitop-core, the CLI, desktop and web app stay MIT. Only the sync server (`sync-server/`) is AGPL-3.0-or-later. The format spec is CC BY 4.0. Contributions under the DCO (`Signed-off-by`), no CLA. (Owner, 2026-11-01: replaces the earlier GPL plus CLA plan.) |
@@ -129,7 +129,7 @@ Secret variables: `secret: true` in an environment file, with the value resolved
 | T15 | gRPC | todo | | |
 | T16 | Response diff and code snippets | todo | | |
 | T17 | OpenAPI import and sync | todo | | |
-| T18 | Bring-your-own-key AI | todo | | |
+| T18 | Bring-your-own-key AI | dropped | owner decision | 2026-11-01 |
 | T19 | v1.0 hardening and release | todo | | |
 | T20 | Git UI in desktop | todo | | |
 | T21 | Secret manager integrations | todo | | |
@@ -346,13 +346,7 @@ export PATH="$HOME/.cargo/bin:$PATH"
   edits.
 
 #### T18 Bring-your-own-key AI
-- Settings: provider (Anthropic, or an OpenAI-compatible base URL including local models), model
-  (default `claude-sonnet-5-5`), key. The key goes in the keychain on desktop and CLI, and in
-  localStorage on the web with a warning.
-- Features: generate requests from a prompt or an OpenAPI operation; generate assertions from a
-  response. Requests go straight from the client to the provider, never through hitop-server.
-- CLI: `hitop ai request "<prompt>"`, `hitop ai tests <request>`.
-- **Done when:** tests against a mocked provider API; no key appears in logs, history or exports.
+- Dropped by the owner on 2026-11-01. Skip it; nothing later depends on it.
 
 #### T19 v1.0 hardening and release
 - Freeze format v1 (spec marked stable, a compatibility test suite).
@@ -434,5 +428,3 @@ Checked 2026-11-01:
       in `/etc/hitop-sync/env` as `SMTP_URL`.
 - [x] Swift 6.4.2 via swiftly (2026-11-01; `swift test` works; non-login shells need
       `. ~/.local/share/swiftly/env.sh`).
-- [ ] Optional: an Anthropic API key in
-      `~/.config/hitop-dev/anthropic.key` if you want T18 checked against the real API too.
