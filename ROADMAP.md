@@ -134,7 +134,7 @@ Secret variables: `secret: true` in an environment file, with the value resolved
 | T4 | Postman migration: environments and pm.* | todo | | |
 | T5 | Desktop = web app; web folder import/export | todo | | |
 | T6 | Cookie jar and multipart in Rust and CLI | todo | | |
-| T7 | Release infra: GitHub Releases, Docker image | todo | | |
+| T7 | Release infra: GitHub Releases, Docker image | done | ee41820; dry run cli-v0.3.0-rc.1, desktop-v0.2.0-rc.1; deployed | 2026-11-01 |
 | T8 | GitHub Action and GitLab template | todo | | |
 | T9 | License notices, DCO, project policies | done | 51cd299; DCO verified on PR #1 | 2026-11-01 |
 | T10 | Opt-in telemetry | todo | | |
@@ -298,6 +298,18 @@ export PATH="$HOME/.cargo/bin:$PATH"
 - Site: `/download` page with links to the latest release assets.
 - **Done when:** a dry-run release on a `-rc` tag produces every asset and image; the image runs
   `hitop run` on a fixture. **Handoff:** owner sets the ghcr package visibility to public once.
+
+- Notes (done 2026-11-01): `release-cli.yml` (crates.io, five binaries: Linux builds are static
+  musl instead of the gnu targets in the old cargo-dist metadata, which was removed; GitHub
+  Release; ghcr image from `cli/docker/Dockerfile` on distroless static, smoke test
+  `cli/docker/smoke.sh`) and `release-desktop.yml` (tauri-action; `tauri.github.conf.json`
+  overlays ad-hoc signing and drops the MAS entitlements for GitHub builds). Tags with a suffix
+  are dry runs: `cargo publish --dry-run`, pre-release, image tagged with the rc version only.
+  Both rc runs passed first time; every asset and the image are there, and the image ran the
+  smoke collection in CI and locally. The ghcr package was already public, so that handoff is
+  not needed. `/download/` lists the assets (direct links filled in from the GitHub API, the
+  releases page without JS). Desktop asset names carry the tauri.conf.json version (0.1.0 in
+  the rc); bump it to 0.2.0 in T11.
 
 #### T8 GitHub Action and GitLab template
 - `bohdaq/hitop-action`: `action.yml` (inputs: `path`, `env`, `env-file`, `reporter`, `version`,
