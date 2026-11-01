@@ -25,6 +25,7 @@ hitop/
 │       │       ├── http.rs         # reqwest blocking client (rustls, no OpenSSL); execute_opts/send_with: timeout + cookie jar
 │       │       ├── cookies.rs      # cookie jar per workspace (<config>/hitop/cookies/<ws>.json), web app rules and JSON shape
 │       │       ├── form.rs         # urlencoded and multipart bodies; saved form requests (bodyMode) as sent
+│       │       ├── snippet.rs      # code snippets (curl, fetch, python, go, java, rust): secrets/missing vars as {{NAME}} (no native deps)
 │       │       ├── graphql.rs      # GraphQL bodies: bodyType graphql + `graphql` {variables, operationName}, request_body() (no native deps)
 │       │       ├── telemetry.rs    # opt-in weekly usage ping, feature `telemetry` (telemetry.json per surface)
 │       │       ├── interpolation.rs # ${variable} substitution
@@ -42,6 +43,7 @@ hitop/
 │           ├── tests/run.rs    # hitop run: JUnit shape (roxmltree), JSON report, exit codes, flags, masking
 │           ├── tests/postman.rs # hitop import --to of the fixtures/postman collections, run against httpmock
 │           ├── tests/cookies_forms.rs # cookie jar across send/run, -F uploads, saved form bodies
+│           ├── tests/snippet.rs # hitop snippet: curl, fetch, Python, Java, Go output run against a capture server = what requests send sends
 │           ├── tests/graphql.rs # send --graphql, saved graphql requests via run/requests send, Postman graphql import (httpmock)
 │           ├── tests/globals.rs # globals below collection/env, secret globals, pm.globals, import, convert
 │           ├── tests/mcp.rs    # hitop mcp: JSON-RPC over stdio for every tool (httpmock), no secret value anywhere on stdout
@@ -86,6 +88,8 @@ hitop/
 │   ├── scripts/check-no-telemetry.mjs # CI: dist/ and web.js have no usage ping (control: dist-tauri has the page)
 │   ├── src/pm.js               # Postman scripts: loads shared/pm-shim.js, runScript, import report helpers
 │   ├── src/wasm/format.js      # hitop-wasm wrapper; src/wasm/pkg/ is built by scripts/build-wasm.mjs (gitignored)
+│   ├── src/diff.js             # response diff: JSON by path (key order ignored), lines (LCS), headers; history response snapshots
+│   ├── src/views/tools-dialogs.js # Code dialog (hitop-wasm snippet) and Compare responses dialog
 │   ├── src/graphql-schema.js   # graphql-js: introspection query, schema from the answer (lazy)
 │   ├── src/views/code-editor-graphql.js # cm6-graphql: GraphQL language, completion, schema lint (own lazy chunk)
 │   ├── src/zip.js              # collection folder ⇄ .zip (fflate)
@@ -152,6 +156,10 @@ hitop/
   `body.operationName`, spec §3). `prepare::Draft.graphql` (`Draft::of(request, collection_auth)`) builds the JSON body after
   `${var}` substitution, adds `Content-Type: application/json` unless set. `hitop send --graphql <file|-> [--graphql-vars JSON|@file]
   [--operation-name N]`. Postman graphql bodies import/export as GraphQL
+- Snippets: `hitop snippet <collection> <request> --lang curl|fetch|python|go|java|rust [-e env] [--show-secrets]`; core
+  `snippet::generate(lang, request, collection_auth, variables, secrets)`; secret names and variables with no value become
+  `{{NAME}}` (the CLI never resolves secrets without `--show-secrets`); one value per header name, as hitop sends; golden files
+  `hitop-core/tests/golden/snippets/<case>/<lang>.<ext>` (cases.json, `UPDATE_GOLDEN=1`; syntax-checked with bash/node/python3/javac/gofmt when installed)
 - Cookies: `send`, `run`, `requests send` keep a jar per workspace (`global` without `-c`, shared with the desktop);
   `hitop cookies ls|clear [-c]`, `--no-cookies`. Forms: `send -F name=value -F file=@path[;type=mime]`, `--urlencoded`;
   `run`/`requests send` send saved `bodyMode` urlencoded/multipart bodies (`form::outgoing`)
@@ -217,6 +225,9 @@ hitop/
 - GraphQL body: tab `bodyMode: "graphql"` ⇄ saved `bodyType: graphql` + `graphql` (store.js `EXTRA_FIELDS`/`SAVED_FIELDS`); the body
   is built by hitop-wasm `graphqlBody` (same bytes as the CLI); `store.fetchSchema()` introspects through `dispatch` (proxy/Rust),
   schemas live in memory per tab (`store.schemas`). Editor deps: cm6-graphql, graphql, @codemirror/autocomplete (MIT)
+- Response diff and Code: history items keep `response` {status, headers, body ≤ 100 kB, truncated?, durationMs} (secrets masked;
+  older items have none and aren't offered); "Save as example" appends {name, status, headers, body} to the saved request's
+  `examples`; Compare picks current / examples / history (`store.compareSources()`); Code uses hitop-wasm `snippet` (`store.snippetInput()`)
 - Postman collections import through hitop-wasm `importPostman` (same importer and report as the CLI); scripts that
   mention pm/postman/tests/... run with the shim; script-set variables live in `store.scriptVariables` until reload,
   script-set globals in `store.scriptGlobals`; the Globals section is on the Environments page (`store.globals`)

@@ -143,7 +143,7 @@ Secret variables: `secret: true` in an environment file, with the value resolved
 | T13 | GraphQL | done | 208583d, a78211d | 2026-11-01 |
 | T14 | WebSocket | todo | | |
 | T15 | gRPC | todo | | |
-| T16 | Response diff and code snippets | todo | | |
+| T16 | Response diff and code snippets | done | 5c550ac, 9b88ff5, 0d4caa8, 8acd583, 344d07d | 2026-11-01 |
 | T17 | OpenAPI import and sync | todo | | |
 | T18 | Bring-your-own-key AI | dropped | owner decision | 2026-11-01 |
 | T19 | v1.0 hardening and release | todo | | |
@@ -906,6 +906,49 @@ export PATH="$HOME/.cargo/bin:$PATH"
   `hitop snippet <request> --lang <lang>`.
 - **Done when:** snippet fixtures per language; the generated curl runs against a mock server and
   matches.
+
+- **Notes (2026-11-01, done):**
+  - Core `hitop-core/src/snippet.rs` (no native deps, builds for wasm32): `generate(lang, request, collection_auth, variables,
+    secrets) -> {code, placeholders}` for curl, JavaScript fetch (Node, top-level await), Python requests, Go net/http, Java
+    HttpClient and Rust reqwest (blocking). Auth (basic structured per language, bearer and API key through `auth::apply`), enabled
+    headers, query, raw, urlencoded (encoded as `form::urlencoded` does), multipart (text parts and file parts read from disk) and
+    GraphQL bodies (T13's JSON POST, `graphql::request_body`). Written the way hitop sends: one value per header name (hitop's
+    header map keeps the last), no Content-Type hitop wouldn't send (curl gets `-H 'Content-Type:'` for a raw body without one,
+    fetch sends such a body as bytes), `--data-raw`/`--form-string` so a leading `@` stays text. Escaping per language (POSIX single
+    quotes; Java octal escapes for control characters, since `\uXXXX` is unescaped before parsing; Rust raw strings with enough
+    `#`; Go raw strings for multi-line text).
+  - Secrets: names in `secrets` and variables with no value are written as `{{NAME}}` (also readable inside an API key in the
+    query). The CLI never resolves secrets by default (no keychain access, no prompt) and drops stale secret values from JSON
+    environments; `--show-secrets` resolves them like `requests send`. stderr lists the placeholders. Web app: "Include secret
+    values" checkbox, off by default, with a warning when on.
+  - CLI `hitop snippet <collection> <request> --lang <lang> [-e env] [--show-secrets] [--secret N=V]` (default curl; addressing as
+    `requests send`; variables globals < collection < environment; scripts not run). README section "Code snippets".
+  - Tests: golden files for 7 cases x 6 languages (`hitop-core/tests/golden/snippets/`, `UPDATE_GOLDEN=1`), syntax-checked with
+    bash, node, python3, javac and gofmt where installed; `hitop/tests/snippet.rs` runs `requests send` and then the generated
+    snippet against a local TCP capture server for 7 requests (bearer + query, JSON + basic with quotes, `$`, backticks and
+    non-ASCII, urlencoded + API key in the query, multipart + API key header, raw text without Content-Type, a custom method with a
+    repeated header, GraphQL) and compares method, path, query, headers and body (multipart boundary normalised): curl always,
+    plus fetch (node), Python requests, Java (`java Main.java`) and Go (`go run`) when installed; all five matched locally. Rust
+    snippets are not compiled (reqwest isn't available offline in a test).
+  - hitop-wasm: `snippet(input, lang)`, `snippetLanguages()`; clippy clean on the host and wasm32.
+  - Web app and desktop: a Code button next to Save (language picker, the code block's copy button, placeholder list, CLI
+    equivalent). History items now keep `response` (status, headers, body up to 100 kB with `truncated`, duration; secret values
+    masked); items stored before have none, still load (e2e seeds the old React/desktop storage) and are not offered for
+    comparison. "Save as example" on a saved request's response appends `{name, status, headers, body}` (masked) to its
+    `examples` (written to the folder file like any example). "Compare" (response bar and History dialog) picks Before/After from
+    the current response, the request's examples and history: status, headers (names without case), JSON bodies by structure
+    (key order ignored, arrays by position) with added/removed/changed paths plus a side-by-side of the canonical JSON, other
+    bodies by line (LCS, with a size cap). `webapp/src/diff.js` (unit checks), `views/tools-dialogs.js`.
+  - e2e `webapp/tests/diff-code.cjs` (local Node server only): old history loads, Code panel in all six languages with the secret as
+    `{{key}}`, "Include secret values", example saved and masked, compare example vs current (one header, two JSON paths, key order
+    ignored), sources (old history left out), same vs same, history keeps masked responses, History → Compare; 20 checks web, 21
+    Tauri. `graphql.cjs` gained a Code panel check (curl posts the GraphQL JSON body). Full suites locally: web 118 PASS, Tauri 142
+    PASS, 0 FAIL; `cargo test` and clippy (`--all-targets`, `--no-default-features`, `--all-features`, hitop-wasm host and wasm32)
+    clean. No new dependency in any workspace.
+  - Deviation: snippets use `{{NAME}}` placeholders, the shape the task suggested (hitop's own `${NAME}` would expand in a shell).
+  - Open: examples saved in the web app can't be renamed or deleted there yet (edit the folder file or JSON); the history
+    response snapshot is cut at 100 kB, so a diff of larger bodies covers only the start; no PHP/C#/HTTPie snippets. No owner
+    handoff.
 
 #### T17 OpenAPI import and sync
 - OpenAPI 3.0 and 3.1 (YAML or JSON, file or URL) → collection folder, in hitop-core (WASM for the
