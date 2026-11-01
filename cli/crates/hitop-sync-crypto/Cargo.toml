@@ -15,6 +15,8 @@ hpke = { version = "0.15.1", default-features = false, features = ["alloc", "get
 chacha20poly1305 = { version = "0.11", default-features = false, features = ["alloc"] }
 getrandom = "0.4"
 zeroize = "1"
+# Key fingerprints (already in the tree through hpke).
+sha2 = { version = "0.11", default-features = false }
 
 [dev-dependencies]
 serde = { version = "1", features = ["derive"] }

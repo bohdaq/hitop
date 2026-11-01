@@ -299,3 +299,23 @@ fn blob_text_round_trip() {
     assert!(BlobText::decode(br#"{"v":2,"path":"a","text":""}"#).unwrap_err().contains("newer"));
     assert!(BlobText::decode(b"garbage").is_err());
 }
+
+#[test]
+fn a_rewrite_with_the_same_text_keeps_a_local_edit() {
+    let mut server = Sim::default();
+    let (mut a, mut b) = (Client::new("a"), Client::new("b"));
+    a.files.insert("requests/x.yaml".into(), request("X", "https://x"));
+    a.sync(&mut server);
+    b.sync(&mut server);
+    // a re-encrypts (same text, next version) while b edits.
+    let e = a.state.entries["requests/x.yaml"].clone();
+    let push = Push { path: "requests/x.yaml".into(), blob: e.blob.clone(), version: e.version + 1, vv: bump(&e.vv, "a"), text: e.base.clone() };
+    server.put(&push).unwrap();
+    b.files.insert("requests/x.yaml".into(), request("X", "https://x/b"));
+    let p = b.sync(&mut server);
+    assert!(p.conflicts.is_empty());
+    assert_eq!(p.push.len(), 1);
+    assert_eq!(p.push[0].version, 3);
+    a.sync(&mut server);
+    assert_eq!(a.files, b.files);
+}

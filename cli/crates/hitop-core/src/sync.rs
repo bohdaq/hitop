@@ -385,6 +385,12 @@ pub fn plan(local: &Files, state: &State, remote: &[RemoteBlob], me: &str, new_b
             st.entries.insert(path.clone(), new_entry);
             continue;
         }
+        if their_text == base {
+            // Rewritten with the same text (re-encrypted after a key rotation): mine stays and
+            // is pushed over their version.
+            st.entries.insert(path.clone(), new_entry);
+            continue;
+        }
         match merge_text(path, base.as_deref(), mine.as_deref(), their_text.as_deref()) {
             Some(Some(merged)) => {
                 if Some(&merged) != mine.as_ref() {

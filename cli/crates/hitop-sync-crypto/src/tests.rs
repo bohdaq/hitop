@@ -289,3 +289,19 @@ fn generate_vectors() {
     let path = concat!(env!("CARGO_MANIFEST_DIR"), "/vectors/v1.json");
     std::fs::write(path, serde_json::to_string_pretty(&v).unwrap() + "\n").unwrap();
 }
+
+#[test]
+fn fingerprints_and_random_ids() {
+    let pk = [7u8; 32];
+    let fp = fingerprint(&pk);
+    assert_eq!(fp.len(), 8 * 4 + 7);
+    assert_eq!(fp, fingerprint(&pk));
+    assert_ne!(fp, fingerprint(&[8u8; 32]));
+    // Pinned so other implementations (the web app) can check theirs.
+    assert_eq!(fingerprint(&[0u8; 32]), FINGERPRINT_OF_ZEROS);
+    let id = random_hex::<16>();
+    assert!(id.len() == 32 && id.bytes().all(|b| b.is_ascii_hexdigit()));
+    assert_ne!(id, random_hex::<16>());
+}
+
+const FINGERPRINT_OF_ZEROS: &str = "62bd a406 8c54 b947 3e40 132e dd07 fbd2";

@@ -284,5 +284,24 @@ pub fn rotate(workspace_id: &str, epoch: u32, recipients: &[Recipient]) -> Resul
     Ok((key, wraps))
 }
 
+/// A device public key's fingerprint, for people to compare out of band before trusting a key:
+/// the first 16 bytes of SHA-256(`"hitop-sync/v1/fingerprint"` || public key) as eight groups of
+/// four hex digits. Clients pin a key once it is confirmed (trust on first use) and refuse a
+/// changed key for the same key id.
+pub fn fingerprint(public_key: &[u8]) -> String {
+    use sha2::Digest;
+    let mut h = sha2::Sha256::new();
+    h.update(b"hitop-sync/v1/fingerprint");
+    h.update(public_key);
+    let digest = h.finalize();
+    digest[..16].chunks(2).map(|c| format!("{:02x}{:02x}", c[0], c[1])).collect::<Vec<_>>().join(" ")
+}
+
+/// A random identifier: `N` bytes from the OS RNG as lower-case hex (workspace ids: 16, blob
+/// ids: 16).
+pub fn random_hex<const N: usize>() -> String {
+    random::<N>().iter().map(|b| format!("{b:02x}")).collect()
+}
+
 #[cfg(test)]
 mod tests;
