@@ -8,6 +8,7 @@
 import storageService from "../../../frontend/src/services/storageService.jsx";
 import { historyFromRust, historyToRust } from "./history.js";
 import { askOnce, settingsPages } from "./tauri-settings.js";
+import { gitApi, gitPages } from "./tauri-git.js";
 
 // What @tauri-apps/api's invoke() calls; the e2e tests put a mock here.
 const invoke = (cmd, args = {}) => window.__TAURI_INTERNALS__.invoke(cmd, args);
@@ -284,7 +285,8 @@ export function createPlatform() {
       }
       // The usage ping's setting (absent in Mac App Store builds: no page then).
       const settings = await settingsPages(telemetry);
-      platform.pages = settings.pages;
+      // The Git panel for collection folders, then Settings.
+      platform.pages = [...gitPages(platform.git), ...settings.pages];
       platform.onStart = () => askOnce(telemetry, settings.status);
       cache.collections = collections?.length ? collections : null;
       cache.history = historyFromRust(history);
@@ -349,6 +351,8 @@ export function createPlatform() {
     websocket: rustWebSocket,
     // gRPC calls (unary and server streaming) through hitop-core.
     grpc: rustGrpc,
+    // Git for collection folders (hitop-git over libgit2).
+    git: gitApi(invoke),
     // The Rust jar handles cookies (send passes options.cookies on), so the
     // page adds no Cookie header itself.
     managesCookies: () => false,

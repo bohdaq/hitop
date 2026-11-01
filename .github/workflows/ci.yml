@@ -143,6 +143,7 @@ jobs:
           workspaces: |
             server
             cli/crates/hitop-wasm
+            cli
       - name: Build site, web app and server
         run: ./deploy/build.sh
       - name: Unit checks
@@ -161,6 +162,9 @@ jobs:
       - name: End-to-end checks (they call example.com, jsonplaceholder.typicode.com and httpbin.org)
         working-directory: webapp
         run: BASE=http://localhost:7879 npm run test:e2e
+      - name: hitop-git for the mocked desktop (tests/git.cjs runs the Git panel through it)
+        working-directory: cli
+        run: cargo build --locked -p hitop-git --example git-json --no-default-features
       - name: Web app built for the desktop (Tauri adapter, mocked invoke)
         working-directory: webapp
         run: npm run build:tauri && npm run test:e2e:tauri

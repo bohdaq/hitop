@@ -135,7 +135,8 @@ export class HitopCollection extends LightElement {
               ${folder.connected
                 ? folder.error
                   ? html`<span>Couldn't save to ${folder.label}: ${folder.error}</span>`
-                  : html`<span>Saved to the folder ${folder.label} as you edit.</span>`
+                  : html`<span>Saved to the folder ${folder.label} as you edit.</span>
+                      ${platform().git ? html`<lit-material-button variant="text" @click=${() => this.app.go("git", c.id)}>Git</lit-material-button>` : nothing}`
                 : html`<span>Was opened from the folder ${folder.label}. Reconnect to read it again and keep saving there.</span>
                     <lit-material-button variant="text" @click=${() => s.reconnectFolder(c.id)}>Reconnect folder</lit-material-button>`}
             </p>`

@@ -1711,7 +1711,7 @@ export class Store extends EventTarget {
         continue;
       }
       entry.writing = true;
-      p.folders
+      entry.saving = p.folders
         .write(entry.ref, content)
         .then(() => {
           entry.written = json;
@@ -1734,6 +1734,38 @@ export class Store extends EventTarget {
             this.syncFolders();
           }
         });
+    }
+  }
+
+  // Writes what a folder collection has changed now, and waits for it (the
+  // desktop's Git panel does this before it commits, pulls or switches).
+  async flushFolder(collectionId) {
+    const entry = this.folders.get(collectionId);
+    if (!entry?.connected) return;
+    this.save();
+    for (let i = 0; i < 20 && (entry.writing || entry.again); i++) await entry.saving;
+  }
+
+  // Reads a folder collection again after its files changed on disk (a
+  // pull, a branch switch, a resolved conflict): the folder wins.
+  async reloadFolder(collectionId) {
+    const f = platform().folders;
+    const entry = this.folders.get(collectionId);
+    if (!f || !entry) return null;
+    try {
+      const folder = await f.read(entry.ref);
+      if (folder.collection.id !== collectionId) {
+        // hitop.yaml now names another collection: replace the old one.
+        this.closeFolder(collectionId);
+        this.collections = this.collections.filter((c) => c.id !== collectionId);
+      }
+      const col = await this.attachFolder(entry.ref, folder);
+      if (this.view.collectionId === collectionId) this.view = { ...this.view, collectionId: col.id };
+      this.emit();
+      return col.id;
+    } catch (e) {
+      this.notify(`Couldn't read ${entry.label} again: ${errorText(e)}`);
+      return null;
     }
   }
 

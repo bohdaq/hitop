@@ -354,3 +354,27 @@ lit-material-dialog.wide::part(container) { width: min(1100px, calc(100vw - 32px
   .ws-saved-row { grid-template-columns: minmax(0, 1fr) auto auto; }
   .ws-saved-row > :nth-child(2) { grid-column: 1 / -1; grid-row: 2; }
 }
+
+/* Git panel (desktop only: platform/tauri-git.js) */
+.git-page section { display: grid; gap: var(--space-100); }
+.git-page h2 { display: flex; align-items: center; gap: var(--space-100); margin: var(--space-200) 0 0; font-size: var(--text-lg); }
+.git-bar { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-100) var(--space-200); }
+.git-bar-actions { display: flex; flex-wrap: wrap; gap: var(--space-100); margin-inline-start: auto; }
+.git-ahead { font-family: var(--font-mono); }
+.git-files, .git-branches { display: grid; gap: 2px; margin: 0; padding: 0; list-style: none; }
+.git-file, .git-branches li { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-100); min-width: 0; }
+.git-file[aria-current="true"] { background: var(--md-sys-color-surface-container); border-radius: var(--md-sys-shape-corner-small); }
+.git-file-name { display: flex; flex: 1 1 12rem; align-items: center; gap: var(--space-100); min-width: 0; padding: var(--space-75) var(--space-100); border: 0; background: none; color: inherit; font: inherit; text-align: start; cursor: pointer; overflow-wrap: anywhere; }
+.git-badge { display: inline-grid; place-items: center; flex: none; width: 1.5em; height: 1.5em; border-radius: var(--md-sys-shape-corner-small); background: var(--md-sys-color-surface-container-high); font-family: var(--font-mono); font-size: var(--text-sm); }
+.git-badge[data-change="added"], .git-badge[data-change="untracked"] { color: var(--md-sys-color-primary); }
+.git-badge[data-change="deleted"], .git-badge[data-change="conflicted"] { color: var(--md-sys-color-error); }
+.git-branch-name { font-family: var(--font-mono); overflow-wrap: anywhere; }
+.git-inline-form { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-100); }
+.git-diff { white-space: pre; }
+.git-hunk { color: var(--md-sys-color-on-surface-variant); }
+.git-line.git-add { color: var(--md-sys-color-primary); }
+.git-line.git-del { color: var(--md-sys-color-error); }
+.git-line.git-note { color: var(--md-sys-color-on-surface-variant); font-style: italic; }
+.git-sides { display: grid; grid-template-columns: repeat(auto-fit, minmax(14rem, 1fr)); gap: var(--space-200); }
+.git-side { display: grid; gap: var(--space-100); align-content: start; min-width: 0; }
+.git-side h3 { margin: 0; font-size: var(--text-sm); }

@@ -14,6 +14,7 @@
 //   grpc                     null in a browser (no gRPC there), or { list(server) → { source, services },
 //                            describe(server, symbol) → { description, template }, call(args, { onHeaders(pairs),
 //                            onMessage(json), onStatus({ code, name, message, trailers }), onError(message) }) → { cancel() } }
+//   git                      null in a browser, or the desktop's Git panel calls (platform/tauri-git.js gitApi)
 //   managesCookies(url)      true when the app's cookie jar applies (no browser cookie handling)
 //   cookies                  null (the app keeps its jar in localStorage), or { load(), save(cookies) }
 //                            for a native jar: send() then gets options.cookies and returns res.cookies

@@ -187,6 +187,8 @@ export function createPlatform() {
     websocket: browserWebSocket,
     // gRPC needs HTTP/2 trailers, which a page can't read: desktop and CLI only.
     grpc: null,
+    // Git is the desktop app's (libgit2 in Rust).
+    git: null,
     // The browser handles cookies of direct requests itself (and hides them);
     // the proxy's answers carry Set-Cookie for the app's jar.
     managesCookies: usesProxy,

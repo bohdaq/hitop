@@ -20,10 +20,19 @@
 //             commands.rs answers: errors before calling, events on the channel
 //   cookies   hitop-core's jar (cookies.rs, same rules as features.js) in
 //             <config>/cookies/global.json
+//   git       the `git` command runs hitop-git itself (cli/crates/hitop-git,
+//             example git-json: the same json::call desktop/src-tauri/src/git.rs
+//             calls) on real repositories; tokens in the in-memory keychain
+//             under git/<host>/token, as git.rs keeps them. Build it first:
+//             cargo build --manifest-path cli/Cargo.toml -p hitop-git --example git-json --no-default-features
+//             (or point HITOP_GIT_JSON at the binary)
 const fs = require('fs');
 const os = require('os');
 const path = require('path');
 const vm = require('vm');
+const { execFile } = require('child_process');
+
+const GIT_JSON = process.env.HITOP_GIT_JSON || path.join(__dirname, '../../cli/target/debug/examples/git-json');
 
 const WASM = path.join(__dirname, '../src/wasm/pkg/hitop_wasm_bg.wasm');
 
@@ -311,6 +320,28 @@ class TauriMock {
       case 'grpc_cancel':
         this.grpcCancelled.push(args.id);
         return null;
+      case 'git':
+        return this.git(args.cmd, args.args);
+      case 'git_token_status': {
+        const host = await this.git('remoteHost', { path: args.path }).catch(() => null);
+        if (!host) return { host: null, saved: false, username: null };
+        return { host, saved: this.keychain.has(`git/${host}/token`), username: this.keychain.get(`git/${host}/username`) ?? null };
+      }
+      case 'git_token_set': {
+        const host = await this.git('remoteHost', { path: args.path });
+        if (!host) throw 'this remote is a local path: it needs no token';
+        if (!args.token?.trim()) throw 'paste a token';
+        this.keychain.set(`git/${host}/token`, args.token.trim());
+        if (args.username?.trim()) this.keychain.set(`git/${host}/username`, args.username.trim());
+        else this.keychain.delete(`git/${host}/username`);
+        return null;
+      }
+      case 'git_token_delete': {
+        const host = await this.git('remoteHost', { path: args.path });
+        if (!host) throw 'this remote is a local path: it has no token';
+        this.keychain.delete(`git/${host}/username`);
+        return this.keychain.delete(`git/${host}/token`);
+      }
       default:
         throw `unknown command ${cmd}`;
     }
@@ -431,6 +462,22 @@ class TauriMock {
       emit(ok);
     }, 20);
     return { id };
+  }
+
+  // git.rs `git`: fetch, pull and push get the remote host's token.
+  async git(cmd, args) {
+    if (!fs.existsSync(GIT_JSON)) throw `no ${GIT_JSON}: cargo build --manifest-path cli/Cargo.toml -p hitop-git --example git-json --no-default-features`;
+    this.gitCalls = [...(this.gitCalls || []), cmd];
+    let token;
+    if (['fetch', 'pull', 'push'].includes(cmd)) {
+      const host = await this.git('remoteHost', { path: args.path }).catch(() => null);
+      token = host ? this.keychain.get(`git/${host}/token`) : undefined;
+    }
+    const env = { ...process.env, ...(token ? { HITOP_GIT_TOKEN: token } : {}) };
+    const out = await new Promise((resolve, reject) => execFile(GIT_JSON, [cmd, JSON.stringify(args)], { env }, (e, stdout) => (e ? reject(`git-json failed: ${e.message}`) : resolve(stdout))));
+    const answer = JSON.parse(out);
+    if ('error' in answer) throw answer.error;
+    return answer.ok;
   }
 
   cleanup() {
