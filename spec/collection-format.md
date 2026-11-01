@@ -57,6 +57,7 @@ my-api/
 format: 1
 name: Shop API
 id: 1793470569736000
+workspace: 5f0c2a9e7d1b4c3a8e6f0b2d4a6c8e01
 variables:
   base: https://api.example.com
 auth:
@@ -72,6 +73,7 @@ order:
 | `format` | yes | Format version, `1`. A reader refuses a higher version. |
 | `name` | no | Collection name. Default: the folder's name. |
 | `id` | no | Numeric id used by hitop's JSON storage. Default: derived from `name` (section 6). |
+| `workspace` | no | Workspace id: the key of this collection's secrets in the OS keychain (section 5). `hitop init` writes a random one (32 hex digits). Default: the collection's `id` in decimal. |
 | `variables` | no | Map of variable name to value, used as `${name}` in requests. |
 | `auth` | no | Default auth (section 4) for requests that have no `auth` of their own. |
 | `order` | no | Request order: paths under `requests/` without the extension. Requests not listed follow in path order; listed paths that don't exist are ignored. Left out when it equals path order. |
@@ -183,6 +185,23 @@ Its value is resolved at run time, in this order: the
 `HITOP_SECRET_<ENV>_<NAME>` environment variable, `--secret NAME=value`, the
 OS keychain (service `hitop`, account `<workspace-id>/<env>/<name>`), then an
 interactive prompt (TTY only). Writers never put a secret's value in a file.
+
+- `<ENV>` and `<NAME>` in the environment variable are the environment's
+  name and the variable's name, upper-cased, with every character other than
+  an ASCII letter or digit replaced by `_`: environment `my-env`, variable
+  `api.key` → `HITOP_SECRET_MY_ENV_API_KEY`.
+- `<env>` in the keychain account is the environment's name as written.
+- `<workspace-id>` is the `workspace` key of `hitop.yaml`, or the
+  collection's `id` in decimal when there is none. A team that shares the
+  folder in git shares the workspace id, so each member keeps their own
+  values under the same accounts. Collections in a tool's own storage rather
+  than a folder (hitop's `~/.config/hitop`) use the fixed id `global`.
+- Without a reachable keychain (headless Linux without a Secret Service, or
+  `HITOP_KEYCHAIN=off`) the keychain step is skipped with a note; a secret
+  with no value from any step is an error that names each way to give it.
+- Tools show a resolved secret as `••••` wherever its value would appear in
+  output, history, logs or reports, and never write it to an export. HITOP
+  JSON exports keep only the names, as `secrets`.
 
 ## 6. Ids and the JSON model
 
