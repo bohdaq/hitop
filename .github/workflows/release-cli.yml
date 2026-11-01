@@ -17,6 +17,26 @@ jobs:
   check:
     name: Tag, version and tests
     runs-on: ubuntu-24.04
+    # The same test setup as ci.yml's cli job: dev servers for tests/secret_managers.rs (${secret:vault:...}, ${secret:aws:...}).
+    services:
+      vault:
+        image: hashicorp/vault:1.20.4
+        env:
+          VAULT_DEV_ROOT_TOKEN_ID: dev-root
+          VAULT_DEV_LISTEN_ADDRESS: 0.0.0.0:8200
+          SKIP_SETCAP: "true"
+        ports: ["8200:8200"]
+        options: --health-cmd "wget -qO- http://127.0.0.1:8200/v1/sys/health" --health-interval 2s --health-timeout 5s --health-retries 15
+      localstack:
+        image: localstack/localstack:4.4
+        env:
+          SERVICES: secretsmanager
+        ports: ["4566:4566"]
+        options: --health-cmd "curl -fs http://localhost:4566/_localstack/health" --health-interval 3s --health-timeout 5s --health-retries 30
+    env:
+      HITOP_TEST_VAULT_ADDR: http://127.0.0.1:8200
+      HITOP_TEST_VAULT_TOKEN: dev-root
+      HITOP_TEST_LOCALSTACK_URL: http://127.0.0.1:4566
     outputs:
       version: ${{ steps.v.outputs.version }}
       prerelease: ${{ steps.v.outputs.prerelease }}
@@ -38,6 +58,19 @@ jobs:
             test "$tag" = "$version" || { echo "tag $GITHUB_REF_NAME, Cargo.toml $version"; exit 1; }
             echo "prerelease=false" >> "$GITHUB_OUTPUT"
           fi
+      - name: actionlint (tests/schedule.rs lints the workflows hitop schedule writes)
+        env:
+          ACTIONLINT_VERSION: 1.7.12
+          ACTIONLINT_SHA256: 8aca8db96f1b94770f1b0d72b6dddcb1ebb8123cb3712530b08cc387b349a3d8
+        run: |
+          dir="$RUNNER_TEMP/actionlint"
+          mkdir -p "$dir"
+          tgz="actionlint_${ACTIONLINT_VERSION}_linux_amd64.tar.gz"
+          curl -fsSL -o "$dir/$tgz" "https://github.com/rhysd/actionlint/releases/download/v${ACTIONLINT_VERSION}/$tgz"
+          echo "$ACTIONLINT_SHA256  $dir/$tgz" | sha256sum -c -
+          tar -xzf "$dir/$tgz" -C "$dir" actionlint
+          "$dir/actionlint" --version
+          echo "HITOP_ACTIONLINT=$dir/actionlint" >> "$GITHUB_ENV"
       - run: cargo test --locked
 
   publish:
