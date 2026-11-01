@@ -6,7 +6,12 @@
   "loginWithEmailAllowed": true,
   "verifyEmail": false,
   "accessTokenLifespan": 300,
-  "groups": [{ "name": "hitop-users", "path": "/hitop-users" }],
+  "groups": [
+    {
+      "name": "hitop-users",
+      "path": "/hitop-users"
+    }
+  ],
   "clients": [
     {
       "clientId": "hitop-sync",
@@ -20,9 +25,14 @@
       "directAccessGrantsEnabled": false,
       "implicitFlowEnabled": false,
       "serviceAccountsEnabled": false,
-      "redirectUris": ["https://sync.test.example/v1/auth/sso/callback"],
+      "redirectUris": [
+        "https://sync.test.example/v1/auth/sso/callback",
+        "http://127.0.0.1*"
+      ],
       "webOrigins": [],
-      "attributes": { "pkce.code.challenge.method": "S256" },
+      "attributes": {
+        "pkce.code.challenge.method": "S256"
+      },
       "protocolMappers": [
         {
           "name": "groups",
@@ -48,8 +58,16 @@
       "lastName": "Test",
       "enabled": true,
       "requiredActions": [],
-      "groups": ["/hitop-users"],
-      "credentials": [{ "type": "password", "value": "alice-test-pw", "temporary": false }]
+      "groups": [
+        "/hitop-users"
+      ],
+      "credentials": [
+        {
+          "type": "password",
+          "value": "alice-test-pw",
+          "temporary": false
+        }
+      ]
     },
     {
       "username": "bob",
@@ -59,8 +77,16 @@
       "lastName": "Test",
       "enabled": true,
       "requiredActions": [],
-      "groups": ["/hitop-users"],
-      "credentials": [{ "type": "password", "value": "bob-test-pw", "temporary": false }]
+      "groups": [
+        "/hitop-users"
+      ],
+      "credentials": [
+        {
+          "type": "password",
+          "value": "bob-test-pw",
+          "temporary": false
+        }
+      ]
     },
     {
       "username": "carol",
@@ -70,8 +96,16 @@
       "lastName": "Test",
       "enabled": true,
       "requiredActions": [],
-      "groups": ["/hitop-users"],
-      "credentials": [{ "type": "password", "value": "carol-test-pw", "temporary": false }]
+      "groups": [
+        "/hitop-users"
+      ],
+      "credentials": [
+        {
+          "type": "password",
+          "value": "carol-test-pw",
+          "temporary": false
+        }
+      ]
     },
     {
       "username": "dave",
@@ -81,7 +115,13 @@
       "lastName": "Test",
       "enabled": true,
       "requiredActions": [],
-      "credentials": [{ "type": "password", "value": "dave-test-pw", "temporary": false }]
+      "credentials": [
+        {
+          "type": "password",
+          "value": "dave-test-pw",
+          "temporary": false
+        }
+      ]
     }
   ]
 }

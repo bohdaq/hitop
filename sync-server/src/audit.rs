@@ -208,6 +208,8 @@ fn row_json(r: &Row) -> Json {
         "actor": { "id": r.text(3), "email": r.text(4) },
         "target": r.text(5),
         "detail": serde_json::from_str::<Json>(&r.text(6)).unwrap_or(Json::Null),
+        // The exact text the hash covers (clients recompute the chain from it).
+        "detailJson": r.text(6),
         "ip": r.text(7),
         "userAgent": r.text(8),
         "prevHash": r.text(9),
