@@ -1,0 +1,35 @@
+// Where the app runs: `web` (the browser: fetch or the HITOP proxy, and
+// localStorage) or `tauri` (the desktop app: Rust through Tauri's invoke).
+// The build picks one: `npm run build:tauri` sets VITE_HITOP_PLATFORM, and
+// Vite drops the other adapter from the bundle.
+//
+// An adapter has:
+//   name                     "web" | "tauri"
+//   init()                   async; loads what `storage` then reads synchronously
+//   storage                  load*/save* for collections, tabs, history, contexts, environments
+//   send(url, options)       a fetch-like response; `headers.pairs` keeps repeated headers
+//   managesCookies(url)      true when the app's cookie jar applies (no browser cookie handling)
+//   scripts                  null (scripts run in the page) or { pre(args), post(args) }, async
+//   folders                  null, or { pick, create, read, write, restore, remember, forget, label }
+//   saveFile(name, data, type)  data is text or bytes
+//   secretsNote              where secret values are kept, for the environments page
+export const IS_TAURI = import.meta.env.VITE_HITOP_PLATFORM === "tauri";
+
+let current = null;
+
+export async function initPlatform() {
+  const mod = IS_TAURI ? await import("./tauri.js") : await import("./web.js");
+  current = mod.createPlatform();
+  await current.init();
+  return current;
+}
+
+export function platform() {
+  if (!current) throw new Error("initPlatform() first");
+  return current;
+}
+
+// For tests: use a given adapter.
+export function setPlatform(p) {
+  current = p;
+}

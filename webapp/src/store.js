@@ -6,10 +6,8 @@
 import collectionService from "../../frontend/src/services/collectionService.jsx";
 import contextService from "../../frontend/src/services/contextService.jsx";
 import historyService from "../../frontend/src/services/historyService.jsx";
-import storageService from "../../frontend/src/services/storageService.jsx";
 import tabService from "../../frontend/src/services/tabService.jsx";
 import { interpolateVariables } from "../../frontend/src/services/variableInterpolation.jsx";
-import { sendRequest, usesProxy } from "../../frontend/src/services/transportService.jsx";
 import { generateUniqueId } from "../../frontend/src/utils/idGenerator.jsx";
 import {
   applyAuth,
@@ -17,17 +15,26 @@ import {
   cookieHeader,
   emptyAuth,
   exportableEnvironments,
-  loadEnvironments,
   makeAssert,
   maskSecrets,
   mergeCookies,
   multipartBody,
   parseEnvironments,
-  saveEnvironments,
   secretNames,
   secretValues,
   urlEncodedBody,
 } from "./features.js";
+import { platform } from "./platform/index.js";
+import { folderToZip, zipToFolder } from "./zip.js";
+
+const storage = () => platform().storage;
+const account = (workspace, env, name) => `${workspace}/${env}/${name}`;
+const workspaceOf = (collection) => collection.workspace || String(collection.id);
+// Ids the Rust model reads (whole numbers); old web data has strings.
+const numericId = (id) => (Number.isSafeInteger(id) && id >= 0 ? id : generateUniqueId());
+const errorText = (e) => (e && typeof e === "object" && "message" in e ? e.message : String(e));
+// An environment as written to a file or export: secret values left out.
+const withoutSecretValues = (e) => ({ ...e, variables: Object.fromEntries(Object.entries(e.variables || {}).filter(([k]) => !secretNames(e).includes(k))) });
 
 const COOKIES_KEY = "hitop_cookies";
 const COOKIE_JAR_KEY = "hitop_cookie_jar";
@@ -78,9 +85,9 @@ function tabForRequest(request, collectionId) {
 }
 
 function initialState() {
-  const collections = storageService.loadCollections();
-  const tabs = storageService.loadTabs();
-  const current = storageService.loadCurrentTab();
+  const collections = storage().loadCollections();
+  const tabs = storage().loadTabs();
+  const current = storage().loadCurrentTab();
   if (collections?.length && tabs?.length) {
     return {
       collections,
@@ -112,6 +119,9 @@ async function readResponse(res) {
   return { data: text, type: "text" };
 }
 
+// Drops keys set to undefined (a cleared bodyType), so they aren't saved.
+const clean = (r) => Object.fromEntries(Object.entries(r).filter(([, v]) => v !== undefined));
+
 const headersObject = (headers) => {
   const out = {};
   for (const h of headers || []) if (h.name && h.value) out[h.name] = h.value;
@@ -134,9 +144,9 @@ export class Store extends EventTarget {
     this.collections = s.collections;
     this.tabs = s.tabs;
     this.currentTab = s.currentTab;
-    this.history = storageService.loadHistory() || [];
-    this.contexts = storageService.loadContexts() || {};
-    const envs = loadEnvironments();
+    this.history = storage().loadHistory() || [];
+    this.contexts = storage().loadContexts() || {};
+    const envs = storage().loadEnvironments();
     this.environments = envs.environments;
     this.activeEnvironmentId = this.environments.some((e) => e.id === envs.activeEnvironmentId) ? envs.activeEnvironmentId : null;
     const jar = loadCookies();
@@ -149,7 +159,14 @@ export class Store extends EventTarget {
     // collection, or one collection's variables.
     this.view = { kind: "request", collectionId: null };
     this.run = { collectionId: null, results: [], running: false, completed: 0, summary: null };
+    // Collections that live in a folder: collection id → { ref, label,
+    // connected, error, written }. Their environments are in
+    // `environments` too, under ids from `folderEnvs` (env id → { collectionId, id }).
+    this.folders = new Map();
+    this.folderEnvs = new Map();
+    platform().onError?.((message) => this.notify(message));
     addEventListener("pagehide", () => this.save());
+    this.ready = this.restoreFolders();
   }
 
   // --- plumbing -----------------------------------------------------------
@@ -166,12 +183,15 @@ export class Store extends EventTarget {
 
   save() {
     clearTimeout(this.saveTimer);
-    storageService.saveCollections(this.collections);
-    storageService.saveTabs(this.tabs);
-    storageService.saveCurrentTab(this.currentTab);
-    storageService.saveHistory(this.history);
-    storageService.saveContexts(this.contexts);
-    saveEnvironments(this.environments, this.activeEnvironmentId);
+    const st = storage();
+    st.saveCollections(this.collections);
+    st.saveTabs(this.tabs);
+    st.saveCurrentTab(this.currentTab);
+    st.saveHistory(this.history);
+    st.saveContexts(this.contexts);
+    const globalEnvs = this.environments.filter((e) => !this.folderEnvs.has(e.id));
+    st.saveEnvironments(globalEnvs, globalEnvs.some((e) => e.id === this.activeEnvironmentId) ? this.activeEnvironmentId : null);
+    this.syncFolders();
     try {
       localStorage.setItem(COOKIES_KEY, JSON.stringify(this.cookies));
       localStorage.setItem(COOKIE_JAR_KEY, this.cookieJarEnabled ? "on" : "off");
@@ -282,7 +302,12 @@ export class Store extends EventTarget {
     const source = this.tabs[index];
     const collectionId = source.loadedCollectionId ?? this.defaultCollection().id;
     const name = `${source.title} (Copy)`;
+    // The saved request's fields the editor doesn't show (examples, unknown
+    // keys) come along; its folder path doesn't.
+    const saved = source.loadedRequestId && this.collection(source.loadedCollectionId)?.requests.find((r) => r.id === source.loadedRequestId);
+    const { id: _id, name: _name, file: _file, ...kept } = saved || {};
     const request = collectionService.createRequest(name, {
+      ...kept,
       url: source.url,
       method: source.method,
       headers: source.headers,
@@ -290,7 +315,9 @@ export class Store extends EventTarget {
       preRequestScript: source.preRequestScript,
       postRequestScript: source.postRequestScript,
       auth: cleanAuth(source.auth),
+      ...EXTRA_FIELDS(source),
     });
+    if (!request.auth) delete request.auth;
     this.collections = collectionService.addRequestToCollection(this.collections, collectionId, request);
     this.tabs = [...this.tabs, tabForRequest(request, collectionId)];
     this.currentTab = this.tabs.length - 1;
@@ -355,18 +382,25 @@ export class Store extends EventTarget {
       auth: cleanAuth(tab.auth),
       ...EXTRA_FIELDS(tab),
     };
-    const existing = tab.loadedRequestId && this.collection(tab.loadedCollectionId)?.requests.some((r) => r.id === tab.loadedRequestId);
+    const existing = tab.loadedRequestId && this.collection(tab.loadedCollectionId)?.requests.find((r) => r.id === tab.loadedRequestId);
+    // A body type label from a folder is kept only while the body is the same.
+    if (existing?.bodyType && existing.body !== data.body) data.bodyType = undefined;
     if (existing) {
       if (collectionId !== tab.loadedCollectionId) {
+        // Moving keeps every field the editor doesn't know (examples, file,
+        // keys from other tools); the folder path is the new collection's to give.
+        const { file: _file, ...rest } = existing;
         let cols = collectionService.deleteRequestFromCollection(this.collections, tab.loadedCollectionId, tab.loadedRequestId);
-        cols = collectionService.addRequestToCollection(cols, collectionId, { id: tab.loadedRequestId, ...data });
+        cols = collectionService.addRequestToCollection(cols, collectionId, clean({ ...rest, ...data, id: tab.loadedRequestId }));
         this.collections = cols;
       } else {
-        this.collections = collectionService.updateRequestInCollection(this.collections, collectionId, tab.loadedRequestId, data);
+        this.collections = collectionService.updateRequestInCollection(this.collections, collectionId, tab.loadedRequestId, data).map((c) =>
+          c.id === collectionId ? { ...c, requests: c.requests.map((r) => (r.id === tab.loadedRequestId ? clean(r) : r)) } : c,
+        );
       }
       this.tabs = tabService.updateTab(this.tabs, this.currentTab, { loadedCollectionId: collectionId, title });
     } else {
-      const request = collectionService.createRequest(title, data);
+      const request = clean(collectionService.createRequest(title, data));
       this.collections = collectionService.addRequestToCollection(this.collections, collectionId, request);
       this.tabs = tabService.updateTab(this.tabs, this.currentTab, { loadedRequestId: request.id, loadedCollectionId: collectionId, title });
     }
@@ -411,6 +445,7 @@ export class Store extends EventTarget {
   }
 
   deleteCollection(id) {
+    if (this.folders.has(id)) this.closeFolder(id);
     this.collections = collectionService.deleteCollection(this.collections, id);
     this.tabs = this.tabs.map((t) => (t.loadedCollectionId === id ? { ...t, loadedRequestId: null, loadedCollectionId: null } : t));
     if (this.view.collectionId === id) this.view = { kind: "collections", collectionId: null };
@@ -435,7 +470,10 @@ export class Store extends EventTarget {
   }
 
   importJson(json) {
-    const imported = collectionService.importCollections(json); // throws on bad JSON
+    let imported = collectionService.importCollections(json); // throws on bad JSON
+    // The desktop keeps ids as numbers (Rust's model); give string ids new ones.
+    if (platform().name === "tauri") imported = imported.map((c) => ({ ...c, id: numericId(c.id), requests: (c.requests || []).map((r) => ({ ...r, id: numericId(r.id) })) }));
+    this.closeAllFolders();
     this.collections = imported;
     const first = imported.find((c) => c.requests?.length);
     this.tabs = first ? [tabForRequest(first.requests[0], first.id)] : [tabService.createNewTab()];
@@ -542,10 +580,17 @@ export class Store extends EventTarget {
 
   // Scripts run in this page, as in the React web build (`with(ctx)`); the
   // extension build keeps its sandboxed iframe.
-  runPreScript(script, collectionId, method, url, headers, body) {
+  async runPreScript(script, collectionId, method, url, headers, body) {
     if (!script?.trim()) return { url, headers, body };
     const context = contextService.getCollectionContext(this.contexts, collectionId);
     const variables = this.variables(collectionId);
+    const native = platform().scripts;
+    if (native) {
+      // The desktop runs scripts in Rust (boa), as the CLI does.
+      const r = await native.pre({ script, url, method, headers, body, variables, context });
+      for (const [k, v] of Object.entries(r.contextUpdates)) this.setContext(collectionId, k, v);
+      return { url: r.url, headers: r.headers, body: r.body };
+    }
     const updates = {};
     const ctx = {
       url,
@@ -571,8 +616,14 @@ export class Store extends EventTarget {
   }
 
   // Returns the assert.* results (an empty list without a script).
-  runPostScript(script, collectionId, text, headers, status, durationMs) {
+  async runPostScript(script, collectionId, text, headers, status, durationMs) {
     if (!script?.trim()) return [];
+    const native = platform().scripts;
+    if (native) {
+      const r = await native.post({ script, text, headers, status, durationMs, variables: this.variables(collectionId), context: contextService.getCollectionContext(this.contexts, collectionId) });
+      for (const [k, v] of Object.entries(r.contextUpdates)) this.setContext(collectionId, k, v);
+      return r.tests;
+    }
     let parsed = text;
     try {
       parsed = JSON.parse(text);
@@ -607,7 +658,7 @@ export class Store extends EventTarget {
 
   // Interpolates variables, adds auth and runs the pre-request script: the
   // request as sent. Auth comes before the script, so a script can override it.
-  prepare(source, collectionId) {
+  async prepare(source, collectionId) {
     const variables = this.variables(collectionId);
     const interpolate = (text) => interpolateVariables(text, variables);
     const url = interpolate(source.url);
@@ -628,7 +679,7 @@ export class Store extends EventTarget {
   async dispatch(source, collectionId) {
     let prepared;
     try {
-      prepared = this.prepare(source, collectionId);
+      prepared = await this.prepare(source, collectionId);
     } catch (e) {
       e.stage = "prepare"; // a variable or pre-request script error: nothing was sent
       throw e;
@@ -649,8 +700,10 @@ export class Store extends EventTarget {
       body = built.body;
       if (!hasHeader("content-type")) headers.push({ name: "Content-Type", value: built.contentType });
     }
-    const proxied = usesProxy(prepared.url);
-    if (proxied && this.cookieJarEnabled && !hasHeader("cookie")) {
+    const p = platform();
+    const proxied = p.usesProxy(prepared.url);
+    const jar = p.managesCookies(prepared.url);
+    if (jar && this.cookieJarEnabled && !hasHeader("cookie")) {
       const cookie = cookieHeader(this.cookies, prepared.url);
       if (cookie) headers.push({ name: "Cookie", value: cookie });
     }
@@ -658,15 +711,15 @@ export class Store extends EventTarget {
     if (body && BODY_METHODS.includes(source.method)) options.body = body;
     let res;
     try {
-      res = await sendRequest(prepared.url, options);
+      res = await p.send(prepared.url, options);
     } catch (e) {
       // fetch says only "Failed to fetch"; for direct requests the usual cause
       // is a server that doesn't allow CORS.
-      if (!proxied && e instanceof TypeError)
+      if (p.name === "web" && !proxied && e instanceof TypeError)
         e.message = "Couldn't reach the server. Requests to localhost and private networks go straight from your browser, so the server must allow CORS from this site; the desktop and mobile apps don't need it.";
       throw e;
     }
-    if (proxied && this.cookieJarEnabled && res.headers.pairs) {
+    if (jar && this.cookieJarEnabled && res.headers.pairs) {
       const lines = res.headers.pairs.filter(([k]) => k.toLowerCase() === "set-cookie").map(([, v]) => v);
       if (lines.length) this.cookies = mergeCookies(this.cookies, lines, res.url || prepared.url);
     }
@@ -723,7 +776,7 @@ export class Store extends EventTarget {
       this.history[this.history.length - 1].auth = cleanAuth(tab.auth);
       let tests = [];
       try {
-        tests = this.runPostScript(tab.postRequestScript, tab.loadedCollectionId, data, headers, res.status, durationMs);
+        tests = await this.runPostScript(tab.postRequestScript, tab.loadedCollectionId, data, headers, res.status, durationMs);
       } catch (e) {
         tests = [...tests, { name: "Script after", pass: false, detail: e.message }];
         this.notify(`The script after the request failed: ${e.message}`);
@@ -765,7 +818,7 @@ export class Store extends EventTarget {
         res.headers.forEach((v, k) => (headers[k] = v));
         let tests = [];
         try {
-          tests = this.runPostScript(request.postRequestScript, id, text, headers, res.status, duration);
+          tests = await this.runPostScript(request.postRequestScript, id, text, headers, res.status, duration);
         } catch (e) {
           tests = [...tests, { name: "Script after", pass: false, detail: e.message }];
         }
@@ -784,6 +837,266 @@ export class Store extends EventTarget {
     this.run = { ...this.run, running: false };
     this.emit();
     return results;
+  }
+
+
+  // --- collection folders and zip files ------------------------------------
+
+  folderOf(collectionId) {
+    return this.folders.get(collectionId) ?? null;
+  }
+
+  // An environment's name in lists: a folder's environments say whose they are.
+  environmentLabel(env) {
+    const owner = this.folderEnvs.get(env.id);
+    const col = owner && this.collection(owner.collectionId);
+    return col ? `${env.name} (${col.name})` : env.name;
+  }
+
+  // What a folder holds now: the collection and its environments, secret
+  // values left out (they go to the keychain or this browser instead).
+  folderContent(collectionId) {
+    const collection = this.collection(collectionId);
+    const environments = this.environments
+      .filter((e) => this.folderEnvs.get(e.id)?.collectionId === collectionId)
+      .map((e) => withoutSecretValues({ ...e, id: this.folderEnvs.get(e.id).id }));
+    return { collection, environments };
+  }
+
+  folderSecretValues(collectionId) {
+    const col = this.collection(collectionId);
+    const out = {};
+    if (!col) return out;
+    for (const e of this.environments) {
+      if (this.folderEnvs.get(e.id)?.collectionId !== collectionId) continue;
+      for (const n of secretNames(e)) if (e.variables[n]) out[account(workspaceOf(col), e.name, n)] = e.variables[n];
+    }
+    return out;
+  }
+
+  // Puts a folder's collection and environments into the app, replacing the
+  // collection with the same id (the folder wins).
+  async attachFolder(ref, folder, { remember = true } = {}) {
+    const p = platform();
+    const col = folder.collection;
+    const envs = (folder.environments || []).map((e) => ({ ...e, variables: { ...e.variables }, folderId: e.id, id: `folder:${col.id}:${e.id}` }));
+    const accounts = envs.flatMap((e) => secretNames(e).map((n) => account(workspaceOf(col), e.name, n)));
+    const values = accounts.length ? await p.folderSecrets.load(accounts) : {};
+    for (const e of envs) for (const n of secretNames(e)) e.variables[n] = values[account(workspaceOf(col), e.name, n)] ?? "";
+    for (const [id, owner] of this.folderEnvs) if (owner.collectionId === col.id) this.folderEnvs.delete(id);
+    for (const e of envs) {
+      this.folderEnvs.set(e.id, { collectionId: col.id, id: e.folderId });
+      delete e.folderId;
+    }
+    this.environments = [...this.environments.filter((e) => !e.id.startsWith?.(`folder:${col.id}:`)), ...envs];
+    const at = this.collections.findIndex((c) => c.id === col.id);
+    this.collections = at === -1 ? [...this.collections, col] : this.collections.map((c, i) => (i === at ? col : c));
+    const entry = { ref, label: p.folders.label(ref), connected: true, error: null, written: null, secrets: this.folderSecretValues(col.id) };
+    this.folders.set(col.id, entry);
+    entry.written = JSON.stringify(this.folderContent(col.id));
+    p.setFolderCollections?.([...this.folders.keys()]);
+    if (remember) p.folders.remember(col.id, ref);
+    this.emit();
+    return col;
+  }
+
+  async openFolder() {
+    const f = platform().folders;
+    if (!f) return;
+    let ref;
+    try {
+      ref = await f.pick();
+    } catch (e) {
+      this.notify(`Couldn't open the folder: ${errorText(e)}`);
+      return;
+    }
+    if (!ref) return;
+    let folder;
+    try {
+      folder = await f.read(ref);
+    } catch (e) {
+      const text = errorText(e);
+      this.notify(text.includes("not a collection folder") ? `${f.label(ref)} has no hitop.yaml, so it isn't a collection folder. To start one, open a collection and choose Save to folder.` : `Couldn't open ${f.label(ref)}: ${text}`);
+      return;
+    }
+    const col = await this.attachFolder(ref, folder);
+    this.show("collection", col.id);
+    this.notify(`Opened ${f.label(ref)}. Changes are saved to the folder as you make them.`);
+  }
+
+  // Writes a collection into a new folder and keeps saving there.
+  async saveToFolder(collectionId) {
+    const f = platform().folders;
+    const col = this.collection(collectionId);
+    if (!f || !col) return;
+    let ref;
+    try {
+      ref = await f.pick();
+    } catch (e) {
+      this.notify(`Couldn't open the folder: ${errorText(e)}`);
+      return;
+    }
+    if (!ref) return;
+    try {
+      await f.read(ref);
+      this.notify(`${f.label(ref)} already holds a collection. Use Open folder to work on it, or pick an empty folder.`);
+      return;
+    } catch {
+      // not a collection folder yet: good
+    }
+    const folder = { collection: col, environments: [] };
+    try {
+      await f.write(ref, folder);
+    } catch (e) {
+      this.notify(`Couldn't save to ${f.label(ref)}: ${errorText(e)}`);
+      return;
+    }
+    await this.attachFolder(ref, folder);
+    this.notify(`Saved ${col.name} to ${f.label(ref)}. Changes are saved there as you make them.`);
+  }
+
+  // A folder from an earlier visit (web): the browser asks again.
+  async reconnectFolder(collectionId) {
+    const f = platform().folders;
+    const entry = this.folders.get(collectionId);
+    if (!f || !entry) return;
+    try {
+      if (!(await f.reconnect(entry.ref))) return;
+      await this.attachFolder(entry.ref, await f.read(entry.ref), { remember: false });
+      this.notify(`Reconnected ${entry.label}`);
+    } catch (e) {
+      this.notify(`Couldn't read ${entry.label}: ${errorText(e)}`);
+    }
+  }
+
+  // Takes the collection out of the app; the folder's files stay.
+  closeFolder(collectionId) {
+    const p = platform();
+    this.folders.delete(collectionId);
+    p.folders?.forget(collectionId);
+    p.setFolderCollections?.([...this.folders.keys()]);
+    for (const [id, owner] of this.folderEnvs) {
+      if (owner.collectionId !== collectionId) continue;
+      this.folderEnvs.delete(id);
+      this.environments = this.environments.filter((e) => e.id !== id);
+      if (this.activeEnvironmentId === id) this.activeEnvironmentId = null;
+    }
+  }
+
+  closeAllFolders() {
+    for (const id of [...this.folders.keys()]) this.closeFolder(id);
+  }
+
+  async restoreFolders() {
+    const f = platform().folders;
+    if (!f) return;
+    for (const { collectionId, ref, connected } of await f.restore()) {
+      if (!connected) {
+        // Web: the browser needs a click before the app may read it again.
+        if (this.collection(collectionId)) this.folders.set(collectionId, { ref, label: f.label(ref), connected: false, error: null, written: null, secrets: {} });
+        else f.forget(collectionId);
+        continue;
+      }
+      try {
+        await this.attachFolder(ref, await f.read(ref), { remember: false });
+      } catch (e) {
+        f.forget(collectionId);
+        this.notify(`Couldn't open the folder ${f.label(ref)}: ${errorText(e)}. Open it again with Open folder.`);
+      }
+    }
+    this.emit();
+  }
+
+  // Live save: each connected folder gets what changed, one write at a time.
+  syncFolders() {
+    const p = platform();
+    for (const [id, entry] of this.folders) {
+      if (!entry.connected) continue;
+      if (!this.collection(id)) {
+        this.closeFolder(id);
+        continue;
+      }
+      const secrets = this.folderSecretValues(id);
+      const changed = Object.fromEntries([
+        ...Object.entries(secrets).filter(([k, v]) => entry.secrets[k] !== v),
+        ...Object.keys(entry.secrets).filter((k) => !(k in secrets)).map((k) => [k, null]),
+      ]);
+      if (Object.keys(changed).length) {
+        p.folderSecrets.save(changed);
+        entry.secrets = secrets;
+      }
+      const content = this.folderContent(id);
+      const json = JSON.stringify(content);
+      if (json === entry.written) continue;
+      if (entry.writing) {
+        entry.again = true;
+        continue;
+      }
+      entry.writing = true;
+      p.folders
+        .write(entry.ref, content)
+        .then(() => {
+          entry.written = json;
+          if (entry.error) {
+            entry.error = null;
+            this.dispatchEvent(new Event("change"));
+          }
+        })
+        .catch((e) => {
+          const first = !entry.error;
+          entry.error = errorText(e);
+          entry.written = json; // don't retry the same content on every keystroke
+          if (first) this.notify(`Couldn't save to ${entry.label}: ${entry.error}`);
+          this.dispatchEvent(new Event("change"));
+        })
+        .finally(() => {
+          entry.writing = false;
+          if (entry.again) {
+            entry.again = false;
+            this.syncFolders();
+          }
+        });
+    }
+  }
+
+  // A collection as a .zip of its folder. A folder collection takes its own
+  // environments; any other takes the app's. Secret values are never in it.
+  async exportZip(collectionId) {
+    const col = this.collection(collectionId);
+    if (!col) return;
+    const content = this.folders.has(collectionId)
+      ? this.folderContent(collectionId)
+      : { collection: col, environments: this.environments.filter((e) => !this.folderEnvs.has(e.id)).map(withoutSecretValues) };
+    try {
+      const { name, bytes } = await folderToZip(content);
+      if (await platform().saveFile(name, bytes, "application/zip")) this.notify(`Exported ${name}`);
+    } catch (e) {
+      this.notify(`Couldn't export ${col.name}: ${errorText(e)}`);
+    }
+  }
+
+  // Adds the collection in a .zip of a folder, and its environments with
+  // names you don't have yet (secrets come without values).
+  async importZip(file) {
+    let folder;
+    try {
+      folder = await zipToFolder(new Uint8Array(await file.arrayBuffer()), file.name);
+    } catch (e) {
+      this.notify(`Couldn't import ${file.name}: ${errorText(e)}`);
+      return null;
+    }
+    const col = folder.collection;
+    if (this.collection(col.id)) col.id = generateUniqueId();
+    this.collections = [...this.collections, col];
+    const names = new Set(this.environments.map((e) => e.name));
+    const added = (folder.environments || [])
+      .filter((e) => !names.has(e.name))
+      .map((e) => ({ ...e, id: crypto.randomUUID(), variables: { ...e.variables, ...Object.fromEntries(secretNames(e).map((n) => [n, ""])) } }));
+    this.environments = [...this.environments, ...added];
+    this.view = { kind: "collection", collectionId: col.id };
+    this.emit();
+    this.notify(`Imported ${col.name}${added.length ? ` and ${added.length} environment${added.length === 1 ? "" : "s"}` : ""}`);
+    return col;
   }
 
   async runAll() {

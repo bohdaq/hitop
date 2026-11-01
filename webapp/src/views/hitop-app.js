@@ -7,6 +7,7 @@ import { unsafeSVG } from "lit/directives/unsafe-svg.js";
 import { mark } from "../../../site/src/brand/mark.js";
 import { icon } from "../icons.js";
 import { Store } from "../store.js";
+import { IS_TAURI, platform } from "../platform/index.js";
 import "./request-view.js";
 import "./collection-views.js";
 
@@ -137,6 +138,16 @@ export class HitopApp extends LitElement {
   }
 
   async deleteCollection(collection) {
+    const folder = this.store.folderOf(collection.id);
+    if (folder) {
+      const ok = await confirm({
+        headline: `Close ${collection.name}?`,
+        message: `It leaves HITOP. The folder ${folder.label} and its files stay where they are; open it again any time.`,
+        confirmLabel: "Close",
+      });
+      if (ok) this.store.deleteCollection(collection.id);
+      return;
+    }
     const n = collection.requests?.length ?? 0;
     const ok = await confirm({
       headline: `Delete ${collection.name}?`,
@@ -274,12 +285,13 @@ export class HitopApp extends LitElement {
       </lit-material-dialog>`;
   }
 
-  download(name, text) {
-    const url = URL.createObjectURL(new Blob([text], { type: "application/json" }));
-    const a = Object.assign(document.createElement("a"), { href: url, download: name });
-    a.click();
-    URL.revokeObjectURL(url);
-    this.toast(`Downloaded ${name}`);
+  // The browser downloads the file; the desktop asks where to save it.
+  async download(name, text) {
+    try {
+      if (await platform().saveFile(name, text, "application/json")) this.toast(IS_TAURI ? `Saved ${name}` : `Downloaded ${name}`);
+    } catch (e) {
+      this.toast(`Couldn't save ${name}: ${e?.message ?? e}`);
+    }
   }
 
   // --- sidebar ------------------------------------------------------------------
@@ -290,10 +302,12 @@ export class HitopApp extends LitElement {
     const activeRequest = kind === "request" ? s.tab?.loadedRequestId : null;
     return html`
       <aside class=${`sidebar ${this.navOpen ? "open" : ""}`} aria-label="Collections">
-        <a class="brand" href="/" aria-label="HITOP home">
-          ${unsafeSVG(mark())}
-          <span>HITOP</span>
-        </a>
+        ${IS_TAURI
+          ? html`<span class="brand">${unsafeSVG(mark())}<span>HITOP</span></span>`
+          : html`<a class="brand" href="/" aria-label="HITOP home">
+              ${unsafeSVG(mark())}
+              <span>HITOP</span>
+            </a>`}
         <lit-material-button variant="filled" class="new-request" @click=${() => (this.navOpen = false, s.newRequestInFirstCollection())}>
           ${icon("plus")} New request
         </lit-material-button>
@@ -304,7 +318,7 @@ export class HitopApp extends LitElement {
             this.go("environments");
           }}>
           <lit-material-select-option value="none">No environment</lit-material-select-option>
-          ${s.environments.map((env) => html`<lit-material-select-option value=${env.id}>${env.name}</lit-material-select-option>`)}
+          ${s.environments.map((env) => html`<lit-material-select-option value=${env.id}>${s.environmentLabel(env)}</lit-material-select-option>`)}
           <lit-material-select-option value="__manage">Manage environments…</lit-material-select-option>
         </lit-material-select>
         <nav class="tree" aria-label="Collections">
@@ -435,7 +449,7 @@ export class HitopApp extends LitElement {
         </lit-material-icon-button>
         <span class="topbar-title">HITOP</span>
         <span class="topbar-spacer"></span>
-        <a class="topbar-link" href="/">${icon("house")}<span>hitop.rws8.tech</span></a>
+        ${IS_TAURI ? nothing : html`<a class="topbar-link" href="/">${icon("house")}<span>hitop.rws8.tech</span></a>`}
         <lit-material-color-scheme-toggle storage-key="hitop-theme">
           ${icon("sun", { slot: "light-icon" })}${icon("moon", { slot: "dark-icon" })}
         </lit-material-color-scheme-toggle>

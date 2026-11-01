@@ -3,11 +3,15 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "dev": "vite",
-    "build": "VITE_HITOP_PROXY=/api/proxy vite build",
+    "wasm": "node scripts/build-wasm.mjs",
+    "dev": "npm run wasm && vite",
+    "dev:tauri": "npm run wasm && VITE_HITOP_PLATFORM=tauri vite --port 1421 --strictPort",
+    "build": "npm run wasm && VITE_HITOP_PROXY=/api/proxy vite build",
+    "build:tauri": "npm run wasm && VITE_HITOP_PLATFORM=tauri vite build --outDir dist-tauri --base ./",
     "preview": "vite preview",
-    "test:unit": "node tests/unit.mjs",
-    "test:e2e": "node tests/e2e.cjs && node tests/editing.cjs && node tests/features.cjs && node tests/extras.cjs"
+    "test:unit": "npm run wasm && node tests/unit.mjs",
+    "test:e2e": "node tests/e2e.cjs && node tests/editing.cjs && node tests/features.cjs && node tests/extras.cjs && node tests/folders.cjs",
+    "test:e2e:tauri": "HITOP_MODE=tauri npm run test:e2e"
   },
   "dependencies": {
     "@codemirror/commands": "6.11.1",
@@ -42,6 +46,7 @@
     "@lit-material/text-field": "0.3.0",
     "@lit-material/tokens": "0.0.2",
     "@phosphor-icons/core": "2.1.1",
+    "fflate": "0.8.2",
     "highlight.js": "11.11.1",
     "lit": "3.3.3"
   },

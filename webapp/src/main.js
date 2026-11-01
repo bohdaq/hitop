@@ -24,4 +24,8 @@ import "@lit-material/switch";
 import "@lit-material/tabs";
 import "@lit-material/text-field";
 
-import "./views/hitop-app.js";
+import { initPlatform } from "./platform/index.js";
+
+// Storage loads before the app starts (the desktop reads it from Rust).
+await initPlatform();
+await import("./views/hitop-app.js");

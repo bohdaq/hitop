@@ -6,6 +6,7 @@ import { repeat } from "lit/directives/repeat.js";
 import { confirm } from "@lit-material/confirm";
 import { icon } from "../icons.js";
 import { secretNames } from "../features.js";
+import { platform } from "../platform/index.js";
 import { testList } from "./request-view.js";
 
 class LightElement extends LitElement {
@@ -54,9 +55,21 @@ export class HitopCollections extends LightElement {
             <lit-material-button variant="outlined" ?disabled=${!s.collections.length || run.running} @click=${() => s.runAll()}>
               ${icon("play")} ${run.running ? `Running ${run.completed + 1} of ${s.collections.filter((c) => c.requests?.length).length}` : "Run all"}
             </lit-material-button>
+            ${platform().folders
+              ? html`<lit-material-button variant="outlined" @click=${() => s.openFolder()}>${icon("folder-open")} Open folder</lit-material-button>`
+              : nothing}
+            <lit-material-button variant="outlined" @click=${() => this.querySelector("#zip-input").click()}>${icon("file-zip")} Import zip</lit-material-button>
+            <input id="zip-input" type="file" accept=".zip,application/zip" hidden aria-label="Collection zip file"
+              @change=${async (e) => {
+                const file = e.target.files?.[0];
+                e.target.value = "";
+                if (file) await s.importZip(file);
+              }} />
             <lit-material-button variant="filled" @click=${() => this.app.openDialog("add-collection")}>${icon("plus")} New collection</lit-material-button>
           </div>
         </header>
+        <p class="page-lead">A collection folder holds one YAML file per request, for git and for <code>hitop run</code> in CI.
+          ${platform().folders ? "Open one to work on its files directly, or import a .zip of one." : "Import a .zip of one here; to work on a folder directly, use Chrome, Edge or the desktop app."}</p>
         ${summary
           ? html`<lit-material-alert variant=${summary.failedCount ? "warning" : "success"}>
               <span slot="title">${summary.failedCount ? "The run stopped at a failed request" : "Every request succeeded"}</span>
@@ -96,6 +109,7 @@ export class HitopCollection extends LightElement {
     const run = s.run;
     const mine = run.collectionId === c.id;
     const n = c.requests?.length ?? 0;
+    const folder = s.folderOf(c.id);
     return html`
       <div class="page">
         <button type="button" class="back" @click=${() => this.app.go("collections")}>${icon("arrow-left")} Collections</button>
@@ -108,9 +122,25 @@ export class HitopCollection extends LightElement {
             <lit-material-button variant="outlined" @click=${() => this.app.go("variables", c.id)}>${icon("sliders-horizontal")} Variables</lit-material-button>
             <lit-material-icon-button aria-label="Rename collection" @click=${() => this.app.openDialog("rename-collection", { id: c.id, name: c.name })}>${icon("pencil-simple")}</lit-material-icon-button>
             <lit-material-icon-button aria-label="Duplicate collection" @click=${() => s.duplicateCollection(c.id)}>${icon("copy")}</lit-material-icon-button>
-            <lit-material-icon-button aria-label="Delete collection" @click=${() => this.app.deleteCollection(c)}>${icon("trash")}</lit-material-icon-button>
+            <lit-material-icon-button aria-label="Export as zip" @click=${() => s.exportZip(c.id)}>${icon("file-zip")}</lit-material-icon-button>
+            <lit-material-icon-button aria-label=${folder ? "Close folder" : "Delete collection"} @click=${() => this.app.deleteCollection(c)}>${icon(folder ? "x" : "trash")}</lit-material-icon-button>
           </div>
         </header>
+        ${folder
+          ? html`<p class="folder-status" role="status">
+              ${icon("folder-open")}
+              ${folder.connected
+                ? folder.error
+                  ? html`<span>Couldn't save to ${folder.label}: ${folder.error}</span>`
+                  : html`<span>Saved to the folder ${folder.label} as you edit.</span>`
+                : html`<span>Was opened from the folder ${folder.label}. Reconnect to read it again and keep saving there.</span>
+                    <lit-material-button variant="text" @click=${() => s.reconnectFolder(c.id)}>Reconnect folder</lit-material-button>`}
+            </p>`
+          : platform().folders
+            ? html`<p class="folder-status">
+                <lit-material-button variant="text" @click=${() => s.saveToFolder(c.id)}>${icon("folder-open")} Save to folder</lit-material-button>
+              </p>`
+            : nothing}
         <p class="page-lead">Run sends the requests in this order, passes values saved with <code>setContext</code> to the next one, and stops at the first failure.</p>
         ${mine ? runResults(run.results, run.running) : nothing}
         <section aria-label="Requests">
@@ -230,7 +260,7 @@ export class HitopEnvironments extends LightElement {
                 ${s.environments.map(
                   (e) => html`<button type="button" class=${`env-chip ${e.id === selectedId ? "selected" : ""}`} aria-current=${e.id === selectedId ? "true" : "false"}
                     @click=${() => s.show("environments", null, e.id)}>
-                    ${e.name}${e.id === s.activeEnvironmentId ? html` <span class="active-tag">active</span>` : nothing}
+                    ${s.environmentLabel(e)}${e.id === s.activeEnvironmentId ? html` <span class="active-tag">active</span>` : nothing}
                   </button>`,
                 )}
               </div>
@@ -254,7 +284,7 @@ export class HitopEnvironments extends LightElement {
                     ></lit-material-key-value-editor>
                     <section class="env-secrets" aria-labelledby="env-secrets-title">
                       <h2 id="env-secrets-title">Secrets</h2>
-                      <p class="hint">Secret values stay in this browser. They are masked here and in history, and never written to exports: an export keeps only their names.</p>
+                      <p class="hint">${platform().secretsNote}</p>
                       <label class="switch-row">
                         <lit-material-switch aria-label="Show secret values" ?checked=${this.reveal} @change=${(e) => (this.reveal = e.target.checked)}></lit-material-switch>
                         <span>Show secret values</span>
