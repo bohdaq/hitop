@@ -42,6 +42,9 @@ enum Cmd {
     /// Manage secret variables in the OS keychain
     #[command(subcommand)]
     Secret(commands::secret::SecretCmd),
+    /// List or clear the cookies hitop keeps between requests
+    #[command(subcommand)]
+    Cookies(commands::cookies::CookiesCmd),
     /// View request history
     History(commands::history::HistoryArgs),
     /// Import HITOP or Postman collections, Postman environments and globals
@@ -75,6 +78,7 @@ fn main() -> Result<()> {
         Cmd::Variables(cmd) => commands::variables::run(cmd),
         Cmd::Env(cmd) => commands::env::run(cmd),
         Cmd::Secret(cmd) => commands::secret::run(cmd),
+        Cmd::Cookies(cmd) => commands::cookies::run(cmd),
         Cmd::History(args) => commands::history::run(args),
         Cmd::Import(args) => commands::import_export::run_import(args),
         Cmd::Export(args) => commands::import_export::run_export(args),

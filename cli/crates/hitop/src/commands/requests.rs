@@ -83,6 +83,9 @@ pub enum RequestsCmd {
 
         #[command(flatten)]
         secrets: super::secret::SecretFlags,
+
+        #[command(flatten)]
+        cookies: super::cookies::CookieFlags,
     },
 }
 
@@ -202,7 +205,7 @@ pub fn run(cmd: RequestsCmd) -> Result<()> {
             println!("{} Renamed '{}' → '{}'", "✓".green(), request.bold(), new_name.bold());
         }
 
-        RequestsCmd::Send { collection, request, show_headers, raw, env, secrets } => {
+        RequestsCmd::Send { collection, request, show_headers, raw, env, secrets, cookies } => {
             use hitop_core::{http, prepare::{prepare, variables, Draft}, scripting::run_post_request_script};
             use crate::output;
 
@@ -234,7 +237,12 @@ pub fn run(cmd: RequestsCmd) -> Result<()> {
                 auth: req.auth.as_ref().or(col.auth.as_ref()),
             };
             let pre = prepare(&draft, &vars, &context).map_err(masked)?;
-            let mut result = http::execute(&req.method, &pre.url, &pre.headers, &pre.body).map_err(masked)?;
+            let (headers, body) = hitop_core::form::outgoing(&req, &pre.headers, &pre.body, &vars).map_err(masked)?;
+            let workspace = source.workspace();
+            let mut jar = super::cookies::open(&workspace, cookies)?;
+            let opts = http::Options { timeout: None, jar: jar.as_mut() };
+            let mut result = http::execute_opts(&req.method, &pre.url, &headers, body, opts).map_err(masked)?;
+            super::cookies::save(&workspace, jar.as_ref())?;
 
             let mut post = run_post_request_script(
                 &req.post_request_script,

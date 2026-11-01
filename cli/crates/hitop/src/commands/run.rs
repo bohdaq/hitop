@@ -14,10 +14,12 @@ use hitop_core::{
     model::{Collection, Environment},
     report::{Report, ReportBuilder},
     runner::{self, RunOptions},
+    cookies::Jar,
     secrets::Secrets,
     storage,
 };
 
+use super::cookies::{self, CookieFlags};
 use super::data;
 use super::secret::{self, SecretFlags};
 use super::source::Source;
@@ -35,7 +37,11 @@ values with --secret or HITOP_SECRET_<ENV>_<NAME>.
 
 Reports: --reporter junit writes <out>/junit.xml, --reporter json writes
 <out>/report.json, format: https://github.com/bohdaq/hitop/blob/main/spec/run-report.md
-Secret values are •••• in both.";
+Secret values are •••• in both.
+
+Cookies that responses set are sent with the later requests to the same site
+and kept for the next run (`hitop cookies ls|clear -c <collection>`);
+--no-cookies turns that off.";
 
 #[derive(Clone, Copy, PartialEq, Eq, ValueEnum)]
 pub enum Reporter {
@@ -103,6 +109,9 @@ pub struct RunArgs {
 
     #[command(flatten)]
     secrets: SecretFlags,
+
+    #[command(flatten)]
+    cookies: CookieFlags,
 }
 
 fn var_pairs(vars: &[String]) -> Result<HashMap<String, String>> {
@@ -117,6 +126,8 @@ fn var_pairs(vars: &[String]) -> Result<HashMap<String, String>> {
 /// What to run: collections with one environment and resolved secrets.
 struct Plan {
     collections: Vec<Collection>,
+    /// Each collection's workspace id (its cookie jar).
+    workspaces: Vec<String>,
     environment: Option<Environment>,
     secrets: Secrets,
 }
@@ -133,7 +144,8 @@ fn plan(args: &RunArgs) -> Result<Plan> {
             None => storage::load_environments()?.pick(args.env.as_deref())?.cloned(),
         };
         let secrets = secret::resolve(hitop_core::secrets::GLOBAL_WORKSPACE, environment.as_ref(), &args.secrets)?;
-        return Ok(Plan { collections, environment, secrets });
+        let workspaces = collections.iter().map(|c| hitop_core::secrets::workspace_id(c, false)).collect();
+        return Ok(Plan { collections, workspaces, environment, secrets });
     }
     let source = Source::open(args.collection.as_deref().unwrap_or_default())?;
     let environment = match env_file {
@@ -141,7 +153,7 @@ fn plan(args: &RunArgs) -> Result<Plan> {
         None => source.environment(args.env.as_deref())?,
     };
     let secrets = secret::resolve(&source.workspace(), environment.as_ref(), &args.secrets)?;
-    Ok(Plan { collections: vec![source.collection], environment, secrets })
+    Ok(Plan { workspaces: vec![source.workspace()], collections: vec![source.collection], environment, secrets })
 }
 
 /// Runs and reports. Ok(0) when everything passed, Ok(1) when a request or
@@ -164,7 +176,10 @@ pub fn run(args: RunArgs) -> Result<i32> {
 
     let mut builder = ReportBuilder::new(env!("CARGO_PKG_VERSION"));
     let mut bailed = false;
-    'collections: for col in &plan.collections {
+    'collections: for (col, workspace) in plan.collections.iter().zip(&plan.workspaces) {
+        // Cookies carry over between requests and iterations, and are kept
+        // for the next run (`hitop cookies clear` empties the jar).
+        let mut jar = cookies::open(workspace, args.cookies)?;
         builder.collection(&col.name, env.map(|e| e.name.as_str()));
         if show {
             println!("{} {}", "▶".cyan(), col.name.bold());
@@ -178,14 +193,16 @@ pub fn run(args: RunArgs) -> Result<i32> {
             options.overrides = row.iter().flatten().map(|(k, v)| (k.clone(), v.clone())).collect();
             options.overrides.extend(vars.clone());
             builder.start_iteration();
-            let steps = run_one(col, env, &plan.secrets, &options, show);
+            let steps = run_one(col, env, &plan.secrets, &options, jar.as_mut(), show);
             let failed = steps.iter().any(|s| !s.passed());
             builder.iteration(row.clone(), &steps);
             if failed && args.bail {
                 bailed = true;
+                cookies::save(workspace, jar.as_ref())?;
                 break 'collections;
             }
         }
+        cookies::save(workspace, jar.as_ref())?;
     }
     let report = builder.finish(bailed);
     if show {
@@ -238,7 +255,7 @@ fn write_reports(report: &Report, reporters: &[Reporter], out: &Path) -> Result<
     Ok(())
 }
 
-fn run_one(col: &Collection, env: Option<&Environment>, secrets: &Secrets, options: &RunOptions, show: bool) -> Vec<runner::RunStepResult> {
+fn run_one(col: &Collection, env: Option<&Environment>, secrets: &Secrets, options: &RunOptions, jar: Option<&mut Jar>, show: bool) -> Vec<runner::RunStepResult> {
     let bar = if show { ProgressBar::new(col.requests.len() as u64) } else { ProgressBar::hidden() };
     bar.set_style(
         ProgressStyle::default_bar()
@@ -254,7 +271,7 @@ fn run_one(col: &Collection, env: Option<&Environment>, secrets: &Secrets, optio
         (true, false) => bar.println(line),
     };
     // Steps come back masked: no secret value reaches the log.
-    let results = runner::run_collection_opts(col, env, secrets, options, &mut |step| {
+    let results = runner::run_collection_jar(col, env, secrets, options, jar, &mut |step| {
         bar.inc(1);
         let mark = if step.passed() { "✓".green().to_string() } else { "✗".red().to_string() };
         match &step.result {

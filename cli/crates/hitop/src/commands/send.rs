@@ -3,7 +3,9 @@ use clap::Args;
 use std::collections::HashMap;
 
 use hitop_core::{
+    form,
     http,
+    interpolation::interpolate,
     model::{Header, HistoryItem},
     params::append_query,
     prepare::{prepare, variables, Draft},
@@ -11,6 +13,7 @@ use hitop_core::{
     storage,
 };
 
+use super::cookies::{self, CookieFlags};
 use super::flags::{query_pair, script_arg, AuthFlags};
 use super::secret::{self, SecretFlags};
 use super::source::Source;
@@ -21,9 +24,9 @@ pub struct SendArgs {
     /// Target URL
     url: String,
 
-    /// HTTP method
-    #[arg(short = 'X', long, default_value = "GET")]
-    method: String,
+    /// HTTP method (default GET, or POST with -F)
+    #[arg(short = 'X', long)]
+    method: Option<String>,
 
     /// Headers in "Name: Value" format (repeatable)
     #[arg(short = 'H', long = "header")]
@@ -33,9 +36,21 @@ pub struct SendArgs {
     #[arg(short = 'b', long)]
     body: Option<String>,
 
+    /// Form field, sent as multipart/form-data: NAME=VALUE, or NAME=@FILE
+    /// with an optional ;type=MIME (repeatable)
+    #[arg(short = 'F', long = "form", value_name = "NAME=VALUE|NAME=@FILE", conflicts_with = "body")]
+    form: Vec<String>,
+
+    /// Send the -F fields as application/x-www-form-urlencoded instead (no files)
+    #[arg(long, requires = "form")]
+    urlencoded: bool,
+
     /// Query parameter appended to the URL, as key=value (repeatable)
     #[arg(short = 'q', long = "query", value_name = "KEY=VALUE")]
     query: Vec<String>,
+
+    #[command(flatten)]
+    cookies: CookieFlags,
 
     #[command(flatten)]
     auth: AuthFlags,
@@ -105,11 +120,24 @@ pub fn run(args: SendArgs) -> Result<()> {
     let post_script = script_arg(&args.post_script)?;
     let auth = args.auth.auth()?;
 
-    let draft = Draft { method: &args.method, url: &url, headers: &headers, body: &body, pre_request_script: &pre_script, auth: auth.as_ref() };
+    let method = args.method.clone().unwrap_or_else(|| if args.form.is_empty() { "GET" } else { "POST" }.into());
+    let draft = Draft { method: &method, url: &url, headers: &headers, body: &body, pre_request_script: &pre_script, auth: auth.as_ref() };
     let pre = prepare(&draft, &variables, &context).map_err(|e| anyhow::anyhow!(masker.mask(&format!("{e:#}"))))?;
     context.extend(pre.context_updates.clone());
 
-    let mut result = http::execute(&args.method, &pre.url, &pre.headers, &pre.body).map_err(|e| anyhow::anyhow!(masker.mask(&format!("{e:#}"))))?;
+    let mut headers = pre.headers.clone();
+    let mut body = pre.body.clone().into_bytes();
+    if !args.form.is_empty() {
+        let built = form_body(&args.form, args.urlencoded, &variables)?;
+        if !headers.iter().any(|(k, v)| k.eq_ignore_ascii_case("content-type") && !v.is_empty()) {
+            headers.push(("Content-Type".into(), built.content_type));
+        }
+        body = built.body;
+    }
+    let mut jar = cookies::open(&workspace, args.cookies)?;
+    let opts = http::Options { timeout: None, jar: jar.as_mut() };
+    let mut result = http::execute_opts(&method, &pre.url, &headers, body, opts).map_err(|e| anyhow::anyhow!(masker.mask(&format!("{e:#}"))))?;
+    cookies::save(&workspace, jar.as_ref())?;
 
     let mut post = run_post_request_script(
         &post_script,
@@ -144,7 +172,7 @@ pub fn run(args: SendArgs) -> Result<()> {
         id: timestamp_id(),
         timestamp: timestamp_id(),
         url: masker.mask(&pre.url),
-        method: args.method.clone(),
+        method: method.clone(),
         status_code: result.status,
         success: result.status < 400,
         collection_name: args.collection.clone(),
@@ -179,6 +207,61 @@ pub fn run(args: SendArgs) -> Result<()> {
     }
 
     Ok(())
+}
+
+/// The body for `-F` fields: multipart, or urlencoded with `--urlencoded`.
+/// Values get `${variables}` filled in; files are read as they are.
+fn form_body(fields: &[String], urlencoded: bool, variables: &HashMap<String, String>) -> Result<form::Built> {
+    let mut parts = vec![];
+    for f in fields {
+        let Some((name, value)) = f.split_once('=').filter(|(n, _)| !n.is_empty()) else {
+            anyhow::bail!("-F takes NAME=VALUE or NAME=@FILE, got '{f}'");
+        };
+        let name = interpolate(name, variables)?;
+        match value.strip_prefix('@') {
+            Some(spec) => {
+                if urlencoded {
+                    anyhow::bail!("--urlencoded can't send files (-F {name}=@...)");
+                }
+                let (path, content_type) = match spec.rsplit_once(";type=") {
+                    Some((p, t)) => (p, t.to_string()),
+                    None => (spec, guess_type(spec).to_string()),
+                };
+                let data = std::fs::read(path).map_err(|e| anyhow::anyhow!("-F {name}: reading {path}: {e}"))?;
+                let filename = std::path::Path::new(path).file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default();
+                parts.push(form::Part::File { name, filename, content_type, data });
+            }
+            None => parts.push(form::Part::Text { name, value: interpolate(value, variables)? }),
+        }
+    }
+    if urlencoded {
+        let pairs: Vec<(String, String)> = parts.into_iter().filter_map(|p| match p {
+            form::Part::Text { name, value } => Some((name, value)),
+            form::Part::File { .. } => None,
+        }).collect();
+        return Ok(form::urlencoded(&pairs));
+    }
+    Ok(form::multipart(&parts))
+}
+
+/// A content type from a file's extension (application/octet-stream when unknown).
+fn guess_type(path: &str) -> &'static str {
+    let ext = path.rsplit('.').next().unwrap_or_default().to_ascii_lowercase();
+    match ext.as_str() {
+        "json" => "application/json",
+        "txt" | "log" | "md" => "text/plain",
+        "csv" => "text/csv",
+        "html" | "htm" => "text/html",
+        "xml" => "application/xml",
+        "png" => "image/png",
+        "jpg" | "jpeg" => "image/jpeg",
+        "gif" => "image/gif",
+        "webp" => "image/webp",
+        "svg" => "image/svg+xml",
+        "pdf" => "application/pdf",
+        "zip" => "application/zip",
+        _ => "application/octet-stream",
+    }
 }
 
 /// Masks secret values in a response and in assertion results before they

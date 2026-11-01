@@ -24,6 +24,9 @@ hitop send https://api.example.com/users \
   -H "Content-Type: application/json" \
   -b '{"name":"Alice"}'
 
+# Form fields and file uploads (multipart/form-data; --urlencoded for a plain form)
+hitop send https://api.example.com/upload -F title=Q3 -F file=@report.csv -F 'logo=@logo.bin;type=image/png'
+
 # Create a collection and save variables
 hitop collections add MyAPI
 hitop variables set MyAPI hostname https://api.example.com
@@ -60,6 +63,7 @@ hitop export MyAPI -o my-collection.json
 | `hitop variables list/set/delete` | Manage collection variables |
 | `hitop env list/add/delete/show/set/unset/use/off/import/export` | Manage environments |
 | `hitop secret set/get/rm/ls --env <env>` | Secret variables in the OS keychain (`-c <folder>` for a folder's environment) |
+| `hitop cookies ls/clear [-c <collection>]` | The cookies hitop keeps between requests (`--no-cookies` on `send`, `run`, `requests send` turns the jar off) |
 | `hitop history` | View request history |
 | `hitop import <files>... [--to <dir>]` | Import HITOP or Postman collections, Postman environments and globals; prints what didn't come over (see "From Postman") |
 | `hitop export <collection>` | Export a collection |
@@ -169,6 +173,21 @@ hitop run ./my-api --env ci --iterations 3
 - `--bail` stops at the first failed request; without it every request runs. (Before 0.3 stopping was the default
   and `--no-stop-on-fail` turned it off; that flag is still accepted.)
 - `--timeout <ms>` limits each request; a slower one fails the run with a timeout.
+
+## Cookies and form bodies
+
+Cookies a response sets are sent with later requests to the same site, the way a browser does
+(domain, path, `Secure`, `Expires`/`Max-Age`; the same rules as the web app). Each workspace has its
+own jar, kept between runs: `hitop send` without `-c` uses the global one (shared with the desktop
+app), a collection or folder its own. `hitop cookies ls -c ./my-api` lists them, `hitop cookies clear`
+empties a jar, and `--no-cookies` sends none and keeps none. A request's own `Cookie` header wins.
+Only the final response's `Set-Cookie` lines count: cookies set on a redirect hitop follows are not kept.
+
+`-F name=value` and `-F name=@path[;type=mime]` send `multipart/form-data` (POST unless `-X` says
+otherwise); add `--urlencoded` for `application/x-www-form-urlencoded`. Saved requests with a form or
+multipart body (`body.type: form` / `multipart` in a folder, or from the web app or a Postman import) go
+out as one in `hitop run` and `requests send`; a file row has no file in a collection, so it goes out as an
+empty part, as in the web app after a reload.
 
 ## Shell completions
 
