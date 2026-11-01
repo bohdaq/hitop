@@ -52,6 +52,20 @@ impl Source {
         bail!("collection '{arg}' not found")
     }
 
+    /// The collection called `name` in global storage, never a folder
+    /// (`hitop mcp` without a folder: a folder in the working directory with
+    /// the same name must not win).
+    pub fn global(name: &str) -> Result<Source> {
+        let all = storage::load_collections()?;
+        match all.iter().position(|c| c.name == name) {
+            Some(index) => Ok(Source { collection: all[index].clone(), environments: None, folder_globals: None, origin: Origin::Global { all, index } }),
+            None => {
+                let names: Vec<&str> = all.iter().map(|c| c.name.as_str()).collect();
+                bail!("collection '{name}' not found (collections: {})", if names.is_empty() { "none".to_string() } else { names.join(", ") })
+            }
+        }
+    }
+
     /// Saves the collection where it came from. A folder gets its
     /// `hitop.yaml` and request files rewritten; its environments are left alone.
     pub fn save(&self) -> Result<()> {

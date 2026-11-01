@@ -42,6 +42,7 @@ hitop/
 │           ├── tests/postman.rs # hitop import --to of the fixtures/postman collections, run against httpmock
 │           ├── tests/cookies_forms.rs # cookie jar across send/run, -F uploads, saved form bodies
 │           ├── tests/globals.rs # globals below collection/env, secret globals, pm.globals, import, convert
+│           ├── tests/mcp.rs    # hitop mcp: JSON-RPC over stdio for every tool (httpmock), no secret value anywhere on stdout
 │           ├── tests/telemetry.rs # nothing sent while off, at most once a week (HITOP_TELEMETRY_URL → httpmock)
 │           └── src/
 │               ├── main.rs         # clap CLI entry point
@@ -52,6 +53,7 @@ hitop/
 │               ├── commands/data.rs # `--data` CSV (RFC 4180, hand written) and JSON rows
 │               ├── commands/cookies.rs # `hitop cookies ls|clear`, `--no-cookies`
 │               ├── commands/globals.rs # `hitop globals show|set|unset|import|export [-c folder]`
+│               ├── commands/mcp.rs # `hitop mcp [folder]`: MCP server over stdio (rmcp), the nine tools, masking
 │               ├── commands/telemetry.rs # `hitop telemetry on|off|status` and the background ping (feature `telemetry`)
 │               └── output.rs       # Colored output, syntect highlighting
 │   ├── fixtures/sample/        # collection folder run by tests/folder.rs against httpmock
@@ -143,6 +145,12 @@ hitop/
   `run`/`requests send` send saved `bodyMode` urlencoded/multipart bodies (`form::outgoing`)
 - Usage ping: hitop-core feature `telemetry` (off by default; the CLI crate's default feature turns it on);
   `hitop telemetry on|off|status`; never sent unless on, at most weekly; `HITOP_TELEMETRY_URL` points tests at a mock
+- MCP: `hitop mcp [folder]` (rmcp 3.8 + tokio, binary crate only): stdio server, workspace = folder or global storage;
+  tools list_collections, list_requests, get_request, run_request, run_collection, create_request, update_request,
+  list_environments, set_environment (names and descriptions are a contract: change additively). Runs go through
+  `runner::run_collection_jar` (precedence and cookie jar as `hitop run`), tool bodies run in `spawn_blocking` behind one
+  mutex; every secret value resolved in the session is masked in all output; create/update refuse secret values.
+  stdout is the protocol: nothing under `commands/mcp.rs` may print to it. Guide: `site/content/guides/use-hitop-with-claude-code-and-cursor.md`
 - YAML crate: `yaml_serde` (serde_yaml continued by the YAML org); HTTP tests use `httpmock` 0.8, never the public internet
 - Publish: `cd cli && cargo publish -p hitop-core` then `cargo publish -p hitop`
 - HTTP client: `reqwest 0.12` blocking + rustls (no OpenSSL)

@@ -58,6 +58,8 @@ enum Cmd {
     #[cfg(feature = "telemetry")]
     #[command(subcommand)]
     Telemetry(commands::telemetry::TelemetryCmd),
+    /// Serve a collection folder (or global storage) to AI tools over MCP (stdio)
+    Mcp(commands::mcp::McpArgs),
     /// Generate shell completions
     Completions {
         #[arg(value_enum)]
@@ -105,6 +107,7 @@ fn dispatch(command: Cmd) -> i32 {
         Cmd::History(args) => commands::history::run(args),
         Cmd::Import(args) => commands::import_export::run_import(args),
         Cmd::Export(args) => commands::import_export::run_export(args),
+        Cmd::Mcp(args) => commands::mcp::run(args),
         #[cfg(feature = "telemetry")]
         Cmd::Telemetry(cmd) => commands::telemetry::run(cmd),
         Cmd::Completions { shell } => {

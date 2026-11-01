@@ -7,6 +7,7 @@ pub mod folder;
 pub mod globals;
 pub mod history;
 pub mod import_export;
+pub mod mcp;
 pub mod requests;
 pub mod run;
 pub mod secret;
