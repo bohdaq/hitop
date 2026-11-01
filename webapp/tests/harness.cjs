@@ -37,7 +37,15 @@ async function launch({ viewport = { width: 1280, height: 860 }, seed = null, ta
     mock.sent = sent;
     await ctx.exposeBinding('__hitopInvoke', (_source, cmd, args) => mock.invoke(cmd, args));
     await ctx.addInitScript(() => {
-      window.__TAURI_INTERNALS__ = { invoke: (cmd, args) => window.__hitopInvoke(cmd, args ?? {}), transformCallback: () => 0 };
+      // Callbacks as Tauri's core.js keeps them: channels (ws_connect) call back through runCallback.
+      const callbacks = new Map();
+      let next = 1;
+      window.__TAURI_INTERNALS__ = {
+        invoke: (cmd, args) => window.__hitopInvoke(cmd, args ?? {}),
+        transformCallback: (cb) => (callbacks.set(next, cb), next++),
+        unregisterCallback: (id) => callbacks.delete(id),
+        runCallback: (id, data) => callbacks.get(id)?.(data),
+      };
     });
     await ctx.route(`${TAURI_ORIGIN}/**`, (route) => {
       let rel = decodeURIComponent(new URL(route.request().url()).pathname).replace(/^\/+/, '') || 'index.html';
@@ -54,6 +62,8 @@ async function launch({ viewport = { width: 1280, height: 860 }, seed = null, ta
     }, seed);
   }
   const page = await ctx.newPage();
+  // Channel messages from the mock's Rust side into the page.
+  if (mock) mock.deliver = (id, data) => page.evaluate(([i, d]) => window.__TAURI_INTERNALS__.runCallback(i, d), [id, data]).catch(() => {});
   if (!TAURI) page.on('request', (r) => r.url().includes('/api/proxy') && sent.push(JSON.parse(r.postData())));
   const proxyCalls = [];
   page.on('request', (r) => r.url().includes('/api/proxy') && proxyCalls.push(r.url()));

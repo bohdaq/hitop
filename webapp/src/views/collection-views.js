@@ -8,6 +8,7 @@ import { icon } from "../icons.js";
 import { secretNames } from "../features.js";
 import { platform } from "../platform/index.js";
 import { testList } from "./request-view.js";
+import { methodLabel } from "../store.js";
 
 class LightElement extends LitElement {
   createRenderRoot() {
@@ -151,7 +152,7 @@ export class HitopCollection extends LightElement {
                   (r) => html`
                     <li>
                       <button type="button" class="request-row" @click=${() => s.openRequest(r, c.id)}>
-                        <span class=${`method-tag m-${r.method}`}>${r.method}</span>
+                        <span class=${`method-tag m-${methodLabel(r)}`}>${methodLabel(r)}</span>
                         <span class="request-name">${r.name}</span>
                         <span class="request-url">${r.url}</span>
                       </button>

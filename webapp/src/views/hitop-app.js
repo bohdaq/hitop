@@ -6,7 +6,7 @@ import { repeat } from "lit/directives/repeat.js";
 import { unsafeSVG } from "lit/directives/unsafe-svg.js";
 import { mark } from "../../../site/src/brand/mark.js";
 import { icon } from "../icons.js";
-import { Store } from "../store.js";
+import { methodLabel, Store } from "../store.js";
 import { IS_TAURI, platform } from "../platform/index.js";
 import { issueText } from "../pm.js";
 import "./request-view.js";
@@ -385,7 +385,7 @@ export class HitopApp extends LitElement {
                               (r) => r.id,
                               (r) => html`<div role="listitem" class="request-item" data-sort-id=${r.id} data-sort-label=${r.name}>
                                 <button type="button" class="tree-row leaf" aria-current=${activeRequest === r.id ? "page" : "false"} @click=${() => ((this.navOpen = false), s.openRequest(r, c.id))}>
-                                  <span class=${`method-tag m-${r.method}`}>${r.method}</span><span>${r.name}</span>
+                                  <span class=${`method-tag m-${methodLabel(r)}`}>${methodLabel(r)}</span><span>${r.name}</span>
                                 </button>
                                 <button type="button" class="sort-handle" data-sort-handle aria-label=${`Reorder ${r.name}`}>${icon("dots-six-vertical")}</button>
                               </div>`,

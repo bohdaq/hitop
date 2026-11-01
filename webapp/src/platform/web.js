@@ -136,6 +136,40 @@ function folders() {
 
 // --- the adapter ---------------------------------------------------------------
 
+// A WebSocket request in the browser: the URL and subprotocols only, since
+// a page can't set handshake headers. Errors carry no detail in browsers,
+// so the message says what usually causes them.
+function browserWebSocket(url, { protocols = [] } = {}, h) {
+  let ws;
+  let opened = false;
+  try {
+    ws = new WebSocket(url, protocols.length ? protocols : undefined);
+  } catch (e) {
+    queueMicrotask(() => {
+      h.onError(e.message);
+      h.onClose({ code: null, reason: "" });
+    });
+    return { send() {}, close() {} };
+  }
+  ws.binaryType = "arraybuffer";
+  ws.onopen = () => {
+    opened = true;
+    h.onOpen({ protocol: ws.protocol || null });
+  };
+  ws.onmessage = (e) => (typeof e.data === "string" ? h.onMessage({ text: e.data }) : h.onMessage({ bytes: new Uint8Array(e.data) }));
+  ws.onclose = (e) => {
+    if (!opened) {
+      const mixed = location.protocol === "https:" && /^ws:/i.test(url) && !/^ws:\/\/(localhost|127\.0\.0\.1|\[::1\])[:/]/i.test(url);
+      h.onError(mixed ? "this page is https, so the browser allows only wss:// (or ws://localhost)" : "the server refused or isn't reachable (the browser gives no details)");
+    }
+    h.onClose({ code: e.code, reason: e.reason });
+  };
+  return {
+    send: (text) => ws.send(text),
+    close: () => ws.close(1000),
+  };
+}
+
 export function createPlatform() {
   return {
     name: "web",
@@ -148,6 +182,9 @@ export function createPlatform() {
       saveGlobals,
     },
     send: sendRequest,
+    // The browser's WebSocket: no handshake headers (browsers can't set them).
+    websocketHeaders: false,
+    websocket: browserWebSocket,
     // The browser handles cookies of direct requests itself (and hides them);
     // the proxy's answers carry Set-Cookie for the app's jar.
     managesCookies: usesProxy,

@@ -83,7 +83,7 @@ code { font-family: var(--font-mono); font-size: 0.9em; padding: var(--space-25)
 lit-material-tabs::part(tablist) { overflow-x: auto; scrollbar-width: none; }
 
 /* Request line */
-.request-line { display: grid; grid-template-columns: 140px minmax(0, 1fr) auto auto; gap: var(--space-100); align-items: center; padding-top: var(--space-300); }
+.request-line { display: grid; grid-template-columns: 160px minmax(0, 1fr) auto auto; gap: var(--space-100); align-items: center; padding-top: var(--space-300); }
 .request-line .url { min-width: 0; }
 .request-line .method { --lit-material-select-min-width: 0; display: block; width: 100%; }
 
@@ -319,3 +319,24 @@ lit-material-dialog.wide::part(container) { width: min(1100px, calc(100vw - 32px
 .side-by-side .row.removed .left, .side-by-side .row.changed .left { background: var(--md-sys-color-error-container); color: var(--md-sys-color-on-error-container); }
 .side-by-side .row.added .right, .side-by-side .row.changed .right { background: light-dark(#dcebd3, #23361a); color: light-dark(#2a4a1b, #9fcf86); }
 @media (max-width: 600px) { .side-by-side .row { grid-template-columns: 1fr; } }
+
+/* WebSocket requests: composer, saved messages, the log. */
+.subprotocols { display: block; margin-top: var(--space-200); }
+.ws-browser-note { margin-top: var(--space-100); }
+.ws-compose { display: grid; gap: var(--space-100); }
+.ws-draft .cm-scroller { min-height: 4lh !important; max-height: 30vh !important; }
+.ws-compose-actions { display: flex; flex-wrap: wrap; gap: var(--space-100); }
+.ws-saved { list-style: none; margin: var(--space-200) 0 0; padding: 0; display: grid; gap: var(--space-100); }
+.ws-saved-row { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 2fr) auto auto; gap: var(--space-100); align-items: center; }
+.ws-log { list-style: none; margin: 0; padding: 0; font-family: var(--font-mono); font-size: var(--text-sm); line-height: var(--leading-sm); max-height: 50vh; overflow: auto; }
+.ws-event { display: grid; grid-template-columns: auto auto minmax(0, 1fr); gap: var(--space-100); align-items: start; padding: var(--space-50, 2px) 0; border-bottom: 1px solid var(--md-sys-color-outline-variant); }
+.ws-event time { color: var(--md-sys-color-on-surface-variant); }
+.ws-event .ws-text { white-space: pre-wrap; overflow-wrap: anywhere; }
+.ws-event.sent .ws-dir { color: var(--md-sys-color-primary); }
+.ws-event.received .ws-dir { color: light-dark(#3f6b2a, #9fcf86); }
+.ws-event.system .ws-text { color: var(--md-sys-color-on-surface-variant); }
+.ws-event.error .ws-text, .ws-event.error .ws-dir { color: var(--md-sys-color-error); }
+@media (max-width: 720px) {
+  .ws-saved-row { grid-template-columns: minmax(0, 1fr) auto auto; }
+  .ws-saved-row > :nth-child(2) { grid-column: 1 / -1; grid-row: 2; }
+}

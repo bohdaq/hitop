@@ -12,6 +12,8 @@
 //   ping      the usage ping setting (commands.rs telemetry_*): answered
 //             already unless a test sets `telemetry.asked = false`;
 //             `telemetry = null` is a build without it (Mac App Store)
+//   websocket ws_connect/ws_send/ws_close through Node's WebSocket (headers
+//             sent, as Rust's client does), events on the page's channel
 //   cookies   hitop-core's jar (cookies.rs, same rules as features.js) in
 //             <config>/cookies/global.json
 const fs = require('fs');
@@ -153,6 +155,9 @@ class TauriMock {
     this.writes = [];
     this.nextFolder = null;
     this.lastCall = 0;
+    this.sockets = new Map();
+    this.nextSocket = 0;
+    this.wsConnects = [];
     this.telemetry = { enabled: false, asked: true, id: null, lastPing: null };
   }
 
@@ -279,6 +284,16 @@ class TauriMock {
       }
       case 'plugin:dialog|save':
         return path.join(this.dir, path.basename(args.options?.defaultPath || 'export'));
+      case 'ws_connect':
+        return this.wsConnect(args.args, args.onEvent);
+      case 'ws_send': {
+        const ws = this.sockets.get(args.id);
+        if (!ws) throw 'the connection is closed';
+        return ws.send(args.binary ? Buffer.from(args.data, 'base64') : args.data);
+      }
+      case 'ws_close':
+        this.sockets.get(args.id)?.close(1000);
+        return null;
       default:
         throw `unknown command ${cmd}`;
     }
@@ -319,7 +334,33 @@ class TauriMock {
     return { status: res.status, statusText: res.statusText, url: res.url, headers, body: text ?? bytes.toString('base64'), ...(text == null ? { bodyEncoding: 'base64' } : {}), timeMs: Date.now() - started, ...(cookies ? { cookies } : {}) };
   }
 
+  // commands.rs ws_connect: Node's WebSocket (undici) sends handshake
+  // headers as Rust's client does; events go to the page's channel callback
+  // as { message, index } (WsEvent: message, closed, error).
+  async wsConnect(a, channel) {
+    const cb = Number(String(channel).replace('__CHANNEL__:', ''));
+    let index = 0;
+    const emit = (message) => this.deliver?.(cb, { message, index: index++ });
+    this.wsConnects.push({ url: a.url, headers: a.headers, protocols: a.protocols });
+    const ws = new WebSocket(a.url, { protocols: a.protocols?.length ? a.protocols : undefined, headers: Object.fromEntries(a.headers || []) });
+    ws.binaryType = 'arraybuffer';
+    await new Promise((resolve, reject) => {
+      ws.onopen = resolve;
+      ws.onerror = () => reject(`couldn't connect to ${a.url}`);
+    });
+    const id = ++this.nextSocket;
+    this.sockets.set(id, ws);
+    ws.onmessage = (e) => emit(typeof e.data === 'string' ? { type: 'message', data: e.data, binary: false } : { type: 'message', data: Buffer.from(e.data).toString('base64'), binary: true });
+    ws.onerror = null;
+    ws.onclose = (e) => {
+      this.sockets.delete(id);
+      emit({ type: 'closed', code: e.code || null, reason: e.reason || '' });
+    };
+    return { id, status: 101, protocol: ws.protocol || null, headers: [] };
+  }
+
   cleanup() {
+    for (const ws of this.sockets.values()) ws.close();
     fs.rmSync(this.dir, { recursive: true, force: true });
   }
 }

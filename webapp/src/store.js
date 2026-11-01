@@ -67,9 +67,18 @@ function loadCookies() {
 // a raw body. Its query is `body`, the rest is in `graphql`.
 export const isGraphql = (r) => r?.bodyType === "graphql" && (!r.bodyMode || r.bodyMode === "raw");
 
+// A saved request that opens a WebSocket connection (hitop-core's `kind`).
+export const isWebsocket = (r) => r?.kind === "websocket";
+// What request lists show in the method's place.
+export const methodLabel = (r) => (isWebsocket(r) ? "WS" : r.method);
+
 // Request fields the web app adds, as a tab carries them: a GraphQL request
-// shows the body mode "graphql", with its variables and operation name.
+// shows the body mode "graphql", with its variables and operation name; a
+// WebSocket request its subprotocols and saved messages.
 const EXTRA_FIELDS = (r) => ({
+  kind: isWebsocket(r) ? "websocket" : undefined,
+  subprotocols: r.websocket?.subprotocols ?? [],
+  wsMessages: r.websocket?.messages ?? [],
   bodyMode: isGraphql(r) ? "graphql" : r.bodyMode || "raw",
   formFields: r.formFields || [],
   disabledParams: r.disabledParams || [],
@@ -88,8 +97,30 @@ const SAVED_FIELDS = (t) => {
     disabledParams: t.disabledParams || [],
     graphql: Object.keys(graphql).length ? graphql : undefined,
     ...(t.bodyMode === "graphql" ? { bodyType: "graphql" } : {}),
+    kind: t.kind === "websocket" ? "websocket" : undefined,
+    websocket: websocketFields(t),
   };
 };
+
+// A tab's subprotocols and saved messages as saved (`websocket`), or
+// undefined when it has neither. Kept when the request switches to HTTP.
+function websocketFields(t) {
+  const subprotocols = (t.subprotocols || []).filter(Boolean);
+  const messages = t.wsMessages || [];
+  if (!subprotocols.length && !messages.length) return undefined;
+  return { ...(subprotocols.length ? { subprotocols } : {}), ...(messages.length ? { messages } : {}) };
+}
+
+// ws:// and wss:// as given; http(s):// read as ws(s)://, as hitop-core does.
+export function wsUrl(url) {
+  const m = /^(wss?|https?):\/\//i.exec(url);
+  if (!m) throw new Error(`'${url}' is not a WebSocket URL: use ws:// or wss://`);
+  const scheme = { ws: "ws", wss: "wss", http: "ws", https: "wss" }[m[1].toLowerCase()];
+  return `${scheme}://${url.slice(m[0].length)}`;
+}
+
+// The log of a WebSocket tab keeps this many entries.
+const WS_LOG_MAX = 500;
 
 export const METHODS = ["GET", "POST", "PUT", "PATCH", "DELETE", "HEAD", "OPTIONS"];
 export const BODY_METHODS = ["POST", "PUT", "PATCH"];
@@ -168,7 +199,7 @@ const headersObject = (headers) => {
 function autoTitle(tab) {
   if (tab.loadedRequestId) return tab.title;
   try {
-    return `${tab.method} ${new URL(tab.url).pathname || "/"}`;
+    return `${tab.kind === "websocket" ? "WS" : tab.method} ${new URL(tab.url).pathname || "/"}`;
   } catch {
     return "New request";
   }
@@ -200,6 +231,11 @@ export class Store extends EventTarget {
     // GraphQL schemas fetched by introspection, by tab id: { schema, types,
     // url, loading, error }. Memory only: fetched again after a reload.
     this.schemas = new Map();
+    // WebSocket connections by tab id: { status: connecting | open | closed,
+    // protocol, log: [{ time, kind: sent | received | system | error, text,
+    // bytes? }], conn }. Memory only: the log holds filled-in values
+    // (tokens), so it is never saved, and connections end with the page.
+    this.sockets = new Map();
     // What the main area shows: the request tabs, all collections, one
     // collection, or one collection's variables.
     this.view = { kind: "request", collectionId: null };
@@ -328,6 +364,7 @@ export class Store extends EventTarget {
 
   closeTab(index) {
     if (this.tabs.length <= 1) return;
+    this.wsDisconnect(this.tabs[index].id);
     const { tabs, newCurrentTab } = tabService.closeTab(this.tabs, index, this.currentTab);
     this.tabs = tabs;
     this.currentTab = newCurrentTab;
@@ -369,6 +406,8 @@ export class Store extends EventTarget {
     });
     if (!request.auth) delete request.auth;
     if (!request.graphql) delete request.graphql;
+    if (!request.kind) delete request.kind;
+    if (!request.websocket) delete request.websocket;
     if (request.bodyType === "graphql" && source.bodyMode !== "graphql") delete request.bodyType;
     this.collections = collectionService.addRequestToCollection(this.collections, collectionId, request);
     this.tabs = [...this.tabs, tabForRequest(request, collectionId)];
@@ -996,6 +1035,7 @@ export class Store extends EventTarget {
       this.notify("Enter a URL first.");
       return;
     }
+    if (tab.kind === "websocket") return this.wsConnect();
     const source = {
       url: tab.url,
       method: tab.method,
@@ -1054,6 +1094,96 @@ export class Store extends EventTarget {
       }
     }
     this.emit();
+  }
+
+  // --- WebSocket --------------------------------------------------------------
+
+  socket(tabId = this.tab?.id) {
+    return this.sockets.get(tabId) ?? { status: "closed", protocol: null, log: [], conn: null };
+  }
+
+  wsLog(tabId, entry) {
+    const s = this.socket(tabId);
+    const log = [...s.log, { time: new Date().toISOString(), ...entry }].slice(-WS_LOG_MAX);
+    this.sockets = new Map(this.sockets).set(tabId, { ...s, log });
+    this.emit();
+  }
+
+  wsSet(tabId, changes) {
+    this.sockets = new Map(this.sockets).set(tabId, { ...this.socket(tabId), ...changes });
+    this.emit();
+  }
+
+  // Opens the current tab's connection: URL, headers, auth and subprotocols
+  // with variables filled in. The browser sends no handshake headers (its
+  // WebSocket can't), the desktop does (Rust); the log says which.
+  async wsConnect() {
+    const tab = this.tab;
+    const id = tab.id;
+    if (["open", "connecting"].includes(this.socket(id).status)) return;
+    const variables = this.variables(tab.loadedCollectionId);
+    const fill = (text) => (text ? interpolateVariables(text, variables) : text);
+    let url, headers, protocols;
+    try {
+      const authed = applyAuth(tab.auth, { url: fill(tab.url.trim()), headers: (tab.headers || []).filter((h) => h.name && h.enabled !== false).map((h) => ({ name: fill(h.name), value: fill(h.value || "") })), body: "" }, fill);
+      url = wsUrl(authed.url);
+      headers = authed.headers;
+      protocols = (tab.subprotocols || []).map(fill).filter(Boolean);
+    } catch (e) {
+      this.notify(`Not connected: ${errorText(e)}`);
+      return;
+    }
+    const p = platform();
+    this.wsSet(id, { status: "connecting", protocol: null });
+    this.wsLog(id, { kind: "system", text: `Connecting to ${url}${protocols.length ? ` (subprotocols ${protocols.join(", ")})` : ""}` });
+    if (headers.length && !p.websocketHeaders)
+      this.wsLog(id, { kind: "system", text: `Not sent: ${headers.map((h) => h.name).join(", ")}. A browser can't set WebSocket handshake headers (auth included); the desktop app and hitop ws send them. An API key in the query works here.` });
+    let opened = false;
+    const conn = p.websocket(url, { headers, protocols }, {
+      onOpen: ({ protocol }) => {
+        opened = true;
+        this.wsSet(id, { status: "open", protocol: protocol || null });
+        this.wsLog(id, { kind: "system", text: `Connected${protocol ? `, subprotocol ${protocol}` : ""}` });
+      },
+      onMessage: ({ text, bytes }) => this.wsLog(id, bytes ? { kind: "received", bytes: Array.from(bytes) } : { kind: "received", text }),
+      onError: (message) => this.wsLog(id, { kind: "error", text: opened ? message : `Couldn't connect: ${message}` }),
+      onClose: ({ code, reason }) => {
+        this.wsSet(id, { status: "closed", conn: null });
+        if (opened || code) this.wsLog(id, { kind: "system", text: `Closed${code ? ` ${code}` : ""}${reason ? ` ${reason}` : ""}` });
+      },
+    });
+    if (this.socket(id).status !== "closed") this.wsSet(id, { conn });
+  }
+
+  wsDisconnect(tabId = this.tab?.id) {
+    const s = this.socket(tabId);
+    if (s.status === "closed") return;
+    s.conn?.close();
+    if (s.status === "connecting") this.wsSet(tabId, { status: "closed", conn: null });
+  }
+
+  // Sends text with variables filled in; logs it as sent.
+  wsSend(text) {
+    const tab = this.tab;
+    const s = this.socket(tab.id);
+    if (s.status !== "open" || !s.conn) {
+      this.notify("Connect first.");
+      return false;
+    }
+    let out;
+    try {
+      out = interpolateVariables(text ?? "", this.variables(tab.loadedCollectionId));
+      s.conn.send(out);
+    } catch (e) {
+      this.notify(`Not sent: ${errorText(e)}`);
+      return false;
+    }
+    this.wsLog(tab.id, { kind: "sent", text: out });
+    return true;
+  }
+
+  wsClearLog(tabId = this.tab?.id) {
+    this.wsSet(tabId, { log: [] });
   }
 
   // Fetches the GraphQL schema of the current tab's endpoint by
@@ -1115,6 +1245,8 @@ export class Store extends EventTarget {
     };
     for (let i = 0; i < collection.requests.length; i++) {
       const request = collection.requests[i];
+      // WebSocket requests connect on demand; a run skips them, as `hitop run` does.
+      if (isWebsocket(request)) continue;
       try {
         const started = performance.now();
         const { prepared, res } = await this.dispatch(request, id);

@@ -120,6 +120,60 @@ async function loadSecretValues(accounts) {
 
 // --- the adapter ---------------------------------------------------------------------
 
+// A WebSocket request through Rust (ws_connect in commands.rs): handshake
+// headers and auth reach the server. Events come on a Tauri channel: the
+// callback gets { message, index } in any order (or { end, index }), so they
+// are put back in order, and held until ws_connect has answered.
+function rustWebSocket(url, { headers = [], protocols = [] } = {}, h) {
+  const internals = window.__TAURI_INTERNALS__;
+  let id = null;
+  let wantClose = false;
+  let next = 0;
+  const early = new Map();
+  const queued = [];
+  const deliver = (e) => {
+    if (e.type === "message") h.onMessage(e.binary ? { bytes: fromBase64(e.data) } : { text: e.data });
+    else if (e.type === "error") {
+      h.onError(e.message);
+      h.onClose({ code: null, reason: "" });
+    } else if (e.type === "closed") h.onClose({ code: e.code ?? null, reason: e.reason || "" });
+  };
+  const handle = (e) => (id === null ? queued.push(e) : deliver(e));
+  const callback = internals.transformCallback((payload) => {
+    if (!payload) return;
+    if ("end" in payload) return internals.unregisterCallback?.(callback);
+    early.set(payload.index, payload.message);
+    while (early.has(next)) {
+      const m = early.get(next);
+      early.delete(next);
+      next += 1;
+      handle(m);
+    }
+  });
+  invoke("ws_connect", { args: { url, headers: headerPairs(headers), protocols }, onEvent: `__CHANNEL__:${callback}` }).then(
+    (opened) => {
+      id = opened.id;
+      h.onOpen({ protocol: opened.protocol });
+      queued.splice(0).forEach(deliver);
+      if (wantClose) invoke("ws_close", { id });
+    },
+    (e) => {
+      h.onError(String(e));
+      h.onClose({ code: null, reason: "" });
+    },
+  );
+  return {
+    send: (text) => {
+      if (id === null) throw new Error("not connected yet");
+      invoke("ws_send", { id, data: text }).catch((e) => h.onError(String(e)));
+    },
+    close: () => {
+      wantClose = true;
+      if (id !== null) invoke("ws_close", { id });
+    },
+  };
+}
+
 export function createPlatform() {
   const cache = { collections: null, history: [], contexts: {}, environments: { environments: [], activeEnvironmentId: null }, cookies: [], globals: { variables: {}, secrets: [] } };
   // Secret globals' values, in the keychain as global/global/<name> (`hitop secret set --globals`).
@@ -245,6 +299,9 @@ export function createPlatform() {
       },
     },
     send,
+    // Rust's client sends handshake headers and auth.
+    websocketHeaders: true,
+    websocket: rustWebSocket,
     // The Rust jar handles cookies (send passes options.cookies on), so the
     // page adds no Cookie header itself.
     managesCookies: () => false,
