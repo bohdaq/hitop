@@ -132,7 +132,7 @@ Secret variables: `secret: true` in an environment file, with the value resolved
 | T2 | Secrets in the OS keychain | done | accd2a4, 20951a8, 8104002, b15cb14 | 2026-11-01 |
 | T3 | CI runner: reports, exit codes, flags | done | 3ee1091, ea5b43c, 8304dcc, aa5f226 | 2026-11-01 |
 | T4 | Postman migration: environments and pm.* | todo | | |
-| T5 | Desktop = web app; web folder import/export | todo | | |
+| T5 | Desktop = web app; web folder import/export | handoff | a1e7704, 767f0d2, c7ae8f5, 37a6385, 54611a7, f527ceb; macOS check in section 6 | 2026-11-01 |
 | T6 | Cookie jar and multipart in Rust and CLI | todo | | |
 | T7 | Release infra: GitHub Releases, Docker image | done | ee41820; dry run cli-v0.3.0-rc.1, desktop-v0.2.0-rc.1; deployed | 2026-11-01 |
 | T8 | GitHub Action and GitLab template | handoff | 52f26f5, 0595081; cli-v0.3.0-rc.2; hitop-action aa873b7, 1223c47, tags v1, v1.0.0 | 2026-11-01 |
@@ -359,6 +359,74 @@ export PATH="$HOME/.cargo/bin:$PATH"
 - **Done when:** all web e2e suites pass in both modes; desktop builds on the CI Linux runner;
   old desktop data loads (migration test). **Handoff:** owner runs the macOS build and checks
   requests, files and the keychain.
+
+- **Notes (2026-11-01, done; React removal waits for the macOS check):**
+  - Switch: `desktop/src-tauri/tauri.webapp.conf.json` points Tauri at `webapp/dist-tauri`
+    (`npm run build:tauri`: `VITE_HITOP_PLATFORM=tauri`, base `./`, no `VITE_HITOP_PROXY`; the bundle
+    has no `/api/proxy` string). Use it with `cd desktop && npm run build:webapp` / `dev:webapp`
+    (`tauri … --config src-tauri/tauri.webapp.conf.json`; for GitHub builds add
+    `--config src-tauri/tauri.github.conf.json`). Without it the React app builds as before, so
+    `release-desktop.yml` is unchanged. Bundle id (`tech.rws8.hitop`, CLAUDE.md said
+    `com.bohdaq.hitop`), MAS entitlements (user-selected read-write covers folders) and storage files
+    are the same in both. Delete `desktop/src` once the macOS check passes.
+  - Adapters (`webapp/src/platform/`): `web` (fetch or proxy, localStorage, File System Access) and
+    `tauri` (`window.__TAURI_INTERNALS__.invoke`, no npm dep). `main.js` awaits `initPlatform()`
+    (the desktop preloads storage from Rust) before the app starts; Vite drops the other adapter.
+    Desktop: requests through `send_request` (the proxy's envelope both ways, so the app and the
+    tests see one shape; bytes for multipart, repeated `Set-Cookie`), scripts in boa
+    (`run_pre_script`/`run_post_script`), storage in hitop-core's JSON files (writes deduped),
+    secret values of global environments in the keychain as `global/<env>/<name>` (what `hitop
+    secret` uses), folder environments under the folder's workspace id, exports through the save
+    dialog and `write_file`. The app's cookie jar handles every desktop request until T6's Rust jar.
+  - WASM: `cli/crates/hitop-wasm` (its own workspace and lock, `publish = false`) exports
+    `readFiles`, `toFiles`, `planSync` and `normalize` over JSON. Toolchain: wasm-bindgen crate
+    `=0.2.126` plus the same CLI version (`cargo install wasm-bindgen-cli --version 0.2.126
+    --locked`; CI uses `taiki-e/install-action`), no wasm-pack, no wasm-opt (670 KB, loaded only when
+    a folder or zip is used). `webapp/scripts/build-wasm.mjs` runs before `build`, `build:tauri`,
+    `dev` and `test:unit`, and fails with the install command when the CLI is missing or another
+    version. hitop-core got a default feature `native` (reqwest, boa, dirs; modules http, scripting,
+    prepare, runner, report, storage behind `#![cfg(feature = "native")]`): new core modules that
+    use them need the same line, or the web build breaks. In-memory folders in
+    `format::files` (reuses the writer, so bytes match; tests compare with `read_folder`/
+    `write_folder` on the golden folder). The web unit checks run hitop-core's golden folder
+    through WASM byte for byte (shared fixtures as a second guard).
+  - Folders: desktop opens a folder (dialog), keeps it out of `collections.json`, remembers paths
+    in the window's localStorage (`hitop_folders`) and writes changes as they happen
+    (`write_folder`: changed files only, `.yml` kept, stale files removed). Web: "Open folder" where
+    `showDirectoryPicker` exists, live save while connected, handle in IndexedDB and "Reconnect
+    folder" after a reload (the folder wins); the collection also stays in localStorage. "Save to
+    folder" turns any collection into a folder; closing a folder collection leaves its files.
+    Folder environments join the environment list as "<env> (<collection>)" and are written back;
+    like the app's own, the active one applies to every request (the CLI uses a folder's
+    environments for that folder only). Zip: "Export as zip" (`<slug>/` + the folder, environments
+    without secret values; a folder collection takes its own environments, others the app's) and
+    "Import zip" (finds the top `hitop.yaml`, adds the collection and environments with new names),
+    with `fflate` 0.8.2.
+  - T1 open items fixed: ids read leniently in Rust (digit strings as numbers, other strings as
+    FNV-1a of `legacy-id/<s>`, spec section 6), so `hitop convert` takes old web exports; the desktop
+    import gives string ids new numbers. Saving a tab keeps fields the editor doesn't know
+    (`examples`, `file`, unknown keys; also on a move to another collection and on duplicate), and a
+    folder's `bodyType` label is dropped when the body changes.
+  - Found on the way: the React desktop never kept history (`save_history` rejected its web-shaped
+    items, `load_history` fell back to empty). `HistoryItem` now keeps extra keys; the adapter maps
+    `timestamp`/`statusCode` to Rust's fields (`platform/history.js`), and CLI history shows.
+  - Tests: hitop-core 111 unit + 4 format (new: string ids, history extra, `http::send` against a
+    one-shot TCP server, four `format::files`); hitop-wasm 2; web unit checks (golden folder through
+    WASM, zip, history mapping, old desktop files through Rust's model). e2e: the four suites run
+    in both modes through `tests/harness.cjs`; Tauri mode (`HITOP_MODE=tauri`, `npm run
+    test:e2e:tauri`) serves `dist-tauri` at `http://tauri.localhost/` and mocks invoke in Node
+    (`tests/tauri-mock.cjs`: storage files through hitop-core in WASM, Node fetch, the boa preamble in
+    `node:vm`, temp folders, in-memory keychain), seeded with old desktop files
+    (`tests/desktop-storage/`, the migration test) and asserting nothing goes through the proxy.
+    New `tests/folders.cjs` (both modes, local mock API only): open `cli/fixtures/sample`, run it with
+    its environment, live save, rename, unknown fields kept, zip export and import, close.
+  - CI: `cli` job also clippies hitop-core without `native` and tests hitop-wasm (native and
+    wasm32); `web` job installs the wasm target and CLI and runs the Tauri-mode e2e after the web
+    one; `desktop` job checks the React build, builds `webapp` with the Tauri adapter and runs
+    `cargo check` again with `TAURI_CONFIG` = the overlay; `licenses.yml` covers hitop-wasm.
+  - Not done here: security-scoped bookmarks, so in the sandboxed MAS build a folder from an
+    earlier launch may need "Open folder" again (the app says so); the Vite build targets Safari
+    16.4, so macOS 12 with an older WebKit may not run the new UI (see the handoff).
 
 #### T6 Cookie jar and multipart in Rust and CLI
 - Cookie jar in the Rust transport (persisted per workspace), used by desktop and CLI.
@@ -607,6 +675,7 @@ Agent appends here; owner ticks when done.
 | 2026-11-01 | T2 | On your Mac (and a Windows or desktop Linux box if handy), check the keychain once: `hitop env add t2 && hitop secret set token --env t2` (macOS asks to allow access), then `hitop secret get token --env t2`, `hitop secret ls --env t2`, `hitop secret rm token --env t2`. The agent's machine and CI have no keychain, so only the fallback path is tested there. | |
 | 2026-11-01 | T3 | Open question, no action needed now: masking replaces every occurrence of a secret value, so a very short value (one to three characters) also masks those characters elsewhere in logs and reports (`token=t` turns every `t` into `••••`). Should hitop warn about, or refuse to mask, secrets shorter than some length? Until decided it masks them (safe side). | |
 | 2026-11-01 | T8 | Publish the action to the GitHub Marketplace: open https://github.com/bohdaq/hitop-action/releases/tag/v1.0.0, Edit, tick "Publish this Action to the GitHub Marketplace" (accept the agreement once), primary category **Testing**, secondary **Continuous integration**, then Update release. The name "Run hitop collection" (from `action.yml`) must be unique on the Marketplace; if taken, change `name:` in `action.yml` and retag v1. Listing text, if a field asks for it: "Run hitop API collections from your repository in GitHub Actions: pinned hitop image, JUnit artifact, job summary, secrets from repository secrets, and a failing check when a request fails." | |
+| 2026-11-01 | T5 | On your Mac, build the desktop with the web app: `cd webapp && npm ci && cd ../desktop && npm ci && npm run build:webapp` (needs `rustup target add wasm32-unknown-unknown` and `cargo install wasm-bindgen-cli --version 0.2.126 --locked`; for the MAS package use your usual signing, the overlay only changes the frontend). Check: (1) your existing collections, environments and history from the React app and the CLI show up; (2) send to a public host and to `http://localhost:<port>` (no CORS errors), a multipart file upload, a cookie set then sent back; (3) a post script with `assert.*` and `setContext` across a collection run; (4) Environments: add a secret, quit and reopen, the value is still there and `hitop secret ls --env <env>` shows it in the Keychain (macOS asks for access once); (5) Collections → Open folder on a `hitop init` folder, edit and save a request, check the YAML changed on disk (`git diff`); quit and reopen: the folder comes back (in the sandboxed MAS build it may ask you to open it again: tell me if so); (6) Export as zip and Import zip; Export dialog saves JSON; (7) the app runs on the oldest macOS you support (12, Safari 16.4 WebKit needed; if 12 without updates fails, say so). If all pass, say so and the React `desktop/src` gets deleted and `release-desktop.yml` switched to the overlay. | |
 
 ## 7. Setup the owner does before the agent starts
 

@@ -29,8 +29,9 @@ hitop/
 │       │       ├── report.rs       # run reports: JSON (spec/run-report.md, reportVersion 1) and JUnit XML, no deps
 │       │       ├── export.rs       # HITOP and Postman v2.1 import/export
 │       │       ├── secrets.rs      # secret variables: resolve order, keychain (keyring), Masker (••••)
-│       │       └── format/         # collection folders (YAML, spec/collection-format.md) ⇄ the JSON model
+│       │       └── format/         # collection folders (YAML, spec/collection-format.md) ⇄ the JSON model; files.rs: in memory (path → text)
 │       │   └── tests/format.rs     # golden files (tests/golden/, UPDATE_GOLDEN=1 regenerates) + proptest round trip
+│       ├── hitop-wasm/         # format + model for the web app (wasm-bindgen =0.2.126), own workspace, not published
 │       └── hitop/              # Binary crate (published to crates.io)
 │           ├── tests/run.rs    # hitop run: JUnit shape (roxmltree), JSON report, exit codes, flags, masking
 │           └── src/
@@ -55,11 +56,16 @@ hitop/
 │       │   ├── commands.rs     # All Tauri commands wrapping hitop-core
 │       │   └── lib.rs          # Command registration
 │       ├── Cargo.toml          # depends on hitop-core via path
-│       ├── tauri.conf.json     # Bundle ID: com.bohdaq.hitop, category: Developer Tools
+│       ├── tauri.conf.json     # Bundle ID: tech.rws8.hitop, category: Developer Tools; React frontend (../dist)
+│       ├── tauri.webapp.conf.json # the switch: frontend = webapp/dist-tauri (npm run build:webapp / dev:webapp)
 │       ├── Entitlements.mas.plist          # Mac App Store entitlements
 │       └── Entitlements.mas.inherit.plist  # MAS child process entitlements
 ├── webapp/                     # hitop.rws8.tech/app/: Lit + lit-material, reuses frontend/src/services
-│   ├── src/store.js            # all app logic (port of frontend/src/App.jsx), same localStorage keys
+│   ├── src/store.js            # all app logic (port of frontend/src/App.jsx), same localStorage keys; folders, zip
+│   ├── src/platform/           # adapters: web.js (fetch/proxy, localStorage, File System Access), tauri.js (invoke), history.js
+│   ├── src/wasm/format.js      # hitop-wasm wrapper; src/wasm/pkg/ is built by scripts/build-wasm.mjs (gitignored)
+│   ├── src/zip.js              # collection folder ⇄ .zip (fflate)
+│   ├── tests/harness.cjs       # e2e in web or Tauri mode (HITOP_MODE=tauri); tests/tauri-mock.cjs mocks invoke in Node
 │   └── tests/e2e.cjs           # Playwright e2e, seeded with React-app storage (legacy-storage.json)
 ├── frontend/                   # React app, now only for the browser extensions
 │   ├── index.html              # Vite entry point (root of frontend/)
@@ -119,7 +125,11 @@ hitop/
 
 ### Desktop (`desktop/`)
 - Framework: Tauri 2.0, frontend: React 19 + MUI v7, build: Vite 6
-- Bundle ID: `com.bohdaq.hitop`
+- Bundle ID: `tech.rws8.hitop` (tauri.conf.json `identifier`)
+- Two frontends until the owner's macOS check (ROADMAP T5): React `desktop/src` (default config, what
+  `release-desktop.yml` ships) and the Lit web app via `--config src-tauri/tauri.webapp.conf.json`
+  (`npm run build:webapp`, `dev:webapp`; CI checks it with `TAURI_CONFIG="$(cat tauri.webapp.conf.json)" cargo check`).
+  Web app commands: `send_request` (proxy envelope), `read_folder`, `write_folder`, `secret_get|set|delete`, `write_file`; dialog plugin
 - Dev: `cd desktop && npx tauri dev`
 - Build: `cd desktop && PATH="$HOME/.cargo/bin:$PATH" RUSTC="$HOME/.cargo/bin/rustc" npx tauri build`
 - All Tauri commands are in `src-tauri/src/commands.rs`
@@ -142,6 +152,11 @@ hitop/
 - Lit + lit-material in light DOM; theme from `site/src/theme.css`; `npm run build` → `dist/` (base `/app/`)
 - Storage must stay readable by the React app (same keys/shapes); `npm run test:e2e` with BASE= a running hitop-server
 - Secrets: environment `secrets` names, masked editor; `features.js` `exportableEnvironments()`/`maskSecrets()` for exports and run history
+- Builds need the wasm32 target and the wasm-bindgen CLI 0.2.126 (`cargo install wasm-bindgen-cli --version 0.2.126 --locked`):
+  `npm run build` (web, `/app/`, proxy), `npm run build:tauri` (`dist-tauri/`, no proxy). `npm run test:e2e:tauri` runs every
+  e2e suite against `dist-tauri` with a mocked invoke (no server needed); new e2e suites use `tests/harness.cjs` so they run in both modes
+- hitop-core feature `native` (default): http, scripting, prepare, runner, report, storage; hitop-wasm builds without it,
+  so a new core module using reqwest, boa, dirs or those modules starts with `#![cfg(feature = "native")]`
 
 ### Website and proxy
 - Hosting: VM bohdan-prod-donotdelete (168.119.17.57) behind the front rws; see `deploy/README.md`
@@ -155,7 +170,8 @@ hitop/
 - `Request` — has `id`, `name`, `url`, `method`, `headers[]` (`enabled`), `body`, `preRequestScript`, `postRequestScript`,
   `auth`, and the web app's `bodyMode`/`formFields`/`disabledParams`, plus `bodyType`, `examples`, `file` (folder path)
 - Every model struct keeps unknown JSON keys (`#[serde(flatten)] extra`); new fields are skipped when empty, so old JSON reads and writes unchanged
-- ids are `u64`: web app storage with string ids (`"col-legacy"`) doesn't load in Rust yet (open item for T5)
+- ids are `u64`; old web app string ids (`"col-legacy"`) read as a number derived from them (`model.rs` `de_id`)
+- `HistoryItem` (history.json, CLI and desktop) keeps extra keys; the desktop web app maps its items onto it (`platform/history.js`)
 - Variable interpolation: `${varName}` syntax in URLs, headers, body
 - Export formats: HITOP native JSON (array of collections) and Postman v2.1
 
@@ -178,7 +194,7 @@ PATH="$HOME/.cargo/bin:$PATH" RUSTC="$HOME/.cargo/bin/rustc" ~/.cargo/bin/cargo 
 ## App Store status
 
 - Both apps are live: macOS "HiTop API Client" and iOS "HiTop HTTP Client" (ids under "Website and proxy")
-- Bundle ID `com.bohdaq.hitop`; MAS entitlements and icon set in `desktop/src-tauri/`
+- Bundle ID `tech.rws8.hitop`; MAS entitlements and icon set in `desktop/src-tauri/`
 - Privacy policy: `https://hitop.rws8.tech/privacy.html` (old Pages URL redirects there)
 - A desktop update needs a signed MAS build from the owner's Mac (upload via Transporter)
 
