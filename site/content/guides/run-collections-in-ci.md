@@ -20,8 +20,10 @@ A request passes when it was sent, the status is below 400, and every check in i
 Use the static binary from GitHub Releases, `cargo install hitop`, or the Docker image:
 
 ```
-docker run --rm -v "$PWD:/work" -w /work ghcr.io/bohdaq/hitop run ./my-api --env ci
+docker run --rm -v "$PWD:/work" -w /work ghcr.io/bohdaq/hitop:0.3.0-rc.2 run ./my-api --env ci
 ```
+
+On GitHub, the [hitop action](/terms/run-hitop-in-github-actions.html) does this in one step and adds a job summary. GitLab needs the image's `-debug` tag, which has a shell: see [Run hitop in GitLab CI](/terms/run-hitop-in-gitlab-ci.html).
 
 ## Exit codes
 
