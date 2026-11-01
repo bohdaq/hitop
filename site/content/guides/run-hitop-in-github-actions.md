@@ -18,7 +18,7 @@ jobs:
       - uses: actions/checkout@v6
       - uses: bohdaq/hitop-action@v1
         with:
-          version: 0.3.0-rc.2
+          version: 0.3.0
           path: ./my-api
           env: staging
         env:
@@ -62,7 +62,7 @@ As an environment variable named `HITOP_SECRET_<ENV>_<NAME>` in upper case, with
 ```yaml
       - uses: bohdaq/hitop-action@v1
         with:
-          version: 0.3.0-rc.2
+          version: 0.3.0
           path: ./my-api
           env: staging
         env:
@@ -109,7 +109,7 @@ jobs:
         id: hitop
         continue-on-error: true
         with:
-          version: 0.3.0-rc.2
+          version: 0.3.0
           path: ./my-api
       - uses: dorny/test-reporter@v3
         if: always()
@@ -134,7 +134,7 @@ The container shares the runner's network, so a collection can call a server sta
       - run: npx wait-on http://localhost:3000/health
       - uses: bohdaq/hitop-action@v1
         with:
-          version: 0.3.0-rc.2
+          version: 0.3.0
           path: ./api-tests
           vars: |
             base=http://localhost:3000

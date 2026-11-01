@@ -13,14 +13,16 @@ While Postman is a popular API testing tool, many developers are seeking alterna
 
 ## HITOP vs Postman: feature comparison
 
+A longer comparison with sources is in [HITOP vs Postman](/terms/hitop-vs-postman.html).
+
 | Feature | HITOP | Postman |
 | --- | --- | --- |
-| **Account required** | No | Yes (mandatory) |
+| **Account required** | No | The free plan starts with a sign up |
 | **Data storage** | On your device | Cloud sync |
 | **Works offline** | Mac, iOS and CLI apps | Partial |
 | **Installation** | Web app (no install), extensions, Mac, iOS, CLI | Desktop or web app with an account |
 | **License** | MIT (web, extensions, CLI) | Proprietary |
-| **Cost** | Free (web, extensions, CLI); Mac $4.99, iOS $2.99 once | $0 to $49 per user per month |
+| **Cost** | Free (web, extensions, CLI); Mac $4.99, iOS $2.99 once | Free for 1 user, Solo $9 per month, Team $19 per user per month (billed annually), Enterprise by quote (checked 2026-11-01) |
 | **Collections** | Yes | Yes |
 | **Variables** | Yes | Yes |
 | **Scripts before and after** | Yes | Yes |
@@ -69,9 +71,11 @@ The web app works on any operating system with a modern browser: Windows, macOS,
 
 Switching from Postman to HITOP is straightforward:
 
-1.  Export your Postman collections as JSON
-2.  Open HITOP and use the Import feature
+1.  Export your Postman collections as JSON (Collection v2.1), and your environments and globals
+2.  Open HITOP and use the Import feature, or run `hitop import <files> --to ./my-api`
 3.  Your collections, requests, and variables are ready to use
+
+The full steps, including secrets and scripts, are in [Migrate from Postman](/terms/migrate-from-postman.html).
 
 > ### Pro tip
 >
