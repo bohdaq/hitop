@@ -61,3 +61,4 @@ Keep pull requests focused, add tests for behaviour you change, and keep existin
 readable: stored JSON (web app localStorage, `~/.config/hitop/`) must load after an upgrade.
 
 By taking part you agree to follow the [Code of Conduct](CODE_OF_CONDUCT.md).
+
