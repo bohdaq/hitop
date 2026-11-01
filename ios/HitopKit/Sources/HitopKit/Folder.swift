@@ -55,6 +55,13 @@ public struct CollectionFolder: Sendable {
                        reserved: ["id", "name", "workspace", "requests", "variables", "auth", "format", "order"], manifest)
 
         let files = try yamlFiles(url.appendingPathComponent("requests"), recursive: true)
+        // Paths that differ only in case are one file on macOS and Windows.
+        var lower: [String: String] = [:]
+        for p in sortedKeys(files) {
+            if let prev = lower.updateValue(p, forKey: p.lowercased()) {
+                throw FormatError("requests/\(prev) and requests/\(p) differ only in case; rename one")
+            }
+        }
         var ordered: [String] = []
         var seen = Set<String>()
         if let order = m["order"] {

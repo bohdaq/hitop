@@ -183,7 +183,7 @@ final class FolderTests: XCTestCase {
     }
 
     func testErrorsLikeTheCore() throws {
-        let cases: [([String: String], String)] = [
+        var cases: [([String: String], String)] = [
             (["hitop.yaml": "name: x\n"], "`format: 1` is missing"),
             (["hitop.yaml": "format: 2\n"], "format 2 needs a newer hitop"),
             (["hitop.yaml": "format: 1\norder:\n- ../x\n"], "invalid path"),
@@ -197,6 +197,10 @@ final class FolderTests: XCTestCase {
             (["hitop.yaml": "format: 1\n", "environments/e.yaml": "variables:\n  t:\n    secret: false\n"], "must be a value or {secret: true}"),
             (["hitop.yaml": "format: 1\n", "environments/e.yaml": "secrets: [a]\n"], "the key 'secrets'"),
         ]
+        #if os(Linux)
+        // Two files only on a case-sensitive file system.
+        cases.append((["hitop.yaml": "format: 1\n", "requests/Get.yaml": "url: x\n", "requests/get.yaml": "url: y\n"], "differ only in case"))
+        #endif
         for (files, want) in cases {
             let dir = try makeFolder(files)
             XCTAssertThrowsError(try CollectionFolder.read(dir), want) { e in
