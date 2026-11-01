@@ -1,0 +1,7 @@
+name: Ping
+method: GET
+url: ${base}/ping.json
+scripts:
+  post: |
+    assert.status(200);
+    assert.equal(getResponseValue('status'), 'ok', 'status');

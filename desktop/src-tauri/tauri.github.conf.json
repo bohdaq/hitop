@@ -1,0 +1,9 @@
+{
+  "bundle": {
+    "macOS": {
+      "signingIdentity": "-",
+      "entitlements": null,
+      "providerShortName": null
+    }
+  }
+}

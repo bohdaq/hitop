@@ -15,6 +15,25 @@ homepage.workspace = true
 name = "hitop"
 path = "src/main.rs"
 
+# cargo binstall hitop: the GitHub Release binaries (release-cli.yml). Linux builds are static
+# musl, so gnu targets use them too.
+[package.metadata.binstall]
+pkg-url = "{ repo }/releases/download/cli-v{ version }/hitop-{ target }.tar.gz"
+bin-dir = "hitop-{ target }/{ bin }{ binary-ext }"
+pkg-fmt = "tgz"
+
+[package.metadata.binstall.overrides.x86_64-unknown-linux-gnu]
+pkg-url = "{ repo }/releases/download/cli-v{ version }/hitop-x86_64-unknown-linux-musl.tar.gz"
+bin-dir = "hitop-x86_64-unknown-linux-musl/{ bin }"
+
+[package.metadata.binstall.overrides.aarch64-unknown-linux-gnu]
+pkg-url = "{ repo }/releases/download/cli-v{ version }/hitop-aarch64-unknown-linux-musl.tar.gz"
+bin-dir = "hitop-aarch64-unknown-linux-musl/{ bin }"
+
+[package.metadata.binstall.overrides.x86_64-pc-windows-msvc]
+pkg-url = "{ repo }/releases/download/cli-v{ version }/hitop-x86_64-pc-windows-msvc.zip"
+pkg-fmt = "zip"
+
 [dependencies]
 hitop-core = { workspace = true }
 serde = { workspace = true }

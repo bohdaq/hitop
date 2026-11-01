@@ -16,6 +16,7 @@ import { initMenu } from "./menu.js";
 import { initInstall } from "./install.js";
 import { initTerminal } from "./terminal.js";
 import { initReveal } from "./reveal.js";
+import { initDownloads } from "./downloads.js";
 
 initThemeToggle();
 initTabPanels();
@@ -23,3 +24,4 @@ initMenu();
 initInstall();
 initTerminal();
 initReveal();
+initDownloads();

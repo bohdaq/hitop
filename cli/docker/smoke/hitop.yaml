@@ -1,0 +1,6 @@
+format: 1
+name: Image smoke test
+variables:
+  base: http://127.0.0.1:8099
+order:
+- ping

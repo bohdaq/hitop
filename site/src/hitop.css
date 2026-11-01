@@ -102,3 +102,8 @@
 }
 .prose blockquote > :first-child { margin-top: 0; }
 .prose pre code { padding: 0; background: none; }
+
+/* /download/ */
+.page-text .downloads { list-style: none; padding: 0; display: grid; gap: var(--space-200); }
+.downloads li { display: flex; flex-wrap: wrap; align-items: baseline; gap: var(--space-50) var(--space-200); }
+.downloads span { color: var(--md-sys-color-on-surface-variant); font-size: var(--text-sm); line-height: var(--leading-sm); }

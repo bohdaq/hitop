@@ -60,6 +60,7 @@ export function footer() {
           <li><a href=${CHROME}>Chrome</a></li>
           <li><a href=${FIREFOX}>Firefox</a></li>
           <li><a href=${CRATE}>crates.io</a></li>
+          <li><a href="/download/">Downloads</a></li>
         </ul>
         <ul>
           <li><a href="/pricing.html">Pricing</a></li>
