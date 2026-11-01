@@ -77,7 +77,8 @@
 .breadcrumb a { text-decoration: none; }
 .guide .lead { margin-top: var(--space-200); }
 .prose { margin-top: var(--space-400); }
-.prose h2 { margin-top: var(--space-500); font-size: var(--text-2xl); line-height: var(--leading-2xl); }
+.prose h2 { margin-top: var(--space-500); font-size: var(--text-2xl); line-height: var(--leading-2xl); scroll-margin-top: 88px; }
+.guide-toc { margin-top: var(--space-400); padding: var(--space-200) var(--space-300); border-radius: var(--md-sys-shape-corner-large); background: var(--md-sys-color-surface-container-low); }
 .prose h3 { margin-top: var(--space-300); font-size: var(--text-xl); line-height: var(--leading-xl); }
 .prose p { margin: var(--space-200) 0 0; }
 .prose ul, .prose ol { margin: var(--space-200) 0 0; }

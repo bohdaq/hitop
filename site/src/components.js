@@ -2,4 +2,5 @@
 // (src/client/main.js) and by the prerender (scripts/prerender.js), so the
 // server-rendered markup and the hydrated elements are the same code.
 import "@lit-material/alert";
+import "@lit-material/jump-links";
 import "@lit-material/tabs";

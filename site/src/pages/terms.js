@@ -4,7 +4,7 @@
 import { readdirSync, readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { html } from "lit";
+import { html, nothing } from "lit";
 import { unsafeHTML } from "lit/directives/unsafe-html.js";
 import { marked } from "marked";
 import { icon } from "../icons.js";
@@ -22,8 +22,18 @@ function read(file) {
       return [line.slice(0, at).trim(), JSON.parse(line.slice(at + 1).trim())];
     }),
   );
-  const body = marked.parse(source.slice(m[0].length)).replace(/<table>/g, '<table class="table">');
-  return { file: file.replace(/\.md$/, ".html"), title: meta.title, description: meta.description, body };
+  const toc = [];
+  const body = marked
+    .parse(source.slice(m[0].length))
+    .replace(/<table>/g, '<table class="table">')
+    // Ids on the sections, for links and the "On this page" list.
+    .replace(/<h2>(.*?)<\/h2>/g, (_, inner) => {
+      const text = inner.replace(/<[^>]+>/g, "").replace(/&[^;]+;/g, "").trim();
+      const id = text.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "");
+      toc.push({ id, text });
+      return `<h2 id="${id}">${inner}</h2>`;
+    });
+  return { file: file.replace(/\.md$/, ".html"), title: meta.title, description: meta.description, body, toc };
 }
 
 const GUIDES = readdirSync(SOURCE)
@@ -41,6 +51,9 @@ function guidePage(guide) {
         <p class="breadcrumb"><a href="/terms/">Guides</a></p>
         <h1>${guide.title}</h1>
         <p class="lead">${guide.description}</p>
+        ${guide.toc.length >= 4
+          ? html`<lit-material-jump-links class="guide-toc" offset="88" links=${JSON.stringify(guide.toc)}></lit-material-jump-links>`
+          : nothing}
         <article class="prose">${unsafeHTML(guide.body)}</article>
         <div class="guide-cta">
           <a class="button-filled" href="/app/">${unsafeHTML(icon("browser"))} Open the web app</a>
