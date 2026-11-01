@@ -41,6 +41,7 @@ hitop/
 │           ├── tests/run.rs    # hitop run: JUnit shape (roxmltree), JSON report, exit codes, flags, masking
 │           ├── tests/postman.rs # hitop import --to of the fixtures/postman collections, run against httpmock
 │           ├── tests/cookies_forms.rs # cookie jar across send/run, -F uploads, saved form bodies
+│           ├── tests/globals.rs # globals below collection/env, secret globals, pm.globals, import, convert
 │           ├── tests/telemetry.rs # nothing sent while off, at most once a week (HITOP_TELEMETRY_URL → httpmock)
 │           └── src/
 │               ├── main.rs         # clap CLI entry point
@@ -50,6 +51,7 @@ hitop/
 │               ├── commands/run.rs # `hitop run`: reporters, iterations, --data, exit codes 0/1/2
 │               ├── commands/data.rs # `--data` CSV (RFC 4180, hand written) and JSON rows
 │               ├── commands/cookies.rs # `hitop cookies ls|clear`, `--no-cookies`
+│               ├── commands/globals.rs # `hitop globals show|set|unset|import|export [-c folder]`
 │               ├── commands/telemetry.rs # `hitop telemetry on|off|status` and the background ping (feature `telemetry`)
 │               └── output.rs       # Colored output, syntect highlighting
 │   ├── fixtures/sample/        # collection folder run by tests/folder.rs against httpmock
@@ -132,6 +134,10 @@ hitop/
   Default is to run every request; `--no-stop-on-fail` is a hidden no-op. Variable order: collection, environment,
   data row, `--var`, secrets. A new hitop-core runtime dep also changes `desktop/src-tauri/Cargo.lock` (CI checks it `--locked`)
   and `cli/crates/hitop-wasm/Cargo.lock` (its own workspace; `npm run build` builds it `--locked`, so a stale lock breaks every web build)
+- Globals: lowest scope (globals < collection < environment < data row < `--var` < script-set < secrets);
+  global storage `globals.json`, a folder's `globals.yaml` (spec 5a); `hitop globals ...`, `hitop secret ... --globals`
+  (`HITOP_SECRET_GLOBAL_<NAME>`, keychain `<ws>/global/<name>`); Postman globals import into them;
+  core `prepare::Scopes` + `prepare_in`, `RunOptions.globals`; scripts get `globals` and return `globals` updates
 - Cookies: `send`, `run`, `requests send` keep a jar per workspace (`global` without `-c`, shared with the desktop);
   `hitop cookies ls|clear [-c]`, `--no-cookies`. Forms: `send -F name=value -F file=@path[;type=mime]`, `--urlencoded`;
   `run`/`requests send` send saved `bodyMode` urlencoded/multipart bodies (`form::outgoing`)
@@ -160,7 +166,7 @@ hitop/
   `release-desktop.yml` ships) and the Lit web app via `--config src-tauri/tauri.webapp.conf.json`
   (`npm run build:webapp`, `dev:webapp`; CI checks it with `TAURI_CONFIG="$(cat tauri.webapp.conf.json)" cargo check`).
   Web app commands: `send_request` (proxy envelope; `cookies: true` uses hitop-core's `global` jar and returns it),
-  `cookies_load|save`, `read_folder`, `write_folder`, `secret_get|set|delete`, `write_file`, `telemetry_status|set`; dialog plugin.
+  `cookies_load|save`, `load_globals|save_globals`, `read_folder`, `write_folder` (optional `globals`), `secret_get|set|delete`, `write_file`, `telemetry_status|set`; dialog plugin.
   Script commands return script-set `variables`; `run_post_script` takes the sent `request` (pm.request)
 - Cargo feature `telemetry` (not default): the usage ping. `release-desktop.yml` builds with `--features telemetry`;
   the MAS build (plain `tauri build`) must not; CI builds both and greps the binary for the endpoint
@@ -186,7 +192,8 @@ hitop/
 - Lit + lit-material in light DOM; theme from `site/src/theme.css`; `npm run build` → `dist/` (base `/app/`)
 - Storage must stay readable by the React app (same keys/shapes); `npm run test:e2e` with BASE= a running hitop-server
 - Postman collections import through hitop-wasm `importPostman` (same importer and report as the CLI); scripts that
-  mention pm/postman/tests/... run with the shim; script-set variables live in `store.scriptVariables` until reload
+  mention pm/postman/tests/... run with the shim; script-set variables live in `store.scriptVariables` until reload,
+  script-set globals in `store.scriptGlobals`; the Globals section is on the Environments page (`store.globals`)
 - Secrets: environment `secrets` names, masked editor; `features.js` `exportableEnvironments()`/`maskSecrets()` for exports and run history
 - No telemetry in the web build: telemetry UI lives only in `platform/tauri-settings.js` (imported by tauri.js);
   `node scripts/check-no-telemetry.mjs` after both builds checks it. Adapter hooks `pages`/`onStart` add desktop-only pages
@@ -212,6 +219,7 @@ hitop/
 ### Data model
 - `Collection` — has `id`, `name`, `requests[]`, `variables` (HashMap, `#[serde(default)]`), optional default `auth`, optional `workspace` (keychain key)
 - `Environment` — `secrets` lists secret variable names: CLI values in the keychain, web app values in `variables` (localStorage), never in files or exports
+- Globals — an `Environment` with id/name `globals` (`model::GLOBALS_ID`); web app `hitop_globals` `{variables, secrets}`; `format::Folder.globals` (None leaves globals.yaml alone)
 - `Request` — has `id`, `name`, `url`, `method`, `headers[]` (`enabled`), `body`, `preRequestScript`, `postRequestScript`,
   `auth`, and the web app's `bodyMode`/`formFields`/`disabledParams`, plus `bodyType`, `examples`, `file` (folder path)
 - Every model struct keeps unknown JSON keys (`#[serde(flatten)] extra`); new fields are skipped when empty, so old JSON reads and writes unchanged

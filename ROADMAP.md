@@ -395,18 +395,59 @@ export PATH="$HOME/.cargo/bin:$PATH"
     (shim, import report, three fixtures through WASM, secret env) and e2e `tests/postman.cjs`
     (report dialog, folders and auth, a run where `pm.environment.set` carries a token, against a
     local Node server) in web and Tauri mode. No new crates.
-  - Open: desktop `commands.rs` `run_pre_script`/`run_post_script` don't return `variables` yet
-    (desktop/ was out of scope), so in the desktop app a variable set by a script doesn't reach the
-    next request; `tauri.js` and the store already pass it on once the command returns it (the
-    Tauri e2e check records the current behaviour). Desktop post scripts see an empty
-    `pm.request` (it calls `run_post_request_script`). A variable a script sets for a secret name
+  - Open: (the desktop script variables and `pm.request` gaps were fixed in T6, eacc7fb.) A variable a script sets for a secret name
     isn't masked. chai methods outside the list fail at run time inside `pm.test` (with a
     TypeError message) rather than in the report. The report check reads lines, skipping `//`
-    comment lines only: a `pm.foo` inside a string or block comment is reported too. Fix for the
-    desktop gap (whoever next works in `desktop/`): add `variables: r.variables` to
-    `PreScriptResult`/`PostScriptResult` in `commands.rs` and call `run_post_request_script_with`
-    with the sent request; `tauri.js` already forwards it; then flip the `[tauri]` check in
-    `webapp/tests/postman.cjs`.
+    comment lines only: a `pm.foo` inside a string or block comment is reported too.
+  - Globals scope added 2026-11-01, owner request (d07a4bf, 3ba2d89, 9da1707, 31dd203, ae9d195): Postman
+    globals now import as globals instead of being copied into each environment (the deviation above).
+    Order, later ones win: globals < collection < environment < data row < `--var` < script-set values <
+    secrets (Postman's global < collection < environment). Storage: `globals.json` next to
+    `environments.json` (an `Environment` with id/name `globals`, read leniently); folders:
+    `globals.yaml` at the root (spec section 5a, golden file, round trip, hitop-wasm `globals` in the
+    folder JSON and `normalize('globals')`). `Folder.globals: None` leaves an existing file alone, so
+    writers that don't know globals can't drop it; `plan_sync` already leaves it. A folder uses only its
+    own `globals.yaml` (as with environments); global storage has one set for all its collections.
+    - Decisions: a secret global's value sits at the globals level (an environment's value of the same
+      name still wins; only environment secrets sit on top). Secret globals resolve as the environment
+      named `global`: `HITOP_SECRET_GLOBAL_<NAME>`, `--secret`, keychain `<workspace>/global/<name>`,
+      prompt; an environment literally named `global` shares those names (documented). Core:
+      `prepare::Scopes { globals, upper }` + `prepare_in`; `RunOptions.globals`/`global_secrets`;
+      `Secrets::masker_with`; `secrets::GLOBALS_ENV`, `globals_lookup_env`; `postman::merge_into_globals`
+      (imported values win; `merge_globals` removed).
+    - Shim: `api.globals` + `setGlobal`; `pm.globals`, `postman.*GlobalVariable` and the legacy `globals`
+      use that scope; a global set in a script shows through `pm.variables` unless another scope has the
+      name (judged by comparing the merged value with the global one). Without `api.globals` (old hosts)
+      `pm.globals` is the shared set as before. Scripts get `globals` and return `globals` updates
+      (`PreRequestCtx.globals`, `PostRequestCtx.globals`, both results); the runner keeps the layers
+      apart and merges them per request.
+    - CLI: `hitop globals show|set|unset|import|export [-c <folder>]` (export = `{variables, secrets}`
+      without values), `hitop secret set|get|rm|ls --globals [-c]`, `hitop import` writes Postman globals
+      to `--to`'s `globals.yaml` or `globals.json`, `hitop env import` of a Postman globals file goes to
+      the globals, `hitop convert --globals <file>` both ways; `send`, `run`, `requests send` use them.
+    - Web app and desktop: a Globals section on the Environments page (plain and secret editors, show
+      switch, Import globals, Export globals without secret values); localStorage `hitop_globals`
+      (`{variables, secrets}`, absent in old storage = empty); the environments Import routes a Postman
+      globals file to the globals; `store.variables` layers globals lowest; `scriptGlobals` (app-wide, a
+      folder collection its own) last until reload; run history masks secret globals. Desktop:
+      `load_globals`/`save_globals`, secret values in the keychain as `global/global/<name>`, folder
+      `globals.yaml` read (secret values from `<workspace>/global/<name>`) and written back unchanged.
+    - Adyen fixture test: its globals now land in `globals.yaml`, and the key comes from
+      `HITOP_SECRET_GLOBAL_X_API_KEY`. The collection declares `X-API-Key` and `YOUR_MERCHANT_ACCOUNT`
+      with empty values, which hide globals (in Postman too), so the test deletes those two collection
+      variables first.
+    - Found on the way: Send did nothing when the URL started with `${variable}` (the form ran `type=url`
+      validation); the request form is `novalidate` now (31dd203).
+    - Open: the web app has no editor for a folder's `globals.yaml` (it is used and written back as it
+      came); the zip export of a non-folder collection doesn't include the app's globals; in the
+      key-value editors (environments and globals alike), typing a secret's name that starts with an
+      existing plain name (`g` then `gs`) briefly claims the plain one and drops it (pre-existing).
+    - Tests: hitop-core 135 unit with the CLI features (scripting globals 1 new, postman 1 rewritten) + 4
+      format (golden globals, proptest with globals); hitop `tests/globals.rs` 3 (folder globals below
+      collection and environment with a secret global masked and pm.globals set/get across requests;
+      `hitop globals`, Postman import, `env import`, `send`, export/import into a folder; `convert
+      --globals`), Adyen updated; web unit (globals helpers, golden folder with globals); e2e
+      `tests/globals.cjs` in both modes.
 
 #### T5 Desktop = web app; web folder import/export
 - Add a platform adapter in `webapp/src/platform/`: `web` (current fetch/proxy and localStorage)
