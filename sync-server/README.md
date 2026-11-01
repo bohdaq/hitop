@@ -84,9 +84,10 @@ client secret. Register a **confidential web client** at the provider with:
   `/v1/auth/sso/callback`; the server prints it at start),
 - scopes `openid email profile`, and a groups claim if you restrict by group.
 
-Then set the issuer, client id and secret (prefer `HITOP_SYNC_OIDC_CLIENT_SECRET_FILE` pointing at
-a root-only file, or the unit's `EnvironmentFile`), usually `HITOP_SYNC_OIDC_ALLOWED_DOMAINS`, and
-restart. People sign in with `hitop sync login --sso` or **Sign in with SSO** on the Sync page. An
+Then set the issuer, client id and secret, usually `HITOP_SYNC_OIDC_ALLOWED_DOMAINS`, and restart.
+With the systemd unit, put them in `/etc/hitop-sync/env` (root-only; systemd reads it before
+dropping to the dynamic user, which couldn't read a root-only secret file). Elsewhere (Docker,
+Kubernetes) `HITOP_SYNC_OIDC_CLIENT_SECRET_FILE` reads the secret from a mounted file. People sign in with `hitop sync login --sso` or **Sign in with SSO** on the Sync page. An
 existing account (from a sign-in mail) is linked on the first SSO sign-in when the provider says
 the address is verified; unverified addresses are refused. Details and limits: THREAT_MODEL.md,
 "Single sign-on".
@@ -114,7 +115,8 @@ truncated client IP and the user agent; never contents or keys. Owners read thei
 (`hitop sync audit`, or Members → Show audit log on the Sync page); everyone their own sign-ins
 (`hitop sync audit --mine`). Rows form a hash chain per workspace: `hitop sync audit --verify`
 checks it on the client, `hitop-sync-server audit-verify` checks every chain on the host (exit 1
-when one is broken; run it with the service's environment). Rows past
+when one is broken). On a copy, so the service's files keep their owner:
+`sudo sqlite3 /var/lib/private/hitop-sync/sync.db ".backup /root/audit.db" && sudo env HITOP_SYNC_DATABASE=sqlite:/root/audit.db hitop-sync-server audit-verify; sudo rm -f /root/audit.db*`. Rows past
 `HITOP_SYNC_AUDIT_RETENTION_DAYS` are purged hourly. If you run a service for others, mention the
 log in your privacy notice.
 
