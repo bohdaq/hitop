@@ -65,7 +65,7 @@ hitop/
 │           ├── tests/globals.rs # globals below collection/env, secret globals, pm.globals, import, convert
 │           ├── tests/mcp.rs    # hitop mcp: JSON-RPC over stdio for every tool (httpmock, ws echo server), path confinement, no secret value anywhere on stdout
 │           ├── tests/secret_managers.rs # ${secret:...}: stub op/az on PATH + Key Vault mock; the settings file and env precedence; Vault dev and LocalStack (HITOP_TEST_VAULT_ADDR, HITOP_TEST_LOCALSTACK_URL; required on CI)
-│           ├── tests/sync.rs   # two hitop clients against a real sync server (HITOP_SYNC_SERVER_BIN; required when CI is set): create, edit, conflict, resolve, delete, invite/trust/add, viewer, runner, remove
+│           ├── tests/sync.rs   # two hitop clients against a real sync server (HITOP_SYNC_SERVER_BIN; required when CI is set): create, edit, conflict, resolve, delete, invite/trust/add, viewer, runner, remove, audit; login --sso via Keycloak (HITOP_SYNC_TEST_KEYCLOAK)
 │           ├── tests/telemetry.rs # nothing sent while off, at most once a week (HITOP_TELEMETRY_URL → httpmock)
 │           ├── tests/launch_gate.rs # T11 scenario: Postman import, two environments, login token via pm.environment.set, JUnit
 │           └── src/
@@ -81,7 +81,7 @@ hitop/
 │               ├── commands/openapi.rs # `hitop import openapi <file|url>`, `hitop openapi sync <file|url> <folder> [--dry-run] [--prune]`
 │               ├── commands/ws.rs  # `hitop ws <url|request> [-c]`: stdin or --send/--message, --count, --wait, --timeout, --json
 │               ├── commands/grpc.rs # `hitop grpc <target> <Service/Method> | list [service] | describe <symbol>`, saved requests with -c
-│               ├── commands/sync/ # `hitop sync ...`: mod.rs (commands, TOFU pins), client.rs (API + hitop-sync-crypto), store.rs (account, keychain/HITOP_SYNC_KEY_FILE, links, state, runner credential)
+│               ├── commands/sync/ # `hitop sync ...`: mod.rs (commands, TOFU pins), client.rs (API + hitop-sync-crypto), store.rs (account, keychain/HITOP_SYNC_KEY_FILE, links, state, runner credential, audit-heads.json), sso.rs (login --sso: loopback listener or paste), audit.rs (audit, local chain check)
 │               ├── commands/mcp.rs # `hitop mcp [folder]`: MCP server over stdio (rmcp), the twelve tools, masking, path confinement
 │               ├── commands/telemetry.rs # `hitop telemetry on|off|status` and the background ping (feature `telemetry`)
 │               └── output.rs       # Colored output, syntect highlighting
@@ -125,9 +125,9 @@ hitop/
 │   ├── src/views/code-editor-graphql.js # cm6-graphql: GraphQL language, completion, schema lint (own lazy chunk)
 │   ├── src/zip.js              # collection folder ⇄ .zip (fflate)
 │   ├── src/sync.js             # hitop sync client (web + desktop): SyncClient (HTTP, wasm crypto/plan), withSyncFolders ("hitop-sync:<ws>" folder refs in app storage)
-│   ├── src/views/sync-view.js  # the Sync page (both modes): sign in, share, join, conflicts, members/invites/trust, runner credential
+│   ├── src/views/sync-view.js  # the Sync page (both modes): sign in (email or SSO, paste the code), share, join, conflicts, members/invites/trust, runner credential, audit log (owners)
 │   ├── tests/harness.cjs       # e2e in web or Tauri mode (HITOP_MODE=tauri); tests/tauri-mock.cjs mocks invoke in Node
-│   ├── tests/sync.cjs          # two people against a real sync server (HITOP_SYNC_SERVER_BIN), web and Tauri modes
+│   ├── tests/sync.cjs          # two people against a real sync server (HITOP_SYNC_SERVER_BIN), web and Tauri modes; audit log; SSO via Keycloak (HITOP_SYNC_TEST_KEYCLOAK)
 │   └── tests/e2e.cjs           # Playwright e2e, seeded with React-app storage (legacy-storage.json)
 ├── frontend/                   # React app, now only for the browser extensions
 │   ├── index.html              # Vite entry point (root of frontend/)
@@ -145,8 +145,8 @@ hitop/
 │   └── src/guard.rs            # address/port policy for the proxy (SSRF guard)
 ├── deploy/                     # build.sh, install.sh, systemd unit, front rws routes, README
 ├── sync-server/                # hitop sync (AGPL-3.0-or-later, own LICENSE/deny.toml): rws app, SQLite or Postgres
-│   ├── src/                    # api.rs (routing, CORS), auth.rs (magic link, passkeys), workspaces.rs (members, wraps, rotation), teams.rs (invites, roles, runner accounts), blobs.rs (CAS + version vectors), db.rs (migrations 1-2)
-│   ├── tests/                  # auth, sync, roles (every role × operation, removed member), teams (invites, runners), plaintext, no_crypto_in_server, postgres
+│   ├── src/                    # api.rs (routing, CORS), auth.rs (magic link, passkeys), workspaces.rs (members, wraps, rotation), teams.rs (invites, roles, runner accounts), blobs.rs (CAS + version vectors), oidc.rs (SSO: OIDC code + PKCE, JWKS cache), audit.rs (audit log, hash chain, purge), db.rs (migrations 1-3)
+│   ├── tests/                  # auth, sync, roles (every role × operation, removed member), teams (invites, runners), plaintext, no_crypto_in_server, postgres, sso (mock IdP, common/idp.rs), keycloak (fixtures/keycloak realm), audit
 │   ├── deploy/                 # hitop-sync.service, install.sh, rws-routes.toml (sync.hitop.rws8.tech)
 │   └── THREAT_MODEL.md, README.md (self-host guide), Dockerfile
 ├── ios/
@@ -260,7 +260,7 @@ hitop/
   `run`/`requests send` send saved `bodyMode` urlencoded/multipart bodies (`form::outgoing`)
 - Usage ping: hitop-core feature `telemetry` (off by default; the CLI crate's default feature turns it on);
   `hitop telemetry on|off|status`; never sent unless on, at most weekly; `HITOP_TELEMETRY_URL` points tests at a mock
-- Sync: `hitop sync login|logout|whoami|ls|init|link|unlink|status|pull|push|resolve|members|invite|accept|add|remove|role|trust|runner create`
+- Sync: `hitop sync login [--sso [--no-browser]]|logout|whoami|ls|init|link|unlink|status|pull|push|resolve|members|invite|accept|add|remove|role|trust|runner create|audit [--json] [--verify] [--mine]`
   (folders only; `-c <dir>`, default cwd). State in `<config>/hitop/sync/` (account.json, pins.json, links.json, state/<ws>-<hash>.json);
   session + device secret in the keychain (`sync/<host>`) or `HITOP_SYNC_KEY_FILE` (0600; tests use it with `HITOP_KEYCHAIN=off`);
   `HITOP_SYNC_SERVER` (default https://sync.hitop.rws8.tech; http only for localhost); `HITOP_SYNC_RUNNER=hitop-runner-1.<b64url JSON>` = read-only
@@ -407,8 +407,12 @@ hitop/
 ### Sync server (`sync-server/`)
 - T24: migration 2 (`users.runner_of`, `invites`); `PUT .../members/:user {role}`, `POST/GET/DELETE .../invites`, `POST /v1/invites/accept`,
   `POST .../runners`; runner accounts `<id>@runner.invalid` (viewer, one workspace, 1-year session, no sign-in/keys/invites/workspaces); `/invite` page
+- T25: migration 3 (`oidc_identities`, `audit_log`, `audit_chain`); SSO `GET /v1/auth/sso`, `POST .../sso/start|finish`, `GET .../sso/callback`
+  (env `HITOP_SYNC_OIDC_*`, `HITOP_SYNC_SSO_REQUIRED`; jsonwebtoken 9 + ureq 3, ring); audit `GET /v1/workspaces/:ws/audit[/verify]`, `GET /v1/me/audit`,
+  `hitop-sync-server audit-verify`, hourly purge (`HITOP_SYNC_AUDIT_RETENTION_DAYS`, 365), IPs truncated (`HITOP_SYNC_AUDIT_IP`, `HITOP_SYNC_TRUSTED_PROXIES`)
 - Own Cargo workspace: `hitop-sync-server` (AGPL); the MIT client crate `cli/crates/hitop-sync-crypto` is in the cli workspace and only a dev-dependency here
-- Tests: `cd sync-server && cargo test --workspace`; Postgres: `HITOP_SYNC_TEST_POSTGRES=postgres://... cargo test --features postgres --test postgres`
+- Tests: `cd sync-server && cargo test --workspace`; Postgres: `HITOP_SYNC_TEST_POSTGRES=postgres://... cargo test --features postgres --test postgres`;
+  Keycloak: `docker run ... quay.io/keycloak/keycloak:26.4.2 start-dev --import-realm` with `tests/fixtures/keycloak` (README), then `HITOP_SYNC_TEST_KEYCLOAK=http://127.0.0.1:18080`
 - Licenses: `cargo deny --config sync-server/deny.toml --manifest-path sync-server/Cargo.toml --workspace check licenses advisories` (the MIT crypto crate is checked with the cli workspace)
 - Live at https://sync.hitop.rws8.tech (VM, `hitop-sync.service`, 127.0.0.1:7881, env `/etc/hitop-sync/env`, DB `/var/lib/private/hitop-sync/sync.db`); deploy: copy the release binary + `deploy/` and run `deploy/install.sh`
 - `rws --check` on the VM needs `/etc/rws/admin.env` loaded (admin token), or it fails on any config
