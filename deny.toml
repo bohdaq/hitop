@@ -1,5 +1,5 @@
-# cargo deny check licenses, run in CI for every Rust workspace:
-#   cargo deny --config deny.toml --manifest-path <workspace>/Cargo.toml check licenses
+# cargo deny check licenses advisories, run in CI for every Rust workspace:
+#   cargo deny --config deny.toml --manifest-path <workspace>/Cargo.toml check licenses advisories
 # Everything here except sync-server/ is MIT, so dependencies must be permissively licensed
 # (MPL-2.0 is file-level copyleft and fine to link). No GPL or AGPL crates.
 [graph]
@@ -32,3 +32,28 @@ allow = [
 [licenses.private]
 # Our own unpublished crates (desktop, server) are checked through their dependencies.
 ignore = true
+
+[advisories]
+# Vulnerabilities fail the check. Every ignore below is an "unmaintained" notice for a
+# transitive crate with no maintained release of its parent to move to; each has a reason.
+# Revisit them when the parent crate (named in the reason) moves on.
+ignore = [
+  # cli (hitop): syntect 5.3 (response highlighting) loads its bundled syntax dumps with
+  # bincode 1.3.3, which its authors call complete. Only syntect's own built-in data is
+  # decoded, never user input.
+  { id = "RUSTSEC-2025-0141", reason = "bincode via syntect: decodes only syntect's bundled syntaxes" },
+  # cli, desktop: keyring 4 (Secret Service on Linux) through zbus 5. zvariant, zvariant_derive
+  # and zbus_names were merged into zbus 6; keyring has no release on zbus 6 yet.
+  { id = "RUSTSEC-2026-0370", reason = "zvariant via zbus 5 (keyring); merged into zbus 6, which keyring doesn't use yet" },
+  { id = "RUSTSEC-2026-0371", reason = "zvariant_derive via zbus 5 (keyring); merged into zbus 6" },
+  { id = "RUSTSEC-2026-0372", reason = "zbus_names via zbus 5 (keyring); merged into zbus 6" },
+  # desktop: build-time macro crates of Tauri 2 (proc-macro-error through gtk3-macros/glib
+  # macros on Linux; unic-* through urlpattern in tauri-utils). They run in the compiler, not
+  # in the app, and Tauri 2 has no release without them.
+  { id = "RUSTSEC-2024-0370", reason = "proc-macro-error: compile-time only, via Tauri's gtk/glib macros" },
+  { id = "RUSTSEC-2025-0075", reason = "unic-char-range: via Tauri's urlpattern, no maintained Tauri 2 alternative" },
+  { id = "RUSTSEC-2025-0080", reason = "unic-common: via Tauri's urlpattern" },
+  { id = "RUSTSEC-2025-0081", reason = "unic-char-property: via Tauri's urlpattern" },
+  { id = "RUSTSEC-2025-0098", reason = "unic-ucd-version: via Tauri's urlpattern" },
+  { id = "RUSTSEC-2025-0100", reason = "unic-ucd-ident: via Tauri's urlpattern" },
+]

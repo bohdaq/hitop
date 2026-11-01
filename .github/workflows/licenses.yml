@@ -1,5 +1,7 @@
-# Dependency licenses for every Rust workspace (policy in deny.toml).
-name: Licenses
+# Dependency licenses and security advisories for every Rust workspace (policy and
+# documented advisory ignores in deny.toml, sync-server/deny.toml), and npm audit for
+# every npm package that ships (frontend/ is the frozen extension build, not audited here).
+name: Licenses and advisories
 
 on:
   push:
@@ -22,7 +24,7 @@ jobs:
       - uses: taiki-e/install-action@v2
         with:
           tool: cargo-deny
-      - run: cargo deny --config deny.toml --manifest-path ${{ matrix.workspace }}/Cargo.toml check licenses
+      - run: cargo deny --config deny.toml --manifest-path ${{ matrix.workspace }}/Cargo.toml check licenses advisories
 
   # sync-server/ is AGPL-3.0-or-later: its own policy (AGPL-compatible licenses) for the server,
   # and the MIT policy for the MIT client crate it contains (crates/hitop-sync-crypto).
@@ -38,3 +40,19 @@ jobs:
         run: cargo deny --config sync-server/deny.toml --manifest-path sync-server/Cargo.toml --workspace check licenses advisories
       - name: hitop-sync-crypto (MIT policy)
         run: cargo deny --config deny.toml --manifest-path sync-server/Cargo.toml --workspace --exclude hitop-sync-server check licenses
+
+  npm-audit:
+    name: npm audit (${{ matrix.package }})
+    runs-on: ubuntu-24.04
+    strategy:
+      fail-fast: false
+      matrix:
+        package: [desktop, webapp, site]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      # Production dependencies only (what reaches users); any advisory fails the job.
+      - run: npm audit --omit=dev --audit-level=low
+        working-directory: ${{ matrix.package }}
