@@ -1,0 +1,57 @@
+# XcodeGen spec for the hitop iOS companion (ROADMAP T26). On a Mac:
+#   brew install xcodegen && cd ios/HitopCompanion && xcodegen && open HitopCompanion.xcodeproj
+# The .xcodeproj is generated (and git-ignored); this file is the source.
+# Bundle ids, team and app group: see ROADMAP.md section 6 (T26) before submitting.
+name: HitopCompanion
+options:
+  bundleIdPrefix: hitop.rws8.tech
+  deploymentTarget:
+    iOS: "17.0"
+  createIntermediateGroups: true
+packages:
+  HitopKit:
+    path: ../HitopKit
+settings:
+  base:
+    DEVELOPMENT_TEAM: XD7JHZ5DB3
+    # The app targets use the Swift 5 language mode (SwiftUI, App Intents and WidgetKit
+    # callbacks without strict-concurrency friction); HitopKit itself is Swift 6.
+    SWIFT_VERSION: "5.0"
+    MARKETING_VERSION: "1.0.0"
+    CURRENT_PROJECT_VERSION: "1"
+    TARGETED_DEVICE_FAMILY: "1,2"
+targets:
+  HitopCompanion:
+    type: application
+    platform: iOS
+    sources:
+      - HitopCompanion
+      - Shared
+    dependencies:
+      - package: HitopKit
+      - target: HitopWidget
+        embed: true
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: hitop.rws8.tech.HitopCompanion
+        PRODUCT_NAME: hitop
+        INFOPLIST_FILE: HitopCompanion/Info.plist
+        CODE_SIGN_ENTITLEMENTS: HitopCompanion/HitopCompanion.entitlements
+        ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
+  HitopWidget:
+    type: app-extension
+    platform: iOS
+    sources:
+      - HitopWidget
+      - Shared
+    dependencies:
+      - package: HitopKit
+      - sdk: WidgetKit.framework
+      - sdk: SwiftUI.framework
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: hitop.rws8.tech.HitopCompanion.Widget
+        PRODUCT_NAME: HitopWidget
+        INFOPLIST_FILE: HitopWidget/Info.plist
+        CODE_SIGN_ENTITLEMENTS: HitopWidget/HitopWidget.entitlements
+        SKIP_INSTALL: true
