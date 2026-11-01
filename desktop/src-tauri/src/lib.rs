@@ -29,6 +29,7 @@ pub fn run() {
             commands::secret_get,
             commands::secret_set,
             commands::secret_delete,
+            commands::secret_refs_resolve,
             commands::write_file,
             commands::telemetry_status,
             commands::telemetry_set,

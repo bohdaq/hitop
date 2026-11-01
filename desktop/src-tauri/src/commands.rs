@@ -408,6 +408,28 @@ pub fn secret_delete(account: String) -> Result<bool, String> {
     secrets::os_store().delete(&account).map_err(|e| e.to_string())
 }
 
+/// `${secret:vault|aws|azure|op:...}` references, by inner text
+/// (`secret:vault:kv/app#token`), resolved as the CLI resolves them (VAULT_*,
+/// AWS_*, AZURE_* env vars, `~/.vault-token`, `~/.aws`, the `az` and `op`
+/// CLIs). The page keeps the values in memory for one send or run, masks
+/// them, and never saves them. Every failure is named in the error.
+#[tauri::command(async)]
+pub fn secret_refs_resolve(refs: Vec<String>) -> Result<HashMap<String, String>, String> {
+    use hitop_core::{secret_managers, secret_refs};
+    let refs: std::collections::BTreeSet<String> = refs.into_iter().filter(|r| secret_refs::is_reference(r)).collect();
+    if refs.is_empty() {
+        return Ok(HashMap::new());
+    }
+    if !secret_managers::enabled() {
+        return Err("secret manager references are turned off (HITOP_SECRET_MANAGERS=off)".into());
+    }
+    let (values, errors) = secret_managers::Resolver::from_env().resolve_all(&refs);
+    if !errors.is_empty() {
+        return Err(errors.join("\n"));
+    }
+    Ok(values.into_iter().collect())
+}
+
 /// Writes an export to the path the save dialog gave (`data` is base64).
 #[tauri::command(async)]
 pub fn write_file(path: String, data: String) -> Result<(), String> {
