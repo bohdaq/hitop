@@ -66,6 +66,9 @@ dist/
 # iOS / Xcode
 ios/*/build/
 ios/*/DerivedData/
+ios/*/.build/
+ios/*/.swiftpm/
+ios/HitopCompanion/*.xcodeproj/
 *.xcuserstate
 xcuserdata/
 *.xccheckout
