@@ -59,6 +59,7 @@ hitop export MyAPI -o my-collection.json
 | `hitop requests auth <collection> <request>` | Set (`--bearer`, `--basic`, `--api-key`) or clear (`--none`) a request's auth |
 | `hitop variables list/set/delete` | Manage collection variables |
 | `hitop env list/add/delete/show/set/unset/use/off/import/export` | Manage environments |
+| `hitop secret set/get/rm/ls --env <env>` | Secret variables in the OS keychain (`-c <folder>` for a folder's environment) |
 | `hitop history` | View request history |
 | `hitop import <file>` | Import collections (HITOP or Postman format) |
 | `hitop export <collection>` | Export a collection |
@@ -96,6 +97,22 @@ hitop send https://api.example.com/search --api-key api_key=k-1 --api-key-in que
 # Saved requests keep their auth
 hitop requests add MyAPI --name "Me" --url '${baseUrl}/me' -H "Accept: application/json" --bearer '${token}'
 ```
+
+## Secrets
+
+A secret variable has no value in collection files, JSON storage, history or exports; it is shown as `••••`.
+Its value comes from, in this order: `HITOP_SECRET_<ENV>_<NAME>`, `--secret NAME=value` (on `send`, `run`
+and `requests send`), the OS keychain (macOS Keychain, Windows Credential Manager, Secret Service on Linux),
+then a prompt when a terminal is attached.
+
+```bash
+hitop secret set token --env staging          # prompts for the value, stores it in the keychain, marks token secret
+hitop secret set token --env prod -c ./my-api # a folder's environment: environments/prod.yaml gets token: {secret: true}
+hitop secret ls --env prod -c ./my-api        # names and where each value comes from, never the values
+HITOP_SECRET_PROD_TOKEN=$TOKEN hitop run ./my-api --env prod   # CI: no keychain needed
+```
+
+Without a keychain (headless Linux, or `HITOP_KEYCHAIN=off`) hitop says so and uses the env vars and `--secret`.
 
 ## Checks in CI
 

@@ -15,7 +15,7 @@ const REQUEST_KEYS: &[&str] = &[
     "formFields", "disabledParams", "bodyType", "examples", "file", "params", "scripts",
 ];
 const ROW_KEYS: &[&str] = &["key", "name", "value", "type", "enabled"];
-pub const COLLECTION_KEYS: &[&str] = &["id", "name", "requests", "variables", "auth", "format", "order"];
+pub const COLLECTION_KEYS: &[&str] = &["id", "name", "workspace", "requests", "variables", "auth", "format", "order"];
 const ENVIRONMENT_KEYS: &[&str] = &["id", "name", "variables", "secrets"];
 
 pub fn check_extra(extra: &Extra, reserved: &[&str], what: &str) -> Result<()> {

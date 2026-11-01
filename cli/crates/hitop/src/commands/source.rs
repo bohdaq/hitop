@@ -82,6 +82,19 @@ impl Source {
         }
     }
 
+    /// The folder, for a collection folder.
+    pub fn folder(&self) -> Option<&Path> {
+        match &self.origin {
+            Origin::Folder(dir) => Some(dir),
+            Origin::Global { .. } => None,
+        }
+    }
+
+    /// The workspace this collection's secrets are kept under in the keychain.
+    pub fn workspace(&self) -> String {
+        hitop_core::secrets::workspace_id(&self.collection, self.folder().is_some())
+    }
+
     /// The key under which `contexts.json` keeps this collection's script
     /// context.
     pub fn context_key(&self) -> String {

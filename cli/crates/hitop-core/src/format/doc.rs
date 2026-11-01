@@ -50,6 +50,8 @@ pub struct CollectionDoc {
     pub name: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub id: Option<u64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub workspace: Option<String>,
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty", deserialize_with = "stringish_map")]
     pub variables: BTreeMap<String, String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]

@@ -80,6 +80,9 @@ pub enum RequestsCmd {
         /// Environment to use instead of the active one
         #[arg(short = 'e', long = "env")]
         env: Option<String>,
+
+        #[command(flatten)]
+        secrets: super::secret::SecretFlags,
     },
 }
 
@@ -199,14 +202,19 @@ pub fn run(cmd: RequestsCmd) -> Result<()> {
             println!("{} Renamed '{}' → '{}'", "✓".green(), request.bold(), new_name.bold());
         }
 
-        RequestsCmd::Send { collection, request, show_headers, raw, env } => {
+        RequestsCmd::Send { collection, request, show_headers, raw, env, secrets } => {
             use hitop_core::{http, prepare::{prepare, variables, Draft}, scripting::run_post_request_script};
             use crate::output;
 
             let source = Source::open(&collection)?;
             let col = &source.collection;
             let req = find_req(col, &request)?.clone();
-            let vars = variables(&col.variables, source.environment(env.as_deref())?.as_ref());
+            let environment = source.environment(env.as_deref())?;
+            let secrets = super::secret::resolve(&source.workspace(), environment.as_ref(), &secrets)?;
+            let mut vars = variables(&col.variables, environment.as_ref());
+            secrets.apply(&mut vars);
+            let masker = secrets.masker();
+            let masked = |e: anyhow::Error| anyhow::anyhow!(masker.mask(&format!("{e:#}")));
             let context_key = source.context_key();
 
             // Load context
@@ -225,10 +233,10 @@ pub fn run(cmd: RequestsCmd) -> Result<()> {
                 pre_request_script: &req.pre_request_script,
                 auth: req.auth.as_ref().or(col.auth.as_ref()),
             };
-            let pre = prepare(&draft, &vars, &context)?;
-            let result = http::execute(&req.method, &pre.url, &pre.headers, &pre.body)?;
+            let pre = prepare(&draft, &vars, &context).map_err(masked)?;
+            let mut result = http::execute(&req.method, &pre.url, &pre.headers, &pre.body).map_err(masked)?;
 
-            let post = run_post_request_script(
+            let mut post = run_post_request_script(
                 &req.post_request_script,
                 &result.body,
                 &result.headers,
@@ -236,7 +244,9 @@ pub fn run(cmd: RequestsCmd) -> Result<()> {
                 result.duration_ms,
                 &vars,
                 &context,
-            )?;
+            )
+            .map_err(masked)?;
+            super::send::mask_output(&masker, &mut result, &mut post.tests);
 
             // Persist context updates
             if !pre.context_updates.is_empty() || !post.context_updates.is_empty() {

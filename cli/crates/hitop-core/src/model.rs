@@ -136,6 +136,10 @@ pub struct Collection {
     pub requests: Vec<Request>,
     #[serde(default)]
     pub variables: HashMap<String, String>,
+    /// The id that keys this collection's secrets in the OS keychain
+    /// (`workspace` in a folder's `hitop.yaml`; see `secrets::workspace_id`).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub workspace: Option<String>,
     /// Default auth for requests without their own `auth`.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub auth: Option<Auth>,
@@ -273,7 +277,9 @@ pub struct Environment {
     #[serde(default)]
     pub variables: HashMap<String, String>,
     /// Names of secret variables. Their values never go into collection
-    /// files; T2 resolves them from env vars and the OS keychain.
+    /// files or exports; `secrets` resolves them at run time (env vars,
+    /// `--secret`, the OS keychain, a prompt). The web app keeps their values
+    /// in `variables` (its localStorage); the CLI keeps them in the keychain.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub secrets: Vec<String>,
     #[serde(flatten)]

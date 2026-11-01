@@ -8,4 +8,5 @@ pub mod params;
 pub mod prepare;
 pub mod runner;
 pub mod scripting;
+pub mod secrets;
 pub mod storage;

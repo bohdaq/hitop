@@ -38,6 +38,9 @@ enum Cmd {
     /// Manage environments (variable sets such as dev, staging, prod)
     #[command(subcommand)]
     Env(commands::env::EnvCmd),
+    /// Manage secret variables in the OS keychain
+    #[command(subcommand)]
+    Secret(commands::secret::SecretCmd),
     /// View request history
     History(commands::history::HistoryArgs),
     /// Import collections from a file
@@ -63,6 +66,7 @@ fn main() -> Result<()> {
         Cmd::Requests(cmd) => commands::requests::run(cmd),
         Cmd::Variables(cmd) => commands::variables::run(cmd),
         Cmd::Env(cmd) => commands::env::run(cmd),
+        Cmd::Secret(cmd) => commands::secret::run(cmd),
         Cmd::History(args) => commands::history::run(args),
         Cmd::Import(args) => commands::import_export::run_import(args),
         Cmd::Export(args) => commands::import_export::run_export(args),

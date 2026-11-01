@@ -5,6 +5,7 @@ use indicatif::{ProgressBar, ProgressStyle};
 
 use hitop_core::{runner, storage};
 
+use super::secret::{self, SecretFlags};
 use super::source::Source;
 
 
@@ -25,6 +26,9 @@ pub struct RunArgs {
     /// its environments/, none by default)
     #[arg(short = 'e', long = "env")]
     env: Option<String>,
+
+    #[command(flatten)]
+    secrets: SecretFlags,
 }
 
 /// Exits with status 1 when a request fails or an assertion doesn't pass,
@@ -34,12 +38,13 @@ pub fn run(args: RunArgs) -> Result<()> {
         let collections = storage::load_collections()?;
         let envs = storage::load_environments()?;
         let env = envs.pick(args.env.as_deref())?;
+        let secrets = secret::resolve(hitop_core::secrets::GLOBAL_WORKSPACE, env, &args.secrets)?;
         // Run all
         let mut total = 0usize;
         let mut success = 0usize;
         for col in &collections {
             println!("\n{} {}", "▶".cyan(), col.name.bold());
-            let results = run_one_collection(col, env, !args.no_stop_on_fail);
+            let results = run_one_collection(col, env, &secrets, !args.no_stop_on_fail);
             for r in &results {
                 total += 1;
                 if r.passed() {
@@ -62,9 +67,10 @@ pub fn run(args: RunArgs) -> Result<()> {
     let source = Source::open(args.collection.as_deref().unwrap_or_default())?;
     let env = source.environment(args.env.as_deref())?;
     let col = &source.collection;
+    let secrets = secret::resolve(&source.workspace(), env.as_ref(), &args.secrets)?;
 
     println!("{} {}", "▶".cyan(), col.name.bold());
-    let results = run_one_collection(col, env.as_ref(), !args.no_stop_on_fail);
+    let results = run_one_collection(col, env.as_ref(), &secrets, !args.no_stop_on_fail);
 
     let success = results
         .iter()
@@ -87,6 +93,7 @@ pub fn run(args: RunArgs) -> Result<()> {
 fn run_one_collection(
     col: &hitop_core::model::Collection,
     env: Option<&hitop_core::model::Environment>,
+    secrets: &hitop_core::secrets::Secrets,
     stop_on_fail: bool,
 ) -> Vec<runner::RunStepResult> {
     let bar = ProgressBar::new(col.requests.len() as u64);
@@ -99,7 +106,8 @@ fn run_one_collection(
     // Without a terminal (CI logs) the bar is hidden and so is anything
     // printed through it, so print lines directly there.
     let say = |line: String| if bar.is_hidden() { println!("{line}") } else { bar.println(line) };
-    let results = runner::run_collection(col, env, stop_on_fail, &mut |step| {
+    // Steps come back masked: no secret value reaches the log.
+    let results = runner::run_collection_with(col, env, secrets, stop_on_fail, &mut |step| {
         bar.inc(1);
         match &step.result {
             Ok(res) => {

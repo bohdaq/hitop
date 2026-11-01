@@ -1,6 +1,7 @@
 format: 1
 name: Shop API
 id: 1793470569736000
+workspace: 5f0c2a9e7d1b4c3a8e6f0b2d4a6c8e01
 variables:
   base: https://api.example.test
   version: '2'

@@ -12,6 +12,7 @@ use hitop_core::{
 };
 
 use super::flags::{query_pair, script_arg, AuthFlags};
+use super::secret::{self, SecretFlags};
 use super::source::Source;
 use crate::output;
 
@@ -38,6 +39,9 @@ pub struct SendArgs {
 
     #[command(flatten)]
     auth: AuthFlags,
+
+    #[command(flatten)]
+    secrets: SecretFlags,
 
     /// Collection name or folder path to load variables and context from
     #[arg(short = 'c', long)]
@@ -81,7 +85,11 @@ pub fn run(args: SendArgs) -> Result<()> {
         Some(s) => s.environment(args.env.as_deref())?,
         None => storage::load_environments()?.pick(args.env.as_deref())?.cloned(),
     };
-    let variables = variables(&collection_vars, environment.as_ref());
+    let workspace = source.as_ref().map(|s| s.workspace()).unwrap_or_else(|| hitop_core::secrets::GLOBAL_WORKSPACE.into());
+    let secrets = secret::resolve(&workspace, environment.as_ref(), &args.secrets)?;
+    let mut variables = variables(&collection_vars, environment.as_ref());
+    secrets.apply(&mut variables);
+    let masker = secrets.masker();
 
     let headers: Vec<Header> = args
         .headers
@@ -98,12 +106,12 @@ pub fn run(args: SendArgs) -> Result<()> {
     let auth = args.auth.auth()?;
 
     let draft = Draft { method: &args.method, url: &url, headers: &headers, body: &body, pre_request_script: &pre_script, auth: auth.as_ref() };
-    let pre = prepare(&draft, &variables, &context)?;
+    let pre = prepare(&draft, &variables, &context).map_err(|e| anyhow::anyhow!(masker.mask(&format!("{e:#}"))))?;
     context.extend(pre.context_updates.clone());
 
-    let result = http::execute(&args.method, &pre.url, &pre.headers, &pre.body)?;
+    let mut result = http::execute(&args.method, &pre.url, &pre.headers, &pre.body).map_err(|e| anyhow::anyhow!(masker.mask(&format!("{e:#}"))))?;
 
-    let post = run_post_request_script(
+    let mut post = run_post_request_script(
         &post_script,
         &result.body,
         &result.headers,
@@ -111,7 +119,10 @@ pub fn run(args: SendArgs) -> Result<()> {
         result.duration_ms,
         &variables,
         &context,
-    )?;
+    )
+    .map_err(|e| anyhow::anyhow!(masker.mask(&format!("{e:#}"))))?;
+    // Scripts saw the real values; whatever is printed or kept doesn't.
+    mask_output(&masker, &mut result, &mut post.tests);
 
     // Persist updated context if tied to a collection
     if let Some(source) = &source {
@@ -132,7 +143,7 @@ pub fn run(args: SendArgs) -> Result<()> {
     history.push(HistoryItem {
         id: timestamp_id(),
         timestamp: timestamp_id(),
-        url: pre.url.clone(),
+        url: masker.mask(&pre.url),
         method: args.method.clone(),
         status_code: result.status,
         success: result.status < 400,
@@ -167,6 +178,22 @@ pub fn run(args: SendArgs) -> Result<()> {
     }
 
     Ok(())
+}
+
+/// Masks secret values in a response and in assertion results before they
+/// are printed.
+pub fn mask_output(masker: &hitop_core::secrets::Masker, result: &mut hitop_core::model::RequestResult, tests: &mut [hitop_core::model::TestResult]) {
+    if masker.is_empty() {
+        return;
+    }
+    result.body = masker.mask(&result.body);
+    for v in result.headers.values_mut() {
+        *v = masker.mask(v);
+    }
+    for t in tests {
+        t.name = masker.mask(&t.name);
+        t.detail = masker.mask(&t.detail);
+    }
 }
 
 fn timestamp_id() -> u64 {

@@ -7,6 +7,7 @@ use crate::{
     model::{Collection, Environment, RequestResult, TestResult},
     prepare::{prepare, variables, Draft},
     scripting::run_post_request_script,
+    secrets::{Masker, Secrets},
 };
 
 #[derive(Debug)]
@@ -24,6 +25,28 @@ impl RunStepResult {
     pub fn passed(&self) -> bool {
         self.result.as_ref().map(|r| r.status < 400).unwrap_or(false) && self.tests.iter().all(|t| t.pass)
     }
+
+    /// Replaces secret values everywhere in the step: URL, error, response
+    /// headers and body, assertion names and details.
+    pub fn mask(&mut self, m: &Masker) {
+        if m.is_empty() {
+            return;
+        }
+        self.url = m.mask(&self.url);
+        match &mut self.result {
+            Ok(r) => {
+                r.body = m.mask(&r.body);
+                for v in r.headers.values_mut() {
+                    *v = m.mask(v);
+                }
+            }
+            Err(e) => *e = anyhow::anyhow!(m.mask(&format!("{e:#}"))),
+        }
+        for t in &mut self.tests {
+            t.name = m.mask(&t.name);
+            t.detail = m.mask(&t.detail);
+        }
+    }
 }
 
 /// Runs the requests in order, passing script context from one to the next.
@@ -34,8 +57,23 @@ pub fn run_collection(
     stop_on_fail: bool,
     on_step: &mut dyn FnMut(&RunStepResult),
 ) -> Vec<RunStepResult> {
+    run_collection_with(collection, environment, &Secrets::default(), stop_on_fail, on_step)
+}
+
+/// [`run_collection`] with resolved secrets: they override the variables,
+/// and every step is masked before `on_step` sees it or it is returned, so
+/// what reports and logs get never holds a secret value.
+pub fn run_collection_with(
+    collection: &Collection,
+    environment: Option<&Environment>,
+    secrets: &Secrets,
+    stop_on_fail: bool,
+    on_step: &mut dyn FnMut(&RunStepResult),
+) -> Vec<RunStepResult> {
     let mut context: HashMap<String, Value> = HashMap::new();
-    let variables = variables(&collection.variables, environment);
+    let mut variables = variables(&collection.variables, environment);
+    secrets.apply(&mut variables);
+    let masker = secrets.masker();
     let mut results = Vec::new();
 
     for request in &collection.requests {
@@ -80,6 +118,8 @@ pub fn run_collection(
                 RunStepResult { request_name: request.name.clone(), method: request.method.clone(), url: pre.url, result, tests }
             }
         };
+        let mut step = step;
+        step.mask(&masker);
         let failed = !step.passed();
         on_step(&step);
         results.push(step);
@@ -89,4 +129,38 @@ pub fn run_collection(
     }
 
     results
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::model::{Header, Request};
+    use crate::secrets::{resolve, Lookup, MemoryStore};
+
+    #[test]
+    fn steps_never_carry_a_secret_value() {
+        // Port 9 on localhost refuses the connection, so the step fails
+        // with an error that names the URL.
+        let collection = Collection {
+            requests: vec![Request {
+                name: "r".into(),
+                method: "GET".into(),
+                url: "http://127.0.0.1:9/x?key=${apiKey}".into(),
+                headers: vec![Header::new("Authorization", "Bearer ${apiKey}")],
+                ..Default::default()
+            }],
+            ..Default::default()
+        };
+        let env = Environment { id: "prod".into(), name: "prod".into(), secrets: vec!["apiKey".into()], ..Default::default() };
+        let store = MemoryStore::new();
+        let lookup = |k: &str| (k == "HITOP_SECRET_PROD_APIKEY").then(|| "s3cr3t-key".to_string());
+        let resolved = resolve(&Lookup { workspace: "w", environment: Some(&env), flags: &[], store: &store, lookup_env: &lookup, prompt: None }).unwrap();
+        let mut seen = vec![];
+        let results = run_collection_with(&collection, Some(&env), &resolved.secrets, false, &mut |s| {
+            seen.push(format!("{} {:?}", s.url, s.result.as_ref().err().map(|e| e.to_string())));
+        });
+        assert_eq!(results[0].url, "http://127.0.0.1:9/x?key=••••");
+        let all = format!("{seen:?} {:?}", results);
+        assert!(!all.contains("s3cr3t"), "{all}");
+    }
 }

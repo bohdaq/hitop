@@ -76,7 +76,7 @@ fn golden_covers_every_field() {
     let files = tree(&golden_dir().join("folder"));
     let all: String = files.values().cloned().collect();
     for key in [
-        "format:", "name:", "id:", "variables:", "auth:", "order:", "params:", "headers:", "enabled: false", "body:",
+        "format:", "name:", "id:", "workspace:", "variables:", "auth:", "order:", "params:", "headers:", "enabled: false", "body:",
         "type: json", "type: xml", "type: text", "type: graphql", "type: form", "type: multipart", "type: file",
         "content: |", "fields:", "scripts:", "pre:", "post: |", "examples:", "type: bearer", "type: basic",
         "type: apikey", "in: query", "type: none", "secret: true", "pinned: true", "color: teal", "region: eu",
@@ -232,8 +232,9 @@ fn folder() -> impl Strategy<Value = Folder> {
         auth(),
         extra(),
         prop::collection::vec(environment(), 0..3),
+        prop::option::of("[0-9a-f]{1,32}"),
     )
-        .prop_map(|(id, name, mut requests, variables, auth, extra, mut environments)| {
+        .prop_map(|(id, name, mut requests, variables, auth, extra, mut environments, workspace)| {
             // Explicit files must be unique (writing rejects duplicates).
             let mut seen = std::collections::HashSet::new();
             for r in &mut requests {
@@ -245,7 +246,7 @@ fn folder() -> impl Strategy<Value = Folder> {
             }
             let mut ids = std::collections::HashSet::new();
             environments.retain(|e| ids.insert(e.id.clone()));
-            Folder { collection: Collection { id, name, requests, variables: variables.into_iter().collect(), auth, extra }, environments }
+            Folder { collection: Collection { id, name, requests, workspace, variables: variables.into_iter().collect(), auth, extra }, environments }
         })
 }
 

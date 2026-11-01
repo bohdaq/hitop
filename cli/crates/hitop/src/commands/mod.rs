@@ -6,6 +6,7 @@ pub mod history;
 pub mod import_export;
 pub mod requests;
 pub mod run;
+pub mod secret;
 pub mod send;
 pub mod source;
 pub mod variables;

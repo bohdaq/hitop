@@ -223,6 +223,34 @@ fn init_writes_a_starter_and_refuses_to_overwrite() {
     let target = dir.path().join("my-api");
     let made = init(&target, None).unwrap();
     assert_eq!(made.collection.name, "my-api");
+    let ws = made.collection.workspace.clone().unwrap();
+    assert_eq!(ws.len(), 32);
+    assert!(file(&target, "hitop.yaml").contains(&format!("workspace: {ws}\n")));
     assert_eq!(read_folder(&target).unwrap(), made);
     assert!(init(&target, None).is_err());
+}
+
+#[test]
+fn workspace_round_trips_and_is_written_after_id() {
+    let mut c = col(vec![]);
+    c.workspace = Some("0123abcd".into());
+    let dir = tempfile::tempdir().unwrap();
+    write_collection(dir.path(), &c).unwrap();
+    assert_eq!(file(dir.path(), "hitop.yaml"), "format: 1\nname: c\nid: 1\nworkspace: 0123abcd\n");
+    assert_eq!(read_folder(dir.path()).unwrap().collection, c);
+}
+
+#[test]
+fn mark_secret_edits_only_that_environment_file() {
+    let dir = tempfile::tempdir().unwrap();
+    write_collection(dir.path(), &col(vec![])).unwrap();
+    let envs = dir.path().join("environments");
+    std::fs::create_dir_all(&envs).unwrap();
+    std::fs::write(envs.join("Prod.yml"), "name: prod\nvariables:\n  base: https://api\n  token: plain\n").unwrap();
+    std::fs::write(envs.join("dev.yaml"), "variables:\n  token: dev-token\n").unwrap();
+    assert!(mark_secret(dir.path(), "prod", "token").unwrap());
+    assert!(!mark_secret(dir.path(), "prod", "token").unwrap());
+    assert_eq!(file(dir.path(), "environments/Prod.yml"), "name: prod\nvariables:\n  base: https://api\n  token:\n    secret: true\n");
+    assert_eq!(file(dir.path(), "environments/dev.yaml"), "variables:\n  token: dev-token\n");
+    assert!(mark_secret(dir.path(), "staging", "token").is_err());
 }

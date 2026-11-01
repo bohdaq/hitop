@@ -45,7 +45,9 @@ pub fn run(cmd: EnvCmd) -> Result<()> {
             }
             for e in &envs.environments {
                 let active = envs.active.as_deref() == Some(e.id.as_str());
-                println!("  {} {} {}", if active { "●".green() } else { "○".dimmed() }, e.name.bold(), format!("{} variables", e.variables.len()).dimmed());
+                let secrets = if e.secrets.is_empty() { String::new() } else { format!(", {} secret", e.secrets.len()) };
+                let plain = e.variables.keys().filter(|k| !e.secrets.contains(k)).count();
+                println!("  {} {} {}", if active { "●".green() } else { "○".dimmed() }, e.name.bold(), format!("{plain} variables{secrets}").dimmed());
             }
             return Ok(());
         }
@@ -66,15 +68,21 @@ pub fn run(cmd: EnvCmd) -> Result<()> {
         }
         EnvCmd::Show { name } => {
             let env = &envs.environments[find(&envs, &name)?];
-            let mut keys: Vec<_> = env.variables.keys().collect();
+            let mut keys: Vec<_> = env.variables.keys().filter(|k| !env.secrets.contains(k)).collect();
             keys.sort();
             for k in keys {
                 println!("  {} = {}", k.bold(), env.variables[k]);
+            }
+            for k in &env.secrets {
+                println!("  {} = {} {}", k.bold(), hitop_core::secrets::MASK, "(secret: hitop secret ls)".dimmed());
             }
             return Ok(());
         }
         EnvCmd::Set { name, key, value } => {
             let i = find(&envs, &name)?;
+            if envs.environments[i].secrets.contains(&key) {
+                bail!("'{key}' is a secret in '{name}'; set it with: hitop secret set {key} --env {name}");
+            }
             envs.environments[i].variables.insert(key.clone(), value.clone());
             println!("{} Set {}={} in '{}'", "✓".green(), key, value, name);
         }
@@ -101,7 +109,19 @@ pub fn run(cmd: EnvCmd) -> Result<()> {
             println!("{} Imported {} environment{}", "✓".green(), n, if n == 1 { "" } else { "s" });
         }
         EnvCmd::Export { file } => {
-            let out: Vec<_> = envs.environments.iter().map(|e| serde_json::json!({ "name": e.name, "variables": e.variables })).collect();
+            // Secret names are exported, their values never.
+            let out: Vec<_> = envs
+                .environments
+                .iter()
+                .map(|e| {
+                    let variables: HashMap<_, _> = e.variables.iter().filter(|(k, _)| !e.secrets.contains(k)).collect();
+                    let mut o = serde_json::json!({ "name": e.name, "variables": variables });
+                    if !e.secrets.is_empty() {
+                        o["secrets"] = serde_json::json!(e.secrets);
+                    }
+                    o
+                })
+                .collect();
             std::fs::write(&file, serde_json::to_string_pretty(&out)?)?;
             println!("{} Exported {} environments to {}", "✓".green(), out.len(), file);
             return Ok(());
@@ -134,7 +154,12 @@ fn parse(json: &str) -> Result<Vec<Environment>> {
                 bail!("item {} has no variables", i + 1);
             }
             let name = e["name"].as_str().map(str::to_string).unwrap_or_else(|| format!("Environment {}", i + 1));
-            Ok(Environment { id: new_id(), name, variables, ..Default::default() })
+            // HITOP's export lists secret names; their values are never in it.
+            let secrets: Vec<String> = e["secrets"].as_array().map(|a| a.iter().filter_map(|s| s.as_str().map(String::from)).collect()).unwrap_or_default();
+            for s in &secrets {
+                variables.remove(s);
+            }
+            Ok(Environment { id: new_id(), name, variables, secrets, ..Default::default() })
         })
         .collect()
 }

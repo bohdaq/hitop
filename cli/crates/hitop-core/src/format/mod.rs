@@ -135,6 +135,7 @@ pub fn read_folder(dir: &Path) -> Result<Folder> {
         id: manifest.id.unwrap_or_else(|| names::collection_id(&name)),
         name,
         requests,
+        workspace: manifest.workspace,
         variables: manifest.variables.into_iter().collect(),
         auth: manifest.auth,
         extra: manifest.extra,
@@ -214,6 +215,7 @@ fn collection_files(collection: &Collection) -> Result<(String, BTreeMap<String,
         format: Some(FORMAT_VERSION),
         name: Some(collection.name.clone()),
         id: (collection.id != names::collection_id(&collection.name)).then_some(collection.id),
+        workspace: collection.workspace.clone(),
         variables: collection.variables.iter().map(|(k, v)| (k.clone(), v.clone())).collect(),
         auth: collection.auth.clone(),
         order: if sorted == files { vec![] } else { files },
@@ -252,6 +254,28 @@ pub fn write_collection(dir: &Path, collection: &Collection) -> Result<()> {
 pub fn write_environments(dir: &Path, environments: &[Environment]) -> Result<()> {
     let files = environment_files(environments)?;
     sync_dir(dir, ENVIRONMENTS, &files, false)
+}
+
+/// Marks `name` as a secret in the environment called `env`, editing only
+/// that environment's file: the variable becomes `{secret: true}` and any
+/// value it had is dropped. False when it already was a secret.
+pub fn mark_secret(dir: &Path, env: &str, name: &str) -> Result<bool> {
+    for (stem, path) in yaml_files(&dir.join(ENVIRONMENTS), false)? {
+        let doc: EnvironmentDoc = parse(&path)?;
+        let mut e = convert::doc_to_environment(doc, &stem).with_context(|| format!("{}", path.display()))?;
+        if e.name != env {
+            continue;
+        }
+        if e.secrets.iter().any(|s| s == name) {
+            return Ok(false);
+        }
+        e.variables.remove(name);
+        e.secrets.push(name.to_string());
+        e.secrets.sort();
+        write_if_changed(&path, &yaml(&convert::environment_to_doc(&e, &stem)?)?)?;
+        return Ok(true);
+    }
+    bail!("environment '{env}' not found in {}", dir.join(ENVIRONMENTS).display())
 }
 
 /// Writes the whole folder.
@@ -310,7 +334,8 @@ pub fn init(dir: &Path, name: Option<&str>) -> Result<Folder> {
             .map(|n| n.to_string_lossy().into_owned())
             .unwrap_or_else(|| "my-api".into()),
     };
-    let folder = starter(&name);
+    let mut folder = starter(&name);
+    folder.collection.workspace = Some(crate::secrets::new_workspace_id());
     write_folder(dir, &folder)?;
     Ok(folder)
 }
