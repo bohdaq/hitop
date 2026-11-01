@@ -6,6 +6,7 @@ pub mod interpolation;
 pub mod model;
 pub mod params;
 pub mod prepare;
+pub mod report;
 pub mod runner;
 pub mod scripting;
 pub mod secrets;

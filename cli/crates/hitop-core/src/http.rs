@@ -1,5 +1,5 @@
 use std::collections::HashMap;
-use std::time::Instant;
+use std::time::{Duration, Instant};
 use anyhow::Result;
 use reqwest::blocking::Client;
 use reqwest::header::{HeaderMap, HeaderName, HeaderValue};
@@ -23,6 +23,18 @@ pub fn execute(
     headers: &[(String, String)],
     body: &str,
 ) -> Result<RequestResult> {
+    execute_with(method, url, headers, body, None)
+}
+
+/// [`execute`] with a time limit for the whole request (connect, send and
+/// reading the body).
+pub fn execute_with(
+    method: &str,
+    url: &str,
+    headers: &[(String, String)],
+    body: &str,
+    timeout: Option<Duration>,
+) -> Result<RequestResult> {
     let mut header_map = HeaderMap::new();
     for (k, v) in headers {
         if k.is_empty() {
@@ -40,6 +52,9 @@ pub fn execute(
         .unwrap_or(reqwest::Method::GET);
 
     let mut req = client().request(method, url).headers(header_map);
+    if let Some(t) = timeout {
+        req = req.timeout(t);
+    }
 
     if !body.is_empty() {
         req = req.body(body.to_string());
@@ -59,7 +74,12 @@ pub fn execute(
         );
     }
 
-    let body = resp.text().unwrap_or_default();
+    // A body cut off by the timeout is an error, not an empty body.
+    let body = match (timeout, resp.text()) {
+        (_, Ok(b)) => b,
+        (Some(_), Err(e)) if e.is_timeout() => return Err(e.into()),
+        (_, Err(_)) => String::new(),
+    };
 
     Ok(RequestResult {
         status,

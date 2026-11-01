@@ -1,4 +1,5 @@
 use std::collections::HashMap;
+use std::time::{Duration, Instant};
 use anyhow::Result;
 use serde_json::Value;
 
@@ -18,6 +19,21 @@ pub struct RunStepResult {
     pub result: Result<RequestResult>,
     /// The post-request script's `assert.*` results.
     pub tests: Vec<TestResult>,
+    /// The whole step: scripts, request and response, in milliseconds.
+    /// The response time alone is `result`'s `duration_ms`.
+    pub duration_ms: u64,
+}
+
+/// How [`run_collection_opts`] runs.
+#[derive(Debug, Clone, Default)]
+pub struct RunOptions {
+    /// Stop after the first request that fails.
+    pub stop_on_fail: bool,
+    /// Time limit for each request.
+    pub timeout: Option<Duration>,
+    /// Variables that override the collection's and the environment's
+    /// (a data row, `--var`); secrets still override these.
+    pub overrides: HashMap<String, String>,
 }
 
 impl RunStepResult {
@@ -70,13 +86,29 @@ pub fn run_collection_with(
     stop_on_fail: bool,
     on_step: &mut dyn FnMut(&RunStepResult),
 ) -> Vec<RunStepResult> {
+    let options = RunOptions { stop_on_fail, ..Default::default() };
+    run_collection_opts(collection, environment, secrets, &options, on_step)
+}
+
+/// [`run_collection_with`] with a per-request timeout and variable
+/// overrides. Script context starts empty on every call.
+pub fn run_collection_opts(
+    collection: &Collection,
+    environment: Option<&Environment>,
+    secrets: &Secrets,
+    options: &RunOptions,
+    on_step: &mut dyn FnMut(&RunStepResult),
+) -> Vec<RunStepResult> {
+    let stop_on_fail = options.stop_on_fail;
     let mut context: HashMap<String, Value> = HashMap::new();
     let mut variables = variables(&collection.variables, environment);
+    variables.extend(options.overrides.iter().map(|(k, v)| (k.clone(), v.clone())));
     secrets.apply(&mut variables);
     let masker = secrets.masker();
     let mut results = Vec::new();
 
     for request in &collection.requests {
+        let started = Instant::now();
         let draft = Draft {
             method: &request.method,
             url: &request.url,
@@ -93,10 +125,11 @@ pub fn run_collection_with(
                 url: request.url.clone(),
                 result: Err(e),
                 tests: vec![],
+                duration_ms: 0,
             },
             Ok(pre) => {
                 context.extend(pre.context_updates.clone());
-                let result = http::execute(&request.method, &pre.url, &pre.headers, &pre.body);
+                let result = http::execute_with(&request.method, &pre.url, &pre.headers, &pre.body, options.timeout);
                 let mut tests = vec![];
                 if let Ok(resp) = &result {
                     match run_post_request_script(
@@ -115,10 +148,11 @@ pub fn run_collection_with(
                         Err(e) => tests.push(TestResult { name: "post-request script".into(), pass: false, detail: e.to_string() }),
                     }
                 }
-                RunStepResult { request_name: request.name.clone(), method: request.method.clone(), url: pre.url, result, tests }
+                RunStepResult { request_name: request.name.clone(), method: request.method.clone(), url: pre.url, result, tests, duration_ms: 0 }
             }
         };
         let mut step = step;
+        step.duration_ms = started.elapsed().as_millis() as u64;
         step.mask(&masker);
         let failed = !step.passed();
         on_step(&step);
@@ -162,5 +196,23 @@ mod tests {
         assert_eq!(results[0].url, "http://127.0.0.1:9/x?key=••••");
         let all = format!("{seen:?} {:?}", results);
         assert!(!all.contains("s3cr3t"), "{all}");
+    }
+
+    #[test]
+    fn overrides_beat_the_environment() {
+        let collection = Collection {
+            variables: [("host".to_string(), "127.0.0.1:1".to_string())].into(),
+            requests: vec![Request { name: "r".into(), method: "GET".into(), url: "http://${host}/${who}?k=${key}".into(), ..Default::default() }],
+            ..Default::default()
+        };
+        let env = Environment { id: "e".into(), name: "e".into(), variables: [("host".into(), "127.0.0.1:2".into()), ("who".into(), "env".into())].into(), ..Default::default() };
+        let options = RunOptions {
+            overrides: [("host".to_string(), "127.0.0.1:9".to_string()), ("key".to_string(), "plain".to_string())].into(),
+            timeout: Some(Duration::from_millis(500)),
+            ..Default::default()
+        };
+        let results = run_collection_opts(&collection, Some(&env), &Secrets::default(), &options, &mut |_| {});
+        assert_eq!(results[0].url, "http://127.0.0.1:9/env?k=plain");
+        assert!(results[0].result.is_err());
     }
 }

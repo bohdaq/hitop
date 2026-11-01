@@ -149,6 +149,17 @@ pub fn read_folder(dir: &Path) -> Result<Folder> {
     Ok(Folder { collection, environments })
 }
 
+/// Reads one environment file (spec section 5) from anywhere, as
+/// `hitop run --env-file` does. Its name defaults to the file name.
+pub fn read_environment_file(path: &Path) -> Result<Environment> {
+    if !is_yaml(path) {
+        bail!("{}: an environment file is .yaml or .yml", path.display());
+    }
+    let doc: EnvironmentDoc = parse(path)?;
+    let stem = path.file_stem().map(|s| s.to_string_lossy().into_owned()).unwrap_or_default();
+    convert::doc_to_environment(doc, &stem).with_context(|| format!("{}", path.display()))
+}
+
 /// Writes only when the content changed, through a temporary file.
 fn write_if_changed(path: &Path, content: &str) -> Result<bool> {
     if fs::read_to_string(path).is_ok_and(|old| old == content) {
