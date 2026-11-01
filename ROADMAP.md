@@ -141,7 +141,7 @@ Secret variables: `secret: true` in an environment file, with the value resolved
 | T11 | Launch readiness, release 0.3.0 / desktop 0.2.0 | done (handoffs) | bc1fdc0, f8a78e7, 7e2889f, e2f5788, ddcca14, 9327b37, b91e7b9, 31414f3; cli-v0.3.0, desktop-v0.2.0; hitop-action 37701e4, v1.0.1 | 2026-11-01 |
 | T12 | `hitop mcp` | done (handoff) | c0a55c8, 1d6986f, faad9aa; MCP directory listing text in section 6 | 2026-11-01 |
 | T13 | GraphQL | done | 208583d, a78211d | 2026-11-01 |
-| T14 | WebSocket | todo | | |
+| T14 | WebSocket | done | ac00903, 743db7d, 538401a, 2eac6a7, 0e23002, 61ea4c0, 8938060 | 2026-11-01 |
 | T15 | gRPC | todo | | |
 | T16 | Response diff and code snippets | done | 5c550ac, 9b88ff5, 0d4caa8, 8acd583, 344d07d | 2026-11-01 |
 | T17 | OpenAPI import and sync | todo | | |
@@ -893,6 +893,49 @@ export PATH="$HOME/.cargo/bin:$PATH"
   app through the browser `WebSocket`. Connect, send saved or typed messages, timestamped log.
 - CLI `hitop ws <url>` with interactive send.
 - **Done when:** tests against a local echo server in Rust and e2e.
+- **Notes (2026-11-01, done):**
+  - Format (additive to v1, as T13): `kind: websocket` on a request plus a `websocket` section, `subprotocols` (list) and `messages`
+    (rows of `name`, `content`; rows keep unknown keys, unknown keys directly under `websocket` are an error). URL, params, headers
+    and auth are the request's own; `method`, `body` and scripts are kept but unused. JSON model: `Request.kind` (`"http"`/empty read
+    as none) and `Request.websocket` (`{}` reads as none). Both are top-level keys, so 0.3.0 keeps them as unknown keys (and would
+    send the request as a GET), unlike T13's `body` keys which it refuses. Spec section 3 "WebSocket" and section 6. Golden
+    `live-prices.yaml`, the proptest generates `kind` and `websocket` on any request, hitop-wasm round trip, format unit test.
+    Struct literals of `Request` outside the crate break again: still the 0.4.0 bump T13 booked.
+  - hitop-core `websocket.rs`: `target()`/`message()` fill in `${variables}` (no native deps; `http(s)://` read as `ws(s)://`);
+    `connect()` behind a new default feature `websocket`: tokio-tungstenite 0.30 (MIT) over rustls 0.23 with the ring provider and
+    webpki-roots (no aws-lc, same roots as reqwest), a task that streams events (message, closed with code and reason, error) on an
+    mpsc channel and a cloneable `Sender` (text, binary, close; dropping it closes). Close handshake bounded at 5 s. The runner skips
+    WebSocket requests. Locks: cli and desktop updated (tokio-tungstenite, tungstenite, sha1, data-encoding, webpki-roots 0.26
+    shim, tokio-macros); hitop-wasm lock unchanged. `cargo deny ... check licenses` ok.
+  - CLI `hitop ws <url>` or `hitop ws <request> -c <collection>`: `-H`, `--protocol`, auth flags, `-m/--message <saved>` (first)
+    then `-s/--send <text>`; without either, stdin lines are sent (blank lines skipped). `-n/--count`, `--wait` (default 1000 ms,
+    30000 with --count), `--timeout` (handshake, 30 s), `--json` (one object per event: open, sent, received, closed, error, with
+    `time` in RFC 3339 ms). Received messages on stdout (binary as hex; `< ` prefix on a TTY), the rest on stderr; secrets masked
+    everywhere. Exit 1 on a failed connection or a `--count` not reached. `requests list` shows `WS`, `requests show` the
+    subprotocols and messages; `requests send`, `hitop snippet` and MCP `run_request` refuse WebSocket requests with a pointer to
+    `hitop ws`; MCP `get_request`/`list_requests` show `kind`/`websocket`; no new MCP tools.
+  - Desktop: `ws_connect` (Tauri `ipc::Channel` for events, state `Sockets`), `ws_send`, `ws_close` in `commands.rs`. Checked with
+    `cargo clippy` in a Debian container with the GTK/WebKit dev packages (none on this machine) and by CI's desktop job.
+  - Web app: method "WebSocket" in the method select (tab `kind`, `subprotocols`, `wsMessages`, `wsDraft`); Connect/Disconnect,
+    Params, Auth, Headers (+ subprotocols), Messages (composer, saved messages with name/content/send/remove, "Save as message"),
+    and a log with times (`HH:MM:SS.mmm`), direction, binary as hex and base64, Clear. The log and connection live in
+    `store.sockets` (memory only: the log holds filled-in tokens). Browser adapter: `WebSocket` with subprotocols only; the Headers
+    tab says headers and header auth can't be sent from a browser, and the log names the headers left out; an https page can only
+    reach `wss://` or `ws://localhost` (said on failure). Desktop adapter: Rust over a channel (ordered by index, held until
+    `ws_connect` answers). Sidebar and collection lists show `WS`; collection runs skip them; closing a tab disconnects.
+  - Tests: core 3 (echo server with headers, bearer, subprotocol choice, text, binary, server close 4000, client close, refused) +
+    format/runner/snippet unit tests; CLI `tests/ws.rs` 5 (flags until count, stdin + JSON lines, count not reached / server close /
+    refused / bad URL, saved request with secret masked and real values at the server, run skips and requests send refuses) + an
+    MCP test. e2e `webapp/tests/websocket.cjs` against a hand-written Node echo server: web 19 checks (served from `dist/` locally;
+    CI runs it behind hitop-server), Tauri 21 (headers and auth reach the server through the mocked Rust side, which uses Node's
+    WebSocket with headers). Full Tauri e2e suite green locally; unit checks green (Rust keeps a saved WebSocket request). CI run
+    41285646054 green on 8938060 (CLI, desktop compile, web and Tauri e2e including `websocket.cjs`).
+  - Deviations: the composer and saved messages are text only (binary is shown, not sent; `ws_send` accepts base64 for later). The
+    method column of the request line is 160 px (was 140) so "WebSocket" fits. `--message` messages go before `--send` ones
+    (clap loses the order between the two flags).
+  - Open: MCP WebSocket tools (not added, by the tranche's scope); history doesn't record WebSocket sessions; no ping/keepalive
+    control or auto-reconnect; the browser can't send handshake headers (platform limit, documented); Postman export writes a
+    WebSocket request as a plain GET (Postman v2.1 has no WebSocket items); pre/post scripts don't run for WebSocket requests.
 
 #### T15 gRPC
 - Unary and server-streaming calls in desktop and CLI (`tonic` + `prost-reflect`), schema from
@@ -1089,6 +1132,7 @@ Agent appends here; owner ticks when done.
 | 2026-11-01 | T11 | Mac App Store update at 0.2.0: on your Mac, from tag `desktop-v0.2.0`, build as today with plain `tauri build` (no `--features telemetry`, so the "Data Not Collected" label stays true), sign and upload with Transporter. tauri.conf.json now says 0.2.0. Whether this build uses the React UI or the web app overlay depends on the T5 check above. | |
 | 2026-11-01 | T11 | Post the launch when you're ready (agents never post): drafts in `launch/` (Show HN, r/rust, r/webdev, This Week in Rust as a PR, Product Hunt), with where and when in `launch/README.md`. Best after the site deploy and the GIF. | |
 | 2026-11-01 | T11 | Optional: the hitop-action Marketplace listing still shows v1.0.0 as newest; open https://github.com/bohdaq/hitop-action/releases/tag/v1.0.1, Edit, tick "Publish this Action to the GitHub Marketplace", Update release. `v1` already points at v1.0.1. | |
+| 2026-11-01 | T14 | Nothing to do now. Open question for later: should `hitop mcp` get WebSocket tools (for example connect, send, read the next messages, close)? T14 left them out as scoped; MCP `run_request` refuses WebSocket requests and points to `hitop ws`. On your Mac, when you do the T5 check, a WebSocket request in the desktop app sends its headers and auth (the browser build can't). | |
 
 ## 7. Setup the owner does before the agent starts
 
