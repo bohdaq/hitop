@@ -71,6 +71,9 @@ enum Cmd {
     Grpc(commands::grpc::GrpcArgs),
     /// Serve a collection folder (or global storage) to AI tools over MCP (stdio)
     Mcp(commands::mcp::McpArgs),
+    /// Share a collection folder with your team, end-to-end encrypted (hitop sync server; secret values never sync)
+    #[command(subcommand)]
+    Sync(commands::sync::SyncCmd),
     /// Generate shell completions
     Completions {
         #[arg(value_enum)]
@@ -125,6 +128,15 @@ fn dispatch(command: Cmd) -> i32 {
                 Err(e) => {
                     eprintln!("{} {e:#}", "error:".red().bold());
                     1
+                }
+            }
+        }
+        Cmd::Sync(cmd) => {
+            return match commands::sync::run(cmd) {
+                Ok(code) => code,
+                Err(e) => {
+                    eprintln!("{} {e:#}", "error:".red().bold());
+                    2
                 }
             }
         }

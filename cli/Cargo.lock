@@ -1598,8 +1598,10 @@ dependencies = [
  "clap",
  "clap_complete",
  "colored",
+ "dirs",
  "futures-util",
  "hitop-core",
+ "hitop-sync-crypto",
  "httpmock",
  "indicatif",
  "predicates",
@@ -1618,6 +1620,7 @@ dependencies = [
  "tonic",
  "tonic-reflection",
  "tower",
+ "url",
 ]
 
 [[package]]
@@ -1672,6 +1675,7 @@ dependencies = [
  "hpke",
  "serde",
  "serde_json",
+ "sha2",
  "zeroize",
 ]
 

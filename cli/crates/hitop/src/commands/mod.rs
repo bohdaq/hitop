@@ -17,6 +17,7 @@ pub mod secret;
 pub mod send;
 pub mod snippet;
 pub mod source;
+pub mod sync;
 #[cfg(feature = "telemetry")]
 pub mod telemetry;
 pub mod variables;
