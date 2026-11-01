@@ -138,6 +138,7 @@ lit-material-code-block::part(pre) { max-height: 60vh; overflow: auto; font-fami
 .page-actions { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-75); }
 .page-lead, .hint { margin: 0; color: var(--md-sys-color-on-surface-variant); }
 .hint { font-size: var(--text-sm); line-height: var(--leading-sm); }
+.code-preview { margin: 0; padding: var(--space-200); overflow-x: auto; border-radius: var(--md-sys-shape-corner-small); background: var(--md-sys-color-surface-container); font-family: var(--font-mono); font-size: var(--text-sm); line-height: var(--leading-sm); }
 .back {
   justify-self: start; display: inline-flex; align-items: center; gap: var(--space-75);
   padding: var(--space-50) var(--space-100); border: 0; border-radius: var(--md-sys-shape-corner-full);

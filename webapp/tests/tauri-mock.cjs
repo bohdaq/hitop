@@ -9,6 +9,9 @@
 //   scripts   the same JavaScript preamble scripting.rs runs in boa, in node:vm
 //   folders   real directories, read and written by hitop-core in WASM
 //   secrets   an in-memory keychain
+//   ping      the usage ping setting (commands.rs telemetry_*): answered
+//             already unless a test sets `telemetry.asked = false`;
+//             `telemetry = null` is a build without it (Mac App Store)
 //   cookies   hitop-core's jar (cookies.rs, same rules as features.js) in
 //             <config>/cookies/global.json
 const fs = require('fs');
@@ -145,6 +148,13 @@ class TauriMock {
     this.writes = [];
     this.nextFolder = null;
     this.lastCall = 0;
+    this.telemetry = { enabled: false, asked: true, id: null, lastPing: null };
+  }
+
+  telemetryStatus() {
+    if (!this.telemetry) throw 'this build has no usage ping';
+    const t = this.telemetry;
+    return { enabled: t.enabled, asked: t.asked, endpoint: 'https://hitop.rws8.tech/api/ping', ping: { id: t.id ?? '<a random id, made when you turn it on>', surface: 'desktop', version: '0.1.0', os: 'linux' }, lastPing: t.lastPing };
   }
 
   async ready() {
@@ -213,6 +223,12 @@ class TauriMock {
         return this.write('environments.json', f.normalize('environments', args.environments));
       case 'send_request':
         return this.send(args.args);
+      case 'telemetry_status':
+        return this.telemetryStatus();
+      case 'telemetry_set':
+        if (!this.telemetry) throw 'this build has no usage ping';
+        Object.assign(this.telemetry, { asked: true, enabled: args.enabled, id: args.enabled ? this.telemetry.id ?? '0123456789abcdef0123456789abcdef' : null, lastPing: null });
+        return this.telemetryStatus();
       case 'cookies_load':
         return this.loadJar();
       case 'cookies_save':

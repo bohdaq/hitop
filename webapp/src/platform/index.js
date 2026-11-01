@@ -12,6 +12,8 @@
 //   cookies                  null (the app keeps its jar in localStorage), or { load(), save(cookies) }
 //                            for a native jar: send() then gets options.cookies and returns res.cookies
 //   cookiesNote              which requests the jar applies to and where it is kept
+//   pages                    optional: extra sidebar pages [{ kind, label, icon, render(store, app) }]
+//   onStart(app)             optional: runs once the app is on screen
 //   scripts                  null (scripts run in the page) or { pre(args), post(args) }, async
 //   folders                  null, or { pick, create, read, write, restore, remember, forget, label }
 //   saveFile(name, data, type)  data is text or bytes

@@ -384,3 +384,60 @@ pub fn write_file(path: String, data: String) -> Result<(), String> {
     let bytes = B64.decode(data).map_err(|e| format!("invalid base64: {e}"))?;
     std::fs::write(&path, bytes).map_err(|e| format!("writing {path}: {e}"))
 }
+
+// ── Usage ping (feature `telemetry`; absent from Mac App Store builds) ────────
+
+/// The desktop's usage ping setting and exactly what a ping sends; an error
+/// in builds without the ping, so the web app shows no setting there.
+#[tauri::command]
+pub fn telemetry_status(app: tauri::AppHandle) -> Result<Value, String> {
+    #[cfg(feature = "telemetry")]
+    {
+        use hitop_core::telemetry::{endpoint, os, Surface, Telemetry};
+        let t = Telemetry::new(Surface::Desktop).map_err(|e| format!("{e:#}"))?;
+        let version = app.package_info().version.to_string();
+        let state = t.state();
+        let ping = match t.payload(&version) {
+            Some(p) => serde_json::to_value(p).map_err(|e| e.to_string())?,
+            None => serde_json::json!({ "id": "<a random id, made when you turn it on>", "surface": "desktop", "version": version, "os": os() }),
+        };
+        Ok(serde_json::json!({ "enabled": state.enabled, "asked": state.asked, "endpoint": endpoint(), "ping": ping, "lastPing": state.last_ping }))
+    }
+    #[cfg(not(feature = "telemetry"))]
+    {
+        let _ = app;
+        Err("this build has no usage ping".into())
+    }
+}
+
+/// Turns the ping on or off (and records that the question was answered).
+/// Turned on, the first ping goes out now.
+#[tauri::command]
+pub fn telemetry_set(app: tauri::AppHandle, enabled: bool) -> Result<Value, String> {
+    #[cfg(feature = "telemetry")]
+    {
+        use hitop_core::telemetry::{Surface, Telemetry};
+        let t = Telemetry::new(Surface::Desktop).map_err(|e| format!("{e:#}"))?;
+        t.set_enabled(enabled).map_err(|e| format!("{e:#}"))?;
+        if enabled {
+            ping_in_background(app.package_info().version.to_string());
+        }
+        telemetry_status(app)
+    }
+    #[cfg(not(feature = "telemetry"))]
+    {
+        let _ = (app, enabled);
+        Err("this build has no usage ping".into())
+    }
+}
+
+/// Sends the ping off the main thread when it is on and a week has passed.
+#[cfg(feature = "telemetry")]
+pub fn ping_in_background(version: String) {
+    use hitop_core::telemetry::{now, Surface, Telemetry};
+    std::thread::spawn(move || {
+        if let Ok(t) = Telemetry::new(Surface::Desktop) {
+            let _ = t.maybe_ping(&version, now());
+        }
+    });
+}

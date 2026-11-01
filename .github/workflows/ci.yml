@@ -122,6 +122,9 @@ jobs:
       - name: Web app built for the desktop (Tauri adapter, mocked invoke)
         working-directory: webapp
         run: npm run build:tauri && npm run test:e2e:tauri
+      - name: No usage ping in the web app (dist/ and the web adapter)
+        working-directory: webapp
+        run: node scripts/check-no-telemetry.mjs
 
   extension:
     name: Browser extension build
@@ -172,3 +175,20 @@ jobs:
       - name: Desktop with the web app (tauri.webapp.conf.json)
         working-directory: desktop/src-tauri
         run: TAURI_CONFIG="$(cat tauri.webapp.conf.json)" cargo check --locked
+      - name: Mac App Store configuration has no usage ping (no telemetry feature)
+        working-directory: desktop/src-tauri
+        env:
+          CARGO_PROFILE_DEV_DEBUG: "0"
+        run: |
+          # The MAS build is a plain `tauri build`: the desktop crate without `telemetry`.
+          cargo build --locked
+          bin=target/debug/hitop-desktop
+          for s in 'hitop.rws8.tech/api/ping' '/api/ping' 'HITOP_TELEMETRY_URL' 'telemetry.json'; do
+            if grep -q -a -F "$s" "$bin"; then echo "MAS build contains '$s'"; exit 1; fi
+          done
+          # Control: the GitHub Release configuration (--features telemetry) has them.
+          cargo build --locked --features telemetry
+          for s in 'hitop.rws8.tech/api/ping' 'telemetry.json'; do
+            grep -q -a -F "$s" "$bin" || { echo "control: telemetry build lacks '$s'"; exit 1; }
+          done
+          echo "MAS configuration: no ping code or endpoint; telemetry build: present"

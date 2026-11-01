@@ -44,6 +44,10 @@ export class HitopApp extends LitElement {
     this.querySelector("#toast")?.show(message);
   }
 
+  firstUpdated() {
+    platform().onStart?.(this);
+  }
+
   go(kind, collectionId = null) {
     this.navOpen = false;
     this.store.show(kind, collectionId);
@@ -385,6 +389,9 @@ export class HitopApp extends LitElement {
           <button type="button" class="tree-row" @click=${() => this.openDialog("history")}>${icon("clock-counter-clockwise")}<span>History</span></button>
           <button type="button" class="tree-row" @click=${() => this.openDialog("export")}>${icon("file-arrow-down")}<span>Export</span></button>
           <button type="button" class="tree-row" @click=${() => this.openDialog("import")}>${icon("file-arrow-up")}<span>Import</span></button>
+          ${(platform().pages ?? []).map(
+            (page) => html`<button type="button" class="tree-row" aria-current=${kind === page.kind ? "page" : "false"} @click=${() => this.go(page.kind)}>${icon(page.icon)}<span>${page.label}</span></button>`,
+          )}
         </div>
       </aside>`;
   }
@@ -440,6 +447,8 @@ export class HitopApp extends LitElement {
   renderMain() {
     const s = this.store;
     const { kind, collectionId } = s.view;
+    const page = platform().pages?.find((p) => p.kind === kind);
+    if (page) return page.render(s, this);
     if (kind === "cookies") {
       return html`<hitop-cookies .store=${s} .version=${s.version} .app=${this}></hitop-cookies>`;
     }

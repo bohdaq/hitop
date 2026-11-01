@@ -81,4 +81,5 @@ jobs:
           tagName: ${{ github.ref_name }}
           releaseName: HITOP desktop ${{ github.ref_name }}
           prerelease: ${{ needs.check.outputs.prerelease == 'true' }}
-          args: ${{ matrix.args }} --config src-tauri/tauri.github.conf.json
+          # GitHub Release builds carry the opt-in usage ping; the Mac App Store build doesn't.
+          args: ${{ matrix.args }} --config src-tauri/tauri.github.conf.json --features telemetry

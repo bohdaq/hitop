@@ -7,6 +7,7 @@
 // disk. Open tabs stay in the window's localStorage.
 import storageService from "../../../frontend/src/services/storageService.jsx";
 import { historyFromRust, historyToRust } from "./history.js";
+import { askOnce, settingsPages } from "./tauri-settings.js";
 
 // What @tauri-apps/api's invoke() calls; the e2e tests put a mock here.
 const invoke = (cmd, args = {}) => window.__TAURI_INTERNALS__.invoke(cmd, args);
@@ -138,6 +139,10 @@ export function createPlatform() {
     });
   };
 
+  const telemetry = {
+    status: () => invoke("telemetry_status"),
+    set: (enabled) => invoke("telemetry_set", { enabled }),
+  };
   const platform = {
     name: "tauri",
     onError(fn) {
@@ -169,6 +174,10 @@ export function createPlatform() {
           // nothing stored, or not readable: start empty
         }
       }
+      // The usage ping's setting (absent in Mac App Store builds: no page then).
+      const settings = await settingsPages(telemetry);
+      platform.pages = settings.pages;
+      platform.onStart = () => askOnce(telemetry, settings.status);
       cache.collections = collections?.length ? collections : null;
       cache.history = historyFromRust(history);
       cache.contexts = contexts && typeof contexts === "object" ? contexts : {};

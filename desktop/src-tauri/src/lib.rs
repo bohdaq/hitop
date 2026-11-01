@@ -28,7 +28,15 @@ pub fn run() {
             commands::secret_set,
             commands::secret_delete,
             commands::write_file,
+            commands::telemetry_status,
+            commands::telemetry_set,
         ])
+        .setup(|_app| {
+            // The usage ping, when the user turned it on (off by default).
+            #[cfg(feature = "telemetry")]
+            commands::ping_in_background(_app.package_info().version.to_string());
+            Ok(())
+        })
         .run(tauri::generate_context!())
         .expect("error running hitop desktop app");
 }
