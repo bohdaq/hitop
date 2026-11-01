@@ -471,3 +471,108 @@ pub fn ping_in_background(version: String) {
         }
     });
 }
+
+// ── WebSocket ───────────────────────────────────────────────────────────────
+// The web app's WebSocket requests on the desktop: hitop-core's client
+// (tokio-tungstenite over rustls), so handshake headers and auth reach the
+// server, which a browser's WebSocket can't do. `ws_connect` opens a
+// connection and streams its events to the page on a channel; `ws_send` and
+// `ws_close` act on it by id. Variables are filled in by the page.
+
+/// Open connections, by id.
+#[derive(Default)]
+pub struct Sockets {
+    next: std::sync::atomic::AtomicU64,
+    open: std::sync::Mutex<HashMap<u64, hitop_core::websocket::Sender>>,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct WsConnectArgs {
+    pub url: String,
+    #[serde(default)]
+    pub headers: Vec<(String, String)>,
+    #[serde(default)]
+    pub protocols: Vec<String>,
+    /// Time limit for the handshake (default 30 s).
+    #[serde(default)]
+    pub timeout_ms: Option<u64>,
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct WsOpened {
+    pub id: u64,
+    pub status: u16,
+    pub protocol: Option<String>,
+    pub headers: Vec<(String, String)>,
+}
+
+/// What the page gets on the channel; `closed` and `error` are the last.
+#[derive(Serialize, Clone)]
+#[serde(tag = "type", rename_all = "camelCase")]
+pub enum WsEvent {
+    /// `data` is the text, or base64 when `binary`.
+    Message { data: String, binary: bool },
+    Closed { code: Option<u16>, reason: String },
+    Error { message: String },
+}
+
+fn ws_event(e: hitop_core::websocket::Event) -> WsEvent {
+    use hitop_core::websocket::{Data, Event};
+    match e {
+        Event::Message(Data::Text(data)) => WsEvent::Message { data, binary: false },
+        Event::Message(Data::Binary(b)) => WsEvent::Message { data: B64.encode(b), binary: true },
+        Event::Closed { code, reason } => WsEvent::Closed { code, reason },
+        Event::Error(message) => WsEvent::Error { message },
+    }
+}
+
+#[tauri::command]
+pub async fn ws_connect(
+    app: tauri::AppHandle,
+    state: tauri::State<'_, Sockets>,
+    args: WsConnectArgs,
+    on_event: tauri::ipc::Channel<WsEvent>,
+) -> Result<WsOpened, String> {
+    use hitop_core::websocket::{self, Target};
+    use tauri::Manager;
+    let target = Target { url: websocket::ws_url(&args.url).map_err(|e| format!("{e:#}"))?, headers: args.headers, subprotocols: args.protocols };
+    let timeout = std::time::Duration::from_millis(args.timeout_ms.unwrap_or(30_000));
+    let conn = websocket::connect(&target, Some(timeout)).await.map_err(|e| format!("{e:#}"))?;
+    let id = state.next.fetch_add(1, std::sync::atomic::Ordering::Relaxed) + 1;
+    state.open.lock().map_err(|e| e.to_string())?.insert(id, conn.sender);
+    let mut events = conn.events;
+    tauri::async_runtime::spawn(async move {
+        while let Some(e) = events.recv().await {
+            let last = !matches!(e, websocket::Event::Message(_));
+            let _ = on_event.send(ws_event(e));
+            if last {
+                break;
+            }
+        }
+        if let Ok(mut open) = app.state::<Sockets>().open.lock() {
+            open.remove(&id);
+        }
+    });
+    Ok(WsOpened { id, status: conn.opened.status, protocol: conn.opened.protocol, headers: conn.opened.headers })
+}
+
+/// Sends text, or bytes given as base64 when `binary`.
+#[tauri::command]
+pub fn ws_send(state: tauri::State<'_, Sockets>, id: u64, data: String, binary: Option<bool>) -> Result<(), String> {
+    use hitop_core::websocket::Data;
+    let open = state.open.lock().map_err(|e| e.to_string())?;
+    let sender = open.get(&id).ok_or("the connection is closed")?;
+    let data = if binary.unwrap_or(false) { Data::Binary(B64.decode(data).map_err(|e| format!("invalid base64: {e}"))?) } else { Data::Text(data) };
+    sender.send(data).map_err(|e| format!("{e:#}"))
+}
+
+/// Starts the closing handshake; the channel then gets `closed`.
+#[tauri::command]
+pub fn ws_close(state: tauri::State<'_, Sockets>, id: u64) -> Result<(), String> {
+    if let Some(sender) = state.open.lock().map_err(|e| e.to_string())?.get(&id) {
+        sender.close();
+    }
+    Ok(())
+}

@@ -32,7 +32,11 @@ pub fn run() {
             commands::write_file,
             commands::telemetry_status,
             commands::telemetry_set,
+            commands::ws_connect,
+            commands::ws_send,
+            commands::ws_close,
         ])
+        .manage(commands::Sockets::default())
         .setup(|_app| {
             // The usage ping, when the user turned it on (off by default).
             #[cfg(feature = "telemetry")]
