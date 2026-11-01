@@ -24,7 +24,8 @@ work started. Don't re-ask them.
    (Handoffs).
 6. Clean build output (`cargo clean` in touched workspaces, `rm -rf */dist */node_modules/.vite`)
    when free disk drops below 20 GB.
-7. Continue with the next tranche. Stop only at a real blocker: a missing credential, a failing
+7. Continue with the next tranche, through T26 with no pause between tranches or phases (owner
+   decision 2026-11-01). Stop only at a real blocker: a missing credential, a failing
    test you can't fix, or a decision this file doesn't cover. When blocked, write the question in
    section 6 and move on to any tranche that doesn't depend on it.
 
@@ -64,10 +65,25 @@ after green e2e; push to `bohdaq/hitop-action` and tag it.
 - Add Claude, Claude Code or Anthropic attribution to commits, tags, releases or PRs.
 - Post anywhere public (Show HN, Reddit, MCP directories, Marketplace listing). Prepare the text
   and record it as a handoff.
-- Change App Store Connect, prices, DNS, or anything on the VM other than `deploy/deploy.sh` and
-  the sync-server unit added in T23.
+- Change App Store Connect, prices or DNS.
+- Change anything on the VM beyond what this file allows (next block).
 - Store secrets in collection files, history, logs, reports or test fixtures.
 - Add a feature to one surface only when it belongs to all three, unless the tranche says so.
+
+**VM (bohdan-prod-donotdelete, 168.119.17.57), owner decision 2026-11-01:**
+- Reach it through your own tunnel pod `claude-hitop-tunnel` in namespace `shalb-dev` on stage
+  (`KUBECONFIG=~/.kube/stage_config`, image `alpine/socat:1.8.0.3`, cpu request 10m, args
+  `tcp-listen:2222,fork,reuseaddr tcp:10.1.0.32:22`), `kubectl port-forward`, then
+  `ssh -p <port> ubuntu@127.0.0.1`. Stop the port-forward by PID and delete the pod afterwards.
+  Never touch other pods or the VM object itself.
+- Allowed: `deploy/deploy.sh`; a hitop-server env file (T10 stats token); the sync-server unit,
+  data directory and env (T23); a front rws route plus ACME name for `sync.hitop.rws8.tech` in
+  `/etc/rws/rws.config.toml`. For every config change: back the file up (`.bak-hitop-<ts>`), run
+  `rws --check=<file>` before `systemctl restart rws`, then verify rws8.tech, git.rws8.tech,
+  hitop.rws8.tech and the mail certificate still answer (`curl --resolve <host>:443:127.0.0.1`);
+  roll back at once on any failure. Nothing else on the VM (mail, Gitea, other sites) is yours.
+- The VM can't reach its own public IP: probe with `curl --resolve`, and send mail through
+  `127.0.0.1:587` (the existing `noreply` account, `SMTP_URL` in `/etc/hitop-sync/env`).
 
 **Engineering standards:**
 - Tests for every behaviour you add. HTTP tests run against a local mock server (`httpmock` in
@@ -240,7 +256,7 @@ export PATH="$HOME/.cargo/bin:$PATH"
 
 #### T7 Release infra: GitHub Releases, Docker image
 - `desktop-v*` tag → `tauri-apps/tauri-action` matrix: macOS universal `.dmg`, Windows
-  `.msi`, Linux `.AppImage` and `.deb`, all unsigned, attached to a GitHub Release with notes that
+  `.msi`, Linux `.AppImage` and `.deb`, all unsigned (macOS ad-hoc signed; owner decision 2026-11-01, no Developer ID), attached to a GitHub Release with notes that
   explain the unsigned-app warnings.
 - `cli-v*` tag → crates.io publish (existing `release-cli.yml`) plus CLI binaries for the five
   targets in `cli/Cargo.toml` (regenerate the cargo-dist workflow with the current `dist`, or a
