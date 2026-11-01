@@ -106,4 +106,20 @@ const [env] = parseEnvironments(readFileSync(join(fixtures, "conduit/conduit.pos
 assert.deepEqual(env.secrets, ["PASSWORD"]);
 assert.equal(env.variables.PASSWORD, "dummy-password-1");
 
+// OpenAPI fixtures through hitop-wasm: the CLI's counts, auth inlined for the web app.
+const openapi = join(here, "../../cli/fixtures/openapi");
+for (const [file, requests, folders] of [["petstore/openapi.yaml", 19, 3], ["adyen-checkout/CheckoutService-v71.yaml", 28, 7], ["kubernetes-apps/apis__apps__v1_openapi.json", 77, 1]]) {
+  const text = readFileSync(join(openapi, file), "utf8");
+  assert.ok(format.isOpenapi(text), file);
+  const r = format.importOpenapi(text, { inlineAuth: true });
+  assert.equal(r.report.mapped.requests, requests, file);
+  assert.equal(r.report.mapped.folders, folders, file);
+  assert.equal(r.collection.auth, undefined, file);
+  const s = format.syncOpenapi(r.collection, text, { inlineAuth: true }, false);
+  assert.equal(s.diff.unchanged, requests, `${file}: a sync with the same spec changes nothing`);
+}
+const pet = format.importOpenapi(readFileSync(join(openapi, "petstore/openapi.yaml"), "utf8"), { inlineAuth: true }).collection;
+assert.equal(pet.requests.find((r) => r.openapi.operationId === "getPetById").auth.key, "api_key");
+assert.ok(!format.isOpenapi('{"info": {}, "item": []}'));
+
 console.log("pm checks passed");

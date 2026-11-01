@@ -12,6 +12,7 @@ import { issueText } from "../pm.js";
 import "./request-view.js";
 import "./collection-views.js";
 import { WIDE_DIALOGS, codeDialog, compareDialog, refreshCode } from "./tools-dialogs.js";
+import { OPENAPI_DIALOGS, openapiDialog, submitOpenapi } from "./openapi-dialogs.js";
 
 // Import errors in words: a parser's message ("Unexpected token } in JSON at
 // position 41") tells most people nothing.
@@ -115,6 +116,10 @@ export class HitopApp extends LitElement {
     if (!d || d.submitted) return;
     if (!this.validateDialog()) return;
     d.submitted = true;
+    if (OPENAPI_DIALOGS.includes(d.kind)) {
+      submitOpenapi(this, d);
+      return;
+    }
     if (d.kind === "add-collection") s.addCollection(this.field("name"));
     if (d.kind === "add-environment") s.addEnvironment(this.field("name"));
     if (d.kind === "rename-environment") s.renameEnvironment(d.id, this.field("name"));
@@ -135,10 +140,15 @@ export class HitopApp extends LitElement {
       s.saveRequest(this.field("name"), target?.id);
     }
     if (d.kind === "import") {
-      // A Postman import may come back with things to check: show them.
-      s.importJson(this.field("json")).then(
-        (report) => {
-          if (report?.issues.length) this.dialog = { kind: "import-report", report };
+      // A Postman import may come back with things to check: show them. An
+      // OpenAPI spec is added as a new collection, with its report.
+      const text = this.field("json");
+      s.isOpenapi(text)
+        .then(async (openapi) => (openapi ? { openapi: await s.importOpenapi({ text }) } : { report: await s.importJson(text) }))
+        .then(
+        ({ openapi, report }) => {
+          if (openapi) this.dialog = { kind: "openapi-report", report: openapi };
+          else if (report?.issues.length) this.dialog = { kind: "import-report", report };
           else this.closeDialog();
         },
         (err) => (this.dialog = { ...d, submitted: false, error: readableError(err, "a collection file") }),
@@ -242,9 +252,11 @@ export class HitopApp extends LitElement {
       case "import":
         headline = "Import collections";
         body = html`
-          <p class="dialog-note">Paste HITOP, Postman v2.1 or Bruno JSON. Importing replaces every collection you have now.</p>
-          <lit-material-textarea id="json" variant="outlined" label="Collection JSON" rows="10" required autofocus
-            ?error=${Boolean(d.error)} error-text=${d.error ?? ""}></lit-material-textarea>`;
+          <p class="dialog-note">Paste HITOP, Postman v2.1 or Bruno JSON. Importing replaces every collection you have now.
+            An OpenAPI 3 spec (YAML or JSON) is added as a new collection instead.</p>
+          <lit-material-textarea id="json" variant="outlined" label="Collection JSON or OpenAPI spec" rows="10" required autofocus
+            ?error=${Boolean(d.error)} error-text=${d.error ?? ""}></lit-material-textarea>
+          <lit-material-button variant="text" class="dialog-link" @click=${() => this.openDialog("openapi-import")}>${icon("globe")} Load an OpenAPI spec from a URL</lit-material-button>`;
         footer = actions("Replace and import", true);
         break;
       case "import-report": {
@@ -286,6 +298,11 @@ export class HitopApp extends LitElement {
           <p class="dialog-note">The response is saved with ${d.request}, as an example to compare later (and in its folder file).</p>
           <lit-material-text-field id="name" variant="outlined" label="Example name" .value=${d.name} required autofocus></lit-material-text-field>`;
         footer = actions("Save");
+        break;
+      case "openapi-import":
+      case "openapi-report":
+      case "openapi-sync":
+        ({ headline, body, footer } = openapiDialog(this, d));
         break;
       case "code":
       case "compare":

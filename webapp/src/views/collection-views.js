@@ -9,6 +9,7 @@ import { secretNames } from "../features.js";
 import { platform } from "../platform/index.js";
 import { testList } from "./request-view.js";
 import { methodLabel } from "../store.js";
+import { syncButton } from "./openapi-dialogs.js";
 
 class LightElement extends LitElement {
   createRenderRoot() {
@@ -121,6 +122,7 @@ export class HitopCollection extends LightElement {
               ${icon("play")} ${mine && run.running ? "Running" : "Run collection"}
             </lit-material-button>
             <lit-material-button variant="outlined" @click=${() => this.app.go("variables", c.id)}>${icon("sliders-horizontal")} Variables</lit-material-button>
+            ${syncButton(this.app, c)}
             <lit-material-icon-button aria-label="Rename collection" @click=${() => this.app.openDialog("rename-collection", { id: c.id, name: c.name })}>${icon("pencil-simple")}</lit-material-icon-button>
             <lit-material-icon-button aria-label="Duplicate collection" @click=${() => s.duplicateCollection(c.id)}>${icon("copy")}</lit-material-icon-button>
             <lit-material-icon-button aria-label="Export as zip" @click=${() => s.exportZip(c.id)}>${icon("file-zip")}</lit-material-icon-button>

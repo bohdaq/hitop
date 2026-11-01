@@ -190,6 +190,11 @@ lit-material-code-block::part(pre) { max-height: 60vh; overflow: auto; font-fami
 .import-report { display: grid; gap: var(--space-100); max-height: 50vh; margin: 0; padding: 0; overflow: auto; list-style: none; }
 .import-report li { display: grid; gap: var(--space-25); min-width: 0; }
 .import-report code { font-family: var(--font-mono); font-size: var(--text-xs); line-height: var(--leading-xs); color: var(--md-sys-color-on-surface-variant); overflow-wrap: anywhere; }
+.report-heading { margin: var(--space-100) 0 0; font-size: var(--text-sm); line-height: var(--leading-sm); font-weight: 600; }
+.openapi-diff b { font-family: var(--font-mono); }
+.openapi-diff .diff-add b { color: var(--md-sys-color-primary); }
+.openapi-diff .diff-del b { color: var(--md-sys-color-error); }
+.dialog-link { justify-self: start; }
 .history-item {
   display: grid; grid-template-columns: auto auto minmax(0, 1fr) auto; align-items: center; gap: var(--space-100);
   width: 100%; padding: var(--space-75); border: 0; border-radius: var(--md-sys-shape-corner-medium);

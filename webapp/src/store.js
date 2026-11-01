@@ -588,6 +588,61 @@ export class Store extends EventTarget {
     return report;
   }
 
+  // --- OpenAPI -------------------------------------------------------------
+
+  // A spec from a URL, through the same transport as Send (the proxy for
+  // public hosts on the web, Rust on the desktop).
+  async fetchSpec(url) {
+    const res = await platform().send(url, { method: "GET", headers: { Accept: "application/yaml, application/json;q=0.9, */*;q=0.8" } });
+    const text = await res.text();
+    if (!res.ok) throw new Error(`the server answered ${res.status}${text ? `: ${text.slice(0, 160)}` : ""}`);
+    return text;
+  }
+
+  // True when the text is an OpenAPI (or Swagger) document.
+  async isOpenapi(text) {
+    return (await loadFormat()).isOpenapi(text);
+  }
+
+  // Adds an OpenAPI spec (text, or fetched from `url`) as a new collection,
+  // through hitop-core's importer (hitop-wasm), as `hitop import openapi`
+  // does. Returns the report: { name, mapped, skipped, warnings }.
+  async importOpenapi({ text = "", url = "" } = {}) {
+    if (url) text = await this.fetchSpec(url);
+    const out = (await loadFormat()).importOpenapi(text, { source: url || null, inlineAuth: true });
+    const col = out.collection;
+    if (this.collection(col.id)) col.id = generateUniqueId();
+    this.collections = [...this.collections, col];
+    this.view = { kind: "collection", collectionId: col.id };
+    this.emit();
+    this.notify(`Imported ${col.name} (${col.requests.length} request${col.requests.length === 1 ? "" : "s"})`);
+    return { name: col.name, ...out.report };
+  }
+
+  // What a sync with a newer spec would do: { collection, diff, report, text }.
+  // Nothing changes until applyOpenapiSync. Request ids go to Rust as their
+  // positions (web ids may be strings) and come back as they were.
+  async previewOpenapiSync(collectionId, { text = "", url = "" } = {}, prune = false) {
+    const col = this.collection(collectionId);
+    if (!col) throw new Error("the collection is gone");
+    if (url) text = await this.fetchSpec(url);
+    const ids = col.requests.map((r) => r.id);
+    const sent = { ...col, id: 0, requests: col.requests.map((r, i) => ({ ...r, id: i })) };
+    const out = (await loadFormat()).syncOpenapi(sent, text, url ? { source: url, inlineAuth: true } : { inlineAuth: true }, prune);
+    // Added requests have ids derived from their files (53-bit hashes).
+    const requests = out.collection.requests.map((r) => (r.id < ids.length ? { ...r, id: ids[r.id] } : r));
+    return { ...out, collection: { ...out.collection, id: col.id, requests }, text };
+  }
+
+  applyOpenapiSync(collectionId, preview) {
+    const keep = new Set(preview.collection.requests.map((r) => r.id));
+    this.collections = this.collections.map((c) => (c.id === collectionId ? preview.collection : c));
+    this.tabs = this.tabs.map((t) => (t.loadedCollectionId === collectionId && !keep.has(t.loadedRequestId) ? { ...t, loadedRequestId: null, loadedCollectionId: null } : t));
+    this.emit();
+    const d = preview.diff;
+    this.notify(`Synced ${preview.collection.name}: ${d.added.length} added, ${d.changed.length} changed, ${d.removed.length} removed${d.pruned && d.removed.length ? " (deleted)" : ""}`);
+  }
+
   openHistoryItem(item) {
     this.view = { kind: "request", collectionId: null };
     this.tabs = tabService.updateTab(this.tabs, this.currentTab, {
