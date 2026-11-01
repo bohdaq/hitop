@@ -33,7 +33,8 @@ ProtectKernelModules=true
 ProtectControlGroups=true
 RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX
 MemoryMax=512M
-TasksMax=256
+# rws spawns 200 worker threads, tokio its own pool on top.
+TasksMax=1024
 
 [Install]
 WantedBy=multi-user.target

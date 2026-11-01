@@ -5,7 +5,7 @@
 #[test]
 fn server_build_has_no_client_crypto() {
     let out = std::process::Command::new(env!("CARGO"))
-        .args(["tree", "--offline", "-e", "normal,build", "--prefix", "none", "--all-features", "-p", "hitop-sync-server"])
+        .args(["tree", "--locked", "-e", "normal,build", "--prefix", "none", "--all-features", "-p", "hitop-sync-server"])
         .current_dir(env!("CARGO_MANIFEST_DIR"))
         .output()
         .expect("cargo tree");
