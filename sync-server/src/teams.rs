@@ -20,6 +20,7 @@ use serde_json::{json, Value as Json};
 use webauthn_rs::prelude::Uuid;
 
 use crate::api::{b64, body, new_token, random_hex, token_hash, unb64, ApiError, ApiResult, State};
+use crate::audit::{self, Event};
 use crate::auth::{authenticate, RUNNER_DOMAIN};
 use crate::mail::Mail;
 use crate::workspaces::{insert_wraps, membership, require, Role, WRAPPED_KEY_LEN};
@@ -80,6 +81,7 @@ pub fn create(state: &State, request: &Request, params: &PathParams) -> ApiResul
             "INSERT INTO invites (id, workspace_id, token_hash, email, role, created_by, created_at, expires_at) VALUES ($1, $2, $3, $4, $5, $6, $7, $8)",
             &[(&invite_id).into(), id.into(), token_hash(&token).into(), (&email).into(), role.as_str().into(), (&user.id).into(), now.into(), (now + INVITE_TTL).into()],
         )?;
+        audit::record(tx, state, Event::new(id, "invite_created", Some(&user)).target(&invite_id).detail(json!({ "email": email, "role": role.as_str(), "mailed": mail })))?;
         Ok::<_, ApiError>((invite_id, user.email, mail))
     })?;
     let link = state.config.public_url.join("invite").map(|u| format!("{u}#{token}")).unwrap_or_default();
@@ -134,6 +136,7 @@ pub fn delete(state: &State, request: &Request, params: &PathParams) -> ApiResul
         if tx.execute("DELETE FROM invites WHERE workspace_id = $1 AND id = $2", &[id.into(), invite.into()])? == 0 {
             return Err(ApiError::not_found("no such invite"));
         }
+        audit::record(tx, state, Event::new(id, "invite_deleted", Some(&user)).target(invite))?;
         Ok((204, Json::Null))
     })
 }
@@ -172,6 +175,7 @@ pub fn accept(state: &State, request: &Request, _: &PathParams) -> ApiResult {
             return Err(ApiError::bad("register a device key first (POST /v1/me/keys)"));
         }
         tx.execute("UPDATE invites SET accepted_by = $1, accepted_at = $2 WHERE id = $3", &[(&user.id).into(), now.into(), row.text(0).into()])?;
+        audit::record(tx, state, Event::new(&row.text(1), "invite_accepted", Some(&user)).target(&row.text(0)).detail(json!({ "role": row.text(3) })))?;
         Ok((200, json!({ "workspaceId": row.text(1), "role": row.text(3) })))
     })
 }
@@ -207,6 +211,7 @@ pub fn set_role(state: &State, request: &Request, params: &PathParams) -> ApiRes
             }
         }
         tx.execute("UPDATE members SET role = $1 WHERE workspace_id = $2 AND user_id = $3", &[role.as_str().into(), id.into(), (&target).into()])?;
+        audit::record(tx, state, Event::new(id, "role_changed", Some(&user)).target(&target).detail(json!({ "from": row.text(0), "to": role.as_str() })))?;
         Ok((200, json!({ "userId": target, "role": role.as_str() })))
     })
 }
@@ -262,6 +267,7 @@ pub fn create_runner(state: &State, request: &Request, params: &PathParams) -> A
             "INSERT INTO sessions (token_hash, user_id, created_at, expires_at) VALUES ($1, $2, $3, $4)",
             &[token_hash(&token).into(), (&runner_id).into(), now.into(), expires.into()],
         )?;
+        audit::record(tx, state, Event::new(id, "runner_created", Some(&user)).target(&runner_id).detail(json!({ "keyId": key_id, "epoch": ws.epoch, "expiresAt": expires })))?;
         Ok((201, json!({ "userId": runner_id, "keyId": key_id, "token": token, "epoch": ws.epoch, "expiresAt": expires })))
     })
 }

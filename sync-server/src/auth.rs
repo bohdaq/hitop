@@ -1,6 +1,8 @@
 //! Sign-in: email magic links and passkeys (WebAuthn, `webauthn-rs`), both ending in a bearer
 //! session. Tokens (links and sessions) are 32 random bytes; the database keeps only their
-//! SHA-256, so a copy of the database doesn't sign anyone in.
+//! SHA-256, so a copy of the database doesn't sign anyone in. Single sign-on (OpenID Connect)
+//! is oidc.rs; it ends in the same sessions. Every sign-in, failed sign-in and sign-out goes to
+//! the audit log (audit.rs).
 
 use rust_web_server::request::Request;
 use rust_web_server::router::PathParams;
@@ -9,6 +11,7 @@ use serde_json::{json, Value as Json};
 use webauthn_rs::prelude::{Passkey, PublicKeyCredential, RegisterPublicKeyCredential, Uuid};
 
 use crate::api::{b64, bearer, body, new_token, random_hex, token_hash, ApiError, ApiResult, Ceremony, State};
+use crate::audit::{self, Event};
 use crate::db::Tx;
 use crate::mail::Mail;
 
@@ -50,7 +53,7 @@ pub fn authenticate(state: &State, tx: &mut Tx, request: &Request) -> Result<Use
     Ok(User { id: row.text(0), email: row.text(1), runner_of: row.text(2) })
 }
 
-fn normalize_email(email: &str) -> Result<String, ApiError> {
+pub fn normalize_email(email: &str) -> Result<String, ApiError> {
     let email = email.trim().to_lowercase();
     let ok = email.len() <= 254 && !email.chars().any(|c| c.is_control() || c.is_whitespace()) && email.parse::<lettre::Address>().is_ok();
     if !ok || email.ends_with(&format!("@{RUNNER_DOMAIN}")) {
@@ -59,7 +62,8 @@ fn normalize_email(email: &str) -> Result<String, ApiError> {
     Ok(email)
 }
 
-fn new_session(state: &State, tx: &mut Tx, user: &User) -> ApiResult {
+/// A new session for `user`, signed in by `method` (`email`, `passkey`, `sso`); audited.
+pub fn new_session(state: &State, tx: &mut Tx, user: &User, method: &str) -> ApiResult {
     let token = new_token();
     let now = state.now();
     let expires = now + state.config.session_ttl_secs;
@@ -68,7 +72,14 @@ fn new_session(state: &State, tx: &mut Tx, user: &User) -> ApiResult {
         "INSERT INTO sessions (token_hash, user_id, created_at, expires_at) VALUES ($1, $2, $3, $4)",
         &[token_hash(&token).into(), (&user.id).into(), now.into(), expires.into()],
     )?;
+    audit::record(tx, state, Event::new(audit::ACCOUNT, "signin", Some(user)).target(&user.id).detail(json!({ "method": method })))?;
     Ok((200, json!({ "session": token, "expiresAt": expires, "user": { "id": user.id, "email": user.email } })))
+}
+
+/// Answer for an address that must sign in by SSO (`HITOP_SYNC_SSO_REQUIRED`).
+fn sso_only(state: &State, email: &str, method: &str) -> ApiError {
+    audit::record_alone(state, Event::new(audit::ACCOUNT, "signin_failed", None).email(email).detail(json!({ "method": method, "reason": "sso_required" })));
+    ApiError::new(403, "sso_required", "this address signs in with single sign-on (hitop sync login --sso, or Sign in with SSO)")
 }
 
 #[derive(Deserialize)]
@@ -85,6 +96,9 @@ pub fn email_start(state: &State, request: &Request, _: &PathParams) -> ApiResul
     }
     let input: EmailStart = body(request)?;
     let email = normalize_email(&input.email)?;
+    if crate::oidc::sso_required_for(state, &email) {
+        return Err(sso_only(state, &email, "email"));
+    }
     let token = new_token();
     let now = state.now();
     state.db.tx(|tx| -> Result<(), ApiError> {
@@ -123,7 +137,7 @@ struct EmailVerify {
 pub fn email_verify(state: &State, request: &Request, _: &PathParams) -> ApiResult {
     let input: EmailVerify = body(request)?;
     let now = state.now();
-    state.db.tx(|tx| {
+    let result = state.db.tx(|tx| {
         let hash = token_hash(input.token.trim());
         let row = tx.query_one("SELECT email FROM magic_links WHERE token_hash = $1 AND used = 0 AND expires_at > $2", &[(&hash).into(), now.into()])?;
         let Some(row) = row else {
@@ -131,6 +145,10 @@ pub fn email_verify(state: &State, request: &Request, _: &PathParams) -> ApiResu
         };
         tx.execute("UPDATE magic_links SET used = 1 WHERE token_hash = $1", &[hash.into()])?;
         let email = row.text(0);
+        // A link mailed before SSO became required for this address.
+        if crate::oidc::sso_required_for(state, &email) {
+            return Err(ApiError::new(403, "sso_required", format!("{email} signs in with single sign-on")));
+        }
         let user = match tx.query_one("SELECT id FROM users WHERE email = $1", &[(&email).into()])? {
             Some(r) => User { id: r.text(0), email, runner_of: String::new() },
             None => {
@@ -139,14 +157,24 @@ pub fn email_verify(state: &State, request: &Request, _: &PathParams) -> ApiResu
                 user
             }
         };
-        new_session(state, tx, &user)
-    })
+        new_session(state, tx, &user, "email")
+    });
+    if let Err(e) = &result {
+        audit::record_alone(state, Event::new(audit::ACCOUNT, "signin_failed", None).detail(json!({ "method": "email", "reason": e.code })));
+    }
+    result
 }
 
 /// `POST /v1/auth/logout`: ends this session.
 pub fn logout(state: &State, request: &Request, _: &PathParams) -> ApiResult {
     let token = bearer(request).ok_or_else(ApiError::unauthorized)?;
-    state.db.tx(|tx| tx.execute("DELETE FROM sessions WHERE token_hash = $1", &[token_hash(&token).into()]))?;
+    state.db.tx(|tx| -> Result<(), ApiError> {
+        if let Ok(user) = authenticate(state, tx, request) {
+            audit::record(tx, state, Event::new(audit::ACCOUNT, "signout", Some(&user)).target(&user.id))?;
+        }
+        tx.execute("DELETE FROM sessions WHERE token_hash = $1", &[token_hash(&token).into()])?;
+        Ok(())
+    })?;
     Ok((204, Json::Null))
 }
 
@@ -246,6 +274,7 @@ pub fn passkey_register_finish(state: &State, request: &Request, _: &PathParams)
             return Err(ApiError::conflict("passkey_exists", "this passkey is already registered", json!({})));
         }
         tx.execute("INSERT INTO passkeys (id, user_id, name, data, created_at) VALUES ($1, $2, $3, $4, $5)", &[(&id).into(), (&user.id).into(), (&name).into(), data.into(), now.into()])?;
+        audit::record(tx, state, Event::new(audit::ACCOUNT, "passkey_added", Some(&user)).target(&user.id).detail(json!({ "passkey": id, "name": name })))?;
         Ok((201, json!({ "id": id, "name": name })))
     })
 }
@@ -260,6 +289,9 @@ struct LoginStart {
 pub fn passkey_login_start(state: &State, request: &Request, _: &PathParams) -> ApiResult {
     let input: LoginStart = body(request)?;
     let email = normalize_email(&input.email)?;
+    if crate::oidc::sso_required_for(state, &email) {
+        return Err(sso_only(state, &email, "passkey"));
+    }
     let (user_id, passkeys) = state.db.tx(|tx| {
         let Some(row) = tx.query_one("SELECT id FROM users WHERE email = $1", &[(&email).into()])? else {
             return Err(ApiError::new(404, "no_passkey", "no passkey for this address; sign in by email"));
@@ -289,7 +321,13 @@ pub fn passkey_login_finish(state: &State, request: &Request, _: &PathParams) ->
     let Ceremony::Login { user_id, state: auth } = take(state, &input.challenge_id)? else {
         return Err(ApiError::bad("that challenge is not a sign-in"));
     };
-    let result = state.webauthn.finish_passkey_authentication(&input.credential, &auth).map_err(|e| ApiError::new(401, "passkey_rejected", format!("passkey rejected: {e}")))?;
+    let result = match state.webauthn.finish_passkey_authentication(&input.credential, &auth) {
+        Ok(r) => r,
+        Err(e) => {
+            audit::record_alone(state, Event::new(audit::ACCOUNT, "signin_failed", None).target(&user_id).detail(json!({ "method": "passkey", "reason": "passkey_rejected" })));
+            return Err(ApiError::new(401, "passkey_rejected", format!("passkey rejected: {e}")));
+        }
+    };
     let cred_id = b64(result.cred_id().as_ref());
     state.db.tx(|tx| {
         let Some(row) = tx.query_one("SELECT data FROM passkeys WHERE id = $1 AND user_id = $2", &[(&cred_id).into(), (&user_id).into()])? else {
@@ -304,6 +342,9 @@ pub fn passkey_login_finish(state: &State, request: &Request, _: &PathParams) ->
             }
         }
         let email = tx.query_one("SELECT email FROM users WHERE id = $1", &[(&user_id).into()])?.map(|r| r.text(0)).unwrap_or_default();
-        new_session(state, tx, &User { id: user_id.clone(), email, runner_of: String::new() })
+        if crate::oidc::sso_required_for(state, &email) {
+            return Err(ApiError::new(403, "sso_required", format!("{email} signs in with single sign-on")));
+        }
+        new_session(state, tx, &User { id: user_id.clone(), email, runner_of: String::new() }, "passkey")
     })
 }

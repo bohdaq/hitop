@@ -251,6 +251,8 @@ impl Tx<'_> {
 
 /// Schema migrations, in order; `{BLOB}` becomes BLOB or BYTEA. Never edit a released entry: add
 /// a new one. 1: T23 (accounts, workspaces, blobs). 2: T24 teams (invites, runner accounts).
+/// 3: T25 SSO identities and the audit log (`audit_log` is append-only: rows are only ever
+/// inserted, and deleted by the retention purge, audit.rs).
 const MIGRATIONS: &[&str] = &[r"
 CREATE TABLE users (
   id TEXT PRIMARY KEY,
@@ -337,6 +339,41 @@ CREATE TABLE invites (
   accepted_at BIGINT NOT NULL DEFAULT 0
 );
 CREATE INDEX invites_workspace ON invites(workspace_id);
+", r"
+CREATE TABLE oidc_identities (
+  issuer TEXT NOT NULL,
+  subject TEXT NOT NULL,
+  user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  email TEXT NOT NULL,
+  created_at BIGINT NOT NULL,
+  last_used_at BIGINT NOT NULL,
+  PRIMARY KEY (issuer, subject)
+);
+CREATE INDEX oidc_identities_user ON oidc_identities(user_id);
+CREATE TABLE audit_log (
+  workspace_id TEXT NOT NULL,
+  seq BIGINT NOT NULL,
+  at BIGINT NOT NULL,
+  event TEXT NOT NULL,
+  actor_id TEXT NOT NULL,
+  actor_email TEXT NOT NULL,
+  target TEXT NOT NULL,
+  detail TEXT NOT NULL,
+  ip TEXT NOT NULL,
+  user_agent TEXT NOT NULL,
+  prev_hash TEXT NOT NULL,
+  hash TEXT NOT NULL,
+  PRIMARY KEY (workspace_id, seq)
+);
+CREATE INDEX audit_log_at ON audit_log(at);
+CREATE INDEX audit_log_actor ON audit_log(workspace_id, actor_id, seq);
+CREATE TABLE audit_chain (
+  workspace_id TEXT PRIMARY KEY,
+  head_seq BIGINT NOT NULL,
+  head_hash TEXT NOT NULL,
+  anchor_seq BIGINT NOT NULL,
+  anchor_hash TEXT NOT NULL
+);
 "];
 
 impl Db {
@@ -426,6 +463,41 @@ mod tests {
         db.tx(|tx| tx.query("SELECT id, workspace_id, token_hash, accepted_by FROM invites", &[])).unwrap();
         let v = db.tx(|tx| tx.query("SELECT MAX(version) FROM schema_version", &[])).unwrap();
         assert_eq!(v[0].int(0), MIGRATIONS.len() as i64);
+        std::fs::remove_dir_all(dir).unwrap();
+    }
+
+    #[test]
+    fn a_t24_database_migrates_to_the_current_schema() {
+        // What the VM has after T24: migrations 1 and 2, with a team in it.
+        let dir = std::env::temp_dir().join(format!("hitop-sync-db-v2-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("t.db");
+        {
+            let conn = rusqlite::Connection::open(&path).unwrap();
+            conn.execute_batch("CREATE TABLE schema_version (version BIGINT NOT NULL); INSERT INTO schema_version (version) VALUES (1); INSERT INTO schema_version (version) VALUES (2);").unwrap();
+            conn.execute_batch(&MIGRATIONS[0].replace("{BLOB}", "BLOB")).unwrap();
+            conn.execute_batch(&MIGRATIONS[1].replace("{BLOB}", "BLOB")).unwrap();
+            conn.execute_batch(
+                "INSERT INTO users (id, email, created_at) VALUES ('u1', 'a@example.com', 1);
+                 INSERT INTO workspaces (id, epoch, seq, bytes, created_at) VALUES ('w1', 1, 0, 0, 1);
+                 INSERT INTO members (workspace_id, user_id, role) VALUES ('w1', 'u1', 'owner');
+                 INSERT INTO invites (id, workspace_id, token_hash, email, role, created_by, created_at, expires_at) VALUES ('i1', 'w1', 'h', '', 'editor', 'u1', 1, 2);",
+            )
+            .unwrap();
+        }
+        let db = Db::open(&format!("sqlite:{}", path.display())).unwrap();
+        let v = db.tx(|tx| tx.query("SELECT MAX(version) FROM schema_version", &[])).unwrap();
+        assert_eq!(v[0].int(0), 3);
+        let kept = db.tx(|tx| tx.query("SELECT m.role, i.role FROM members m JOIN invites i ON i.workspace_id = m.workspace_id", &[])).unwrap();
+        assert_eq!((kept[0].text(0), kept[0].text(1)), ("owner".to_string(), "editor".to_string()), "existing teams are untouched");
+        db.tx(|tx| tx.query("SELECT issuer, subject, user_id, email, created_at, last_used_at FROM oidc_identities", &[])).unwrap();
+        db.tx(|tx| tx.query("SELECT workspace_id, seq, at, event, actor_id, actor_email, target, detail, ip, user_agent, prev_hash, hash FROM audit_log", &[])).unwrap();
+        db.tx(|tx| tx.query("SELECT workspace_id, head_seq, head_hash, anchor_seq, anchor_hash FROM audit_chain", &[])).unwrap();
+        // Identities go with their account.
+        db.tx(|tx| tx.execute("INSERT INTO oidc_identities (issuer, subject, user_id, email, created_at, last_used_at) VALUES ('https://id', 's', 'u1', 'a@example.com', 1, 1)", &[])).unwrap();
+        db.tx(|tx| tx.execute("DELETE FROM users WHERE id = 'u1'", &[])).unwrap();
+        assert!(db.tx(|tx| tx.query("SELECT subject FROM oidc_identities", &[])).unwrap().is_empty());
+        drop(db);
         std::fs::remove_dir_all(dir).unwrap();
     }
 

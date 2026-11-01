@@ -31,11 +31,14 @@ rusqlite = { version = "0.41", features = ["bundled"] }
 postgres = { version = "0.19", optional = true }
 lettre = { version = "0.11", default-features = false, features = ["smtp-transport", "builder", "rustls", "ring", "webpki-roots"] }
 webauthn-rs = "0.6"
+jsonwebtoken = { version = "9.3", default-features = false }
+ureq = { version = "3", default-features = false, features = ["rustls"] }
 
 [dev-dependencies]
 # Tests act as the clients: they encrypt with the client crate and check the server only ever
 # holds ciphertext. The server itself never links it (see tests/no_crypto_in_server.rs).
 hitop-sync-crypto = { path = "../cli/crates/hitop-sync-crypto" }
+ring = "0.17"
 webauthn-authenticator-rs = { version = "0.6", default-features = false, features = ["softpasskey"] }
 
 [profile.release]

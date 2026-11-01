@@ -14,6 +14,7 @@ use serde::Deserialize;
 use serde_json::{json, Value as Json};
 
 use crate::api::{b64, body, query, random_hex, unb64, ApiError, ApiResult, State};
+use crate::audit::{self, Event};
 use crate::auth::{authenticate, User};
 use crate::db::Tx;
 
@@ -155,8 +156,9 @@ pub fn add_device_key(state: &State, request: &Request, _: &PathParams) -> ApiRe
         let id = random_hex::<16>();
         tx.execute(
             "INSERT INTO device_keys (id, user_id, name, public_key, created_at) VALUES ($1, $2, $3, $4, $5)",
-            &[(&id).into(), (&user.id).into(), name.into(), public_key.into(), state.now().into()],
+            &[(&id).into(), (&user.id).into(), (&name).into(), public_key.into(), state.now().into()],
         )?;
+        audit::record(tx, state, Event::new(audit::ACCOUNT, "device_key_added", Some(&user)).target(&user.id).detail(json!({ "keyId": id, "name": name })))?;
         Ok((201, json!({ "id": id })))
     })
 }
@@ -218,6 +220,7 @@ pub fn create(state: &State, request: &Request, _: &PathParams) -> ApiResult {
         tx.execute("INSERT INTO workspaces (id, epoch, seq, bytes, created_at) VALUES ($1, 1, 0, 0, $2)", &[(&input.id).into(), state.now().into()])?;
         tx.execute("INSERT INTO members (workspace_id, user_id, role) VALUES ($1, $2, 'owner')", &[(&input.id).into(), (&user.id).into()])?;
         insert_wraps(tx, &input.id, 1, &wraps)?;
+        audit::record(tx, state, Event::new(&input.id, "workspace_created", Some(&user)).target(&input.id))?;
         Ok((201, json!({ "id": input.id, "epoch": 1 })))
     })
 }
@@ -264,7 +267,9 @@ pub fn delete(state: &State, request: &Request, params: &PathParams) -> ApiResul
         }
         tx.execute("DELETE FROM workspaces WHERE id = $1", &[id.into()])?;
         // Runner accounts exist for one workspace only.
-        tx.execute("DELETE FROM users WHERE runner_of = $1", &[id.into()])?;
+        let runners = tx.execute("DELETE FROM users WHERE runner_of = $1", &[id.into()])?;
+        // The workspace's log stays (until the retention purge) and ends with this row.
+        audit::record(tx, state, Event::new(id, "workspace_deleted", Some(&user)).target(id).detail(json!({ "runnersRemoved": runners })))?;
         Ok((204, Json::Null))
     })
 }
@@ -322,6 +327,8 @@ pub fn add_wraps(state: &State, request: &Request, params: &PathParams) -> ApiRe
             accepted.push((w.key_id.clone(), bytes));
         }
         insert_wraps(tx, id, input.epoch, &accepted)?;
+        let keys: Vec<&str> = accepted.iter().map(|(k, _)| k.as_str()).collect();
+        audit::record(tx, state, Event::new(id, "key_wrapped", Some(&user)).detail(json!({ "epoch": input.epoch, "keyIds": keys })))?;
         Ok((200, json!({ "epoch": input.epoch, "added": accepted.len() })))
     })
 }
@@ -363,6 +370,7 @@ pub fn add_member(state: &State, request: &Request, params: &PathParams) -> ApiR
         tx.execute("INSERT INTO members (workspace_id, user_id, role) VALUES ($1, $2, $3)", &[id.into(), (&new_id).into(), role.as_str().into()])?;
         insert_wraps(tx, id, ws.epoch, &wraps)?;
         tx.execute("DELETE FROM invites WHERE workspace_id = $1 AND accepted_by = $2", &[id.into(), (&new_id).into()])?;
+        audit::record(tx, state, Event::new(id, "member_added", Some(&user)).target(&new_id).detail(json!({ "email": email, "role": role.as_str(), "epoch": ws.epoch, "keys": wraps.len() })))?;
         Ok((201, json!({ "userId": new_id, "role": role.as_str(), "epoch": ws.epoch })))
     })
 }
@@ -396,7 +404,7 @@ pub fn remove_member(state: &State, request: &Request, params: &PathParams) -> A
         let user = authenticate(state, tx, request)?;
         let ws = membership(tx, id, &user)?;
         require(&ws, Role::Owner)?;
-        let Some(row) = tx.query_one("SELECT role FROM members WHERE workspace_id = $1 AND user_id = $2", &[id.into(), (&removed).into()])? else {
+        let Some(row) = tx.query_one("SELECT m.role, u.email, u.runner_of FROM members m JOIN users u ON u.id = m.user_id WHERE m.workspace_id = $1 AND m.user_id = $2", &[id.into(), (&removed).into()])? else {
             return Err(ApiError::not_found("not a member"));
         };
         if row.text(0) == "owner" {
@@ -409,7 +417,12 @@ pub fn remove_member(state: &State, request: &Request, params: &PathParams) -> A
         tx.execute("DELETE FROM wraps WHERE workspace_id = $1 AND key_id IN (SELECT id FROM device_keys WHERE user_id = $2)", &[id.into(), (&removed).into()])?;
         rotate_to(tx, &ws, &input)?;
         // A removed runner credential stops existing (its sessions and key go with it).
-        tx.execute("DELETE FROM users WHERE id = $1 AND runner_of = $2", &[(&removed).into(), id.into()])?;
+        let runner = tx.execute("DELETE FROM users WHERE id = $1 AND runner_of = $2", &[(&removed).into(), id.into()])? > 0;
+        audit::record(tx, state, Event::new(id, "member_removed", Some(&user)).target(&removed).detail(json!({ "email": row.text(1), "role": row.text(0), "runner": runner })))?;
+        audit::record(tx, state, Event::new(id, "key_rotated", Some(&user)).detail(json!({ "epoch": input.epoch, "reason": "member_removed" })))?;
+        if runner {
+            audit::record(tx, state, Event::new(id, "session_revoked", Some(&user)).target(&removed).detail(json!({ "reason": "runner_removed" })))?;
+        }
         Ok((200, json!({ "removed": removed, "epoch": input.epoch })))
     })
 }
@@ -424,6 +437,7 @@ pub fn rotate(state: &State, request: &Request, params: &PathParams) -> ApiResul
         let ws = membership(tx, id, &user)?;
         require(&ws, Role::Owner)?;
         rotate_to(tx, &ws, &input)?;
+        audit::record(tx, state, Event::new(id, "key_rotated", Some(&user)).detail(json!({ "epoch": input.epoch, "reason": "rotate" })))?;
         Ok((200, json!({ "epoch": input.epoch })))
     })
 }

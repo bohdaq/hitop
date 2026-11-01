@@ -19,6 +19,7 @@ use serde::de::DeserializeOwned;
 use serde_json::{json, Value as Json};
 use sha2::{Digest, Sha256};
 
+use crate::audit::Client;
 use crate::config::Config;
 use crate::db::{Db, DbError};
 use crate::mail::Mailer;
@@ -143,6 +144,21 @@ pub fn bearer(request: &Request) -> Option<String> {
     request.header("authorization").and_then(|h| h.value.strip_prefix("Bearer ").map(|t| t.trim().to_string()))
 }
 
+thread_local! {
+    /// The caller of the request this thread is handling (set by the router before a handler
+    /// runs; handlers run synchronously on the request's thread). For the audit log.
+    static CLIENT: std::cell::RefCell<Client> = std::cell::RefCell::new(Client::default());
+}
+
+/// The current request's client (IP as the audit policy keeps it, user agent).
+pub fn client() -> Client {
+    CLIENT.with(|c| c.borrow().clone())
+}
+
+fn set_client(c: Client) {
+    CLIENT.with(|cell| *cell.borrow_mut() = c);
+}
+
 /// Challenge state for passkey ceremonies, kept in memory for a few minutes.
 pub enum Ceremony {
     Register { user_id: String, state: webauthn_rs::prelude::PasskeyRegistration },
@@ -155,6 +171,8 @@ pub struct State {
     pub config: Config,
     pub webauthn: webauthn_rs::Webauthn,
     pub ceremonies: Mutex<HashMap<String, (i64, Ceremony)>>,
+    /// OpenID Connect sign-in: provider metadata and keys (cached), flows in progress.
+    pub sso: crate::oidc::Sso,
     /// Seconds added to the clock (tests move time forward with it).
     pub clock_offset: AtomicI64,
 }
@@ -162,7 +180,8 @@ pub struct State {
 impl State {
     pub fn new(db: Db, mailer: Mailer, config: Config) -> Result<State, String> {
         let webauthn = config.webauthn()?;
-        Ok(State { db, mailer, config, webauthn, ceremonies: Mutex::new(HashMap::new()), clock_offset: AtomicI64::new(0) })
+        let sso = crate::oidc::Sso::new(config.oidc.clone())?;
+        Ok(State { db, mailer, config, webauthn, ceremonies: Mutex::new(HashMap::new()), sso, clock_offset: AtomicI64::new(0) })
     }
 
     pub fn now(&self) -> i64 {
@@ -192,7 +211,11 @@ impl SyncApp {
             ("POST", "/v1/auth/passkey/register/finish", crate::auth::passkey_register_finish),
             ("POST", "/v1/auth/passkey/login/start", crate::auth::passkey_login_start),
             ("POST", "/v1/auth/passkey/login/finish", crate::auth::passkey_login_finish),
+            ("GET", "/v1/auth/sso", crate::oidc::info),
+            ("POST", "/v1/auth/sso/start", crate::oidc::start),
+            ("POST", "/v1/auth/sso/finish", crate::oidc::finish),
             ("GET", "/v1/me", crate::auth::me),
+            ("GET", "/v1/me/audit", crate::audit::mine),
             ("POST", "/v1/me/keys", crate::workspaces::add_device_key),
             ("GET", "/v1/users/keys", crate::workspaces::user_keys),
             ("GET", "/v1/workspaces", crate::workspaces::list),
@@ -210,6 +233,8 @@ impl SyncApp {
             ("DELETE", "/v1/workspaces/:ws/invites/:id", crate::teams::delete),
             ("POST", "/v1/invites/accept", crate::teams::accept),
             ("POST", "/v1/workspaces/:ws/runners", crate::teams::create_runner),
+            ("GET", "/v1/workspaces/:ws/audit", crate::audit::list),
+            ("GET", "/v1/workspaces/:ws/audit/verify", crate::audit::verify_endpoint),
             ("GET", "/v1/workspaces/:ws/changes", crate::blobs::changes),
             ("GET", "/v1/workspaces/:ws/blobs/:id", crate::blobs::get),
             ("PUT", "/v1/workspaces/:ws/blobs/:id", crate::blobs::put),
@@ -217,9 +242,12 @@ impl SyncApp {
         let mut router = Router::new();
         for &(method, pattern, handler) in routes {
             let st = Arc::clone(&state);
-            let run = move |req: &Request, params: &PathParams, _: &ConnectionInfo| match handler(&st, req, params) {
-                Ok((status, body)) => json_response(status, &body),
-                Err(e) => error_response(&e),
+            let run = move |req: &Request, params: &PathParams, conn: &ConnectionInfo| {
+                set_client(crate::audit::client_of(req, &conn.client.ip, &st.config.trusted_proxies, st.config.audit_ip));
+                match handler(&st, req, params) {
+                    Ok((status, body)) => json_response(status, &body),
+                    Err(e) => error_response(&e),
+                }
             };
             router = match method {
                 "GET" => router.get(pattern, run),
@@ -233,6 +261,10 @@ impl SyncApp {
 
     pub fn state(&self) -> &State {
         &self.state
+    }
+
+    fn client_of(&self, request: &Request, connection: &ConnectionInfo) -> Client {
+        crate::audit::client_of(request, &connection.client.ip, &self.state.config.trusted_proxies, self.state.config.audit_ip)
     }
 
     /// CORS for the allowed web origins (the web app). Sessions are bearer tokens, never cookies,
@@ -262,6 +294,9 @@ impl Application for SyncApp {
             crate::routes::signin_page()
         } else if request.method == "GET" && path == "/invite" {
             crate::routes::invite_page()
+        } else if request.method == "GET" && path == "/v1/auth/sso/callback" {
+            set_client(self.client_of(request, connection));
+            crate::oidc::callback(&self.state, request)
         } else if request.body.len() > self.state.config.max_request_bytes() {
             error_response(&ApiError::new(413, "too_large", "request body too large"))
         } else {

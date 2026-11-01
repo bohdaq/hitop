@@ -81,3 +81,36 @@ fn postgres_teams_flow() {
     assert_eq!(s.call("DELETE", &format!("/v1/workspaces/{WS}"), Some(&ada.session), None).status, 204);
     assert_eq!(s.call("GET", "/v1/me", Some(&token), None).status, 401);
 }
+
+#[test]
+fn postgres_audit_and_sso() {
+    use common::idp::{self, MockIdp};
+    use hitop_sync_server::audit;
+    let Some(url) = database("audit") else {
+        eprintln!("HITOP_SYNC_TEST_POSTGRES not set: skipped");
+        return;
+    };
+    let idp = MockIdp::start();
+    let s = Server::with("pg-audit", |c| {
+        c.database = url.clone();
+        c.oidc = Some(idp.config());
+        c.audit_retention_days = 30;
+    });
+    let ada = Device::new(&s, "ada@example.com");
+    create_workspace(&s, &ada, WS);
+    assert_eq!(s.call("POST", &format!("/v1/workspaces/{WS}/invites"), Some(&ada.session), Some(json!({ "role": "viewer" }))).status, 201);
+    // SSO links the existing account (oidc_identities on Postgres).
+    let flow = sso_start(&s, Some("http://127.0.0.1:4000/"));
+    idp.next(idp.sign(&idp.claims("sub-ada", "ada@example.com", &flow.nonce)), &flow.pkce);
+    let code = sso_code(&sso_callback(&s, &format!("code={}&state={}", idp::GOOD_CODE, flow.state))).unwrap();
+    let session = sso_finish(&s, &code, &flow.verifier).json["session"].as_str().unwrap().to_string();
+    assert_eq!(s.call("GET", "/v1/me", Some(&session), None).json["id"], ada.user_id.as_str());
+    let log = s.call("GET", &format!("/v1/workspaces/{WS}/audit?limit=1"), Some(&ada.session), None);
+    assert_eq!((log.json["events"][0]["event"].as_str(), log.json["next"].as_i64()), (Some("invite_created"), Some(2)));
+    assert_eq!(s.call("GET", &format!("/v1/workspaces/{WS}/audit/verify"), Some(&ada.session), None).json["ok"], true);
+    s.app.state().db.tx(|tx| tx.execute("UPDATE audit_log SET actor_email = 'x' WHERE workspace_id = $1 AND seq = 1", &[WS.into()])).unwrap();
+    assert_eq!(s.call("GET", &format!("/v1/workspaces/{WS}/audit/verify"), Some(&ada.session), None).json["ok"], false);
+    s.advance(31 * 86_400);
+    assert!(audit::purge(s.app.state()).unwrap() >= 2);
+    assert!(audit::verify_all(s.app.state()).unwrap().iter().all(|(_, v)| v.problem.is_none()), "purged chains verify from their anchors");
+}

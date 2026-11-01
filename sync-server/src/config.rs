@@ -10,9 +10,18 @@
 //! - `HITOP_SYNC_ALLOWED_ORIGINS`: comma separated web origins allowed by CORS (default none)
 //! - `HITOP_SYNC_MAX_BLOB_BYTES` (default 4 MiB), `HITOP_SYNC_MAX_WORKSPACE_BYTES` (256 MiB),
 //!   `HITOP_SYNC_MAX_WORKSPACES` per user (50)
+//! - `HITOP_SYNC_TRUSTED_PROXIES`: comma separated peer IPs whose `X-Forwarded-For` names the
+//!   client (default `127.0.0.1,::1`: the front proxy on the same host)
+//! - `HITOP_SYNC_AUDIT_IP`: `truncated` (default: IPv4 /24, IPv6 /48) or `off`
+//! - `HITOP_SYNC_AUDIT_RETENTION_DAYS`: audit rows older than this are purged (default 365; 0
+//!   keeps them forever)
+//! - SSO (OpenID Connect): see oidc.rs (`HITOP_SYNC_OIDC_*`, `HITOP_SYNC_SSO_REQUIRED`)
 //! - mail: see mail.rs
 
 use url::Url;
+
+use crate::audit::IpPolicy;
+use crate::oidc::OidcConfig;
 
 #[derive(Clone, Debug)]
 pub struct Config {
@@ -29,6 +38,11 @@ pub struct Config {
     pub links_per_hour: i64,
     pub link_ttl_secs: i64,
     pub session_ttl_secs: i64,
+    pub trusted_proxies: Vec<String>,
+    pub audit_ip: IpPolicy,
+    pub audit_retention_days: i64,
+    /// Sign-in with an OpenID Connect provider; `None` when not configured.
+    pub oidc: Option<OidcConfig>,
 }
 
 fn list(value: &str) -> Vec<String> {
@@ -51,6 +65,10 @@ impl Config {
             links_per_hour: 500,
             link_ttl_secs: 15 * 60,
             session_ttl_secs: 30 * 24 * 3600,
+            trusted_proxies: vec!["127.0.0.1".into(), "::1".into()],
+            audit_ip: IpPolicy::Truncated,
+            audit_retention_days: 365,
+            oidc: None,
         }
     }
 
@@ -75,6 +93,16 @@ impl Config {
         c.max_blob_bytes = number("HITOP_SYNC_MAX_BLOB_BYTES", c.max_blob_bytes as i64)? as usize;
         c.max_workspace_bytes = number("HITOP_SYNC_MAX_WORKSPACE_BYTES", c.max_workspace_bytes)?;
         c.max_workspaces = number("HITOP_SYNC_MAX_WORKSPACES", c.max_workspaces)?;
+        if let Some(proxies) = var("HITOP_SYNC_TRUSTED_PROXIES") {
+            c.trusted_proxies = list(&proxies);
+        }
+        c.audit_ip = match var("HITOP_SYNC_AUDIT_IP").as_deref() {
+            None | Some("truncated") => IpPolicy::Truncated,
+            Some("off") => IpPolicy::Off,
+            Some(other) => return Err(format!("HITOP_SYNC_AUDIT_IP must be truncated or off, not {other}")),
+        };
+        c.audit_retention_days = number("HITOP_SYNC_AUDIT_RETENTION_DAYS", c.audit_retention_days)?;
+        c.oidc = OidcConfig::from_env(&var)?;
         Ok(c)
     }
 

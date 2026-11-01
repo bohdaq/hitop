@@ -3,11 +3,13 @@
 //! decrypts anything; clients encrypt with `hitop-sync-crypto` (MIT). See THREAT_MODEL.md.
 
 pub mod api;
+pub mod audit;
 pub mod auth;
 pub mod blobs;
 pub mod config;
 pub mod db;
 pub mod mail;
+pub mod oidc;
 mod routes;
 pub mod teams;
 pub mod workspaces;

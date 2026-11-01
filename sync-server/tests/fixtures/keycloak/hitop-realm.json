@@ -1,0 +1,87 @@
+{
+  "realm": "hitop",
+  "enabled": true,
+  "sslRequired": "none",
+  "registrationAllowed": false,
+  "loginWithEmailAllowed": true,
+  "verifyEmail": false,
+  "accessTokenLifespan": 300,
+  "groups": [{ "name": "hitop-users", "path": "/hitop-users" }],
+  "clients": [
+    {
+      "clientId": "hitop-sync",
+      "name": "hitop sync (test)",
+      "enabled": true,
+      "protocol": "openid-connect",
+      "publicClient": false,
+      "clientAuthenticatorType": "client-secret",
+      "secret": "hitop-sync-test-secret",
+      "standardFlowEnabled": true,
+      "directAccessGrantsEnabled": false,
+      "implicitFlowEnabled": false,
+      "serviceAccountsEnabled": false,
+      "redirectUris": ["https://sync.test.example/v1/auth/sso/callback"],
+      "webOrigins": [],
+      "attributes": { "pkce.code.challenge.method": "S256" },
+      "protocolMappers": [
+        {
+          "name": "groups",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-group-membership-mapper",
+          "config": {
+            "claim.name": "groups",
+            "full.path": "false",
+            "id.token.claim": "true",
+            "access.token.claim": "false",
+            "userinfo.token.claim": "false"
+          }
+        }
+      ]
+    }
+  ],
+  "users": [
+    {
+      "username": "alice",
+      "email": "alice@corp.test",
+      "emailVerified": true,
+      "firstName": "Alice",
+      "lastName": "Test",
+      "enabled": true,
+      "requiredActions": [],
+      "groups": ["/hitop-users"],
+      "credentials": [{ "type": "password", "value": "alice-test-pw", "temporary": false }]
+    },
+    {
+      "username": "bob",
+      "email": "bob@other.test",
+      "emailVerified": true,
+      "firstName": "Bob",
+      "lastName": "Test",
+      "enabled": true,
+      "requiredActions": [],
+      "groups": ["/hitop-users"],
+      "credentials": [{ "type": "password", "value": "bob-test-pw", "temporary": false }]
+    },
+    {
+      "username": "carol",
+      "email": "carol@corp.test",
+      "emailVerified": false,
+      "firstName": "Carol",
+      "lastName": "Test",
+      "enabled": true,
+      "requiredActions": [],
+      "groups": ["/hitop-users"],
+      "credentials": [{ "type": "password", "value": "carol-test-pw", "temporary": false }]
+    },
+    {
+      "username": "dave",
+      "email": "dave@corp.test",
+      "emailVerified": true,
+      "firstName": "Dave",
+      "lastName": "Test",
+      "enabled": true,
+      "requiredActions": [],
+      "credentials": [{ "type": "password", "value": "dave-test-pw", "temporary": false }]
+    }
+  ]
+}

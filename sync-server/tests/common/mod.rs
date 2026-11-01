@@ -16,6 +16,8 @@ use rust_web_server::request::Request;
 use rust_web_server::server::{Address, ConnectionInfo};
 use serde_json::{json, Value};
 
+pub mod idp;
+
 pub const ORIGIN: &str = "https://sync.test.example";
 
 pub struct Server {
@@ -180,4 +182,72 @@ pub fn seal(key: &crypto::WorkspaceKey, ws: &str, blob: &str, version: u64, epoc
 
 pub fn open(key: &crypto::WorkspaceKey, ws: &str, blob: &str, version: u64, epoch: u32, content: &str) -> Vec<u8> {
     crypto::decrypt_blob(key, &crypto::BlobContext { workspace_id: ws, blob_id: blob, version, epoch }, &unb64(content)).unwrap()
+}
+
+/// One SSO sign-in in progress, as a client holds it.
+pub struct SsoFlow {
+    pub verifier: String,
+    pub url: url::Url,
+    pub state: String,
+    pub nonce: String,
+    /// The PKCE challenge the server sent the provider.
+    pub pkce: String,
+}
+
+/// `POST /v1/auth/sso/start` with a fresh verifier.
+pub fn sso_start(server: &Server, return_to: Option<&str>) -> SsoFlow {
+    use sha2::Digest;
+    let verifier = b64(&rand_bytes());
+    let challenge = b64(&sha2::Sha256::digest(verifier.as_bytes()));
+    let mut body = json!({ "challenge": challenge });
+    if let Some(r) = return_to {
+        body["returnTo"] = json!(r);
+    }
+    let r = server.call("POST", "/v1/auth/sso/start", None, Some(body));
+    assert_eq!(r.status, 200, "{}", r.json);
+    let url = url::Url::parse(r.json["url"].as_str().unwrap()).unwrap();
+    let q: std::collections::HashMap<String, String> = url.query_pairs().into_owned().collect();
+    assert_eq!(q["code_challenge_method"], "S256");
+    assert_eq!(q["response_type"], "code");
+    assert_eq!(q["redirect_uri"], format!("{ORIGIN}/v1/auth/sso/callback"));
+    SsoFlow { verifier, state: q["state"].clone(), nonce: q["nonce"].clone(), pkce: q["code_challenge"].clone(), url }
+}
+
+fn rand_bytes() -> Vec<u8> {
+    [uuid::Uuid::new_v4().into_bytes(), uuid::Uuid::new_v4().into_bytes()].concat()
+}
+
+/// The provider's redirect back to the server, `GET /v1/auth/sso/callback?...`.
+pub fn sso_callback(server: &Server, query: &str) -> Reply {
+    server.raw("GET", &format!("/v1/auth/sso/callback?{query}"), None, vec![], &[("User-Agent", "test-browser/1.0")])
+}
+
+/// The one-time code from the callback's answer: a loopback redirect, a web redirect, or the
+/// paste page.
+pub fn sso_code(reply: &Reply) -> Option<String> {
+    if let Some(location) = reply.header("location") {
+        let url = url::Url::parse(location).unwrap();
+        if let Some(f) = url.fragment() {
+            return f.strip_prefix("sso=").map(str::to_string);
+        }
+        return url.query_pairs().find(|(k, _)| k == "sso").map(|(_, v)| v.into_owned());
+    }
+    if reply.status != 200 {
+        return None;
+    }
+    let page = String::from_utf8_lossy(&reply.raw);
+    let start = page.find("<code>")? + 6;
+    Some(page[start..start + page[start..].find("</code>")?].to_string())
+}
+
+pub fn sso_finish(server: &Server, code: &str, verifier: &str) -> Reply {
+    server.call("POST", "/v1/auth/sso/finish", None, Some(json!({ "code": code, "verifier": verifier })))
+}
+
+/// Every audit row of a chain, oldest first, straight from the database.
+pub fn audit_rows(server: &Server, ws: &str) -> Vec<Value> {
+    let rows = server.app.state().db.tx(|tx| tx.query("SELECT seq, event, actor_email, target, detail, ip, user_agent FROM audit_log WHERE workspace_id = $1 ORDER BY seq", &[ws.into()])).unwrap();
+    rows.iter()
+        .map(|r| json!({ "seq": r.int(0), "event": r.text(1), "actor": r.text(2), "target": r.text(3), "detail": serde_json::from_str::<Value>(&r.text(4)).unwrap(), "ip": r.text(5), "userAgent": r.text(6) }))
+        .collect()
 }
