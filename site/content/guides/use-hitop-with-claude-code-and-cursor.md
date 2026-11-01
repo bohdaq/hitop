@@ -30,8 +30,15 @@ Requests run through the same code as `hitop run`: the same variables, scripts, 
 | `update_request` | Changes the fields you give of a saved request. |
 | `list_environments` | Environments and globals with their variables; secret variables by name only. |
 | `set_environment` | Picks the environment that later runs use, for this session only. |
+| `run_websocket` | Opens a saved WebSocket request (or a `ws://`/`wss://` URL, sent without the collection's auth), sends its saved messages by name and any texts, collects what the server sends until `count` messages or `wait_ms`, then closes. At most 100 messages, 256 KiB and 60 s; nothing stays open between calls. |
+| `import_openapi` | Imports an OpenAPI 3.0 or 3.1 spec (a URL, or a file inside the workspace) as a new collection folder inside the workspace (`to`), or into global storage. |
+| `sync_openapi` | Brings a collection imported from a spec up to a newer one. Returns the diff (operations added, changed, removed; header and query rows one by one) without writing; `apply: true` writes it, keeping your edits. |
 
-There is no delete tool: removing requests stays with you (`hitop requests delete`, or `git rm` in a folder). In a folder every change the assistant makes is an ordinary file change, so `git diff` shows it and `git checkout` undoes it.
+The WebSocket and OpenAPI tools need hitop 1.1 or later.
+
+There is no delete tool: removing requests stays with you (`hitop requests delete`, or `git rm` in a folder). The one exception is `sync_openapi` called with both `apply` and `prune`, which deletes the requests of operations the spec dropped. In a folder every change the assistant makes is an ordinary file change, so `git diff` shows it and `git checkout` undoes it.
+
+File paths the tools take (a spec file, the `to` folder) must be inside the workspace: the served folder, or with global storage the directory the client starts `hitop mcp` in. Anything outside, or with `..`, is refused.
 
 ## Claude Code
 

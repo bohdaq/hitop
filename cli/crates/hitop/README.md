@@ -96,7 +96,7 @@ hitop export MyAPI -o my-collection.json
 | `hitop openapi sync <file\|url> <dir> [--dry-run] [--prune]` | Update a folder imported from a spec: adds new operations, updates changed ones where you didn't edit them, lists removed ones (deleted only with `--prune`) |
 | `hitop export <collection>` | Export a collection |
 | `hitop telemetry on/off/status` | The anonymous weekly usage ping: off unless you turn it on; `status` shows exactly what would be sent |
-| `hitop mcp [folder]` | MCP server over stdio for Claude Code, Cursor and other MCP clients: list, read, run, create and update requests, switch environments; secrets never returned ([guide](https://hitop.rws8.tech/terms/use-hitop-with-claude-code-and-cursor.html)) |
+| `hitop mcp [folder]` | MCP server over stdio for Claude Code, Cursor and other MCP clients: list, read, run, create and update requests, switch environments, a bounded WebSocket exchange, OpenAPI import and sync; secrets never returned ([guide](https://hitop.rws8.tech/terms/use-hitop-with-claude-code-and-cursor.html)) |
 | `hitop completions <shell>` | Generate shell completions |
 
 `run`, `requests`, `variables`, `export` and `send -c` take a path to a collection folder as well as a collection name.
@@ -150,15 +150,19 @@ is refused: convert it first). `hitop import spec.yaml --to dir` finds a spec by
 `hitop openapi sync <file|url> <dir>` brings the folder up to a newer spec. Operations are matched
 by operationId, then by method and path. New ones are added; a field the spec changed (URL,
 parameters, headers, body, auth, its examples) is updated when you left it as imported, and kept
-with a note when you edited it. Names, files, scripts and your own examples are never touched.
-Operations gone from the spec are listed and kept; `--prune` deletes them. `--dry-run` shows the
-diff and writes nothing.
+with a note when you edited it. Header and query parameter rows merge one by one (from hitop 1.1):
+a row you added or edited stays, and each row the spec added, changed or removed is applied where
+you didn't touch it; the diff lists the rows. Names, files, scripts and your own examples are never
+touched. Operations gone from the spec are listed and kept; `--prune` deletes them. `--dry-run`
+shows the diff and writes nothing.
 
 ```bash
 $ hitop openapi sync ./openapi-v2.yaml ./shop --dry-run
 Sync 'Shop' with ./openapi-v2.yaml (dry run: nothing is written)
   + GET /pets/{id} (getPet)  Get a pet → requests/pets/get-a-pet.yaml
-  ~ GET /pets (listPets)  All my pets: updated url
+  ~ GET /pets (listPets)  All my pets: updated url, headers
+      ~ header X-Api-Version changed by the spec: updated
+      = header X-Mine added by you: kept
   ~ POST /pets (addPet)  Add a pet: kept your body (the spec changed it too)
   - DELETE /pets/{id} (deletePet)  Delete a pet: removed from the spec: kept (--prune deletes it)
   2 added, 2 changed, 1 removed, 0 unchanged
@@ -303,6 +307,19 @@ Each reference is read once per run; calls time out after 15 s (60 s for `op`, `
 lists every reference with where it is used and tests that each resolves, without printing a value
 (exit 1 if one doesn't; `--list` only lists). Snippets keep references as `{{secret:...}}` unless
 `--show-secrets`; `hitop mcp` resolves only the references already in the workspace files.
+
+The desktop app's Settings page ("Secret managers") saves VAULT_ADDR, VAULT_NAMESPACE, AWS_REGION,
+AWS_PROFILE, AZURE_TENANT_ID, AZURE_CLIENT_ID and where `op`, `az` and `aws` are to
+`secret-managers.json` in hitop's settings folder (`~/.config/hitop/`, `~/Library/Application
+Support/hitop/` on macOS), and VAULT_TOKEN, AZURE_CLIENT_SECRET and the AWS keys to the OS keychain
+(service `hitop`, account `secret-managers/<NAME>`). The CLI reads both too (from hitop 1.1), and
+only to resolve references (they never go into the process environment). Precedence: environment
+variables win over the file and the keychain, a group at a time: when the environment sets any of
+`VAULT_ADDR`/`BAO_ADDR`, `VAULT_TOKEN`/`BAO_TOKEN`, `VAULT_NAMESPACE`/`BAO_NAMESPACE`,
+`AWS_REGION`/`AWS_DEFAULT_REGION`, `AWS_PROFILE` and the AWS keys, the `AZURE_*` three, or
+`HITOP_OP_BIN`/`HITOP_AZ_BIN`/`HITOP_AWS_BIN`, the saved values of that group are not used. There are
+no per-manager flags; `--no-secret-managers` turns them all off. A saved token comes before
+`~/.vault-token`, saved AWS keys before `~/.aws`. `HITOP_KEYCHAIN=off` skips the keychain part.
 
 ## Checks in CI
 

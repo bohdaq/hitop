@@ -36,10 +36,11 @@ hitop/
 │       │       ├── report.rs       # run reports: JSON (spec/run-report.md, reportVersion 1), JUnit XML and to_html (one page, no script, CSP loads nothing), no deps
 │       │       ├── export.rs       # HITOP and Postman v2.1 import/export
 │       │       ├── postman.rs      # Postman import: collections (folders, auth, scripts), environments, globals, ImportReport
-│       │       ├── openapi/        # OpenAPI 3.0/3.1 import (refs.rs: parse + local $ref, example.rs: schema → example) and sync.rs (three-way per field)
+│       │       ├── openapi/        # OpenAPI 3.0/3.1 import (refs.rs: parse + local $ref, example.rs: schema → example) and sync.rs (three-way per field; headers/query params row by row)
 │       │       ├── secrets.rs      # secret variables: resolve order, keychain (keyring), Masker (••••)
 │       │       ├── secret_refs.rs  # ${secret:vault|aws|azure|op:...} references: find, parse, expand (no deps, also in hitop-wasm)
-│       │       ├── secret_managers.rs # feature `secret-managers`: Resolver for Vault/OpenBao KV, AWS (SigV4 on ring), Azure Key Vault, `op read`
+│       │       ├── secret_managers.rs # feature `secret-managers`: Resolver for Vault/OpenBao KV, AWS (SigV4 on ring), Azure Key Vault, `op read`;
+│       │       │                      # Settings (secret-managers.json + keychain `secret-managers/<NAME>`), layered under the env (GROUPS)
 │       │       └── format/         # collection folders (YAML, spec/collection-format.md) ⇄ the JSON model; files.rs: in memory (path → text)
 │       │   ├── pm-shim.js          # byte-for-byte copy of shared/pm-shim.js (packaged; a test checks they match)
 │       │   ├── tests/grpc.rs       # gRPC client against tests/support/grpc_server.rs (tonic, reflection v1/v1alpha/none; fixtures/grpc/*.proto)
@@ -57,12 +58,12 @@ hitop/
 │           ├── tests/openapi.rs # hitop import openapi (file, URL via httpmock), run, openapi sync keeping edits, --prune
 │           ├── tests/cookies_forms.rs # cookie jar across send/run, -F uploads, saved form bodies
 │           ├── tests/snippet.rs # hitop snippet: curl, fetch, Python, Java, Go output run against a capture server = what requests send sends
-│           ├── tests/ws.rs     # hitop ws against a local tokio-tungstenite echo server: flags, stdin, --count/--wait/--json, saved requests, masking
+│           ├── tests/ws.rs     # hitop ws against a local tokio-tungstenite echo server (tests/support/ws_echo.rs, shared with mcp.rs): flags, stdin, --count/--wait/--json, saved requests, masking
 │           ├── tests/grpc.rs   # hitop grpc against hitop-core's test server (included by #[path]): calls, streaming, status, list/describe, --proto, saved requests
 │           ├── tests/graphql.rs # send --graphql, saved graphql requests via run/requests send, Postman graphql import (httpmock)
 │           ├── tests/globals.rs # globals below collection/env, secret globals, pm.globals, import, convert
-│           ├── tests/mcp.rs    # hitop mcp: JSON-RPC over stdio for every tool (httpmock), no secret value anywhere on stdout
-│           ├── tests/secret_managers.rs # ${secret:...}: stub op/az on PATH + Key Vault mock; Vault dev and LocalStack (HITOP_TEST_VAULT_ADDR, HITOP_TEST_LOCALSTACK_URL; required on CI)
+│           ├── tests/mcp.rs    # hitop mcp: JSON-RPC over stdio for every tool (httpmock, ws echo server), path confinement, no secret value anywhere on stdout
+│           ├── tests/secret_managers.rs # ${secret:...}: stub op/az on PATH + Key Vault mock; the settings file and env precedence; Vault dev and LocalStack (HITOP_TEST_VAULT_ADDR, HITOP_TEST_LOCALSTACK_URL; required on CI)
 │           ├── tests/telemetry.rs # nothing sent while off, at most once a week (HITOP_TELEMETRY_URL → httpmock)
 │           ├── tests/launch_gate.rs # T11 scenario: Postman import, two environments, login token via pm.environment.set, JUnit
 │           └── src/
@@ -78,7 +79,7 @@ hitop/
 │               ├── commands/openapi.rs # `hitop import openapi <file|url>`, `hitop openapi sync <file|url> <folder> [--dry-run] [--prune]`
 │               ├── commands/ws.rs  # `hitop ws <url|request> [-c]`: stdin or --send/--message, --count, --wait, --timeout, --json
 │               ├── commands/grpc.rs # `hitop grpc <target> <Service/Method> | list [service] | describe <symbol>`, saved requests with -c
-│               ├── commands/mcp.rs # `hitop mcp [folder]`: MCP server over stdio (rmcp), the nine tools, masking
+│               ├── commands/mcp.rs # `hitop mcp [folder]`: MCP server over stdio (rmcp), the twelve tools, masking, path confinement
 │               ├── commands/telemetry.rs # `hitop telemetry on|off|status` and the background ping (feature `telemetry`)
 │               └── output.rs       # Colored output, syntect highlighting
 │   ├── fuzz/                   # cargo fuzz (nightly, own workspace): collection_yaml, postman, openapi; seed.sh <target> <secs> (corpora from fixtures, not in git); workflow fuzz.yml
@@ -107,7 +108,7 @@ hitop/
 ├── webapp/                     # hitop.rws8.tech/app/: Lit + lit-material, reuses frontend/src/services
 │   ├── src/store.js            # all app logic (port of frontend/src/App.jsx), same localStorage keys; folders, zip
 │   ├── src/platform/           # adapters: web.js (fetch/proxy, localStorage, File System Access), tauri.js (invoke), history.js;
-│   │                           # tauri-settings.js: desktop-only Settings page + first-run usage ping question
+│   │                           # tauri-settings.js: desktop-only Settings page (secret managers; usage ping where built) + first-run usage ping question
 │   │                           # tauri-git.js: desktop-only Git page for folder collections (status, diff, commit, pull/push, branches, conflicts)
 │   ├── scripts/check-no-telemetry.mjs # CI: dist/ and web.js have no usage ping (control: dist-tauri has the page)
 │   ├── src/pm.js               # Postman scripts: loads shared/pm-shim.js, runScript, import report helpers
@@ -186,7 +187,9 @@ hitop/
   `hitop openapi sync <file|url> <folder> [--dry-run] [--prune]`. Core `openapi::import`/`sync` (pure, in hitop-wasm): tags → folders,
   first server → `baseUrl` variable, path params `${name}`, security → auth (bearer, basic, apiKey header/query; OAuth 2 reported),
   response examples `source: openapi`. Requests and `hitop.yaml` carry an `openapi` record (extra key, spec section "OpenAPI source"):
-  operation, operationId, per-field FNV hashes as imported; sync updates a field only where it still has that value. Report
+  operation, operationId, per-field FNV hashes as imported (`synced`) and per-row hashes of headers and params (`rows`, since 1.1);
+  sync updates a field only where it still has that value, and merges header/param rows one by one (`OpChange.rows`: RowChange
+  {field, name, change, outcome updated|kept|yours}; a record without `rows` keeps an edited field whole once). Report
   `OpenApiReport {mapped, skipped, warnings}`. JSON maps are sorted (no serde_json preserve_order), so requests come in path order
 - Collection folders: `hitop init [dir]`, `hitop convert <json> <dir>` / `<dir> <json>` (`--environments`, `-c`, `--force`);
   `run`, `requests`, `variables`, `export`, `send -c` also take a folder path (`hitop run ./my-api --env local`); a folder uses only its own `environments/`
@@ -202,6 +205,10 @@ hitop/
   Env: VAULT_ADDR/TOKEN/NAMESPACE (BAO_*, ~/.vault-token), AWS_* + ~/.aws (credential_process, `aws configure export-credentials`),
   AZURE_TENANT_ID/CLIENT_ID/CLIENT_SECRET or `az`; `HITOP_AZURE_VAULT_URL` (`{vault}` template) and `HITOP_{OP,AZ,AWS}_BIN` are test hooks.
   `--no-secret-managers` on every SecretFlags command and `hitop mcp`, `HITOP_SECRET_MANAGERS=off`. `hitop secret check [-c] [--env] [--list]`.
+  Settings (since 1.1): `secret_managers::Settings` in `<config>/hitop/secret-managers.json` (vaultAddr, vaultNamespace, awsRegion,
+  awsProfile, azureTenantId, azureClientId, opPath/azPath/awsPath) + keychain `secret-managers/<NAME>` for VAULT_TOKEN,
+  AZURE_CLIENT_SECRET, AWS keys; `Resolver::configured(store)` layers them under the env (env wins per `GROUPS`); every call site
+  (CLI add_refs/check, desktop) uses it; never written into the process env. Desktop page = webapp `platform/tauri-settings.js`
   MCP resolves only refs in the workspace files (not a call's `variables`); snippets keep them as `{{secret:...}}` without `--show-secrets`
 - CI runs: `hitop run <folder|name> --env <e> | --env-file <yaml>`, `--var k=v`, `--bail`, `--timeout <ms>`,
   `--iterations <n>` or `--data <csv|json>`, `--reporter cli,junit,json,html --out <dir>` (`junit.xml`, `report.json`, `report.html`);
@@ -228,7 +235,7 @@ hitop/
   (default; tokio-tungstenite 0.30, rustls with ring + webpki-roots; no aws-lc). `hitop ws <url>` or `hitop ws <request> -c <col>`:
   `-H`, `--protocol`, auth flags, `-m/--message <saved>` then `-s/--send <text>`, else stdin lines; `-n/--count`, `--wait <ms>`
   (default 1000, 30000 with --count), `--timeout`, `--json` (JSON lines); exit 1 on failure or count not reached. `hitop run`,
-  `snippet` and MCP `run_request` skip or refuse WebSocket requests; MCP has no WebSocket tools (open)
+  `snippet` and MCP `run_request` skip or refuse WebSocket requests; MCP `run_websocket` does one bounded exchange (100 msgs/256 KiB/60 s)
 - gRPC: `kind: grpc` + `grpc: {service, method, message (JSON text), protos, importPaths, plaintext}` (spec §3 "gRPC"; the URL is the
   address `host:port` (TLS unless plaintext) / `http://` / `https://`; headers and auth are the metadata). Core `grpc::target(request,
   collection_auth, vars, base_dir)` (no native deps), then feature `grpc` (default; tonic 0.14.6 pinned in the locks, tls-ring +
@@ -249,7 +256,10 @@ hitop/
   `hitop telemetry on|off|status`; never sent unless on, at most weekly; `HITOP_TELEMETRY_URL` points tests at a mock
 - MCP: `hitop mcp [folder]` (rmcp 3.8 + tokio, binary crate only): stdio server, workspace = folder or global storage;
   tools list_collections, list_requests, get_request, run_request, run_collection, create_request, update_request,
-  list_environments, set_environment (names and descriptions are a contract: change additively). Runs go through
+  list_environments, set_environment, and since 1.1 run_websocket (connect, send, collect until count/wait, close; URL mode
+  gets no collection auth), import_openapi, sync_openapi (preview unless `apply`; `prune` deletes only with `apply`: the one
+  way a tool deletes); spec/`to` paths confined to the served folder (cwd with global storage) (names and descriptions
+  are a contract: change additively). Runs go through
   `runner::run_collection_jar` (precedence and cookie jar as `hitop run`), tool bodies run in `spawn_blocking` behind one
   mutex; every secret value resolved in the session is masked in all output; create/update refuse secret values.
   stdout is the protocol: nothing under `commands/mcp.rs` may print to it. Guide: `site/content/guides/use-hitop-with-claude-code-and-cursor.md`
@@ -284,7 +294,9 @@ hitop/
   `grpc_describe {args, symbol}` → `{description, template}`, `grpc_call {args: {...server, service, method, message, maxTimeMs},
   onEvent: Channel}` → `{id}`, events `{type: headers|message|status}`; `grpc_cancel {id}` (state `GrpcCalls`).
   Web app commands: `send_request` (proxy envelope; `cookies: true` uses hitop-core's `global` jar and returns it),
-  `cookies_load|save`, `load_globals|save_globals`, `read_folder`, `write_folder` (optional `globals`), `secret_get|set|delete`, `secret_refs_resolve {refs}` (inner texts → values; errors one line per reference), `write_file`, `telemetry_status|set`; dialog plugin.
+  `cookies_load|save`, `load_globals|save_globals`, `read_folder`, `write_folder` (optional `globals`), `secret_get|set|delete`, `secret_refs_resolve {refs}` (inner texts → values; errors one line per reference; Settings layered in),
+  `secret_manager_settings` → `{settings, secrets: {NAME: saved?}, shell: [names], path, keychainError}`, `secret_manager_settings_set
+  {settings, secrets: {NAME: text|null}}`, `write_file`, `telemetry_status|set`; dialog plugin.
   Script commands return script-set `variables`; `run_post_script` takes the sent `request` (pm.request)
   Git (`src/git.rs`): `git {cmd, args: {path, ...}}` → `hitop_git::json::call` (status, diff, stage, unstage, discard, commit,
   setIdentity, branches, createBranch, switchBranch, deleteBranch, mergeBranch, conflict, resolve, abortMerge, remoteHost,

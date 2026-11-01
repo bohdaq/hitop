@@ -91,6 +91,7 @@ Then run it without `--dry-run` to write the changes. What a sync does:
 
 - **New operations** are added as new request files.
 - **Changed operations**: each field the spec changed (URL, query parameters, headers, body, auth, the spec's examples) is updated if you left it as imported. If you edited it, your version stays and the sync says so.
+- **Header and query parameter rows** (from hitop 1.1) are merged one by one: a header you added or edited stays, while the spec's new, changed or removed headers still apply to the rows you didn't touch. The diff lists each row.
 - **Yours, always**: request names, file names and folders you moved them to, scripts and assertions, examples you saved, auth you set on a request, and environments.
 - **Removed operations** are listed and kept. Add `--prune` to delete their files.
 

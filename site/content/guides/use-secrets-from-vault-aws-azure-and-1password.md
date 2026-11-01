@@ -96,6 +96,25 @@ Give the job access to the manager the way you do for anything else, then run as
 
 Each reference is read once per run. Calls time out after 15 seconds (60 seconds for `op`, `az` and `aws`); set `HITOP_SECRET_MANAGER_TIMEOUT` in seconds to change it. An error names the reference and the reason, never a value.
 
+## Settings in the desktop app
+
+An app opened from the Dock or a desktop launcher doesn't see the variables your shell exports. From hitop 1.1 the desktop app's Settings page has a **Secret managers** section for them:
+
+- Vault or OpenBao: address (`VAULT_ADDR`), namespace (`VAULT_NAMESPACE`), token (`VAULT_TOKEN`).
+- AWS Secrets Manager: region (`AWS_REGION`), profile (`AWS_PROFILE`), access key id, secret access key and session token.
+- Azure Key Vault: tenant id and client id (`AZURE_TENANT_ID`, `AZURE_CLIENT_ID`), client secret (`AZURE_CLIENT_SECRET`).
+- Where the `op`, `az` and `aws` programs are, when they aren't on the app's `PATH`.
+
+Tokens, keys and the client secret go to your system keychain only (service `hitop`, account `secret-managers/<NAME>`), never to a file. The other values go to `secret-managers.json` in hitop's settings folder (`~/.config/hitop/` on Linux, `~/Library/Application Support/hitop/` on macOS). The CLI reads the same file and keychain items, so a value set once works in both.
+
+These values are handed to hitop's secret manager lookups only; they never become environment variables of the app or of anything it starts. Precedence, from first to last:
+
+1. Environment variables, a group at a time. When the environment sets any variable of a group, the saved values of that group are not used: `VAULT_ADDR`/`BAO_ADDR`; `VAULT_TOKEN`/`BAO_TOKEN`; `VAULT_NAMESPACE`/`BAO_NAMESPACE`; `AWS_REGION`/`AWS_DEFAULT_REGION`; `AWS_PROFILE` with the three AWS keys (a shell profile is never mixed with saved keys); the three `AZURE_*` values; `HITOP_OP_BIN`, `HITOP_AZ_BIN`, `HITOP_AWS_BIN` each on its own. The page says which variables the app's environment already sets.
+2. The saved settings and keychain values.
+3. What hitop finds by itself: `~/.vault-token`, the profiles in `~/.aws`, the `az` and `op` sign-ins.
+
+The CLI has no per-manager flags, so for it the order is environment, then the saved settings; `--no-secret-managers` still turns everything off. `hitop secret check` says when the settings file is in use.
+
 ## Turn it off
 
 `--no-secret-managers` on any command, or `HITOP_SECRET_MANAGERS=off` for the CLI and the desktop app, stops hitop from contacting secret managers. A request that uses a reference then fails with the list of references, instead of sending the reference text.
@@ -105,4 +124,4 @@ Each reference is read once per run. Calls time out after 15 seconds (60 seconds
 - Code snippets keep references as `{{secret:...}}` placeholders unless you pass `--show-secrets`; the web app's Code dialog always does.
 - `hitop mcp` resolves only references that are already in the workspace's files, so an AI client can't ask for other secrets; values are masked in every tool result.
 - Scripts see the resolved values through the variables, as they see other secrets.
-- The desktop app reads the environment it was started with. On macOS an app opened from the Dock doesn't see your shell's `VAULT_ADDR`; `~/.vault-token`, `~/.aws` and the `az` and `op` CLIs still work. The Mac App Store build can't run the `az`, `op` and `aws` CLIs from its sandbox.
+- The desktop app reads the environment it was started with. On macOS an app opened from the Dock doesn't see your shell's `VAULT_ADDR`: set it in Settings (above); `~/.vault-token`, `~/.aws` and the `az` and `op` CLIs still work. The Mac App Store build can't run the `az`, `op` and `aws` CLIs from its sandbox, and its settings folder and keychain items are its own.
