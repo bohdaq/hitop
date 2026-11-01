@@ -7,8 +7,8 @@ use serde_json::Value;
 use crate::{
     http,
     model::{Collection, Environment, RequestResult, TestResult},
-    prepare::{prepare, variables, Draft},
-    scripting::run_post_request_script,
+    prepare::{apply_updates, prepare, variables, Draft},
+    scripting::{run_post_request_script_with, PostRequestCtx, SentRequest},
     secrets::{Masker, Secrets},
 };
 
@@ -130,20 +130,27 @@ pub fn run_collection_opts(
             },
             Ok(pre) => {
                 context.extend(pre.context_updates.clone());
+                // Variables a script sets (pm.environment.set, ...) last for the run.
+                apply_updates(&mut variables, &pre.variables);
                 let result = http::execute_with(&request.method, &pre.url, &pre.headers, &pre.body, options.timeout);
                 let mut tests = vec![];
                 if let Ok(resp) = &result {
-                    match run_post_request_script(
+                    let sent = SentRequest { url: pre.url.clone(), method: request.method.clone(), headers: pre.headers.clone(), body: pre.body.clone() };
+                    match run_post_request_script_with(
                         &request.post_request_script,
-                        &resp.body,
-                        &resp.headers,
-                        resp.status,
-                        resp.duration_ms,
-                        &variables,
-                        &context,
+                        &PostRequestCtx {
+                            response_body: &resp.body,
+                            response_headers: &resp.headers,
+                            status_code: resp.status,
+                            duration_ms: resp.duration_ms,
+                            variables: &variables,
+                            context: &context,
+                            request: Some(&sent),
+                        },
                     ) {
                         Ok(post) => {
                             context.extend(post.context_updates);
+                            apply_updates(&mut variables, &post.variables);
                             tests = post.tests;
                         }
                         Err(e) => tests.push(TestResult { name: "post-request script".into(), pass: false, detail: e.to_string() }),

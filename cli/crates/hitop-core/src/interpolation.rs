@@ -23,6 +23,46 @@ pub fn interpolate(template: &str, variables: &HashMap<String, String>) -> Resul
     Ok(result.into_owned())
 }
 
+/// Like [`interpolate`], but a `${name}` with no value is left as written
+/// and its name added to `missing` (once, in order).
+pub fn interpolate_lenient(template: &str, variables: &HashMap<String, String>, missing: &mut Vec<String>) -> String {
+    let re = Regex::new(r"\$\{([^}]+)\}").unwrap();
+    re.replace_all(template, |caps: &regex::Captures| match variables.get(&caps[1]) {
+        Some(val) => val.clone(),
+        None => {
+            if !missing.iter().any(|m| m == &caps[1]) {
+                missing.push(caps[1].to_string());
+            }
+            caps[0].to_string()
+        }
+    })
+    .into_owned()
+}
+
+/// Replaces only the `${name}`s whose name is in `names`; one that still has
+/// no value is an error, as in [`interpolate`].
+pub fn fill(template: &str, names: &[String], variables: &HashMap<String, String>) -> Result<String> {
+    let re = Regex::new(r"\$\{([^}]+)\}").unwrap();
+    let mut error: Option<String> = None;
+    let out = re.replace_all(template, |caps: &regex::Captures| {
+        let key = &caps[1];
+        if !names.iter().any(|n| n == key) {
+            return caps[0].to_string();
+        }
+        match variables.get(key) {
+            Some(v) => v.clone(),
+            None => {
+                error.get_or_insert_with(|| format!("variable '{}' is not defined", key));
+                caps[0].to_string()
+            }
+        }
+    });
+    if let Some(e) = error {
+        bail!(e);
+    }
+    Ok(out.into_owned())
+}
+
 pub fn interpolate_headers(
     headers: &[(String, String)],
     variables: &HashMap<String, String>,
@@ -90,6 +130,16 @@ mod tests {
         let result = interpolate_headers(&headers, &vars(&[("token", "abc123")])).unwrap();
         assert_eq!(result[0], ("Authorization".to_string(), "Bearer abc123".to_string()));
         assert_eq!(result[1], ("X-App".to_string(), "hitop".to_string()));
+    }
+
+    #[test]
+    fn lenient_keeps_missing_and_fill_resolves_them() {
+        let mut missing = vec![];
+        let out = interpolate_lenient("${a}/${b}/${b}/${c}", &vars(&[("a", "1")]), &mut missing);
+        assert_eq!(out, "1/${b}/${b}/${c}");
+        assert_eq!(missing, ["b", "c"]);
+        assert_eq!(fill("${b}-${x}", &missing, &vars(&[("b", "2")])).unwrap(), "2-${x}");
+        assert!(fill("${c}", &missing, &vars(&[])).unwrap_err().to_string().contains("'c'"));
     }
 
     #[test]

@@ -22,14 +22,101 @@ pub struct PreRequestResult {
     pub headers: Vec<(String, String)>,
     pub body: String,
     pub context_updates: HashMap<String, Value>,
+    /// Variables the script set (`pm.environment.set`, ...) for the rest of
+    /// the run; `None` unsets one.
+    pub variables: VariableUpdates,
 }
 
 /// Outputs after running a post-request script.
 #[derive(Debug, Clone)]
 pub struct PostRequestResult {
     pub context_updates: HashMap<String, Value>,
-    /// One entry per `assert.*` call, in order.
+    /// One entry per `assert.*` call (and `pm.test`, `tests[...]`), in order.
     pub tests: Vec<crate::model::TestResult>,
+    /// Variables the script set, as in [`PreRequestResult::variables`].
+    pub variables: VariableUpdates,
+}
+
+/// Variables set (`Some`) or unset (`None`) by a script.
+pub type VariableUpdates = HashMap<String, Option<String>>;
+
+/// The request a post-request script sees as `pm.request`.
+#[derive(Debug, Clone, Default)]
+pub struct SentRequest {
+    pub url: String,
+    pub method: String,
+    pub headers: Vec<(String, String)>,
+    pub body: String,
+}
+
+/// Everything a post-request script sees.
+#[derive(Debug, Clone, Copy)]
+pub struct PostRequestCtx<'a> {
+    pub response_body: &'a str,
+    pub response_headers: &'a HashMap<String, String>,
+    pub status_code: u16,
+    pub duration_ms: u64,
+    pub variables: &'a HashMap<String, String>,
+    pub context: &'a HashMap<String, Value>,
+    pub request: Option<&'a SentRequest>,
+}
+
+/// The Postman `pm.*` shim (`shared/pm-shim.js`; this crate keeps a copy so
+/// it is packaged, and a test checks the two are the same).
+pub const PM_SHIM: &str = include_str!("../pm-shim.js");
+
+/// True when a script may use Postman's API, so the shim is loaded. Scripts
+/// that don't run exactly as before (no shim, no wrapper function).
+fn uses_postman_api(script: &str) -> bool {
+    static WORDS: std::sync::OnceLock<regex::Regex> = std::sync::OnceLock::new();
+    WORDS
+        .get_or_init(|| regex::Regex::new(r"\b(pm|postman|tests|responseBody|responseCode|responseTime|environment|globals)\b").unwrap())
+        .is_match(script)
+}
+
+/// JS that loads the shim as `__p` (given the host `api` object literal)
+/// and runs `script` in a function that receives `pm` and the legacy names.
+fn with_shim(api: &str, script: &str) -> String {
+    format!(
+        "{PM_SHIM}\nconst __p = __hitopPm({api});\n(function (pm, tests, postman, environment, globals, responseBody, responseCode, responseTime) {{\n{script}\n}}).call(undefined, __p.pm, __p.tests, __p.postman, __p.environment, __p.globals, __p.responseBody, __p.responseCode, __p.responseTime);\n__p.finish();\n"
+    )
+}
+
+const SET_VAR_JS: &str = "function (k, v) { __varUpdates[k] = v; if (v === null) delete __vars[k]; else __vars[k] = v; }";
+
+fn variable_updates(v: &Value) -> VariableUpdates {
+    v.as_object()
+        .map(|m| m.iter().map(|(k, v)| (k.clone(), v.as_str().map(str::to_string))).collect())
+        .unwrap_or_default()
+}
+
+/// A script line that calls a `pm.*` (or `postman.*`, `require`, ...) API
+/// the shim doesn't provide.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub struct UnsupportedCall {
+    /// 1-based line in the script.
+    pub line: usize,
+    /// The call, as `pm.sendRequest`.
+    pub call: String,
+    /// The line's text, trimmed.
+    pub text: String,
+}
+
+/// Every line of `script` that uses a Postman call the shim doesn't
+/// provide (the same check the web app runs: it lives in the shim).
+pub fn unsupported_calls(script: &str) -> Vec<UnsupportedCall> {
+    if script.trim().is_empty() {
+        return vec![];
+    }
+    let mut engine = Context::default();
+    let Ok(source) = serde_json::to_string(script) else { return vec![] };
+    let js = format!("{PM_SHIM}\nJSON.stringify(__hitopPmUnsupported({source}))");
+    engine
+        .eval(Source::from_bytes(js.as_bytes()))
+        .ok()
+        .and_then(|v| v.as_string().map(|s| s.to_std_string().unwrap_or_default()))
+        .and_then(|s| serde_json::from_str(&s).ok())
+        .unwrap_or_default()
 }
 
 pub fn run_pre_request_script(script: &str, ctx: PreRequestCtx) -> Result<PreRequestResult> {
@@ -39,6 +126,7 @@ pub fn run_pre_request_script(script: &str, ctx: PreRequestCtx) -> Result<PreReq
             headers: ctx.headers,
             body: ctx.body,
             context_updates: HashMap::new(),
+            variables: HashMap::new(),
         });
     }
 
@@ -53,9 +141,11 @@ pub fn run_pre_request_script(script: &str, ctx: PreRequestCtx) -> Result<PreReq
 const __vars = {};
 const __ctx  = {};
 const __ctxUpdates = {{}};
+const __varUpdates = {{}};
 let __url    = {};
 let __body   = {};
 let __headers = {};
+const __method = {};
 
 function getVariable(k) {{ return __vars[k]; }}
 function getContext(k)  {{ return __ctxUpdates[k] !== undefined ? __ctxUpdates[k] : __ctx[k]; }}
@@ -67,6 +157,10 @@ function setHeader(name, value) {{
     for (let h of __headers) {{ if (h[0] === name) {{ h[1] = value; found = true; break; }} }}
     if (!found) __headers.push([name, value]);
 }}
+function __removeHeader(name) {{
+    const n = String(name).toLowerCase();
+    __headers = __headers.filter(h => String(h[0]).toLowerCase() !== n);
+}}
 "#,
         variables_json,
         context_json,
@@ -74,13 +168,24 @@ function setHeader(name, value) {{
         serde_json::to_string(&ctx.body)?,
         // The script starts from the request's headers, as in the web app.
         serde_json::to_string(&ctx.headers)?,
+        serde_json::to_string(&ctx.method)?,
     );
 
     let postamble = r#"
-JSON.stringify({ url: __url, body: __body, headers: __headers, ctx: __ctxUpdates })
+JSON.stringify({ url: __url, body: __body, headers: __headers, ctx: __ctxUpdates, vars: __varUpdates })
 "#;
 
-    let full_script = format!("{}\n{}\n{}", preamble, script, postamble);
+    let body = if uses_postman_api(script) {
+        let api = format!(
+            "{{ vars: __vars, setVar: {SET_VAR_JS}, assert: {{ ok: function () {{}} }}, \
+             request: {{ get url() {{ return __url; }}, method: __method, get headers() {{ return __headers; }}, get body() {{ return __body; }} }}, \
+             setUrl: setUrl, setHeader: setHeader, removeHeader: __removeHeader, setBody: setBody, response: null }}"
+        );
+        with_shim(&api, script)
+    } else {
+        script.to_string()
+    };
+    let full_script = format!("{}\n{}\n{}", preamble, body, postamble);
 
     let result = engine
         .eval(Source::from_bytes(full_script.as_bytes()))
@@ -122,6 +227,7 @@ JSON.stringify({ url: __url, body: __body, headers: __headers, ctx: __ctxUpdates
         headers: new_headers,
         body: new_body,
         context_updates: ctx_updates,
+        variables: variable_updates(&parsed["vars"]),
     })
 }
 
@@ -134,10 +240,21 @@ pub fn run_post_request_script(
     variables: &HashMap<String, String>,
     context: &HashMap<String, Value>,
 ) -> Result<PostRequestResult> {
+    run_post_request_script_with(
+        script,
+        &PostRequestCtx { response_body, response_headers, status_code, duration_ms, variables, context, request: None },
+    )
+}
+
+/// [`run_post_request_script`] that also gives the script the request as
+/// sent (`pm.request`).
+pub fn run_post_request_script_with(script: &str, ctx: &PostRequestCtx) -> Result<PostRequestResult> {
+    let PostRequestCtx { response_body, response_headers, status_code, duration_ms, variables, context, request } = *ctx;
     if script.trim().is_empty() {
         return Ok(PostRequestResult {
             context_updates: HashMap::new(),
             tests: vec![],
+            variables: HashMap::new(),
         });
     }
 
@@ -159,6 +276,7 @@ const statusCode      = {};
 const __vars = {};
 const __ctx  = {};
 const __ctxUpdates = {{}};
+const __varUpdates = {{}};
 
 function getVariable(k) {{ return __vars[k]; }}
 function getContext(k)  {{ return __ctxUpdates[k] !== undefined ? __ctxUpdates[k] : __ctx[k]; }}
@@ -182,7 +300,7 @@ const assert = {{
     }},
     responseTime(ms) {{ __record("responds within " + ms + " ms", {duration} <= Number(ms), "took {duration} ms"); }},
     equal(a, e, name) {{ __record(name === undefined ? JSON.stringify(a) + " equals " + JSON.stringify(e) : name, JSON.stringify(a) === JSON.stringify(e), "got " + JSON.stringify(a)); }},
-    ok(c, name) {{ __record(name === undefined ? "condition is true" : name, c, "was false"); }},
+    ok(c, name, detail) {{ __record(name === undefined ? "condition is true" : name, c, detail === undefined || detail === "" ? "was false" : detail); }},
 }};
 "#,
         response_json,
@@ -194,8 +312,23 @@ const assert = {{
         duration = duration_ms,
     );
 
-    let postamble = "JSON.stringify({ ctx: __ctxUpdates, tests: __tests })";
-    let full_script = format!("{}\n{}\n{}", preamble, script, postamble);
+    let postamble = "JSON.stringify({ ctx: __ctxUpdates, tests: __tests, vars: __varUpdates })";
+    let body = if uses_postman_api(script) {
+        let sent = request.cloned().unwrap_or_default();
+        let api = format!(
+            "{{ vars: __vars, setVar: {SET_VAR_JS}, assert: assert, \
+             request: {{ url: {}, method: {}, headers: {}, body: {} }}, \
+             response: {{ code: statusCode, text: responseText, headers: responseHeaders, time: {duration_ms} }} }}",
+            serde_json::to_string(&sent.url)?,
+            serde_json::to_string(&sent.method)?,
+            serde_json::to_string(&sent.headers)?,
+            serde_json::to_string(&sent.body)?,
+        );
+        with_shim(&api, script)
+    } else {
+        script.to_string()
+    };
+    let full_script = format!("{}\n{}\n{}", preamble, body, postamble);
 
     let result = engine
         .eval(Source::from_bytes(full_script.as_bytes()))
@@ -213,6 +346,7 @@ const assert = {{
     Ok(PostRequestResult {
         context_updates: ctx_updates,
         tests,
+        variables: variable_updates(&out["vars"]),
     })
 }
 
@@ -461,5 +595,137 @@ mod tests {
             "!!!invalid", "{}", &HashMap::new(), 200, 50, &HashMap::new(), &HashMap::new(),
         ).unwrap_err();
         assert!(err.to_string().contains("post-request script error"));
+    }
+
+    // --- pm.* shim ---
+
+    fn post(script: &str, body: &str, status: u16) -> PostRequestResult {
+        let headers: HashMap<String, String> = [("content-type".to_string(), "application/json; charset=utf-8".to_string())].into();
+        let vars: HashMap<String, String> = [("base".to_string(), "http://x".to_string())].into();
+        let sent = SentRequest { url: "http://x/get".into(), method: "GET".into(), headers: vec![("Accept".into(), "*/*".into())], body: String::new() };
+        run_post_request_script_with(
+            script,
+            &PostRequestCtx { response_body: body, response_headers: &headers, status_code: status, duration_ms: 12, variables: &vars, context: &HashMap::new(), request: Some(&sent) },
+        )
+        .unwrap()
+    }
+
+    fn summary(r: &PostRequestResult) -> Vec<(String, bool, String)> {
+        r.tests.iter().map(|t| (t.name.clone(), t.pass, t.detail.clone())).collect()
+    }
+
+    #[test]
+    fn shared_shim_is_the_packaged_copy() {
+        let shared = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../../shared/pm-shim.js");
+        if let Ok(text) = std::fs::read_to_string(&shared) {
+            assert!(text == PM_SHIM, "cli/crates/hitop-core/pm-shim.js differs from shared/pm-shim.js: copy it over");
+        }
+    }
+
+    #[test]
+    fn pm_test_and_chai_expect() {
+        let r = post(
+            r#"pm.test('expect response be 200', function () {
+    pm.response.to.be.ok
+})
+pm.test('expect response json contain args', function () {
+    pm.expect(pm.response.json().args).to.have.property('source')
+      .and.equal('newman')
+})
+pm.test('fails with a message', function () { pm.expect(pm.response.code).to.equal(201); });
+pm.test('not and deep', function () {
+    pm.expect([1, 2]).to.be.an('array').that.is.not.empty;
+    pm.expect({a: {b: 1}}).to.deep.equal({a: {b: 1}});
+    pm.expect({a: 1}).to.eql({a: 1});
+    pm.expect('hello').to.include('ell');
+    pm.expect(5).to.be.above(3).and.below(10);
+    pm.expect(null).to.be.null;
+    pm.expect(pm.response.headers.get('Content-Type')).to.include('json');
+    pm.response.to.have.status(200);
+    pm.response.to.have.header('content-type');
+    pm.response.to.not.be.error;
+    pm.expect(pm.response.responseTime).to.be.below(1000);
+    pm.expect(pm.request.url.toString()).to.equal('http://x/get');
+    pm.expect(pm.request.headers.get('accept')).to.equal('*/*');
+});
+pm.test('a thrown error', function () { undefined.x; });
+pm.expect(1).to.equal(2);"#,
+            r#"{"args":{"source":"newman"}}"#,
+            200,
+        );
+        let s = summary(&r);
+        assert_eq!(s[0], ("expect response be 200".into(), true, "".into()));
+        assert_eq!(s[1], ("expect response json contain args".into(), true, "".into()));
+        assert_eq!(s[2], ("fails with a message".into(), false, "expected 200 to equal 201".into()));
+        assert!(s[3].1, "{:?}", s[3]);
+        assert!(!s[4].1 && s[4].2.starts_with("TypeError"), "{:?}", s[4]);
+        assert_eq!(s[5], ("expected 1 to equal 2".into(), false, "expected 1 to equal 2".into()));
+        assert_eq!(s.len(), 6);
+    }
+
+    #[test]
+    fn pm_variables_are_returned_as_updates() {
+        let r = post(
+            "pm.environment.set('token', pm.response.json().token); pm.collectionVariables.set('n', 3); pm.globals.unset('base'); \
+             pm.test('reads back', () => { pm.expect(pm.variables.get('token')).to.equal('t1'); pm.expect(pm.environment.has('base')).to.be.false; });",
+            r#"{"token":"t1"}"#,
+            200,
+        );
+        assert_eq!(r.variables["token"].as_deref(), Some("t1"));
+        assert_eq!(r.variables["n"].as_deref(), Some("3"));
+        assert_eq!(r.variables["base"], None);
+        assert!(r.tests[0].pass, "{:?}", r.tests);
+    }
+
+    #[test]
+    fn legacy_tests_object_and_globals() {
+        let r = post(
+            "var j = JSON.parse(responseBody); tests['has user'] = j.hasOwnProperty('user'); tests['code'] = responseCode.code === 201; \
+             if (!(environment.isIntegrationTest)) {} postman.setEnvironmentVariable('slug', j.user);",
+            r#"{"user":"u"}"#,
+            200,
+        );
+        assert_eq!(summary(&r), vec![("has user".into(), true, "".into()), ("code".into(), false, "was false".into())]);
+        assert_eq!(r.variables["slug"].as_deref(), Some("u"));
+    }
+
+    #[test]
+    fn pre_request_pm_request_edits() {
+        let mut ctx = empty_pre_ctx("http://x/a");
+        ctx.headers = vec![("X-Old".into(), "1".into())];
+        let r = run_pre_request_script(
+            "pm.request.headers.add({key: 'X-New', value: 'v'}); pm.request.headers.remove('x-old'); pm.request.url = pm.request.url.toString() + '?q=1'; \
+             pm.request.body.update('{\"a\":1}'); pm.variables.set('ts', 7);",
+            ctx,
+        )
+        .unwrap();
+        assert_eq!(r.url, "http://x/a?q=1");
+        assert_eq!(r.headers, vec![("X-New".to_string(), "v".to_string())]);
+        assert_eq!(r.body, r#"{"a":1}"#);
+        assert_eq!(r.variables["ts"].as_deref(), Some("7"));
+    }
+
+    #[test]
+    fn hitop_scripts_are_untouched_by_the_shim() {
+        let r = post("const pmx = 1; assert.status(200); setContext('a', pmx)", "{}", 200);
+        assert!(r.variables.is_empty());
+        assert_eq!(r.tests.len(), 1);
+    }
+
+    #[test]
+    fn unsupported_calls_are_listed_by_line() {
+        let script = "pm.test('x', () => {});\n// pm.sendRequest in a comment\npm.sendRequest('http://x', () => {}); pm.info.requestName;\nconst _ = require('lodash');\npostman.setNextRequest('a'); pm.response.to.have.jsonSchema({});";
+        let calls: Vec<(usize, String)> = unsupported_calls(script).into_iter().map(|c| (c.line, c.call)).collect();
+        assert_eq!(
+            calls,
+            vec![
+                (3, "pm.sendRequest".to_string()),
+                (3, "pm.info.requestName".to_string()),
+                (4, "require()".to_string()),
+                (5, "postman.setNextRequest".to_string()),
+                (5, "pm.response.to.have.jsonSchema".to_string()),
+            ]
+        );
+        assert!(unsupported_calls("pm.environment.set('a', 1); pm.expect(x).to.equal(1); tests['a'] = true").is_empty());
     }
 }
