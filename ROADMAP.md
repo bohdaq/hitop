@@ -144,7 +144,7 @@ Secret variables: `secret: true` in an environment file, with the value resolved
 | T14 | WebSocket | done | ac00903, 743db7d, 538401a, 2eac6a7, 0e23002, 61ea4c0, 8938060 | 2026-11-01 |
 | T15 | gRPC | todo | | |
 | T16 | Response diff and code snippets | done | 5c550ac, 9b88ff5, 0d4caa8, 8acd583, 344d07d | 2026-11-01 |
-| T17 | OpenAPI import and sync | done | 68d6a14, 3628f76, d1878c0, 45ac576, docs (this push) | 2026-11-01 |
+| T17 | OpenAPI import and sync | done | 68d6a14, 3628f76, d1878c0, 45ac576, e5292df, ed397f1, a1fd78e, be02942 | 2026-11-01 |
 | T18 | Bring-your-own-key AI | dropped | owner decision | 2026-11-01 |
 | T19 | v1.0 hardening and release | todo | | |
 | T20 | Git UI in desktop | todo | | |
@@ -1057,7 +1057,8 @@ export PATH="$HOME/.cargo/bin:$PATH"
     `tests/openapi.cjs` (URL import via the dialog link and report, pasted YAML added, edits, sync preview/apply,
     prune, run of the synced collection against a local Node server) in web and Tauri mode. Full e2e suite green in
     both modes locally; clippy (workspace, core without default features, wasm32) and `cargo deny check licenses` clean.
-    No new crates.
+    No new crates. CI run 41287086462 green on be02942 (all jobs, incl. desktop compile and web + Tauri e2e); Licenses
+    run 41287086529 green.
   - Guide `site/content/guides/import-an-openapi-spec.md` (/terms/import-an-openapi-spec.html); CLI README "From OpenAPI".
   - Deviations: JSON maps are sorted (serde_json without `preserve_order`), so requests within a folder follow path
     order and generated example bodies list keys alphabetically (the same on every surface). Field-level merge: adding
