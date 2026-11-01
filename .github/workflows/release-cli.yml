@@ -2,7 +2,8 @@ name: Release CLI
 
 # A tag like cli-v0.3.0 publishes hitop-core, then hitop, to crates.io (CARGO_REGISTRY_TOKEN
 # secret), builds hitop for five targets, attaches them to a GitHub Release and pushes the
-# multi-arch image ghcr.io/bohdaq/hitop:<version> and :latest.
+# multi-arch image ghcr.io/bohdaq/hitop:<version> and :latest, plus <version>-debug and :debug
+# (cli/docker/Dockerfile.debug: busybox shell, for GitLab CI and other shell-based runners).
 # Tags with a suffix (cli-v0.3.0-rc.1) are dry runs: no crates.io publish (only --dry-run), a
 # pre-release, and the image tagged with the rc version only.
 on:
@@ -157,7 +158,7 @@ jobs:
             tar xzf "assets/hitop-$target.tar.gz" -C image
             mv "image/hitop-$target/hitop" "image/$arch/hitop"
           done
-          cp cli/docker/Dockerfile image/
+          cp cli/docker/Dockerfile cli/docker/Dockerfile.debug image/
       - uses: docker/setup-qemu-action@v3
       - uses: docker/setup-buildx-action@v3
       - uses: docker/login-action@v3
@@ -167,9 +168,15 @@ jobs:
           password: ${{ github.token }}
       - id: tags
         run: |
-          tags="ghcr.io/bohdaq/hitop:${{ needs.check.outputs.version }}"
-          [ "${{ needs.check.outputs.prerelease }}" != true ] && tags="$tags,ghcr.io/bohdaq/hitop:latest"
+          v="${{ needs.check.outputs.version }}"
+          tags="ghcr.io/bohdaq/hitop:$v"
+          debug="ghcr.io/bohdaq/hitop:$v-debug"
+          if [ "${{ needs.check.outputs.prerelease }}" != true ]; then
+            tags="$tags,ghcr.io/bohdaq/hitop:latest"
+            debug="$debug,ghcr.io/bohdaq/hitop:debug"
+          fi
           echo "tags=$tags" >> "$GITHUB_OUTPUT"
+          echo "debug=$debug" >> "$GITHUB_OUTPUT"
       - uses: docker/build-push-action@v6
         with:
           context: image
@@ -180,7 +187,23 @@ jobs:
             org.opencontainers.image.source=https://github.com/bohdaq/hitop
             org.opencontainers.image.licenses=MIT
             org.opencontainers.image.description=hitop: run HTTP API collections from the command line and in CI
+      - uses: docker/build-push-action@v6
+        with:
+          context: image
+          file: image/Dockerfile.debug
+          platforms: linux/amd64,linux/arm64
+          push: true
+          tags: ${{ steps.tags.outputs.debug }}
+          labels: |
+            org.opencontainers.image.source=https://github.com/bohdaq/hitop
+            org.opencontainers.image.licenses=MIT
+            org.opencontainers.image.description=hitop with a busybox shell, for shell-based CI runners such as GitLab CI
       - name: The image runs a collection
         run: |
           docker run --rm ghcr.io/bohdaq/hitop:${{ needs.check.outputs.version }} --version
           cli/docker/smoke.sh ghcr.io/bohdaq/hitop:${{ needs.check.outputs.version }}
+      - name: The debug image runs a collection from a shell, as GitLab CI does
+        run: |
+          image=ghcr.io/bohdaq/hitop:${{ needs.check.outputs.version }}-debug
+          cli/docker/smoke.sh "$image"
+          docker run --rm --entrypoint "" "$image" sh -c 'hitop --version && command -v hitop'

@@ -1,0 +1,10 @@
+# ghcr.io/bohdaq/hitop:<version>-debug: the same static hitop binary on distroless static
+# "debug", which adds a busybox shell (/busybox/sh) and runs as root. For CI systems that run
+# job scripts through a shell inside the image, such as GitLab CI:
+#   image: { name: ghcr.io/bohdaq/hitop:<version>-debug, entrypoint: [""] }
+# Use the default (shell-less, nonroot) tag everywhere else.
+FROM gcr.io/distroless/static-debian12:debug
+ARG TARGETARCH
+COPY ${TARGETARCH}/hitop /usr/local/bin/hitop
+WORKDIR /work
+ENTRYPOINT ["/usr/local/bin/hitop"]
