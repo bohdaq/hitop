@@ -170,11 +170,12 @@ fn repository(folder: &Path) -> Result<(PathBuf, String)> {
     Ok((root, if rel.is_empty() { ".".to_string() } else { rel.join("/") }))
 }
 
-/// `--reporter html` came after 0.3: older images don't know it.
+/// `--reporter html` came after 0.3.0: older images don't know it.
 fn has_html_reporter(version: &str) -> bool {
-    let mut parts = version.trim_start_matches('v').split(['.', '-', '+']).map(|p| p.parse::<u64>().unwrap_or(0));
-    let (major, minor) = (parts.next().unwrap_or(0), parts.next().unwrap_or(0));
-    (major, minor) > (0, 3)
+    let core = version.trim_start_matches('v').split(['-', '+']).next().unwrap_or_default();
+    let mut parts = core.split('.').map(|p| p.parse::<u64>().unwrap_or(0));
+    let v = (parts.next().unwrap_or(0), parts.next().unwrap_or(0), parts.next().unwrap_or(0));
+    v > (0, 3, 0)
 }
 
 fn github(args: &ScheduleArgs, t: &Target, cron: &Cron) -> Result<()> {
@@ -246,7 +247,7 @@ fn workflow(t: &Target, cron: &Cron, path: &str, version: &str) -> Result<String
     y.push_str("jobs:\n  run:\n");
     y.push_str(&format!("    name: {}\n", yq(&title)?));
     y.push_str("    runs-on: ubuntu-24.04\n    timeout-minutes: 30\n    steps:\n");
-    y.push_str("      - uses: actions/checkout@v5\n        with:\n          persist-credentials: false\n");
+    y.push_str("      - uses: actions/checkout@v6\n        with:\n          persist-credentials: false\n");
     y.push_str(&format!("      - name: {}\n        id: hitop\n        uses: bohdaq/hitop-action@v1\n", yq(&format!("Run {title}"))?));
     if !t.secret_vars.is_empty() {
         y.push_str("        env:\n");
@@ -503,6 +504,8 @@ mod tests {
         assert_eq!(slugify("**"), "");
         assert!(!has_html_reporter("0.3.0"));
         assert!(!has_html_reporter("0.3.0-rc.2"));
+        assert!(!has_html_reporter("v0.2.9"));
+        assert!(has_html_reporter("0.3.1"));
         assert!(has_html_reporter("0.4.0"));
         assert!(has_html_reporter("1.0.0"));
     }
