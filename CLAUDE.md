@@ -140,8 +140,12 @@ hitop/
 │   ├── tests/                  # auth, sync, plaintext (server never sees plaintext), no_crypto_in_server, postgres
 │   ├── deploy/                 # hitop-sync.service, install.sh, rws-routes.toml (sync.hitop.rws8.tech)
 │   └── THREAT_MODEL.md, README.md (self-host guide), Dockerfile
+├── ios/
+│   ├── HiTop/                  # the live App Store iOS app ("HiTop HTTP Client", editor, own JSON storage); frozen, untouched
+│   ├── HitopKit/               # Swift package (MIT): format v1 reader (Yams 6.2.2), variables, secrets, scripts, URLSession runner, report.json
+│   └── HitopCompanion/         # SwiftUI companion (T26): XcodeGen project.yml, app + App Intents, WidgetKit widget, Shared/ (app group)
 ├── spec/collection-format.md   # collection folder format v1 (CC BY 4.0)
-├── shared/pm-shim.js           # the pm.* shim for Postman scripts, run by hitop-core (copy in the crate) and the web app
+├── shared/pm-shim.js           # the pm.* shim for Postman scripts, run by hitop-core (copy in the crate), the web app and HitopKit (copy in Resources/)
 ├── spec/run-report.md          # `hitop run --reporter json` report, reportVersion 1, and the JUnit shape (CC BY 4.0)
 ├── ROADMAP.md                  # agent work order to v1.x: decisions, rules, tranches T0–T26, status
 ├── launch/                     # launch text drafts for the owner (Show HN, Reddit, TWiR, Product Hunt); never posted by agents
@@ -329,6 +333,20 @@ hitop/
   e2e suite against `dist-tauri` with a mocked invoke (no server needed); new e2e suites use `tests/harness.cjs` so they run in both modes
 - hitop-core feature `native` (default): http, scripting, prepare, runner, report, storage; hitop-wasm builds without it,
   so a new core module using reqwest, boa, dirs or those modules starts with `#![cfg(feature = "native")]`
+
+### iOS companion (`ios/HitopKit`, `ios/HitopCompanion`)
+- HitopKit follows hitop-core: same reader rules and errors, ids (FNV-1a), interpolation (one pass), auth, GraphQL and
+  form bodies, script preambles + `pm-shim.js`, masking, report.json shape. A change to any of these in the core needs the
+  same change in HitopKit; `CLICompatibilityTests` runs one folder through both and diffs the wire requests and reports
+- Tests on Linux: `. ~/.local/share/swiftly/env.sh && cd ios/HitopKit && HITOP_BIN=../../cli/target/debug/hitop swift test`
+  (needs python3 for `mock_server.py` and node as the script engine; without HITOP_BIN the CLI test is skipped). CI job
+  `hitopkit` runs it in `swift:6.4.2-noble` pinned by digest and fails on any skipped test
+- YAML: Yams with `Resolver.basic`, plain scalars resolved by the YAML 1.2 core schema in `YAML.swift` (`on`/`yes` stay strings)
+- Scripts: JavaScriptCore on Apple platforms (`defaultScriptEngine`); none on Linux (scripts reported as not run, `notes`)
+- Secrets: env var, given values, then `SecretStore` (`KeychainSecretStore` service `hitop`, `MemorySecretStore` in tests);
+  `${secret:...}` references fail the request (no secret managers on iOS); WebSocket/gRPC left out of runs
+- The app (no editing) is generated with `xcodegen` on a Mac; bundle ids `hitop.rws8.tech.HitopCompanion` (+ `.Widget`),
+  app group `group.hitop.rws8.tech.companion`; Swift 5 language mode for the app targets, Swift 6 for HitopKit
 
 ### Website and proxy
 - Hosting: VM bohdan-prod-donotdelete (168.119.17.57) behind the front rws; see `deploy/README.md`

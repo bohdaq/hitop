@@ -153,7 +153,7 @@ Secret variables: `secret: true` in an environment file, with the value resolved
 | T23 | Sync server (AGPL) | done (handoff) | 5cd2ac2, 9a8119f, 35f2775, f08bbce, a3b6c7d, ce07adf; deployed https://sync.hitop.rws8.tech | 2026-11-01 |
 | T24 | Client sync, teams, cloud runs | todo | | |
 | T25 | SSO and audit log | todo | | |
-| T26 | iOS companion code | todo | | |
+| T26 | iOS companion code | done (handoff) | 981c736, c1bfa7f, bdd5508; CI 41309724315 (HitopKit 40 tests on Linux); Xcode build in section 6 | 2026-11-01 |
 
 Common commands referenced below:
 
@@ -1394,6 +1394,52 @@ export PATH="$HOME/.cargo/bin:$PATH"
   collections, switch environment, App Intents for Shortcuts, a status widget. No editing.
 - **Done when:** `HitopKit` tests pass (on Linux or in the owner's Xcode). **Handoff:** owner
   builds, tests and submits.
+- **Notes (2026-11-01, done; handoff in section 6):**
+  - `ios/HitopKit` (Swift package, Swift 6, iOS 17 / macOS 14, MIT): reader for format v1 folders
+    (`hitop.yaml`, `requests/**`, `environments/`, `globals.yaml`) with hitop-core's defaults, ids,
+    path checks and errors; Yams 6.2.2 pinned exactly (`Package.resolved` committed) with
+    `Resolver.basic` and the YAML 1.2 core schema done in `YAML.swift`, which closes the T1 note
+    (`on`/`yes`/`no` stay strings). Same JSON model field names where they apply; the companion
+    drops what only editors need (unknown keys, examples, OpenAPI hashes) and keeps each request's
+    path. Variables: globals < collection < environment < run values < script-set < secrets, one-pass
+    `${name}` as in the core. Runner on URLSession (ephemeral session per run, so cookies carry within
+    a run only) with auth presets, GraphQL bodies (variables spliced as typed), urlencoded and
+    multipart bodies; WebSocket and gRPC requests are left out of runs as `hitop run` leaves them
+    out (the app marks them "not run on iOS"). Scripts: the core's pre/post preambles and
+    `assert.*` verbatim plus the `pm.*` shim (copy in `Resources/`, a test checks it equals
+    `shared/pm-shim.js`), on JavaScriptCore on Apple platforms; with no engine (Linux library use)
+    scripts are skipped and reported in an added `notes` key. `report.json` shape with every
+    documented key (nulls kept), `file` = `<folder name>/requests/<path>.yaml`. Secrets: env var,
+    given values, then a `SecretStore` (Keychain service `hitop`, account `<workspace>/<env>/<name>`,
+    globals as env `global`); no prompt (the app has a Secrets sheet). `${secret:...}` references fail
+    the request with a message naming the reference. `RunStatus`/`RunStatusStore` hold the last run
+    per collection (counts and first failure line, no response data) for the widget and Shortcuts.
+  - Tests (`swift test` on Linux, 40): YAML core schema, folder reading and error cases, the core's
+    params/interpolation/auth/GraphQL/form unit cases, scripts on Node (the same JS JavaScriptCore
+    runs; `vm.runInNewContext`), secrets and masking, the runner against `mock_server.py` (sample
+    fixture, globals, overrides, failures, bail, cookies, wire format), and `CLICompatibilityTests`:
+    the sample fixture plus a GraphQL/API-key/globals/pm.test request run by both `hitop run` and
+    HitopKit against the same mock server; the requests on the wire (minus each client's own headers)
+    and the reports (minus timings) are equal. CI job `hitopkit`: builds hitop, then `swift test` in
+    `swift:6.4.2-noble@sha256:bca121f6…` with python3 and nodejs from apt; fails on any skipped test.
+  - T19's compatibility fixture suite wasn't on main when this landed; when it does, point a HitopKit
+    test at it (read every fixture folder and compare with the expected model or a `hitop` run).
+  - `ios/HitopCompanion`: XcodeGen `project.yml` (the .xcodeproj is generated and git-ignored), app
+    target (Files/iCloud Drive folder picker, security-scoped bookmarks in the app group, coordinated
+    reads that first download iCloud placeholders, collection and request lists, run one request or
+    the collection, environment picker, report view and `report.json` share, Secrets sheet to the
+    keychain; no editing), App Intents (Run hitop collection, Get last hitop run status, App Shortcuts)
+    and a WidgetKit extension (last run of pinned collections). Not compiled here (no Apple SDK on
+    Linux): everything not UI is in HitopKit and tested.
+  - Relation to the existing app: `ios/HiTop` (App Store "HiTop HTTP Client", $2.99, an editor with its
+    own JSON storage and a small JavaScriptCore script service) is untouched and stays frozen. The
+    companion is a separate app with its own bundle id; whether it ships as a new App Store app, or
+    replaces HiTop as its next version (same bundle id `hitop.rws8.tech.HiTop`), is the owner's choice
+    (section 6). HiTop could also adopt HitopKit later to read folders.
+  - Deviations: `responseTimeMs` is the time until URLSession returns the whole response (no
+    headers-only timing); explicit YAML tags (`!!str 8080`) aren't honoured (Yams resolves tags lazily);
+    floats print through Swift's formatter (`1e+16` → `1e16`, otherwise as serde_json); URLSession may
+    refuse a body on GET (the CLI sends it); no cookie jar across runs (the CLI keeps one per workspace).
 
 ---
 
@@ -1421,6 +1467,7 @@ Agent appends here; owner ticks when done.
 | 2026-11-01 | T22 | Nothing to do now. `--reporter html` and the html artifact in `hitop schedule --github` workflows reach users with the next CLI release (0.3.0 images don't have it); the guides already say "releases after 0.3.0". The guide changes go live with the next site deploy. | |
 | 2026-11-01 | T20 | When you do the T5 macOS check (web app overlay build), try the Git panel: open a collection folder that is a git clone with an HTTPS remote (for example a private GitHub repo), make sure it is in a clean state, then: (1) Collections → the folder → Git (or the sidebar's Git); the branch, upstream and ↑/↓ show; (2) edit a request, see it under Changes with its diff, Stage, write a message, Commit (author = your git config; in the sandboxed MAS build the app may not see `~/.gitconfig`: it then asks for a name and email and keeps them in the repo's `.git/config`); (3) Push: in the MAS build it fails without a token and says so (outside the sandbox git's credential helper, for example osxkeychain, may answer); paste a fine-grained token (contents read/write) under Remote access, Push again (macOS may ask for Keychain access once; `security find-generic-password -s hitop -a git/github.com/token` shows it); (4) make a commit on GitHub's web editor to the same line, Pull: a conflict appears; Take theirs or edit the text, Commit merge, Push; (5) create a branch, switch back, delete it after merging. Outside the MAS build, an SSH remote should work through your ssh-agent (the host must be in `~/.ssh/known_hosts`). Tell me what fails, especially anything the sandbox blocks. | |
 | 2026-11-01 | T21 | Optional, with accounts you have: put one reference per manager you use into a test folder's environment (`token: ${secret:vault:secret/x#token}`, `${secret:aws:name#key}`, `${secret:azure:<vault>/<name>}`, `${secret:op:<vault>/<item>/<field>}`), sign in as usual (`vault login`, `aws sso login`, `az login`, `op signin`) and run `hitop secret check -c <folder>`: each should show ✓ (no value printed); tell me any that fails and its message. Agents had only Vault dev mode, LocalStack, stubs and mocks. On the Mac with the T5 check: does the desktop app opened from the Dock resolve a Vault reference (it doesn't see shell env vars like VAULT_ADDR; `~/.vault-token` alone isn't enough without the address), and does the MAS build run `op`/`az` (expected: sandbox blocks them)? Open question: should the desktop get a Settings field for VAULT_ADDR and friends? | |
+| 2026-11-01 | T26 | Build and ship the iOS companion (agents can't build for Apple platforms). On a Mac with Xcode 16+: (1) `cd ios/HitopKit && swift test` (40 tests; JavaScriptCore runs the scripts there; `HITOP_BIN=<path to hitop> swift test` adds the CLI comparison, `HITOP_TEST_KEYCHAIN=1` also writes and deletes one real keychain item). (2) `brew install xcodegen && cd ios/HitopCompanion && xcodegen && open HitopCompanion.xcodeproj`. (3) Decide: a new App Store app (keep bundle ids `hitop.rws8.tech.HitopCompanion` and `hitop.rws8.tech.HitopCompanion.Widget`, create them and the app group `group.hitop.rws8.tech.companion` in the developer portal, enable App Groups on both ids) or the next version of "HiTop HTTP Client" (then set `PRODUCT_BUNDLE_IDENTIFIER` to `hitop.rws8.tech.HiTop` and the widget to `hitop.rws8.tech.HiTop.Widget` in `project.yml`, and keep `ios/HiTop` only as history). Team is `XD7JHZ5DB3` as in the HiTop project. If you change the app group, change it in both `.entitlements` files and `Shared/Library.swift` (`AppGroup.id`). (4) On a device: open a collection folder from iCloud Drive (for example a `hitop init` folder or `cli/fixtures/sample` with a `local` environment pointing at a server you can reach), run one request and the collection, switch environment, set a secret in Secrets… and run `prod`, pin it (swipe) and add the "hitop runs" widget, run "Run hitop collection" and "Get last hitop run status" in Shortcuts. Check that a folder still opens after a relaunch and after the folder is renamed in Files. (5) App Review: the app has `NSAllowsArbitraryLoads` (as HiTop does; an API client calls hosts the user names) and a local network usage string; privacy label "Data Not Collected" holds (no telemetry, no network calls but the user's requests). The icon is a copy of HiTop's. Tell me what fails to compile: the app sources were written without an Apple SDK. | |
 
 ## 7. Setup the owner does before the agent starts
 
