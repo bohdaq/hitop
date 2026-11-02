@@ -174,6 +174,9 @@ pub fn run(args: SendArgs) -> Result<()> {
             headers.push(("Content-Type".into(), built.content_type));
         }
         body = built.body;
+    } else {
+        // A raw body says what it is, as in every other hitop.
+        hitop_core::sending::add_content_type(&method, &mut headers, &pre.body);
     }
     let (headers_sent, body_sent) = (headers.clone(), String::from_utf8(body.clone()).unwrap_or_default());
     let mut jar = cookies::open(&workspace, args.cookies)?;

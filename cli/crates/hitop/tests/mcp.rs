@@ -595,3 +595,30 @@ fn import_and_sync_openapi_stay_inside_the_workspace() {
     let all = c.transcript.join("\n");
     assert!(!all.contains(SECRET));
 }
+
+#[test]
+fn run_request_and_run_collection_send_the_content_type_of_a_raw_body() {
+    let home = TempDir::new().unwrap();
+    let server = MockServer::start();
+    let dir = home.path().join("bodies");
+    // No scheme on `base`: 127.0.0.1 gets http://, as everywhere else.
+    write(&dir, "hitop.yaml", &format!("format: 1\nname: Bodies\nvariables:\n  base: {}\norder:\n- json\n- own\n", server.address()));
+    write(&dir, "requests/json.yaml", "name: Json\nmethod: POST\nurl: ${base}/json\nbody:\n  type: json\n  content: '{\"a\": 1}'\nscripts:\n  post: assert.status(200);\n");
+    write(&dir, "requests/own.yaml", "name: Own\nmethod: PATCH\nurl: ${base}/own\nheaders:\n- name: Content-Type\n  value: text/csv\nbody:\n  type: text\n  content: '[1]'\nscripts:\n  post: assert.status(200);\n");
+    let json = server.mock(|when, then| {
+        when.method(POST).path("/json").header("content-type", "application/json");
+        then.status(200);
+    });
+    let own = server.mock(|when, then| {
+        when.method(PATCH).path("/own").header("content-type", "text/csv");
+        then.status(200);
+    });
+    let mut c = Client::start(&home, &[dir.to_str().unwrap()], &[]);
+    assert_eq!(c.ok("run_request", json!({"request": "Json"}))["passed"], true);
+    assert_eq!(c.ok("run_collection", json!({}))["passed"], true);
+    json.assert_calls(2);
+    own.assert_calls(1);
+    // get_request shows the request as saved: no added header.
+    let saved = c.ok("get_request", json!({"request": "Json"}));
+    assert_eq!(saved["headers"], json!([]), "{saved}");
+}
