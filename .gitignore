@@ -81,3 +81,6 @@ xcuserdata/
 !default.mode2v3
 *.perspectivev3
 !default.perspectivev3
+
+# Screenshots of UX reviews stay local (large)
+reviews/*/shots/
