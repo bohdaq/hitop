@@ -40,6 +40,32 @@ Deferred (not in the 1.1.0 scope): IndexedDB response store, additive JSON impor
 two-pane response layout, Settings page, Cancel for a request in flight, History as a page, the sortable `aria-required-children`
 (in `@lit-material/sortable`), header autocomplete, variable highlighting in the URL.
 
+## Status (1.2.0)
+
+The deferred items, owner-approved for 1.2.0, on `main` (web app and its desktop build), checked by
+`webapp/tests/ux12.cjs` in web and Tauri modes and `webapp/tests/unit-ux.mjs`. After-screenshots:
+`shots/after12-*.png` (local, gitignored). Commits: 52598e0 (IndexedDB), d974170 (Cancel, time limit; desktop
+`send_cancel`), d9b704c (Settings), 66ed313 (additive import), 81b89e7 (split panes, Mod+P), 8dcac28 (tab close,
+History page, request menu, folder groups).
+
+| Item | Status | Commit |
+| --- | --- | --- |
+| Top 1: IndexedDB for response bodies | fixed: bodies over 64 KB go to IndexedDB (`hitop-responses`, by tab id, raw body too) and come back whole after a reload; `hitop_tabs` keeps their first 16 KB with `responseCut` + `responseStored` (the React app and 1.1 still read a body). No IndexedDB (private windows) or a refused write (full, one toast): the 1.1 behaviour. 1.1's cut tabs keep their note; inline bodies move over on the next save | 52598e0 |
+| Top 2: additive JSON import | fixed: "Add to my collections" is the default (an id in use gets a new one, a name in use gets " (2)"; tabs and folders stay); "Replace all my collections" keeps the 1.1 destructive confirm | 66ed313 |
+| Top 8: two-pane layout, drag split, collapsible pane | fixed: side by side when the view is 880 px or wider, stacked with a handle that sets the editor's height when narrower, plain stacked on phones; the handle is a `separator` (drag, arrows, Home/End, Enter/double click resets); split and fold remembered per viewer (`hitop_layout`); the response (and the WebSocket/gRPC logs) folds into a bar that keeps the last status. A new response doesn't unfold it | 81b89e7 |
+| Top 9: Ctrl+P quick open | fixed: Mod+P opens a fuzzy finder over every saved request (name, collection › folder, URL) and the unsaved tabs; arrows, Enter, Esc; Mod+P never reaches the browser's Print inside the app (also with a dialog open); Mod+K still goes to the URL field; both in the shortcuts list | 81b89e7 |
+| Top 9: folder groups, context menu | fixed: `file` folders (Postman folders, OpenAPI tags, folder collections) are groups in the sidebar that fold (remembered); reordering works inside each group. Right click (or the context menu key) on a request: Open, Rename, Duplicate (same folder), Delete (asks) | 8dcac28 |
+| Top 10: close "×" per tab | fixed: on hover and on the selected tab (always on touch screens); asks first when the tab has unsaved content; `aria-hidden` (keyboard: Alt+Shift+W, the tab menu). Right-click menus now open after the button is released (they closed at once on Linux) | 8dcac28 |
+| Settings page (Findings: first run, Settings and keyboard) | fixed: one page in both builds: theme (light, dark, match the system), request time limit, cookie jar switch, what happens to requests (proxy or direct, redirects, TLS; no switches that don't exist), storage use + "Clear stored responses", the shortcuts. The desktop's secret managers and usage ping are sections of it (`platform().settingsSections`, never in the web build). The top bar keeps the theme toggle and the shortcuts button as quick access | d9b704c |
+| Cancel a request in flight | fixed: Send turns into Cancel; the web app aborts the fetch (a proxied request's answer is dropped: the shared transport can't take a signal); the desktop gets `send_cancel` (Rust answers at once; the blocking client finishes in the background with its response and cookies dropped, bounded by the time limit). Cancelled requests aren't in History. Time limit (Settings) for Send and runs, also passed to Rust | d974170 |
+| History as a page | fixed: a page with search, groups by day, delete one, Clear, Compare responses | 8dcac28 |
+
+Left (not in 1.2.0): the sortable `aria-required-children` (in `@lit-material/sortable`), header autocomplete,
+variable highlighting in the URL, the raw sub-type select, phone editor-tab fades, a proxy on/off switch and
+proxy indicator per request, moving "Variables" into the collection row's menu, folder groups on the collection
+page (the sidebar has them), reordering requests across folders, a per-tab (rather than per-viewer) fold, and
+tearing down a proxied or desktop request mid-exchange (both stop waiting at once, see Cancel).
+
 ## Verdict
 
 HITOP's web app is a clean, fast, honest tool: the Material surface is consistent, dark mode is first-class, wording is in plain English, Postman and OpenAPI imports produce an audit trail that Postman itself doesn't, tests/scripts/GraphQL/WebSocket all work end to end, and contrast passes AA everywhere I measured. What holds it back is not polish but a handful of trust-breaking behaviours a Postman/Bruno/Insomnia user hits in the first ten minutes: a 5 MB response silently stops every later save and tabs vanish on reload; "Import" wipes all existing collections with no confirmation; a raw JSON POST goes out without any `Content-Type`; a URL typed without `https://` fetches HITOP's own index.html and records a green 200; closing a tab discards edits with no warning; and there are no keyboard shortcuts at all (Ctrl+Enter does nothing from the body editor). Fix the top five and the app is competitive with Hoppscotch for the "send a request in the browser" use case; the rest of the list is daily-friction work (response pane height, sidebar scale, tab strip, compare defaults).

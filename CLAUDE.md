@@ -114,7 +114,8 @@ hitop/
 ├── webapp/                     # hitop.rws8.tech/app/: Lit + lit-material, reuses frontend/src/services
 │   ├── src/store.js            # all app logic (port of frontend/src/App.jsx), same localStorage keys; folders, zip
 │   ├── src/platform/           # adapters: web.js (fetch/proxy, localStorage, File System Access), tauri.js (invoke), history.js;
-│   │                           # tauri-settings.js: desktop-only Settings page (secret managers; usage ping where built) + first-run usage ping question
+│   │                           # tauri-settings.js: desktop-only sections of the Settings page (secret managers; usage ping where built) + first-run usage ping question
+│   │                           # response-store.js: large response bodies in IndexedDB (both adapters), storage usage for Settings
 │   │                           # tauri-git.js: desktop-only Git page for folder collections (status, diff, commit, pull/push, branches, conflicts)
 │   ├── scripts/check-no-telemetry.mjs # CI: dist/ and web.js have no usage ping (control: dist-tauri has the page)
 │   ├── src/pm.js               # Postman scripts: loads shared/pm-shim.js, runScript, import report helpers
@@ -131,9 +132,12 @@ hitop/
 │   ├── src/views/sync-view.js  # the Sync page (both modes): sign in (email or SSO, paste the code), share, join, conflicts, members/invites/trust, runner credential, audit log (owners)
 │   ├── tests/harness.cjs       # e2e in web or Tauri mode (HITOP_MODE=tauri); tests/tauri-mock.cjs mocks invoke in Node
 │   ├── tests/sync.cjs          # two people against a real sync server (HITOP_SYNC_SERVER_BIN), web and Tauri modes; audit log; SSO via Keycloak (HITOP_SYNC_TEST_KEYCLOAK)
-│   ├── src/shortcuts.js        # keyboard shortcuts (Mod+Enter, Mod+S, Mod+K, Alt+Shift+N/W/[/], ?): one capture listener in hitop-app.js
+│   ├── src/shortcuts.js        # keyboard shortcuts (Mod+Enter, Mod+S, Mod+K, Mod+P, Alt+Shift+N/W/[/], ?): one capture listener in hitop-app.js
+│   ├── src/settings.js, split.js, quick-open.js, collection-tree.js # 1.2: hitop_settings, the pane split, Mod+P fuzzy finder, import merge + folder tree
+│   ├── src/views/settings-view.js, history-view.js # the Settings page (both builds) and the History page
 │   ├── src/platform/local-storage.js # localStorage writes under the React keys that return false when refused (full storage → toast)
 │   ├── tests/ux.cjs            # UI/UX review fixes (reviews/2026-11-01-webapp-ux): Content-Type, scheme, response tools, quota, dirty tabs, import, shortcuts, top bar
+│   ├── tests/ux12.cjs          # 1.2 deferred items: IndexedDB bodies + fallbacks, Cancel/time limit, Settings, additive import, split panes, Mod+P, folder groups, request menu, tab ×, History page
 │   └── tests/e2e.cjs           # Playwright e2e, seeded with React-app storage (legacy-storage.json)
 ├── frontend/                   # React app, now only for the browser extensions
 │   ├── index.html              # Vite entry point (root of frontend/)
@@ -314,7 +318,8 @@ hitop/
   gRPC: `grpc_list {args: {address, plaintext, metadata, protos, importPaths, baseDir, timeoutMs}}` → `{source, services}`,
   `grpc_describe {args, symbol}` → `{description, template}`, `grpc_call {args: {...server, service, method, message, maxTimeMs},
   onEvent: Channel}` → `{id}`, events `{type: headers|message|status}`; `grpc_cancel {id}` (state `GrpcCalls`).
-  Web app commands: `send_request` (proxy envelope; `cookies: true` uses hitop-core's `global` jar and returns it),
+  Web app commands: `send_request` (proxy envelope; `cookies: true` uses hitop-core's `global` jar and returns it; optional `timeoutMs`,
+  and `id` for `send_cancel {id}`: the exchange then runs on its own thread, cancel answers at once and drops its response and cookies),
   `cookies_load|save`, `load_globals|save_globals`, `read_folder`, `write_folder` (optional `globals`), `secret_get|set|delete`, `secret_refs_resolve {refs}` (inner texts → values; errors one line per reference; Settings layered in),
   `secret_manager_settings` → `{settings, secrets: {NAME: saved?}, shell: [names], path, keychainError}`, `secret_manager_settings_set
   {settings, secrets: {NAME: text|null}}`, `write_file`, `telemetry_status|set`; dialog plugin.
@@ -348,8 +353,19 @@ hitop/
 ### Web app (`webapp/`)
 - Lit + lit-material in light DOM; theme from `site/src/theme.css`; `npm run build` → `dist/` (base `/app/`)
 - Storage must stay readable by the React app (same keys/shapes); `npm run test:e2e` with BASE= a running hitop-server
-- Saved tabs keep at most the first 64 KB of a response over 256 KB (`storedTab`, flag `responseCut`); raw bodies (`store.rawBodies`),
-  URL errors and dirty state are memory only. Raw-body Content-Type is decided in `dispatch` and URLs get a scheme (never a relative
+- Response bodies over 64 KB go to IndexedDB (`platform/response-store.js`, DB `hitop-responses`, by tab id, `{body, raw}`,
+  `platform().responses`, both adapters); `hitop_tabs` keeps their first 16 KB with `responseCut` + `responseStored`
+  (`storedTabInDb`), restored after a reload (`store.restoreResponses`). Without IndexedDB or after a refused write (one toast):
+  1.1 rule, first 64 KB of a body over 256 KB (`storedTab`, `responseCut` only). Raw bodies of smaller responses (`store.rawBodies`),
+  URL errors and dirty state are memory only.
+- 1.2 UX (reviews/2026-11-01-webapp-ux "Status (1.2.0)", e2e `tests/ux12.cjs`, unit `tests/unit-ux.mjs`): Settings page in both builds
+  (`views/settings-view.js`, element `hitop-app-settings`: never name it `hitop-settings*`, check-no-telemetry greps that; desktop
+  sections via `platform().settingsSections` from tauri-settings.js); localStorage `hitop_settings` {timeoutMs} (`settings.js`),
+  `hitop_layout` {columns %, rows px, responseCollapsed} (`split.js`; panes in request-view.js: columns ≥ 880 px view width, rows
+  ≥ 600, stack); Cancel = `store.cancel(tabId)` (AbortController per tab in `store.inflight`, time limit → TimeoutError; web.js
+  races proxied sends, tauri.js `send_cancel {id}`); Import add (default, `collection-tree.js` addCollections) or replace;
+  quick open Mod+P (`quick-open.js`); History page (`views/history-view.js`); sidebar folder groups from `file`
+  (`requestTree`, fold keys `<collectionId>/<path>` in `hitop_collapsed_collections`) and request context menu Raw-body Content-Type is decided in `dispatch` and URLs get a scheme (never a relative
   fetch) through hitop-wasm `rawContentType`/`withScheme` = hitop-core `sending` (`store.format` for the Headers note while rendering). Sidebar folding: localStorage `hitop_collapsed_collections`
 - GraphQL body: tab `bodyMode: "graphql"` ⇄ saved `bodyType: graphql` + `graphql` (store.js `EXTRA_FIELDS`/`SAVED_FIELDS`); the body
   is built by hitop-wasm `graphqlBody` (same bytes as the CLI); `store.fetchSchema()` introspects through `dispatch` (proxy/Rust),

@@ -159,6 +159,7 @@ Secret variables: `secret: true` in an environment file, with the value resolved
 | 1.1 | 1.1 owner follow-ups: MCP WebSocket/OpenAPI tools, row-by-row OpenAPI sync, secret manager settings | done | cf400c6, 75d5a1a, ef5ab83, bc1d19a; released in cli-v1.1.0 / desktop-v1.1.0 (2026-11-02) | 2026-11-01 |
 | 1.1.0 | Release 1.1.0: CLI (hitop, hitop-core 1.1.0, first hitop-sync-crypto 0.1.0 on crates.io), ghcr image, desktop; sync server + site deployed | done | c79dd1c, 4ebb2e8 (release-cli runs the sync tests with the server + Keycloak), 3055102 (ID token iat/nbf/exp checks); rc cli-v1.1.0-rc.1 (failed: no sync server in release tests) / rc.2, desktop-v1.1.0-rc.1; releases 41420105353, 41420109000 | 2026-11-02 |
 | 1.2 | Same Content-Type on every surface (owner-approved 2026-11-02, release 1.2.0) | done (handoff) | fb636e1 (hitop-core `sending`), d718e28 (hitop send, CLI + MCP tests), 9505a3c (web app through hitop-wasm), ae47ae1 (HitopKit), edc28c5 (spec/sending.md, README, guide, CHANGELOG), ROADMAP; CI 41436745770; not tagged | 2026-11-02 |
+| 1.2 UX | 1.2 Web app UX: deferred items (reviews/2026-11-01-webapp-ux, owner-approved 2026-11-02, release 1.2.0) | done (handoff) | 52598e0 (IndexedDB bodies), d974170 (Cancel, time limit, desktop `send_cancel`), d9b704c (Settings page), 66ed313 (additive import), 81b89e7 (split panes, Mod+P), 8dcac28 (tab ×, History page, request menu, folder groups), docs; CI see notes; not tagged | 2026-11-02 |
 
 Common commands referenced below:
 
@@ -1754,6 +1755,44 @@ export PATH="$HOME/.cargo/bin:$PATH"
   - Not done here: version numbers stay 1.1.0 (no bump, no tag, no deploy: the release is the owner's/coordinator's
     step). The React desktop UI (`desktop/src`) and the frozen extensions aren't changed.
 
+#### 1.2 Web app UX: deferred items (2026-11-02)
+- The items the 1.1.0 UX review deferred (REVIEW.md "Status (1.2.0)" has the table and what is left).
+- **Notes (2026-11-02, done):**
+  - Large responses: IndexedDB `hitop-responses` (own DB, so the web adapter's `hitop` DB of folder handles keeps
+    version 1), opened in each adapter's `init()` (`platform().responses`, null without IndexedDB or when it doesn't
+    open in 3 s). Bodies over 64 KB go there by tab id with the raw body; `hitop_tabs` keeps the first 16 KB with
+    `responseCut` + new flag `responseStored` (old readers see a body and the note). Restored after load only when
+    the tab still holds that head. A refused write (quota) = one toast, then the 1.1 rule for the rest of the page.
+    Migration: 1.1 cut tabs keep their note (nothing to recover); 1.1 inline bodies of 64–256 KB move on the next
+    save; bodies of closed tabs are deleted. Tested with IndexedDB removed and with `put` throwing QuotaExceededError.
+  - Cancel: per-tab AbortController (`store.inflight`). Web: a direct fetch is aborted; a proxied request can't be
+    (frontend's `sendRequest` makes its own fetch and frontend/ is frozen), so web.js races it and drops the answer.
+    Desktop (`desktop/src-tauri`, minimal): `SendArgs` gets optional `id` and `timeoutMs`; with an id the exchange
+    runs on its own thread and `send_cancel {id}` answers the waiting command at once; the blocking reqwest client
+    can't stop mid-exchange, so that thread finishes (bounded by the time limit) and its response and cookie-jar save
+    are dropped. A cancelled request shows "Cancelled" and isn't in History. Time limit (Settings, `hitop_settings`)
+    for Send, collection runs and schema fetches; Rust gets it as hitop-core's `http::Options.timeout`.
+  - Settings: `views/settings-view.js` in both builds. The desktop's secret managers + usage ping became sections of
+    it (`platform().settingsSections`), so check-no-telemetry still holds (element `hitop-app-settings`, no
+    "telemetry"/"usage ping" text in shared code). Follow-redirects, TLS verification and a proxy toggle don't exist
+    in hitop, so the page states the facts instead of switches. Theme via lit-material `setColorScheme` with the
+    existing `hitop-theme` key; the top bar toggle and shortcuts button stay as quick access.
+  - Import: "Add to my collections" default (ids in use renumbered, names get " (2)"), "Replace all" = 1.1 path with
+    its confirm. features.cjs/ux.cjs, which replaced, now pick Replace all explicitly.
+  - Panes: layout by the request view's width (ResizeObserver), not the viewport: columns ≥ 880 px, rows with a
+    height handle ≥ 600 px, stack below. One per-viewer split and fold (`hitop_layout`), not per tab. A folded
+    response stays folded when a new one arrives (its bar shows the status).
+  - Mod+P: preventDefault always (also with a dialog open), so Print never opens from inside the app; the browser
+    menu still prints. Mod+K unchanged.
+  - Sidebar: folder groups from `file` in collection order; reordering only within a run of requests between
+    folders; right-click menus open after pointerup (popover light dismiss closed them at once on Linux).
+  - Tests: `tests/ux12.cjs` (new, in `test:e2e`, both modes), `tests/unit-ux.mjs` (new, in `test:unit`: import merge,
+    folder tree, split math and keys, fuzzy match and ranking); ux.cjs, features.cjs, settings.cjs, e2e.cjs,
+    diff-code.cjs adjusted; tauri-mock.cjs knows `send_cancel` and `timeoutMs`. Locally green in both modes: ux12, ux,
+    e2e, diff-code, features, postman, settings, folders, openapi, editing, extras, globals, websocket, grpc, graphql
+    (git and sync left to CI). The desktop crate can't build on the agent's machine (no GTK); CI compiles it.
+  - Collection format v1, spec/compat and the React app's storage shapes unchanged (new keys and an optional flag only).
+
 ---
 
 ## 6. Handoffs and open questions
@@ -1795,6 +1834,7 @@ Agent appends here; owner ticks when done.
 | 2026-11-01 | T25 | Before any public launch (adds to the review above): the reviewer also covers `sync-server/src/oidc.rs` (token checks, the code handoff, account linking) and `sync-server/src/audit.rs` (chain, purge), and THREAT_MODEL sections "Single sign-on" and "Audit log". Open: audit heads anchored outside the server (THREAT_MODEL item 7). | |
 | 2026-11-02 | UX | Eye-check the review fixes on the web app and desktop build: top bar, sidebar fold/filter, tab strip (tabs now at most 16rem wide, so one tab no longer spans the strip), theme toggle now cycles light/dark/system. (The Content-Type question of this row was answered "port it" by the owner and is done in 1.2, row below.) | |
 | 2026-11-02 | 1.2 | Nothing blocking. When releasing 1.2.0: bump the versions as usual (still 1.1.0) and keep the CHANGELOG's behaviour-change note in the release text (CLI raw bodies now get a Content-Type; schemeless URLs get https:// instead of failing). Optional check: `hitop snippet` and the web app's Code dialog for one raw JSON POST should show the same `Content-Type: application/json` line. HitopKit's rules run on Linux in CI; on a Mac the companion uses the same code (`Sending.swift`), nothing extra to do. | |
+| 2026-11-02 | 1.2 UX | Eye-check the 1.2 web app items in a browser and in the desktop build (macOS WKWebView; Windows WebView2 if handy): (1) the drag handle between request and response: feel, cursor, keyboard (Tab to it, arrows, Enter resets), the stacked layout in a narrow window, none on a phone; (2) hide/show the response; (3) Cmd+P / Ctrl+P opens quick open and never the print dialog, Cmd+K still the URL field; (4) Cancel on a slow request in the desktop app (`https://httpbin.org/delay/10`): stops at once; (5) a multi-MB response, then reload/relaunch: the whole body is back (IndexedDB in WKWebView), in a private browser window the 1.1 note instead; (6) Settings: theme, time limit, Clear stored responses; on the desktop the secret managers and (release build) usage ping are sections of the same page; (7) Import with "Add to my collections" next to existing ones; (8) folder groups after a Postman import, right-click menu, the × on tabs, the History page. Screenshots: `reviews/2026-11-01-webapp-ux/shots/after12-*.png` (local). | |
 
 ## 7. Setup the owner does before the agent starts
 
