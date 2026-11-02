@@ -25,6 +25,10 @@
 //!   for every remaining device ([`rotate`]). Old blobs stay readable with the old epoch's key;
 //!   clients re-encrypt them under the new epoch when they next write them.
 //!
+//! - **Recovery** (since 0.3): a 24-word phrase ([`RecoveryPhrase`], BIP-39 words) seals an
+//!   account's recovery blob ([`seal_recovery`]), which the server keeps, so a lost device can
+//!   be brought back on a new one.
+//!
 //! Byte layouts are in `sync-server/THREAT_MODEL.md`, `vectors/v1.json` (blobs, format 1 wraps)
 //! and `vectors/v2.json` (format 2 wraps, key commitments), which every implementation must pass.
 
@@ -37,6 +41,8 @@ use hpke::{Deserializable, Kem as _, OpModeR, OpModeS, Serializable};
 use zeroize::{Zeroize, ZeroizeOnDrop};
 
 mod keyring;
+mod recovery;
+pub use recovery::{open_recovery, recovery_associated_data, seal_recovery, seal_recovery_with_nonce, RecoveryPhrase, PHRASE_WORDS, RECOVERY_AAD_LABEL, RECOVERY_FORMAT, RECOVERY_KEY_LABEL};
 pub use keyring::{accept_wraps, key_commitment, normalize_fingerprint, Keyring, Notice, ReceivedWrap, WorkspaceMemory};
 
 /// First byte of every blob envelope.
@@ -95,6 +101,8 @@ pub enum Error {
     LegacyRefused { epoch: u32 },
     /// No usable key for the workspace's current epoch (not wrapped for this device yet).
     MissingKey { epoch: u32 },
+    /// A recovery phrase that isn't one (word count, unknown word, checksum): the message says which.
+    Phrase(String),
 }
 
 impl std::fmt::Display for Error {
@@ -125,6 +133,7 @@ impl std::fmt::Display for Error {
                 "the workspace key (epoch {epoch}) was handed out without authentication (by hitop before 1.2), which this device no longer accepts for this workspace: ask an owner to sync with hitop 1.2 or newer"
             ),
             Error::MissingKey { epoch } => write!(f, "this device has no key for the workspace's current epoch {epoch} yet"),
+            Error::Phrase(why) => write!(f, "not a recovery phrase: {why}"),
         }
     }
 }
