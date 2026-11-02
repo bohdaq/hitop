@@ -525,7 +525,7 @@ server-side row, never a new file in `environments/`.
 | ID | Tranche | Status | Needs |
 | --- | --- | --- | --- |
 | C0 | Owner decisions and accounts | decisions done; accounts open | owner |
-| C1 | Organizations, plans, entitlements; portal MVP; SOC 2 policies and first access review | open | the 1.2 sync server deployed to the test server first (ROADMAP section 6, "1.2 signed key wraps") so migration 4 and the 1.2 deploy don't collide |
+| C1 | Organizations, plans, entitlements; portal MVP; SOC 2 policies and first access review | **built** 2026-11-02 (commits below, CI green); left: the deploy (after the 1.2 sync server) and the owner's approvals | the 1.2 sync server deployed to the test server first (ROADMAP section 6, "1.2 signed key wraps") so migration 4 and the 1.2 deploy don't collide |
 | C2 | Harden the current VM: Postgres, limits, backups + drill, recovery key, status page, runbook | open | C0 (bucket, backup key, uptime checker, `status.` DNS), C1 |
 | C3 | Lemon Squeezy billing, pricing page, prompts, legal and security pages: **paid launch of Pro and Team** | open | C1, C2, C0 (store approved, mail service, legal drafts reviewed) |
 | C4 | Run history and alerts from your own runners; shared environment secrets | open | C3 (can start after C1; ships after C3) |
@@ -584,9 +584,70 @@ server-side row, never a new file in `environments/`.
   limits, existing accounts migrated into personal orgs (count before == count after) and
   grandfathered limits (a query for accounts over their limit returns zero rows); the policies,
   vendor list and first access review are committed and the deploy is in the ops log.
-- Needs: the 1.2 sync server deployed to the test server first.
+- Needs: the 1.2 sync server deployed to the test server first (met 2026-11-02, b5389cf).
 - Owner handoffs: read and approve the policies (they describe the owner's own practice); confirm
   the access review list.
+
+**Status (2026-11-02): built, CI green, not deployed.**
+
+- Commits on `main`: cd2d0c6 (migration 4, `orgs.rs`, `limits.rs`, `tokens.rs`), ded3115
+  (`tests/orgs.rs`, `tests/limits.rs`), 70e3b9a (CLI `sync init --org`, `sync ls` org), b9be01c
+  (portal, `cloud/compat/released-cli.sh`), 6f6755c (policies, vendors, access review, ops log),
+  62394b7 (deploy: `www/cloud/`, route, install), 213d028 (CI), 788ef5c (Sync page link),
+  690d3ec (docs). CI run: see the last line of this block.
+- **Migration 4** (additive; SQLite and Postgres): tables `orgs`, `org_members`, `org_invites`,
+  `entitlements`, `usage_counters`, `api_tokens`, column `workspaces.org_id`. Every person
+  (`users.runner_of = ''`) gets a personal org `personal-<user id>` on Free, owner, with an
+  entitlements row; each workspace goes to its first owner's personal org; then, in the same
+  transaction, `limits::grandfather` writes the org's current usage as floors wherever it is
+  above Free (seats, workspaces, storage, devices, runners; marked `grandfathered`). No existing
+  row changes or goes; runner accounts get no org. `tests/migration.rs` and
+  `tests/postgres.rs` upgrade a T25-shaped database (`tests/common/t25.rs`: an account with 7
+  workspaces, 150 MB, 6 people, 6 devices, 6 runners) and check: row counts of every old table
+  equal, personal orgs = people, `over_limits` empty, every read answered, creates refused only
+  beyond the floor, a delete frees room.
+- **Enforcement is opt-in**: `HITOP_SYNC_LIMITS=plans` (HITOP Cloud). The default `off` keeps the
+  self-hosted promise of section 2 (no plans, seats or per-org limits; the server-wide
+  `HITOP_SYNC_MAX_*` limits stay). The plan numbers of section 3 are in `limits::plan_limits`;
+  invites a day (Free 20, Pro 50, Team 200, Business 1000) are an abuse ceiling not in section 3.
+  Seats: org members, pending org invites and people in the org's workspaces; Team's 5 guest
+  viewers are free; runners never count. Devices: the best limit of the person's orgs. Lapsed
+  (`expired`/`unpaid`) = Free, nothing deleted. Operator commands: `hitop-sync-server
+  over-limits`, `set-plan <org> <plan> [seats]` (until C3).
+- Deviations: the portal is a static shell plus a Lit app (hash routes), not prerendered pages
+  (nothing in it is public content); usage counters are daily rows (`usage_counters`) rather than
+  one `usage` row, and seats/workspaces/storage are counted live from the tables; the Sync page
+  limit note is the server's message as clients already show it (no new client UI); CLI limit
+  hint is the server message (it names plan, limit and the portal URL). Run uploads per day and
+  history retention wait for C4 (no runs yet).
+- **Done when**, as run: `cd sync-server && cargo test --workspace` (orgs, limits, migration; all
+  green), `cargo test --features postgres --test postgres` (5 tests incl. the 3 → 4 upgrade);
+  `cd cli && cargo test --locked` with `tests/sync.rs` `organizations_and_a_refused_create`, and
+  the whole `tests/sync.rs` again with `HITOP_SYNC_LIMITS=plans`; `cd cloud/portal && npm test`
+  (22 checks: sign in, org, invite, usage, 402 on seats, role, plan page, token, passkey);
+  **client compatibility**: CI job `compat` downloads every released `cli-v*` from 1.1.0 on (the
+  GitHub Release binary, sha256 checked) and runs `cloud/compat/released-cli.sh` (login, init,
+  push, pull, conflict, invite, accept, add, viewer, runner, remove + rotation, audit verify,
+  a refused 4th workspace, `over-limits`, no plaintext) against this tree's server with limits on:
+  hitop 1.1.0 and 1.2.0 (both release binaries also passed locally). The live web app's flow is `webapp/tests/sync.cjs`,
+  also run with `HITOP_SYNC_LIMITS=plans` in the `web` job. Not yet (deploy): the test server
+  migrated, "count before == count after" and `over-limits` = 0 on the VM, the ops-log entry.
+- **Deploy steps** (after the 1.2 sync server is live): build `cargo build --release --locked`
+  in `sync-server/`; copy the binary and `sync-server/deploy/` to the VM and run `install.sh`
+  (backs up `sync.db`, binary, env; adds `HITOP_SYNC_LIMITS=plans` and
+  `HITOP_SYNC_PORTAL_URL=https://cloud.hitop.rws8.tech/`; restarts; runs `over-limits` on a copy:
+  must print `0 over a limit`). Before/after counts: `SELECT COUNT(*) FROM users WHERE runner_of =
+  ''` = `SELECT COUNT(*) FROM orgs WHERE personal_of <> ''`. Then `deploy/deploy.sh` (site, web
+  app and the portal in `www/cloud/`; checks `/cloud/` and `/cloud/healthz`). Add the
+  `hitop-cloud` route from `deploy/rws-routes.toml` (back up, `rws --check`, restart, probe the
+  other sites). Once the owner's DNS for `cloud.hitop.rws8.tech` resolves: append it to `[acme]`
+  domains, and add `https://cloud.hitop.rws8.tech` to `HITOP_SYNC_ALLOWED_ORIGINS` and
+  `HITOP_SYNC_RP_ORIGINS` in `/etc/hitop-sync/env`; until then the portal works at
+  `https://hitop.rws8.tech/cloud/` (that origin is already in both settings). Record it in
+  `cloud/ops-log.md`.
+- Left for the owner: DNS `cloud.hitop.rws8.tech` (C0 row); approve the policies; confirm the
+  access review (`cloud/evidence/access-reviews/2026-Q4.md`, "owner lists" rows) and the vendor
+  list; set real prices later (the limits table is the proposal).
 
 ### C2 Harden the current VM
 
@@ -802,7 +863,7 @@ All questions were answered by the owner on 2026-11-02 (section 0).
 | 2026-11-02 | C0 | DNS: `cloud.hitop.rws8.tech` and `status.hitop.rws8.tech` → the VM. | |
 | 2026-11-02 | C0 | Pick an uptime checker outside the VM's provider; create the account. | |
 | 2026-11-02 | C0 | Pick the SOC 2 compliance tool (Vanta, Drata, Secureframe or a spreadsheet) and the auditor; Type 1 first. | |
-| 2026-11-02 | C1 | Read and approve the policies in `cloud/policies/`; confirm the first access review. Then quarterly access reviews. | |
+| 2026-11-02 | C1 | Read and approve the policies in `cloud/policies/`; confirm the first access review (`cloud/evidence/access-reviews/2026-Q4.md`: fill the "owner lists" rows, sign) and the vendor list (`cloud/policies/vendors.md`: the VM provider, DNS provider). Then quarterly access reviews. | |
 | 2026-11-02 | C2 | Agree the write-freeze time for the SQLite → Postgres switch; keep the backup key offline. | |
 | 2026-11-02 | C3 | Lawyer review of the drafts: ToS, privacy update, DPA, sub-processor list, SLA (99.5%, shared host), refund policy. Approve the security page wording (no external review yet; shared server). Confirm the App Store position (guideline 3.1.3). | |
 | 2026-11-02 | C3 | Switch the Lemon Squeezy store to live, place the live keys, give the paid-launch green light, post the launch yourself (drafts in `launch/`). | |
