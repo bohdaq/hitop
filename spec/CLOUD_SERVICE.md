@@ -594,7 +594,7 @@ server-side row, never a new file in `environments/`.
   (`tests/orgs.rs`, `tests/limits.rs`), 70e3b9a (CLI `sync init --org`, `sync ls` org), b9be01c
   (portal, `cloud/compat/released-cli.sh`), 6f6755c (policies, vendors, access review, ops log),
   62394b7 (deploy: `www/cloud/`, route, install), 213d028 (CI), 788ef5c (Sync page link),
-  690d3ec (docs). CI run: see the last line of this block.
+  690d3ec (docs). e55b514 (this status). CI run 41459531300 on e55b514: green (every job, compat with hitop 1.1.0 and 1.2.0 included; the macOS job re-run after a GitHub runner capacity cancel).
 - **Migration 4** (additive; SQLite and Postgres): tables `orgs`, `org_members`, `org_invites`,
   `entitlements`, `usage_counters`, `api_tokens`, column `workspaces.org_id`. Every person
   (`users.runner_of = ''`) gets a personal org `personal-<user id>` on Free, owner, with an
