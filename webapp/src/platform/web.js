@@ -7,6 +7,7 @@ import { localSaves } from "./local-storage.js";
 import { sendRequest, usesProxy } from "../../../frontend/src/services/transportService.jsx";
 import { loadEnvironments, loadGlobals, saveEnvironments, saveGlobals } from "../features.js";
 import { loadFormat } from "../wasm/format.js";
+import { openResponseStore } from "./response-store.js";
 
 const FOLDER_SECRETS_KEY = "hitop_folder_secrets";
 const DB = "hitop";
@@ -174,7 +175,11 @@ function browserWebSocket(url, { protocols = [] } = {}, h) {
 export function createPlatform() {
   return {
     name: "web",
-    async init() {},
+    // Large response bodies across reloads (IndexedDB), or null without it.
+    responses: null,
+    async init() {
+      this.responses = await openResponseStore();
+    },
     storage: {
       ...storageService,
       ...localSaves,

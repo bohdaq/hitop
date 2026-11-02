@@ -129,14 +129,16 @@ function api() {
   await p.keyboard.press('Escape');
   await settle(p);
 
-  // 5. A large response isn't kept whole in storage, and the page says so after a reload.
+  // 5. A large response isn't kept whole in localStorage: since 1.2 it goes to
+  // IndexedDB and comes back whole after a reload (ux12.cjs has the fallbacks).
   await url.fill(`${base}/big`);
   await sendAndWait();
   const big = await tab();
-  check('large response: stored cut to 64 KB', big.response.length === 64 * 1024 && big.responseCut === true, `${big.response.length}`);
+  check('large response: localStorage keeps its first 16 KB, marked as stored', big.response.length === 16 * 1024 && big.responseCut === true && big.responseStored === true, `${big.response.length}`);
   check('… while the open tab still shows all of it', (await p.locator('.response-meta').innerText()).includes('600.0 KB'));
   await p.reload({ waitUntil: 'networkidle' });
-  check('after a reload: a note that only part was kept', (await p.locator('.response-note').innerText()).includes('over 256 KB'));
+  await settle(p);
+  check('after a reload: the whole body is back, no note', (await p.locator('.response-meta').innerText()).includes('600.0 KB') && (await p.locator('.response-note').count()) === 0);
 
   // 6. A full storage is reported (once), not only in the console.
   await p.evaluate(() => (window.__storageFull = true));

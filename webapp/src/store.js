@@ -222,16 +222,31 @@ async function readResponse(res) {
   return { data: text, type: "text" };
 }
 
-// A tab as saved: a response body over KEEP_BODY is cut to its first
-// KEEP_HEAD characters (`responseCut`), so one large response can't fill the
-// browser's storage (about 5 MB for everything) and stop every later save.
-// The open tab keeps the whole body until the page is reloaded.
-const KEEP_BODY = 256 * 1024;
-const KEEP_HEAD = 64 * 1024;
+// A tab as saved without IndexedDB (the 1.1 behaviour): a response body over
+// KEEP_BODY is cut to its first KEEP_HEAD characters (`responseCut`), so one
+// large response can't fill the browser's storage (about 5 MB for
+// everything) and stop every later save. The open tab keeps the whole body
+// until the page is reloaded.
+export const KEEP_BODY = 256 * 1024;
+export const KEEP_HEAD = 64 * 1024;
 export function storedTab(t) {
   if (typeof t.response !== "string" || t.response.length <= KEEP_BODY) return t;
-  return { ...t, response: t.response.slice(0, KEEP_HEAD), responseCut: true };
+  return { ...t, response: t.response.slice(0, KEEP_HEAD), responseCut: true, responseStored: undefined };
 }
+
+// With IndexedDB (platform().responses): a body over INLINE_BODY goes there
+// whole, and the saved tab keeps its first STORED_HEAD characters with
+// `responseCut` and `responseStored` (so the React app and 1.1 still read a
+// body, with the note). After a reload the whole body comes back.
+export const INLINE_BODY = 64 * 1024;
+export const STORED_HEAD = 16 * 1024;
+export function storedTabInDb(t) {
+  if (typeof t.response !== "string" || t.response.length <= INLINE_BODY || t.id == null) return t;
+  return { ...t, response: t.response.slice(0, STORED_HEAD), responseCut: true, responseStored: true };
+}
+
+// A tab's response fields when it has none (Settings: clear stored responses).
+const NO_RESPONSE = { response: null, responseHeaders: null, statusCode: null, responseType: "", tests: null, durationMs: null, truncated: false, responseCut: false, responseStored: undefined, jsonError: null };
 
 // Drops keys set to undefined (a cleared bodyType), so they aren't saved.
 const clean = (r) => Object.fromEntries(Object.entries(r).filter(([, v]) => v !== undefined));
@@ -335,6 +350,11 @@ export class Store extends EventTarget {
     this.scriptVariables = {};
     platform().onError?.((message) => this.notify(message));
     addEventListener("pagehide", () => this.save());
+    // Large response bodies across reloads (IndexedDB), null without it;
+    // keptBodies: tab id → the body last written there.
+    this.responseStore = platform().responses ?? null;
+    this.keptBodies = new Map();
+    this.responsesRestored = this.restoreResponses();
     this.ready = this.restoreFolders();
   }
 
@@ -356,7 +376,7 @@ export class Store extends EventTarget {
     // Adapters return false when the browser refused a write (storage full).
     const failed = [];
     if (st.saveCollections(this.collections) === false) failed.push("collections");
-    if (st.saveTabs(this.tabs.map(storedTab)) === false) failed.push("tabs");
+    if (st.saveTabs(this.storedTabs()) === false) failed.push("tabs");
     st.saveCurrentTab(this.currentTab);
     if (st.saveHistory(this.history) === false) failed.push("history");
     if (st.saveContexts(this.contexts) === false) failed.push("script values");
@@ -372,6 +392,85 @@ export class Store extends EventTarget {
     } catch {
       // Storage full or blocked: the jar lasts for this page only.
     }
+  }
+
+  // The tabs as saved. With IndexedDB, large bodies are written there (when
+  // they changed) and bodies of closed tabs go; without it, storedTab.
+  storedTabs() {
+    const db = this.responseStore;
+    if (!db) return this.tabs.map(storedTab);
+    const wanted = new Set();
+    const tabs = this.tabs.map((t) => {
+      const saved = storedTabInDb(t);
+      if (saved === t) return t;
+      wanted.add(t.id);
+      if (this.keptBodies.get(t.id) !== t.response) {
+        this.keptBodies.set(t.id, t.response);
+        const raw = this.rawBodies.get(t.id);
+        db.put(t.id, { body: t.response, ...(raw !== undefined ? { raw } : {}) }).catch((e) => this.responseStoreFailed(e));
+      }
+      return saved;
+    });
+    for (const id of [...this.keptBodies.keys()]) {
+      if (wanted.has(id)) continue;
+      this.keptBodies.delete(id);
+      db.delete(id).catch(() => {});
+    }
+    return tabs;
+  }
+
+  // IndexedDB refused a body (full, or gone): say so once and save the 1.1
+  // way from now on.
+  responseStoreFailed(e) {
+    if (!this.responseStore) return;
+    console.error("Couldn't keep a response body:", e);
+    this.responseStore = null;
+    this.keptBodies.clear();
+    this.notify("Couldn't keep a large response for after a reload: this browser's storage for HITOP is full. Responses over 256 KB are kept as their first 64 KB from now on.");
+    this.save();
+  }
+
+  // After a reload: the whole bodies of tabs saved with `responseStored`, as
+  // long as the tab still shows what was saved (not a newer response).
+  // Bodies no tab refers to are deleted. A body that isn't there (site data
+  // cleared, 1.1's cut tabs) leaves the part that was saved, with its note.
+  async restoreResponses() {
+    const db = this.responseStore;
+    if (!db) return;
+    const heads = new Map(this.tabs.filter((t) => t.responseStored && t.id != null).map((t) => [t.id, t.response]));
+    for (const key of db.keys) if (!heads.has(key)) db.delete(key).catch(() => {});
+    let changed = false;
+    for (const [id, head] of heads) {
+      if (!db.keys.includes(id)) continue;
+      let kept;
+      try {
+        kept = await db.get(id);
+      } catch {
+        continue;
+      }
+      const at = this.tabs.findIndex((t) => t.id === id);
+      if (!kept || typeof kept.body !== "string" || at === -1 || this.tabs[at].response !== head || !this.tabs[at].responseCut) continue;
+      this.keptBodies.set(id, kept.body);
+      if (typeof kept.raw === "string") this.rawBodies.set(id, kept.raw);
+      this.tabs = tabService.updateTab(this.tabs, at, { response: kept.body, responseCut: false });
+      changed = true;
+    }
+    if (changed) this.emit();
+  }
+
+  // Settings: every response kept for the tabs goes (IndexedDB and the saved
+  // tabs); history keeps its own.
+  async clearStoredResponses() {
+    try {
+      await this.responseStore?.clear();
+    } catch {
+      // gone already
+    }
+    this.keptBodies.clear();
+    this.rawBodies.clear();
+    this.tabs = this.tabs.map((t) => (t.loading ? t : { ...t, ...NO_RESPONSE }));
+    this.emit();
+    this.notify("Cleared the responses kept for your tabs");
   }
 
   // Says once that saving fails (and again after a save that worked), so a
@@ -1296,7 +1395,7 @@ export class Store extends EventTarget {
       auth: tab.auth,
       ...SAVED_FIELDS(tab),
     };
-    this.tabs = tabService.updateTab(this.tabs, index, { loading: true, response: null, statusCode: null, responseHeaders: null, durationMs: null, tests: null, responseCut: false, jsonError: null });
+    this.tabs = tabService.updateTab(this.tabs, index, { loading: true, response: null, statusCode: null, responseHeaders: null, durationMs: null, tests: null, responseCut: false, responseStored: undefined, jsonError: null });
     this.emit();
     const started = performance.now();
     try {

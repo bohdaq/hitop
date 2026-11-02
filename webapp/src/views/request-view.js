@@ -495,7 +495,9 @@ export class HitopRequest extends LitElement {
     const ext = t.responseType === "json" ? "json" : t.responseType === "html" ? "html" : t.responseType === "xml" ? "xml" : "txt";
     return html`
       ${t.responseCut
-        ? html`<lit-material-alert variant="info" class="response-note">This response was over 256 KB, so only its first 64 KB were kept when the page was saved. Send the request again to see all of it.</lit-material-alert>`
+        ? html`<lit-material-alert variant="info" class="response-note">${t.responseStored
+            ? `Only the first ${size(t.response.length)} of this response were found after the reload: the rest is no longer in this browser's storage. Send the request again to see all of it.`
+            : "This response was over 256 KB, so only its first 64 KB were kept when the page was saved. Send the request again to see all of it."}</lit-material-alert>`
         : nothing}
       ${t.jsonError
         ? html`<lit-material-alert variant="warning" class="response-note">The server says JSON, but the body doesn't parse: ${t.jsonError}. It's shown as text.</lit-material-alert>`

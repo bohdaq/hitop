@@ -10,6 +10,7 @@ import { localSaves } from "./local-storage.js";
 import { historyFromRust, historyToRust } from "./history.js";
 import { askOnce, settingsPages } from "./tauri-settings.js";
 import { gitApi, gitPages } from "./tauri-git.js";
+import { openResponseStore } from "./response-store.js";
 
 // What @tauri-apps/api's invoke() calls; the e2e tests put a mock here.
 const invoke = (cmd, args = {}) => window.__TAURI_INTERNALS__.invoke(cmd, args);
@@ -268,6 +269,8 @@ export function createPlatform() {
         invoke("load_environments").catch(() => ({ active: null, environments: [] })),
         invoke("cookies_load").catch(() => []),
       ]);
+      // Large response bodies across reloads: the window's IndexedDB, as on the web.
+      platform.responses = await openResponseStore();
       const globals = await invoke("load_globals").catch(() => null);
       const gNames = Array.isArray(globals?.secrets) ? globals.secrets : [];
       knownGlobalSecrets = await loadSecretValues(gNames.map((n) => account(GLOBAL, GLOBAL, n)));

@@ -7,6 +7,8 @@
 //   name                     "web" | "tauri"
 //   init()                   async; loads what `storage` then reads synchronously
 //   storage                  load*/save* for collections, tabs, history, contexts, environments
+//   responses                null, or large response bodies by tab id (IndexedDB, response-store.js):
+//                            { keys, get(id), put(id, { body, raw }), delete(id), clear() }, async
 //   send(url, options)       a fetch-like response; `headers.pairs` keeps repeated headers
 //   websocket(url, { headers, protocols }, { onOpen({ protocol }), onMessage({ text } | { bytes }),
 //                            onError(message), onClose({ code, reason }) })  → { send(text), close() }
