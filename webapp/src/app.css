@@ -531,3 +531,6 @@ lit-material-dialog.wide::part(container) { width: min(1100px, calc(100vw - 32px
 .fingerprint { font-family: var(--font-mono); font-size: var(--text-sm); overflow-wrap: anywhere; }
 .trust-changed { color: var(--md-sys-color-error); font-weight: 600; }
 .sync-note { margin: 0; }
+.sync-warnings { list-style: none; margin: 0; padding: 0; display: grid; gap: var(--space-100); }
+.sync-warnings .security { color: var(--md-sys-color-error); font-weight: 600; }
+.sync-untrusted { padding: var(--space-200); border-radius: var(--md-sys-shape-corner-medium); background: var(--md-sys-color-surface-container-low); display: grid; gap: var(--space-100); justify-items: start; }

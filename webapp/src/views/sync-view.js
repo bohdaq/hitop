@@ -4,7 +4,7 @@
 import { LitElement, html, nothing } from "lit";
 import { confirm } from "@lit-material/confirm";
 import { icon } from "../icons.js";
-import { DEFAULT_SERVER, SyncClient } from "../sync.js";
+import { DEFAULT_SERVER, KeyError, SyncClient } from "../sync.js";
 import { platform } from "../platform/index.js";
 
 const errorText = (e) => (e && e.message) || String(e);
@@ -33,6 +33,8 @@ class HitopSync extends LitElement {
     awaitingCode: { state: true },
     ssoUrl: { state: true },
     audit: { state: true },
+    warnings: { state: true },
+    untrusted: { state: true },
   };
 
   createRenderRoot() {
@@ -73,13 +75,33 @@ class HitopSync extends LitElement {
     this.busy = what;
     this.error = null;
     this.note = null;
+    this.untrusted = null;
     try {
       await fn();
     } catch (e) {
-      this.error = errorText(e);
+      // A refused workspace key: forged, swapped or a hidden rotation is a security warning; a
+      // key from a device not trusted yet can be trusted after comparing its fingerprint.
+      this.error = e instanceof KeyError && e.security ? `Security warning: ${errorText(e)}` : errorText(e);
+      if (e instanceof KeyError && e.kind === "untrustedSender" && e.fingerprint) this.untrusted = e;
     } finally {
       this.busy = null;
+      this.warnings = this.sync.takeNotices();
     }
+  }
+
+  renderUntrusted() {
+    const u = this.untrusted;
+    return html`<div class="sync-untrusted" aria-label="Device not trusted">
+      <p>The workspace key came from a device with fingerprint <code class="fingerprint">${u.fingerprint}</code>. Compare it with the person who added you (in person, on a call, or in a chat you trust). Only if it matches:</p>
+      <lit-material-button variant="outlined" @click=${async () => {
+        const ok = await confirm({ headline: "Trust this device?", message: `Fingerprint ${u.fingerprint}. If it isn't the one they see on their device, someone (the server, for instance) is trying to give you a key it knows: don't trust it.`, confirmLabel: "They match, trust it" });
+        if (!ok) return;
+        await this.run("trust", async () => {
+          await this.sync.trustSender(u.workspace, u.senderKeyId, u.fingerprint);
+          this.note = "Trusted. Sync again (or open the workspace) to use its key.";
+        });
+      }}>Trust this device…</lit-material-button>
+    </div>`;
   }
 
   field(id) {
@@ -219,7 +241,9 @@ class HitopSync extends LitElement {
           <lit-material-text-field id="sync-invite-code" variant="outlined" label="Invite code"></lit-material-text-field>
           <lit-material-button variant="outlined" ?disabled=${Boolean(this.busy)} @click=${() => this.run("accept", async () => {
             const r = await this.sync.accept(this.field("sync-invite-code"));
-            this.note = `Invite accepted (${r.role}). Tell the owner your fingerprint ${this.fingerprint}; once they add you, the workspace shows up below.`;
+            this.note = r.inviter
+              ? `Invite accepted (${r.role}). Tell the owner your fingerprint ${this.fingerprint}; once they add you, the workspace shows up below. Its key will be accepted from the inviter's device, fingerprint ${r.inviter}.`
+              : `Invite accepted (${r.role}). Tell the owner your fingerprint ${this.fingerprint}; once they add you, the workspace shows up below. This code doesn't name the inviter's key: you'll be asked to compare the fingerprint of the device that sends the key.`;
           })}>Accept invite</lit-material-button>
         </div>
         ${joinable.length
@@ -261,7 +285,7 @@ class HitopSync extends LitElement {
     return html`<ul class="sync-keys">
       ${keys.map((k) => html`<li>
         <span>${k.name}</span> <code class="fingerprint" aria-label=${`Fingerprint of ${owner}'s ${k.name}`}>${k.fingerprint}</code>
-        <span class=${`hint trust-${k.trust}`}>${this.trustLabel(k)}${k.hasKey === false ? ", waiting for the workspace key" : ""}</span>
+        <span class=${`hint trust-${k.trust}`}>${this.trustLabel(k)}${k.hasKey === false ? ", waiting for the workspace key" : ""}${k.legacy ? ", key handed out without authentication (hitop 1.1)" : ""}</span>
         ${k.trust === "new"
           ? html`<lit-material-button variant="text" @click=${async () => {
               const ok = await confirm({ headline: `Trust this device of ${owner}?`, message: `Fingerprint ${k.fingerprint}. Compare it with ${owner} (in person, on a call, or in a chat you trust) before you say yes: the server hands out these keys, and a wrong key would let someone else read the workspace.`, confirmLabel: "They match, trust it" });
@@ -351,11 +375,14 @@ class HitopSync extends LitElement {
         <lit-material-button variant="outlined" ?disabled=${Boolean(this.busy)} @click=${() => this.run("invite", async () => {
           const email = this.field("sync-invite-email");
           this.invite = await this.sync.invite(c.id, email, this.querySelector("#sync-invite-role").value || "editor");
-          this.note = this.invite.mailed ? `Invite mailed to ${email}.` : "Share this invite link privately:";
+          this.note = this.invite.mailed ? `Invite mailed to ${email}. So their hitop can check your key, also send them this code yourself (chat, in person):` : "Share this invite link privately:";
           await this.reloadTeam(c);
         })}>Invite</lit-material-button>
       </div>
-      ${this.invite && !this.invite.mailed ? html`<pre class="code-preview" aria-label="Invite link">${this.invite.link}</pre>` : nothing}
+      ${this.invite
+        ? html`${this.invite.mailed ? html`<pre class="code-preview" aria-label="Invite code with your fingerprint">${this.invite.code}</pre>` : html`<pre class="code-preview" aria-label="Invite link">${this.invite.link}</pre>`}
+            <p class="hint">It carries your key's fingerprint, <code class="fingerprint">${this.fingerprint ?? ""}</code>: their hitop accepts the workspace key only from this device. A mailed invite can't carry it (the server writes the mail).</p>`
+        : nothing}
       <p class="hint">Roles: owners manage members; editors change requests; viewers only read. The server enforces them; every member holds the workspace key.</p>`;
   }
 
@@ -408,6 +435,10 @@ class HitopSync extends LitElement {
             })}>Sign out</lit-material-button></p>`
         : nothing}
       ${this.error ? html`<lit-material-alert variant="error" role="alert">${this.error}</lit-material-alert>` : nothing}
+      ${this.untrusted ? this.renderUntrusted() : nothing}
+      ${this.warnings?.length
+        ? html`<ul class="sync-warnings" aria-label="Key warnings">${this.warnings.map((w) => html`<li class=${w.kind === "senderKeyChanged" ? "sync-note security" : "hint"}>${icon("warning-circle")} ${w.message}</li>`)}</ul>`
+        : nothing}
       ${this.note ? html`<p class="sync-note" role="status">${this.note}</p>` : nothing}
       ${this.busy ? html`<p class="hint" aria-busy="true">Working…</p>` : nothing}
       ${a ? this.renderShared() : this.renderSignIn()}

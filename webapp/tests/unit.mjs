@@ -218,10 +218,38 @@ assert.throws(() => schemaFromResponse('{"errors": [{"message": "introspection i
   const ws = sync.randomId();
   assert.match(ws, /^[0-9a-f]{32}$/);
   const key = sync.newKey();
-  const wrapped = sync.wrap(dev.publicKey, ws, 1, key);
-  assert.equal(sync.unwrap(dev.secret, ws, 1, wrapped), key);
-  assert.throws(() => sync.unwrap(dev.secret, ws, 2, wrapped), "another epoch");
-  assert.throws(() => sync.unwrap(sync.keygen().secret, ws, 1, wrapped), "another device");
+  // Authenticated wraps (hitop-sync-crypto 0.2): vectors/v2.json, and accept_wraps as the CLI runs it.
+  const v2 = readFileSync(join(here, "../../cli/crates/hitop-sync-crypto/vectors/v2.json"), "utf8");
+  assert.ok(sync.checkVectorsV2(v2) >= 10, "every format 2 test vector passes in the WASM build");
+  const owner = sync.keygen();
+  const wrapped = sync.sealWrap(owner.secret, "owner-key", "dev-key", dev.publicKey, ws, 1, 1, key);
+  assert.deepEqual(sync.wrapHeader(wrapped), { legacy: false, sender: "owner-key", head: 1 });
+  const ok = sync.acceptWraps(dev.secret, "dev-key", ws, 1, [{ epoch: 1, wrapped }], { "owner-key": owner.publicKey }, {}, {});
+  assert.equal(ok.ok, true);
+  assert.equal(ok.keys["1"], key);
+  assert.equal(ok.memory.strict, true);
+  assert.equal(ok.memory.maxEpoch, 1);
+  // Not trusted: refused with the fingerprint from the member list.
+  const untrusted = sync.acceptWraps(dev.secret, "dev-key", ws, 1, [{ epoch: 1, wrapped }], {}, { "owner-key": owner.publicKey }, {});
+  assert.equal(untrusted.ok, false);
+  assert.equal(untrusted.error.kind, "untrustedSender");
+  assert.equal(untrusted.error.fingerprint, sync.fingerprint(owner.publicKey));
+  // ...unless the invite code named that fingerprint.
+  const invited = sync.acceptWraps(dev.secret, "dev-key", ws, 1, [{ epoch: 1, wrapped }], {}, { "owner-key": owner.publicKey }, { strict: true, expectedSenders: [sync.normalizeFingerprint(sync.fingerprint(owner.publicKey))] });
+  assert.equal(invited.ok, true);
+  assert.deepEqual(invited.newPins, { "owner-key": owner.publicKey });
+  assert.equal(invited.notices[0].kind, "senderPinned");
+  // Forged in the owner's name, a swapped key for a known epoch, a rollback, a legacy wrap once strict.
+  const forged = sync.sealWrap(sync.keygen().secret, "owner-key", "dev-key", dev.publicKey, ws, 1, 1, key);
+  assert.equal(sync.acceptWraps(dev.secret, "dev-key", ws, 1, [{ epoch: 1, wrapped: forged }], { "owner-key": owner.publicKey }, {}, {}).error.kind, "forged");
+  const swapped = sync.sealWrap(owner.secret, "owner-key", "dev-key", dev.publicKey, ws, 1, 1, sync.newKey());
+  assert.equal(sync.acceptWraps(dev.secret, "dev-key", ws, 1, [{ epoch: 1, wrapped: swapped }], { "owner-key": owner.publicKey }, {}, ok.memory).error.kind, "keyChanged");
+  assert.equal(sync.acceptWraps(dev.secret, "dev-key", ws, 1, [{ epoch: 1, wrapped }], { "owner-key": owner.publicKey }, {}, { ...ok.memory, maxEpoch: 2 }).error.kind, "rollback");
+  const legacy = sync.wrapLegacy(dev.publicKey, ws, 1, key);
+  assert.deepEqual(sync.wrapHeader(legacy), { legacy: true });
+  assert.equal(sync.acceptWraps(dev.secret, "dev-key", ws, 1, [{ epoch: 1, wrapped: legacy }], {}, {}, ok.memory).error.kind, "legacyRefused");
+  const old = sync.acceptWraps(dev.secret, "dev-key", ws, 1, [{ epoch: 1, wrapped: legacy }], {}, {}, {});
+  assert.equal(old.ok && old.legacy && old.notices[0].kind, "legacyAccepted", "a workspace from hitop 1.1: used, with a warning");
   const env = sync.seal(key, ws, "b1", 3, 1, "requests/a.yaml", "name: A\n");
   assert.equal(sync.blobEpoch(env), 1);
   assert.deepEqual(sync.open(key, ws, "b1", 3, env), { path: "requests/a.yaml", text: "name: A\n" });

@@ -14,7 +14,12 @@
 //   the session and the device's X25519 secret key: platform().folderSecrets under
 //                          "hitop-sync/<host>" (desktop: the OS keychain; web: this browser)
 //   hitop_sync             { pins: { keyId: publicKey }, links: { collectionId: { workspace } },
-//                            states: { workspace: hitop-core sync State } }
+//                            states: { workspace: hitop-core sync State },
+//                            memory: { workspace: hitop-sync-crypto WorkspaceMemory } }
+//
+// Workspace keys are accepted only through hitop-sync-crypto's accept_wraps (the same policy as
+// the CLI): a wrap must be authenticated by a pinned device key (or the inviter's, whose
+// fingerprint the invite code carries), an epoch's key never changes, the epoch never goes back.
 //   hitop_sync_files:<ws>  { path: text } for collections kept in app storage
 import { loadFormat } from "./wasm/format.js";
 import { platform } from "./platform/index.js";
@@ -42,6 +47,17 @@ const host = (server) => {
   }
 };
 const secretAccount = (server) => `hitop-sync/${host(server)}`;
+
+// A workspace key this device refused (forged, from a device not trusted, swapped, a hidden
+// rotation...): `kind`, and for an untrusted sender its `fingerprint` and `senderKeyId`.
+export class KeyError extends Error {
+  constructor(workspace, error) {
+    super(error.message);
+    this.workspace = workspace;
+    Object.assign(this, { kind: error.kind, fingerprint: error.fingerprint ?? null, senderKeyId: error.senderKeyId ?? null, epoch: error.epoch });
+    this.security = ["forged", "keyChanged", "rollback"].includes(error.kind);
+  }
+}
 
 export class SyncError extends Error {
   constructor(status, body) {
@@ -136,13 +152,22 @@ export class SyncClient {
   constructor(store) {
     this.store = store;
     this.status = new Map(); // collectionId → { busy, message, error, at }
+    this.notices = []; // warnings from accepting keys, for the page to show (takeNotices)
+  }
+
+  // The warnings collected since the last call ([{ kind, message, ... }]), once each.
+  takeNotices() {
+    const seen = new Set();
+    const out = this.notices.filter((n) => !seen.has(n.message) && seen.add(n.message));
+    this.notices = [];
+    return out;
   }
 
   // --- local bookkeeping ----------------------------------------------------------------
 
   get data() {
     const d = readJson(STATE_KEY, {});
-    return { pins: d.pins ?? {}, links: d.links ?? {}, states: d.states ?? {} };
+    return { pins: d.pins ?? {}, links: d.links ?? {}, states: d.states ?? {}, memory: d.memory ?? {} };
   }
 
   update(fn) {
@@ -337,6 +362,25 @@ export class SyncClient {
     });
   }
 
+  // Trusts the device that handed this device a workspace key (KeyError "untrustedSender"), after
+  // the person compared its fingerprint: the server's key for it must still have that fingerprint.
+  async trustSender(ws, senderKeyId, fingerprint) {
+    const info = await this.api("GET", `/v1/workspaces/${ws}`);
+    const k = info.members.flatMap((m) => m.keys).find((x) => x.id === senderKeyId);
+    const w = (await loadFormat()).sync;
+    if (!k || w.normalizeFingerprint(await this.fp(k.publicKey)) !== w.normalizeFingerprint(fingerprint)) throw new Error("That device's key isn't the one you compared any more: not trusting it");
+    if (this.trustOf(k.id, k.publicKey) === "changed") throw new Error("That device's key changed since you trusted it: not trusting the new one");
+    this.trust([k]);
+  }
+
+  memoryOf(ws) {
+    return this.data.memory[ws] ?? {};
+  }
+
+  saveMemory(ws, memory) {
+    this.update((d) => (d.memory[ws] = memory));
+  }
+
   // Every key must be trusted; a changed key is refused (that's what a substituted key looks like).
   checkTrusted(keys, who = "") {
     const bad = keys.filter((k) => this.trustOf(k.id, k.publicKey) !== "trusted");
@@ -346,20 +390,69 @@ export class SyncClient {
 
   // --- keys -------------------------------------------------------------------------------
 
+  // The keys this device may use for a workspace: { epoch, keys: { epoch: key }, legacy } (legacy:
+  // some of this device's wraps are unauthenticated ones from hitop 1.1). Throws a KeyError for a
+  // refused key; warnings go to this.notices.
   async workspaceKeys(ws) {
     const a = this.account();
     const s = await this.secret();
     const w = (await loadFormat()).sync;
     const r = await this.api("GET", `/v1/workspaces/${ws}/wraps?keyId=${a.keyId}`);
-    const keys = {};
-    for (const x of r.wraps) keys[x.epoch] = w.unwrap(s.secret, ws, x.epoch, x.wrapped);
-    if (!keys[r.epoch]) throw new Error(`This device has no key for the workspace's current epoch yet: ask a member to open Sync → Members (it hands the key to new devices)`);
-    return { epoch: r.epoch, keys };
+    const pinned = this.data.pins;
+    const headers = r.wraps.map((x) => w.wrapHeader(x.wrapped));
+    // The member list only when a sender isn't trusted: its fingerprint, or the inviter's.
+    let listed = {};
+    if (headers.some((h) => !h.legacy && !pinned[h.sender])) {
+      const info = await this.api("GET", `/v1/workspaces/${ws}`);
+      for (const k of info.members.flatMap((m) => m.keys)) listed[k.id] = k.publicKey;
+    }
+    const out = w.acceptWraps(s.secret, a.keyId, ws, r.epoch, r.wraps.map((x) => ({ epoch: x.epoch, wrapped: x.wrapped })), pinned, listed, this.memoryOf(ws));
+    if (!out.ok) {
+      if (out.error.kind === "missingKey") throw new Error("This device has no key for the workspace's current epoch yet: ask a member to open Sync → Members (it hands the key to new devices)");
+      throw new KeyError(ws, out.error);
+    }
+    this.update((d) => {
+      d.memory[ws] = out.memory;
+      for (const [id, pk] of Object.entries(out.newPins)) d.pins[id] = pk;
+    });
+    this.notices.push(...out.notices);
+    return { epoch: out.current, keys: out.keys, legacy: headers.some((h) => h.legacy) };
   }
 
-  async wrapsFor(keys, ws, epoch, key) {
+  // Authenticated wraps of `key` (epoch `epoch`) made by this device for `keys` [{ id, publicKey }];
+  // `head` = the workspace's current epoch.
+  async wrapsFor(keys, ws, epoch, key, head = epoch) {
     const w = (await loadFormat()).sync;
-    return keys.map((k) => ({ keyId: k.id, wrapped: w.wrap(k.publicKey, ws, epoch, key) }));
+    const s = await this.secret();
+    const me = this.account().keyId;
+    return keys.map((k) => ({ keyId: k.id, wrapped: w.sealWrap(s.secret, me, k.id, k.publicKey, ws, epoch, head, key) }));
+  }
+
+  // As an owner: replaces unauthenticated (hitop 1.1) wraps with authenticated ones for every
+  // trusted device of every member, for every epoch this device holds. Runner credentials made by
+  // hitop 1.1 can't check them, so theirs stay. Returns { upgraded, untrusted: [names] }.
+  async upgradeWraps(ws, { epoch, keys }) {
+    const info = await this.api("GET", `/v1/workspaces/${ws}`);
+    if (info.role !== "owner") return { upgraded: 0, untrusted: [] };
+    const byEpoch = {};
+    const untrusted = [];
+    for (const m of info.members) {
+      for (const k of m.keys) {
+        const epochs = (k.legacyEpochs ?? []).filter((e) => keys[e]);
+        if (!epochs.length || m.runner) continue;
+        if (this.trustOf(k.id, k.publicKey) !== "trusted") {
+          untrusted.push(`${m.email} (${k.name})`);
+          continue;
+        }
+        for (const e of epochs) (byEpoch[e] ??= []).push(k);
+      }
+    }
+    let upgraded = 0;
+    for (const [e, list] of Object.entries(byEpoch)) {
+      const r = await this.api("POST", `/v1/workspaces/${ws}/wraps`, { epoch: +e, wraps: await this.wrapsFor(list, ws, +e, keys[e], epoch) });
+      upgraded += r.stored ?? 0;
+    }
+    return { upgraded, untrusted };
   }
 
   // --- the files of a collection --------------------------------------------------------
@@ -428,7 +521,13 @@ export class SyncClient {
     const ws = l.workspace;
     const me = this.account().keyId;
     const w = (await loadFormat()).sync;
-    let { epoch, keys } = await this.workspaceKeys(ws);
+    let { epoch, keys, legacy } = await this.workspaceKeys(ws);
+    // Keys from hitop 1.1 here: an owner's sync upgrades them (members see a warning).
+    if (legacy) {
+      const u = await this.upgradeWraps(ws, { epoch, keys });
+      if (u.upgraded) this.notices.push({ kind: "upgraded", message: `Upgraded ${u.upgraded} workspace key wrap(s) to authenticated ones. Members confirm your fingerprint once.` });
+      if (u.untrusted.length) this.notices.push({ kind: "notUpgraded", message: `Not upgraded, devices you haven't trusted: ${u.untrusted.join(", ")}` });
+    }
     for (let attempt = 0; attempt < 5; attempt++) {
       let state = this.state(ws);
       const { remote, seq } = await this.changes(ws, state.seq, keys);
@@ -501,6 +600,8 @@ export class SyncClient {
     const ws = w.randomId();
     const key = w.newKey();
     await this.api("POST", "/v1/workspaces", { id: ws, wraps: await this.wrapsFor(me.keys, ws, 1, key) });
+    // Made here: only authenticated keys from now on.
+    this.saveMemory(ws, { strict: true });
     const entry = this.store.folderOf(collectionId);
     let ref = entry?.ref;
     if (!entry) {
@@ -549,19 +650,38 @@ export class SyncClient {
     const ws = this.link(collectionId).workspace;
     const info = await this.api("GET", `/v1/workspaces/${ws}`);
     const invites = info.role === "owner" ? (await this.api("GET", `/v1/workspaces/${ws}/invites`)).invites : [];
-    const withFp = async (keys) => Promise.all((keys ?? []).map(async (k) => ({ ...k, fingerprint: await this.fp(k.publicKey), trust: this.trustOf(k.id, k.publicKey) })));
+    const withFp = async (keys) => Promise.all((keys ?? []).map(async (k) => ({ ...k, fingerprint: await this.fp(k.publicKey), trust: this.trustOf(k.id, k.publicKey), legacy: (k.legacyEpochs ?? []).length > 0 })));
     for (const m of info.members) m.keys = await withFp(m.keys);
     for (const i of invites) if (i.accepted) i.accepted.keys = await withFp(i.accepted.keys);
     return { ...info, workspace: ws, invites };
   }
 
+  // An invite: the server's answer plus `code` = "<token>.<this device's fingerprint>" and a link
+  // with it, so the invitee's hitop checks that the workspace key comes from this device. (A
+  // mailed invite carries only the token: the server writes the mail.)
   async invite(collectionId, email, role) {
     const ws = this.link(collectionId).workspace;
-    return this.api("POST", `/v1/workspaces/${ws}/invites`, { role, ...(email ? { email } : {}) });
+    const r = await this.api("POST", `/v1/workspaces/${ws}/invites`, { role, ...(email ? { email } : {}) });
+    const fp = (await loadFormat()).sync.normalizeFingerprint(await this.fingerprint());
+    const code = `${r.token}.${fp}`;
+    return { ...r, code, link: r.link.includes("#") ? `${r.link.split("#")[0]}#${code}` : r.link };
   }
 
+  // Accepts an invite code ("<token>.<fingerprint>" from hitop 1.2, or a bare token). From now on
+  // this device takes only authenticated keys for the workspace, and trusts the device the code
+  // names. Returns { workspaceId, role, inviter } (inviter: the fingerprint, or null).
   async accept(code) {
-    return this.api("POST", "/v1/invites/accept", { token: String(code).trim().split("#").pop() });
+    const text = String(code).trim().split("#").pop();
+    const [token, fpPart] = text.split(".");
+    const w = (await loadFormat()).sync;
+    const inviter = fpPart ? w.normalizeFingerprint(fpPart) : null;
+    if (inviter !== null && inviter.length !== 32) throw new Error("This invite code is damaged (the part after the '.' must be a key fingerprint)");
+    const r = await this.api("POST", "/v1/invites/accept", { token });
+    const m = this.memoryOf(r.workspaceId);
+    const expected = new Set(m.expectedSenders ?? []);
+    if (inviter) expected.add(inviter);
+    this.saveMemory(r.workspaceId, { ...m, strict: true, expectedSenders: [...expected] });
+    return { ...r, inviter: inviter ? inviter.match(/.{4}/g).join(" ") : null };
   }
 
   // Adds an account (that accepted an invite) after its keys were checked and trusted here.
@@ -569,8 +689,8 @@ export class SyncClient {
     const ws = this.link(collectionId).workspace;
     this.checkTrusted(keys, email);
     const { epoch, keys: epochKeys } = await this.workspaceKeys(ws);
-    await this.api("POST", `/v1/workspaces/${ws}/members`, { email, role, wraps: await this.wrapsFor(keys, ws, epoch, epochKeys[epoch]) });
-    for (const [e, k] of Object.entries(epochKeys)) if (+e !== epoch) await this.api("POST", `/v1/workspaces/${ws}/wraps`, { epoch: +e, wraps: await this.wrapsFor(keys, ws, +e, k) });
+    await this.api("POST", `/v1/workspaces/${ws}/members`, { email, role, wraps: await this.wrapsFor(keys, ws, epoch, epochKeys[epoch], epoch) });
+    for (const [e, k] of Object.entries(epochKeys)) if (+e !== epoch) await this.api("POST", `/v1/workspaces/${ws}/wraps`, { epoch: +e, wraps: await this.wrapsFor(keys, ws, +e, k, epoch) });
   }
 
   // Hands the workspace key to members' new devices whose keys are trusted.
@@ -578,8 +698,8 @@ export class SyncClient {
     const info = await this.members(collectionId);
     const waiting = info.members.flatMap((m) => m.keys.filter((k) => !k.hasKey && k.trust === "trusted"));
     if (!waiting.length || info.role === "viewer") return 0;
-    const { keys } = await this.workspaceKeys(info.workspace);
-    for (const [e, k] of Object.entries(keys)) await this.api("POST", `/v1/workspaces/${info.workspace}/wraps`, { epoch: +e, wraps: await this.wrapsFor(waiting, info.workspace, +e, k) });
+    const { epoch, keys } = await this.workspaceKeys(info.workspace);
+    for (const [e, k] of Object.entries(keys)) await this.api("POST", `/v1/workspaces/${info.workspace}/wraps`, { epoch: +e, wraps: await this.wrapsFor(waiting, info.workspace, +e, k, epoch) });
     return waiting.length;
   }
 
@@ -593,7 +713,12 @@ export class SyncClient {
     const w = (await loadFormat()).sync;
     const next = info.epoch + 1;
     const key = w.newKey();
-    await this.api("DELETE", `/v1/workspaces/${ws}/members/${userId}`, { epoch: next, wraps: await this.wrapsFor(remaining, ws, next, key) });
+    await this.api("DELETE", `/v1/workspaces/${ws}/members/${userId}`, { epoch: next, wraps: await this.wrapsFor(remaining, ws, next, key, next) });
+    // Their devices are no longer trusted here: keys they hand out from now on are refused.
+    const removed = info.members.find((m) => m.userId === userId)?.keys ?? [];
+    this.update((d) => {
+      for (const k of removed) delete d.pins[k.id];
+    });
     const { keys } = await this.workspaceKeys(ws);
     const { remote } = await this.changes(ws, 0, keys);
     const me = this.account().keyId;
@@ -624,10 +749,17 @@ export class SyncClient {
     const w = (await loadFormat()).sync;
     const k = w.keygen();
     const { epoch, keys } = await this.workspaceKeys(ws);
-    const r = await this.api("POST", `/v1/workspaces/${ws}/runners`, { name: name || "runner", publicKey: k.publicKey, wrapped: w.wrap(k.publicKey, ws, epoch, keys[epoch]) });
-    for (const [e, key] of Object.entries(keys)) if (+e !== epoch) await this.api("POST", `/v1/workspaces/${ws}/wraps`, { epoch: +e, wraps: [{ keyId: r.keyId, wrapped: w.wrap(k.publicKey, ws, +e, key) }] });
+    // The server names the runner's key only when it makes the runner, and an authenticated wrap
+    // names its recipient: the first wrap is a placeholder (unauthenticated, of a random key, which
+    // the runner never accepts) that the authenticated ones replace right after.
+    const r = await this.api("POST", `/v1/workspaces/${ws}/runners`, { name: name || "runner", publicKey: k.publicKey, wrapped: w.wrapLegacy(k.publicKey, ws, epoch, w.newKey()) });
+    for (const [e, key] of Object.entries(keys)) await this.api("POST", `/v1/workspaces/${ws}/wraps`, { epoch: +e, wraps: await this.wrapsFor([{ id: r.keyId, publicKey: k.publicKey }], ws, +e, key, epoch) });
     this.update((d) => (d.pins[r.keyId] = k.publicKey));
-    const cred = { v: 1, server: this.account().server, workspace: ws, token: r.token, keyId: r.keyId, secret: k.secret };
+    // The runner accepts keys from this device and the owners' and editors' devices trusted here.
+    const info = await this.api("GET", `/v1/workspaces/${ws}`);
+    const pins = { [this.account().keyId]: w.publicKey((await this.secret()).secret) };
+    for (const m of info.members.filter((x) => x.role === "owner" || x.role === "editor")) for (const key of m.keys) if (this.trustOf(key.id, key.publicKey) === "trusted") pins[key.id] = key.publicKey;
+    const cred = { v: 1, server: this.account().server, workspace: ws, token: r.token, keyId: r.keyId, secret: k.secret, pins };
     const b64 = btoa(String.fromCharCode(...new TextEncoder().encode(JSON.stringify(cred)))).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
     return { credential: `hitop-runner-1.${b64}`, userId: r.userId };
   }

@@ -5,7 +5,9 @@
 // conflict resolved both ways (View both, Take theirs, Keep mine), delete, a runner credential,
 // and removing the member; the owner's audit log; Sign in with SSO (against Keycloak when
 // HITOP_SYNC_TEST_KEYCLOAK is set, see sync-server/tests/keycloak.rs). The server's database never
-// holds a URL or a request name.
+// holds a URL or a request name. A malicious server (this test editing its SQLite database) can't
+// make the invitee use a workspace key of its own: an unauthenticated wrap, one forged in the
+// owner's name and one from a device the server made up are all refused.
 //   BASE=http://localhost:7879 HITOP_SYNC_SERVER_BIN=../sync-server/target/debug/hitop-sync-server node tests/sync.cjs
 const { spawn } = require('child_process');
 const fs = require('fs');
@@ -72,11 +74,13 @@ async function syncServer(extraEnv = {}) {
     throw new Error(`no mail to ${email}`);
   };
   const database = () => Buffer.concat(fs.readdirSync(dir).map((f) => fs.readFileSync(path.join(dir, f))));
+  // The database itself, to play a malicious server (node:sqlite, Node 22.13+).
+  const sql = () => new (require('node:sqlite').DatabaseSync)(path.join(dir, 'sync.db'));
   const stop = () => {
     child.kill();
     fs.rmSync(dir, { recursive: true, force: true });
   };
-  return { url, code, database, stop, log: () => log };
+  return { url, code, database, sql, stop, log: () => log };
 }
 
 (async () => {
@@ -147,10 +151,14 @@ async function syncServer(extraEnv = {}) {
   await S(ada).getByRole('button', { name: 'Invite', exact: true }).click();
   await idle(ada);
   check('invite by mail', (await note(ada)).includes('mailed to bob@example.com'), await note(ada));
-  await S(bob).getByLabel('Invite code').fill(await server.code('bob@example.com', 'hitop sync accept'));
+  // The mail carries the token only; the page shows the code with Ada's fingerprint to send herself.
+  const mailed = await server.code('bob@example.com', 'hitop sync accept');
+  const inviteCode = (await S(ada).getByLabel('Invite code with your fingerprint').innerText()).trim();
+  check("the invite code carries the owner's fingerprint", inviteCode === `${mailed}.${adaFp.replace(/ /g, '')}`, `${inviteCode} vs ${mailed}`);
+  await S(bob).getByLabel('Invite code').fill(inviteCode);
   await S(bob).getByRole('button', { name: 'Accept invite' }).click();
   await idle(bob);
-  check('accept the invite', (await note(bob)).includes('Invite accepted (editor)'), (await note(bob)) + (await alertText(bob)));
+  check('accept the invite', (await note(bob)).includes('Invite accepted (editor)') && (await note(bob)).includes(adaFp), (await note(bob)) + (await alertText(bob)));
 
   // Ada sees Bob's fingerprint, trusts it after comparing, and adds him.
   await S(ada).getByRole('button', { name: 'Members' }).click(); // close
@@ -168,12 +176,44 @@ async function syncServer(extraEnv = {}) {
   await idle(ada);
   check('add the member', (await note(ada)).includes('Added bob@example.com as editor'), (await note(ada)) + (await alertText(ada)));
 
-  // Bob opens it.
+  // A malicious server hands Bob a key of its own instead (the test edits its database); Bob's
+  // app refuses each one and opens nothing.
+  const { formatFromBytes } = await import('../src/wasm/format.js');
+  const w = (await formatFromBytes(fs.readFileSync(path.join(__dirname, '../src/wasm/pkg/hitop_wasm_bg.wasm')))).sync;
+  const b64 = (buf) => Buffer.from(buf).toString('base64url');
+  const evilDb = server.sql();
+  const keyOf = (email) => evilDb.prepare('SELECT k.id, k.public_key, k.user_id FROM device_keys k JOIN users u ON u.id = k.user_id WHERE u.email = ?').get(email);
+  const adaKey = keyOf('ada@example.com');
+  const bobKey = keyOf('bob@example.com');
+  const wsId = evilDb.prepare('SELECT id FROM workspaces').get().id;
+  const honest = evilDb.prepare('SELECT wrapped FROM wraps WHERE key_id = ? AND epoch = 1').get(bobKey.id).wrapped;
+  const setWrap = (b) => evilDb.prepare('UPDATE wraps SET wrapped = ? WHERE key_id = ? AND epoch = 1').run(Buffer.from(b, 'base64url'), bobKey.id);
+  const theirs = w.newKey();
+  const evil = w.keygen();
+  const refused = async (what, wrapped, needle) => {
+    setWrap(wrapped);
+    await S(bob).getByRole('button', { name: 'Open here' }).click();
+    await idle(bob);
+    const text = await alertText(bob);
+    check(`a malicious server's key is refused: ${what}`, text.includes(needle) && (await requests(bob, 'Shop API')) === null, text);
+  };
   await bob.page.reload({ waitUntil: 'networkidle' });
   await openSync(bob);
   await idle(bob);
+  await refused('an unauthenticated wrap', w.wrapLegacy(b64(bobKey.public_key), wsId, 1, theirs), 'without authentication');
+  await refused("a wrap forged in the owner's name", w.sealWrap(evil.secret, adaKey.id, bobKey.id, b64(bobKey.public_key), wsId, 1, 1, theirs), "Security warning: the workspace key (epoch 1) claims to come from device");
+  evilDb.prepare("INSERT INTO device_keys (id, user_id, name, public_key, created_at) VALUES ('ffffffffffffffffffffffffffffffff', ?, 'Ada new laptop', ?, 0)").run(adaKey.user_id, Buffer.from(evil.publicKey, 'base64url'));
+  const evilFp = w.fingerprint(evil.publicKey);
+  await refused('a wrap from a device the server made up', w.sealWrap(evil.secret, 'ffffffffffffffffffffffffffffffff', bobKey.id, b64(bobKey.public_key), wsId, 1, 1, theirs), evilFp);
+  check('a key from an unknown device offers to trust it only after comparing its fingerprint', (await S(bob).locator('.sync-untrusted').innerText()).includes(evilFp) && (await S(bob).getByRole('button', { name: 'Trust this device…' }).count()) === 1);
+  evilDb.prepare("DELETE FROM device_keys WHERE id = 'ffffffffffffffffffffffffffffffff'").run();
+  evilDb.prepare('UPDATE wraps SET wrapped = ? WHERE key_id = ? AND epoch = 1').run(honest, bobKey.id);
+  evilDb.close();
+
+  // Bob opens it: the key came from the device his invite code named.
   await S(bob).getByRole('button', { name: 'Open here' }).click();
   await idle(bob);
+  check("the inviter's device is trusted from the invite code", (await S(bob).locator('.sync-warnings').innerText().catch(() => '')).includes(adaFp), await S(bob).locator('.sync-warnings').innerText().catch(() => ''));
   const bobReqs = await requests(bob, 'Shop API');
   check('the other side opens the shared collection', JSON.stringify(bobReqs) === JSON.stringify(await requests(ada, 'Shop API')), JSON.stringify(bobReqs) + (await alertText(bob)));
 

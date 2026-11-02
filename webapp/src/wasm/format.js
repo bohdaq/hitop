@@ -46,13 +46,26 @@ function api(m) {
       fingerprint: (publicKey) => m.syncFingerprint(publicKey),
       newKey: () => m.syncNewKey(),
       randomId: () => m.syncRandomId(),
-      wrap: (publicKey, workspace, epoch, key) => m.syncWrap(publicKey, workspace, epoch, key),
-      unwrap: (secret, workspace, epoch, wrapped) => m.syncUnwrap(secret, workspace, epoch, wrapped),
+      // Authenticated (format 2) wrap made by this device (secret, its key id) for one device.
+      sealWrap: (secret, senderKeyId, recipientKeyId, recipientPublicKey, workspace, epoch, head, key) =>
+        m.syncSealWrap(secret, String(senderKeyId), String(recipientKeyId), recipientPublicKey, workspace, epoch, head, key),
+      // { legacy: true } or { legacy: false, sender, head } (not verified).
+      wrapHeader: (wrapped) => JSON.parse(m.syncWrapHeader(wrapped)),
+      // hitop-sync-crypto accept_wraps: which keys this device may use. wraps [{ epoch, wrapped }],
+      // pinned/listed { keyId: publicKey }, memory = WorkspaceMemory ({} when none) →
+      // { ok: true, keys: { epoch: key }, current, notices, newPins, memory, legacy } | { ok: false, error: { kind, message, ... } }.
+      acceptWraps: (secret, keyId, workspace, current, wraps, pinned, listed, memory) =>
+        JSON.parse(m.syncAcceptWraps(secret, String(keyId), workspace, current, JSON.stringify(wraps), JSON.stringify(pinned ?? {}), JSON.stringify(listed ?? {}), JSON.stringify(memory ?? {}))),
+      normalizeFingerprint: (fp) => m.syncNormalizeFingerprint(String(fp ?? "")),
+      // A format 1 (unauthenticated, hitop 1.1) wrap: never made by the app; tests play a malicious server with it.
+      wrapLegacy: (publicKey, workspace, epoch, key) => m.syncWrapLegacy(publicKey, workspace, epoch, key),
       blobEpoch: (envelope) => m.syncBlobEpoch(envelope),
       seal: (key, workspace, blob, version, epoch, path, text) => m.syncSeal(key, workspace, blob, BigInt(version), epoch, path, text),
       open: (key, workspace, blob, version, envelope) => JSON.parse(m.syncOpen(key, workspace, blob, BigInt(version), envelope)),
       // vectors/v1.json through this build; returns how many cases passed.
       checkVectors: (json) => m.syncCheckVectors(typeof json === "string" ? json : JSON.stringify(json)),
+      // vectors/v2.json (authenticated wraps, key commitments).
+      checkVectorsV2: (json) => m.syncCheckVectorsV2(typeof json === "string" ? json : JSON.stringify(json)),
     },
   };
 }
