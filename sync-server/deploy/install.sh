@@ -25,6 +25,11 @@ add HITOP_SYNC_RP_ORIGINS "${HITOP_SYNC_RP_ORIGINS:-https://sync.hitop.rws8.tech
 add HITOP_SYNC_ALLOWED_ORIGINS "${HITOP_SYNC_ALLOWED_ORIGINS:-https://hitop.rws8.tech}"
 add SMTP_TLS_SERVER_NAME "${SMTP_TLS_SERVER_NAME:-mail.rws8.tech}"
 add SMTP_FROM "${SMTP_FROM:-HITOP <noreply@rws8.tech>}"
+# HITOP Cloud (C1): the hosted plan limits and the portal limit errors link to. Existing lines
+# stay as they are: add https://cloud.hitop.rws8.tech to HITOP_SYNC_ALLOWED_ORIGINS and
+# HITOP_SYNC_RP_ORIGINS by hand once the portal is served there.
+add HITOP_SYNC_LIMITS "${HITOP_SYNC_LIMITS:-plans}"
+add HITOP_SYNC_PORTAL_URL "${HITOP_SYNC_PORTAL_URL:-https://cloud.hitop.rws8.tech/}"
 
 sudo systemctl daemon-reload
 sudo systemctl enable hitop-sync
@@ -33,3 +38,9 @@ sleep 1
 systemctl is-active hitop-sync
 curl -fsS http://127.0.0.1:7881/healthz; echo
 curl -sS -o /dev/null -w "db not served: %{http_code} (404 expected)\n" http://127.0.0.1:7881/sync.db
+# Migrations ran at start. Nobody may be over a plan limit (exit 1 and a list otherwise): checked
+# on a copy, so nothing but the service ever opens the live database.
+check="$(mktemp -d)"
+sudo sqlite3 /var/lib/private/hitop-sync/sync.db ".backup $check/sync.db" 2>/dev/null || sudo cp -a /var/lib/private/hitop-sync/sync.db "$check/sync.db"
+sudo env HITOP_SYNC_DATABASE="sqlite:$check/sync.db" /usr/local/bin/hitop-sync-server over-limits
+sudo rm -rf "$check"

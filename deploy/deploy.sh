@@ -17,7 +17,7 @@ set -euo pipefail
 cd ~/hitop-deploy && ./install.sh
 H=hitop.rws8.tech
 R="--resolve $H:443:127.0.0.1 -m 20"
-for p in / /app/ /terms/ /privacy.html; do
+for p in / /app/ /terms/ /privacy.html /cloud/ /cloud/healthz; do
   code=$(curl -s $R -o /dev/null -w '%{http_code}' "https://$H$p")
   echo "$code $p"
   test "$code" = 200

@@ -61,3 +61,26 @@ backends = ["127.0.0.1:7880"]
   [route.action]
   type     = "proxy"
   upstream = "hitop"
+
+# HITOP Cloud portal (spec/CLOUD_SERVICE.md C1): static files in hitop-server's www/cloud/.
+# The route adds the /cloud prefix, so cloud.hitop.rws8.tech/ is www/cloud/index.html and
+# /healthz is www/cloud/healthz. Add it with the others (above the old-docs-* routes). Append
+# "cloud.hitop.rws8.tech" to [acme] domains only after the owner's DNS A record for it points at
+# 168.119.17.57 (one shared certificate: a name that fails validation fails the whole order).
+# Until then the same files answer at https://hitop.rws8.tech/cloud/.
+[[route]]
+  name = "hitop-cloud"
+
+  [route.match]
+  host = "cloud.hitop.rws8.tech"
+  path = "/*"
+
+  [route.action]
+  type = "proxy"
+
+  [route.action.proxy]
+  upstream        = "hitop"
+  add_path_prefix = "/cloud"
+
+  [route.middleware]
+  rate_limit = { max_requests = 120, window_secs = 60 }
