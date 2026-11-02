@@ -5,6 +5,11 @@
 //!   account `sync/<server host>`), or in the file `HITOP_SYNC_KEY_FILE` names (mode 0600) where
 //!   there is no keychain; never anywhere else;
 //! - `pins.json`: device keys confirmed by fingerprint (key id → public key), trust on first use;
+//!   workspace keys are accepted only from these devices;
+//! - `keys.json`: per workspace, what this device knows about its keys
+//!   ([`hitop_sync_crypto::WorkspaceMemory`]: strict, newest epoch seen, a commitment to each
+//!   epoch's key, the inviter's fingerprint from an invite code), so a substituted key or a hidden
+//!   rotation is noticed;
 //! - `links.json`: collection folder → workspace;
 //! - `state/<workspace>.json`: [`hitop_core::sync::State`] of each linked folder;
 //! - `audit-heads.json`: the last audit-log head each workspace's `hitop sync audit --verify`
@@ -19,7 +24,7 @@ use std::path::{Path, PathBuf};
 use anyhow::{bail, Context, Result};
 use base64::engine::general_purpose::URL_SAFE_NO_PAD;
 use base64::Engine;
-use hitop_sync_crypto::DeviceKeyPair;
+use hitop_sync_crypto::{DeviceKeyPair, WorkspaceMemory};
 use serde::{Deserialize, Serialize};
 
 pub const DEFAULT_SERVER: &str = "https://sync.hitop.rws8.tech";
@@ -164,6 +169,25 @@ pub fn load_pins() -> Result<Pins> {
     read_json(&dir()?.join("pins.json"))
 }
 
+/// The pins as raw public keys (what `accept_wraps` takes).
+pub fn pinned_keys() -> Result<BTreeMap<String, Vec<u8>>> {
+    load_pins()?.into_iter().map(|(id, pk)| Ok((id, URL_SAFE_NO_PAD.decode(pk.trim_end_matches('=')).context("pins.json")?))).collect()
+}
+
+/// What this device remembers about a workspace's keys (`keys.json`); empty for a workspace it
+/// has never opened (or opened only with hitop 1.1).
+pub fn load_memory(workspace: &str) -> Result<WorkspaceMemory> {
+    let all: BTreeMap<String, WorkspaceMemory> = read_json(&dir()?.join("keys.json"))?;
+    Ok(all.get(workspace).cloned().unwrap_or_default())
+}
+
+pub fn save_memory(workspace: &str, memory: &WorkspaceMemory) -> Result<()> {
+    let path = dir()?.join("keys.json");
+    let mut all: BTreeMap<String, WorkspaceMemory> = read_json(&path)?;
+    all.insert(workspace.to_string(), memory.clone());
+    write_json(&path, &all)
+}
+
 pub fn save_pins(pins: &Pins) -> Result<()> {
     write_json(&dir()?.join("pins.json"), pins)
 }
@@ -232,6 +256,11 @@ pub struct RunnerCredential {
     pub key_id: String,
     /// The runner's X25519 secret key, base64url.
     pub secret: String,
+    /// The device keys the runner accepts workspace keys from (key id → public key, base64url):
+    /// the owners' and editors' devices its maker trusted (hitop 1.2). Empty in a hitop 1.1
+    /// credential, which then accepts only unauthenticated keys, with a warning.
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub pins: BTreeMap<String, String>,
 }
 
 impl RunnerCredential {

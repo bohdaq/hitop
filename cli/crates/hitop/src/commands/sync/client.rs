@@ -7,7 +7,8 @@ use anyhow::{anyhow, bail, Context, Result};
 use base64::engine::general_purpose::URL_SAFE_NO_PAD;
 use base64::Engine;
 use hitop_core::sync::{BlobText, Push, RemoteBlob};
-use hitop_sync_crypto::{self as crypto, BlobContext, DeviceKeyPair, WorkspaceKey};
+use colored::Colorize;
+use hitop_sync_crypto::{self as crypto, BlobContext, DeviceKeyPair, Error as CryptoError, ReceivedWrap, WorkspaceKey, WrapHeader};
 use serde_json::{json, Value};
 
 pub fn b64(bytes: &[u8]) -> String {
@@ -72,6 +73,22 @@ impl Api {
     }
 }
 
+/// A refused key as the person should read it: what happened and what to do.
+fn key_error(e: CryptoError, runner: bool) -> anyhow::Error {
+    let hint = match &e {
+        CryptoError::UntrustedSender { fingerprint: Some(fp), .. } if !runner => format!("\nIf it is right, run: hitop sync trust '{fp}'"),
+        CryptoError::UntrustedSender { .. } if runner => "\nThis runner credential doesn't trust the device that wrapped the key: make a new credential (`hitop sync runner create`)".into(),
+        CryptoError::MissingKey { .. } => ": ask an owner or editor to run `hitop sync members` (it wraps the key for new devices)".into(),
+        CryptoError::LegacyRefused { .. } if runner => "\nMake a new runner credential with hitop 1.2 or newer (`hitop sync runner create`)".into(),
+        _ => String::new(),
+    };
+    let text = format!("{e}{hint}");
+    match e {
+        CryptoError::Forged { .. } | CryptoError::KeyChanged { .. } | CryptoError::Rollback { .. } => anyhow!("{} {text}", "SECURITY:".red().bold()),
+        _ => anyhow!("{text}"),
+    }
+}
+
 pub fn api_error(r: &Reply) -> anyhow::Error {
     let message = r.json["message"].as_str().unwrap_or("no message");
     let hint = match r.status {
@@ -82,10 +99,37 @@ pub fn api_error(r: &Reply) -> anyhow::Error {
     anyhow!("sync server: {message}{hint} [{} {}]", r.status, r.json["error"].as_str().unwrap_or(""))
 }
 
+/// Where a device's trusted keys (the devices it accepts workspace keys from) come from.
+pub enum Trust {
+    /// This computer's pins (`pins.json`) and what it remembers per workspace (`keys.json`).
+    Local,
+    /// A runner credential's own pins (key id → public key); nothing is remembered between runs.
+    /// Empty for a credential made by hitop 1.1, which then accepts only unauthenticated keys.
+    Runner(BTreeMap<String, Vec<u8>>),
+}
+
 /// A signed-in device: what it needs to open and seal a workspace's blobs.
 pub struct Device {
     pub key_id: String,
     pub keys: DeviceKeyPair,
+    pub trust: Trust,
+}
+
+impl Device {
+    pub fn crypto(&self) -> crypto::Device<'_> {
+        crypto::Device { key_id: &self.key_id, keys: &self.keys }
+    }
+}
+
+/// Device key id → public key, as `GET /v1/workspaces/:ws` lists every member's devices.
+pub fn listed_keys(info: &Value) -> Result<BTreeMap<String, Vec<u8>>> {
+    let mut out = BTreeMap::new();
+    for m in info["members"].as_array().cloned().unwrap_or_default() {
+        for k in m["keys"].as_array().cloned().unwrap_or_default() {
+            out.insert(k["id"].as_str().unwrap_or("").to_string(), unb64(k["publicKey"].as_str().unwrap_or(""))?);
+        }
+    }
+    Ok(out)
 }
 
 /// One workspace as this device sees it: its epoch keys and the server's current epoch.
@@ -95,28 +139,64 @@ pub struct Workspace<'a> {
     pub id: String,
     pub keys: BTreeMap<u32, WorkspaceKey>,
     pub epoch: u32,
+    /// Some of this device's own wraps are format 1 (unauthenticated, hitop 1.1): an owner's
+    /// client upgrades the workspace (`upgrade_wraps` in mod.rs).
+    pub legacy: bool,
 }
 
 impl<'a> Workspace<'a> {
     pub fn open(api: &'a Api, device: &'a Device, id: &str) -> Result<Workspace<'a>> {
-        let mut ws = Workspace { api, device, id: id.to_string(), keys: BTreeMap::new(), epoch: 0 };
+        let mut ws = Workspace { api, device, id: id.to_string(), keys: BTreeMap::new(), epoch: 0, legacy: false };
         ws.refresh_keys()?;
         Ok(ws)
     }
 
-    /// Unwraps every epoch's key wrapped for this device.
+    /// Opens every epoch's key wrapped for this device and keeps only what
+    /// `hitop_sync_crypto::accept_wraps` allows: wraps verified against a trusted device key, no
+    /// key that changed for an epoch seen before, no epoch older than one seen before.
     pub fn refresh_keys(&mut self) -> Result<()> {
         let r = self.api.call("GET", &format!("/v1/workspaces/{}/wraps?keyId={}", self.id, self.device.key_id), None)?;
-        self.epoch = r["epoch"].as_u64().unwrap_or(0) as u32;
+        let epoch = r["epoch"].as_u64().unwrap_or(0) as u32;
+        let mut wraps = Vec::new();
         for w in r["wraps"].as_array().cloned().unwrap_or_default() {
-            let epoch = w["epoch"].as_u64().unwrap_or(0) as u32;
-            let wrapped = unb64(w["wrapped"].as_str().unwrap_or(""))?;
-            let key = crypto::unwrap_key(&self.device.keys, &self.id, epoch, &wrapped).map_err(|e| anyhow!("workspace key of epoch {epoch}: {e}"))?;
-            self.keys.insert(epoch, key);
+            wraps.push((w["epoch"].as_u64().unwrap_or(0) as u32, unb64(w["wrapped"].as_str().unwrap_or(""))?));
         }
-        if !self.keys.contains_key(&self.epoch) {
-            bail!("this device has no key for the workspace's current epoch {} yet: ask an owner or editor to run `hitop sync members` (it wraps the key for new devices)", self.epoch);
+        let runner = matches!(self.device.trust, Trust::Runner(_));
+        let (pinned, mut memory) = match &self.device.trust {
+            Trust::Local => (super::store::pinned_keys()?, super::store::load_memory(&self.id)?),
+            // A runner keeps no memory; one with pins (hitop 1.2) accepts authenticated keys only.
+            Trust::Runner(pins) => (pins.clone(), crypto::WorkspaceMemory { strict: !pins.is_empty(), ..Default::default() }),
+        };
+        // The server's member list only when a sender isn't trusted: for its fingerprint, or to
+        // match the inviter's fingerprint from an invite code.
+        let unknown_sender = wraps.iter().any(|(_, w)| matches!(crypto::wrap_header(w), Ok(WrapHeader::Authenticated { sender_key_id, .. }) if !pinned.contains_key(&sender_key_id)));
+        let listed = if unknown_sender { listed_keys(&self.api.call("GET", &format!("/v1/workspaces/{}", self.id), None)?)? } else { BTreeMap::new() };
+        self.legacy = wraps.iter().any(|(_, w)| crypto::wrap_header(w) == Ok(WrapHeader::Legacy));
+        let received: Vec<ReceivedWrap> = wraps.iter().map(|(e, w)| ReceivedWrap { epoch: *e, wrapped: w }).collect();
+        let ring = crypto::accept_wraps(&self.device.crypto(), &self.id, epoch, &received, &pinned, &listed, &mut memory).map_err(|e| key_error(e, runner))?;
+        if !runner {
+            if !ring.new_pins.is_empty() {
+                let mut pins = super::store::load_pins()?;
+                for (id, pk) in &ring.new_pins {
+                    pins.insert(id.clone(), b64(pk));
+                }
+                super::store::save_pins(&pins)?;
+            }
+            super::store::save_memory(&self.id, &memory)?;
         }
+        for n in &ring.notices {
+            let label = match n {
+                crypto::Notice::SenderKeyChanged { .. } => "warning:".red().bold(),
+                crypto::Notice::SenderPinned { .. } | crypto::Notice::KnownKeyFromUntrusted { .. } => "note:".cyan(),
+                _ => "warning:".yellow(),
+            };
+            eprintln!("{label} {n}");
+        }
+        if ring.uses_legacy() && matches!(&self.device.trust, Trust::Runner(p) if p.is_empty()) {
+            eprintln!("{} this runner credential was made by hitop 1.1: make a new one (`hitop sync runner create`) and remove the old one", "warning:".yellow());
+        }
+        self.epoch = ring.current;
+        self.keys = ring.keys;
         Ok(())
     }
 

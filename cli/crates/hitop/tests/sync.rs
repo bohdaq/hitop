@@ -1,8 +1,10 @@
 //! `hitop sync` end to end: two clients with separate config directories and key files against a
 //! real sync server on localhost (the sync-server binary from `HITOP_SYNC_SERVER_BIN`; skipped
 //! without it locally, required when `CI` is set). Create, edit, conflict, resolve, delete; teams
-//! (invite, accept, trust, add, remove with rotation); a runner credential; the audit log; and
-//! `login --sso` against Keycloak when `HITOP_SYNC_TEST_KEYCLOAK` is set (sync-server/tests/keycloak.rs).
+//! (invite, accept, trust, add, remove with rotation); a runner credential; the audit log;
+//! authenticated key wraps against a malicious server (the test edits the server's database) and
+//! the upgrade of a hitop 1.1 workspace; and `login --sso` against Keycloak when
+//! `HITOP_SYNC_TEST_KEYCLOAK` is set (sync-server/tests/keycloak.rs).
 
 use std::io::{BufRead, BufReader};
 use std::path::{Path, PathBuf};
@@ -11,6 +13,9 @@ use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 use assert_cmd::Command;
+use base64::engine::general_purpose::URL_SAFE_NO_PAD;
+use base64::Engine;
+use hitop_sync_crypto as crypto;
 use tempfile::TempDir;
 
 struct SyncServer {
@@ -98,6 +103,22 @@ impl SyncServer {
         panic!("no mail to {email}");
     }
 
+    /// The server's database, to play a malicious server.
+    fn db(&self) -> rusqlite::Connection {
+        let db = rusqlite::Connection::open(self.dir.path().join("sync.db")).unwrap();
+        db.busy_timeout(Duration::from_secs(5)).unwrap();
+        db
+    }
+
+    fn wrap(&self, ws: &str, key_id: &str, epoch: i64) -> Vec<u8> {
+        self.db().query_row("SELECT wrapped FROM wraps WHERE workspace_id = ?1 AND key_id = ?2 AND epoch = ?3", rusqlite::params![ws, key_id, epoch], |r| r.get(0)).unwrap()
+    }
+
+    /// Stores `wrapped` as the wrap of `key_id` for `epoch` (replacing or adding it).
+    fn set_wrap(&self, ws: &str, key_id: &str, epoch: i64, wrapped: &[u8]) {
+        self.db().execute("INSERT OR REPLACE INTO wraps (workspace_id, epoch, key_id, wrapped) VALUES (?1, ?2, ?3, ?4)", rusqlite::params![ws, epoch, key_id, wrapped]).unwrap();
+    }
+
     fn database(&self) -> Vec<u8> {
         let mut all = Vec::new();
         for e in std::fs::read_dir(self.dir.path()).unwrap() {
@@ -153,6 +174,18 @@ impl Client {
 
     fn folder(&self, name: &str) -> PathBuf {
         self.home.path().join(name)
+    }
+
+    fn config(&self, file: &str) -> PathBuf {
+        self.home.path().join("config/hitop/sync").join(file)
+    }
+
+    /// This client's device: its key id and key pair (from account.json and the key file).
+    fn device(&self) -> (String, crypto::DeviceKeyPair) {
+        let account: serde_json::Value = serde_json::from_str(&std::fs::read_to_string(self.config("account.json")).unwrap()).unwrap();
+        let secret: serde_json::Value = serde_json::from_str(&std::fs::read_to_string(self.home.path().join("sync-key.json")).unwrap()).unwrap();
+        let keys = crypto::DeviceKeyPair::from_secret_bytes(&URL_SAFE_NO_PAD.decode(secret["secret"].as_str().unwrap()).unwrap()).unwrap();
+        (account["keyId"].as_str().unwrap().to_string(), keys)
     }
 
     /// Signs in; returns this device's key fingerprint.
@@ -221,11 +254,15 @@ fn two_clients_sync_a_folder_end_to_end() {
     assert_eq!(ada.run(&["sync", "init", "-c", a.to_str().unwrap()]).code, 2);
     assert!(ada.ok(&["sync", "status", "-c", a.to_str().unwrap()]).contains("up to date"));
 
-    // Invite Bob by mail; he accepts; Ada checks his fingerprint and adds him.
-    assert!(ada.ok(&["sync", "invite", "bob@example.com", "--role", "editor", "-c", a.to_str().unwrap()]).contains("mailed"));
-    let code = server.code_for("bob@example.com", "hitop sync accept");
+    // Invite Bob by mail; Ada also hands him the code with her key's fingerprint (the mail can't
+    // carry it: the server writes it); he accepts; Ada checks his fingerprint and adds him.
+    let invited = ada.ok(&["sync", "invite", "bob@example.com", "--role", "editor", "-c", a.to_str().unwrap()]);
+    assert!(invited.contains("mailed") && invited.contains(&ada_fp), "{invited}");
+    let code = invited.lines().find_map(|l| l.trim().strip_prefix("hitop sync accept ")).unwrap().to_string();
+    let mailed = server.code_for("bob@example.com", "hitop sync accept");
+    assert_eq!(code, format!("{mailed}.{}", ada_fp.replace(' ', "")));
     let accepted = bob.ok(&["sync", "accept", &code]);
-    assert!(accepted.contains(&bob_fp) && accepted.contains(&ws));
+    assert!(accepted.contains(&bob_fp) && accepted.contains(&ws) && accepted.contains(&ada_fp), "{accepted}");
     let members = ada.ok(&["sync", "members", "-c", a.to_str().unwrap()]);
     assert!(members.contains("Invite accepted by bob@example.com") && members.contains(&bob_fp), "{members}");
     // Without trusting his key first, adding him is refused (no terminal here to ask).
@@ -234,9 +271,12 @@ fn two_clients_sync_a_folder_end_to_end() {
     assert!(refused.stderr.contains(&bob_fp), "{}", refused.stderr);
     ada.ok(&["sync", "add", "bob@example.com", "--trust", &bob_fp, "-c", a.to_str().unwrap()]);
 
-    // Bob links an empty folder and gets everything.
+    // Bob links an empty folder and gets everything: the key came from the device his invite
+    // code named.
     let b = bob.folder("shop");
-    bob.ok(&["sync", "link", &ws, "-c", b.to_str().unwrap()]);
+    let o = bob.run(&["sync", "link", &ws, "-c", b.to_str().unwrap()]);
+    assert_eq!(o.code, 0, "{}", o.stderr);
+    assert!(o.stderr.contains("trusted device") && o.stderr.contains(&ada_fp), "{}", o.stderr);
     assert_eq!(snapshot(&b), snapshot(&a));
 
     // Edit on one side, pull on the other.
@@ -291,14 +331,21 @@ fn two_clients_sync_a_folder_end_to_end() {
         assert!(!db.windows(needle.len()).any(|w| w == needle.as_bytes()), "{needle} is in the server's database");
     }
 
-    // A viewer can pull but not push.
+    // A viewer can pull but not push. Cy accepts the mailed code, which names no key: her hitop
+    // refuses the workspace key until she has compared Ada's fingerprint and trusted it.
     let cy = Client::new(&server);
     let cy_fp = cy.login(&server, "cy@example.com");
     ada.ok(&["sync", "invite", "cy@example.com", "--role", "viewer", "-c", a.to_str().unwrap()]);
-    cy.ok(&["sync", "accept", &server.code_for("cy@example.com", "hitop sync accept")]);
+    assert!(cy.ok(&["sync", "accept", &server.code_for("cy@example.com", "hitop sync accept")]).contains("doesn't name the inviter's key"));
     ada.ok(&["sync", "add", "cy@example.com", "--trust", &cy_fp, "-c", a.to_str().unwrap()]);
     let cf = cy.folder("shop");
-    cy.ok(&["sync", "link", &ws, "-c", cf.to_str().unwrap()]);
+    let o = cy.run(&["sync", "link", &ws, "-c", cf.to_str().unwrap()]);
+    assert_eq!(o.code, 2);
+    assert!(o.stderr.contains("haven't trusted") && o.stderr.contains(&format!("hitop sync trust '{ada_fp}'")), "{}", o.stderr);
+    assert!(!cf.join("hitop.yaml").exists());
+    cy.ok(&["sync", "trust", &ada_fp, "-c", cf.to_str().unwrap()]);
+    cy.ok(&["sync", "pull", "-c", cf.to_str().unwrap()]);
+    assert_eq!(snapshot(&cf), snapshot(&a));
     write(&cf, "requests/list-orders.yaml", &request("List orders", "https://cy.example.test"));
     let o = cy.run(&["sync", "push", "-c", cf.to_str().unwrap()]);
     assert_eq!(o.code, 2);
@@ -359,6 +406,195 @@ fn two_clients_sync_a_folder_end_to_end() {
     let o = Client::new(&server).run(&["sync", "login", "--sso", "--server", &server.url]);
     assert_eq!(o.code, 2);
     assert!(o.stderr.contains("no single sign-on"), "{}", o.stderr);
+}
+
+/// Ada shares a folder, invites Bob with a link code carrying her fingerprint, adds him. Returns
+/// the workspace id, Ada's folder and Bob's (not linked yet).
+fn share_with_bob(server: &SyncServer, ada: &Client, bob: &Client) -> (String, PathBuf, PathBuf) {
+    let bob_fp = bob.login(server, "bob@example.com");
+    let a = ada.folder("shop");
+    ada.ok(&["init", a.to_str().unwrap(), "--name", "Shop"]);
+    write(&a, "requests/list-orders.yaml", &request("List orders", "https://internal.example.test/orders"));
+    let out = ada.ok(&["sync", "init", "-c", a.to_str().unwrap()]);
+    let ws = out.split("workspace ").nth(1).unwrap().split_whitespace().next().unwrap().to_string();
+    let invited = ada.ok(&["sync", "invite", "--role", "editor", "-c", a.to_str().unwrap()]);
+    let link = invited.lines().find(|l| l.contains("/invite#")).unwrap();
+    bob.ok(&["sync", "accept", link.trim()]);
+    ada.ok(&["sync", "add", "bob@example.com", "--trust", &bob_fp, "-c", a.to_str().unwrap()]);
+    (ws, a, bob.folder("shop"))
+}
+
+/// A sync server that hands out workspace keys of its choosing is refused: an unauthenticated
+/// wrap, a wrap forged in the owner's name, one from a device the server made up, a swapped key
+/// for an epoch already known, a hidden rotation, an old wrap replayed after a rotation, and a
+/// fake next epoch. Nothing is written to the folder, nothing is pushed under such a key.
+#[test]
+fn a_malicious_server_cant_hand_out_its_own_workspace_key() {
+    let Some(server) = server() else { return };
+    let (ada, bob) = (Client::new(&server), Client::new(&server));
+    let ada_fp = ada.login(&server, "ada@example.com");
+    let (ws, a, b) = share_with_bob(&server, &ada, &bob);
+    let (ada_key, ada_keys) = ada.device();
+    let (bob_key, bob_keys) = bob.device();
+    let honest = server.wrap(&ws, &bob_key, 1);
+    let theirs = crypto::WorkspaceKey::generate();
+    let bob_pk = bob_keys.public_key();
+    let to_bob = crypto::Recipient { key_id: &bob_key, public_key: &bob_pk };
+    let refused = |what: &str, wrapped: &[u8], needle: &str| {
+        server.set_wrap(&ws, &bob_key, 1, wrapped);
+        let o = bob.run(&["sync", "link", &ws, "-c", b.to_str().unwrap()]);
+        assert_eq!(o.code, 2, "{what}: {}", o.stdout);
+        assert!(o.stderr.contains(needle), "{what}: {}", o.stderr);
+        assert!(!b.join("hitop.yaml").exists(), "{what}: nothing written");
+    };
+
+    // 1. An unauthenticated (hitop 1.1 style) wrap of the server's key: Bob joined with hitop 1.2.
+    refused("legacy wrap", &crypto::wrap_key(&bob_pk, &ws, 1, &theirs).unwrap(), "without authentication");
+    // 2. A wrap in Ada's name, made with the server's own key pair.
+    let server_keys = crypto::DeviceKeyPair::generate();
+    let forged = crypto::seal_wrap(&crypto::Device { key_id: &ada_key, keys: &server_keys }, &to_bob, &ws, 1, 1, &theirs).unwrap();
+    refused("forged in Ada's name", &forged, "doesn't verify");
+    // 3. A device the server adds to Ada's account and wraps from: not the key the code named.
+    let ada_user: String = server.db().query_row("SELECT user_id FROM device_keys WHERE id = ?1", [&ada_key], |r| r.get(0)).unwrap();
+    server.db().execute("INSERT INTO device_keys (id, user_id, name, public_key, created_at) VALUES ('ffffffffffffffffffffffffffffffff', ?1, 'Ada new laptop', ?2, 0)", rusqlite::params![ada_user, server_keys.public_key().to_vec()]).unwrap();
+    let made_up = crypto::seal_wrap(&crypto::Device { key_id: "ffffffffffffffffffffffffffffffff", keys: &server_keys }, &to_bob, &ws, 1, 1, &theirs).unwrap();
+    refused("a made-up device", &made_up, &crypto::fingerprint(&server_keys.public_key()));
+    // The honest wrap works.
+    server.set_wrap(&ws, &bob_key, 1, &honest);
+    bob.ok(&["sync", "link", &ws, "-c", b.to_str().unwrap()]);
+    assert_eq!(snapshot(&b), snapshot(&a));
+
+    // 4. A different key for epoch 1, even authenticated by Ada's real key (as a member colluding
+    //    with the server could make): Bob already holds epoch 1's key.
+    let swapped = crypto::seal_wrap(&crypto::Device { key_id: &ada_key, keys: &ada_keys }, &to_bob, &ws, 1, 1, &theirs).unwrap();
+    server.set_wrap(&ws, &bob_key, 1, &swapped);
+    let o = bob.run(&["sync", "pull", "-c", b.to_str().unwrap()]);
+    assert_eq!(o.code, 2);
+    assert!(o.stderr.contains("SECURITY") && o.stderr.contains("not the one this device accepted before"), "{}", o.stderr);
+    server.set_wrap(&ws, &bob_key, 1, &honest);
+
+    // A real rotation: Ada removes Cy (epoch 2); Bob follows.
+    let cy = Client::new(&server);
+    let cy_fp = cy.login(&server, "cy@example.com");
+    let invited = ada.ok(&["sync", "invite", "--role", "viewer", "-c", a.to_str().unwrap()]);
+    cy.ok(&["sync", "accept", invited.lines().find(|l| l.contains("/invite#")).unwrap().trim()]);
+    ada.ok(&["sync", "add", "cy@example.com", "--trust", &cy_fp, "-c", a.to_str().unwrap()]);
+    // The device the server added to Ada's account is shown to her as untrusted, and her client
+    // won't wrap the next key for it.
+    let members = ada.ok(&["sync", "members", "-c", a.to_str().unwrap()]);
+    assert!(members.contains("Ada new laptop") && members.contains("not trusted yet") && members.contains(&ada_fp), "{members}");
+    let o = ada.run(&["sync", "remove", "cy@example.com", "-c", a.to_str().unwrap()]);
+    assert_eq!(o.code, 2);
+    assert!(o.stderr.contains("Ada new laptop") && o.stderr.contains(&crypto::fingerprint(&server_keys.public_key())), "{}", o.stderr);
+    server.db().execute("DELETE FROM device_keys WHERE id = 'ffffffffffffffffffffffffffffffff'", []).unwrap();
+    assert!(ada.ok(&["sync", "remove", "cy@example.com", "-c", a.to_str().unwrap()]).contains("epoch 2"));
+    bob.ok(&["sync", "pull", "-c", b.to_str().unwrap()]);
+    let honest2 = server.wrap(&ws, &bob_key, 2);
+
+    // 5. The server hides the rotation (back to epoch 1, whose key Cy has).
+    server.db().execute("UPDATE workspaces SET epoch = 1 WHERE id = ?1", [&ws]).unwrap();
+    let o = bob.run(&["sync", "push", "-c", b.to_str().unwrap()]);
+    assert_eq!(o.code, 2);
+    assert!(o.stderr.contains("SECURITY") && o.stderr.contains("rotation is being hidden"), "{}", o.stderr);
+    server.db().execute("UPDATE workspaces SET epoch = 2 WHERE id = ?1", [&ws]).unwrap();
+    // 6. The old epoch's wrap replayed as the new epoch's.
+    server.set_wrap(&ws, &bob_key, 2, &honest);
+    let o = bob.run(&["sync", "pull", "-c", b.to_str().unwrap()]);
+    assert_eq!(o.code, 2);
+    assert!(o.stderr.contains("doesn't verify"), "{}", o.stderr);
+    server.set_wrap(&ws, &bob_key, 2, &honest2);
+    // 7. A fake next epoch with an unauthenticated wrap of the server's key.
+    server.db().execute("UPDATE workspaces SET epoch = 3 WHERE id = ?1", [&ws]).unwrap();
+    server.set_wrap(&ws, &bob_key, 3, &crypto::wrap_key(&bob_pk, &ws, 3, &theirs).unwrap());
+    write(&b, "requests/secret-plan.yaml", &request("Secret plan", "https://plan.example.test"));
+    let o = bob.run(&["sync", "push", "-c", b.to_str().unwrap()]);
+    assert_eq!(o.code, 2);
+    assert!(o.stderr.contains("without authentication"), "{}", o.stderr);
+    let blobs: i64 = server.db().query_row("SELECT COUNT(*) FROM blobs WHERE workspace_id = ?1 AND epoch = 3", [&ws], |r| r.get(0)).unwrap();
+    assert_eq!(blobs, 0, "nothing pushed under the server's key");
+    server.db().execute("DELETE FROM wraps WHERE workspace_id = ?1 AND epoch = 3", [&ws]).unwrap();
+    server.db().execute("UPDATE workspaces SET epoch = 2 WHERE id = ?1", [&ws]).unwrap();
+    assert!(bob.ok(&["sync", "push", "-c", b.to_str().unwrap()]).contains("pushed  requests/secret-plan.yaml"));
+}
+
+/// A workspace made by hitop 1.1 (format 1 wraps, no key memory on the devices) keeps working
+/// with a warning; the owner's next sync replaces the wraps with authenticated ones; a member
+/// who never trusted the owner's device keeps the keys already held but must trust it for the
+/// next rotation; a hitop 1.1 runner credential keeps its unauthenticated key, with a warning.
+#[test]
+fn a_hitop_1_1_workspace_keeps_working_and_is_upgraded() {
+    let Some(server) = server() else { return };
+    let (ada, bob) = (Client::new(&server), Client::new(&server));
+    let ada_fp = ada.login(&server, "ada@example.com");
+    let (ws, a, b) = share_with_bob(&server, &ada, &bob);
+    bob.ok(&["sync", "link", &ws, "-c", b.to_str().unwrap()]);
+    let cred = ada.ok(&["sync", "runner", "create", "-c", a.to_str().unwrap()]).trim().to_string();
+
+    // Turn it into what hitop 1.1 left behind: every wrap format 1, no keys.json, Bob never
+    // pinned Ada's device, the runner credential has no pins.
+    let (ada_key, ada_keys) = ada.device();
+    let (bob_key, bob_keys) = bob.device();
+    let rows: Vec<(String, i64, Vec<u8>)> = {
+        let db = server.db();
+        let mut q = db.prepare("SELECT key_id, epoch, wrapped FROM wraps WHERE workspace_id = ?1").unwrap();
+        q.query_map([&ws], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?))).unwrap().map(Result::unwrap).collect()
+    };
+    let body = cred.strip_prefix("hitop-runner-1.").unwrap();
+    let mut c: serde_json::Value = serde_json::from_slice(&URL_SAFE_NO_PAD.decode(body).unwrap()).unwrap();
+    let runner_keys = crypto::DeviceKeyPair::from_secret_bytes(&URL_SAFE_NO_PAD.decode(c["secret"].as_str().unwrap()).unwrap()).unwrap();
+    let runner_key = c["keyId"].as_str().unwrap().to_string();
+    c.as_object_mut().unwrap().remove("pins");
+    let old_cred = format!("hitop-runner-1.{}", URL_SAFE_NO_PAD.encode(serde_json::to_vec(&c).unwrap()));
+    for (key_id, epoch, wrapped) in &rows {
+        let me = if *key_id == ada_key { &ada_keys } else if *key_id == bob_key { &bob_keys } else { &runner_keys };
+        let key = crypto::open_wrap(me, key_id, &ada_keys.public_key(), &ws, *epoch as u32, wrapped).unwrap().key;
+        server.set_wrap(&ws, key_id, *epoch, &crypto::wrap_key(&me.public_key(), &ws, *epoch as u32, &key).unwrap());
+    }
+    std::fs::remove_file(ada.config("keys.json")).unwrap();
+    std::fs::remove_file(bob.config("keys.json")).unwrap();
+    let mut pins: serde_json::Value = serde_json::from_str(&std::fs::read_to_string(bob.config("pins.json")).unwrap()).unwrap();
+    pins.as_object_mut().unwrap().remove(&ada_key);
+    std::fs::write(bob.config("pins.json"), pins.to_string()).unwrap();
+
+    // Both still sync, with a warning.
+    let o = bob.run(&["sync", "pull", "-c", b.to_str().unwrap()]);
+    assert_eq!(o.code, 0, "{}", o.stderr);
+    assert!(o.stderr.contains("without authentication"), "{}", o.stderr);
+    // Ada (owner) upgrades every wrap she can: hers and Bob's, not the 1.1 runner's.
+    let o = ada.run(&["sync", "pull", "-c", a.to_str().unwrap()]);
+    assert_eq!(o.code, 0, "{}", o.stderr);
+    assert!(o.stderr.contains("Upgraded 2 workspace key wrap(s)") && o.stderr.contains("hitop 1.1 and keeps an unauthenticated key"), "{}", o.stderr);
+    assert_eq!(server.wrap(&ws, &bob_key, 1)[0], 2);
+    assert_eq!(server.wrap(&ws, &runner_key, 1).len(), 80);
+    assert!(ada.run(&["sync", "pull", "-c", a.to_str().unwrap()]).stderr.is_empty(), "no warning once upgraded");
+    // Bob: the same key, now from a device he hasn't trusted: used, with a note.
+    let o = bob.run(&["sync", "pull", "-c", b.to_str().unwrap()]);
+    assert_eq!(o.code, 0, "{}", o.stderr);
+    assert!(o.stderr.contains("re-sent the workspace key") && o.stderr.contains(&ada_fp), "{}", o.stderr);
+    // From now on his device refuses unauthenticated wraps for this workspace.
+    let current = server.wrap(&ws, &bob_key, 1);
+    server.set_wrap(&ws, &bob_key, 1, &crypto::wrap_key(&bob_keys.public_key(), &ws, 1, &crypto::WorkspaceKey::generate()).unwrap());
+    let o = bob.run(&["sync", "pull", "-c", b.to_str().unwrap()]);
+    assert_eq!(o.code, 2);
+    assert!(o.stderr.contains("without authentication"), "{}", o.stderr);
+    server.set_wrap(&ws, &bob_key, 1, &current);
+    // The 1.1 runner credential still pulls, with a warning to replace it.
+    let ci = Client::new(&server);
+    let r = ci.folder("checkout");
+    let o = Client::out(ci.cmd().env("HITOP_SYNC_RUNNER", &old_cred).args(["sync", "pull", "-c", r.to_str().unwrap()]).output().unwrap());
+    assert_eq!(o.code, 0, "{}", o.stderr);
+    assert!(o.stderr.contains("made by hitop 1.1"), "{}", o.stderr);
+    assert_eq!(snapshot(&r), snapshot(&a));
+
+    // A rotation (Ada removes the runner): Bob must trust Ada's device for the new key.
+    let runner_user: String = server.db().query_row("SELECT user_id FROM device_keys WHERE id = ?1", [&runner_key], |r| r.get(0)).unwrap();
+    ada.ok(&["sync", "remove", &runner_user, "-c", a.to_str().unwrap()]);
+    let o = bob.run(&["sync", "pull", "-c", b.to_str().unwrap()]);
+    assert_eq!(o.code, 2);
+    assert!(o.stderr.contains("haven't trusted") && o.stderr.contains(&ada_fp), "{}", o.stderr);
+    bob.ok(&["sync", "trust", &ada_fp, "-c", b.to_str().unwrap()]);
+    bob.ok(&["sync", "pull", "-c", b.to_str().unwrap()]);
+    assert_eq!(snapshot(&b), snapshot(&a));
 }
 
 #[test]

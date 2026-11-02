@@ -20,7 +20,7 @@ use hitop_core::sync::{self as engine, Plan, Resolution, State};
 use hitop_sync_crypto::{self as crypto, DeviceKeyPair, WorkspaceKey};
 use serde_json::{json, Value};
 
-use client::{b64, unb64, Api, Device, Workspace};
+use client::{b64, unb64, Api, Device, Trust, Workspace};
 use store::{Account, Link, RunnerCredential, Secret};
 
 #[derive(Subcommand)]
@@ -275,7 +275,7 @@ struct Session {
 fn session() -> Result<Session> {
     let account = Account::load()?.ok_or_else(|| anyhow!("not signed in: run `hitop sync login --email <you>`"))?;
     let secret = store::load_secret(&account.server)?;
-    let device = Device { key_id: account.key_id.clone(), keys: secret.device()? };
+    let device = Device { key_id: account.key_id.clone(), keys: secret.device()?, trust: Trust::Local };
     let api = Api::new(&account.server, Some(secret.session))?;
     Ok(Session { account, api, device })
 }
@@ -448,13 +448,64 @@ fn normalize_fp(f: &str) -> String {
     f.chars().filter(|c| c.is_ascii_hexdigit()).collect::<String>().to_lowercase()
 }
 
-fn wraps_for(recipients: &[Recipient], ws: &str, epoch: u32, key: &WorkspaceKey) -> Result<Value> {
+/// Authenticated (format 2) wraps of `key`, epoch `epoch`, made by this device for each
+/// recipient; `head` is the workspace's current epoch.
+fn wraps_for(me: &Device, recipients: &[Recipient], ws: &str, epoch: u32, head: u32, key: &WorkspaceKey) -> Result<Value> {
     let mut out = Vec::new();
     for r in recipients {
-        let w = crypto::wrap_key(&r.public_key, ws, epoch, key).map_err(|e| anyhow!("{e}"))?;
+        let to = crypto::Recipient { key_id: &r.key_id, public_key: &r.public_key };
+        let w = crypto::seal_wrap(&me.crypto(), &to, ws, epoch, head, key).map_err(|e| anyhow!("{e}"))?;
         out.push(json!({ "keyId": r.key_id, "wrapped": b64(&w) }));
     }
     Ok(Value::Array(out))
+}
+
+/// Replaces format 1 (unauthenticated, hitop 1.1) wraps in a workspace with authenticated ones,
+/// as an owner: for every trusted device key of every member (runner credentials made by hitop
+/// 1.1 can't verify them, so theirs stay), for every epoch this device holds. Members' clients
+/// then accept keys only from trusted devices.
+fn upgrade_wraps(me: &Device, api: &Api, ws: &Workspace, info: &Value) -> Result<()> {
+    if info["role"] != "owner" {
+        return Ok(());
+    }
+    let pins = store::load_pins()?;
+    let mut by_epoch: BTreeMap<u32, Vec<Recipient>> = BTreeMap::new();
+    let mut untrusted = Vec::new();
+    for m in info["members"].as_array().cloned().unwrap_or_default() {
+        let runner = m["runner"].as_bool().unwrap_or(false);
+        let who = m["email"].as_str().unwrap_or("").to_string();
+        for k in m["keys"].as_array().cloned().unwrap_or_default() {
+            let epochs: Vec<u32> = k["legacyEpochs"].as_array().cloned().unwrap_or_default().iter().filter_map(|e| e.as_u64()).map(|e| e as u32).filter(|e| ws.keys.contains_key(e)).collect();
+            if epochs.is_empty() {
+                continue;
+            }
+            let pk = unb64(k["publicKey"].as_str().unwrap_or(""))?;
+            let id = k["id"].as_str().unwrap_or("").to_string();
+            if runner {
+                eprintln!("{} the runner credential {} was made by hitop 1.1 and keeps an unauthenticated key: make a new one (`hitop sync runner create`), then remove it (`hitop sync remove {}`)", "note:".yellow(), m["userId"].as_str().unwrap_or(""), m["userId"].as_str().unwrap_or(""));
+                continue;
+            }
+            if pins.get(&id) != Some(&b64(&pk)) {
+                untrusted.push(format!("{who} ({})", crypto::fingerprint(&pk)));
+                continue;
+            }
+            for e in epochs {
+                by_epoch.entry(e).or_default().push(Recipient { key_id: id.clone(), public_key: pk.clone(), owner: who.clone(), name: String::new() });
+            }
+        }
+    }
+    let mut n = 0;
+    for (epoch, recipients) in &by_epoch {
+        let r = api.call("POST", &format!("/v1/workspaces/{}/wraps", ws.id), Some(json!({ "epoch": epoch, "wraps": wraps_for(me, recipients, &ws.id, *epoch, ws.epoch, &ws.keys[epoch])? })))?;
+        n += r["stored"].as_u64().unwrap_or(0);
+    }
+    if n > 0 {
+        eprintln!("Upgraded {n} workspace key wrap(s) to authenticated ones (hitop 1.2). Members confirm your fingerprint once: {}", crypto::fingerprint(&me.keys.public_key()));
+    }
+    if !untrusted.is_empty() {
+        eprintln!("{} not upgraded, device keys you haven't trusted (compare, then `hitop sync members --trust <fingerprint>`): {}", "note:".yellow(), untrusted.join(", "));
+    }
+    Ok(())
 }
 
 fn keys_of(owner: &str, keys: &Value) -> Result<Vec<Recipient>> {
@@ -554,7 +605,8 @@ struct Target {
 
 fn target(dir: &Path) -> Result<Target> {
     if let Some(c) = RunnerCredential::from_env()? {
-        let device = Device { key_id: c.key_id.clone(), keys: DeviceKeyPair::from_secret_bytes(&unb64(&c.secret)?).map_err(|e| anyhow!("runner key: {e}"))? };
+        let pins = c.pins.iter().map(|(id, pk)| Ok((id.clone(), unb64(pk)?))).collect::<Result<BTreeMap<_, _>>>()?;
+        let device = Device { key_id: c.key_id.clone(), keys: DeviceKeyPair::from_secret_bytes(&unb64(&c.secret)?).map_err(|e| anyhow!("runner key: {e}"))?, trust: Trust::Runner(pins) };
         return Ok(Target { workspace: c.workspace.clone(), api: Api::new(&c.server, Some(c.token.clone()))?, me: c.key_id.clone(), device, runner: true });
     }
     let s = session()?;
@@ -574,6 +626,11 @@ fn sync_folder(t: &Target, dir: &Path, push: bool) -> Result<(Plan, usize)> {
     let mut ws = Workspace::open(&t.api, &t.device, &t.workspace)?;
     if t.runner {
         return runner_pull(&ws, t, dir);
+    }
+    if ws.legacy {
+        // Keys from hitop 1.1 here: an owner's sync upgrades them (others are told by the warning).
+        let info = t.api.call("GET", &format!("/v1/workspaces/{}", t.workspace), None)?;
+        upgrade_wraps(&t.device, &t.api, &ws, &info)?;
     }
     let mut state = store::load_state(&t.workspace, dir)?;
     for _ in 0..5 {
@@ -742,7 +799,9 @@ fn init(dir: &Path) -> Result<()> {
     check_trust(&recipients, &TrustArgs::default())?;
     let id = crypto::random_hex::<16>();
     let key = WorkspaceKey::generate();
-    s.api.call("POST", "/v1/workspaces", Some(json!({ "id": id, "wraps": wraps_for(&recipients, &id, 1, &key)? })))?;
+    s.api.call("POST", "/v1/workspaces", Some(json!({ "id": id, "wraps": wraps_for(&s.device, &recipients, &id, 1, 1, &key)? })))?;
+    // Made with hitop 1.2: only authenticated keys from now on.
+    store::save_memory(&id, &crypto::WorkspaceMemory { strict: true, ..Default::default() })?;
     store::save_link(dir, Some(Link { workspace: id.clone(), server: s.account.server.clone() }))?;
     store::save_state(&id, dir, &State::default())?;
     let t = Target { workspace: id.clone(), me: s.device.key_id.clone(), api: s.api, device: s.device, runner: false };
@@ -809,9 +868,18 @@ fn members(dir: &Path, trust: &TrustArgs) -> Result<()> {
         }
         let ws = Workspace::open(&s.api, &s.device, &ws_id)?;
         for (epoch, key) in &ws.keys {
-            s.api.call("POST", &format!("/v1/workspaces/{ws_id}/wraps"), Some(json!({ "epoch": epoch, "wraps": wraps_for(&missing, &ws_id, *epoch, key)? })))?;
+            s.api.call("POST", &format!("/v1/workspaces/{ws_id}/wraps"), Some(json!({ "epoch": epoch, "wraps": wraps_for(&s.device, &missing, &ws_id, *epoch, ws.epoch, key)? })))?;
         }
         println!("Gave the workspace key to {} new device(s).", missing.len());
+    }
+    let legacy = info["members"].as_array().cloned().unwrap_or_default().iter().flat_map(|m| m["keys"].as_array().cloned().unwrap_or_default()).any(|k| k["legacyEpochs"].as_array().is_some_and(|e| !e.is_empty()));
+    if legacy {
+        if info["role"] == "owner" {
+            let ws = Workspace::open(&s.api, &s.device, &ws_id)?;
+            upgrade_wraps(&s.device, &s.api, &ws, &s.api.call("GET", &format!("/v1/workspaces/{ws_id}"), None)?)?;
+        } else {
+            eprintln!("{} some keys in this workspace were handed out by hitop 1.1 without authentication; an owner's next sync with hitop 1.2 upgrades them", "note:".yellow());
+        }
     }
     Ok(())
 }
@@ -828,9 +896,22 @@ fn invite(dir: &Path, email: Option<&str>, role: &str) -> Result<()> {
         (Some(e), false) => println!("This server sends no mail; send {e} this link yourself:"),
         (None, _) => println!("Share this link privately (anyone with it can accept, once):"),
     }
+    // The code carries this device's fingerprint, so their hitop checks the key it gets came from
+    // here. A mailed invite can't: the server writes the mail.
+    let fp = crypto::normalize_fingerprint(&crypto::fingerprint(&s.device.keys.public_key()));
+    let token = r["token"].as_str().unwrap_or("");
+    let link = r["link"].as_str().unwrap_or("");
+    let link = match link.rsplit_once('#') {
+        Some((base, _)) => format!("{base}#{token}.{fp}"),
+        None => link.to_string(),
+    };
     if !(email.is_some() && r["mailed"].as_bool().unwrap_or(false)) {
-        println!("{}", r["link"].as_str().unwrap_or(""));
+        println!("{link}");
+    } else {
+        println!("For them to check your key, also send them this code yourself (chat, in person), to use instead of the one in the mail:");
+        println!("  hitop sync accept {token}.{fp}");
     }
+    println!("Your key fingerprint: {}", crypto::fingerprint(&s.device.keys.public_key()));
     println!("When they've accepted: hitop sync members (check their key fingerprint), then hitop sync add <email>");
     Ok(())
 }
@@ -838,8 +919,30 @@ fn invite(dir: &Path, email: Option<&str>, role: &str) -> Result<()> {
 fn accept(code: &str) -> Result<()> {
     let s = session()?;
     let code = code.rsplit('#').next().unwrap_or(code).trim();
-    let r = s.api.call("POST", "/v1/invites/accept", Some(json!({ "token": code })))?;
-    println!("Accepted: workspace {} as {}.", r["workspaceId"].as_str().unwrap_or(""), r["role"].as_str().unwrap_or(""));
+    // `<token>.<inviter's fingerprint>` from hitop 1.2; a bare token from a mail or hitop 1.1.
+    let (token, inviter) = match code.split_once('.') {
+        Some((t, fp)) => (t, Some(crypto::normalize_fingerprint(fp))),
+        None => (code, None),
+    };
+    if inviter.as_ref().is_some_and(|f| f.len() != 32) {
+        bail!("this invite code is damaged (the part after the '.' must be a key fingerprint)");
+    }
+    let r = s.api.call("POST", "/v1/invites/accept", Some(json!({ "token": token })))?;
+    let ws = r["workspaceId"].as_str().unwrap_or("").to_string();
+    // Joined with hitop 1.2: only authenticated keys, and the inviter's device is trusted on sight.
+    let mut memory = store::load_memory(&ws)?;
+    memory.strict = true;
+    if let Some(fp) = &inviter {
+        if !memory.expected_senders.contains(fp) {
+            memory.expected_senders.push(fp.clone());
+        }
+    }
+    store::save_memory(&ws, &memory)?;
+    println!("Accepted: workspace {} as {}.", ws, r["role"].as_str().unwrap_or(""));
+    match &inviter {
+        Some(fp) => println!("The workspace key will be accepted from the inviter's device with fingerprint {}.", fp.as_bytes().chunks(4).map(|c| std::str::from_utf8(c).unwrap_or("")).collect::<Vec<_>>().join(" ")),
+        None => println!("This code doesn't name the inviter's key: when you link, hitop shows the fingerprint of the device that sent the key; compare it with them before trusting it."),
+    }
     println!("Tell the owner your key fingerprint: {}", crypto::fingerprint(&s.device.keys.public_key()));
     println!("Once they add you: hitop sync link {} -c <folder>", r["workspaceId"].as_str().unwrap_or(""));
     Ok(())
@@ -861,10 +964,10 @@ fn add(dir: &Path, email: &str, role: Option<&str>, trust: &TrustArgs) -> Result
     }
     check_trust(&recipients, trust)?;
     let ws = Workspace::open(&s.api, &s.device, &ws_id)?;
-    s.api.call("POST", &format!("/v1/workspaces/{ws_id}/members"), Some(json!({ "email": email, "role": role, "wraps": wraps_for(&recipients, &ws_id, ws.epoch, ws.current_key())? })))?;
+    s.api.call("POST", &format!("/v1/workspaces/{ws_id}/members"), Some(json!({ "email": email, "role": role, "wraps": wraps_for(&s.device, &recipients, &ws_id, ws.epoch, ws.epoch, ws.current_key())? })))?;
     // Older epochs too, so they can read files not rewritten since a rotation.
     for (epoch, key) in ws.keys.iter().filter(|(e, _)| **e != ws.epoch) {
-        s.api.call("POST", &format!("/v1/workspaces/{ws_id}/wraps"), Some(json!({ "epoch": epoch, "wraps": wraps_for(&recipients, &ws_id, *epoch, key)? })))?;
+        s.api.call("POST", &format!("/v1/workspaces/{ws_id}/wraps"), Some(json!({ "epoch": epoch, "wraps": wraps_for(&s.device, &recipients, &ws_id, *epoch, ws.epoch, key)? })))?;
     }
     println!("Added {email} as {role}. They run: hitop sync link {ws_id} -c <folder>");
     Ok(())
@@ -884,7 +987,13 @@ fn remove(dir: &Path, email: &str, trust: &TrustArgs) -> Result<()> {
     check_trust(&remaining, trust)?;
     let next = info["epoch"].as_u64().unwrap_or(0) as u32 + 1;
     let key = WorkspaceKey::generate();
-    s.api.call("DELETE", &format!("/v1/workspaces/{ws_id}/members/{user}"), Some(json!({ "epoch": next, "wraps": wraps_for(&remaining, &ws_id, next, &key)? })))?;
+    s.api.call("DELETE", &format!("/v1/workspaces/{ws_id}/members/{user}"), Some(json!({ "epoch": next, "wraps": wraps_for(&s.device, &remaining, &ws_id, next, next, &key)? })))?;
+    // Their devices are no longer trusted here: keys they hand out from now on are refused.
+    let mut pins = store::load_pins()?;
+    for k in keys_of(&email, &member["keys"])? {
+        pins.remove(&k.key_id);
+    }
+    store::save_pins(&pins)?;
     let ws = Workspace::open(&s.api, &s.device, &ws_id)?;
     let n = ws.reencrypt_all(&s.device.key_id)?;
     println!("Removed {email}. New workspace key (epoch {next}); re-encrypted {n} file(s).");
@@ -905,11 +1014,16 @@ fn set_role(dir: &Path, email: &str, role: &str) -> Result<()> {
 fn trust_cmd(dir: &Path, fingerprints: &[String]) -> Result<()> {
     let s = session()?;
     let mut candidates = keys_of(&s.account.email, &s.api.call("GET", "/v1/me", None)?["keys"])?;
-    if let Ok(Some(link)) = store::link_of(dir) {
-        let info = s.api.call("GET", &format!("/v1/workspaces/{}", link.workspace), None)?;
+    // The linked workspace's members, or (outside a linked folder) every workspace's.
+    let workspaces: Vec<String> = match store::link_of(dir) {
+        Ok(Some(link)) => vec![link.workspace],
+        _ => s.api.call("GET", "/v1/workspaces", None)?["workspaces"].as_array().cloned().unwrap_or_default().iter().filter_map(|w| w["id"].as_str().map(String::from)).collect(),
+    };
+    for ws in &workspaces {
+        let info = s.api.call("GET", &format!("/v1/workspaces/{ws}"), None)?;
         candidates.extend(member_keys(&info, None)?);
         if info["role"] == "owner" {
-            for i in s.api.call("GET", &format!("/v1/workspaces/{}/invites", link.workspace), None)?["invites"].as_array().cloned().unwrap_or_default() {
+            for i in s.api.call("GET", &format!("/v1/workspaces/{ws}/invites"), None)?["invites"].as_array().cloned().unwrap_or_default() {
                 candidates.extend(keys_of(i["accepted"]["email"].as_str().unwrap_or(""), &i["accepted"]["keys"])?);
             }
         }
@@ -933,21 +1047,35 @@ fn trust_cmd(dir: &Path, fingerprints: &[String]) -> Result<()> {
 }
 
 fn runner_create(dir: &Path, name: &str) -> Result<()> {
-    let (s, ws_id, _) = team(dir)?;
+    let (s, ws_id, info) = team(dir)?;
     let ws = Workspace::open(&s.api, &s.device, &ws_id)?;
     let keys = DeviceKeyPair::generate();
-    let wrapped = crypto::wrap_key(&keys.public_key(), &ws_id, ws.epoch, ws.current_key()).map_err(|e| anyhow!("{e}"))?;
-    let r = s.api.call("POST", &format!("/v1/workspaces/{ws_id}/runners"), Some(json!({ "name": name, "publicKey": b64(&keys.public_key()), "wrapped": b64(&wrapped) })))?;
+    // The server names the runner's key only when it makes the runner, and an authenticated wrap
+    // names its recipient: so the first wrap is a placeholder (format 1, which the runner never
+    // accepts) that the authenticated one replaces right after.
+    let placeholder = crypto::wrap_key(&keys.public_key(), &ws_id, ws.epoch, &WorkspaceKey::generate()).map_err(|e| anyhow!("{e}"))?;
+    let r = s.api.call("POST", &format!("/v1/workspaces/{ws_id}/runners"), Some(json!({ "name": name, "publicKey": b64(&keys.public_key()), "wrapped": b64(&placeholder) })))?;
     let key_id = r["keyId"].as_str().unwrap_or("").to_string();
-    // Older epochs, so the runner reads files not rewritten since a rotation.
+    // Every epoch (older ones so the runner reads files not rewritten since a rotation).
     let recipient = [Recipient { key_id: key_id.clone(), public_key: keys.public_key().to_vec(), owner: "runner".into(), name: name.into() }];
-    for (epoch, key) in ws.keys.iter().filter(|(e, _)| **e != ws.epoch) {
-        s.api.call("POST", &format!("/v1/workspaces/{ws_id}/wraps"), Some(json!({ "epoch": epoch, "wraps": wraps_for(&recipient, &ws_id, *epoch, key)? })))?;
+    for (epoch, key) in &ws.keys {
+        s.api.call("POST", &format!("/v1/workspaces/{ws_id}/wraps"), Some(json!({ "epoch": epoch, "wraps": wraps_for(&s.device, &recipient, &ws_id, *epoch, ws.epoch, key)? })))?;
     }
     let mut pins = store::load_pins()?;
     pins.insert(key_id.clone(), b64(&keys.public_key()));
     store::save_pins(&pins)?;
-    let cred = RunnerCredential { v: 1, server: s.account.server.clone(), workspace: ws_id.clone(), token: r["token"].as_str().unwrap_or("").into(), key_id, secret: b64(&keys.secret_bytes()) };
+    // The runner accepts keys from this device and from the owners' and editors' devices trusted
+    // here (a later rotation may come from one of them).
+    let mut runner_pins = BTreeMap::from([(s.device.key_id.clone(), b64(&s.device.keys.public_key()))]);
+    for m in info["members"].as_array().cloned().unwrap_or_default().iter().filter(|m| m["role"] == "owner" || m["role"] == "editor") {
+        for k in m["keys"].as_array().cloned().unwrap_or_default() {
+            let id = k["id"].as_str().unwrap_or("");
+            if let Some(pk) = pins.get(id).filter(|p| Some(p.as_str()) == k["publicKey"].as_str()) {
+                runner_pins.insert(id.to_string(), pk.clone());
+            }
+        }
+    }
+    let cred = RunnerCredential { v: 1, server: s.account.server.clone(), workspace: ws_id.clone(), token: r["token"].as_str().unwrap_or("").into(), key_id, secret: b64(&keys.secret_bytes()), pins: runner_pins };
     eprintln!("A read-only runner credential for workspace {ws_id}, valid one year. It decrypts the workspace: keep it secret.");
     eprintln!("GitHub: gh secret set HITOP_SYNC_RUNNER (paste it); revoke with `hitop sync remove {}`", r["userId"].as_str().unwrap_or(""));
     println!("{}", cred.encode());
