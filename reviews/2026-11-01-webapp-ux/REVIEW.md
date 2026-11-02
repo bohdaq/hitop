@@ -17,7 +17,7 @@ Fixes on `main` (web app and the desktop build of it), checked by `webapp/tests/
 | Top 3: raw JSON sent without Content-Type | fixed: JSON/XML/HTML/text detected when sending, noted in Headers, shown in Code; empty-valued headers left out of snippets. Raw sub-type select deferred | 0e55b0b |
 | Top 4: schemeless URL fetches the app's own page | fixed: `https://` (`http://` for localhost) prepended and kept; otherwise an error under the field; never a relative fetch; `type="url"` dropped | 0e55b0b |
 | Top 5: closing a tab discards edits silently | fixed: dirty dot on tab and sidebar row, Discard confirm, Save and close | 8e6c75f |
-| Top 6: no keyboard shortcuts | fixed: Mod+Enter, Mod+S, Mod+K and /, Alt+Shift+N/W/[/], ? and Mod+/ (list dialog). Ctrl+T/W/1..9 not usable in browsers | 8e6c75f |
+| Top 6: no keyboard shortcuts | fixed: Mod+Enter, Mod+S, Mod+K and /, Alt+Shift+N/W/[/], ? (list dialog; Mod+/ stays the editors' comment toggle). Ctrl+T/W/1..9 not usable in browsers | 8e6c75f |
 | Top 7: Compare compares a response with itself | fixed: Before defaults to the newest different response of the same request | 6eb61be |
 | Top 8: response pane | partial: Pretty/Raw/Preview (sandboxed HTML), wrap, find with count and stepping, download, invalid-JSON warning, focusable scroll region. Two-pane layout, collapsible editor, drag split deferred | c8fdaa5 |
 | Top 9: sidebar doesn't scale | partial: only the tree scrolls, footer pinned, filter box, collections fold (`hitop_collapsed_collections`). Folder groups, context menu, Ctrl+P, moving Variables deferred | 2bf3443 |

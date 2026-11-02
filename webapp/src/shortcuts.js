@@ -2,7 +2,7 @@
 // works inside the CodeMirror editors, which bind it themselves), keyed on
 // e.code for letters (Alt changes e.key on macOS). Browsers keep Ctrl/Cmd+T,
 // +W and +N for themselves, so tab shortcuts use Alt+Shift; the same keys
-// work in the desktop app.
+// work in the desktop app. Mod+/ is left to the code editors (toggle comment).
 export const IS_MAC = typeof navigator !== "undefined" && /Mac|iPhone|iPad/.test(navigator.platform || navigator.userAgent || "");
 
 const MOD = IS_MAC ? "⌘" : "Ctrl";
@@ -18,7 +18,6 @@ export const SHORTCUTS = [
   [[ALT, "Shift", "W"], "Close the tab"],
   [[ALT, "Shift", "]"], "Next tab"],
   [[ALT, "Shift", "["], "Previous tab"],
-  [[MOD, "/"], "Show these shortcuts"],
   [["?"], "Show these shortcuts (when not typing)"],
   [["Esc", "Tab"], "Leave a code editor (Tab indents in it)"],
 ];
@@ -39,7 +38,6 @@ export function shortcutFor(e) {
     if (e.key === "Enter") return "send";
     if (e.code === "KeyS") return "save";
     if (e.code === "KeyK") return "focusUrl";
-    if (e.code === "Slash") return "help";
   }
   if (e.altKey && e.shiftKey && !e.ctrlKey && !e.metaKey) {
     if (e.code === "KeyN") return "newTab";
