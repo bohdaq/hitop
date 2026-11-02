@@ -11,6 +11,7 @@ import { icon } from "../icons.js";
 import { AUTH_TYPES, emptyAuth, parseQuery, withQuery } from "../features.js";
 import { BODY_METHODS, METHODS } from "../store.js";
 import "./code-editor.js";
+import { SAVE_KEYS, SEND_KEYS } from "../shortcuts.js";
 import { socketHeaders, socketLine, socketLog, socketMessages } from "./websocket-view.js";
 import { grpcLine, grpcLog, grpcMessage, grpcMetadataNote, grpcSchema } from "./grpc-view.js";
 
@@ -122,8 +123,8 @@ export class HitopRequest extends LitElement {
     if (changed.has("tab") && changed.get("tab")?.id !== this.tab?.id) {
       this.section = this.tab?.kind === "websocket" || this.tab?.kind === "grpc" ? BODY : this.tab?.requestBody && BODY_METHODS.includes(this.tab.method) ? BODY : this.tab?.url?.includes("?") ? PARAMS : HEADERS;
       this.responseSection = 0;
-    } else if (changed.has("tab") && this.tab?.kind === "grpc" && changed.get("tab")?.kind !== "grpc") {
-      // Switched to gRPC: the message, service and method come first.
+    } else if (changed.has("tab") && (this.tab?.kind === "grpc" || this.tab?.kind === "websocket") && changed.get("tab")?.kind !== this.tab.kind) {
+      // Switched to gRPC or WebSocket: the message (and service, method) or the messages come first.
       this.section = BODY;
     }
     // The header editor rebuilds its rows whenever `entries` is set, and Lit
@@ -572,10 +573,10 @@ export class HitopRequest extends LitElement {
           @input=${(e) => this.set({ url: e.target.value })}
           @keydown=${(e) => e.key === "Enter" && this.send(e)}
         ></lit-material-text-field>
-        <lit-material-button variant="filled" type="submit" ?disabled=${t.loading}>
+        <lit-material-button variant="filled" type="submit" ?disabled=${t.loading} title=${`Send (${SEND_KEYS})`}>
           ${icon("paper-plane-tilt")} ${t.loading ? "Sending" : "Send"}
         </lit-material-button>
-        <lit-material-icon-button aria-label="Save request" ?disabled=${!t.url} @click=${() => this.app.openDialog("save", this.store.saveTarget())}>
+        <lit-material-icon-button aria-label="Save request" title=${`Save (${SAVE_KEYS})`} ?disabled=${!t.url} @click=${() => this.app.openDialog("save", this.store.saveTarget())}>
           ${icon("floppy-disk")}
         </lit-material-icon-button>
         <lit-material-icon-button aria-label="Code" title="Code: curl, fetch, Python, Go, Java, Rust" ?disabled=${!t.url} @click=${() => this.app.openDialog("code", { lang: "curl", showSecrets: false })}>

@@ -95,7 +95,18 @@ a.brand:focus-visible { outline: 2px solid var(--md-sys-color-primary); outline-
 /* Tab strip */
 .tab-strip { display: flex; align-items: center; gap: var(--space-50); min-width: 0; border-bottom: 1px solid var(--md-sys-color-outline-variant); }
 .tab-strip lit-material-tabs { flex: 1; min-width: 0; }
-lit-material-tabs::part(tablist) { overflow-x: auto; scrollbar-width: none; }
+/* Tab strips that don't fit scroll sideways, with a thin scrollbar as the hint. */
+lit-material-tabs::part(tablist) { overflow-x: auto; scrollbar-width: thin; }
+.tab-strip lit-material-tab { max-width: 16rem; }
+.dirty-dot { margin-inline-start: var(--space-50); color: var(--md-sys-color-primary); font-size: 0.7em; vertical-align: middle; }
+
+/* Keyboard shortcuts dialog */
+.shortcut-list { display: grid; grid-template-columns: max-content minmax(0, 1fr); gap: var(--space-100) var(--space-300); margin: 0; align-items: center; }
+.shortcut-list dt { display: flex; align-items: center; gap: var(--space-50); white-space: nowrap; }
+.shortcut-list dd { margin: 0; color: var(--md-sys-color-on-surface-variant); }
+kbd { display: inline-block; min-width: 1.6em; padding: 1px var(--space-75); border: 1px solid var(--md-sys-color-outline-variant); border-bottom-width: 2px; border-radius: var(--md-sys-shape-corner-small, 6px); background: var(--md-sys-color-surface-container); font-family: var(--font-mono); font-size: var(--text-xs); line-height: var(--leading-xs); text-align: center; }
+.key-then { font-size: var(--text-xs); color: var(--md-sys-color-on-surface-variant); }
+.drop-zone { display: grid; }
 
 /* Request line */
 .request-line { display: grid; grid-template-columns: 160px minmax(0, 1fr) auto auto auto; gap: var(--space-100); align-items: center; padding-top: var(--space-300); }

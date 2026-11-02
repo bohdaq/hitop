@@ -242,14 +242,40 @@ const headersObject = (headers) => {
   return out;
 };
 
+// A draft's title follows its URL as typed: "GET api.example.com/users", so
+// drafts can be told apart in the tab strip.
 function autoTitle(tab) {
   if (tab.loadedRequestId) return tab.title;
+  if (tab.kind === "grpc") return `GRPC ${tab.grpcMethod || tab.url || ""}`.trim();
+  const verb = tab.kind === "websocket" ? "WS" : tab.method;
+  const url = (tab.url || "").trim();
+  if (!url) return "New request";
+  let where = url;
   try {
-    if (tab.kind === "grpc") return `GRPC ${tab.grpcMethod || tab.url}`;
-    return `${tab.kind === "websocket" ? "WS" : tab.method} ${new URL(tab.url).pathname || "/"}`;
+    const u = new URL(/^[a-z][a-z0-9+.-]*:\/\//i.test(url) ? url : `https://${url}`);
+    where = `${u.host}${u.pathname === "/" ? "" : u.pathname}`;
   } catch {
-    return "New request";
+    // ${baseUrl}/users and the like: as typed
   }
+  return `${verb} ${where.length > 48 ? `${where.slice(0, 47)}…` : where}`;
+}
+
+// What decides whether a tab differs from its saved request: the fields
+// saveRequest writes, normalized (empty header rows and unused auth fields
+// don't count).
+function savedShape(tab) {
+  return JSON.stringify(
+    clean({
+      url: tab.url || "",
+      method: tab.method || "GET",
+      headers: (tab.headers || []).filter((h) => h.name || h.value).map((h) => [h.name || "", h.value || "", h.enabled !== false]),
+      body: tab.requestBody || "",
+      preRequestScript: tab.preRequestScript || "",
+      postRequestScript: tab.postRequestScript || "",
+      auth: cleanAuth(tab.auth),
+      ...SAVED_FIELDS(tab),
+    }),
+  );
 }
 
 export class Store extends EventTarget {
@@ -778,6 +804,37 @@ export class Store extends EventTarget {
     if (!p.resolveSecretRefs) throw new Error(`Secret manager references resolve in the hitop desktop app and the CLI, not in the browser: ${list}`);
     const values = await p.resolveSecretRefs(wanted);
     this.refValues = { ...this.refValues, ...values };
+  }
+
+  // True when the tab has edits its saved request doesn't (computed, never
+  // stored). Cached per tab and request object: both are replaced on change.
+  isDirty(tab = this.tab) {
+    const request = this.loadedRequest(tab);
+    if (!request) return false;
+    this.dirtyCache ??= new WeakMap();
+    const hit = this.dirtyCache.get(tab);
+    if (hit?.request === request) return hit.dirty;
+    const dirty = savedShape(tab) !== savedShape(tabForRequest(request, tab.loadedCollectionId));
+    this.dirtyCache.set(tab, { request, dirty });
+    return dirty;
+  }
+
+  isDirtyRequest(requestId, collectionId) {
+    const tab = this.tabs.find((t) => t.loadedRequestId === requestId && t.loadedCollectionId === collectionId);
+    return tab ? this.isDirty(tab) : false;
+  }
+
+  // An unsaved draft with something in it (closing it loses that).
+  hasDraftContent(tab) {
+    return !tab.loadedRequestId && Boolean(tab.url?.trim() || tab.requestBody?.trim() || tab.preRequestScript?.trim() || tab.postRequestScript?.trim());
+  }
+
+  // What importing in place of the collections would delete: [{ name, requests }],
+  // empty when there is nothing to lose (the first-run Default with its blank request).
+  collectionsAtStake() {
+    const filled = (r) => Boolean(r.url?.trim() || r.body?.trim() || r.preRequestScript?.trim() || r.postRequestScript?.trim() || r.kind);
+    const stake = this.collections.map((c) => ({ name: c.name, requests: (c.requests || []).length, filled: (c.requests || []).some(filled) || Object.keys(c.variables || {}).length > 0 }));
+    return this.collections.length > 1 || stake.some((c) => c.filled) ? stake : [];
   }
 
   loadedRequest(tab = this.tab) {

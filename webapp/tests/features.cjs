@@ -141,6 +141,8 @@ const settle = (p) => p.waitForTimeout(400);
   await p.waitForTimeout(300);
   await p.locator('#dialog #json').evaluate((el, text) => (el.value = text), postman);
   await p.locator('#dialog').getByRole('button', { name: /import/i }).click();
+  // Replacing collections that have requests asks first.
+  await p.locator('lit-material-confirm-dialog[open]').getByRole('button', { name: 'Replace', exact: true }).click();
   await settle(p);
   const reimported = (await h.stored.collections()).flatMap((c) => c.requests).find((r) => r.name === 'Posts with key');
   check('Postman import restores auth', reimported?.auth?.type === 'apikey' && reimported.auth.in === 'query', JSON.stringify(reimported?.auth));
