@@ -1,0 +1,115 @@
+/* HITOP Cloud portal: layout on top of the site theme (site/src/theme.css). */
+
+body {
+  margin: 0;
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+}
+
+.portal-header,
+.portal-footer {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-200);
+  padding: var(--space-200) var(--space-300);
+}
+
+.portal-header {
+  border-bottom: 1px solid var(--md-sys-color-outline-variant);
+}
+
+.portal-footer {
+  margin-top: auto;
+  border-top: 1px solid var(--md-sys-color-outline-variant);
+  font-size: var(--text-sm);
+}
+
+.portal-brand {
+  font-weight: 600;
+  font-size: var(--text-lg);
+  text-decoration: none;
+  color: inherit;
+}
+
+#portal-nav {
+  display: flex;
+  gap: var(--space-300);
+}
+
+#portal-nav a[aria-current="page"] {
+  font-weight: 600;
+}
+
+main {
+  width: 100%;
+  max-width: 64rem;
+  margin: 0 auto;
+  padding: var(--space-300) var(--space-200);
+  box-sizing: border-box;
+}
+
+.portal-form {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-100);
+  margin: var(--space-200) 0;
+}
+
+.portal-form lit-material-text-field {
+  min-width: 16rem;
+  flex: 1 1 16rem;
+}
+
+.portal-table {
+  width: 100%;
+  border-collapse: collapse;
+  margin: var(--space-200) 0;
+  display: block;
+  overflow-x: auto;
+}
+
+.portal-table th,
+.portal-table td {
+  text-align: left;
+  padding: var(--space-75) var(--space-100);
+  border-bottom: 1px solid var(--md-sys-color-outline-variant);
+}
+
+.portal-full td {
+  color: var(--md-sys-color-error);
+  font-weight: 600;
+}
+
+.portal-error {
+  color: var(--md-sys-color-error);
+  font-weight: 600;
+}
+
+.portal-note {
+  color: var(--md-sys-color-primary);
+}
+
+.portal-card pre {
+  white-space: pre-wrap;
+  word-break: break-all;
+  padding: var(--space-100);
+  background: var(--md-sys-color-surface-container);
+  border-radius: 8px;
+}
+
+.portal-whoami {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-100);
+  font-size: var(--text-sm);
+}
+
+select {
+  font: inherit;
+  padding: var(--space-75);
+}

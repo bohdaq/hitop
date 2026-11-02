@@ -1,0 +1,32 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>HITOP Cloud</title>
+    <meta name="description" content="HITOP Cloud: your organizations, members, usage, plan and access tokens for end-to-end encrypted hitop sync." />
+    <meta name="referrer" content="no-referrer" />
+    <link rel="icon" href="https://hitop.rws8.tech/favicon.svg" type="image/svg+xml" />
+    <script type="module" src="./src/main.js"></script>
+  </head>
+  <body>
+    <header class="portal-header">
+      <a class="portal-brand" href="#/">HITOP Cloud</a>
+      <nav id="portal-nav" aria-label="Portal"></nav>
+    </header>
+    <main id="main">
+      <hitop-cloud>
+        <!-- Static shell until the app starts. -->
+        <section class="portal-intro">
+          <h1>HITOP Cloud</h1>
+          <p class="page-lead">Your organizations, members, usage, plan and API tokens for hitop sync. Your collections stay end-to-end encrypted: this page never sees them.</p>
+          <noscript><p>The portal needs JavaScript. Everything it does is also in the sync API (<code>/v1/orgs</code>).</p></noscript>
+        </section>
+      </hitop-cloud>
+    </main>
+    <footer class="portal-footer">
+      <span>HITOP Cloud portal, <a href="https://github.com/bohdaq/hitop/tree/main/cloud" rel="noopener">source (AGPL-3.0-or-later)</a>, commit <a id="portal-commit" href="https://github.com/bohdaq/hitop" rel="noopener">main</a>.</span>
+      <a href="https://hitop.rws8.tech/privacy.html">Privacy</a>
+    </footer>
+  </body>
+</html>

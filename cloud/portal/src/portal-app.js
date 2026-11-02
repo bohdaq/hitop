@@ -1,0 +1,467 @@
+// <hitop-cloud>: the HITOP Cloud portal. Sign in (mail code, passkey or single sign-on, all through
+// the sync server), organizations, members and roles, usage against the plan's limits, the plan
+// (read only until billing opens), access tokens and passkeys. Light DOM, hash routes:
+//   #/                 organizations          #/orgs/<id>        an organization
+//   #/orgs/<id>/plan   its plan               #/tokens           access tokens
+//   #/account          the account            #sso=<code>        back from single sign-on
+import { LitElement, html, nothing } from "lit";
+import { Api, ApiError, DEFAULT_SERVER, normalizeServer, passkeySignIn, registerPasskey, ssoFinish, ssoStart } from "./api.js";
+
+const STORE = "hitop_cloud";
+
+function load() {
+  try {
+    return JSON.parse(localStorage.getItem(STORE) || "null") || {};
+  } catch {
+    return {};
+  }
+}
+
+function save(value) {
+  try {
+    if (value) localStorage.setItem(STORE, JSON.stringify(value));
+    else localStorage.removeItem(STORE);
+  } catch {
+    // Storage refused (private window): the session lasts this page only.
+  }
+}
+
+export function bytes(n) {
+  if (n === null || n === undefined) return "no limit";
+  const units = ["bytes", "KB", "MB", "GB", "TB"];
+  let v = n;
+  let i = 0;
+  while (v >= 1024 && i < units.length - 1) {
+    v /= 1024;
+    i++;
+  }
+  return i === 0 ? `${v} bytes` : `${v >= 10 || Number.isInteger(v) ? Math.round(v) : v.toFixed(1)} ${units[i]}`;
+}
+
+const date = (secs) => (secs ? new Date(secs * 1000).toISOString().slice(0, 10) : "never");
+
+const METRICS = [
+  ["seats", "People (seats)", String],
+  ["workspaces", "Shared workspaces", String],
+  ["storageBytes", "Encrypted storage", bytes],
+  ["devices", "Devices per person (most used)", String],
+  ["runners", "Runner credentials", String],
+  ["invitesPerDay", "Invites today", String],
+];
+
+const PLAN_NOTES = {
+  free: "Free: 3 people, 3 shared workspaces, 100 MB, 3 devices per person, 5 runner credentials.",
+  pro: "Pro: one person and two guests, 25 workspaces, 2 GB, 10 devices, 10 runner credentials.",
+  team: "Team: per seat, unlimited workspaces, 10 GB + 1 GB per seat, 5 free guest viewers.",
+  business: "Business: per seat, 50 GB + 2 GB per seat; hosted SSO and audit export come with it.",
+  enterprise: "Enterprise: limits as the contract says.",
+};
+
+export class HitopCloud extends LitElement {
+  static properties = {
+    account: { state: true },
+    route: { state: true },
+    data: { state: true },
+    busy: { state: true },
+    error: { state: true },
+    note: { state: true },
+    awaitingCode: { state: true },
+    sso: { state: true },
+    newToken: { state: true },
+  };
+
+  constructor() {
+    super();
+    this.account = load();
+    this.route = location.hash;
+    this.data = {};
+    this.busy = "";
+    this.error = "";
+    this.note = "";
+    this.awaitingCode = false;
+    this.sso = null;
+    this.newToken = null;
+  }
+
+  createRenderRoot() {
+    return this;
+  }
+
+  connectedCallback() {
+    super.connectedCallback();
+    this.textContent = "";
+    window.addEventListener("hashchange", () => this.go(location.hash));
+    const sso = /^#sso=(.+)$/.exec(location.hash);
+    if (sso) {
+      history.replaceState(null, "", location.pathname);
+      this.run("sso", async () => {
+        const { server, reply } = await ssoFinish(decodeURIComponent(sso[1]));
+        this.signedIn(server, reply);
+      });
+    } else {
+      this.go(location.hash);
+    }
+    this.checkSso();
+  }
+
+  get api() {
+    return new Api(this.account.server || DEFAULT_SERVER, this.account.session || null);
+  }
+
+  get signedInNow() {
+    return Boolean(this.account.session) && (!this.account.expiresAt || this.account.expiresAt * 1000 > Date.now());
+  }
+
+  async run(what, fn) {
+    this.busy = what;
+    this.error = "";
+    try {
+      await fn();
+    } catch (e) {
+      if (e instanceof ApiError && e.status === 401 && this.account.session) {
+        this.account = { server: this.account.server };
+        save(this.account);
+        this.error = "Your session ended. Sign in again.";
+      } else {
+        this.error = e.message || String(e);
+      }
+    } finally {
+      this.busy = "";
+    }
+  }
+
+  field(id) {
+    return this.querySelector(`#${id}`)?.value?.trim() ?? "";
+  }
+
+  async go(hash) {
+    this.route = hash || "#/";
+    this.newToken = null;
+    if (!this.signedInNow) return;
+    await this.run("load", async () => {
+      const parts = this.route.replace(/^#\/?/, "").split("/").filter(Boolean);
+      if (parts[0] === "orgs" && parts[1]) {
+        const id = decodeURIComponent(parts[1]);
+        const [org, members, usage] = await Promise.all([
+          this.api.get(`/v1/orgs/${encodeURIComponent(id)}`),
+          this.api.get(`/v1/orgs/${encodeURIComponent(id)}/members`),
+          this.api.get(`/v1/orgs/${encodeURIComponent(id)}/usage`),
+        ]);
+        this.data = { org, members, usage };
+      } else if (parts[0] === "tokens") {
+        this.data = { tokens: (await this.api.get("/v1/me/tokens")).tokens };
+      } else if (parts[0] === "account") {
+        this.data = { me: await this.api.get("/v1/me") };
+      } else {
+        this.data = { orgs: (await this.api.get("/v1/orgs")).orgs };
+      }
+    });
+  }
+
+  signedIn(server, reply) {
+    this.account = { server, session: reply.session, email: reply.user.email, expiresAt: reply.expiresAt };
+    save(this.account);
+    this.awaitingCode = false;
+    this.note = "";
+    this.go(this.route && !this.route.startsWith("#sso") ? this.route : "#/");
+  }
+
+  async checkSso() {
+    try {
+      const server = normalizeServer(this.account.server || DEFAULT_SERVER);
+      this.sso = await new Api(server).get("/v1/auth/sso");
+    } catch {
+      this.sso = null;
+    }
+  }
+
+  updated() {
+    // The header's navigation lives outside the element (index.html).
+    const nav = document.getElementById("portal-nav");
+    if (nav) {
+      nav.replaceChildren();
+      if (this.signedInNow) {
+        for (const [href, label] of [["#/", "Organizations"], ["#/tokens", "Access tokens"], ["#/account", "Account"]]) {
+          const a = document.createElement("a");
+          a.href = href;
+          a.textContent = label;
+          if (this.route === href || (href === "#/" && this.route.startsWith("#/orgs"))) a.setAttribute("aria-current", "page");
+          nav.append(a);
+        }
+      }
+    }
+    const commit = document.getElementById("portal-commit");
+    if (commit && typeof __HITOP_COMMIT__ === "string") {
+      commit.textContent = __HITOP_COMMIT__;
+      commit.href = `https://github.com/bohdaq/hitop/tree/${__HITOP_COMMIT__}/cloud/portal`;
+    }
+  }
+
+  render() {
+    return html`
+      <div aria-busy=${this.busy ? "true" : "false"}>
+        ${this.error ? html`<p class="portal-error" role="alert">${this.error}</p>` : nothing}
+        ${this.note ? html`<p class="portal-note" role="status">${this.note}</p>` : nothing}
+        ${this.signedInNow ? this.renderSignedIn() : this.renderSignIn()}
+      </div>`;
+  }
+
+  // --- sign in ---------------------------------------------------------------------------
+
+  renderSignIn() {
+    return html`
+      <section aria-label="Sign in" class="portal-card">
+        <h1>Sign in to HITOP Cloud</h1>
+        <p class="page-lead">Use the account you sync with: the same address in hitop (Sync page, or <code>hitop sync login</code>). Your collections stay end-to-end encrypted; this portal only manages organizations, people, usage and tokens.</p>
+        <div class="portal-form">
+          <lit-material-text-field id="server" variant="outlined" label="Sync server" .value=${this.account.server || DEFAULT_SERVER}></lit-material-text-field>
+          <lit-material-text-field id="email" variant="outlined" label="Email" type="email" .value=${this.account.email || ""}></lit-material-text-field>
+          <lit-material-button variant="filled" ?disabled=${Boolean(this.busy)} @click=${() => this.run("code", async () => {
+            const server = normalizeServer(this.field("server"));
+            await new Api(server).call("POST", "/v1/auth/email", { email: this.field("email") });
+            this.account = { server, email: this.field("email") };
+            save(this.account);
+            this.awaitingCode = true;
+            this.note = "Check your mail for the sign-in code.";
+          })}>Send code</lit-material-button>
+          <lit-material-button variant="outlined" ?disabled=${Boolean(this.busy)} @click=${() => this.run("passkey", async () => {
+            const server = normalizeServer(this.field("server"));
+            const reply = await passkeySignIn(new Api(server), this.field("email"));
+            this.signedIn(server, reply);
+          })}>Sign in with a passkey</lit-material-button>
+          ${this.sso?.enabled
+            ? html`<lit-material-button variant="outlined" ?disabled=${Boolean(this.busy)} @click=${() => this.run("sso", async () => {
+                const server = normalizeServer(this.field("server"));
+                this.account = { server };
+                save(this.account);
+                location.assign(await ssoStart(new Api(server), this.field("email")));
+              })}>Sign in with ${this.sso.name || "SSO"}</lit-material-button>`
+            : nothing}
+        </div>
+        ${this.awaitingCode
+          ? html`<div class="portal-form">
+              <lit-material-text-field id="code" variant="outlined" label="Code from the mail"></lit-material-text-field>
+              <lit-material-button variant="filled" ?disabled=${Boolean(this.busy)} @click=${() => this.run("signin", async () => {
+                // A pasted link works too: the code is after the '#'.
+                const code = this.field("code").split("#").pop();
+                const server = this.account.server || DEFAULT_SERVER;
+                this.signedIn(server, await new Api(server).call("POST", "/v1/auth/email/verify", { token: code }));
+              })}>Sign in</lit-material-button>
+            </div>`
+          : nothing}
+      </section>`;
+  }
+
+  renderSignedIn() {
+    const parts = this.route.replace(/^#\/?/, "").split("/").filter(Boolean);
+    let page;
+    if (parts[0] === "orgs" && this.data.org) page = parts[2] === "plan" ? this.renderPlan() : this.renderOrg();
+    else if (parts[0] === "tokens" && this.data.tokens) page = this.renderTokens();
+    else if (parts[0] === "account" && this.data.me) page = this.renderAccount();
+    else if (this.data.orgs) page = this.renderOrgs();
+    else page = html`<p>Loading…</p>`;
+    return html`
+      <p class="portal-whoami">Signed in as <strong>${this.account.email}</strong> on ${this.account.server}
+        <lit-material-button variant="text" @click=${() => this.run("signout", async () => {
+          await this.api.call("POST", "/v1/auth/logout").catch(() => {});
+          this.account = { server: this.account.server, email: this.account.email };
+          save(this.account);
+          this.data = {};
+        })}>Sign out</lit-material-button></p>
+      ${page}`;
+  }
+
+  // --- organizations ---------------------------------------------------------------------
+
+  renderOrgs() {
+    return html`
+      <section aria-label="Organizations">
+        <h1>Organizations</h1>
+        <p class="page-lead">A plan, its seats and limits belong to an organization. Your personal one holds the workspaces you share without naming an organization (<code>hitop sync init --org &lt;name&gt;</code> picks another).</p>
+        <table class="portal-table">
+          <thead><tr><th>Name</th><th>Plan</th><th>Your role</th><th>Members</th><th>Workspaces</th></tr></thead>
+          <tbody>
+            ${this.data.orgs.map((o) => html`<tr>
+              <td><a href="#/orgs/${o.id}">${o.personal ? "Personal" : o.name}</a></td>
+              <td>${o.plan}</td><td>${o.role}</td><td>${o.members}</td><td>${o.workspaces}</td>
+            </tr>`)}
+          </tbody>
+        </table>
+        <h2>Create an organization</h2>
+        <div class="portal-form">
+          <lit-material-text-field id="org-name" variant="outlined" label="Organization name"></lit-material-text-field>
+          <lit-material-button variant="filled" ?disabled=${Boolean(this.busy)} @click=${() => this.run("create-org", async () => {
+            const org = await this.api.call("POST", "/v1/orgs", { name: this.field("org-name") });
+            location.hash = `#/orgs/${org.id}`;
+          })}>Create</lit-material-button>
+        </div>
+      </section>`;
+  }
+
+  renderUsage(u) {
+    return html`
+      <table class="portal-table" aria-label="Usage">
+        <thead><tr><th>Limit</th><th>Used</th><th>Plan allows</th></tr></thead>
+        <tbody>
+          ${METRICS.map(([key, label, fmt]) => {
+            const max = u.limits[key];
+            const used = u.usage[key];
+            const full = max !== null && max !== undefined && used >= max;
+            return html`<tr data-metric=${key} class=${full ? "portal-full" : ""}>
+              <td>${label}</td><td>${fmt(used)}</td><td>${max === null || max === undefined ? "no limit" : fmt(max)}</td>
+            </tr>`;
+          })}
+        </tbody>
+      </table>
+      ${u.usage.guests ? html`<p class="hint">${u.usage.guests} guest viewer(s); ${u.limits.guestViewers} of them free on this plan.</p>` : nothing}
+      ${u.enforced ? nothing : html`<p class="hint">This server enforces no plan limits (self-hosted).</p>`}`;
+  }
+
+  renderOrg() {
+    const { org, members, usage } = this.data;
+    const admin = org.role === "owner" || org.role === "admin";
+    const owner = org.role === "owner";
+    const base = `/v1/orgs/${encodeURIComponent(org.id)}`;
+    const reload = () => this.go(this.route);
+    return html`
+      <section aria-label="Organization">
+        <h1>${org.personal ? "Personal" : org.name}</h1>
+        <p class="page-lead">Plan <strong>${org.plan}</strong>${org.seats ? html`, ${org.seats} seat(s)` : nothing}. You are ${org.role}. <a href="#/orgs/${org.id}/plan">Plan details</a></p>
+        <h2>Usage</h2>
+        ${this.renderUsage(usage)}
+        <h2>Members</h2>
+        ${org.personal
+          ? html`<p class="hint">A personal organization has only you. People you share a workspace with count here (Free: 3 people). For a team, create an organization.</p>`
+          : nothing}
+        <table class="portal-table" aria-label="Members">
+          <thead><tr><th>Email</th><th>Role</th><th></th></tr></thead>
+          <tbody>
+            ${members.members.map((m) => html`<tr>
+              <td>${m.email}</td>
+              <td>${admin && !org.personal
+                ? html`<select aria-label="Role of ${m.email}" .value=${m.role} @change=${(e) => this.run("role", async () => {
+                    await this.api.call("PUT", `${base}/members/${m.userId}`, { role: e.target.value });
+                    await reload();
+                  })}>${["member", "admin", "owner"].map((r) => html`<option value=${r} ?selected=${r === m.role}>${r}</option>`)}</select>`
+                : m.role}</td>
+              <td>${!org.personal && (admin || m.email === this.account.email)
+                ? html`<lit-material-button variant="text" @click=${() => this.run("remove", async () => {
+                    await this.api.call("DELETE", `${base}/members/${m.userId}`);
+                    if (m.email === this.account.email) location.hash = "#/";
+                    else await reload();
+                  })}>${m.email === this.account.email ? "Leave" : "Remove"}</lit-material-button>`
+                : nothing}</td>
+            </tr>`)}
+            ${members.invites.map((i) => html`<tr>
+              <td>${i.email}</td><td>${i.role} (invited)</td>
+              <td>${admin ? html`<lit-material-button variant="text" @click=${() => this.run("uninvite", async () => {
+                await this.api.call("DELETE", `${base}/invites/${encodeURIComponent(i.email)}`);
+                await reload();
+              })}>Cancel invite</lit-material-button>` : nothing}</td>
+            </tr>`)}
+          </tbody>
+        </table>
+        ${admin && !org.personal
+          ? html`<h2>Invite someone</h2>
+            <p class="hint">An account joins at once; an address without one is invited (mailed) and joins when it first signs in. Either takes a seat. Workspaces are still shared from hitop: an organization role never opens a workspace.</p>
+            <div class="portal-form">
+              <lit-material-text-field id="member-email" variant="outlined" label="Email to invite" type="email"></lit-material-text-field>
+              <select id="member-role" aria-label="Role">${["member", "admin", ...(owner ? ["owner"] : [])].map((r) => html`<option value=${r}>${r}</option>`)}</select>
+              <lit-material-button variant="filled" ?disabled=${Boolean(this.busy)} @click=${() => this.run("invite", async () => {
+                const r = await this.api.call("POST", `${base}/members`, { email: this.field("member-email"), role: this.querySelector("#member-role").value });
+                await reload();
+                this.note = r.status === "invited" ? `Invited ${r.email}${r.mailed ? " (mailed)" : ""}.` : `Added ${r.email}.`;
+              })}>Invite</lit-material-button>
+            </div>
+            <h2>Settings</h2>
+            <div class="portal-form">
+              <lit-material-text-field id="org-rename" variant="outlined" label="Name" .value=${org.name}></lit-material-text-field>
+              <lit-material-button variant="outlined" @click=${() => this.run("rename", async () => {
+                await this.api.call("PUT", base, { name: this.field("org-rename") });
+                await reload();
+                this.note = "Renamed.";
+              })}>Rename</lit-material-button>
+              ${owner
+                ? html`<lit-material-button variant="outlined" @click=${() => this.run("delete-org", async () => {
+                    if (!confirm(`Delete the organization ${org.name}? It must have no workspaces.`)) return;
+                    await this.api.call("DELETE", base);
+                    location.hash = "#/";
+                  })}>Delete organization</lit-material-button>`
+                : nothing}
+            </div>`
+          : nothing}
+      </section>`;
+  }
+
+  renderPlan() {
+    const { org, usage } = this.data;
+    return html`
+      <section aria-label="Plan">
+        <h1>Plan: ${org.plan}</h1>
+        <p class="page-lead">${PLAN_NOTES[usage.planInForce] || ""}${usage.grandfathered ? " Your limits were raised to what you used before plans existed." : ""}</p>
+        ${usage.planInForce !== usage.plan ? html`<p class="portal-error" role="alert">The ${usage.plan} subscription is ${usage.status}: Free limits apply until it is paid. Nothing was deleted.</p>` : nothing}
+        ${this.renderUsage(usage)}
+        <p>Paid plans (Pro, Team, Business) open soon; prices are not final. Over a limit, hitop refuses new workspaces, people, devices or uploads that grow storage. Reading and pulling never stop, and nothing is deleted.</p>
+        <p><a href="#/orgs/${org.id}">Back to ${org.personal ? "Personal" : org.name}</a></p>
+      </section>`;
+  }
+
+  // --- access tokens and the account -------------------------------------------------------
+
+  renderTokens() {
+    return html`
+      <section aria-label="Access tokens">
+        <h1>Access tokens</h1>
+        <p class="page-lead">Personal access tokens call the sync API as you (scripts, integrations). Read tokens only read. A token is not a key: it can't decrypt anything.</p>
+        ${this.newToken
+          ? html`<div class="portal-card" role="status"><p>Copy the token now; it isn't shown again.</p><pre aria-label="New token">${this.newToken}</pre></div>`
+          : nothing}
+        <table class="portal-table" aria-label="Tokens">
+          <thead><tr><th>Name</th><th>Scopes</th><th>Created</th><th>Expires</th><th>Last used</th><th></th></tr></thead>
+          <tbody>
+            ${this.data.tokens.map((t) => html`<tr>
+              <td>${t.name}</td><td>${t.scopes.join(", ")}</td><td>${date(t.createdAt)}</td><td>${t.expired ? "expired" : date(t.expiresAt)}</td><td>${date(t.lastUsedAt)}</td>
+              <td><lit-material-button variant="text" @click=${() => this.run("revoke", async () => {
+                await this.api.call("DELETE", `/v1/me/tokens/${t.id}`);
+                this.data = { tokens: (await this.api.get("/v1/me/tokens")).tokens };
+                this.note = `Revoked ${t.name}.`;
+              })}>Revoke</lit-material-button></td>
+            </tr>`)}
+          </tbody>
+        </table>
+        <h2>New token</h2>
+        <div class="portal-form">
+          <lit-material-text-field id="token-name" variant="outlined" label="Token name"></lit-material-text-field>
+          <label><input type="checkbox" id="token-write" /> Write (changes too)</label>
+          <select id="token-days" aria-label="Expires in">${[30, 90, 365].map((d) => html`<option value=${d} ?selected=${d === 90}>${d} days</option>`)}</select>
+          <lit-material-button variant="filled" ?disabled=${Boolean(this.busy)} @click=${() => this.run("token", async () => {
+            const scopes = this.querySelector("#token-write").checked ? ["read", "write"] : ["read"];
+            const t = await this.api.call("POST", "/v1/me/tokens", { name: this.field("token-name"), scopes, expiresInDays: Number(this.querySelector("#token-days").value) });
+            this.data = { tokens: (await this.api.get("/v1/me/tokens")).tokens };
+            this.newToken = t.token;
+          })}>Create token</lit-material-button>
+        </div>
+      </section>`;
+  }
+
+  renderAccount() {
+    const me = this.data.me;
+    return html`
+      <section aria-label="Account">
+        <h1>Account</h1>
+        <p class="page-lead">${me.email}: ${me.keys.length} device key(s), ${me.passkeys.length} passkey(s).</p>
+        <h2>Passkeys</h2>
+        <ul>${me.passkeys.map((p) => html`<li>${p.name}</li>`)}</ul>
+        <div class="portal-form">
+          <lit-material-text-field id="passkey-name" variant="outlined" label="Passkey name"></lit-material-text-field>
+          <lit-material-button variant="outlined" ?disabled=${Boolean(this.busy)} @click=${() => this.run("passkey-add", async () => {
+            await registerPasskey(this.api, this.field("passkey-name") || "portal");
+            this.data = { me: await this.api.get("/v1/me") };
+            this.note = "Passkey added: sign in with it next time.";
+          })}>Add a passkey</lit-material-button>
+        </div>
+      </section>`;
+  }
+}
+
+customElements.define("hitop-cloud", HitopCloud);
