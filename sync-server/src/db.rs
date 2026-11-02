@@ -252,7 +252,11 @@ impl Tx<'_> {
 /// Schema migrations, in order; `{BLOB}` becomes BLOB or BYTEA. Never edit a released entry: add
 /// a new one. 1: T23 (accounts, workspaces, blobs). 2: T24 teams (invites, runner accounts).
 /// 3: T25 SSO identities and the audit log (`audit_log` is append-only: rows are only ever
-/// inserted, and deleted by the retention purge, audit.rs).
+/// inserted, and deleted by the retention purge, audit.rs). 4: HITOP Cloud C1 organizations
+/// (orgs.rs), entitlements and usage (limits.rs), API tokens (tokens.rs): every person gets a
+/// personal org (`personal-<user id>`, Free) that owns the workspaces they own; after the SQL,
+/// `limits::grandfather` raises each personal org's limits to its usage (`migrate`), so no
+/// existing account is over a limit.
 const MIGRATIONS: &[&str] = &[r"
 CREATE TABLE users (
   id TEXT PRIMARY KEY,
@@ -374,11 +378,95 @@ CREATE TABLE audit_chain (
   anchor_seq BIGINT NOT NULL,
   anchor_hash TEXT NOT NULL
 );
+", r"
+CREATE TABLE orgs (
+  id TEXT PRIMARY KEY,
+  name TEXT NOT NULL,
+  personal_of TEXT NOT NULL DEFAULT '',
+  plan TEXT NOT NULL DEFAULT 'free',
+  region TEXT NOT NULL DEFAULT 'eu',
+  billing_ref TEXT NOT NULL DEFAULT '',
+  created_by TEXT NOT NULL DEFAULT '',
+  created_at BIGINT NOT NULL
+);
+CREATE INDEX orgs_personal ON orgs(personal_of);
+CREATE TABLE org_members (
+  org_id TEXT NOT NULL REFERENCES orgs(id) ON DELETE CASCADE,
+  user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  role TEXT NOT NULL,
+  created_at BIGINT NOT NULL,
+  PRIMARY KEY (org_id, user_id)
+);
+CREATE INDEX org_members_user ON org_members(user_id);
+CREATE TABLE org_invites (
+  org_id TEXT NOT NULL REFERENCES orgs(id) ON DELETE CASCADE,
+  email TEXT NOT NULL,
+  role TEXT NOT NULL,
+  created_by TEXT NOT NULL,
+  created_at BIGINT NOT NULL,
+  PRIMARY KEY (org_id, email)
+);
+CREATE INDEX org_invites_email ON org_invites(email);
+ALTER TABLE workspaces ADD COLUMN org_id TEXT NOT NULL DEFAULT '';
+CREATE INDEX workspaces_org ON workspaces(org_id);
+CREATE TABLE entitlements (
+  org_id TEXT PRIMARY KEY REFERENCES orgs(id) ON DELETE CASCADE,
+  plan TEXT NOT NULL,
+  seats BIGINT NOT NULL DEFAULT 0,
+  limits TEXT NOT NULL DEFAULT '{}',
+  status TEXT NOT NULL DEFAULT 'active',
+  period_end BIGINT NOT NULL DEFAULT 0,
+  ls_customer_id TEXT NOT NULL DEFAULT '',
+  ls_subscription_id TEXT NOT NULL DEFAULT '',
+  ls_variant_id TEXT NOT NULL DEFAULT '',
+  updated_at BIGINT NOT NULL
+);
+CREATE TABLE usage_counters (
+  org_id TEXT NOT NULL REFERENCES orgs(id) ON DELETE CASCADE,
+  metric TEXT NOT NULL,
+  day BIGINT NOT NULL,
+  count BIGINT NOT NULL,
+  PRIMARY KEY (org_id, metric, day)
+);
+CREATE TABLE api_tokens (
+  id TEXT PRIMARY KEY,
+  user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  name TEXT NOT NULL,
+  token_hash TEXT NOT NULL UNIQUE,
+  scopes TEXT NOT NULL,
+  created_at BIGINT NOT NULL,
+  expires_at BIGINT NOT NULL,
+  last_used_at BIGINT NOT NULL DEFAULT 0
+);
+CREATE INDEX api_tokens_user ON api_tokens(user_id);
+INSERT INTO orgs (id, name, personal_of, plan, region, billing_ref, created_by, created_at)
+  SELECT 'personal-' || id, 'Personal', id, 'free', 'eu', '', id, created_at FROM users WHERE runner_of = '';
+INSERT INTO org_members (org_id, user_id, role, created_at)
+  SELECT 'personal-' || id, id, 'owner', created_at FROM users WHERE runner_of = '';
+INSERT INTO entitlements (org_id, plan, seats, limits, status, period_end, updated_at)
+  SELECT id, 'free', 0, '{}', 'active', 0, created_at FROM orgs;
+UPDATE workspaces SET org_id = COALESCE((SELECT 'personal-' || MIN(m.user_id) FROM members m JOIN users u ON u.id = m.user_id
+  WHERE m.workspace_id = workspaces.id AND m.role = 'owner' AND u.runner_of = ''), '');
 "];
+
+/// Steps in Rust that run in the same transaction as a migration's SQL (index = migration
+/// number - 1).
+fn after_migration(index: usize, tx: &mut Tx) -> Result<(), DbError> {
+    if index == 3 {
+        crate::limits::grandfather(tx)?;
+    }
+    Ok(())
+}
 
 impl Db {
     /// `sqlite:<path>`, `sqlite::memory:`, or `postgres://...` (feature `postgres`).
     pub fn open(url: &str) -> Result<Db, DbError> {
+        Self::open_at(url, MIGRATIONS.len())
+    }
+
+    /// Opens and migrates only up to schema `version` (tests build older databases with it).
+    #[doc(hidden)]
+    pub fn open_at(url: &str, version: usize) -> Result<Db, DbError> {
         let backend: Box<dyn Backend> = if let Some(path) = url.strip_prefix("sqlite:") {
             let conn = if path == ":memory:" { rusqlite::Connection::open_in_memory() } else { rusqlite::Connection::open(path) }
                 .map_err(|e| DbError(format!("{path}: {e}")))?;
@@ -397,19 +485,28 @@ impl Db {
             return Err(DbError(format!("unknown database URL {url:?} (use sqlite:<path> or postgres://...)")));
         };
         let db = Db { backend: Mutex::new(backend) };
-        db.migrate()?;
+        db.migrate(version)?;
         Ok(db)
     }
 
-    fn migrate(&self) -> Result<(), DbError> {
+    /// The schema version this build migrates to.
+    pub fn schema_version() -> usize {
+        MIGRATIONS.len()
+    }
+
+    fn migrate(&self, upto: usize) -> Result<(), DbError> {
         let mut guard = self.backend.lock().unwrap_or_else(|e| e.into_inner());
         let b = guard.as_mut();
         b.batch("CREATE TABLE IF NOT EXISTS schema_version (version BIGINT NOT NULL)")?;
         let current = b.query("SELECT COALESCE(MAX(version), 0) FROM schema_version", &[])?.first().map_or(0, |r| r.int(0));
-        for (i, sql) in MIGRATIONS.iter().enumerate().skip(current as usize) {
+        for (i, sql) in MIGRATIONS.iter().enumerate().take(upto).skip(current as usize) {
             let begin = b.begin();
             b.batch(begin)?;
-            let applied = b.batch(&b.ddl(sql)).and_then(|_| b.execute("INSERT INTO schema_version (version) VALUES ($1)", &[Value::Int(i as i64 + 1)]));
+            let ddl = b.ddl(sql);
+            let applied = b
+                .batch(&ddl)
+                .and_then(|_| after_migration(i, &mut Tx { backend: &mut *b }))
+                .and_then(|_| b.execute("INSERT INTO schema_version (version) VALUES ($1)", &[Value::Int(i as i64 + 1)]));
             match applied {
                 Ok(_) => b.batch("COMMIT")?,
                 Err(e) => {
@@ -487,7 +584,7 @@ mod tests {
         }
         let db = Db::open(&format!("sqlite:{}", path.display())).unwrap();
         let v = db.tx(|tx| tx.query("SELECT MAX(version) FROM schema_version", &[])).unwrap();
-        assert_eq!(v[0].int(0), 3);
+        assert_eq!(v[0].int(0), MIGRATIONS.len() as i64);
         let kept = db.tx(|tx| tx.query("SELECT m.role, i.role FROM members m JOIN invites i ON i.workspace_id = m.workspace_id", &[])).unwrap();
         assert_eq!((kept[0].text(0), kept[0].text(1)), ("owner".to_string(), "editor".to_string()), "existing teams are untouched");
         db.tx(|tx| tx.query("SELECT issuer, subject, user_id, email, created_at, last_used_at FROM oidc_identities", &[])).unwrap();

@@ -194,6 +194,8 @@ pub fn add_device_key(state: &State, request: &Request, _: &PathParams) -> ApiRe
         if count >= MAX_KEYS_PER_USER {
             return Err(ApiError::bad("this account has the maximum number of device keys"));
         }
+        crate::orgs::ensure_personal(state, tx, &user)?;
+        crate::limits::check_device(state, tx, &user.id)?;
         let id = random_hex::<16>();
         tx.execute(
             "INSERT INTO device_keys (id, user_id, name, public_key, created_at) VALUES ($1, $2, $3, $4, $5)",
@@ -218,29 +220,45 @@ pub fn user_keys(state: &State, request: &Request, _: &PathParams) -> ApiResult 
     })
 }
 
-/// `GET /v1/workspaces`: the caller's workspaces.
+/// `GET /v1/workspaces`: the caller's workspaces, each with the org it counts under (`org`:
+/// `{id, name, personal}`, or null).
 pub fn list(state: &State, request: &Request, _: &PathParams) -> ApiResult {
     state.db.tx(|tx| {
         let user = authenticate(state, tx, request)?;
         let rows = tx.query(
-            "SELECT w.id, m.role, w.epoch, w.seq FROM workspaces w JOIN members m ON m.workspace_id = w.id WHERE m.user_id = $1 ORDER BY w.created_at, w.id",
+            "SELECT w.id, m.role, w.epoch, w.seq, COALESCE(o.id, ''), COALESCE(o.name, ''), COALESCE(o.personal_of, '') FROM workspaces w JOIN members m ON m.workspace_id = w.id
+             LEFT JOIN orgs o ON o.id = w.org_id WHERE m.user_id = $1 ORDER BY w.created_at, w.id",
             &[(&user.id).into()],
         )?;
-        Ok((200, json!({ "workspaces": rows.iter().map(|r| json!({ "id": r.text(0), "role": r.text(1), "epoch": r.int(2), "seq": r.int(3) })).collect::<Vec<_>>() })))
+        let list: Vec<Json> = rows
+            .iter()
+            .map(|r| {
+                let org = if r.text(4).is_empty() { Json::Null } else { json!({ "id": r.text(4), "name": r.text(5), "personal": !r.text(6).is_empty() }) };
+                json!({ "id": r.text(0), "role": r.text(1), "epoch": r.int(2), "seq": r.int(3), "org": org })
+            })
+            .collect();
+        Ok((200, json!({ "workspaces": list })))
     })
 }
 
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
-struct NewWorkspace {
-    id: String,
-    wraps: Vec<WrapIn>,
+pub struct NewWorkspace {
+    pub id: String,
+    pub wraps: Vec<WrapIn>,
+    /// The org to create it in (the caller must be a member); default the caller's personal org.
+    #[serde(default)]
+    pub org: Option<String>,
 }
 
-/// `POST /v1/workspaces {"id","wraps"}`: the caller becomes owner; epoch 1's key must be
+/// `POST /v1/workspaces {"id","wraps","org"?}`: the caller becomes owner; epoch 1's key must be
 /// wrapped for each of their device keys.
 pub fn create(state: &State, request: &Request, _: &PathParams) -> ApiResult {
     let input: NewWorkspace = body(request)?;
+    create_with(state, request, input)
+}
+
+pub(crate) fn create_with(state: &State, request: &Request, input: NewWorkspace) -> ApiResult {
     if !valid_workspace_id(&input.id) {
         return Err(ApiError::bad("id must be 32 lower-case hex digits (random, from the client)"));
     }
@@ -258,7 +276,10 @@ pub fn create(state: &State, request: &Request, _: &PathParams) -> ApiResult {
         if wraps.is_empty() {
             return Err(ApiError::bad("register a device key first (POST /v1/me/keys)"));
         }
-        tx.execute("INSERT INTO workspaces (id, epoch, seq, bytes, created_at) VALUES ($1, 1, 0, 0, $2)", &[(&input.id).into(), state.now().into()])?;
+        let org = crate::orgs::org_for_new_workspace(state, tx, &user, input.org.as_deref())?;
+        crate::limits::check_workspace(state, tx, &org)?;
+        crate::limits::check_seat(state, tx, &org, &user.id, true)?;
+        tx.execute("INSERT INTO workspaces (id, epoch, seq, bytes, created_at, org_id) VALUES ($1, 1, 0, 0, $2, $3)", &[(&input.id).into(), state.now().into(), (&org).into()])?;
         tx.execute("INSERT INTO members (workspace_id, user_id, role) VALUES ($1, $2, 'owner')", &[(&input.id).into(), (&user.id).into()])?;
         insert_wraps(tx, &input.id, 1, &wraps)?;
         audit::record(tx, state, Event::new(&input.id, "workspace_created", Some(&user)).target(&input.id))?;
@@ -418,6 +439,8 @@ pub fn add_member(state: &State, request: &Request, params: &PathParams) -> ApiR
         if wraps.is_empty() {
             return Err(ApiError::bad("that account has no device key yet"));
         }
+        let org = crate::limits::org_of_workspace(tx, id)?;
+        crate::limits::check_seat(state, tx, &org, &new_id, role != Role::Viewer)?;
         tx.execute("INSERT INTO members (workspace_id, user_id, role) VALUES ($1, $2, $3)", &[id.into(), (&new_id).into(), role.as_str().into()])?;
         insert_wraps(tx, id, ws.epoch, &wraps)?;
         tx.execute("DELETE FROM invites WHERE workspace_id = $1 AND accepted_by = $2", &[id.into(), (&new_id).into()])?;

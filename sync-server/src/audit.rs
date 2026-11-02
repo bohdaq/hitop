@@ -62,6 +62,25 @@ pub const EVENTS: &[&str] = &[
     "session_revoked",
 ];
 
+/// HITOP Cloud events (orgs.rs, limits.rs, tokens.rs): `token_created` and `token_revoked` on the
+/// account chain, `workspace_moved` on the workspace's chain and the org chains, the rest on the
+/// chain of the org (`org:<id>`).
+pub const CLOUD_EVENTS: &[&str] = &[
+    "org_created",
+    "org_renamed",
+    "org_deleted",
+    "org_member_added",
+    "org_member_removed",
+    "org_role_changed",
+    "org_invite_created",
+    "org_invite_deleted",
+    "org_invite_accepted",
+    "workspace_moved",
+    "plan_changed",
+    "token_created",
+    "token_revoked",
+];
+
 /// Who called: the client IP (truncated, or empty when the server is set not to keep it) and
 /// the user agent (at most 200 characters).
 #[derive(Clone, Debug, Default, PartialEq, Eq)]

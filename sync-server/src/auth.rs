@@ -45,6 +45,9 @@ impl User {
 /// The signed-in user, from `Authorization: Bearer <session>`.
 pub fn authenticate(state: &State, tx: &mut Tx, request: &Request) -> Result<User, ApiError> {
     let token = bearer(request).ok_or_else(ApiError::unauthorized)?;
+    if token.starts_with(crate::tokens::PREFIX) {
+        return crate::tokens::authenticate_token(state, tx, request, &token);
+    }
     let row = tx.query_one(
         "SELECT u.id, u.email, u.runner_of FROM sessions s JOIN users u ON u.id = s.user_id WHERE s.token_hash = $1 AND s.expires_at > $2",
         &[token_hash(&token).into(), state.now().into()],

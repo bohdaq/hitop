@@ -1,7 +1,7 @@
 //! `hitop-sync-server`: listens where rws's settings say (`RWS_CONFIG_IP`, `RWS_CONFIG_PORT`,
 //! default 127.0.0.1:7881 here) behind a TLS-terminating proxy. Settings: config.rs, mail.rs.
 
-use hitop_sync_server::{audit, Config, Db, Mailer, State, SyncApp};
+use hitop_sync_server::{audit, limits, Config, Db, Mailer, State, SyncApp};
 use rust_web_server::server::Server;
 
 fn main() {
@@ -42,6 +42,25 @@ fn main() {
         println!("{} chains, {bad} broken", chains.len());
         std::process::exit(if bad == 0 { 0 } else { 1 });
     }
+    // `hitop-sync-server over-limits`: every org (or person, for devices) over a limit of its
+    // plan; exit 0 when there is none (after migration 4 there is none).
+    if std::env::args().nth(1).as_deref() == Some("over-limits") {
+        let over = state.db.tx(|tx| limits::over_limits(&state, tx)).unwrap_or_else(|e| fail(e.to_string()));
+        for o in &over {
+            println!("{}: {} {} of {}", o.org, o.metric.name(), o.used, o.max);
+        }
+        println!("{} over a limit", over.len());
+        std::process::exit(if over.is_empty() { 0 } else { 1 });
+    }
+    // `hitop-sync-server set-plan <org> <plan> [seats]`: an org's plan until billing sets it.
+    if std::env::args().nth(1).as_deref() == Some("set-plan") {
+        let args: Vec<String> = std::env::args().skip(2).collect();
+        let [org, plan, rest @ ..] = args.as_slice() else { fail("usage: hitop-sync-server set-plan <org> <plan> [seats]".into()) };
+        let seats = rest.first().map(|s| s.parse::<i64>().unwrap_or_else(|_| fail("seats must be a number".into()))).unwrap_or(0);
+        limits::set_plan(&state, org, plan, seats).unwrap_or_else(|e| fail(e));
+        println!("{org}: {plan}, {seats} seat(s)");
+        std::process::exit(0);
+    }
     let app = SyncApp::new(state);
     // The audit retention purge: at start, then hourly.
     let purger = app.clone();
@@ -50,6 +69,9 @@ fn main() {
             Ok(0) => {}
             Ok(n) => eprintln!("hitop-sync-server: purged {n} audit rows past retention"),
             Err(e) => eprintln!("hitop-sync-server: audit purge: {e}"),
+        }
+        if let Err(e) = limits::purge(purger.state()) {
+            eprintln!("hitop-sync-server: usage purge: {e}");
         }
         std::thread::sleep(std::time::Duration::from_secs(3600));
     });

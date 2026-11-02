@@ -15,6 +15,10 @@
 //! - `HITOP_SYNC_AUDIT_IP`: `truncated` (default: IPv4 /24, IPv6 /48) or `off`
 //! - `HITOP_SYNC_AUDIT_RETENTION_DAYS`: audit rows older than this are purged (default 365; 0
 //!   keeps them forever)
+//! - `HITOP_SYNC_LIMITS`: `off` (default: a self-hosted server has no plans, seats or per-org
+//!   limits) or `plans` (HITOP Cloud: each org's plan limits are enforced, limits.rs)
+//! - `HITOP_SYNC_PORTAL_URL`: the account portal, named in limit errors (default
+//!   `https://cloud.hitop.rws8.tech/`)
 //! - SSO (OpenID Connect): see oidc.rs (`HITOP_SYNC_OIDC_*`, `HITOP_SYNC_SSO_REQUIRED`)
 //! - mail: see mail.rs
 
@@ -43,6 +47,10 @@ pub struct Config {
     pub audit_retention_days: i64,
     /// Sign-in with an OpenID Connect provider; `None` when not configured.
     pub oidc: Option<OidcConfig>,
+    /// Enforce each org's plan limits (`HITOP_SYNC_LIMITS=plans`); off on a self-hosted server.
+    pub plan_limits: bool,
+    /// The account portal (limit errors link to it).
+    pub portal_url: String,
 }
 
 fn list(value: &str) -> Vec<String> {
@@ -69,6 +77,8 @@ impl Config {
             audit_ip: IpPolicy::Truncated,
             audit_retention_days: 365,
             oidc: None,
+            plan_limits: false,
+            portal_url: "https://cloud.hitop.rws8.tech/".into(),
         }
     }
 
@@ -103,6 +113,14 @@ impl Config {
         };
         c.audit_retention_days = number("HITOP_SYNC_AUDIT_RETENTION_DAYS", c.audit_retention_days)?;
         c.oidc = OidcConfig::from_env(&var)?;
+        c.plan_limits = match var("HITOP_SYNC_LIMITS").as_deref() {
+            None | Some("off") => false,
+            Some("plans") => true,
+            Some(other) => return Err(format!("HITOP_SYNC_LIMITS must be off or plans, not {other}")),
+        };
+        if let Some(url) = var("HITOP_SYNC_PORTAL_URL") {
+            c.portal_url = if url.ends_with('/') { url } else { format!("{url}/") };
+        }
         Ok(c)
     }
 

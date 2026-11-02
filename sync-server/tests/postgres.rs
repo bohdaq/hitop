@@ -122,3 +122,66 @@ fn postgres_audit_and_sso() {
     assert!(audit::purge(s.app.state()).unwrap() >= 2);
     assert!(audit::verify_all(s.app.state()).unwrap().iter().all(|(_, v)| v.problem.is_none()), "purged chains verify from their anchors");
 }
+
+/// Migration 3 → 4 of a T25-shaped database on Postgres (common/t25.rs, as tests/migration.rs).
+#[test]
+fn postgres_t25_database_migrates_to_orgs() {
+    let Some(url) = database("t25") else {
+        eprintln!("HITOP_SYNC_TEST_POSTGRES not set: skipped");
+        return;
+    };
+    common::t25::build(&url);
+    let before = common::t25::counts(&hitop_sync_server::Db::open_at(&url, 3).unwrap());
+    let s = Server::with("pg-t25", |c| {
+        c.database = url.clone();
+        c.plan_limits = true;
+    });
+    common::t25::check(&s, &before);
+}
+
+/// Orgs, members, usage, limits, a refused create and access tokens on Postgres.
+#[test]
+fn postgres_orgs_limits_tokens() {
+    let Some(url) = database("orgs") else {
+        eprintln!("HITOP_SYNC_TEST_POSTGRES not set: skipped");
+        return;
+    };
+    let s = Server::with("pg-orgs", |c| {
+        c.database = url.clone();
+        c.plan_limits = true;
+    });
+    let ada = Device::new(&s, "ada@example.com");
+    let bob = Device::new(&s, "bob@example.com");
+    let org = s.call("POST", "/v1/orgs", Some(&ada.session), Some(json!({ "name": "Acme" })));
+    assert_eq!(org.status, 201, "{}", org.json);
+    let id = org.json["id"].as_str().unwrap().to_string();
+    assert_eq!(s.call("POST", &format!("/v1/orgs/{id}/members"), Some(&ada.session), Some(json!({ "email": "bob@example.com", "role": "admin" }))).status, 201);
+    assert_eq!(s.call("POST", &format!("/v1/orgs/{id}/members"), Some(&bob.session), Some(json!({ "email": "new@example.com", "role": "member" }))).json["status"], "invited");
+    for i in 0..3 {
+        let ws = format!("{i:032x}");
+        let key = crypto::WorkspaceKey::generate();
+        let wraps = wraps_for(&[(ada.key_id.clone(), ada.keys.public_key().to_vec())], &ws, 1, &key);
+        let r = s.call("POST", &format!("/v1/orgs/{id}/workspaces"), Some(&ada.session), Some(json!({ "id": ws, "wraps": wraps })));
+        assert_eq!(r.status, 201, "{}", r.json);
+        let put = s.call("PUT", &format!("/v1/workspaces/{ws}/blobs/a"), Some(&ada.session), Some(json!({ "version": 1, "vv": { "a": 1 }, "epoch": 1, "content": seal(&key, &ws, "a", 1, 1, b"one") })));
+        assert_eq!(put.status, 200, "{}", put.json);
+    }
+    let key = crypto::WorkspaceKey::generate();
+    let ws = format!("{:032x}", 9);
+    let r = s.call("POST", "/v1/workspaces", Some(&ada.session), Some(json!({ "id": ws, "org": id, "wraps": wraps_for(&[(ada.key_id.clone(), ada.keys.public_key().to_vec())], &ws, 1, &key) })));
+    assert_eq!((r.status, r.json["limit"].as_str()), (402, Some("workspaces")), "{}", r.json);
+    let u = s.call("GET", &format!("/v1/orgs/{id}/usage"), Some(&bob.session), None);
+    assert_eq!(u.status, 200, "{}", u.json);
+    assert_eq!((u.json["usage"]["workspaces"].as_i64(), u.json["usage"]["seats"].as_i64(), u.json["usage"]["writesToday"].as_i64()), (Some(3), Some(3), Some(3)));
+    assert!(u.json["usage"]["storageBytes"].as_i64().unwrap() > 0);
+    let over = s.app.state().db.tx(|tx| hitop_sync_server::limits::over_limits(s.app.state(), tx)).unwrap();
+    assert!(over.is_empty(), "{over:?}");
+    hitop_sync_server::limits::set_plan(s.app.state(), &id, "team", 5).unwrap();
+    assert_eq!(s.call("GET", &format!("/v1/orgs/{id}/limits"), Some(&ada.session), None).json["limits"]["seats"], 5);
+    let t = s.call("POST", "/v1/me/tokens", Some(&ada.session), Some(json!({ "name": "ci", "scopes": ["read"], "expiresInDays": 30 })));
+    assert_eq!(t.status, 201, "{}", t.json);
+    let token = t.json["token"].as_str().unwrap();
+    assert_eq!(s.call("GET", "/v1/workspaces", Some(token), None).json["workspaces"].as_array().unwrap().len(), 3);
+    assert_eq!(s.call("DELETE", &format!("/v1/me/tokens/{}", t.json["id"].as_str().unwrap()), Some(&ada.session), None).status, 204);
+    assert_eq!(s.call("GET", "/v1/workspaces", Some(token), None).status, 401);
+}

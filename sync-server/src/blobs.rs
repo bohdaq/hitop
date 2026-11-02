@@ -165,6 +165,10 @@ pub fn put(state: &State, request: &Request, params: &PathParams) -> ApiResult {
         if bytes > state.config.max_workspace_bytes {
             return Err(ApiError::new(413, "quota", format!("the workspace would exceed {} bytes", state.config.max_workspace_bytes)));
         }
+        // Only a write that makes the org's storage grow can be refused by its plan.
+        let org = crate::limits::org_of_workspace(tx, id)?;
+        crate::limits::check_storage(state, tx, &org, bytes - ws.bytes)?;
+        crate::limits::meter(state, tx, &org, "writes", 1)?;
         let seq = ws.seq + 1;
         let vv = serde_json::to_string(&input.vv).unwrap_or_default();
         tx.execute(

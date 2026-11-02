@@ -76,6 +76,9 @@ pub fn create(state: &State, request: &Request, params: &PathParams) -> ApiResul
         if mail && mailed_recently >= INVITE_MAILS_PER_HOUR {
             return Err(ApiError::new(429, "rate_limited", "too many invite mails from this workspace; try again in an hour"));
         }
+        let org = crate::limits::org_of_workspace(tx, id)?;
+        crate::limits::check_invite(state, tx, &org)?;
+        crate::limits::meter(state, tx, &org, "invites", 1)?;
         let invite_id = random_hex::<16>();
         tx.execute(
             "INSERT INTO invites (id, workspace_id, token_hash, email, role, created_by, created_at, expires_at) VALUES ($1, $2, $3, $4, $5, $6, $7, $8)",
@@ -218,6 +221,11 @@ pub fn set_role(state: &State, request: &Request, params: &PathParams) -> ApiRes
                 return Err(ApiError::bad("a workspace keeps at least one owner"));
             }
         }
+        if row.text(1).is_empty() && role != Role::Viewer {
+            // A guest viewer who becomes an editor takes a seat.
+            let org = crate::limits::org_of_workspace(tx, id)?;
+            crate::limits::check_seat(state, tx, &org, &target, true)?;
+        }
         tx.execute("UPDATE members SET role = $1 WHERE workspace_id = $2 AND user_id = $3", &[role.as_str().into(), id.into(), (&target).into()])?;
         audit::record(tx, state, Event::new(id, "role_changed", Some(&user)).target(&target).detail(json!({ "from": row.text(0), "to": role.as_str() })))?;
         Ok((200, json!({ "userId": target, "role": role.as_str() })))
@@ -258,6 +266,8 @@ pub fn create_runner(state: &State, request: &Request, params: &PathParams) -> A
         if runners >= MAX_RUNNERS {
             return Err(ApiError::forbidden(format!("a workspace has at most {MAX_RUNNERS} runner credentials")));
         }
+        let org = crate::limits::org_of_workspace(tx, id)?;
+        crate::limits::check_runner(state, tx, &org)?;
         let runner_id = Uuid::new_v4().to_string();
         let email = format!("{runner_id}@{RUNNER_DOMAIN}");
         tx.execute("INSERT INTO users (id, email, created_at, runner_of) VALUES ($1, $2, $3, $4)", &[(&runner_id).into(), email.into(), now.into(), id.into()])?;
