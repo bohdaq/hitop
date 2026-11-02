@@ -18,7 +18,7 @@ homepage = "https://github.com/bohdaq/hitop"
 
 [workspace.dependencies]
 hitop-core = { path = "crates/hitop-core", version = "1.1.0" }
-hitop-sync-crypto = { path = "crates/hitop-sync-crypto", version = "0.1.0" }
+hitop-sync-crypto = { path = "crates/hitop-sync-crypto", version = "0.2.0" }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 reqwest = { version = "0.12", features = ["blocking", "rustls-tls", "json"], default-features = false }

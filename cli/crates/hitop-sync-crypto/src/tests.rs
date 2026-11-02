@@ -143,20 +143,23 @@ fn rotation_gives_a_new_key_only_to_the_remaining_devices() {
     let (alice, bob, carol) = (DeviceKeyPair::generate(), DeviceKeyPair::generate(), DeviceKeyPair::generate());
     let (pa, pb, pc) = (alice.public_key(), bob.public_key(), carol.public_key());
     let all = [Recipient { key_id: "a", public_key: &pa }, Recipient { key_id: "b", public_key: &pb }, Recipient { key_id: "c", public_key: &pc }];
-    let (k1, wraps1) = rotate("ws", 1, &all).unwrap();
+    let me = Device { key_id: "a", keys: &alice };
+    let (k1, wraps1) = rotate(&me, "ws", 1, &all).unwrap();
     assert_eq!(wraps1.len(), 3);
-    assert_eq!(unwrap_key(&carol, "ws", 1, &wraps1[2].1).unwrap(), k1);
+    assert_eq!(open_wrap(&carol, "c", &pa, "ws", 1, &wraps1[2].1).unwrap().key, k1);
     // Carol is removed: epoch 2 goes to Alice and Bob only.
-    let (k2, wraps2) = rotate("ws", 2, &all[..2]).unwrap();
+    let (k2, wraps2) = rotate(&me, "ws", 2, &all[..2]).unwrap();
     assert_ne!(k1, k2);
     assert_eq!(wraps2.iter().map(|w| w.0.as_str()).collect::<Vec<_>>(), ["a", "b"]);
-    assert_eq!(unwrap_key(&bob, "ws", 2, &wraps2[1].1).unwrap(), k2);
+    let opened = open_wrap(&bob, "b", &pa, "ws", 2, &wraps2[1].1).unwrap();
+    assert_eq!((opened.key, opened.sender_key_id.as_str(), opened.head), (k2.clone(), "a", 2));
     // Carol's epoch 1 key doesn't open epoch 2 blobs, nor does her key open the new wraps.
     let c2 = ctx("ws", "req", 5, 2);
     let blob = encrypt_blob(&k2, &c2, b"after removal").unwrap();
     assert_eq!(decrypt_blob(&k1, &c2, &blob), Err(Error::Decrypt));
-    for (_, w) in &wraps2 {
-        assert_eq!(unwrap_key(&carol, "ws", 2, w), Err(Error::Decrypt));
+    for (id, w) in &wraps2 {
+        assert_eq!(open_wrap(&carol, id, &pa, "ws", 2, w), Err(Error::Decrypt));
+        assert_eq!(open_wrap(&carol, "c", &pa, "ws", 2, w), Err(Error::Decrypt));
     }
 }
 
@@ -305,3 +308,6 @@ fn fingerprints_and_random_ids() {
 }
 
 const FINGERPRINT_OF_ZEROS: &str = "62bd a406 8c54 b947 3e40 132e dd07 fbd2";
+
+#[path = "tests_v2.rs"]
+mod v2;
