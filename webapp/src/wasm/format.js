@@ -24,6 +24,12 @@ function api(m) {
     // A GraphQL request's JSON body (variables filled in), as hitop-core
     // builds it: text, not parsed. Throws when the variables aren't an object.
     graphqlBody: (query, variables, operationName) => m.graphqlBody(String(query ?? ""), String(variables ?? ""), String(operationName ?? "")),
+    // What every hitop surface does when sending (hitop-core `sending`,
+    // spec/vectors/send.json): the Content-Type a raw body gets when the
+    // request sets none (null for an empty body), and the URL with a scheme
+    // (throws "… isn't a URL" for anything else).
+    rawContentType: (body) => m.rawContentType(typeof body === "string" ? body : "") ?? null,
+    withScheme: (url) => m.withScheme(String(url ?? "")),
     // { request, variables, secrets } + "curl" | "fetch" | "python" | "go" | "java" | "rust" → { code, placeholders }.
     snippet: (input, lang) => call(m.snippet, input, lang),
     // [{ id, label }] in menu order.

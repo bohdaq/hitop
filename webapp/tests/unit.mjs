@@ -1,20 +1,6 @@
 // Unit checks for features.js (no browser): node tests/unit.mjs
 import assert from "node:assert/strict";
-import { cookieHeader, rawContentType, withScheme, exportableEnvironments, exportableGlobals, isPostmanGlobals, maskSecrets, mergeGlobals, normalizeGlobals, parseGlobals, mergeCookies, multipartBody, parseEnvironments, parseQuery, secretNames, secretRefs, secretValues, urlEncodedBody, withQuery, withSecretRefs } from "../src/features.js";
-
-// Raw bodies: a Content-Type by content; URLs typed without a scheme.
-assert.equal(rawContentType(' {"a": 1}'), "application/json");
-assert.equal(rawContentType("[1]"), "application/json");
-assert.equal(rawContentType("<?xml version='1.0'?><a/>"), "application/xml");
-assert.equal(rawContentType("<!DOCTYPE html><p>"), "text/html");
-assert.equal(rawContentType("hello"), "text/plain");
-assert.equal(rawContentType(""), null);
-assert.equal(withScheme("https://x.dev/a"), "https://x.dev/a");
-assert.equal(withScheme("api.example.com/users?a=1"), "https://api.example.com/users?a=1");
-assert.equal(withScheme("api.example.com:8443/v1"), "https://api.example.com:8443/v1");
-assert.equal(withScheme("localhost:3000/x"), "http://localhost:3000/x");
-assert.equal(withScheme("127.0.0.1:8080"), "http://127.0.0.1:8080");
-for (const bad of ["not a url", "users", "/users", ""]) assert.throws(() => withScheme(bad), /isn't a URL/, bad);
+import { cookieHeader, exportableEnvironments, exportableGlobals, isPostmanGlobals, maskSecrets, mergeGlobals, normalizeGlobals, parseGlobals, mergeCookies, multipartBody, parseEnvironments, parseQuery, secretNames, secretRefs, secretValues, urlEncodedBody, withQuery, withSecretRefs } from "../src/features.js";
 
 const now = Date.parse("2026-10-31T12:00:00Z");
 let jar = mergeCookies([], ["sid=abc; Path=/; HttpOnly", "pref=dark; Domain=example.com; Path=/; Max-Age=3600", "evil=1; Domain=other.com", "old=x; Expires=Thu, 01 Jan 2026 00:00:00 GMT"], "https://api.example.com/v1/login", now);
@@ -64,6 +50,23 @@ import { historyFromRust, historyToRust } from "../src/platform/history.js";
 
 const here = dirname(fileURLToPath(import.meta.url));
 const format = await formatFromBytes(readFileSync(join(here, "../src/wasm/pkg/hitop_wasm_bg.wasm")));
+
+// What every surface does when sending (spec/vectors/send.json, also run by
+// hitop-core and HitopKit): the Content-Type of a raw body, the URL's scheme.
+{
+  const vectors = JSON.parse(readFileSync(join(here, "../../spec/vectors/send.json"), "utf8"));
+  for (const c of vectors.contentType.detect) assert.equal(format.rawContentType(c.body), c.contentType, JSON.stringify(c.body));
+  for (const c of vectors.scheme.cases) {
+    if (c.error) assert.throws(() => format.withScheme(c.url), (e) => e.message === c.error, JSON.stringify(c.url));
+    else assert.equal(format.withScheme(c.url), c.sent, JSON.stringify(c.url));
+  }
+  // The Code dialog's generator adds the same Content-Type and scheme.
+  const code = format.snippet({ request: { id: 0, name: "r", url: "api.test/u", method: "POST", headers: [], body: '{"a":1}' }, variables: {}, secrets: [] }, "curl").code;
+  assert.match(code, /https:\/\/api\.test\/u/);
+  assert.match(code, /Content-Type: application\/json/);
+  const own = format.snippet({ request: { id: 0, name: "r", url: "https://api.test/u", method: "POST", headers: [{ name: "Content-Type", value: "text/csv" }], body: '{"a":1}' }, variables: {}, secrets: [] }, "curl").code;
+  assert.doesNotMatch(own, /application\/json/);
+}
 const tree = (dir) => {
   const out = {};
   const walk = (d) => {

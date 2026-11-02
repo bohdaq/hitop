@@ -31,8 +31,6 @@ import {
   secretRefs,
   withSecretRefs,
   urlEncodedBody,
-  rawContentType,
-  withScheme,
 } from "./features.js";
 import { platform } from "./platform/index.js";
 import { fillVariables, forWebApp, isPostmanCollection, loadShim, runScript, scriptScans, usesPostmanApi } from "./pm.js";
@@ -311,6 +309,10 @@ export class Store extends EventTarget {
     // ${secret:vault|aws|azure|op:...} values (desktop only), by inner text:
     // memory only, for one send or run, masked like secrets, never saved.
     this.refValues = {};
+    // hitop-wasm, once loaded: the Headers note asks it for the Content-Type
+    // (hitop-core's rules, as every surface sends it) while rendering.
+    this.format = null;
+    loadFormat().then((f) => { this.format = f; this.emit(); }, () => {});
     // Globals scripts set (pm.globals.set): app-wide (folder collections: their own), until reload.
     this.scriptGlobals = {};
     const jar = loadCookies();
@@ -998,7 +1000,7 @@ export class Store extends EventTarget {
   autoContentType(tab = this.tab) {
     if (!tab || tab.kind || !BODY_METHODS.includes(tab.method) || (tab.bodyMode && tab.bodyMode !== "raw")) return null;
     if ((tab.headers || []).some((h) => h.name?.toLowerCase() === "content-type" && h.value)) return null;
-    return rawContentType(tab.requestBody);
+    return this.format?.rawContentType(tab.requestBody) ?? null;
   }
 
   snippetInput(showSecrets = false) {
@@ -1013,8 +1015,7 @@ export class Store extends EventTarget {
       body: BODY_METHODS.includes(tab.method) ? tab.requestBody || "" : "",
       ...SAVED_FIELDS(tab),
     };
-    const auto = this.autoContentType(tab);
-    if (auto) request.headers.push({ name: "Content-Type", value: auto });
+    // hitop-core's generator adds the Content-Type and scheme hitop sends with.
     const auth = cleanAuth(tab.auth);
     if (auth) request.auth = auth;
     // The web app sends a body only with these methods.
@@ -1322,7 +1323,7 @@ export class Store extends EventTarget {
     try {
       prepared = await this.prepare(source, collectionId);
       // A URL whose variables leave it without a scheme gets one too; never a relative fetch.
-      prepared = { ...prepared, url: withScheme(prepared.url) };
+      prepared = { ...prepared, url: (await loadFormat()).withScheme(prepared.url) };
     } catch (e) {
       e.stage = "prepare"; // a variable or pre-request script error: nothing was sent
       throw e;
@@ -1343,8 +1344,9 @@ export class Store extends EventTarget {
       body = built.body;
       if (!hasHeader("content-type")) headers.push({ name: "Content-Type", value: built.contentType });
     } else if (BODY_METHODS.includes(source.method) && body && typeof body === "string" && !hasHeader("content-type")) {
-      // A raw body says what it is, unless the request does (GraphQL already has its own).
-      const type = rawContentType(body);
+      // A raw body says what it is, unless the request does (GraphQL already has its own):
+      // hitop-core's rules (spec/vectors/send.json), as the CLI, MCP and HitopKit send it.
+      const type = (await loadFormat()).rawContentType(body);
       if (type) headers.push({ name: "Content-Type", value: type });
     }
     const p = platform();
@@ -1393,7 +1395,7 @@ export class Store extends EventTarget {
     // a URL with variables is checked once they are filled in (dispatch).
     if (!tab.url.includes("${")) {
       try {
-        const url = withScheme(tab.url);
+        const url = (await loadFormat()).withScheme(tab.url);
         if (url !== tab.url) {
           this.tabs = tabService.updateTab(this.tabs, index, { url });
           tab = this.tabs[index];

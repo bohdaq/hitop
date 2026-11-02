@@ -164,6 +164,22 @@ pub fn graphql_body(query: &str, variables: &str, operation_name: &str) -> Resul
     hitop_core::graphql::request_body(query, variables, operation_name).map_err(chain)
 }
 
+/// The Content-Type hitop sends a raw body with when the request sets none
+/// (`hitop_core::sending::raw_content_type`): JSON, XML, HTML or plain text by
+/// its first character; `undefined` for an empty body.
+#[wasm_bindgen(js_name = rawContentType)]
+pub fn raw_content_type(body: &str) -> Option<String> {
+    hitop_core::sending::raw_content_type(body).map(str::to_string)
+}
+
+/// The URL as hitop sends it (`hitop_core::sending::with_scheme`): typed
+/// without a scheme it gets `https://` (`http://` for localhost); anything
+/// else that isn't a URL throws.
+#[wasm_bindgen(js_name = withScheme)]
+pub fn with_scheme(url: &str) -> Result<String, JsError> {
+    hitop_core::sending::with_scheme(url).map_err(chain)
+}
+
 /// `{request, collectionAuth?, variables, secrets}`: what a snippet is made of.
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
