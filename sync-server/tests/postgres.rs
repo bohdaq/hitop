@@ -70,6 +70,14 @@ fn postgres_teams_flow() {
     assert_eq!(list.json["invites"][0]["accepted"]["email"], "bob@example.com");
     let w = wraps_for(&[(bob.key_id.clone(), bob.keys.public_key().to_vec())], WS, 1, &key);
     assert_eq!(s.call("POST", &format!("/v1/workspaces/{WS}/members"), Some(&ada.session), Some(json!({ "email": "bob@example.com", "role": "viewer", "wraps": w }))).status, 201);
+    // A format 2 wrap replaces Bob's format 1 wrap (upsert with length() on bytea), not the reverse.
+    let legacy = |s: &Server| s.call("GET", &format!("/v1/workspaces/{WS}"), Some(&ada.session), None).json["members"].as_array().unwrap().iter().find(|m| m["email"] == "bob@example.com").unwrap()["keys"][0]["legacyEpochs"].clone();
+    assert_eq!(legacy(&s), json!([1]));
+    let v2 = crypto::seal_wrap(&crypto::Device { key_id: &ada.key_id, keys: &ada.keys }, &crypto::Recipient { key_id: &bob.key_id, public_key: &bob.keys.public_key() }, WS, 1, 1, &key).unwrap();
+    let r = s.call("POST", &format!("/v1/workspaces/{WS}/wraps"), Some(&ada.session), Some(json!({ "epoch": 1, "wraps": [{ "keyId": bob.key_id, "wrapped": b64(&v2) }] })));
+    assert_eq!(r.json["stored"], 1, "{}", r.json);
+    assert_eq!(legacy(&s), json!([]));
+    assert_eq!(s.call("POST", &format!("/v1/workspaces/{WS}/wraps"), Some(&ada.session), Some(json!({ "epoch": 1, "wraps": w }))).json["stored"], 0);
     assert_eq!(s.call("PUT", &format!("/v1/workspaces/{WS}/members/{}", bob.user_id), Some(&ada.session), Some(json!({ "role": "editor" }))).status, 200);
     let kp = crypto::DeviceKeyPair::generate();
     let wrapped = crypto::wrap_key(&kp.public_key(), WS, 1, &key).unwrap();

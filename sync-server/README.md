@@ -135,6 +135,10 @@ account emails and membership; protect them like any personal data.
 ## API (v1)
 
 JSON over HTTPS; `Authorization: Bearer <session>`; binary fields are base64url without padding.
+A `wrapped` key is format 1 (hitop 1.1: 80 bytes, unauthenticated) or format 2 (hitop 1.2:
+`0x02 || u32 head || u16 len || sender key id || 80 bytes`, HPKE Auth mode); the server accepts
+both, checks that a format 2 wrap names one of the caller's own device keys as sender, and never
+verifies a wrap (clients do, THREAT_MODEL.md "Authenticated wraps").
 
 | Method and path | |
 | --- | --- |
@@ -146,16 +150,16 @@ JSON over HTTPS; `Authorization: Bearer <session>`; binary fields are base64url 
 | `GET /v1/me`; `POST /v1/me/keys {name, publicKey}` | account; register a device's X25519 public key |
 | `GET /v1/users/keys?email=` | another account's device keys (to add them) |
 | `GET/POST /v1/workspaces` `{id, wraps}` | list; create (id = 32 hex digits, epoch 1 wrapped for each of your devices) |
-| `GET/DELETE /v1/workspaces/:ws` | members, keys, epoch, seq; delete (owner) |
+| `GET/DELETE /v1/workspaces/:ws` | members, keys (`hasKey`, `legacyEpochs`: epochs whose wrap for it is format 1), epoch, seq; delete (owner) |
 | `GET /v1/workspaces/:ws/wraps?keyId=` | your device's wrapped keys, every epoch |
-| `POST /v1/workspaces/:ws/wraps {epoch, wraps}` | wrap an epoch for a member's new device |
+| `POST /v1/workspaces/:ws/wraps {epoch, wraps}` | wrap an epoch for a member's new device; a format 2 wrap also replaces a format 1 wrap (→ `{added, stored}`) |
 | `POST /v1/workspaces/:ws/members {email, role, wraps}` | add a member (owner) |
 | `DELETE /v1/workspaces/:ws/members/:user {epoch, wraps}` | remove a member **and** rotate the key (owner) |
 | `POST /v1/workspaces/:ws/rotate {epoch, wraps}` | rotate the key (owner) |
 | `PUT /v1/workspaces/:ws/members/:user {role}` | change a role (owner; a workspace keeps one owner) |
 | `POST /v1/workspaces/:ws/invites {email?, role}` | invite (owner): mailed when `email` is set, else a link; 7 days → `{id, token, link, mailed}` |
 | `GET /v1/workspaces/:ws/invites`; `DELETE .../invites/:id` | open invites, accepted ones with the account's device keys (owner) |
-| `POST /v1/invites/accept {token}` | accept (signed in, with a device key); the owner then adds you with the wrapped key |
+| `POST /v1/invites/accept {token}` | accept (signed in, with a device key); the owner then adds you with the wrapped key. A code `<token>.<fingerprint>` (hitop 1.2) is accepted too: the server ignores the part after the `.` |
 | `POST /v1/workspaces/:ws/runners {name, publicKey, wrapped}` | a runner credential for scheduled runs (owner): viewer of this workspace only, one-year token |
 | `GET /v1/workspaces/:ws/changes?since=<seq>` | blobs changed after `seq` |
 | `GET /v1/workspaces/:ws/blobs/:id` | envelope + version, vv, epoch |

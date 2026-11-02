@@ -23,7 +23,7 @@ use crate::api::{b64, body, new_token, random_hex, token_hash, unb64, ApiError, 
 use crate::audit::{self, Event};
 use crate::auth::{authenticate, RUNNER_DOMAIN};
 use crate::mail::Mail;
-use crate::workspaces::{insert_wraps, membership, require, Role, WRAPPED_KEY_LEN};
+use crate::workspaces::{check_wrap, insert_wraps, membership, require, Role};
 
 const INVITE_TTL: i64 = 7 * 24 * 3600;
 const MAX_OPEN_INVITES: i64 = 50;
@@ -147,6 +147,14 @@ struct Accept {
     token: String,
 }
 
+/// The token of an invite code. hitop 1.2 clients hand out `<token>.<inviter's key fingerprint>`
+/// (the fingerprint is for the invitee's client, which checks the inviter's key with it); the
+/// token is base64url, so it never contains a `.`.
+fn invite_token(code: &str) -> &str {
+    let code = code.trim();
+    code.split('.').next().unwrap_or(code)
+}
+
 /// `POST /v1/invites/accept {"token"}` (signed in, with a device key) → `{workspaceId, role}`.
 /// Membership starts when the owner adds the account with the wrapped key.
 pub fn accept(state: &State, request: &Request, _: &PathParams) -> ApiResult {
@@ -157,7 +165,7 @@ pub fn accept(state: &State, request: &Request, _: &PathParams) -> ApiResult {
         user.person()?;
         let row = tx.query_one(
             "SELECT id, workspace_id, email, role, accepted_by FROM invites WHERE token_hash = $1 AND expires_at > $2",
-            &[token_hash(input.token.trim()).into(), now.into()],
+            &[token_hash(invite_token(&input.token)).into(), now.into()],
         )?;
         let Some(row) = row else {
             return Err(ApiError::new(404, "invalid_invite", "this invite is invalid or expired"));
@@ -237,9 +245,6 @@ pub fn create_runner(state: &State, request: &Request, params: &PathParams) -> A
         return Err(ApiError::bad("publicKey must be a 32-byte X25519 public key"));
     }
     let wrapped = unb64("wrapped", &input.wrapped)?;
-    if wrapped.len() != WRAPPED_KEY_LEN {
-        return Err(ApiError::bad(format!("wrapped must be {WRAPPED_KEY_LEN} bytes")));
-    }
     let name: String = input.name.trim().chars().take(64).collect();
     let name = if name.is_empty() { "runner".to_string() } else { name };
     let token = new_token();
@@ -248,6 +253,7 @@ pub fn create_runner(state: &State, request: &Request, params: &PathParams) -> A
         let user = authenticate(state, tx, request)?;
         let ws = membership(tx, id, &user)?;
         require(&ws, Role::Owner)?;
+        check_wrap(tx, &user, "the runner", &wrapped)?;
         let runners = tx.query_one("SELECT COUNT(*) FROM users WHERE runner_of = $1", &[id.into()])?.map_or(0, |r| r.int(0));
         if runners >= MAX_RUNNERS {
             return Err(ApiError::forbidden(format!("a workspace has at most {MAX_RUNNERS} runner credentials")));

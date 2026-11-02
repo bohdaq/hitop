@@ -5,6 +5,12 @@
 //! when it is created or rotated; removing a member is only accepted together with the next
 //! epoch's wraps for the remaining devices, so the removed member's key is never used for new
 //! writes; blob writes must be under the current epoch (blobs.rs).
+//!
+//! Wrapped keys come in two formats (hitop-sync-crypto): format 1 (hitop 1.1, 80 bytes, HPKE base
+//! mode, unauthenticated) and format 2 (hitop 1.2, `0x02 || u32 head || u16 len || sender key id
+//! || 80 bytes`, HPKE Auth mode). The server only checks the shape, and that a format 2 wrap names
+//! one of the caller's own device keys as its sender; the recipient verifies it. A format 2 wrap may
+//! replace a format 1 wrap (the owner's client upgrading a workspace), never the other way round.
 
 use std::collections::{BTreeMap, BTreeSet};
 
@@ -18,8 +24,39 @@ use crate::audit::{self, Event};
 use crate::auth::{authenticate, User};
 use crate::db::Tx;
 
-/// HPKE enc (32) + sealed 32-byte key + tag (16), see hitop-sync-crypto.
+/// HPKE enc (32) + sealed 32-byte key + tag (16), see hitop-sync-crypto: a whole format 1 wrap,
+/// the end of a format 2 wrap.
 pub const WRAPPED_KEY_LEN: usize = 80;
+/// Longest sender key id in a format 2 wrap (hitop-sync-crypto `MAX_KEY_ID_LEN`).
+const MAX_SENDER_ID_LEN: usize = 128;
+
+/// The sender key id a format 2 wrap names, `None` for a format 1 wrap, or an error for anything
+/// else. Shape only: the server can't (and doesn't) verify a wrap.
+pub(crate) fn wrap_sender(bytes: &[u8]) -> Result<Option<&str>, ApiError> {
+    if bytes.len() == WRAPPED_KEY_LEN {
+        return Ok(None);
+    }
+    let bad = || ApiError::bad(format!("a wrapped key is {WRAPPED_KEY_LEN} bytes (format 1) or 0x02 || u32 head || u16 len || sender key id || {WRAPPED_KEY_LEN} bytes (format 2)"));
+    if bytes.len() < 7 + 1 + WRAPPED_KEY_LEN || bytes[0] != 2 {
+        return Err(bad());
+    }
+    let len = u16::from_be_bytes([bytes[5], bytes[6]]) as usize;
+    if len == 0 || len > MAX_SENDER_ID_LEN || bytes.len() != 7 + len + WRAPPED_KEY_LEN {
+        return Err(bad());
+    }
+    std::str::from_utf8(&bytes[7..7 + len]).map(Some).map_err(|_| bad())
+}
+
+/// Checks a wrapped key's shape, and that a format 2 wrap names one of `caller`'s device keys as
+/// its sender (a client can only authenticate wraps with its own key).
+pub(crate) fn check_wrap(tx: &mut Tx, caller: &User, key_id: &str, bytes: &[u8]) -> Result<(), ApiError> {
+    if let Some(sender) = wrap_sender(bytes).map_err(|e| ApiError::bad(format!("wrapped key for {key_id}: {}", e.message)))? {
+        if tx.query_one("SELECT id FROM device_keys WHERE id = $1 AND user_id = $2", &[sender.into(), (&caller.id).into()])?.is_none() {
+            return Err(ApiError::bad(format!("the wrapped key for {key_id} names {sender} as its sender, which is not one of your device keys")));
+        }
+    }
+    Ok(())
+}
 const MAX_KEYS_PER_USER: i64 = 20;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
@@ -84,8 +121,9 @@ pub struct WrapIn {
     pub(crate) wrapped: String,
 }
 
-/// Checks that `wraps` holds exactly one well-formed wrapped key for each device key of `users`.
-pub(crate) fn exact_wraps(tx: &mut Tx, users: &[String], wraps: &[WrapIn]) -> Result<Vec<(String, Vec<u8>)>, ApiError> {
+/// Checks that `wraps` (from `caller`) holds exactly one well-formed wrapped key for each device
+/// key of `users`.
+pub(crate) fn exact_wraps(tx: &mut Tx, caller: &User, users: &[String], wraps: &[WrapIn]) -> Result<Vec<(String, Vec<u8>)>, ApiError> {
     let mut expected = BTreeSet::new();
     for user in users {
         for row in tx.query("SELECT id FROM device_keys WHERE user_id = $1", &[user.into()])? {
@@ -95,9 +133,7 @@ pub(crate) fn exact_wraps(tx: &mut Tx, users: &[String], wraps: &[WrapIn]) -> Re
     let mut given = BTreeMap::new();
     for w in wraps {
         let bytes = unb64("wrapped", &w.wrapped)?;
-        if bytes.len() != WRAPPED_KEY_LEN {
-            return Err(ApiError::bad(format!("wrapped key for {} must be {WRAPPED_KEY_LEN} bytes", w.key_id)));
-        }
+        check_wrap(tx, caller, &w.key_id, &bytes)?;
         if given.insert(w.key_id.clone(), bytes).is_some() {
             return Err(ApiError::bad(format!("two wrapped keys for {}", w.key_id)));
         }
@@ -116,14 +152,19 @@ pub(crate) fn exact_wraps(tx: &mut Tx, users: &[String], wraps: &[WrapIn]) -> Re
     Ok(given.into_iter().collect())
 }
 
-pub(crate) fn insert_wraps(tx: &mut Tx, ws: &str, epoch: i64, wraps: &[(String, Vec<u8>)]) -> Result<(), ApiError> {
+/// Stores wraps. An existing wrap stays, except that a format 2 wrap replaces a format 1 wrap (an
+/// owner upgrading the workspace's wraps). Returns how many were stored.
+pub(crate) fn insert_wraps(tx: &mut Tx, ws: &str, epoch: i64, wraps: &[(String, Vec<u8>)]) -> Result<u64, ApiError> {
+    let mut n = 0;
     for (key_id, wrapped) in wraps {
-        tx.execute(
-            "INSERT INTO wraps (workspace_id, epoch, key_id, wrapped) VALUES ($1, $2, $3, $4) ON CONFLICT (workspace_id, epoch, key_id) DO NOTHING",
-            &[ws.into(), epoch.into(), key_id.into(), wrapped.clone().into()],
-        )?;
+        let sql = if wrapped.len() == WRAPPED_KEY_LEN {
+            "INSERT INTO wraps (workspace_id, epoch, key_id, wrapped) VALUES ($1, $2, $3, $4) ON CONFLICT (workspace_id, epoch, key_id) DO NOTHING"
+        } else {
+            "INSERT INTO wraps (workspace_id, epoch, key_id, wrapped) VALUES ($1, $2, $3, $4) ON CONFLICT (workspace_id, epoch, key_id) DO UPDATE SET wrapped = excluded.wrapped WHERE length(wraps.wrapped) = 80"
+        };
+        n += tx.execute(sql, &[ws.into(), epoch.into(), key_id.into(), wrapped.clone().into()])?;
     }
-    Ok(())
+    Ok(n)
 }
 
 fn member_ids(tx: &mut Tx, ws: &str) -> Result<Vec<String>, ApiError> {
@@ -213,7 +254,7 @@ pub fn create(state: &State, request: &Request, _: &PathParams) -> ApiResult {
         if owned >= state.config.max_workspaces {
             return Err(ApiError::forbidden("this account owns the maximum number of workspaces"));
         }
-        let wraps = exact_wraps(tx, std::slice::from_ref(&user.id), &input.wraps)?;
+        let wraps = exact_wraps(tx, &user, std::slice::from_ref(&user.id), &input.wraps)?;
         if wraps.is_empty() {
             return Err(ApiError::bad("register a device key first (POST /v1/me/keys)"));
         }
@@ -227,7 +268,7 @@ pub fn create(state: &State, request: &Request, _: &PathParams) -> ApiResult {
 
 /// `GET /v1/workspaces/:ws`: epoch, sequence and members with their device keys; `hasKey` says
 /// whether a device has the current epoch's key (a new device of a member doesn't until someone
-/// wraps it, `POST .../wraps`).
+/// wraps it, `POST .../wraps`), `legacyEpochs` the epochs whose wrap for it is format 1.
 pub fn get(state: &State, request: &Request, params: &PathParams) -> ApiResult {
     let id = params.get("ws").unwrap_or_default();
     state.db.tx(|tx| {
@@ -243,12 +284,23 @@ pub fn get(state: &State, request: &Request, params: &PathParams) -> ApiResult {
                 "SELECT k.id, k.name, k.public_key, (SELECT COUNT(*) FROM wraps x WHERE x.workspace_id = $1 AND x.epoch = $2 AND x.key_id = k.id) FROM device_keys k WHERE k.user_id = $3 ORDER BY k.created_at, k.id",
                 &[id.into(), ws.epoch.into(), r.text(0).into()],
             )?;
+            let mut keys_json = Vec::new();
+            for k in &keys {
+                // Epochs whose wrap for this key is format 1 (unauthenticated): an owner's client
+                // replaces them with format 2 wraps.
+                let legacy: Vec<i64> = tx
+                    .query("SELECT epoch FROM wraps WHERE workspace_id = $1 AND key_id = $2 AND length(wrapped) = 80 ORDER BY epoch", &[id.into(), k.text(0).into()])?
+                    .iter()
+                    .map(|e| e.int(0))
+                    .collect();
+                keys_json.push(json!({ "id": k.text(0), "name": k.text(1), "publicKey": b64(&k.bytes(2)), "hasKey": k.int(3) > 0, "legacyEpochs": legacy }));
+            }
             members.push(json!({
                 "userId": r.text(0),
                 "email": r.text(1),
                 "role": r.text(2),
                 "runner": !r.text(3).is_empty(),
-                "keys": keys.iter().map(|k| json!({ "id": k.text(0), "name": k.text(1), "publicKey": b64(&k.bytes(2)), "hasKey": k.int(3) > 0 })).collect::<Vec<_>>(),
+                "keys": keys_json,
             }));
         }
         Ok((200, json!({ "id": ws.id, "epoch": ws.epoch, "seq": ws.seq, "bytes": ws.bytes, "role": ws.role.as_str(), "members": members })))
@@ -298,7 +350,8 @@ struct AddWraps {
 
 /// `POST /v1/workspaces/:ws/wraps {"epoch","wraps"}`: wraps an existing epoch's key for member
 /// devices that don't have it yet (a member's new device). Viewers may wrap for their own devices
-/// only. Existing wraps are never replaced.
+/// only. Existing wraps are never replaced, except a format 1 wrap by a format 2 wrap (`stored`
+/// counts the wraps written).
 pub fn add_wraps(state: &State, request: &Request, params: &PathParams) -> ApiResult {
     let id = params.get("ws").unwrap_or_default();
     let input: AddWraps = body(request)?;
@@ -311,9 +364,7 @@ pub fn add_wraps(state: &State, request: &Request, params: &PathParams) -> ApiRe
         let mut accepted = Vec::new();
         for w in &input.wraps {
             let bytes = unb64("wrapped", &w.wrapped)?;
-            if bytes.len() != WRAPPED_KEY_LEN {
-                return Err(ApiError::bad(format!("wrapped key for {} must be {WRAPPED_KEY_LEN} bytes", w.key_id)));
-            }
+            check_wrap(tx, &user, &w.key_id, &bytes)?;
             let owner = tx.query_one(
                 "SELECT k.user_id FROM device_keys k JOIN members m ON m.user_id = k.user_id AND m.workspace_id = $1 WHERE k.id = $2",
                 &[id.into(), (&w.key_id).into()],
@@ -326,10 +377,10 @@ pub fn add_wraps(state: &State, request: &Request, params: &PathParams) -> ApiRe
             }
             accepted.push((w.key_id.clone(), bytes));
         }
-        insert_wraps(tx, id, input.epoch, &accepted)?;
+        let stored = insert_wraps(tx, id, input.epoch, &accepted)?;
         let keys: Vec<&str> = accepted.iter().map(|(k, _)| k.as_str()).collect();
         audit::record(tx, state, Event::new(id, "key_wrapped", Some(&user)).detail(json!({ "epoch": input.epoch, "keyIds": keys })))?;
-        Ok((200, json!({ "epoch": input.epoch, "added": accepted.len() })))
+        Ok((200, json!({ "epoch": input.epoch, "added": accepted.len(), "stored": stored })))
     })
 }
 
@@ -363,7 +414,7 @@ pub fn add_member(state: &State, request: &Request, params: &PathParams) -> ApiR
         if tx.query_one("SELECT role FROM members WHERE workspace_id = $1 AND user_id = $2", &[id.into(), (&new_id).into()])?.is_some() {
             return Err(ApiError::conflict("already_member", "already a member", json!({})));
         }
-        let wraps = exact_wraps(tx, std::slice::from_ref(&new_id), &input.wraps)?;
+        let wraps = exact_wraps(tx, &user, std::slice::from_ref(&new_id), &input.wraps)?;
         if wraps.is_empty() {
             return Err(ApiError::bad("that account has no device key yet"));
         }
@@ -382,12 +433,12 @@ struct Rotation {
     wraps: Vec<WrapIn>,
 }
 
-fn rotate_to(tx: &mut Tx, ws: &Workspace, input: &Rotation) -> Result<(), ApiError> {
+fn rotate_to(tx: &mut Tx, user: &User, ws: &Workspace, input: &Rotation) -> Result<(), ApiError> {
     if input.epoch != ws.epoch + 1 {
         return Err(ApiError::conflict("stale_epoch", format!("the next epoch is {}", ws.epoch + 1), json!({ "epoch": ws.epoch })));
     }
     let members = member_ids(tx, &ws.id)?;
-    let wraps = exact_wraps(tx, &members, &input.wraps)?;
+    let wraps = exact_wraps(tx, user, &members, &input.wraps)?;
     insert_wraps(tx, &ws.id, input.epoch, &wraps)?;
     tx.execute("UPDATE workspaces SET epoch = $1 WHERE id = $2", &[input.epoch.into(), (&ws.id).into()])?;
     Ok(())
@@ -415,7 +466,7 @@ pub fn remove_member(state: &State, request: &Request, params: &PathParams) -> A
         }
         tx.execute("DELETE FROM members WHERE workspace_id = $1 AND user_id = $2", &[id.into(), (&removed).into()])?;
         tx.execute("DELETE FROM wraps WHERE workspace_id = $1 AND key_id IN (SELECT id FROM device_keys WHERE user_id = $2)", &[id.into(), (&removed).into()])?;
-        rotate_to(tx, &ws, &input)?;
+        rotate_to(tx, &user, &ws, &input)?;
         // A removed runner credential stops existing (its sessions and key go with it).
         let runner = tx.execute("DELETE FROM users WHERE id = $1 AND runner_of = $2", &[(&removed).into(), id.into()])? > 0;
         audit::record(tx, state, Event::new(id, "member_removed", Some(&user)).target(&removed).detail(json!({ "email": row.text(1), "role": row.text(0), "runner": runner })))?;
@@ -436,7 +487,7 @@ pub fn rotate(state: &State, request: &Request, params: &PathParams) -> ApiResul
         let user = authenticate(state, tx, request)?;
         let ws = membership(tx, id, &user)?;
         require(&ws, Role::Owner)?;
-        rotate_to(tx, &ws, &input)?;
+        rotate_to(tx, &user, &ws, &input)?;
         audit::record(tx, state, Event::new(id, "key_rotated", Some(&user)).detail(json!({ "epoch": input.epoch, "reason": "rotate" })))?;
         Ok((200, json!({ "epoch": input.epoch })))
     })
