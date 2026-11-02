@@ -86,6 +86,10 @@ jobs:
           docker logs keycloak
           exit 1
       - run: cargo test --locked
+      # HITOP Cloud C1: the same client flows against a server with the hosted Free plan limits
+      # on (HITOP_SYNC_LIMITS=plans, as the test server runs).
+      - name: tests/sync.rs against a server with plan limits
+        run: HITOP_SYNC_LIMITS=plans cargo test --locked -p hitop --test sync
       - name: hitop schedule --github output passes actionlint
         run: |
           repo="$RUNNER_TEMP/schedule-repo"
@@ -220,6 +224,14 @@ jobs:
       - name: End-to-end checks (they call example.com, jsonplaceholder.typicode.com and httpbin.org)
         working-directory: webapp
         run: BASE=http://localhost:7879 npm run test:e2e
+      # HITOP Cloud C1: the web app's sync flow, unchanged, against a server with the hosted Free
+      # plan limits on.
+      - name: tests/sync.cjs against a server with plan limits
+        working-directory: webapp
+        run: HITOP_SYNC_LIMITS=plans BASE=http://localhost:7879 node tests/sync.cjs
+      - name: HITOP Cloud portal (cloud/portal, e2e against the sync server)
+        working-directory: cloud/portal
+        run: npm ci --no-audit --no-fund && npm test
       - name: hitop-git for the mocked desktop (tests/git.cjs runs the Git panel through it)
         working-directory: cli
         run: cargo build --locked -p hitop-git --example git-json --no-default-features
@@ -229,6 +241,44 @@ jobs:
       - name: No usage ping in the web app (dist/ and the web adapter)
         working-directory: webapp
         run: node scripts/check-no-telemetry.mjs
+
+  compat:
+    # HITOP Cloud C1 (spec/CLOUD_SERVICE.md): every released hitop CLI since 1.1.0, the binary from
+    # GitHub Releases (not this tree), runs the whole sync flow unchanged against this commit's
+    # sync server (migration 4, organizations) with the hosted Free plan limits on.
+    name: Released CLIs against this sync server
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: sync-server
+      - name: Build the sync server
+        env:
+          CARGO_PROFILE_DEV_DEBUG: "0"
+        run: cargo build --locked --manifest-path sync-server/Cargo.toml
+      - name: Each released hitop (cli-v1.1.0 and later, no pre-releases) runs cloud/compat/released-cli.sh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          tags="$(gh release list --repo "$GITHUB_REPOSITORY" --limit 100 --json tagName,isPrerelease \
+            -q '.[] | select(.isPrerelease | not) | .tagName' | grep '^cli-v' | sort -V)"
+          tested=0
+          for tag in $tags; do
+            v="${tag#cli-v}"
+            [ "$(printf '%s\n' 1.1.0 "$v" | sort -V | head -n 1)" = 1.1.0 ] || continue
+            dir="$RUNNER_TEMP/$tag"
+            mkdir -p "$dir"
+            gh release download "$tag" --repo "$GITHUB_REPOSITORY" -p 'hitop-x86_64-unknown-linux-musl.tar.gz*' -D "$dir"
+            (cd "$dir" && sha256sum -c hitop-x86_64-unknown-linux-musl.tar.gz.sha256 && tar -xzf hitop-x86_64-unknown-linux-musl.tar.gz)
+            echo "::group::$tag"
+            cloud/compat/released-cli.sh "$dir/hitop-x86_64-unknown-linux-musl/hitop" sync-server/target/debug/hitop-sync-server
+            echo "::endgroup::"
+            tested=$((tested + 1))
+          done
+          echo "tested $tested released version(s)"
+          test "$tested" -ge 1
 
   launch-gate:
     # ROADMAP T11: a Postman user's first CI run, through the container image built from this

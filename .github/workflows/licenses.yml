@@ -46,7 +46,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        package: [desktop, webapp, site]
+        package: [desktop, webapp, site, cloud/portal]
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
