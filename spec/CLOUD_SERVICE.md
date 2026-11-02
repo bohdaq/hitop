@@ -525,7 +525,7 @@ server-side row, never a new file in `environments/`.
 | ID | Tranche | Status | Needs |
 | --- | --- | --- | --- |
 | C0 | Owner decisions and accounts | decisions done; accounts open | owner |
-| C1 | Organizations, plans, entitlements; portal MVP; SOC 2 policies and first access review | **built** 2026-11-02 (commits below, CI green); left: the deploy (after the 1.2 sync server) and the owner's approvals | the 1.2 sync server deployed to the test server first (ROADMAP section 6, "1.2 signed key wraps") so migration 4 and the 1.2 deploy don't collide |
+| C1 | Organizations, plans, entitlements; portal MVP; SOC 2 policies and first access review | **deployed** to the test server 2026-11-02 (2049e95, CI green; `cloud/ops-log.md`); left: the `cloud.` route after the owner's DNS, and the owner's approvals | the 1.2 sync server deployed to the test server first (ROADMAP section 6, "1.2 signed key wraps") so migration 4 and the 1.2 deploy don't collide |
 | C2 | Harden the current VM: Postgres, limits, backups + drill, recovery key, status page, runbook | open | C0 (bucket, backup key, uptime checker, `status.` DNS), C1 |
 | C3 | Lemon Squeezy billing, pricing page, prompts, legal and security pages: **paid launch of Pro and Team** | open | C1, C2, C0 (store approved, mail service, legal drafts reviewed) |
 | C4 | Run history and alerts from your own runners; shared environment secrets | open | C3 (can start after C1; ships after C3) |

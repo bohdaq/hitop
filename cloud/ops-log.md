@@ -12,7 +12,22 @@ date (UTC), who, what, the commit, the checks run after it.
   (spec/CLOUD_SERVICE.md C1 "Needs").
 - Deploy steps (for the entry below): spec/CLOUD_SERVICE.md section 9, C1 status.
 
-<!-- Next entry: the C1 deploy. Record: commit, backup file names (sync.db.bak-<ts>), the row
+## 2026-11-02 C1 deployed to the test server (14:42 UTC)
+
+- Who: agent. Commit: 2049e95 (sync server and portal). Before it, the 1.2 sync server (c1d5e3c,
+  no migration) and the 1.2.0 site and web app (b1233c3) were deployed the same day.
+- Sync server: `install.sh` backed up `sync.db`, the binary and `/etc/hitop-sync/env` (`.bak-<ts>`
+  next to each), added `HITOP_SYNC_LIMITS=plans` and `HITOP_SYNC_PORTAL_URL=https://hitop.rws8.tech/cloud/`
+  (the `cloud.` host waits for DNS), restarted. Migration 4 applied: schema version 4.
+- Checks: `over-limits` on a copy of the database: 0 over a limit. People (users with
+  `runner_of = ''`) 1 = personal orgs 1. No error or panic in the journal. `/healthz` on
+  sync.hitop.rws8.tech 200.
+- Portal and site: `deploy/deploy.sh` from 2049e95. hitop.rws8.tech `/`, `/app/`, `/cloud/`,
+  `/cloud/healthz` 200; rws8.tech and lit.rws8.tech 200.
+- Not done: the `hitop-cloud` rws route and the `[acme]` name for cloud.hitop.rws8.tech wait for
+  the owner's DNS record (C0).
+
+<!-- Next entry (template): record: commit, backup file names (sync.db.bak-<ts>), the row
 counts before and after (users, workspaces, members; orgs with personal_of <> '' = users with
 runner_of = ''), `hitop-sync-server over-limits` output (0 over a limit), curl of /healthz on sync
 and on hitop.rws8.tech/cloud/healthz. -->
