@@ -182,6 +182,22 @@ function api() {
   st = await tabs();
   check('Clear stored responses: no tab keeps a response, IndexedDB is empty', st.tabs.every((t) => t.response == null && !t.responseStored) && (await page.locator('.settings-facts').innerText()).includes('0 kept'));
 
+  // --- 2. Import adds by default (a name in use gets " (2)"); Replace all asks (ux.cjs) ------
+  const colsBefore = await h.stored.collections();
+  const exportJson = JSON.stringify([
+    { id: colsBefore[0].id, name: colsBefore[0].name, requests: [{ id: 'r-imp', name: 'Imported one', url: `${base}/json`, method: 'GET', headers: [], body: '' }] },
+    { id: 'imp-2', name: 'Shop', requests: [{ id: 'r-shop', name: 'List orders', url: `${base}/json`, method: 'GET', headers: [], body: '', file: 'orders/list' }, { id: 'r-me', name: 'Me', url: `${base}/json`, method: 'GET', headers: [], body: '', file: 'account/me' }, { id: 'r-top', name: 'Health', url: `${base}/json`, method: 'GET', headers: [], body: '' }] },
+  ]);
+  await p.locator('aside').getByRole('button', { name: 'Import', exact: true }).click();
+  await p.locator('#dialog #json').waitFor();
+  check('Import: "Add to my collections" is the default', await p.locator('#dialog').getByRole('radio', { name: /Add to my collections/ }).isChecked());
+  await p.locator('#dialog #json').evaluate((el, text) => (el.value = text), exportJson);
+  await p.locator('#dialog').getByRole('button', { name: 'Import', exact: true }).click();
+  await settle(p);
+  const colsAfter = await h.stored.collections();
+  check('Import adds, no confirm; a clashing name gets (2)', (await p.locator('lit-material-confirm-dialog[open]').count()) === 0 && colsAfter.length === colsBefore.length + 2 && colsAfter.some((c) => c.name === `${colsBefore[0].name} (2)`) && colsAfter.some((c) => c.name === 'Shop'), colsAfter.map((c) => c.name).join());
+  check('… existing collections and tabs stay; the first imported request opens', colsAfter[0].requests.length === colsBefore[0].requests.length && (await p.locator('.tab-strip lit-material-tab[selected]').innerText()).includes('Imported one'));
+
   check('no page errors', errors.length === 0, errors.join(' || '));
   server.close();
   await h.finish();

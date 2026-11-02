@@ -229,6 +229,8 @@ function api() {
   await p.locator('#dialog input[type=file]').setInputFiles({ name: 'export.json', mimeType: 'application/json', buffer: Buffer.from(exportJson) });
   await settle(p);
   check('the chosen file fills the text area', (await p.locator('#dialog #json').evaluate((el) => el.value)) === exportJson && (await p.locator('#dialog .file-name').innerText()) === 'export.json');
+  // Adding is the default since 1.2 (ux12.cjs); Replace all keeps the confirm.
+  await p.locator('#dialog').getByRole('radio', { name: /Replace all/ }).check();
   await p.locator('#dialog').getByRole('button', { name: /import/i }).click();
   await ask.getByRole('button', { name: 'Cancel' }).waitFor({ timeout: 5000 });
   check('replacing asks first, naming what goes', await p.getByText(/Importing deletes .*Default/).isVisible());

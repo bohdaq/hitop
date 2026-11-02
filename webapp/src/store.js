@@ -39,6 +39,7 @@ import { loadFormat } from "./wasm/format.js";
 import { exampleResponse, snapshotResponse } from "./diff.js";
 import { folderToZip, zipToFolder } from "./zip.js";
 import { loadSettings, saveSettings, seconds } from "./settings.js";
+import { addCollections } from "./collection-tree.js";
 
 // Postman's pm.* API for scripts (the shim the CLI and desktop run too).
 const pmShim = loadShim(pmShimText);
@@ -785,8 +786,10 @@ export class Store extends EventTarget {
   }
 
   // Returns the import report for a Postman collection (what hitop couldn't
-  // carry over, unsupported pm.* calls by script line), else null.
-  async importJson(json) {
+  // carry over, unsupported pm.* calls by script line), else null. Imported
+  // collections are added to the ones there are (a name in use gets " (2)"),
+  // or with `replace` take their place.
+  async importJson(json, { replace = false } = {}) {
     let imported;
     let report = null;
     const parsed = JSON.parse(json.replace(/^\uFEFF/, "")); // throws on bad JSON
@@ -800,6 +803,16 @@ export class Store extends EventTarget {
     }
     // The desktop keeps ids as numbers (Rust's model); give string ids new ones.
     if (platform().name === "tauri") imported = imported.map((c) => ({ ...c, id: numericId(c.id), requests: (c.requests || []).map((r) => ({ ...r, id: numericId(r.id) })) }));
+    if (!replace) {
+      const { added, renamed } = addCollections(this.collections, imported, generateUniqueId);
+      this.collections = [...this.collections, ...added];
+      const first = added.find((c) => c.requests?.length);
+      if (first) this.openRequest(first.requests[0], first.id);
+      else this.show("collections");
+      const names = added.map((c) => c.name).join(", ");
+      this.notify(`Added ${added.length} collection${added.length === 1 ? "" : "s"}: ${names}${renamed.length ? ` (renamed: you already have ${renamed.map(([from]) => from).join(", ")})` : ""}`);
+      return report;
+    }
     this.closeAllFolders();
     this.collections = imported;
     const first = imported.find((c) => c.requests?.length);

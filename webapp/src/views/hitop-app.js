@@ -220,14 +220,15 @@ export class HitopApp extends LitElement {
       // A Postman import may come back with things to check: show them. An
       // OpenAPI spec is added as a new collection, with its report.
       const text = this.field("json");
-      const replace = async () => {
+      const replace = d.mode === "replace";
+      const collections = async () => {
         JSON.parse(text.replace(/^﻿/, "")); // bad JSON says so before anything is asked
-        // A collection import replaces every collection: ask first when that deletes something.
-        if (!(await this.confirmReplace())) return { cancelled: true };
-        return { report: await s.importJson(text) };
+        // "Replace all" deletes every collection: ask first when that deletes something.
+        if (replace && !(await this.confirmReplace())) return { cancelled: true };
+        return { report: await s.importJson(text, { replace }) };
       };
       s.isOpenapi(text)
-        .then(async (openapi) => (openapi ? { openapi: await s.importOpenapi({ text }) } : replace()))
+        .then(async (openapi) => (openapi ? { openapi: await s.importOpenapi({ text }) } : collections()))
         .then(
         ({ openapi, report, cancelled }) => {
           if (cancelled) this.dialog = { ...d, submitted: false };
@@ -393,11 +394,20 @@ export class HitopApp extends LitElement {
           </lit-material-select>`;
         footer = actions("Save");
         break;
-      case "import":
+      case "import": {
         headline = "Import collections";
+        const replace = d.mode === "replace";
+        const mode = (value, label, help) => html`<label class="import-mode-option">
+          <input type="radio" name="import-mode" value=${value} .checked=${(d.mode ?? "add") === value} @change=${() => (this.dialog = { ...this.dialog, mode: value })} />
+          <span><strong>${label}</strong><span class="hint">${help}</span></span>
+        </label>`;
         body = html`
-          <p class="dialog-note">Choose a file, drop one here or paste HITOP, Postman v2.1 or Bruno JSON. Importing replaces every
-            collection you have now (you're asked first). An OpenAPI 3 spec (YAML or JSON) is added as a new collection instead.</p>
+          <p class="dialog-note">Choose a file, drop one here or paste HITOP, Postman v2.1 or Bruno JSON, or an OpenAPI 3 spec (YAML or JSON, always added as a new collection).</p>
+          <fieldset class="import-mode">
+            <legend>Imported collections</legend>
+            ${mode("add", "Add to my collections", "A name you already have gets (2) added.")}
+            ${mode("replace", "Replace all my collections", "Deletes the ones you have now (you're asked first).")}
+          </fieldset>
           <label class="file-pick">
             <input type="file" class="visually-hidden" accept=".json,.yaml,.yml,application/json,application/yaml,text/yaml"
               @change=${(e) => this.importFile(e.target.files?.[0])} />
@@ -409,8 +419,9 @@ export class HitopApp extends LitElement {
               ?error=${Boolean(d.error)} error-text=${d.error ?? ""}></lit-material-textarea>
           </div>
           <lit-material-button variant="text" class="dialog-link" @click=${() => this.openDialog("openapi-import")}>${icon("globe")} Load an OpenAPI spec from a URL</lit-material-button>`;
-        footer = actions("Replace and import", true);
+        footer = replace ? actions("Replace and import", true) : actions("Import");
         break;
+      }
       case "import-report": {
         const { name, issues } = d.report;
         const scripts = issues.filter((i) => i.line).length;

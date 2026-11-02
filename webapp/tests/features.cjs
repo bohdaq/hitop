@@ -140,6 +140,7 @@ const settle = (p) => p.waitForTimeout(400);
   await p.locator('aside').getByRole('button', { name: 'Import' }).click();
   await p.waitForTimeout(300);
   await p.locator('#dialog #json').evaluate((el, text) => (el.value = text), postman);
+  await p.locator('#dialog').getByRole('radio', { name: /Replace all/ }).check();
   await p.locator('#dialog').getByRole('button', { name: /import/i }).click();
   // Replacing collections that have requests asks first.
   await p.locator('lit-material-confirm-dialog[open]').getByRole('button', { name: 'Replace', exact: true }).click();
