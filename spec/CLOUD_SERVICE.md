@@ -14,6 +14,31 @@ this plan; building and launching then follow the tranches and handoffs below.
 
 ---
 
+## 0. Owner decisions (2026-11-02)
+
+These answers to the questions in section 10 replace the recommendations wherever they differ. Where a later section still says otherwise, this section wins until that section is rewritten.
+
+| # | Decision | Differs from the recommendation? | What it changes |
+| --- | --- | --- | --- |
+| Q1 | Name: HITOP Cloud | no | |
+| Q2 | Stay under `hitop.rws8.tech` | no | |
+| Q3 | Billing: **Lemon Squeezy** (merchant of record) | yes (was Paddle) | C3 integrates Lemon Squeezy: checkout, subscriptions, webhooks into entitlements. The owner creates the store and API keys. |
+| Q4 | Prices: Pro $6, Team $10 per seat, Business $20 per seat, Enterprise by quote (annual billing; monthly costs more) | no | Still a proposal until the owner sets them in Lemon Squeezy. |
+| Q5 | Viewers count as seats; 5 free guest viewers per Team org | no | |
+| Q6 | AGPL + paid support and indemnity, no dual licence | no | |
+| Q7 | Portal, billing and later monitor code: this repo, `cloud/`, AGPL | no | |
+| Q8 | **No cloud monitors until confidential computing** | yes (was runner-credential monitors on a separate host) | C4 drops hosted monitors. Paid tiers rely on hosting, storage, run history and alerts from the customer's own runners (CI, `hitop schedule`), SSO and audit. The "Cloud monitors" row in section 3 becomes "Runs from your runners: history + alerts", with the same limits on history days. |
+| Q9 | Shared secret values: opt-in per environment, end-to-end to pinned devices | no | |
+| Q10 | Run history: sealed under the workspace key; only status rows readable by the server | no | |
+| Q11 | **Stay on the current VM** | yes (was two dedicated VMs) | C2 hardens the existing VM: Postgres on it, off-site encrypted backups and a restore drill, status page, resource limits. The service shares the host with other sites, so plan a move once revenue justifies it. No SLA above 99.5%. |
+| Q12 | Transactional mail service before paid launch | no | The owner picks and creates it (Postmark or SES). |
+| Q13 | **External crypto review later / not now** | yes (was before paid launch) | The paid launch doesn't wait for a review. The security page must say plainly that no external review has been done yet. ROADMAP section 6 keeps the review as an open owner item. |
+| Q14 | Hosted Free tier: 3 members, 3 workspaces, 100 MB | no | |
+| Q15 | No SSO on the shared test server until the Business tier | no | |
+| Q16 | App Store builds: sign-in only, no purchase UI | no | The owner checks that Apple guideline 3.1.3 applies. |
+| Q17 | **SOC 2 groundwork starts now** | yes (was when the first enterprise asks) | Policies, access reviews, change log and backups evidence start in C1/C2. The owner picks a compliance tool and auditor (owner handoff); Type 1 first. |
+| Q18 | EU only at launch; US region later on demand | no | |
+
 ## 1. One page summary
 
 **The offer.** HITOP stays a free, MIT, local-first API client with a git-native format, a CLI, a
