@@ -629,6 +629,56 @@ fn sync_commands_explain_what_is_missing() {
     assert!(String::from_utf8_lossy(&o.stderr).contains("runner credential"));
 }
 
+/// HITOP Cloud (a server with plan limits): `sync ls` names the org, `sync init --org` shares into
+/// an organization, and a create beyond the plan is refused with the server's message (plan,
+/// limit, where to upgrade), exit 2, nothing linked.
+#[test]
+fn organizations_and_a_refused_create() {
+    let Some(server) = server_with(&[("HITOP_SYNC_LIMITS", "plans".into()), ("HITOP_SYNC_PORTAL_URL", "https://cloud.test.example/".into())]) else { return };
+    let ada = Client::new(&server);
+    ada.login(&server, "ada@example.com");
+    let session = serde_json::from_str::<serde_json::Value>(&std::fs::read_to_string(ada.home.path().join("sync-key.json")).unwrap()).unwrap()["session"].as_str().unwrap().to_string();
+    let http = reqwest::blocking::Client::new();
+    let org: serde_json::Value = http.post(format!("{}/v1/orgs", server.url)).bearer_auth(&session).json(&serde_json::json!({ "name": "Acme" })).send().unwrap().json().unwrap();
+    let org_id = org["id"].as_str().unwrap().to_string();
+
+    let share = |name: &str, extra: &[&str]| {
+        let dir = ada.folder(name);
+        ada.ok(&["init", dir.to_str().unwrap(), "--name", name]);
+        write(&dir, "requests/a.yaml", &request("A", "https://example.test/a"));
+        let mut args = vec!["sync", "init", "-c", dir.to_str().unwrap()];
+        args.extend_from_slice(extra);
+        (ada.run(&args), dir)
+    };
+    // Into the org by name (any case) or id; an unknown name is explained.
+    let (o, _) = share("in-org", &["--org", "acme"]);
+    assert_eq!(o.code, 0, "{}", o.stderr);
+    let (o, _) = share("nowhere", &["--org", "Initech"]);
+    assert_eq!(o.code, 2);
+    assert!(o.stderr.contains("no organization named Initech") && o.stderr.contains("Acme"), "{}", o.stderr);
+    let (o, _) = share("in-org-2", &["--org", &org_id]);
+    assert_eq!(o.code, 0, "{}", o.stderr);
+    let ls = ada.ok(&["sync", "ls"]);
+    assert_eq!(ls.matches("org Acme").count(), 2, "{ls}");
+
+    // Free allows 3 workspaces per org: the personal org's 4th is refused.
+    for name in ["p1", "p2", "p3"] {
+        let (o, _) = share(name, &[]);
+        assert_eq!(o.code, 0, "{}", o.stderr);
+    }
+    let (o, dir) = share("p4", &[]);
+    assert_eq!(o.code, 2, "{}", o.stdout);
+    for part in ["plan limit", "free plan", "your personal account", "3 shared workspaces", "https://cloud.test.example/#/orgs/personal-", "402 limit"] {
+        assert!(o.stderr.contains(part), "{part} in {}", o.stderr);
+    }
+    assert_eq!(ada.run(&["sync", "status", "-c", dir.to_str().unwrap()]).code, 2, "not linked");
+    let ls = ada.ok(&["sync", "ls"]);
+    assert_eq!((ls.matches("personal").count(), ls.lines().count()), (3, 5), "{ls}");
+    // The org's own limit is separate: a third workspace in it still fits.
+    let (o, _) = share("in-org-3", &["--org", "Acme"]);
+    assert_eq!(o.code, 0, "{}", o.stderr);
+}
+
 /// Keycloak's login form, as a browser fills it: returns where Keycloak redirects to.
 fn keycloak_login(authorize: &str, username: &str, password: &str) -> String {
     let http = reqwest::blocking::Client::builder().redirect(reqwest::redirect::Policy::none()).build().unwrap();

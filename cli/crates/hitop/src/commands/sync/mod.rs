@@ -52,10 +52,16 @@ pub enum SyncCmd {
     Logout,
     /// The account, this device and its key fingerprint
     Whoami,
-    /// Your workspaces on the server
+    /// Your workspaces on the server, with the organization each belongs to
     Ls,
     /// Share a collection folder: make a new end-to-end encrypted workspace and push it
-    Init(FolderArgs),
+    Init {
+        /// Create it in this organization (name or id; default your personal one)
+        #[arg(long)]
+        org: Option<String>,
+        #[command(flatten)]
+        folder: FolderArgs,
+    },
     /// Sync a folder with an existing workspace (empty folder, or one to merge), then pull
     Link {
         workspace: String,
@@ -213,7 +219,7 @@ pub fn run(cmd: SyncCmd) -> Result<i32> {
         SyncCmd::Logout => logout().map(|_| 0),
         SyncCmd::Whoami => whoami().map(|_| 0),
         SyncCmd::Ls => ls().map(|_| 0),
-        SyncCmd::Init(f) => init(&f.path()).map(|_| 0),
+        SyncCmd::Init { org, folder } => init(&folder.path(), org.as_deref()).map(|_| 0),
         SyncCmd::Link { workspace, folder } => link(&workspace, &folder.path()),
         SyncCmd::Unlink(f) => {
             store::save_link(&f.path(), None)?;
@@ -383,9 +389,38 @@ fn ls() -> Result<()> {
         println!("No workspaces yet: `hitop sync init` shares a collection folder.");
     }
     for w in list {
-        println!("{}  {}", w["id"].as_str().unwrap_or(""), w["role"].as_str().unwrap_or(""));
+        // Servers before HITOP Cloud C1 send no org.
+        let org = match &w["org"] {
+            Value::Object(o) if o.get("personal").and_then(Value::as_bool) == Some(true) => "  personal".to_string(),
+            Value::Object(o) => format!("  org {}", o.get("name").and_then(Value::as_str).unwrap_or("")),
+            _ => String::new(),
+        };
+        println!("{}  {}{org}", w["id"].as_str().unwrap_or(""), w["role"].as_str().unwrap_or(""));
     }
     Ok(())
+}
+
+/// The id of the org `wanted` names (id, or name ignoring case), from the caller's orgs.
+fn org_id(api: &client::Api, wanted: &str) -> Result<String> {
+    let r = api.raw("GET", "/v1/orgs", None)?;
+    if r.status == 404 {
+        bail!("this sync server has no organizations");
+    }
+    if !(200..300).contains(&r.status) {
+        return Err(client::api_error(&r));
+    }
+    let orgs = r.json["orgs"].as_array().cloned().unwrap_or_default();
+    let name = |o: &Value| o["name"].as_str().unwrap_or("").to_string();
+    let found: Vec<&Value> = orgs.iter().filter(|o| o["id"] == wanted).collect();
+    let found = if found.is_empty() { orgs.iter().filter(|o| o["personal"] != true && name(o).eq_ignore_ascii_case(wanted)).collect() } else { found };
+    match found.as_slice() {
+        [o] => Ok(o["id"].as_str().unwrap_or("").to_string()),
+        [] => {
+            let names: Vec<String> = orgs.iter().filter(|o| o["personal"] != true).map(|o| format!("{} ({})", name(o), o["id"].as_str().unwrap_or(""))).collect();
+            bail!("you are in no organization named {wanted}{}", if names.is_empty() { String::new() } else { format!("; yours: {}", names.join(", ")) })
+        }
+        _ => bail!("more than one organization is named {wanted}: use its id ({})", found.iter().map(|o| o["id"].as_str().unwrap_or("")).collect::<Vec<_>>().join(", ")),
+    }
 }
 
 // ---- trust on first use ----
@@ -786,7 +821,7 @@ fn resolve(dir: &Path, path: &str, mine: bool, theirs: bool, show: bool) -> Resu
     Ok(0)
 }
 
-fn init(dir: &Path) -> Result<()> {
+fn init(dir: &Path, org: Option<&str>) -> Result<()> {
     if !hitop_core::format::is_folder(dir) {
         bail!("{} is not a collection folder (no hitop.yaml): `hitop init` makes one", dir.display());
     }
@@ -797,9 +832,14 @@ fn init(dir: &Path) -> Result<()> {
     let me = s.api.call("GET", "/v1/me", None)?;
     let recipients = keys_of(&s.account.email, &me["keys"])?;
     check_trust(&recipients, &TrustArgs::default())?;
+    let org = org.map(|o| org_id(&s.api, o)).transpose()?;
     let id = crypto::random_hex::<16>();
     let key = WorkspaceKey::generate();
-    s.api.call("POST", "/v1/workspaces", Some(json!({ "id": id, "wraps": wraps_for(&s.device, &recipients, &id, 1, 1, &key)? })))?;
+    let mut body = json!({ "id": id, "wraps": wraps_for(&s.device, &recipients, &id, 1, 1, &key)? });
+    if let Some(o) = &org {
+        body["org"] = json!(o);
+    }
+    s.api.call("POST", "/v1/workspaces", Some(body))?;
     // Made with hitop 1.2: only authenticated keys from now on.
     store::save_memory(&id, &crypto::WorkspaceMemory { strict: true, ..Default::default() })?;
     store::save_link(dir, Some(Link { workspace: id.clone(), server: s.account.server.clone() }))?;
