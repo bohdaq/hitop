@@ -292,7 +292,8 @@ impl Tx<'_> {
 /// (orgs.rs), entitlements and usage (limits.rs), API tokens (tokens.rs): every person gets a
 /// personal org (`personal-<user id>`, Free) that owns the workspaces they own; after the SQL,
 /// `limits::grandfather` raises each personal org's limits to its usage (`migrate`), so no
-/// existing account is over a limit.
+/// existing account is over a limit. 5: HITOP Cloud C2 recovery blobs (recovery.rs), one opaque
+/// blob per account.
 const MIGRATIONS: &[&str] = &[r"
 CREATE TABLE users (
   id TEXT PRIMARY KEY,
@@ -483,6 +484,13 @@ INSERT INTO entitlements (org_id, plan, seats, limits, status, period_end, updat
   SELECT id, 'free', 0, '{}', 'active', 0, created_at FROM orgs;
 UPDATE workspaces SET org_id = COALESCE((SELECT 'personal-' || MIN(m.user_id) FROM members m JOIN users u ON u.id = m.user_id
   WHERE m.workspace_id = workspaces.id AND m.role = 'owner' AND u.runner_of = ''), '');
+", r"
+CREATE TABLE recovery_blobs (
+  user_id TEXT PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
+  blob {BLOB} NOT NULL,
+  created_at BIGINT NOT NULL,
+  updated_at BIGINT NOT NULL
+);
 "];
 
 /// Steps in Rust that run in the same transaction as a migration's SQL (index = migration
