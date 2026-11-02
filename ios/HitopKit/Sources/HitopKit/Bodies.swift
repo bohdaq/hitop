@@ -165,7 +165,8 @@ public enum FormBody {
     /// The headers and body a request goes out with after its pre-request
     /// script: its form body (with a `Content-Type` unless a header sets one)
     /// when it has one and the script didn't replace the body, else the
-    /// prepared text body.
+    /// prepared text body with the Content-Type its text implies, unless a
+    /// header sets one (`Sending.addContentType`).
     static func outgoing(_ r: Request, headers: [(String, String)], body: String, _ variables: [String: String]) throws -> ([(String, String)], Data) {
         var headers = headers
         let unchanged = (try? Interpolation.interpolate(r.body, variables)) == body
@@ -175,6 +176,8 @@ public enum FormBody {
             }
             return (headers, built.body)
         }
+        // A raw body (or one the script replaced) says what it is.
+        Sending.addContentType(method: r.method, headers: &headers, body: body)
         return (headers, Data(body.utf8))
     }
 }

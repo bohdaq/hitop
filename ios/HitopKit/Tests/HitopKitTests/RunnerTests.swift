@@ -273,6 +273,15 @@ final class CLICompatibilityTests: XCTestCase {
             assert.header('content-type', 'json');
             pm.test('pm', function () { pm.expect(pm.response.json().method).to.equal('POST'); });
         """.write(to: dir.appendingPathComponent("requests/echo.yaml"), atomically: true, encoding: .utf8)
+        // A raw body with no Content-Type: both send the one its text implies.
+        try """
+        name: Raw
+        method: PATCH
+        url: ${base}/echo/raw
+        body:
+          type: text
+          content: '  <note>hi</note>'
+        """.write(to: dir.appendingPathComponent("requests/raw.yaml"), atomically: true, encoding: .utf8)
         try "variables:\n  env: g\n".write(to: dir.appendingPathComponent("globals.yaml"), atomically: true, encoding: .utf8)
         let out = dir.deletingLastPathComponent().appendingPathComponent("out")
 
@@ -291,7 +300,8 @@ final class CLICompatibilityTests: XCTestCase {
                                              runner: Runner(engine: try requireEngine()))
         let kitSeen = wire(try server.requests())
 
-        XCTAssertEqual(cliSeen.count, 4)
+        XCTAssertEqual(cliSeen.count, 5)
+        XCTAssertTrue(cliSeen.contains { $0["headers"]?["content-type"]?.stringValue == "application/xml" }, "\(cliSeen)")
         XCTAssertEqual(kitSeen.count, cliSeen.count)
         for (k, c) in zip(kitSeen, cliSeen) { XCTAssertEqual(k, c, "\nkit: \(k.compact)\ncli: \(c.compact)") }
         let kit = normalized(try JSONValue.parse(report.jsonText))

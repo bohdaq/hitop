@@ -29,7 +29,7 @@ public struct Scopes: Sendable, Equatable {
 
 /// A request as it is sent: variables filled in, auth applied, then the
 /// pre-request script run, so a script can still override the auth
-/// (hitop-core `prepare.rs`).
+/// (hitop-core `prepare.rs`); the URL then gets a scheme if it has none.
 enum Prepare {
     static func variables(collection: [String: String], environment: Environment?) -> [String: String] {
         var vars = collection
@@ -75,13 +75,14 @@ enum Prepare {
         let hasScript = !r.preRequestScript.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
         guard let engine, hasScript else {
             if let name = missing.first { throw Interpolation.MissingVariable(name: name) }
-            return (PreRequestResult(url: first.url, headers: first.headers, body: first.body, contextUpdates: [:], variables: [:], globals: [:]), hasScript)
+            return (PreRequestResult(url: try Sending.withScheme(first.url), headers: first.headers, body: first.body, contextUpdates: [:], variables: [:], globals: [:]), hasScript)
         }
         var pre = try Scripts.runPreRequest(r.preRequestScript, PreRequestInput(
             url: first.url, method: r.method, headers: first.headers, body: first.body,
             variables: variables, context: context, globals: scopes.globals), engine: engine)
         if pre.variables.isEmpty && pre.globals.isEmpty {
             if let name = missing.first { throw Interpolation.MissingVariable(name: name) }
+            pre.url = try Sending.withScheme(pre.url)
             return (pre, false)
         }
         // The script set variables: what it left as built is built again with
@@ -97,6 +98,7 @@ enum Prepare {
         } else {
             pre.headers = try pre.headers.map { (try Interpolation.fill($0.0, names: missing, vars), try Interpolation.fill($0.1, names: missing, vars)) }
         }
+        pre.url = try Sending.withScheme(pre.url)
         return (pre, false)
     }
 }
