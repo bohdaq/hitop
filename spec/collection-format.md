@@ -161,6 +161,11 @@ types are `text`) or, without one, from the content (valid JSON object or
 array → `json`, starts with `<` → `xml`, else `text`). `graphql` is never
 inferred: it is always written.
 
+What hitop adds when it sends a request is behaviour, not format, and is
+never written to these files: a `Content-Type` for a text body that has
+none (by its content), and a scheme for a URL typed without one. See
+`sending.md`.
+
 ### GraphQL
 
 ```yaml

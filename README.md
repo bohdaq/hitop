@@ -79,7 +79,9 @@ GitLab CI and any other runner: `ghcr.io/bohdaq/hitop:1.1.0` (distroless) or
   run, create and update requests and switch environments; secrets are never returned
   ([guide](https://hitop.rws8.tech/terms/use-hitop-with-claude-code-and-cursor.html)).
 - **Protocols**: HTTP (auth presets for Bearer, Basic and API key, query parameters, JSON, form and
-  multipart bodies, a cookie jar per workspace, request history); GraphQL with variables and schema
+  multipart bodies, a cookie jar per workspace, request history; a JSON, XML, HTML or text body
+  without a `Content-Type` gets one from its content, and `api.example.com/users` is sent as
+  `https://...`, the same in every app, [spec](spec/sending.md)); GraphQL with variables and schema
   completion (CLI and web app); WebSocket (`hitop ws`, and the web app, where a browser can't send
   handshake headers); gRPC, unary and server streaming, through server reflection or `.proto` files
   (`hitop grpc`). The desktop app gets WebSocket and gRPC with its new UI (the web app in Tauri,

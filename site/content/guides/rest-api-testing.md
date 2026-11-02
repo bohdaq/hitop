@@ -61,6 +61,14 @@ Body:
 }
 ```
 
+You can leave the `Content-Type` header out: when a POST, PUT or PATCH body has none, HITOP sends
+`application/json` for a body that starts with `{` or `[`, `text/html` for an HTML page,
+`application/xml` for other `<...>` and `text/plain` for anything else. The CLI, the MCP server, the
+web app, the desktop app and the iOS companion all do it the same way, `hitop snippet` shows the
+header, and it is never written into your collection. A header of your own always wins. A URL typed
+without a scheme, such as `api.example.com/users`, is sent as `https://api.example.com/users`
+(`http://` for `localhost` and `127.0.0.1`).
+
 ### Testing PUT and PATCH requests
 
 Update existing resources with PUT (full update) or PATCH (partial update):
