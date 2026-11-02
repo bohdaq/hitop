@@ -58,6 +58,17 @@ jobs:
             test "$tag" = "$version" || { echo "tag $GITHUB_REF_NAME, Cargo.toml $version"; exit 1; }
             echo "prerelease=false" >> "$GITHUB_OUTPUT"
           fi
+      - name: sync server for tests/sync.rs
+        run: |
+          cargo build --locked --manifest-path ../sync-server/Cargo.toml
+          echo "HITOP_SYNC_SERVER_BIN=$GITHUB_WORKSPACE/sync-server/target/debug/hitop-sync-server" >> "$GITHUB_ENV"
+      # tests/sync.rs `hitop sync login --sso` through Keycloak (the sync-server's test realm).
+      - name: Keycloak for tests/sync.rs
+        run: |
+          docker run -d --name keycloak -p 127.0.0.1:18080:8080 \
+            -v "$GITHUB_WORKSPACE/sync-server/tests/fixtures/keycloak:/opt/keycloak/data/import:ro" \
+            quay.io/keycloak/keycloak:26.4.2 start-dev --import-realm
+          echo "HITOP_SYNC_TEST_KEYCLOAK=http://127.0.0.1:18080" >> "$GITHUB_ENV"
       - name: actionlint (tests/schedule.rs lints the workflows hitop schedule writes)
         env:
           ACTIONLINT_VERSION: 1.7.12
