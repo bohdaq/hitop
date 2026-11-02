@@ -4,6 +4,42 @@ Reviewed: `webapp/` at `origin/main` fe54a11 (2026-11-01), built with `npm run b
 
 Not exercised: File System Access folders (`Open folder`, `Save to folder`, Git) need a real directory picker; gRPC sending (desktop only, the web build says so clearly); the real hitop-server proxy's error bodies.
 
+## Status (1.1.0)
+
+Fixes on `main` (web app and the desktop build of it), checked by `webapp/tests/ux.cjs` in web and Tauri modes. Commits:
+2bf3443 (top bar, sidebar), 0e55b0b (Content-Type, scheme), 6eb61be (Compare), c8fdaa5 (storage, response pane),
+8e6c75f (unsaved tabs, import, tab strip, shortcuts). After-screenshots: `shots/after-*.png` (local).
+
+| Item | Status | Commit |
+| --- | --- | --- |
+| Top 1: large response breaks persistence | fixed: tab responses over 256 KB saved as their first 64 KB (note after reload); failed writes reported once in a toast. IndexedDB for bodies deferred | c8fdaa5 |
+| Top 2: Import replaces without confirmation, paste only | fixed: destructive confirm naming the collections (skipped for the untouched first-run Default); file picker and drop. Additive JSON import deferred (replace-all kept, now confirmed) | 8e6c75f |
+| Top 3: raw JSON sent without Content-Type | fixed: JSON/XML/HTML/text detected when sending, noted in Headers, shown in Code; empty-valued headers left out of snippets. Raw sub-type select deferred | 0e55b0b |
+| Top 4: schemeless URL fetches the app's own page | fixed: `https://` (`http://` for localhost) prepended and kept; otherwise an error under the field; never a relative fetch; `type="url"` dropped | 0e55b0b |
+| Top 5: closing a tab discards edits silently | fixed: dirty dot on tab and sidebar row, Discard confirm, Save and close | 8e6c75f |
+| Top 6: no keyboard shortcuts | fixed: Mod+Enter, Mod+S, Mod+K and /, Alt+Shift+N/W/[/], ? and Mod+/ (list dialog). Ctrl+T/W/1..9 not usable in browsers | 8e6c75f |
+| Top 7: Compare compares a response with itself | fixed: Before defaults to the newest different response of the same request | 6eb61be |
+| Top 8: response pane | partial: Pretty/Raw/Preview (sandboxed HTML), wrap, find with count and stepping, download, invalid-JSON warning, focusable scroll region. Two-pane layout, collapsible editor, drag split deferred | c8fdaa5 |
+| Top 9: sidebar doesn't scale | partial: only the tree scrolls, footer pinned, filter box, collections fold (`hitop_collapsed_collections`). Folder groups, context menu, Ctrl+P, moving Variables deferred | 2bf3443 |
+| Top 10: tab strip | partial: selected tab scrolled into view, thin scrollbar, drafts titled METHOD host/path, middle click closes. Close "×" per tab and phone editor-tab fades deferred | 8e6c75f |
+| Owner note: logo in the top bar | fixed: logo + HITOP at the left (site link, `aria-label="HITOP website"`; plain text in the desktop app), environment picker, Manage environments, shortcuts and theme (now light/dark/system) at the right; sidebar starts with New request; phone = menu button + logo, picker and theme at the top of the drawer | 2bf3443 |
+| Quick win 1: Code button wraps | fixed | 2bf3443 |
+| Quick win 2: Content-Type, empty snippet headers | fixed | 0e55b0b |
+| Quick win 3: scheme, no relative fetch, no `type="url"` | fixed | 0e55b0b |
+| Quick win 4: Compare default | fixed | 6eb61be |
+| Quick win 5: QuotaExceededError toast | fixed | c8fdaa5 |
+| Quick win 6: active tab into view, draft titles | fixed | 8e6c75f |
+| Quick win 7: WebSocket opens Messages | fixed | 8e6c75f |
+| Quick win 8: topbar link name, h1 | fixed (visually hidden h1 "Request: …") | 2bf3443 |
+| Quick win 9: Close tab confirm | fixed | 8e6c75f |
+| Quick win 10: Mod+Enter, Mod+S | fixed | 8e6c75f |
+| Quick win 11: tree scroller, pinned footer | fixed | 2bf3443 |
+| Quick win 12: file input in Import | fixed | 8e6c75f |
+
+Deferred (not in the 1.1.0 scope): IndexedDB response store, additive JSON import, Postman folder groups, request context menu,
+two-pane response layout, Settings page, Cancel for a request in flight, History as a page, the sortable `aria-required-children`
+(in `@lit-material/sortable`), header autocomplete, variable highlighting in the URL.
+
 ## Verdict
 
 HITOP's web app is a clean, fast, honest tool: the Material surface is consistent, dark mode is first-class, wording is in plain English, Postman and OpenAPI imports produce an audit trail that Postman itself doesn't, tests/scripts/GraphQL/WebSocket all work end to end, and contrast passes AA everywhere I measured. What holds it back is not polish but a handful of trust-breaking behaviours a Postman/Bruno/Insomnia user hits in the first ten minutes: a 5 MB response silently stops every later save and tabs vanish on reload; "Import" wipes all existing collections with no confirmation; a raw JSON POST goes out without any `Content-Type`; a URL typed without `https://` fetches HITOP's own index.html and records a green 200; closing a tab discards edits with no warning; and there are no keyboard shortcuts at all (Ctrl+Enter does nothing from the body editor). Fix the top five and the app is competitive with Hoppscotch for the "send a request in the browser" use case; the rest of the list is daily-friction work (response pane height, sidebar scale, tab strip, compare defaults).

@@ -128,6 +128,9 @@ hitop/
 │   ├── src/views/sync-view.js  # the Sync page (both modes): sign in (email or SSO, paste the code), share, join, conflicts, members/invites/trust, runner credential, audit log (owners)
 │   ├── tests/harness.cjs       # e2e in web or Tauri mode (HITOP_MODE=tauri); tests/tauri-mock.cjs mocks invoke in Node
 │   ├── tests/sync.cjs          # two people against a real sync server (HITOP_SYNC_SERVER_BIN), web and Tauri modes; audit log; SSO via Keycloak (HITOP_SYNC_TEST_KEYCLOAK)
+│   ├── src/shortcuts.js        # keyboard shortcuts (Mod+Enter, Mod+S, Mod+K, Alt+Shift+N/W/[/], ?): one capture listener in hitop-app.js
+│   ├── src/platform/local-storage.js # localStorage writes under the React keys that return false when refused (full storage → toast)
+│   ├── tests/ux.cjs            # UI/UX review fixes (reviews/2026-11-01-webapp-ux): Content-Type, scheme, response tools, quota, dirty tabs, import, shortcuts, top bar
 │   └── tests/e2e.cjs           # Playwright e2e, seeded with React-app storage (legacy-storage.json)
 ├── frontend/                   # React app, now only for the browser extensions
 │   ├── index.html              # Vite entry point (root of frontend/)
@@ -340,6 +343,9 @@ hitop/
 ### Web app (`webapp/`)
 - Lit + lit-material in light DOM; theme from `site/src/theme.css`; `npm run build` → `dist/` (base `/app/`)
 - Storage must stay readable by the React app (same keys/shapes); `npm run test:e2e` with BASE= a running hitop-server
+- Saved tabs keep at most the first 64 KB of a response over 256 KB (`storedTab`, flag `responseCut`); raw bodies (`store.rawBodies`),
+  URL errors and dirty state are memory only. Raw-body Content-Type is decided in `dispatch` (`features.js` `rawContentType`), URLs get a
+  scheme via `withScheme` (never a relative fetch). Sidebar folding: localStorage `hitop_collapsed_collections`
 - GraphQL body: tab `bodyMode: "graphql"` ⇄ saved `bodyType: graphql` + `graphql` (store.js `EXTRA_FIELDS`/`SAVED_FIELDS`); the body
   is built by hitop-wasm `graphqlBody` (same bytes as the CLI); `store.fetchSchema()` introspects through `dispatch` (proxy/Rust),
   schemas live in memory per tab (`store.schemas`). Editor deps: cm6-graphql, graphql, @codemirror/autocomplete (MIT)
