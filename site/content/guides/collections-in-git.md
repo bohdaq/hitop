@@ -88,7 +88,7 @@ On GitHub:
 ```yaml
 - uses: bohdaq/hitop-action@v1
   with:
-    version: 1.0.0
+    version: 1.1.0
     path: api
     env: staging
   env:

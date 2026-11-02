@@ -180,7 +180,7 @@ hitop/
   Details and the asset map: `brand/BRAND.md`
 
 ### Rust CLI (`cli/`)
-- Workspace version: `1.0.0` (hitop, hitop-core, hitop-git in sync; also `[workspace.dependencies] hitop-core` version; the locks of
+- Workspace version: `1.1.0` (hitop, hitop-core, hitop-git in sync; also `[workspace.dependencies] hitop-core` version; the locks of
   hitop-wasm, cli/fuzz and desktop carry hitop-core's version too)
 - Format v1 is stable: additive changes only (spec section 7). A new request/collection key needs a new case in
   `spec/compat/v1/` (the test writes its expected.json once; review, commit); existing cases never change
@@ -268,7 +268,7 @@ hitop/
   session + device secret in the keychain (`sync/<host>`) or `HITOP_SYNC_KEY_FILE` (0600; tests use it with `HITOP_KEYCHAIN=off`);
   `HITOP_SYNC_SERVER` (default https://sync.hitop.rws8.tech; http only for localhost); `HITOP_SYNC_RUNNER=hitop-runner-1.<b64url JSON>` = read-only
   runner credential for `pull`. Wraps only for pinned keys (`--trust <fp>` or a TTY prompt; changed key refused). Exit 1 while a conflict is open,
-  2 on errors. `hitop schedule --sync` adds a pull step (GitHub: docker image + `secrets.HITOP_SYNC_RUNNER`; needs an image > 1.0.0) or a pull before
+  2 on errors. `hitop schedule --sync` adds a pull step (GitHub: docker image + `secrets.HITOP_SYNC_RUNNER`; needs an image >= 1.1.0) or a pull before
   the cron run. Core `hitop_core::sync` decides; `hitop-sync-crypto` (cli workspace, published before hitop by release-cli.yml when its version is new)
 - MCP: `hitop mcp [folder]` (rmcp 3.8 + tokio, binary crate only): stdio server, workspace = folder or global storage;
   tools list_collections, list_requests, get_request, run_request, run_collection, create_request, update_request,
@@ -289,7 +289,7 @@ hitop/
 ### GitHub Action and images
 - `ghcr.io/bohdaq/hitop:<version>` is distroless static, nonroot, entrypoint `hitop`, workdir `/work`;
   `<version>-debug` (`cli/docker/Dockerfile.debug`, busybox shell, root) is for GitLab CI (`entrypoint: [""]`).
-  Both pushed by `release-cli.yml`; `latest`/`debug` only on non-rc tags. Newest release: `1.0.0`
+  Both pushed by `release-cli.yml`; `latest`/`debug` only on non-rc tags. Newest release: `1.1.0`
 - `bohdaq/hitop-action` (separate repo, MIT, tags `v1` → `v1.0.1`, `v1.0.0`): composite action, `run.sh` (docker run
   `--network host --user $(id -u)`; a tag not on ghcr.io but already on the runner is used as is, since v1.0.1), `summary.js` (job summary from report.json v1, sets the outcome from the
   exit code), self-test with a local Python mock server. Move `v1` to each compatible release
