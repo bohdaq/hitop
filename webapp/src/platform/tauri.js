@@ -6,6 +6,7 @@
 // desktop), secret values in the OS keychain, and collection folders on
 // disk. Open tabs stay in the window's localStorage.
 import storageService from "../../../frontend/src/services/storageService.jsx";
+import { localSaves } from "./local-storage.js";
 import { historyFromRust, historyToRust } from "./history.js";
 import { askOnce, settingsPages } from "./tauri-settings.js";
 import { gitApi, gitPages } from "./tauri-git.js";
@@ -312,9 +313,9 @@ export function createPlatform() {
       loadCollections: () => cache.collections,
       saveCollections: (collections) => write("collections", "save_collections", { collections: collections.filter((c) => !folderIds.has(c.id)) }),
       loadTabs: storageService.loadTabs,
-      saveTabs: storageService.saveTabs,
+      saveTabs: localSaves.saveTabs,
       loadCurrentTab: storageService.loadCurrentTab,
-      saveCurrentTab: storageService.saveCurrentTab,
+      saveCurrentTab: localSaves.saveCurrentTab,
       loadHistory: () => cache.history,
       saveHistory: (history) => write("history", "save_history", { history: historyToRust(history) }),
       loadContexts: () => cache.contexts,

@@ -211,14 +211,26 @@ async function readResponse(res) {
   const text = await res.text();
   if (contentType.includes("json")) {
     try {
-      return { data: JSON.stringify(JSON.parse(text), null, 2), type: "json" };
-    } catch {
-      return { data: text, type: "text" };
+      return { data: JSON.stringify(JSON.parse(text), null, 2), type: "json", raw: text };
+    } catch (e) {
+      // Shown as text, with what the parser said (not silently).
+      return { data: text, type: "text", jsonError: text.trim() ? e.message : null };
     }
   }
   if (contentType.includes("html")) return { data: text, type: "html" };
   if (contentType.includes("xml")) return { data: text, type: "xml" };
   return { data: text, type: "text" };
+}
+
+// A tab as saved: a response body over KEEP_BODY is cut to its first
+// KEEP_HEAD characters (`responseCut`), so one large response can't fill the
+// browser's storage (about 5 MB for everything) and stop every later save.
+// The open tab keeps the whole body until the page is reloaded.
+const KEEP_BODY = 256 * 1024;
+const KEEP_HEAD = 64 * 1024;
+export function storedTab(t) {
+  if (typeof t.response !== "string" || t.response.length <= KEEP_BODY) return t;
+  return { ...t, response: t.response.slice(0, KEEP_HEAD), responseCut: true };
 }
 
 // Drops keys set to undefined (a cleared bodyType), so they aren't saved.
@@ -281,6 +293,8 @@ export class Store extends EventTarget {
     this.grpcTabs = new Map();
     // What's wrong with a tab's URL, shown under the field until it changes (by tab id).
     this.urlErrors = new Map();
+    // Response bodies as received, by tab id, where the tab shows them formatted (JSON).
+    this.rawBodies = new Map();
     // What the main area shows: the request tabs, all collections, one
     // collection, or one collection's variables.
     this.view = { kind: "request", collectionId: null };
@@ -303,7 +317,7 @@ export class Store extends EventTarget {
   emit() {
     // Views get the store by reference; this changing number re-renders them.
     this.version = (this.version ?? 0) + 1;
-    // Saving serializes everything, responses included (up to 5 MB), so it
+    // Saving serializes everything, responses included (cut at 256 KB), so it
     // runs at most every 250 ms rather than on each keystroke.
     clearTimeout(this.saveTimer);
     this.saveTimer = setTimeout(() => this.save(), 250);
@@ -313,11 +327,14 @@ export class Store extends EventTarget {
   save() {
     clearTimeout(this.saveTimer);
     const st = storage();
-    st.saveCollections(this.collections);
-    st.saveTabs(this.tabs);
+    // Adapters return false when the browser refused a write (storage full).
+    const failed = [];
+    if (st.saveCollections(this.collections) === false) failed.push("collections");
+    if (st.saveTabs(this.tabs.map(storedTab)) === false) failed.push("tabs");
     st.saveCurrentTab(this.currentTab);
-    st.saveHistory(this.history);
-    st.saveContexts(this.contexts);
+    if (st.saveHistory(this.history) === false) failed.push("history");
+    if (st.saveContexts(this.contexts) === false) failed.push("script values");
+    this.reportStorage(failed);
     st.saveGlobals?.(this.globals);
     const globalEnvs = this.environments.filter((e) => !this.folderEnvs.has(e.id));
     st.saveEnvironments(globalEnvs, globalEnvs.some((e) => e.id === this.activeEnvironmentId) ? this.activeEnvironmentId : null);
@@ -329,6 +346,19 @@ export class Store extends EventTarget {
     } catch {
       // Storage full or blocked: the jar lasts for this page only.
     }
+  }
+
+  // Says once that saving fails (and again after a save that worked), so a
+  // full storage isn't silent: edits made meanwhile would be gone on reload.
+  reportStorage(failed) {
+    if (!failed.length) {
+      this.storageFull = false;
+      return;
+    }
+    if (this.storageFull) return;
+    this.storageFull = true;
+    const what = failed.length === 1 ? failed[0] : `${failed.slice(0, -1).join(", ")} and ${failed.at(-1)}`;
+    this.notify(`Couldn't save your ${what}: this browser's storage for HITOP is full, so changes are lost on reload. Close tabs with large responses or clear History.`);
   }
 
   // --- cookies -------------------------------------------------------------------
@@ -1209,18 +1239,22 @@ export class Store extends EventTarget {
       auth: tab.auth,
       ...SAVED_FIELDS(tab),
     };
-    this.tabs = tabService.updateTab(this.tabs, index, { loading: true, response: null, statusCode: null, responseHeaders: null, durationMs: null, tests: null });
+    this.tabs = tabService.updateTab(this.tabs, index, { loading: true, response: null, statusCode: null, responseHeaders: null, durationMs: null, tests: null, responseCut: false, jsonError: null });
     this.emit();
     const started = performance.now();
     try {
       const { prepared, res } = await this.dispatch(source, tab.loadedCollectionId);
       const headers = {};
       res.headers.forEach((v, k) => (headers[k] = v));
-      const { data, type } = await readResponse(res);
+      const { data, type, raw, jsonError } = await readResponse(res);
       const durationMs = res.timeMs ?? Math.round(performance.now() - started);
+      // The body as received, for Raw (memory only: the tab keeps the formatted one).
+      if (raw !== undefined) this.rawBodies.set(tab.id, raw);
+      else this.rawBodies.delete(tab.id);
       this.tabs = tabService.updateTab(this.tabs, index, {
         response: data,
         responseType: type,
+        jsonError: jsonError ?? null,
         statusCode: res.status,
         responseHeaders: headers,
         durationMs,

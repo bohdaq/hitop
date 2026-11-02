@@ -3,6 +3,7 @@
 // collection folders open through the File System Access API where the
 // browser has it (Chrome, Edge).
 import storageService from "../../../frontend/src/services/storageService.jsx";
+import { localSaves } from "./local-storage.js";
 import { sendRequest, usesProxy } from "../../../frontend/src/services/transportService.jsx";
 import { loadEnvironments, loadGlobals, saveEnvironments, saveGlobals } from "../features.js";
 import { loadFormat } from "../wasm/format.js";
@@ -176,6 +177,7 @@ export function createPlatform() {
     async init() {},
     storage: {
       ...storageService,
+      ...localSaves,
       loadEnvironments,
       saveEnvironments,
       loadGlobals,

@@ -54,6 +54,24 @@ function highlighted(text, type) {
   }
 }
 
+// The text split around every case-insensitive match of `query`: odd parts
+// are the matches. At most 2,000 are marked.
+const MAX_MARKS = 2000;
+function findMarks(text, query) {
+  const parts = [];
+  const hay = text.toLowerCase();
+  const needle = query.toLowerCase();
+  let from = 0;
+  let count = 0;
+  for (let at = hay.indexOf(needle); at !== -1 && count < MAX_MARKS; at = hay.indexOf(needle, at + needle.length)) {
+    parts.push(text.slice(from, at), text.slice(at, at + needle.length));
+    from = at + needle.length;
+    count++;
+  }
+  parts.push(text.slice(from));
+  return { parts, count, capped: count === MAX_MARKS && hay.indexOf(needle, from) !== -1 };
+}
+
 const size = (n) => (n < 1024 ? `${n} B` : n < 1024 * 1024 ? `${(n / 1024).toFixed(1)} KB` : `${(n / 1024 / 1024).toFixed(1)} MB`);
 
 const bytes = (text) => {
@@ -79,12 +97,20 @@ export class HitopRequest extends LitElement {
     tab: { attribute: false },
     section: { state: true },
     responseSection: { state: true },
+    bodyMode: { state: true },
+    wrap: { state: true },
+    find: { state: true },
+    findAt: { state: true },
   };
 
   constructor() {
     super();
     this.section = 0;
     this.responseSection = 0;
+    this.bodyMode = "pretty";
+    this.wrap = false;
+    this.find = "";
+    this.findAt = 0;
   }
 
   createRenderRoot() {
@@ -436,7 +462,7 @@ export class HitopRequest extends LitElement {
         </lit-material-tabs>
         ${this.responseSection === 0
           ? t.response
-            ? html`<lit-material-code-block class="response-body" label=${t.responseType.toUpperCase()}>${code ? unsafeHTML(code) : t.response}</lit-material-code-block>`
+            ? this.renderBodyView(code)
             : html`<p class="hint">No body${t.method === "HEAD" ? ": HEAD responses never have one" : ""}.</p>`
           : this.responseSection === 1
             ? html`<dl class="response-headers">
@@ -444,6 +470,70 @@ export class HitopRequest extends LitElement {
               </dl>`
             : testList(tests)}
       </section>`;
+  }
+
+  // The response body: Pretty (formatted, highlighted) | Raw (as received) |
+  // Preview (HTML, sandboxed: no scripts, no requests of its own), wrap,
+  // find (marks every match; Enter / Shift+Enter step through) and download.
+  renderBodyView(code) {
+    const t = this.tab;
+    const html_ = t.responseType === "html";
+    const mode = this.bodyMode === "preview" && !html_ ? "pretty" : this.bodyMode;
+    const raw = this.store.rawBodies.get(t.id);
+    const text = mode === "raw" && raw !== undefined ? raw : t.response;
+    const query = this.find ?? "";
+    const marks = query && mode !== "preview" ? findMarks(text, query) : null;
+    if (marks && this.findAt >= marks.count) this.findAt = 0;
+    const seg = (value, label, title) => html`<button type="button" class="seg" aria-pressed=${String(mode === value)} title=${title}
+      @click=${() => (this.bodyMode = value)}>${label}</button>`;
+    const step = (by) => {
+      if (!marks?.count) return;
+      this.findAt = (this.findAt + by + marks.count) % marks.count;
+      this.requestUpdate();
+    };
+    const ext = t.responseType === "json" ? "json" : t.responseType === "html" ? "html" : t.responseType === "xml" ? "xml" : "txt";
+    return html`
+      ${t.responseCut
+        ? html`<lit-material-alert variant="info" class="response-note">This response was over 256 KB, so only its first 64 KB were kept when the page was saved. Send the request again to see all of it.</lit-material-alert>`
+        : nothing}
+      ${t.jsonError
+        ? html`<lit-material-alert variant="warning" class="response-note">The server says JSON, but the body doesn't parse: ${t.jsonError}. It's shown as text.</lit-material-alert>`
+        : nothing}
+      <div class="body-tools">
+        <span class="segmented" role="group" aria-label="Show the body">
+          ${seg("pretty", "Pretty", "Formatted and highlighted")}${seg("raw", "Raw", "As received")}${html_ ? seg("preview", "Preview", "The page, rendered without scripts") : nothing}
+        </span>
+        <button type="button" class="seg wrap-toggle" aria-pressed=${String(this.wrap)} title="Wrap long lines" @click=${() => (this.wrap = !this.wrap)}>
+          ${icon("text-align-left")} Wrap
+        </button>
+        ${mode !== "preview"
+          ? html`<label class="find">
+              ${icon("magnifying-glass")}
+              <input type="search" class="find-input" placeholder="Find in body" aria-label="Find in body" .value=${query}
+                @input=${(e) => ((this.find = e.target.value), (this.findAt = 0))}
+                @keydown=${(e) => e.key === "Enter" && (e.preventDefault(), step(e.shiftKey ? -1 : 1))} />
+              ${query ? html`<span class="find-count" role="status">${marks.count ? `${this.findAt + 1} of ${marks.count}${marks.capped ? "+" : ""}` : "No matches"}</span>` : nothing}
+            </label>`
+          : nothing}
+        <lit-material-icon-button aria-label="Download the body" title="Download the body" @click=${() => this.app.download(`response.${ext}`, text, ext === "json" ? "application/json" : "text/plain")}>
+          ${icon("file-arrow-down")}
+        </lit-material-icon-button>
+      </div>
+      ${mode === "preview"
+        ? html`<iframe class="response-preview" title="Preview of the HTML response" sandbox="" referrerpolicy="no-referrer" srcdoc=${t.response}></iframe>`
+        : html`<div class=${`response-scroll ${this.wrap ? "wrap" : ""}`} tabindex="0" role="region" aria-label="Response body">
+            ${marks
+              ? html`<pre class="response-text">${marks.parts.map((p, i) => (i % 2 ? html`<mark class=${(i - 1) / 2 === this.findAt ? "current" : ""}>${p}</mark>` : p))}</pre>`
+              : html`<lit-material-code-block class="response-body" label=${mode === "raw" ? "RAW" : t.responseType.toUpperCase()}>${mode === "pretty" && code ? unsafeHTML(code) : text}</lit-material-code-block>`}
+          </div>`}`;
+  }
+
+  updated() {
+    // Brings the current match into view when the search or the match changes.
+    const key = this.find ? `${this.find}|${this.findAt}` : "";
+    if (key === this.shownMatch) return;
+    this.shownMatch = key;
+    this.querySelector(".response-text mark.current")?.scrollIntoView({ block: "nearest", inline: "nearest" });
   }
 
   // Method, WebSocket or gRPC (request kinds of their own in hitop-core).

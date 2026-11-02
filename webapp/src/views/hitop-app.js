@@ -364,9 +364,9 @@ export class HitopApp extends LitElement {
   }
 
   // The browser downloads the file; the desktop asks where to save it.
-  async download(name, text) {
+  async download(name, text, type = "application/json") {
     try {
-      if (await platform().saveFile(name, text, "application/json")) this.toast(IS_TAURI ? `Saved ${name}` : `Downloaded ${name}`);
+      if (await platform().saveFile(name, text, type)) this.toast(IS_TAURI ? `Saved ${name}` : `Downloaded ${name}`);
     } catch (e) {
       this.toast(`Couldn't save ${name}: ${e?.message ?? e}`);
     }

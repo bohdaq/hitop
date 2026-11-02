@@ -113,7 +113,34 @@ lit-material-tabs::part(tablist) { overflow-x: auto; scrollbar-width: none; }
 .response.empty { padding-top: var(--space-300); }
 .response-meta { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-200); margin-bottom: var(--space-200); font-family: var(--font-mono); font-size: var(--text-sm); line-height: var(--leading-sm); color: var(--md-sys-color-on-surface-variant); }
 .response-meta .warn { color: var(--md-sys-color-error); }
-.response-body { display: block; margin-top: var(--space-200); }
+.response-body { display: block; }
+/* The body scrolls in a focusable region (keyboard users can scroll it). */
+.response-scroll { margin-top: var(--space-100); max-height: 70vh; overflow: auto; border-radius: var(--md-sys-shape-corner-large); background: var(--md-sys-color-surface-container-low); }
+.response-scroll:focus-visible { outline: 2px solid var(--md-sys-color-primary); outline-offset: 2px; }
+.response-scroll .response-body::part(pre) { max-height: none; overflow: visible; }
+.response-scroll.wrap .response-body::part(pre), .response-scroll.wrap .response-text { white-space: pre-wrap; overflow-wrap: anywhere; }
+.response-text { margin: 0; padding: var(--space-200); font-family: var(--font-mono); font-size: var(--text-sm); line-height: var(--leading-sm); }
+.response-text mark { background: light-dark(#fde68a, #6b5a12); color: inherit; border-radius: 2px; }
+.response-text mark.current { background: var(--md-sys-color-primary); color: var(--md-sys-color-on-primary); }
+.response-preview { display: block; width: 100%; height: 60vh; margin-top: var(--space-100); border: 1px solid var(--md-sys-color-outline-variant); border-radius: var(--md-sys-shape-corner-large); background: #fff; }
+.response-note { display: block; margin-top: var(--space-200); }
+.body-tools { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-100); margin-top: var(--space-200); }
+.segmented { display: inline-flex; border: 1px solid var(--md-sys-color-outline-variant); border-radius: var(--md-sys-shape-corner-full); overflow: hidden; }
+.seg {
+  display: inline-flex; align-items: center; gap: var(--space-50); min-height: 32px; padding: 0 var(--space-150, 12px);
+  border: 0; background: transparent; cursor: pointer; font-size: var(--text-sm); line-height: var(--leading-sm); font-weight: 600;
+  color: var(--md-sys-color-on-surface-variant);
+}
+.seg lit-material-icon { width: 16px; height: 16px; }
+.segmented .seg + .seg { border-left: 1px solid var(--md-sys-color-outline-variant); }
+.seg[aria-pressed="true"] { background: var(--md-sys-color-secondary-container, var(--md-sys-color-primary-container)); color: var(--md-sys-color-on-secondary-container, var(--md-sys-color-on-primary-container)); }
+.seg:focus-visible { outline: 2px solid var(--md-sys-color-primary); outline-offset: -2px; }
+.wrap-toggle { border: 1px solid var(--md-sys-color-outline-variant); border-radius: var(--md-sys-shape-corner-full); }
+.find { display: inline-flex; align-items: center; gap: var(--space-50); flex: 1 1 14rem; min-width: 0; max-width: 24rem; padding: 0 var(--space-100); border: 1px solid var(--md-sys-color-outline-variant); border-radius: var(--md-sys-shape-corner-full); color: var(--md-sys-color-on-surface-variant); }
+.find lit-material-icon { width: 16px; height: 16px; }
+.find:focus-within { outline: 2px solid var(--md-sys-color-primary); outline-offset: 1px; }
+.find-input { flex: 1; min-width: 0; height: 32px; border: 0; background: transparent; color: var(--md-sys-color-on-surface); font: inherit; font-size: var(--text-sm); outline: none; }
+.find-count { flex: none; font-family: var(--font-mono); font-size: var(--text-xs); }
 lit-material-code-block::part(code-block) { border-radius: var(--md-sys-shape-corner-large); background: var(--md-sys-color-surface-container-low); }
 lit-material-code-block::part(pre) { max-height: 60vh; overflow: auto; font-family: var(--font-mono); font-size: var(--text-sm); line-height: var(--leading-sm); }
 .response-headers { display: grid; grid-template-columns: max-content minmax(0, 1fr); gap: var(--space-75) var(--space-300); margin: var(--space-200) 0 0; font-family: var(--font-mono); font-size: var(--text-sm); line-height: var(--leading-sm); }
