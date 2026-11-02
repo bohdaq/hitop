@@ -1515,7 +1515,7 @@ export PATH="$HOME/.cargo/bin:$PATH"
     `email_verified` refused (`HITOP_SYNC_OIDC_ASSUME_VERIFIED=1` for Entra, only with allowed domains). Env: `HITOP_SYNC_OIDC_ISSUER`,
     `_CLIENT_ID`, `_CLIENT_SECRET` or `_CLIENT_SECRET_FILE`, `_ALLOWED_DOMAINS`, `_REQUIRED_GROUPS`/`_GROUPS_CLAIM`, `_SCOPES`, `_NAME`,
     `HITOP_SYNC_SSO_REQUIRED` (no sign-in mails, no passkey sign-in for those domains; checked at mail request, link use and passkey).
-    Crates: jsonwebtoken 9.3 (ring, already in the tree via rustls) and ureq 3 (rustls + webpki roots); cargo-deny clean.
+    Crates: jsonwebtoken 10 (aws-lc-rs backend, already in the tree via rustls; was 9.3 until 2026-11-02) and ureq 3 (rustls + webpki roots); cargo-deny clean.
   - Audit log: 19 event types (`audit::EVENTS`: signin with method, signin_failed with reason, signout, passkey_added, device_key_added,
     sso_linked, sso_config_error; workspace_created/deleted, member_added/removed, role_changed, key_rotated, key_wrapped,
     invite_created/deleted/accepted, runner_created, session_revoked), written inside the action's transaction (failures in their own),
@@ -1546,8 +1546,8 @@ export PATH="$HOME/.cargo/bin:$PATH"
   - Deviations: the web app and desktop take the SSO code by paste, not a redirect back into the app (one path for both, no Tauri
     command; the CLI gets the loopback redirect). Existing sessions survive turning SSO on (documented with the SQL to end them).
     Tamper evidence only: someone who writes the database can rewrite a whole chain; clients that pinned a head notice (THREAT_MODEL
-    open item 7: anchor heads outside the server). jsonwebtoken stays on 9.3 (10+ needs a separate crypto backend; 9 uses the ring
-    already linked).
+    open item 7: anchor heads outside the server). jsonwebtoken stayed on 9.3 here; moved to 10 with the aws-lc-rs
+    backend (already linked through rustls) on 2026-11-02 for GHSA-h395-gr6q-cpjc.
 
 #### T26 iOS companion code
 - Swift package `HitopKit` (format reader with Yams, runner on URLSession, environments, keychain
@@ -1748,7 +1748,6 @@ Agent appends here; owner ticks when done.
 | 2026-11-01 | T25 | Decide whether the hosted test server (sync.hitop.rws8.tech) gets SSO. Agent's recommendation: leave it off. It serves individuals with sign-in mails and passkeys; SSO is for organizations running their own server with their own provider, and turning it on here means registering a client at one provider (for example Google with `HITOP_SYNC_OIDC_ALLOWED_DOMAINS` set to your domain) and keeping its secret on the VM. If yes: register a web client with redirect URI `https://sync.hitop.rws8.tech/v1/auth/sso/callback`, add `HITOP_SYNC_OIDC_ISSUER`, `HITOP_SYNC_OIDC_CLIENT_ID`, `HITOP_SYNC_OIDC_CLIENT_SECRET` (and the domains) to `/etc/hitop-sync/env` (root, 0600), `sudo systemctl restart hitop-sync`, and test with `hitop sync login --sso`. Leave `HITOP_SYNC_SSO_REQUIRED` off on a shared test server. | |
 | 2026-11-01 | T25 | Before any public launch (adds to the review above): the reviewer also covers `sync-server/src/oidc.rs` (token checks, the code handoff, account linking) and `sync-server/src/audit.rs` (chain, purge), and THREAT_MODEL sections "Single sign-on" and "Audit log". Open: audit heads anchored outside the server (THREAT_MODEL item 7). | |
 | 2026-11-02 | UX | Decide: the web app (and the desktop build of it) now adds `Content-Type` to a raw POST/PUT/PATCH body that has none (JSON, XML, HTML or text/plain by its first character, `features.js` `rawContentType`), in Send, collection runs and the Code dialog. hitop-core `prepare` (CLI `hitop run`, `hitop snippet`, MCP) and HitopKit still send no Content-Type for raw bodies, so the same collection sends different headers. Agent's recommendation: port it to hitop-core `prepare` and HitopKit (with a `CLICompatibilityTests` case) in 1.2; or say web-only is fine. Also eye-check the review fixes on the web app and desktop build: top bar, sidebar fold/filter, tab strip (tabs now at most 16rem wide, so one tab no longer spans the strip), theme toggle now cycles light/dark/system. | |
-| 2026-11-02 | 1.1.0 | Dependabot alert GHSA-h395-gr6q-cpjc (jsonwebtoken 9.3, sync-server) stays open: the sync server no longer relies on the affected checks (3055102 checks exp/iat/nbf itself, with tests). Dismiss it as "vulnerable code not used", or ask for the move to jsonwebtoken 10 (needs the rust_crypto or aws-lc backend instead of ring). |
 
 ## 7. Setup the owner does before the agent starts
 

@@ -414,7 +414,7 @@ hitop/
 - T24: migration 2 (`users.runner_of`, `invites`); `PUT .../members/:user {role}`, `POST/GET/DELETE .../invites`, `POST /v1/invites/accept`,
   `POST .../runners`; runner accounts `<id>@runner.invalid` (viewer, one workspace, 1-year session, no sign-in/keys/invites/workspaces); `/invite` page
 - T25: migration 3 (`oidc_identities`, `audit_log`, `audit_chain`); SSO `GET /v1/auth/sso`, `POST .../sso/start|finish`, `GET .../sso/callback`
-  (env `HITOP_SYNC_OIDC_*`, `HITOP_SYNC_SSO_REQUIRED`; jsonwebtoken 9 + ureq 3, ring); audit `GET /v1/workspaces/:ws/audit[/verify]`, `GET /v1/me/audit`,
+  (env `HITOP_SYNC_OIDC_*`, `HITOP_SYNC_SSO_REQUIRED`; jsonwebtoken 10 with the aws_lc_rs backend + ureq 3); audit `GET /v1/workspaces/:ws/audit[/verify]`, `GET /v1/me/audit`,
   `hitop-sync-server audit-verify`, hourly purge (`HITOP_SYNC_AUDIT_RETENTION_DAYS`, 365), IPs truncated (`HITOP_SYNC_AUDIT_IP`, `HITOP_SYNC_TRUSTED_PROXIES`)
 - Own Cargo workspace: `hitop-sync-server` (AGPL); the MIT client crate `cli/crates/hitop-sync-crypto` is in the cli workspace and only a dev-dependency here
 - Tests: `cd sync-server && cargo test --workspace`; Postgres: `HITOP_SYNC_TEST_POSTGRES=postgres://... cargo test --features postgres --test postgres`;
