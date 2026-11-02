@@ -432,7 +432,10 @@ class HitopSync extends LitElement {
             <lit-material-button variant="text" @click=${() => this.run("signout", async () => {
               await this.sync.signOut();
               this.remote = null;
-            })}>Sign out</lit-material-button></p>`
+            })}>Sign out</lit-material-button></p>
+          ${a.server === DEFAULT_SERVER && platform().name !== "tauri"
+            ? html`<p class="hint">Organizations, members, usage and plan: <a href="https://cloud.hitop.rws8.tech/" target="_blank" rel="noopener noreferrer">HITOP Cloud</a></p>`
+            : nothing}`
         : nothing}
       ${this.error ? html`<lit-material-alert variant="error" role="alert">${this.error}</lit-material-alert>` : nothing}
       ${this.untrusted ? this.renderUntrusted() : nothing}
