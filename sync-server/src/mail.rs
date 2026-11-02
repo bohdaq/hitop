@@ -10,7 +10,7 @@
 
 use std::sync::{Arc, Mutex};
 
-use lettre::message::Mailbox;
+use lettre::message::{Mailbox, MultiPart};
 use lettre::transport::smtp::authentication::Credentials;
 use lettre::transport::smtp::client::{Tls, TlsParameters};
 use lettre::{Message, SmtpTransport, Transport};
@@ -59,7 +59,7 @@ impl Mailer {
             builder = builder.credentials(Credentials::new(user.clone(), password));
         }
         let address = if user.contains('@') { user.clone() } else { format!("{}@{}", if user.is_empty() { "noreply" } else { &user }, tls_name.trim_start_matches("mail.")) };
-        let from_default = format!("hitop <{address}>");
+        let from_default = format!("HITOP <{address}>");
         let from_raw = std::env::var("SMTP_FROM").ok().filter(|s| !s.is_empty()).unwrap_or(from_default);
         let from: Mailbox = from_raw.parse().map_err(|_| format!("SMTP_FROM {from_raw:?} is not an address"))?;
         Ok(Mailer::Smtp { transport: Box::new(builder.build()), from })
@@ -80,8 +80,18 @@ impl Mailer {
                 let transport = transport.as_ref().clone();
                 let from = from.clone();
                 std::thread::spawn(move || {
+                    // lettre's default Message-ID ends in @localhost (no `hostname` feature): spam filters
+                    // count that against the mail, so use the From domain.
+                    let message_id = format!("<{}@{}>", uuid::Uuid::new_v4(), from.email.domain());
                     let message = mail.to.parse::<Mailbox>().map_err(|e| e.to_string()).and_then(|to| {
-                        Message::builder().from(from).to(to).subject(mail.subject).body(mail.body).map_err(|e| e.to_string())
+                        let html = html_body(&mail.body);
+                        Message::builder()
+                            .from(from)
+                            .to(to)
+                            .subject(mail.subject)
+                            .message_id(Some(message_id))
+                            .multipart(MultiPart::alternative_plain_html(mail.body, html))
+                            .map_err(|e| e.to_string())
                     });
                     // The address is not logged: it's personal data.
                     match message.and_then(|m| transport.send(&m).map(|_| ()).map_err(|e| e.to_string())) {
@@ -94,8 +104,33 @@ impl Mailer {
     }
 }
 
+/// The HTML alternative of a plain-text mail: paragraphs, line breaks, https links clickable.
+/// Plain-text-only mail with a sign-in link scores worse with spam filters.
+pub fn html_body(text: &str) -> String {
+    let escape = |s: &str| s.replace('&', "&amp;").replace('<', "&lt;").replace('>', "&gt;").replace('"', "&quot;");
+    let line = |l: &str| {
+        let t = l.trim();
+        if t.starts_with("https://") && !t.contains(char::is_whitespace) {
+            let url = escape(t);
+            format!("<a href=\"{url}\">{url}</a>")
+        } else {
+            escape(l)
+        }
+    };
+    let paragraphs: Vec<String> = text.split("\n\n").map(|p| p.trim_matches('\n')).filter(|p| !p.is_empty()).map(|p| format!("<p>{}</p>", p.lines().map(line).collect::<Vec<_>>().join("<br>\n"))).collect();
+    format!("<!doctype html>\n<html><body style=\"font-family:sans-serif;font-size:15px;line-height:1.5\">\n{}\n</body></html>\n", paragraphs.join("\n"))
+}
+
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn html_body_escapes_and_links() {
+        let html = super::html_body("Open this:\n\nhttps://x.test/a?b=1&c=2\n\n<b>code</b>\nline two\n");
+        assert!(html.contains("<p>Open this:</p>"));
+        assert!(html.contains("<a href=\"https://x.test/a?b=1&amp;c=2\">https://x.test/a?b=1&amp;c=2</a>"));
+        assert!(html.contains("<p>&lt;b&gt;code&lt;/b&gt;<br>\nline two</p>"));
+    }
+
     #[test]
     fn smtp_credentials_are_percent_decoded() {
         let url = url::Url::parse("smtp://noreply%40rws8.tech:p%2Bw%3Ad+x@127.0.0.1:587").unwrap();
