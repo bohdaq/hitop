@@ -99,6 +99,25 @@ fn a_changed_row_changes_the_table_hash() {
 }
 
 #[test]
+fn dump_writes_the_data_and_a_manifest_of_exactly_that_data() {
+    let s = Server::new("dump");
+    fill::fill(&s);
+    let src = format!("sqlite:{}", s.dir.join("sync.db").display());
+    let dir = s.dir.join("backup");
+    let o = bin(&["dump", dir.to_str().unwrap()], Some(&src));
+    assert_eq!(o.status.code(), Some(0), "{}", text(&o));
+    let manifest: serde_json::Value = serde_json::from_slice(&std::fs::read(dir.join("manifest.json")).unwrap()).unwrap();
+    assert_eq!((manifest["format"].as_str(), manifest["file"].as_str()), (Some("sqlite"), Some("sync.db")));
+    let copy = Db::open(&format!("sqlite:{}", dir.join("sync.db").display())).unwrap();
+    assert_eq!(dbtools::stats(&copy).unwrap().to_json()["tables"], manifest["stats"]["tables"]);
+    assert_eq!(manifest["stats"]["tables"], dbtools::stats(&s.app.state().db).unwrap().to_json()["tables"]);
+    // Only into an empty directory.
+    let o = bin(&["dump", dir.to_str().unwrap()], Some(&src));
+    assert_eq!(o.status.code(), Some(2));
+    assert!(text(&o).contains("not empty"), "{}", text(&o));
+}
+
+#[test]
 fn snapshot_is_a_consistent_copy_that_verifies() {
     let s = Server::new("snapshot");
     let chains = fill::fill(&s);

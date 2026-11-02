@@ -587,9 +587,24 @@ impl Db {
 
     /// Runs `f` in one transaction: committed on `Ok`, rolled back on `Err`.
     pub fn tx<T, E: From<DbError>>(&self, f: impl FnOnce(&mut Tx) -> Result<T, E>) -> Result<T, E> {
+        self.run_tx(false, f)
+    }
+
+    /// Runs `f` in one read-only transaction that sees a single snapshot of the database
+    /// (Postgres: repeatable read; SQLite: a deferred transaction, one snapshot in WAL mode), so
+    /// stats and copies are consistent while the server keeps writing.
+    pub fn read_tx<T, E: From<DbError>>(&self, f: impl FnOnce(&mut Tx) -> Result<T, E>) -> Result<T, E> {
+        self.run_tx(true, f)
+    }
+
+    fn run_tx<T, E: From<DbError>>(&self, read: bool, f: impl FnOnce(&mut Tx) -> Result<T, E>) -> Result<T, E> {
         let mut guard = self.backend.lock().unwrap_or_else(|e| e.into_inner());
         let backend = guard.as_mut();
-        let begin = backend.begin();
+        let begin = match (read, backend.kind()) {
+            (true, "postgres") => "BEGIN ISOLATION LEVEL REPEATABLE READ READ ONLY",
+            (true, _) => "BEGIN",
+            _ => backend.begin(),
+        };
         backend.batch(begin)?;
         let mut tx = Tx { backend };
         match f(&mut tx) {

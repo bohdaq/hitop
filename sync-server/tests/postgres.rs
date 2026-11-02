@@ -243,6 +243,63 @@ fn postgres_migrate_db_from_sqlite_and_back() {
     assert_eq!(hitop_sync_server::dbtools::stats(&hitop_sync_server::Db::open(&back).unwrap()).unwrap().tables, grown.tables);
 }
 
+/// `hitop-sync-server dump` on Postgres: pg_dump runs in the snapshot the manifest's stats come
+/// from, and a pg_restore of it into a new database has exactly those rows (what restore-drill.sh
+/// checks). Needs HITOP_SYNC_TEST_PG_DUMP and HITOP_SYNC_TEST_PG_RESTORE (the commands; CI runs
+/// them from the postgres:17-alpine image, as the server's major version).
+#[test]
+fn postgres_dump_matches_its_manifest_after_a_restore() {
+    let (Ok(url), Ok(pg_dump), Ok(pg_restore)) = (std::env::var("HITOP_SYNC_TEST_POSTGRES"), std::env::var("HITOP_SYNC_TEST_PG_DUMP"), std::env::var("HITOP_SYNC_TEST_PG_RESTORE")) else {
+        eprintln!("HITOP_SYNC_TEST_POSTGRES, HITOP_SYNC_TEST_PG_DUMP or HITOP_SYNC_TEST_PG_RESTORE not set: skipped");
+        return;
+    };
+    let mut admin = postgres::Client::connect(&url, postgres::NoTls).unwrap();
+    let (src_db, dst_db) = (format!("dump_src_{}", std::process::id()), format!("dump_dst_{}", std::process::id()));
+    for d in [&src_db, &dst_db] {
+        admin.batch_execute(&format!("DROP DATABASE IF EXISTS {d}")).unwrap();
+        admin.batch_execute(&format!("CREATE DATABASE {d}")).unwrap();
+    }
+    let with_db = |d: &str| {
+        let mut u = url::Url::parse(&url).unwrap();
+        u.set_path(&format!("/{d}"));
+        u.to_string()
+    };
+    let src = with_db(&src_db);
+    let s = Server::with("pg-dump", |c| c.database = src.clone());
+    let chains = common::fill::fill(&s);
+    let dir = s.dir.join("dump");
+    let o = std::process::Command::new(env!("CARGO_BIN_EXE_hitop-sync-server")).args(["dump", dir.to_str().unwrap()]).env("HITOP_SYNC_DATABASE", &src).env("HITOP_SYNC_PG_DUMP", &pg_dump).output().unwrap();
+    assert_eq!(o.status.code(), Some(0), "{}", output(&o));
+    let manifest: serde_json::Value = serde_json::from_slice(&std::fs::read(dir.join("manifest.json")).unwrap()).unwrap();
+    assert_eq!((manifest["format"].as_str(), manifest["file"].as_str()), (Some("pg_dump-custom"), Some("sync.pgdump")));
+    let before = hitop_sync_server::dbtools::stats(&s.app.state().db).unwrap();
+    assert_eq!(manifest["stats"]["tables"], before.to_json()["tables"]);
+
+    // Restore into an empty database with the given pg_restore (reading the dump on stdin).
+    let dst = with_db(&dst_db);
+    let words: Vec<&str> = pg_restore.split_whitespace().collect();
+    let mut parsed = url::Url::parse(&dst).unwrap();
+    let password = parsed.password().unwrap_or("").to_string();
+    parsed.set_password(None).unwrap();
+    let r = std::process::Command::new(words[0])
+        .args(&words[1..])
+        .args(["--no-owner", "--no-privileges", &format!("--dbname={parsed}")])
+        .env("PGPASSWORD", password)
+        .stdin(std::fs::File::open(dir.join("sync.pgdump")).unwrap())
+        .output()
+        .unwrap();
+    assert!(r.status.success(), "{}", output(&r));
+    let restored = hitop_sync_server::Db::open(&dst).unwrap();
+    assert_eq!(hitop_sync_server::dbtools::stats(&restored).unwrap().to_json()["tables"], manifest["stats"]["tables"]);
+    drop(restored);
+    let o = bin(&["audit-verify"], Some(&dst));
+    assert!(output(&o).contains(&format!("{chains} chains, 0 broken")), "{}", output(&o));
+    drop(s);
+    for d in [&src_db, &dst_db] {
+        admin.batch_execute(&format!("DROP DATABASE IF EXISTS {d} WITH (FORCE)")).unwrap();
+    }
+}
+
 /// The unix socket URL form the VM uses (`?host=/run/postgresql`), when the test is given one.
 #[test]
 fn postgres_over_a_unix_socket() {

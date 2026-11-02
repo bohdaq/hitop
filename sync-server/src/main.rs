@@ -42,6 +42,15 @@ fn main() {
         print_stats(&stats, args.iter().any(|a| a == "--json"));
         std::process::exit(0);
     }
+    // `hitop-sync-server dump <dir>`: a backup (data file + manifest.json with its row counts and
+    // hashes); deploy/backup.sh encrypts and uploads it. HITOP_SYNC_PG_DUMP: the pg_dump command.
+    if command == Some("dump") {
+        let Some(dir) = args.get(1) else { fail("usage: hitop-sync-server dump <empty directory>".into()) };
+        let pg_dump = std::env::var("HITOP_SYNC_PG_DUMP").ok().filter(|s| !s.trim().is_empty()).unwrap_or_else(|| "pg_dump".into());
+        let manifest = dbtools::dump(&state.db, &state.config.database, std::path::Path::new(dir), &pg_dump).unwrap_or_else(|e| fail(e.to_string()));
+        println!("{manifest:#}");
+        std::process::exit(0);
+    }
     // `hitop-sync-server snapshot <file>`: a consistent copy of a SQLite database (backups).
     if command == Some("snapshot") {
         let Some(out) = args.get(1) else { fail("usage: hitop-sync-server snapshot <file>".into()) };

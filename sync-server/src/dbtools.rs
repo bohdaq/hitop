@@ -84,23 +84,23 @@ pub fn schema_of(tx: &mut Tx) -> Result<i64, DbError> {
 
 /// Calls `f` with every row of `table` (columns `cols`, as given), a workspace at a time when the
 /// table has `workspace_id` (so the blobs table is never held in memory whole).
-fn each_chunk(db: &Db, table: &str, cols: &[String], mut f: impl FnMut(Vec<Row>) -> Result<(), DbError>) -> Result<(), DbError> {
+fn each_chunk(tx: &mut Tx, table: &str, cols: &[String], mut f: impl FnMut(Vec<Row>) -> Result<(), DbError>) -> Result<(), DbError> {
     let list = cols.iter().map(|c| quote(c)).collect::<Result<Vec<_>, _>>()?.join(", ");
     let t = quote(table)?;
     if cols.iter().any(|c| c == "workspace_id") {
-        let groups = db.tx(|tx| tx.query(&format!("SELECT DISTINCT workspace_id FROM {t}"), &[]))?;
+        let groups = tx.query(&format!("SELECT DISTINCT workspace_id FROM {t}"), &[])?;
         for g in groups {
-            let rows = db.tx(|tx| tx.query(&format!("SELECT {list} FROM {t} WHERE workspace_id = $1"), &[g.text(0).into()]))?;
+            let rows = tx.query(&format!("SELECT {list} FROM {t} WHERE workspace_id = $1"), &[g.text(0).into()])?;
             f(rows)?;
         }
         Ok(())
     } else {
-        f(db.tx(|tx| tx.query(&format!("SELECT {list} FROM {t}"), &[]))?)
+        f(tx.query(&format!("SELECT {list} FROM {t}"), &[])?)
     }
 }
 
-fn sorted_columns(db: &Db, table: &str) -> Result<Vec<String>, DbError> {
-    let mut cols = db.tx(|tx| tx.columns(table))?;
+fn sorted_columns(tx: &mut Tx, table: &str) -> Result<Vec<String>, DbError> {
+    let mut cols = tx.columns(table)?;
     if cols.is_empty() {
         return Err(DbError(format!("table {table} is missing")));
     }
@@ -108,14 +108,20 @@ fn sorted_columns(db: &Db, table: &str) -> Result<Vec<String>, DbError> {
     Ok(cols)
 }
 
-/// Row counts and content hashes of every table the migrations create.
+/// Row counts and content hashes of every table the migrations create, from one consistent
+/// snapshot of the database.
 pub fn stats(db: &Db) -> Result<Stats, DbError> {
-    let (kind, schema) = db.tx(|tx| Ok::<_, DbError>((tx.kind().to_string(), schema_of(tx)?)))?;
+    db.read_tx(stats_in)
+}
+
+/// [`stats`] in a transaction the caller holds (`dump` takes them in the snapshot pg_dump reads).
+pub fn stats_in(tx: &mut Tx) -> Result<Stats, DbError> {
+    let (kind, schema) = (tx.kind().to_string(), schema_of(tx)?);
     let mut tables = Vec::new();
     for table in Db::tables() {
-        let cols = sorted_columns(db, &table)?;
+        let cols = sorted_columns(tx, &table)?;
         let mut hashes: Vec<[u8; 32]> = Vec::new();
-        each_chunk(db, &table, &cols, |rows| {
+        each_chunk(tx, &table, &cols, |rows| {
             hashes.extend(rows.iter().map(row_hash));
             Ok(())
         })?;
@@ -155,26 +161,8 @@ pub fn copy(from: &Db, to: &Db) -> Result<CopyReport, DbError> {
             return Err(DbError(format!("the target is not empty ({table} has {n} rows): migrate-db only copies into a new, empty database")));
         }
     }
-    to.tx(|tx| {
-        for table in &tables {
-            let cols = sorted_columns(from, table)?;
-            let mut theirs = tx.columns(table)?;
-            theirs.sort();
-            if theirs != cols {
-                return Err(DbError(format!("table {table}: the columns differ ({} vs {})", cols.join(","), theirs.join(","))));
-            }
-            let list = cols.iter().map(|c| quote(c)).collect::<Result<Vec<_>, _>>()?.join(", ");
-            let marks = (1..=cols.len()).map(|i| format!("${i}")).collect::<Vec<_>>().join(", ");
-            let sql = format!("INSERT INTO {} ({list}) VALUES ({marks})", quote(table)?);
-            each_chunk(from, table, &cols, |rows| {
-                for row in rows {
-                    tx.execute(&sql, row.values())?;
-                }
-                Ok(())
-            })?;
-        }
-        Ok::<_, DbError>(())
-    })?;
+    // Read from one snapshot of the source, write in one transaction on the target.
+    from.read_tx(|src| to.tx(|tx| copy_tables(src, tx, &tables)))?;
     let source = stats(from)?;
     let target = stats(to)?;
     if source.tables != target.tables {
@@ -190,6 +178,29 @@ pub fn copy(from: &Db, to: &Db) -> Result<CopyReport, DbError> {
     Ok(CopyReport { source, target })
 }
 
+fn copy_tables(src: &mut Tx, tx: &mut Tx, tables: &[String]) -> Result<(), DbError> {
+    {
+        for table in tables {
+            let cols = sorted_columns(src, table)?;
+            let mut theirs = tx.columns(table)?;
+            theirs.sort();
+            if theirs != cols {
+                return Err(DbError(format!("table {table}: the columns differ ({} vs {})", cols.join(","), theirs.join(","))));
+            }
+            let list = cols.iter().map(|c| quote(c)).collect::<Result<Vec<_>, _>>()?.join(", ");
+            let marks = (1..=cols.len()).map(|i| format!("${i}")).collect::<Vec<_>>().join(", ");
+            let sql = format!("INSERT INTO {} ({list}) VALUES ({marks})", quote(table)?);
+            each_chunk(src, table, &cols, |rows| {
+                for row in rows {
+                    tx.execute(&sql, row.values())?;
+                }
+                Ok(())
+            })?;
+        }
+    }
+    Ok(())
+}
+
 /// A consistent copy of a SQLite database in one file (`VACUUM INTO`), safe while the server
 /// runs. The backup of a server that is still on SQLite.
 pub fn snapshot_sqlite(db: &Db, out: &std::path::Path) -> Result<(), DbError> {
@@ -197,8 +208,62 @@ pub fn snapshot_sqlite(db: &Db, out: &std::path::Path) -> Result<(), DbError> {
         return Err(DbError(format!("{} exists", out.display())));
     }
     if db.kind() != "sqlite" {
-        return Err(DbError("snapshot is for SQLite; back up Postgres with pg_dump (deploy/backup.sh)".into()));
+        return Err(DbError("snapshot is for SQLite; for Postgres use dump (pg_dump in the same snapshot as the stats)".into()));
     }
     db.execute_alone("VACUUM INTO $1", &[out.display().to_string().into()])?;
     Ok(())
+}
+
+/// A backup in `dir` (`hitop-sync-server dump`): the data file and `manifest.json` with the row
+/// counts and content hashes **of exactly that data**, so a restore can be checked row for row.
+///
+/// - SQLite: `sync.db`, a [`snapshot_sqlite`]; the stats are taken on the snapshot.
+/// - Postgres: `sync.pgdump` (`pg_dump --format=custom`), run with `--snapshot` of a repeatable-read
+///   transaction this function holds, and the stats are taken in that same transaction.
+///   `pg_dump` is the command `pg_dump` names (it may have arguments: `docker run ... pg_dump`); the
+///   password goes to it in `PGPASSWORD`, not on its command line.
+pub fn dump(db: &Db, url: &str, dir: &std::path::Path, pg_dump: &str) -> Result<Json, DbError> {
+    let io = |e: std::io::Error| DbError(format!("{}: {e}", dir.display()));
+    std::fs::create_dir_all(dir).map_err(io)?;
+    if std::fs::read_dir(dir).map_err(io)?.next().is_some() {
+        return Err(DbError(format!("{} is not empty", dir.display())));
+    }
+    let (file, format, stats) = if db.kind() == "sqlite" {
+        let out = dir.join("sync.db");
+        snapshot_sqlite(db, &out)?;
+        let copy = Db::open(&format!("sqlite:{}", out.display()))?;
+        ("sync.db", "sqlite", stats(&copy)?)
+    } else {
+        let out = dir.join("sync.pgdump");
+        let mut parsed = url::Url::parse(url).map_err(|e| DbError(format!("database URL: {e}")))?;
+        let password = parsed.password().map(|p| percent_encoding::percent_decode_str(p).decode_utf8_lossy().into_owned());
+        let _ = parsed.set_password(None);
+        let words: Vec<&str> = pg_dump.split_whitespace().collect();
+        let (program, pre) = words.split_first().ok_or_else(|| DbError("no pg_dump command".into()))?;
+        let stats = db.read_tx(|tx| {
+            let snapshot = tx.query_one("SELECT pg_export_snapshot()", &[])?.map(|r| r.text(0)).unwrap_or_default();
+            let file = std::fs::File::create(&out).map_err(io)?;
+            let mut cmd = std::process::Command::new(program);
+            cmd.args(pre).arg(format!("--snapshot={snapshot}")).args(["--format=custom", "--no-owner", "--no-privileges"]).arg(format!("--dbname={parsed}")).stdout(file);
+            if let Some(p) = &password {
+                cmd.env("PGPASSWORD", p);
+            }
+            let status = cmd.status().map_err(|e| DbError(format!("{pg_dump}: {e}")))?;
+            if !status.success() {
+                return Err(DbError(format!("{pg_dump} failed ({status})")));
+            }
+            stats_in(tx)
+        })?;
+        ("sync.pgdump", "pg_dump-custom", stats)
+    };
+    let manifest = json!({
+        "v": 1,
+        "format": format,
+        "file": file,
+        "createdAt": crate::api::now_secs(),
+        "serverVersion": env!("CARGO_PKG_VERSION"),
+        "stats": stats.to_json(),
+    });
+    std::fs::write(dir.join("manifest.json"), format!("{manifest:#}\n")).map_err(io)?;
+    Ok(manifest)
 }
