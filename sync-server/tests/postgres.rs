@@ -185,3 +185,72 @@ fn postgres_orgs_limits_tokens() {
     assert_eq!(s.call("DELETE", &format!("/v1/me/tokens/{}", t.json["id"].as_str().unwrap()), Some(&ada.session), None).status, 204);
     assert_eq!(s.call("GET", "/v1/workspaces", Some(token), None).status, 401);
 }
+
+fn bin(args: &[&str], database: Option<&str>) -> std::process::Output {
+    let mut c = std::process::Command::new(env!("CARGO_BIN_EXE_hitop-sync-server"));
+    c.args(args).env_remove("HITOP_SYNC_DATABASE");
+    if let Some(db) = database {
+        c.env("HITOP_SYNC_DATABASE", db);
+    }
+    c.output().unwrap()
+}
+
+fn output(o: &std::process::Output) -> String {
+    format!("{}{}", String::from_utf8_lossy(&o.stdout), String::from_utf8_lossy(&o.stderr))
+}
+
+/// HITOP Cloud C2: the switch from SQLite to Postgres (`migrate-db`), checked as the cutover script
+/// checks it, and the way back (Postgres → a new SQLite file) for a rollback after writes.
+#[test]
+fn postgres_migrate_db_from_sqlite_and_back() {
+    let Some(url) = database("migrate") else {
+        eprintln!("HITOP_SYNC_TEST_POSTGRES not set: skipped");
+        return;
+    };
+    let s = Server::new("pg-migrate-src");
+    let chains = common::fill::fill(&s);
+    let src = format!("sqlite:{}", s.dir.join("sync.db").display());
+    let before = hitop_sync_server::dbtools::stats(&s.app.state().db).unwrap();
+
+    let o = bin(&["migrate-db", "--from", &src, "--to", &url], None);
+    assert_eq!(o.status.code(), Some(0), "{}", output(&o));
+    assert!(output(&o).contains(&format!("{chains} chains, 0 broken")), "{}", output(&o));
+    let pg = hitop_sync_server::Db::open(&url).unwrap();
+    assert_eq!(pg.kind(), "postgres");
+    assert_eq!(hitop_sync_server::dbtools::stats(&pg).unwrap().tables, before.tables, "every row, byte for byte");
+    drop(pg);
+    let o = bin(&["audit-verify"], Some(&url));
+    assert_eq!(o.status.code(), Some(0), "{}", output(&o));
+
+    // A second run is refused: the target has rows now.
+    let o = bin(&["migrate-db", "--from", &src, "--to", &url], None);
+    assert_eq!(o.status.code(), Some(2), "{}", output(&o));
+    assert!(output(&o).contains("not empty"), "{}", output(&o));
+
+    // The server runs on the copy: people sign in and find their workspace, writes go on.
+    let after = Server::with("pg-migrate-run", |c| c.database = url.clone());
+    let session = after.sign_in("ada@example.com");
+    let mine = after.call("GET", "/v1/workspaces", Some(&session), None);
+    assert_eq!(mine.json["workspaces"].as_array().unwrap().len(), 1, "{}", mine.json);
+    Device::new(&after, "dee@example.com");
+    let grown = hitop_sync_server::dbtools::stats(&after.app.state().db).unwrap();
+    drop(after);
+
+    // Rollback after writes on Postgres: copied back into a new SQLite file, nothing lost.
+    let back = format!("sqlite:{}", s.dir.join("back.db").display());
+    let o = bin(&["migrate-db", "--from", &url, "--to", &back], None);
+    assert_eq!(o.status.code(), Some(0), "{}", output(&o));
+    assert_eq!(hitop_sync_server::dbtools::stats(&hitop_sync_server::Db::open(&back).unwrap()).unwrap().tables, grown.tables);
+}
+
+/// The unix socket URL form the VM uses (`?host=/run/postgresql`), when the test is given one.
+#[test]
+fn postgres_over_a_unix_socket() {
+    let Ok(socket_url) = std::env::var("HITOP_SYNC_TEST_POSTGRES_SOCKET") else {
+        eprintln!("HITOP_SYNC_TEST_POSTGRES_SOCKET not set: skipped");
+        return;
+    };
+    let db = hitop_sync_server::Db::open(&socket_url).unwrap();
+    assert_eq!(db.kind(), "postgres");
+    assert_eq!(db.tx(|tx| tx.query_one("SELECT 1::bigint", &[])).unwrap().unwrap().int(0), 1);
+}

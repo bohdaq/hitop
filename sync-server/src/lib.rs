@@ -8,6 +8,7 @@ pub mod auth;
 pub mod blobs;
 pub mod config;
 pub mod db;
+pub mod dbtools;
 pub mod limits;
 pub mod mail;
 pub mod oidc;

@@ -62,6 +62,10 @@ impl From<Vec<u8>> for Value {
 pub struct Row(Vec<Value>);
 
 impl Row {
+    /// Every value of the row, in column order.
+    pub fn values(&self) -> &[Value] {
+        &self.0
+    }
     pub fn int(&self, i: usize) -> i64 {
         match &self.0[i] {
             Value::Int(v) => *v,
@@ -97,6 +101,10 @@ trait Backend: Send {
     fn batch(&mut self, sql: &str) -> Result<(), DbError>;
     fn begin(&self) -> &'static str;
     fn ddl(&self, sql: &str) -> String;
+    /// `sqlite` or `postgres`.
+    fn kind(&self) -> &'static str;
+    /// The column names of `table`, in table order.
+    fn columns(&mut self, table: &str) -> Result<Vec<String>, DbError>;
 }
 
 struct Sqlite(rusqlite::Connection);
@@ -156,6 +164,14 @@ impl Backend for Sqlite {
 
     fn ddl(&self, sql: &str) -> String {
         sql.replace("{BLOB}", "BLOB")
+    }
+
+    fn kind(&self) -> &'static str {
+        "sqlite"
+    }
+
+    fn columns(&mut self, table: &str) -> Result<Vec<String>, DbError> {
+        Ok(self.query("SELECT name FROM pragma_table_info($1) ORDER BY cid", &[table.into()])?.iter().map(|r| r.text(0)).collect())
     }
 }
 
@@ -224,6 +240,16 @@ impl Backend for Postgres {
     fn ddl(&self, sql: &str) -> String {
         sql.replace("{BLOB}", "BYTEA")
     }
+
+    fn kind(&self) -> &'static str {
+        "postgres"
+    }
+
+    fn columns(&mut self, table: &str) -> Result<Vec<String>, DbError> {
+        // The table the connection's search_path finds (tests use a schema per test).
+        let sql = "SELECT column_name::text FROM information_schema.columns WHERE table_name = $1 AND table_schema = (SELECT n.nspname::text FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace WHERE c.oid = to_regclass($1)) ORDER BY ordinal_position";
+        Ok(self.query(sql, &[table.into()])?.iter().map(|r| r.text(0)).collect())
+    }
 }
 
 pub struct Db {
@@ -246,6 +272,16 @@ impl Tx<'_> {
 
     pub fn query_one(&mut self, sql: &str, params: &[Value]) -> Result<Option<Row>, DbError> {
         Ok(self.backend.query(sql, params)?.into_iter().next())
+    }
+
+    /// `sqlite` or `postgres`.
+    pub fn kind(&self) -> &'static str {
+        self.backend.kind()
+    }
+
+    /// The column names of `table` (empty when there is no such table).
+    pub fn columns(&mut self, table: &str) -> Result<Vec<String>, DbError> {
+        self.backend.columns(table)
     }
 }
 
@@ -494,6 +530,18 @@ impl Db {
         MIGRATIONS.len()
     }
 
+    /// Every table the migrations create, in creation order (a table is created after the tables
+    /// it references, so copying in this order satisfies every foreign key). Not `schema_version`.
+    pub fn tables() -> Vec<String> {
+        MIGRATIONS
+            .iter()
+            .flat_map(|sql| sql.lines())
+            .filter_map(|line| line.trim().strip_prefix("CREATE TABLE "))
+            .filter_map(|rest| rest.split([' ', '(']).next())
+            .map(String::from)
+            .collect()
+    }
+
     fn migrate(&self, upto: usize) -> Result<(), DbError> {
         let mut guard = self.backend.lock().unwrap_or_else(|e| e.into_inner());
         let b = guard.as_mut();
@@ -516,6 +564,17 @@ impl Db {
             }
         }
         Ok(())
+    }
+
+    /// One statement outside any transaction (`VACUUM INTO` can't run in one).
+    pub fn execute_alone(&self, sql: &str, params: &[Value]) -> Result<u64, DbError> {
+        let mut guard = self.backend.lock().unwrap_or_else(|e| e.into_inner());
+        guard.as_mut().execute(sql, params)
+    }
+
+    /// `sqlite` or `postgres`.
+    pub fn kind(&self) -> &'static str {
+        self.backend.lock().unwrap_or_else(|e| e.into_inner()).kind()
     }
 
     /// Runs `f` in one transaction: committed on `Ok`, rolled back on `Err`.

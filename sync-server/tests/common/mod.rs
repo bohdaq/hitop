@@ -16,6 +16,7 @@ use rust_web_server::request::Request;
 use rust_web_server::server::{Address, ConnectionInfo};
 use serde_json::{json, Value};
 
+pub mod fill;
 pub mod idp;
 pub mod t25;
 
