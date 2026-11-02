@@ -199,7 +199,7 @@ function api() {
   await ask.getByRole('button', { name: 'Cancel' }).click();
   await settle(p);
   check('Cancel keeps the tab and the edit', (await h.stored.tabs()).tabs.length === tabsBefore && (await tab()).url.endsWith('?v=2'));
-  await p.locator('.response-meta').click();
+  await p.locator('.response-meta .status-chip').click(); // (not a button in the meta row)
   await p.keyboard.press(`${mod}+s`);
   await settle(p);
   const echoSaved = (await h.stored.collections()).flatMap((c) => c.requests).find((r) => r.name === 'Echo');
@@ -210,7 +210,7 @@ function api() {
   await p.keyboard.press('Alt+Shift+KeyW');
   await settle(p);
   check('Alt+Shift+W closes an empty tab without asking', (await h.stored.tabs()).tabs.length === tabsBefore && (await p.locator('lit-material-confirm-dialog[open]').count()) === 0);
-  await p.locator('.response-meta').click();
+  await p.locator('.response-meta .status-chip').click(); // (not a button in the meta row)
   await p.keyboard.press('Shift+Slash');
   await p.locator('#dialog .shortcut-list').waitFor({ timeout: 5000 });
   check('? lists the shortcuts', (await p.locator('#dialog .shortcut-list').innerText()).includes('Send the request'));

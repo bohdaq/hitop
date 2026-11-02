@@ -3,6 +3,7 @@
 // e.code for letters (Alt changes e.key on macOS). Browsers keep Ctrl/Cmd+T,
 // +W and +N for themselves, so tab shortcuts use Alt+Shift; the same keys
 // work in the desktop app. Mod+/ is left to the code editors (toggle comment).
+// Mod+K goes to the URL field, Mod+P opens quick open (find any request).
 export const IS_MAC = typeof navigator !== "undefined" && /Mac|iPhone|iPad/.test(navigator.platform || navigator.userAgent || "");
 
 const MOD = IS_MAC ? "⌘" : "Ctrl";
@@ -13,6 +14,7 @@ export const SHORTCUTS = [
   [[MOD, "Enter"], "Send the request (from anywhere, editors included)"],
   [[MOD, "S"], "Save the request (a draft asks where)"],
   [[MOD, "K"], "Go to the URL field"],
+  [[MOD, "P"], "Quick open: find any saved request or open tab (in place of Print)"],
   [["/"], "Go to the URL field (when not typing)"],
   [[ALT, "Shift", "N"], "New tab"],
   [[ALT, "Shift", "W"], "Close the tab"],
@@ -29,8 +31,9 @@ export const SAVE_KEYS = keyLabel([MOD, "S"]);
 const typing = (e) =>
   e.composedPath().some((n) => n.localName === "input" || n.localName === "textarea" || n.localName === "select" || n.isContentEditable);
 
-// The action for a keydown, or null. `actions`: send, save, focusUrl, newTab,
-// closeTab, nextTab, prevTab, help.
+// The action for a keydown, or null. `actions`: send, save, focusUrl,
+// quickOpen, newTab, closeTab, nextTab, prevTab, help. Mod+P is the
+// browser's Print elsewhere: the app takes it only while it has the focus.
 export function shortcutFor(e) {
   if (e.isComposing || e.repeat) return null;
   const mod = IS_MAC ? e.metaKey && !e.ctrlKey : e.ctrlKey && !e.metaKey;
@@ -38,6 +41,7 @@ export function shortcutFor(e) {
     if (e.key === "Enter") return "send";
     if (e.code === "KeyS") return "save";
     if (e.code === "KeyK") return "focusUrl";
+    if (e.code === "KeyP") return "quickOpen";
   }
   if (e.altKey && e.shiftKey && !e.ctrlKey && !e.metaKey) {
     if (e.code === "KeyN") return "newTab";

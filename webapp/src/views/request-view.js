@@ -12,6 +12,7 @@ import { AUTH_TYPES, emptyAuth, parseQuery, withQuery } from "../features.js";
 import { BODY_METHODS, METHODS } from "../store.js";
 import "./code-editor.js";
 import { SAVE_KEYS, SEND_KEYS } from "../shortcuts.js";
+import { SPLIT, clampSplit, layoutFor, loadLayout, saveLayout, splitAt, splitForKey } from "../split.js";
 import { socketHeaders, socketLine, socketLog, socketMessages } from "./websocket-view.js";
 import { grpcLine, grpcLog, grpcMessage, grpcMetadataNote, grpcSchema } from "./grpc-view.js";
 
@@ -102,6 +103,8 @@ export class HitopRequest extends LitElement {
     wrap: { state: true },
     find: { state: true },
     findAt: { state: true },
+    layout: { state: true },
+    layoutKind: { state: true },
   };
 
   constructor() {
@@ -112,6 +115,7 @@ export class HitopRequest extends LitElement {
     this.wrap = false;
     this.find = "";
     this.findAt = 0;
+    this.layout = loadLayout();
   }
 
   createRenderRoot() {
@@ -561,8 +565,8 @@ export class HitopRequest extends LitElement {
     if (!t) return nothing;
     // The page's heading for screen readers: the tab strip shows the title.
     const heading = html`<h1 class="visually-hidden">Request: ${t.title}</h1>`;
-    if (t.kind === "websocket") return html`${heading}${socketLine(this, this.methodSelect())} ${this.renderEditor()} ${socketLog(this)}`;
-    if (t.kind === "grpc") return html`${heading}${grpcLine(this, this.methodSelect())} ${this.renderEditor()} ${grpcLog(this)}`;
+    if (t.kind === "websocket") return html`${heading}${socketLine(this, this.methodSelect())} ${this.panes(this.renderEditor(), () => socketLog(this), "Messages log")}`;
+    if (t.kind === "grpc") return html`${heading}${grpcLine(this, this.methodSelect())} ${this.panes(this.renderEditor(), () => grpcLog(this), "Call log")}`;
     // A plain text field: the browser's own URL check refuses \${baseUrl}/x and
     // shows its own message; the store checks the URL as it is sent instead.
     const urlError = this.store.urlErrors.get(t.id);
@@ -593,7 +597,113 @@ export class HitopRequest extends LitElement {
           ${icon("code")}
         </lit-material-icon-button>
       </form>
-      ${this.renderEditor()} ${this.renderResponse()}`;
+      ${this.panes(this.renderEditor(), () => this.renderResponse(), "Response")}`;
+  }
+
+  // --- the split between the editor and the response ----------------------------
+
+  // Side by side (wide), one above the other with a handle (narrower), or
+  // plain stacked (phones), by this view's width; the split and a folded
+  // response are remembered per viewer (split.js). A folded response stays
+  // folded when a new one arrives: its bar shows the new status.
+  panes(editor, response, title) {
+    const layout = this.layoutKind ?? "stack";
+    const folded = this.layout.responseCollapsed;
+    const kind = layout === "columns" ? "columns" : "rows";
+    const value = this.layout[kind];
+    const style = layout === "columns" ? `--split: ${value}%` : layout === "rows" ? `--editor-height: ${value}px` : "";
+    const { min, max } = SPLIT[kind];
+    const handle =
+      layout !== "stack" && !folded
+        ? html`<div class="split-handle" role="separator" tabindex="0" aria-orientation=${layout === "columns" ? "vertical" : "horizontal"}
+            aria-label="Resize the request and response panes" aria-valuemin=${min} aria-valuemax=${max} aria-valuenow=${value}
+            aria-valuetext=${layout === "columns" ? `Request ${value}% of the width` : `Request ${value} pixels high`}
+            title="Drag to resize; arrow keys too, Enter resets"
+            @pointerdown=${(e) => this.startDrag(e, kind)} @keydown=${(e) => this.splitKey(e, kind)} @dblclick=${() => this.setSplit(kind, SPLIT[kind].initial)}></div>`
+        : nothing;
+    return html`<div class=${`panes ${layout}${folded ? " folded" : ""}`} style=${style}>
+      <div class="pane pane-editor">${editor}</div>
+      ${handle}
+      <div class="pane pane-response">
+        ${folded
+          ? html`<div class="pane-bar folded-bar">
+              <span class="pane-title">${title} hidden</span>${this.foldedStatus()}
+              <lit-material-button variant="text" aria-expanded="false" @click=${() => this.foldResponse(false)}>${icon("caret-up")} Show ${title.toLowerCase()}</lit-material-button>
+            </div>`
+          : html`<div class="pane-bar">
+                <span class="pane-title">${title}</span>
+                <lit-material-icon-button class="fold-response" aria-label=${`Hide the ${title.toLowerCase()}`} title=${`Hide the ${title.toLowerCase()}`} aria-expanded="true" @click=${() => this.foldResponse(true)}>${icon("caret-down")}</lit-material-icon-button>
+              </div>
+              ${response()}`}
+      </div>
+    </div>`;
+  }
+
+  // What the folded response's bar says: the status of the last response.
+  foldedStatus() {
+    const t = this.tab;
+    if (t.kind) return nothing;
+    if (t.loading) return html`<span class="hint">Waiting for the response…</span>`;
+    if (t.responseType === "cancelled") return html`<span class="hint">Cancelled</span>`;
+    if (t.responseType === "error") return html`<span class="status-chip bad">Failed</span>`;
+    if (t.statusCode == null) return nothing;
+    return html`<span class=${`status-chip ${t.statusCode < 300 ? "ok" : t.statusCode < 400 ? "info" : "bad"}`}>${t.statusCode}</span>`;
+  }
+
+  foldResponse(folded) {
+    this.layout = { ...this.layout, responseCollapsed: folded };
+    saveLayout(this.layout);
+    // Focus stays with the control that brings it back.
+    this.updateComplete.then(() => this.querySelector(folded ? ".folded-bar lit-material-button" : ".fold-response")?.focus());
+  }
+
+  setSplit(kind, value) {
+    this.layout = { ...this.layout, [kind]: clampSplit(kind, value) };
+    saveLayout(this.layout);
+  }
+
+  splitKey(e, kind) {
+    const next = splitForKey(kind, this.layout[kind], e.key, e.shiftKey);
+    if (next == null) return;
+    e.preventDefault();
+    this.setSplit(kind, next);
+  }
+
+  startDrag(e, kind) {
+    if (e.button !== 0) return;
+    const handle = e.currentTarget;
+    const box = (kind === "columns" ? this.querySelector(".panes") : this.querySelector(".pane-editor"))?.getBoundingClientRect();
+    if (!box) return;
+    e.preventDefault();
+    handle.setPointerCapture(e.pointerId);
+    handle.classList.add("dragging");
+    const move = (m) => {
+      this.layout = { ...this.layout, [kind]: kind === "columns" ? splitAt(kind, m.clientX, box.left, box.width) : splitAt(kind, m.clientY, box.top, 0) };
+    };
+    const up = () => {
+      handle.removeEventListener("pointermove", move);
+      handle.removeEventListener("pointerup", up);
+      handle.removeEventListener("pointercancel", up);
+      handle.classList.remove("dragging");
+      saveLayout(this.layout);
+    };
+    handle.addEventListener("pointermove", move);
+    handle.addEventListener("pointerup", up);
+    handle.addEventListener("pointercancel", up);
+  }
+
+  connectedCallback() {
+    super.connectedCallback();
+    this.resizer = new ResizeObserver(([entry]) => {
+      const kind = layoutFor(entry.contentRect.width);
+      if (kind !== this.layoutKind) this.layoutKind = kind;
+    });
+    this.resizer.observe(this);
+  }
+
+  disconnectedCallback() {
+    super.disconnectedCallback();
+    this.resizer?.disconnect();
   }
 }
 

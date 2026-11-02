@@ -107,6 +107,21 @@ lit-material-tabs::part(tablist) { overflow-x: auto; scrollbar-width: thin; }
 kbd { display: inline-block; min-width: 1.6em; padding: 1px var(--space-75); border: 1px solid var(--md-sys-color-outline-variant); border-bottom-width: 2px; border-radius: var(--md-sys-shape-corner-small, 6px); background: var(--md-sys-color-surface-container); font-family: var(--font-mono); font-size: var(--text-xs); line-height: var(--leading-xs); text-align: center; }
 .key-then { font-size: var(--text-xs); color: var(--md-sys-color-on-surface-variant); }
 .drop-zone { display: grid; }
+/* Quick open (Mod+P) */
+.quick-input { width: 100%; box-sizing: border-box; height: 44px; padding: 0 var(--space-200); border: 1px solid var(--md-sys-color-outline); border-radius: var(--md-sys-shape-corner-medium); background: var(--md-sys-color-surface); color: var(--md-sys-color-on-surface); font: inherit; }
+.quick-input:focus-visible { outline: 2px solid var(--md-sys-color-primary); outline-offset: 1px; }
+.quick-list { list-style: none; margin: 0; padding: 0; max-height: min(60vh, 420px); overflow-y: auto; }
+.quick-list li { display: flex; align-items: center; gap: var(--space-100); padding: var(--space-75) var(--space-100); border-radius: var(--md-sys-shape-corner-medium); cursor: pointer; }
+.quick-list li.active { background: var(--md-sys-color-primary-container); color: var(--md-sys-color-on-primary-container); }
+.quick-text { display: grid; min-width: 0; flex: 1; }
+.quick-title { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.quick-title mark { background: none; color: inherit; font-weight: 700; text-decoration: underline; text-underline-offset: 2px; }
+.quick-detail { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: var(--text-xs); line-height: var(--leading-xs); color: var(--md-sys-color-on-surface-variant); }
+.quick-list li.active .quick-detail { color: inherit; }
+.quick-url { font-family: var(--font-mono); }
+.quick-open-tag { flex: none; font-size: var(--text-xs); color: var(--md-sys-color-on-surface-variant); }
+.quick-actions { align-items: center; }
+.quick-actions .hint { margin-inline-end: auto; }
 .import-mode { display: grid; gap: var(--space-75); margin: 0; padding: var(--space-100) var(--space-200) var(--space-150, 12px); border: 1px solid var(--md-sys-color-outline-variant); border-radius: var(--md-sys-shape-corner-medium); }
 .import-mode legend { padding: 0 var(--space-75); font-size: var(--text-sm); font-weight: 600; }
 .import-mode-option { display: flex; align-items: flex-start; gap: var(--space-100); cursor: pointer; }
@@ -119,6 +134,32 @@ kbd { display: inline-block; min-width: 1.6em; padding: 1px var(--space-75); bor
 .request-line .method { --lit-material-select-min-width: 0; display: block; width: 100%; }
 
 .editor, .response { margin-top: var(--space-300); }
+
+/* The editor and the response (request-view.js panes, split.js): side by side
+   with a handle (columns), stacked with a handle that sets the editor's height
+   (rows), or plainly stacked on phones (stack). The response can fold away. */
+hitop-request { display: block; }
+.panes { margin-top: var(--space-300); }
+.panes .editor { margin-top: 0; }
+.panes .response { margin-top: 0; padding-top: 0; border-top: 0; }
+.pane { min-width: 0; }
+.pane-bar { display: flex; align-items: center; gap: var(--space-100); min-height: 40px; margin-bottom: var(--space-100); }
+.pane-title { font-size: var(--text-sm); line-height: var(--leading-sm); font-weight: 600; color: var(--md-sys-color-on-surface-variant); text-transform: uppercase; letter-spacing: 0.04em; }
+.pane-bar .fold-response { margin-inline-start: auto; }
+.folded-bar { flex-wrap: wrap; padding: var(--space-50) var(--space-150, 12px); border: 1px dashed var(--md-sys-color-outline-variant); border-radius: var(--md-sys-shape-corner-medium); }
+.folded-bar lit-material-button { margin-inline-start: auto; }
+.panes.stack .pane-response, .panes.folded .pane-response { margin-top: var(--space-300); padding-top: var(--space-200); border-top: 1px solid var(--md-sys-color-outline-variant); }
+.panes.columns:not(.folded) { display: grid; grid-template-columns: minmax(300px, var(--split, 50%)) 16px minmax(300px, 1fr); align-items: start; }
+.panes.rows:not(.folded) .pane-editor { height: var(--editor-height, 280px); overflow: auto; overscroll-behavior: contain; }
+.split-handle { position: relative; display: grid; place-items: center; touch-action: none; user-select: none; }
+.split-handle::before { content: ""; border-radius: 2px; background: var(--md-sys-color-outline-variant); transition: background-color var(--duration-color) var(--ease); }
+.split-handle:hover::before, .split-handle.dragging::before, .split-handle:focus-visible::before { background: var(--md-sys-color-primary); }
+.split-handle:focus-visible { outline: 2px solid var(--md-sys-color-primary); outline-offset: 2px; border-radius: 4px; }
+.panes.columns .split-handle { align-self: stretch; min-height: 120px; cursor: col-resize; }
+.panes.columns .split-handle::before { width: 4px; height: 100%; min-height: 48px; }
+.panes.rows .split-handle { height: 16px; margin: var(--space-100) 0; cursor: row-resize; }
+.panes.rows .split-handle::before { width: 100%; height: 4px; }
+.panes.rows .pane-response { padding-top: var(--space-100); }
 .editor-panel { padding-top: var(--space-200); }
 .script-help { margin-top: var(--space-100); font-size: var(--text-sm); line-height: var(--leading-sm); color: var(--md-sys-color-on-surface-variant); }
 .script-help summary { cursor: pointer; font-weight: 600; }

@@ -14,6 +14,7 @@ import "./collection-views.js";
 import { WIDE_DIALOGS, codeDialog, compareDialog, refreshCode } from "./tools-dialogs.js";
 import { OPENAPI_DIALOGS, openapiDialog, submitOpenapi } from "./openapi-dialogs.js";
 import { shortcutFor } from "../shortcuts.js";
+import { quickOpenItems, rankItems } from "../quick-open.js";
 import { shortcutList } from "./shortcut-list.js";
 import "./settings-view.js";
 
@@ -91,6 +92,8 @@ export class HitopApp extends LitElement {
   onShortcut(e) {
     const action = shortcutFor(e);
     if (!action) return;
+    // Mod+P never prints from inside the app, even with a dialog open.
+    if (action === "quickOpen") e.preventDefault();
     if (this.dialog || document.querySelector("lit-material-confirm-dialog[open]")) return;
     const s = this.store;
     const onRequest = s.view.kind === "request";
@@ -124,7 +127,64 @@ export class HitopApp extends LitElement {
       case "help":
         this.openDialog("shortcuts");
         break;
+      case "quickOpen":
+        this.openDialog("quick-open", { query: "", active: 0 });
+        break;
     }
+  }
+
+  // --- quick open (Mod+P) ---------------------------------------------------------
+
+  quickResults(d = this.dialog) {
+    const s = this.store;
+    return rankItems(quickOpenItems({ collections: s.collections, tabs: s.tabs, methodLabel }), d?.query ?? "", 50);
+  }
+
+  quickPick(item) {
+    if (!item) return;
+    const s = this.store;
+    this.closeDialog();
+    if (item.kind === "tab") s.selectTab(item.tabIndex);
+    else s.openRequest(item.request, item.collectionId);
+  }
+
+  quickKey(e) {
+    const d = this.dialog;
+    const n = this.quickResults(d).length;
+    if (!n || !["ArrowDown", "ArrowUp", "Home", "End"].includes(e.key)) return;
+    e.preventDefault();
+    const active = e.key === "Home" ? 0 : e.key === "End" ? n - 1 : (d.active + (e.key === "ArrowDown" ? 1 : n - 1)) % n;
+    this.dialog = { ...d, active };
+    this.updateComplete.then(() => this.querySelector(`#quick-opt-${active}`)?.scrollIntoView({ block: "nearest" }));
+  }
+
+  quickDialog(d) {
+    const results = this.quickResults(d);
+    const active = Math.min(d.active ?? 0, Math.max(0, results.length - 1));
+    const title = (item) => {
+      if (!item.match.length) return item.title;
+      const at = new Set(item.match);
+      return [...item.title].map((ch, i) => (at.has(i) ? html`<mark>${ch}</mark>` : ch));
+    };
+    const body = html`
+      <input id="quick-input" class="quick-input" type="text" autofocus autocomplete="off" spellcheck="false"
+        placeholder="Find a request by name, collection or URL" aria-label="Find a request"
+        role="combobox" aria-expanded="true" aria-controls="quick-list" aria-autocomplete="list"
+        aria-activedescendant=${results.length ? `quick-opt-${active}` : ""}
+        .value=${d.query ?? ""} @input=${(e) => (this.dialog = { ...this.dialog, query: e.target.value, active: 0 })} @keydown=${(e) => this.quickKey(e)} />
+      ${results.length
+        ? html`<ul id="quick-list" class="quick-list" role="listbox" aria-label="Requests">
+            ${results.map(
+              (item, i) => html`<li id=${`quick-opt-${i}`} role="option" aria-selected=${String(i === active)} class=${i === active ? "active" : ""}
+                @mousemove=${() => i !== this.dialog.active && (this.dialog = { ...this.dialog, active: i })} @click=${() => this.quickPick(item)}>
+                <span class=${`method-tag m-${item.method}`}>${item.method}</span>
+                <span class="quick-text"><span class="quick-title">${title(item)}</span><span class="quick-detail">${item.detail}${item.url ? html` · <span class="quick-url">${item.url}</span>` : nothing}</span></span>
+                ${item.open ? html`<span class="quick-open-tag">open</span>` : nothing}
+              </li>`,
+            )}
+          </ul>`
+        : html`<p class="hint" id="quick-list" role="status">No request matches “${d.query}”.</p>`}`;
+    return { body, results, active };
   }
 
   go(kind, collectionId = null) {
@@ -191,6 +251,11 @@ export class HitopApp extends LitElement {
     // Enter can reach the form twice (the field's own implicit submission and
     // dialogKey); act once per opening.
     if (!d || d.submitted) return;
+    if (d.kind === "quick-open") {
+      const { results, active } = this.quickDialog(d);
+      this.quickPick(results[active]);
+      return;
+    }
     if (!this.validateDialog()) return;
     d.submitted = true;
     if (OPENAPI_DIALOGS.includes(d.kind)) {
@@ -471,6 +536,15 @@ export class HitopApp extends LitElement {
       case "compare":
         ({ headline, body, footer } = (d.kind === "code" ? codeDialog : compareDialog)(this, d));
         break;
+      case "quick-open": {
+        headline = "Quick open";
+        ({ body } = this.quickDialog(d));
+        footer = html`<div slot="actions" class="dialog-actions quick-actions">
+          <span class="hint">↑ ↓ to choose, Enter to open, Esc to close</span>
+          <lit-material-button variant="text" @click=${() => this.closeDialog()}>Close</lit-material-button>
+        </div>`;
+        break;
+      }
       case "shortcuts":
         headline = "Keyboard shortcuts";
         body = html`${shortcutList()}<p class="dialog-note">They're on the Settings page too.</p>`;
@@ -505,7 +579,7 @@ export class HitopApp extends LitElement {
         break;
     }
     return html`
-      <lit-material-dialog id="dialog" class=${WIDE_DIALOGS.includes(d.kind) ? "wide" : ""} @close=${() => (this.dialog = null)}>
+      <lit-material-dialog id="dialog" class=${WIDE_DIALOGS.includes(d.kind) || d.kind === "quick-open" ? "wide" : ""} @close=${() => (this.dialog = null)}>
         <span slot="headline">${headline}</span>
         <form id="dialog-form" class="dialog-form" novalidate @submit=${(e) => this.submitDialog(e)} @input=${(e) => this.clearFieldError(e.target)} @keydown=${(e) => this.dialogKey(e)}>${body}</form>
         ${footer}

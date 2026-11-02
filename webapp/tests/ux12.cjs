@@ -198,6 +198,96 @@ function api() {
   check('Import adds, no confirm; a clashing name gets (2)', (await p.locator('lit-material-confirm-dialog[open]').count()) === 0 && colsAfter.length === colsBefore.length + 2 && colsAfter.some((c) => c.name === `${colsBefore[0].name} (2)`) && colsAfter.some((c) => c.name === 'Shop'), colsAfter.map((c) => c.name).join());
   check('… existing collections and tabs stay; the first imported request opens', colsAfter[0].requests.length === colsBefore[0].requests.length && (await p.locator('.tab-strip lit-material-tab[selected]').innerText()).includes('Imported one'));
 
+  // --- 3. Split panes: side by side at 1280, a keyboard and pointer handle, remembered; fold --
+  await sendAndWait();
+  const sep = p.getByRole('separator', { name: 'Resize the request and response panes' });
+  const ratio = () => p.evaluate(() => document.querySelector('.pane-editor').getBoundingClientRect().width / document.querySelector('.panes').getBoundingClientRect().width);
+  check('wide: editor and response side by side, split 50%', (await p.locator('.panes.columns').count()) === 1 && (await sep.getAttribute('aria-valuenow')) === '50' && (await sep.getAttribute('aria-orientation')) === 'vertical');
+  await sep.focus();
+  await p.keyboard.press('ArrowRight');
+  await p.keyboard.press('ArrowRight');
+  await settle(p);
+  const layout = () => p.evaluate(() => JSON.parse(localStorage.getItem('hitop_layout') || 'null'));
+  check('arrow keys move the split; it is remembered', (await sep.getAttribute('aria-valuenow')) === '60' && (await layout())?.columns === 60 && Math.abs((await ratio()) - 0.6) < 0.03, String(await ratio()));
+  const box = await p.locator('.panes').boundingBox();
+  const hb = await sep.boundingBox();
+  await p.mouse.move(hb.x + hb.width / 2, hb.y + 40);
+  await p.mouse.down();
+  await p.mouse.move(box.x + box.width * 0.4, hb.y + 40, { steps: 5 });
+  await p.mouse.up();
+  await settle(p);
+  check('dragging the handle moves the split', Math.abs(Number(await sep.getAttribute('aria-valuenow')) - 40) <= 2 && (await layout()).columns === Number(await sep.getAttribute('aria-valuenow')), await sep.getAttribute('aria-valuenow'));
+  await p.reload({ waitUntil: 'networkidle' });
+  await settle(p);
+  check('… and kept after a reload', Math.abs((await ratio()) - (await layout()).columns / 100) < 0.03);
+  await p.getByRole('button', { name: 'Hide the response' }).click();
+  await settle(p);
+  const bar = await p.locator('.folded-bar').innerText();
+  check('the response folds away; its bar keeps the status', (await layout()).responseCollapsed === true && (await p.locator('.response-meta').count()) === 0 && bar.includes('200'), bar.replace(/\n/g, ' '));
+  await p.reload({ waitUntil: 'networkidle' });
+  await settle(p);
+  check('… folded after a reload too', (await p.locator('.folded-bar').count()) === 1);
+  await p.getByRole('button', { name: 'Show response' }).click();
+  await settle(p);
+  check('Show response brings it back', (await p.locator('.response-meta').count()) === 1 && (await layout()).responseCollapsed === false);
+  // Narrower: stacked, the handle sets the editor's height.
+  await p.setViewportSize({ width: 1024, height: 768 });
+  await settle(p);
+  const editorHeight = () => p.evaluate(() => Math.round(document.querySelector('.pane-editor').getBoundingClientRect().height));
+  const h0 = await editorHeight();
+  check('narrower: stacked with a horizontal handle', (await p.locator('.panes.rows').count()) === 1 && (await sep.getAttribute('aria-orientation')) === 'horizontal' && h0 === 280, String(h0));
+  await sep.focus();
+  await p.keyboard.press('ArrowDown');
+  await settle(p);
+  check('ArrowDown makes the editor taller', (await editorHeight()) === 320 && (await layout()).rows === 320, String(await editorHeight()));
+  await p.keyboard.press('Enter');
+  await settle(p);
+  // Phone: plain stacked, no handle, no sideways scroll.
+  await p.setViewportSize({ width: 390, height: 844 });
+  await settle(p);
+  check('phone: stacked, no handle, no horizontal scroll', (await p.locator('.panes.stack').count()) === 1 && (await sep.count()) === 0 && !(await p.evaluate(() => document.documentElement.scrollWidth > innerWidth)));
+  await p.setViewportSize({ width: 1280, height: 860 });
+  await settle(p);
+
+  // --- 4. Mod+P quick open (never the browser's Print inside the app); Mod+K still the URL ---
+  const mod = process.platform === 'darwin' ? 'Meta' : 'Control';
+  await p.evaluate(() => window.addEventListener('keydown', (e) => e.code === 'KeyP' && (window.__lastP = e), true));
+  await p.locator('.response-meta .status-chip').click();
+  await p.keyboard.press(`${mod}+p`);
+  const quick = p.getByRole('combobox', { name: 'Find a request' });
+  await quick.waitFor({ timeout: 5000 });
+  check('Mod+P opens quick open, not Print', (await p.evaluate(() => window.__lastP?.defaultPrevented)) === true && (await p.getByRole('option').count()) > 3);
+  await p.keyboard.type('lstord', { delay: 20 });
+  await settle(p);
+  const firstOption = await p.getByRole('option').first().innerText();
+  check('fuzzy: "lstord" finds List orders, with its collection and folder', firstOption.includes('List orders') && firstOption.includes('Shop › orders'), firstOption.replace(/\n/g, ' '));
+  await p.keyboard.press('Enter');
+  await settle(p);
+  check('Enter opens it in a tab', (await p.locator('.tab-strip lit-material-tab[selected]').innerText()).includes('List orders') && (await p.locator('#dialog #quick-input').count()) === 0);
+  await p.keyboard.press(`${mod}+p`);
+  await quick.waitFor({ timeout: 5000 });
+  await p.keyboard.type('health', { delay: 20 });
+  await p.keyboard.press('ArrowDown');
+  await p.keyboard.press('ArrowUp');
+  const activeId = await quick.getAttribute('aria-activedescendant');
+  check('arrow keys move the active option (aria-activedescendant)', activeId === 'quick-opt-0');
+  await p.keyboard.press('Escape');
+  await settle(p);
+  await p.locator('.pane-title').first().click(); // not typing: ? is a key then
+  await p.keyboard.press('Shift+Slash');
+  await p.locator('#dialog .shortcut-list').waitFor({ timeout: 5000 });
+  const list = await p.locator('#dialog .shortcut-list').innerText();
+  check('the shortcuts list has Mod+P and Mod+K', list.includes('Quick open') && list.includes('Go to the URL field'));
+  await p.evaluate(() => (window.__lastP = null));
+  await p.keyboard.press(`${mod}+p`);
+  check('Mod+P with another dialog open still never prints', (await p.evaluate(() => window.__lastP?.defaultPrevented)) === true && (await p.locator('#dialog .shortcut-list').count()) === 1);
+  await p.keyboard.press('Escape');
+  await settle(p);
+  await p.locator('.pane-title').first().click();
+  await p.keyboard.press(`${mod}+k`);
+  await settle(p);
+  check('Mod+K still goes to the URL field', await p.evaluate(() => document.activeElement?.closest?.('.url') != null || document.activeElement?.classList.contains('url')));
+
   check('no page errors', errors.length === 0, errors.join(' || '));
   server.close();
   await h.finish();
