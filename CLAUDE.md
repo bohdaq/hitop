@@ -38,6 +38,7 @@ hitop/
 │       │       ├── postman.rs      # Postman import: collections (folders, auth, scripts), environments, globals, ImportReport
 │       │       ├── openapi/        # OpenAPI 3.0/3.1 import (refs.rs: parse + local $ref, example.rs: schema → example) and sync.rs (three-way per field; headers/query params row by row)
 │       │       ├── secrets.rs      # secret variables: resolve order, keychain (keyring), Masker (••••)
+│       │       ├── sending.rs      # what every surface adds when sending (spec/sending.md): raw-body Content-Type, URL scheme (no deps, also in hitop-wasm, mirrored by HitopKit)
 │       │       ├── secret_refs.rs  # ${secret:vault|aws|azure|op:...} references: find, parse, expand (no deps, also in hitop-wasm)
 │       │       ├── sync.rs         # hitop sync, client side (no deps, also in hitop-wasm): plan() three-way pull/push/conflicts per file, key-by-key merge of hitop.yaml/env/globals, path allowlist; sync/tests.rs
 │       │       ├── secret_managers.rs # feature `secret-managers`: Resolver for Vault/OpenBao KV, AWS (SigV4 on ring), Azure Key Vault, `op read`;
@@ -46,6 +47,7 @@ hitop/
 │       │   ├── pm-shim.js          # byte-for-byte copy of shared/pm-shim.js (packaged; a test checks they match)
 │       │   ├── tests/grpc.rs       # gRPC client against tests/support/grpc_server.rs (tonic, reflection v1/v1alpha/none; fixtures/grpc/*.proto)
 │       │   ├── tests/format.rs     # golden files (tests/golden/, UPDATE_GOLDEN=1 regenerates) + proptest round trip
+│       │   ├── tests/send_vectors.rs # spec/vectors/send.json (also run by webapp unit.mjs and HitopKit SendRulesTests)
 │       │   ├── tests/compat.rs     # format v1 compatibility suite (spec/compat/v1/): read, in-memory read, round trip, canonical write; v1 report shape
 │       │   └── tests/report_html.rs # golden report.html from tests/golden/report/report.json (UPDATE_GOLDEN=1), escaping of every field
 │       ├── hitop-wasm/         # format + model for the web app (wasm-bindgen =0.2.126), own workspace, not published
@@ -58,6 +60,7 @@ hitop/
 │           ├── tests/postman.rs # hitop import --to of the fixtures/postman collections, run against httpmock
 │           ├── tests/openapi.rs # hitop import openapi (file, URL via httpmock), run, openapi sync keeping edits, --prune
 │           ├── tests/cookies_forms.rs # cookie jar across send/run, -F uploads, saved form bodies
+│           ├── tests/sending.rs # Content-Type and scheme added by send, run, requests send, snippet (httpmock)
 │           ├── tests/snippet.rs # hitop snippet: curl, fetch, Python, Java, Go output run against a capture server = what requests send sends
 │           ├── tests/ws.rs     # hitop ws against a local tokio-tungstenite echo server (tests/support/ws_echo.rs, shared with mcp.rs): flags, stdin, --count/--wait/--json, saved requests, masking
 │           ├── tests/grpc.rs   # hitop grpc against hitop-core's test server (included by #[path]): calls, streaming, status, list/describe, --proto, saved requests
@@ -159,6 +162,7 @@ hitop/
 ├── spec/collection-format.md   # collection folder format v1, stable since 1.0 (CC BY 4.0); section 7 = compatibility promise
 ├── spec/compat/v1/             # compatibility suite: <case>/folder + expected.json (never changed, only added), run-report/report.json
 ├── shared/pm-shim.js           # the pm.* shim for Postman scripts, run by hitop-core (copy in the crate), the web app and HitopKit (copy in Resources/)
+├── spec/sending.md             # what hitop adds when sending (behaviour, not format) + spec/vectors/send.json (cases only added)
 ├── spec/run-report.md          # `hitop run --reporter json` report, reportVersion 1, and the JUnit shape (CC BY 4.0)
 ├── brand/                      # logo.svg (master), logo-mono.svg, png/, BRAND.md (name, tagline, colors, asset map), export.sh, check.sh (CI job brand)
 ├── ROADMAP.md                  # agent work order to v1.x: decisions, rules, tranches T0–T26, status
@@ -256,7 +260,8 @@ hitop/
   `run_request` refuse; MCP `get_request` shows `grpc`. Test server `hitop-core/tests/support/grpc_server.rs` (dynamic Greeter service)
 - Snippets: `hitop snippet <collection> <request> --lang curl|fetch|python|go|java|rust [-e env] [--show-secrets]`; core
   `snippet::generate(lang, request, collection_auth, variables, secrets)`; secret names and variables with no value become
-  `{{NAME}}` (the CLI never resolves secrets without `--show-secrets`); one value per header name, as hitop sends; golden files
+  `{{NAME}}` (the CLI never resolves secrets without `--show-secrets`); one value per header name, as hitop sends, with the
+  Content-Type and scheme `sending` adds (spec/sending.md; every send path: `form::outgoing`, `hitop send`, `prepare_in`); golden files
   `hitop-core/tests/golden/snippets/<case>/<lang>.<ext>` (cases.json, `UPDATE_GOLDEN=1`; syntax-checked with bash/node/python3/javac/gofmt when installed)
 - Cookies: `send`, `run`, `requests send` keep a jar per workspace (`global` without `-c`, shared with the desktop);
   `hitop cookies ls|clear [-c]`, `--no-cookies`. Forms: `send -F name=value -F file=@path[;type=mime]`, `--urlencoded`;
@@ -344,8 +349,8 @@ hitop/
 - Lit + lit-material in light DOM; theme from `site/src/theme.css`; `npm run build` → `dist/` (base `/app/`)
 - Storage must stay readable by the React app (same keys/shapes); `npm run test:e2e` with BASE= a running hitop-server
 - Saved tabs keep at most the first 64 KB of a response over 256 KB (`storedTab`, flag `responseCut`); raw bodies (`store.rawBodies`),
-  URL errors and dirty state are memory only. Raw-body Content-Type is decided in `dispatch` (`features.js` `rawContentType`), URLs get a
-  scheme via `withScheme` (never a relative fetch). Sidebar folding: localStorage `hitop_collapsed_collections`
+  URL errors and dirty state are memory only. Raw-body Content-Type is decided in `dispatch` and URLs get a scheme (never a relative
+  fetch) through hitop-wasm `rawContentType`/`withScheme` = hitop-core `sending` (`store.format` for the Headers note while rendering). Sidebar folding: localStorage `hitop_collapsed_collections`
 - GraphQL body: tab `bodyMode: "graphql"` ⇄ saved `bodyType: graphql` + `graphql` (store.js `EXTRA_FIELDS`/`SAVED_FIELDS`); the body
   is built by hitop-wasm `graphqlBody` (same bytes as the CLI); `store.fetchSchema()` introspects through `dispatch` (proxy/Rust),
   schemas live in memory per tab (`store.schemas`). Editor deps: cm6-graphql, graphql, @codemirror/autocomplete (MIT)
@@ -392,7 +397,7 @@ hitop/
 
 ### iOS companion (`ios/HitopKit`, `ios/HitopCompanion`)
 - HitopKit follows hitop-core: same reader rules and errors, ids (FNV-1a), interpolation (one pass), auth, GraphQL and
-  form bodies, script preambles + `pm-shim.js`, masking, report.json shape. A change to any of these in the core needs the
+  form bodies, send rules (`Sending.swift`: raw-body Content-Type, URL scheme; `SendRulesTests` on spec/vectors/send.json), script preambles + `pm-shim.js`, masking, report.json shape. A change to any of these in the core needs the
   same change in HitopKit; `CLICompatibilityTests` runs one folder through both and diffs the wire requests and reports
 - Tests on Linux: `. ~/.local/share/swiftly/env.sh && cd ios/HitopKit && HITOP_BIN=../../cli/target/debug/hitop swift test`
   (needs python3 for `mock_server.py` and node as the script engine; without HITOP_BIN the CLI test is skipped). CI job

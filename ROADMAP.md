@@ -158,6 +158,7 @@ Secret variables: `secret: true` in an environment file, with the value resolved
 | UX | Web app UX review fixes (reviews/2026-11-01-webapp-ux) | done | 2bf3443, 0e55b0b, 6eb61be, c8fdaa5, 8e6c75f, 205c3ec; CI 41411458623; released in desktop-v1.1.0, web app deployed 2026-11-02 | 2026-11-02 |
 | 1.1 | 1.1 owner follow-ups: MCP WebSocket/OpenAPI tools, row-by-row OpenAPI sync, secret manager settings | done | cf400c6, 75d5a1a, ef5ab83, bc1d19a; released in cli-v1.1.0 / desktop-v1.1.0 (2026-11-02) | 2026-11-01 |
 | 1.1.0 | Release 1.1.0: CLI (hitop, hitop-core 1.1.0, first hitop-sync-crypto 0.1.0 on crates.io), ghcr image, desktop; sync server + site deployed | done | c79dd1c, 4ebb2e8 (release-cli runs the sync tests with the server + Keycloak), 3055102 (ID token iat/nbf/exp checks); rc cli-v1.1.0-rc.1 (failed: no sync server in release tests) / rc.2, desktop-v1.1.0-rc.1; releases 41420105353, 41420109000 | 2026-11-02 |
+| 1.2 | Same Content-Type on every surface (owner-approved 2026-11-02, release 1.2.0) | done (handoff) | fb636e1 (hitop-core `sending`), d718e28 (hitop send, CLI + MCP tests), 9505a3c (web app through hitop-wasm), ae47ae1 (HitopKit), edc28c5 (spec/sending.md, README, guide, CHANGELOG), ROADMAP; CI 41436745770; not tagged | 2026-11-02 |
 
 Common commands referenced below:
 
@@ -1708,6 +1709,51 @@ export PATH="$HOME/.cargo/bin:$PATH"
   - Open: no long-lived MCP WebSocket session (connect/read/close across calls), by design for now; MCP gRPC tools
     (T15 question) still open.
 
+#### 1.2 Same Content-Type on every surface (2026-11-02)
+- In 1.1.0 the web app and its desktop build started adding a Content-Type to raw bodies and a scheme to URLs
+  typed without one (UX review, 0e55b0b); the CLI, MCP and HitopKit didn't, so one collection sent different
+  headers per surface. Owner approved making them the same in 1.2.0 (section 6 handoff of 2026-11-02, closed).
+- **Notes (2026-11-02, done):**
+  - One implementation: hitop-core `sending.rs` (pure, in hitop-wasm): `raw_content_type`, `add_content_type`
+    (POST/PUT/PATCH, any case; no Content-Type header with a value; the body as sent, after variables and the
+    pre-request script) and `with_scheme`. Called from `form::outgoing` (run, requests send, MCP, a form body a
+    script replaced), `hitop send` (raw `-b`), `prepare_in` (scheme, both return points) and `snippet::build`
+    (header on the filled body; scheme leniently: a `{{placeholder}}` host is left as written). The web app's
+    `features.js` copies are gone: `dispatch`/`send` call hitop-wasm `rawContentType`/`withScheme`, the Headers note
+    reads the module loaded at start (`store.format`), and the Code dialog no longer adds the header itself (core
+    does). HitopKit `Sending.swift` follows the same rules (`FormBody.outgoing`, `Prepare`).
+  - Exactness: the rules are the 1.1.0 regular expressions, so whitespace is JavaScript's (U+FEFF in, U+0085 out),
+    `\w`/`\d` and `/i` are ASCII. Hand-written matchers in Rust and Swift (no Unicode regex classes or case
+    folding). Shared vectors `spec/vectors/send.json` (25 detect, 10 apply, 39 scheme cases), all checked against
+    the 1.1.0 JS first; tested by hitop-core `tests/send_vectors.rs`, `webapp/tests/unit.mjs` (through the wasm
+    build) and HitopKit `SendRulesTests`. Before committing, 60,000 random strings from an adversarial alphabet were
+    run through the 1.1.0 JS, Rust and Swift: no difference (throwaway test, not committed).
+  - Scheme decision: core and CLI match the web app. A schemeless URL was a hard reqwest error in the CLI ("relative
+    URL without a base"), so no working run changes; a collection with `base: api.example.com` now runs the same in
+    every app, and only towards https (http only for loopback, as curl's local default). A typo like `users`
+    still fails, now before sending and with the web app's message. A CLI user typing `hitop send api.x.dev/v1`
+    gets https, which is what the web app does with the same text. WebSocket and gRPC targets are untouched.
+  - Reports and history: report.json v1 and the JUnit shape carry no request headers (spec/run-report.md), and
+    CLI `HistoryItem` has none, so nothing to record without a format change; `pm.request` in post-request scripts
+    (CLI, MCP, HitopKit) sees the header as sent; the web app's collection-run history already stores the sent
+    headers. The web app's single-send history keeps `tab.headers` on purpose: items reopen into tabs, so adding the
+    header there would turn it into a saved header on reopen. Report/history `url` is the URL with its scheme.
+  - Behaviour change for CLI users (CHANGELOG): a raw body that went out without Content-Type now has one; the
+    golden `secrets-placeholders` snippets changed accordingly (curl's `-H 'Content-Type:'` became text/plain).
+    `hitop send -b` without `-X` is still a GET and gets no header (the web rule); the method default wasn't changed.
+  - Edge (documented, not special-cased): a snippet detects on the body as written in the snippet, so a body that
+    is only `${secret}` shows `{{secret}}` → application/json while the real value decides when sending.
+  - Tests: hitop-core 1 prepare test + 2 unit + 3 vector tests, 6 golden files; CLI `tests/sending.rs` (send:
+    JSON/XML/own/GET, pm.request sees it, schemeless 127.0.0.1:port, `users` refused; run + requests send + snippet
+    on a folder with a schemeless base: lowercase `post`, HTML, own header, script-replaced form body, nothing saved);
+    `tests/mcp.rs` (run_request/run_collection send it, get_request shows the request as saved); webapp unit
+    (vectors + Code snippet through wasm); e2e ux, ux12, diff-code, e2e, graphql and the rest green in Tauri mode
+    locally; HitopKit swift test green (SendRulesTests incl. the runner on the mock server, CLICompatibilityTests
+    with a raw XML PATCH so the CLI and HitopKit wire requests match with the header). Collection format v1 and
+    spec/compat/v1 unchanged.
+  - Not done here: version numbers stay 1.1.0 (no bump, no tag, no deploy: the release is the owner's/coordinator's
+    step). The React desktop UI (`desktop/src`) and the frozen extensions aren't changed.
+
 ---
 
 ## 6. Handoffs and open questions
@@ -1747,7 +1793,8 @@ Agent appends here; owner ticks when done.
 | 2026-11-01 | T26 | Build and ship the iOS companion (agents can't build for Apple platforms). On a Mac with Xcode 16+: (1) `cd ios/HitopKit && swift test` (42 tests; JavaScriptCore runs the scripts there; `HITOP_BIN=<path to hitop> swift test` adds the CLI comparison, `HITOP_TEST_KEYCHAIN=1` also writes and deletes one real keychain item). (2) `brew install xcodegen && cd ios/HitopCompanion && xcodegen && open HitopCompanion.xcodeproj`. (3) Decide: a new App Store app (keep bundle ids `hitop.rws8.tech.HitopCompanion` and `hitop.rws8.tech.HitopCompanion.Widget`, create them and the app group `group.hitop.rws8.tech.companion` in the developer portal, enable App Groups on both ids) or the next version of "HiTop HTTP Client" (then set `PRODUCT_BUNDLE_IDENTIFIER` to `hitop.rws8.tech.HiTop` and the widget to `hitop.rws8.tech.HiTop.Widget` in `project.yml`, and keep `ios/HiTop` only as history). Team is `XD7JHZ5DB3` as in the HiTop project. If you change the app group, change it in both `.entitlements` files and `Shared/Library.swift` (`AppGroup.id`). (4) On a device: open a collection folder from iCloud Drive (for example a `hitop init` folder or `cli/fixtures/sample` with a `local` environment pointing at a server you can reach), run one request and the collection, switch environment, set a secret in Secrets… and run `prod`, pin it (swipe) and add the "hitop runs" widget, run "Run hitop collection" and "Get last hitop run status" in Shortcuts. Check that a folder still opens after a relaunch and after the folder is renamed in Files. (5) App Review: the app has `NSAllowsArbitraryLoads` (as HiTop does; an API client calls hosts the user names) and a local network usage string; privacy label "Data Not Collected" holds (no telemetry, no network calls but the user's requests). Both targets carry a `PrivacyInfo.xcprivacy` (no tracking, no collected data; required-reason APIs: app-group UserDefaults `1C8F.1`, file metadata in the user-picked folder `3B52.1`): check the reasons against Apple's current list when you archive. The icon is a copy of HiTop's. Tell me what fails to compile: the app sources were written without an Apple SDK. | |
 | 2026-11-01 | T25 | Decide whether the hosted test server (sync.hitop.rws8.tech) gets SSO. Agent's recommendation: leave it off. It serves individuals with sign-in mails and passkeys; SSO is for organizations running their own server with their own provider, and turning it on here means registering a client at one provider (for example Google with `HITOP_SYNC_OIDC_ALLOWED_DOMAINS` set to your domain) and keeping its secret on the VM. If yes: register a web client with redirect URI `https://sync.hitop.rws8.tech/v1/auth/sso/callback`, add `HITOP_SYNC_OIDC_ISSUER`, `HITOP_SYNC_OIDC_CLIENT_ID`, `HITOP_SYNC_OIDC_CLIENT_SECRET` (and the domains) to `/etc/hitop-sync/env` (root, 0600), `sudo systemctl restart hitop-sync`, and test with `hitop sync login --sso`. Leave `HITOP_SYNC_SSO_REQUIRED` off on a shared test server. | |
 | 2026-11-01 | T25 | Before any public launch (adds to the review above): the reviewer also covers `sync-server/src/oidc.rs` (token checks, the code handoff, account linking) and `sync-server/src/audit.rs` (chain, purge), and THREAT_MODEL sections "Single sign-on" and "Audit log". Open: audit heads anchored outside the server (THREAT_MODEL item 7). | |
-| 2026-11-02 | UX | Decide: the web app (and the desktop build of it) now adds `Content-Type` to a raw POST/PUT/PATCH body that has none (JSON, XML, HTML or text/plain by its first character, `features.js` `rawContentType`), in Send, collection runs and the Code dialog. hitop-core `prepare` (CLI `hitop run`, `hitop snippet`, MCP) and HitopKit still send no Content-Type for raw bodies, so the same collection sends different headers. Agent's recommendation: port it to hitop-core `prepare` and HitopKit (with a `CLICompatibilityTests` case) in 1.2; or say web-only is fine. Also eye-check the review fixes on the web app and desktop build: top bar, sidebar fold/filter, tab strip (tabs now at most 16rem wide, so one tab no longer spans the strip), theme toggle now cycles light/dark/system. | |
+| 2026-11-02 | UX | Eye-check the review fixes on the web app and desktop build: top bar, sidebar fold/filter, tab strip (tabs now at most 16rem wide, so one tab no longer spans the strip), theme toggle now cycles light/dark/system. (The Content-Type question of this row was answered "port it" by the owner and is done in 1.2, row below.) | |
+| 2026-11-02 | 1.2 | Nothing blocking. When releasing 1.2.0: bump the versions as usual (still 1.1.0) and keep the CHANGELOG's behaviour-change note in the release text (CLI raw bodies now get a Content-Type; schemeless URLs get https:// instead of failing). Optional check: `hitop snippet` and the web app's Code dialog for one raw JSON POST should show the same `Content-Type: application/json` line. HitopKit's rules run on Linux in CI; on a Mac the companion uses the same code (`Sending.swift`), nothing extra to do. | |
 
 ## 7. Setup the owner does before the agent starts
 
