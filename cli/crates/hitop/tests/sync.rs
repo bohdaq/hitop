@@ -597,6 +597,93 @@ fn a_hitop_1_1_workspace_keeps_working_and_is_upgraded() {
     assert_eq!(snapshot(&b), snapshot(&a));
 }
 
+/// HITOP Cloud C2 recovery key: Ada makes a recovery phrase, keeps working (she trusts a new
+/// member afterwards, which updates the recovery data), then loses her computer. On a new one she
+/// signs in and recovers with the phrase: she is her old device again (same key, the key the new
+/// sign-in registered is gone), reads the workspace, and her trust decisions came along. A wrong
+/// or mistyped phrase recovers nothing; the server never holds the phrase or a key.
+#[test]
+fn a_lost_device_comes_back_with_its_recovery_phrase() {
+    let Some(server) = server() else { return };
+    let (ada, bob, cy) = (Client::new(&server), Client::new(&server), Client::new(&server));
+    ada.login(&server, "ada@example.com");
+    let (ws, a, _) = share_with_bob(&server, &ada, &bob);
+    let (old_key, old_keys) = ada.device();
+    let out = ada.run(&["sync", "recovery", "create"]);
+    assert_eq!(out.code, 0, "{}", out.stderr);
+    let phrase = out.stdout.trim().to_string();
+    assert_eq!(phrase.split(' ').count(), 24, "{phrase}");
+    assert!(out.stderr.contains("Write it down"), "{}", out.stderr);
+    assert!(ada.ok(&["sync", "recovery", "status"]).contains("Recovery phrase set"));
+
+    // Later: Cy joins (Ada pins Cy's device), and a file changes. The recovery data follows.
+    let cy_fp = cy.login(&server, "cy@example.com");
+    let invited = ada.ok(&["sync", "invite", "--role", "viewer", "-c", a.to_str().unwrap()]);
+    cy.ok(&["sync", "accept", invited.lines().find(|l| l.contains("/invite#")).unwrap().trim()]);
+    ada.ok(&["sync", "add", "cy@example.com", "--trust", &cy_fp, "-c", a.to_str().unwrap()]);
+    write(&a, "requests/new-order.yaml", &request("New order", "https://internal.example.test/orders/new"));
+    ada.ok(&["sync", "push", "-c", a.to_str().unwrap()]);
+
+    // The server holds the blob, never the phrase or the device key.
+    let db = server.database();
+    assert!(!String::from_utf8_lossy(&db).contains(&phrase), "no phrase on the server");
+    let first_word = phrase.split(' ').next().unwrap();
+    assert!(!db.windows(32).any(|w| w == old_keys.secret_bytes()), "no device secret on the server");
+
+    // The computer is lost. A new one signs in (registering a new key) and recovers.
+    let ada2 = Client::new(&server);
+    ada2.login(&server, "ada@example.com");
+    let fresh = ada2.device().0;
+    assert_ne!(fresh, old_key);
+    assert!(ada2.ok(&["sync", "whoami"]).contains("ada@example.com"));
+
+    // A wrong phrase (valid words, another phrase) and a mistyped one recover nothing.
+    let other = crypto::RecoveryPhrase::generate().to_words();
+    let o = Client::out(ada2.cmd().args(["sync", "recovery", "use", "--phrase-file", "-"]).write_stdin(other).output().unwrap());
+    assert_eq!(o.code, 2, "{}", o.stdout);
+    assert!(o.stderr.contains("doesn't open"), "{}", o.stderr);
+    let typo = phrase.replacen(first_word, if first_word == "zoo" { "abandon" } else { "zoo" }, 1);
+    let o = Client::out(ada2.cmd().args(["sync", "recovery", "use"]).write_stdin(format!("{}\n", phrase.split(' ').take(23).collect::<Vec<_>>().join(" "))).output().unwrap());
+    assert_eq!(o.code, 2);
+    assert!(o.stderr.contains("24 words"), "{}", o.stderr);
+    let o = Client::out(ada2.cmd().args(["sync", "recovery", "use"]).write_stdin(typo).output().unwrap());
+    assert_eq!(o.code, 2, "a mistyped word");
+    assert_eq!(ada2.device().0, fresh, "nothing changed");
+
+    // The right phrase (as typed: other case, line breaks).
+    let typed = phrase.to_uppercase().replacen(' ', "\n", 5);
+    let o = Client::out(ada2.cmd().args(["sync", "recovery", "use"]).write_stdin(typed).output().unwrap());
+    assert_eq!(o.code, 0, "{}\n{}", o.stdout, o.stderr);
+    assert!(o.stdout.contains(&crypto::fingerprint(&old_keys.public_key())), "{}", o.stdout);
+    let (key, keys) = ada2.device();
+    assert_eq!((key.as_str(), keys.public_key()), (old_key.as_str(), old_keys.public_key()), "the old device, back");
+    let ada_keys: i64 = server.db().query_row("SELECT COUNT(*) FROM device_keys k JOIN users u ON u.id = k.user_id WHERE u.email = 'ada@example.com'", [], |r| r.get(0)).unwrap();
+    assert_eq!(ada_keys, 1, "the key the new sign-in registered is gone");
+
+    // It reads the workspace, and still trusts Bob's and Cy's devices.
+    let a2 = ada2.folder("shop");
+    ada2.ok(&["sync", "link", &ws, "-c", a2.to_str().unwrap()]);
+    assert_eq!(snapshot(&a2), snapshot(&a));
+    let members = ada2.ok(&["sync", "members", "-c", a2.to_str().unwrap()]);
+    assert!(!members.contains("not trusted"), "{members}");
+    assert_eq!(members.matches("trusted").count(), 3, "{members}");
+    // And can keep working as the owner: an edit syncs to Bob.
+    write(&a2, "requests/new-order.yaml", &request("New order", "https://internal.example.test/orders/v2"));
+    ada2.ok(&["sync", "push", "-c", a2.to_str().unwrap()]);
+    let b = bob.folder("shop");
+    bob.ok(&["sync", "link", &ws, "-c", b.to_str().unwrap()]);
+    assert!(read(&b, "requests/new-order.yaml").contains("/orders/v2"));
+
+    // Remove: the phrase recovers nothing any more.
+    ada2.ok(&["sync", "recovery", "remove"]);
+    assert!(ada2.ok(&["sync", "recovery", "status"]).contains("No recovery phrase"));
+    let ada3 = Client::new(&server);
+    ada3.login(&server, "ada@example.com");
+    let o = Client::out(ada3.cmd().args(["sync", "recovery", "use"]).write_stdin(phrase.clone()).output().unwrap());
+    assert_eq!(o.code, 2);
+    assert!(o.stderr.contains("no recovery phrase"), "{}", o.stderr);
+}
+
 #[test]
 fn sync_commands_explain_what_is_missing() {
     let home = TempDir::new().unwrap();

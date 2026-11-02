@@ -5,6 +5,7 @@
 
 mod audit;
 mod client;
+mod recovery;
 mod sso;
 mod store;
 
@@ -149,6 +150,9 @@ pub enum SyncCmd {
     /// Runner credentials for scheduled runs (CI, cron)
     #[command(subcommand)]
     Runner(RunnerCmd),
+    /// A recovery phrase: brings this device back on a new computer if you lose it
+    #[command(subcommand)]
+    Recovery(RecoveryCmd),
     /// The workspace's audit log (owners): sign-ins aside, who added, removed or invited whom,
     /// role changes, key rotations, runner credentials. --verify checks its hash chain here
     Audit {
@@ -187,6 +191,24 @@ pub enum RunnerCmd {
     },
 }
 
+#[derive(Subcommand)]
+pub enum RecoveryCmd {
+    /// Make a 24-word recovery phrase (printed once; write it down) and keep this device's
+    /// recovery data, sealed with it, on the server. Replaces an earlier phrase
+    Create,
+    /// On a new computer, after `hitop sync login`: become your lost device again with its phrase
+    Use {
+        /// Read the phrase from this file (`-` = stdin); otherwise asked on a terminal, or read
+        /// from stdin
+        #[arg(long, value_name = "FILE")]
+        phrase_file: Option<String>,
+    },
+    /// Whether a recovery phrase is set, and when its data was last updated
+    Status,
+    /// Delete the recovery data from the server (the phrase then recovers nothing)
+    Remove,
+}
+
 #[derive(Args, Clone)]
 pub struct FolderArgs {
     /// The collection folder (default: the current directory)
@@ -208,6 +230,16 @@ pub struct TrustArgs {
 }
 
 pub fn run(cmd: SyncCmd) -> Result<i32> {
+    let refresh = !matches!(cmd, SyncCmd::Login { .. } | SyncCmd::Logout | SyncCmd::Recovery(_));
+    let result = run_cmd(cmd);
+    // Keep the recovery data up to date with this device's trust and key memory.
+    if refresh && result.is_ok() && std::env::var_os(store::RUNNER_ENV).is_none() {
+        recovery::refresh();
+    }
+    result
+}
+
+fn run_cmd(cmd: SyncCmd) -> Result<i32> {
     match cmd {
         SyncCmd::Login { email, sso, no_browser, code, server, name } => {
             if sso {
@@ -238,6 +270,10 @@ pub fn run(cmd: SyncCmd) -> Result<i32> {
         SyncCmd::Role { email, role, folder } => set_role(&folder.path(), &email, &role).map(|_| 0),
         SyncCmd::Trust { fingerprints, folder } => trust_cmd(&folder.path(), &fingerprints).map(|_| 0),
         SyncCmd::Runner(RunnerCmd::Create { name, folder }) => runner_create(&folder.path(), &name).map(|_| 0),
+        SyncCmd::Recovery(RecoveryCmd::Create) => recovery::create().map(|_| 0),
+        SyncCmd::Recovery(RecoveryCmd::Use { phrase_file }) => recovery::use_phrase(phrase_file.as_deref()).map(|_| 0),
+        SyncCmd::Recovery(RecoveryCmd::Status) => recovery::status().map(|_| 0),
+        SyncCmd::Recovery(RecoveryCmd::Remove) => recovery::remove().map(|_| 0),
         SyncCmd::Audit { json, verify, mine, event, actor, limit, folder } => {
             let filter = audit::Filter { event, actor, limit };
             if mine {
@@ -259,7 +295,7 @@ fn interactive() -> bool {
     std::io::stdin().is_terminal() && std::io::stderr().is_terminal()
 }
 
-fn ask(prompt: &str) -> Result<String> {
+pub(crate) fn ask(prompt: &str) -> Result<String> {
     eprint!("{prompt}");
     std::io::stderr().flush()?;
     let mut line = String::new();
@@ -326,16 +362,17 @@ fn finish_login(server: &str, r: &Value, email: &str, name: Option<String>) -> R
     let previous = Account::load()?.filter(|a| a.server.trim_end_matches('/') == server.trim_end_matches('/') && a.user_id == user_id);
     let reuse = previous.as_ref().and_then(|a| store::load_secret(&a.server).ok().map(|s| (a.clone(), s)));
     let me = api.call("GET", "/v1/me", None)?;
-    let (key_id, keys, device_name) = match reuse.filter(|(a, _)| me["keys"].as_array().is_some_and(|k| k.iter().any(|k| k["id"] == a.key_id.as_str()))) {
-        Some((a, s)) => (a.key_id.clone(), s.device()?, a.device_name.clone()),
+    let (key_id, keys, device_name, recovery) = match reuse.filter(|(a, _)| me["keys"].as_array().is_some_and(|k| k.iter().any(|k| k["id"] == a.key_id.as_str()))) {
+        Some((a, s)) => (a.key_id.clone(), s.device()?, a.device_name.clone(), s.recovery),
         None => {
             let keys = DeviceKeyPair::generate();
             let device_name = name.unwrap_or_else(|| format!("hitop CLI on {}", hostname()));
             let r = api.call("POST", "/v1/me/keys", Some(json!({ "name": device_name, "publicKey": b64(&keys.public_key()) })))?;
-            (r["id"].as_str().context("no key id")?.to_string(), keys, device_name)
+            (r["id"].as_str().context("no key id")?.to_string(), keys, device_name, None)
         }
     };
-    store::save_secret(&server, &Secret { session, secret: b64(&keys.secret_bytes()) })?;
+    let new_key = !me["keys"].as_array().is_some_and(|k| k.iter().any(|k| k["id"] == key_id.as_str()));
+    store::save_secret(&server, &Secret { session, secret: b64(&keys.secret_bytes()), recovery })?;
     let mut pins = store::load_pins()?;
     pins.insert(key_id.clone(), b64(&keys.public_key()));
     store::save_pins(&pins)?;
@@ -343,6 +380,9 @@ fn finish_login(server: &str, r: &Value, email: &str, name: Option<String>) -> R
     println!("Signed in to {server} as {email}.");
     println!("This device: {device_name}, key fingerprint {}", crypto::fingerprint(&keys.public_key()).bold());
     println!("Tell your team this fingerprint when they add you, and check theirs.");
+    if !me["recovery"].is_null() && new_key {
+        println!("Lost your other device? Its recovery phrase brings it back here: hitop sync recovery use");
+    }
     Ok(())
 }
 

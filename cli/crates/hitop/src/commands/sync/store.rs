@@ -12,6 +12,8 @@
 //!   rotation is noticed;
 //! - `links.json`: collection folder → workspace;
 //! - `state/<workspace>.json`: [`hitop_core::sync::State`] of each linked folder;
+//! - `recovery.json`: a hash of the recovery data this device last sealed for the server
+//!   (`hitop sync recovery`, recovery.rs);
 //! - `audit-heads.json`: the last audit-log head each workspace's `hitop sync audit --verify`
 //!   saw (workspace → seq and hash), so a rewritten log is noticed next time.
 //!
@@ -90,6 +92,10 @@ pub struct Secret {
     pub session: String,
     /// The X25519 secret key, base64url.
     pub secret: String,
+    /// The account's recovery phrase (its 32 bytes, base64url) when this device made it or was
+    /// recovered with it: the device re-seals the recovery data when its pins or memory change.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub recovery: Option<String>,
 }
 
 impl Secret {
@@ -186,6 +192,26 @@ pub fn save_memory(workspace: &str, memory: &WorkspaceMemory) -> Result<()> {
     let mut all: BTreeMap<String, WorkspaceMemory> = read_json(&path)?;
     all.insert(workspace.to_string(), memory.clone());
     write_json(&path, &all)
+}
+
+/// Everything `keys.json` holds (workspace → memory), for the recovery data.
+pub fn load_all_memory() -> Result<BTreeMap<String, WorkspaceMemory>> {
+    read_json(&dir()?.join("keys.json"))
+}
+
+pub fn save_all_memory(all: &BTreeMap<String, WorkspaceMemory>) -> Result<()> {
+    write_json(&dir()?.join("keys.json"), all)
+}
+
+/// SHA-256 of the recovery data last uploaded (`recovery.json`), so it is sealed again only
+/// when it changed.
+pub fn load_recovery_hash() -> Result<Option<String>> {
+    let v: BTreeMap<String, String> = read_json(&dir()?.join("recovery.json"))?;
+    Ok(v.get("uploaded").cloned())
+}
+
+pub fn save_recovery_hash(hash: &str) -> Result<()> {
+    write_json(&dir()?.join("recovery.json"), &BTreeMap::from([("uploaded".to_string(), hash.to_string())]))
 }
 
 pub fn save_pins(pins: &Pins) -> Result<()> {
