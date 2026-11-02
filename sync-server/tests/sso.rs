@@ -143,6 +143,22 @@ fn bad_tokens_are_refused() {
             let w = with.clone();
             Box::new(move |f| w(f, "iat", json!(now + 3600)))
         }),
+        ("iat as a string", "bad_token", {
+            let w = with.clone();
+            Box::new(move |f| w(f, "iat", json!((now + 3600).to_string())))
+        }),
+        ("not valid yet", "bad_token", {
+            let w = with.clone();
+            Box::new(move |f| w(f, "nbf", json!(now + 3600)))
+        }),
+        ("nbf as a string", "bad_token", {
+            let w = with.clone();
+            Box::new(move |f| w(f, "nbf", json!((now + 3600).to_string())))
+        }),
+        ("exp as a string", "bad_token", {
+            let w = with.clone();
+            Box::new(move |f| w(f, "exp", json!((now + 3600).to_string())))
+        }),
         ("nonce of another sign-in", "bad_nonce", {
             let w = with.clone();
             Box::new(move |f| w(f, "nonce", json!("replayed-nonce")))

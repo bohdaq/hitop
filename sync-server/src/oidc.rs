@@ -476,10 +476,17 @@ fn check_id_token(state: &State, c: &OidcConfig, provider: &Provider, token: &st
     if exp + LEEWAY < now {
         return Err(refused("expired_token", "the ID token has expired"));
     }
-    if let Some(iat) = claims["iat"].as_i64() {
-        if iat > now + LEEWAY {
-            return Err(refused("bad_token", "the ID token was issued in the future"));
-        }
+    // iat and nbf are optional, but when present they must be numbers: a string must not
+    // switch the check off (GHSA-h395-gr6q-cpjc, which is why jsonwebtoken's own nbf check is unused).
+    let time_claim = |name: &str| match &claims[name] {
+        Json::Null => Ok(None),
+        v => v.as_i64().map(Some).ok_or_else(|| refused("bad_token", format!("the ID token's {name} isn't a number"))),
+    };
+    if time_claim("iat")?.is_some_and(|iat| iat > now + LEEWAY) {
+        return Err(refused("bad_token", "the ID token was issued in the future"));
+    }
+    if time_claim("nbf")?.is_some_and(|nbf| nbf > now + LEEWAY) {
+        return Err(refused("bad_token", "the ID token isn't valid yet (nbf)"));
     }
     // Several audiences: the token must have been issued to us (OIDC Core 3.1.3.7).
     let audiences = match &claims["aud"] {
