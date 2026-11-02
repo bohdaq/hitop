@@ -24,7 +24,7 @@ add HITOP_SYNC_RP_ID "${HITOP_SYNC_RP_ID:-hitop.rws8.tech}"
 add HITOP_SYNC_RP_ORIGINS "${HITOP_SYNC_RP_ORIGINS:-https://sync.hitop.rws8.tech,https://hitop.rws8.tech}"
 add HITOP_SYNC_ALLOWED_ORIGINS "${HITOP_SYNC_ALLOWED_ORIGINS:-https://hitop.rws8.tech}"
 add SMTP_TLS_SERVER_NAME "${SMTP_TLS_SERVER_NAME:-mail.rws8.tech}"
-add SMTP_FROM "${SMTP_FROM:-hitop sync <noreply@rws8.tech>}"
+add SMTP_FROM "${SMTP_FROM:-HITOP <noreply@rws8.tech>}"
 
 sudo systemctl daemon-reload
 sudo systemctl enable hitop-sync
