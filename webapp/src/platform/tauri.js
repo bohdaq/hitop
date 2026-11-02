@@ -52,11 +52,19 @@ const fromBase64 = (b64) => Uint8Array.from(atob(b64), (c) => c.charCodeAt(0));
 
 const headerPairs = (headers) => (Array.isArray(headers) ? headers.map((h) => [h.name, h.value]) : Object.entries(headers || {}));
 
+// Ids for send_cancel.
+let sendIds = 0;
+
 // The request goes out as the proxy's envelope, so both look the same to
-// the app (and to the tests).
+// the app (and to the tests). options.signal cancels it (`send_cancel`: Rust
+// answers at once and drops the response); options.timeoutMs is hitop-core's
+// time limit.
 async function send(url, options = {}) {
+  const { signal } = options;
+  if (signal?.aborted) throw signal.reason;
   const binary = options.body instanceof Uint8Array;
-  const r = await invoke("send_request", {
+  const id = ++sendIds;
+  const call = invoke("send_request", {
     args: {
       method: options.method || "GET",
       url,
@@ -65,8 +73,23 @@ async function send(url, options = {}) {
       ...(binary ? { bodyEncoding: "base64" } : {}),
       // hitop-core's cookie jar (shared with `hitop send`) sends and keeps cookies.
       cookies: Boolean(options.cookies),
+      ...(signal ? { id } : {}),
+      ...(options.timeoutMs ? { timeoutMs: options.timeoutMs } : {}),
     },
   });
+  const r = !signal
+    ? await call
+    : await new Promise((resolve, reject) => {
+        const stop = () => {
+          invoke("send_cancel", { id }).catch(() => {});
+          reject(signal.reason);
+        };
+        signal.addEventListener("abort", stop, { once: true });
+        call.then(
+          (v) => (signal.removeEventListener("abort", stop), resolve(v)),
+          (e) => (signal.removeEventListener("abort", stop), reject(e)),
+        );
+      });
   const text = r.bodyEncoding === "base64" ? new TextDecoder().decode(fromBase64(r.body)) : r.body;
   return {
     status: r.status,

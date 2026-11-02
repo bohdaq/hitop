@@ -420,6 +420,12 @@ export class HitopRequest extends LitElement {
         <div class="skeleton block"></div>
       </section>`;
     }
+    if (t.responseType === "cancelled") {
+      return html`<section class="response" aria-label="Response">
+        <lit-material-status status="warning">Cancelled</lit-material-status>
+        <p class="hint">You stopped the request before its response arrived. Nothing was recorded in History.</p>
+      </section>`;
+    }
     if (t.statusCode == null && (t.response == null || t.response === "")) {
       return html`<section class="response empty" aria-label="Response">
         <lit-material-empty-state size="compact" headline="Send a request to see the response">
@@ -575,9 +581,11 @@ export class HitopRequest extends LitElement {
           @input=${(e) => this.set({ url: e.target.value })}
           @keydown=${(e) => e.key === "Enter" && this.send(e)}
         ></lit-material-text-field>
-        <lit-material-button variant="filled" type="submit" ?disabled=${t.loading} title=${`Send (${SEND_KEYS})`}>
-          ${icon("paper-plane-tilt")} ${t.loading ? "Sending" : "Send"}
-        </lit-material-button>
+        ${t.loading
+          ? html`<lit-material-button class="cancel-send" variant="outlined" type="button" title="Stop waiting for the response" @click=${() => this.store.cancel(t.id)}>
+              ${icon("x")} Cancel
+            </lit-material-button>`
+          : html`<lit-material-button variant="filled" type="submit" title=${`Send (${SEND_KEYS})`}>${icon("paper-plane-tilt")} Send</lit-material-button>`}
         <lit-material-icon-button aria-label="Save request" title=${`Save (${SAVE_KEYS})`} ?disabled=${!t.url} @click=${() => this.app.openDialog("save", this.store.saveTarget())}>
           ${icon("floppy-disk")}
         </lit-material-icon-button>

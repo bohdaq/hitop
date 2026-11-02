@@ -288,6 +288,10 @@ class TauriMock {
         return this.write('environments.json', f.normalize('environments', args.environments));
       case 'send_request':
         return this.send(args.args);
+      case 'send_cancel':
+        (this.cancels ??= []).push(args.id);
+        this.inflight?.get(args.id)?.abort();
+        return null;
       case 'telemetry_status':
         return this.telemetryStatus();
       case 'telemetry_set':
@@ -405,11 +409,19 @@ class TauriMock {
       const cookie = this.jar.cookieHeader(jar, a.url);
       if (cookie) headers0.push(['Cookie', cookie]);
     }
+    // send_cancel {id} (commands.rs answers the call at once) and timeoutMs (hitop-core's time limit).
+    const abort = new AbortController();
+    if (a.id != null) (this.inflight ??= new Map()).set(a.id, abort);
+    const signals = [abort.signal, ...(a.timeoutMs ? [AbortSignal.timeout(a.timeoutMs)] : [])];
     let res;
     try {
-      res = await fetch(a.url, { method: a.method, headers: headers0, body: ['GET', 'HEAD'].includes(a.method) ? undefined : body, redirect: 'follow' });
+      res = await fetch(a.url, { method: a.method, headers: headers0, body: ['GET', 'HEAD'].includes(a.method) ? undefined : body, redirect: 'follow', signal: AbortSignal.any(signals) });
     } catch (e) {
+      if (abort.signal.aborted) throw 'cancelled';
+      if (e.name === 'TimeoutError') throw `error sending request for url (${a.url}): operation timed out`;
       throw `error sending request for url (${a.url}): ${e.cause?.message ?? e.message}`;
+    } finally {
+      this.inflight?.delete(a.id);
     }
     const headers = [];
     res.headers.forEach((v, k) => k !== 'set-cookie' && headers.push([k, v]));

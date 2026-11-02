@@ -138,6 +138,24 @@ function folders() {
 
 // --- the adapter ---------------------------------------------------------------
 
+// Send with options.signal: a direct fetch is aborted by it; a request
+// through the proxy can't be (sendRequest's own fetch, shared with the
+// React app), so its answer is dropped instead.
+function send(url, options = {}) {
+  const { signal } = options;
+  const sent = sendRequest(url, options);
+  if (!signal) return sent;
+  if (signal.aborted) return Promise.reject(signal.reason);
+  return new Promise((resolve, reject) => {
+    const stop = () => reject(signal.reason);
+    signal.addEventListener("abort", stop, { once: true });
+    sent.then(
+      (res) => (signal.removeEventListener("abort", stop), resolve(res)),
+      (e) => (signal.removeEventListener("abort", stop), reject(e)),
+    );
+  });
+}
+
 // A WebSocket request in the browser: the URL and subprotocols only, since
 // a page can't set handshake headers. Errors carry no detail in browsers,
 // so the message says what usually causes them.
@@ -188,7 +206,7 @@ export function createPlatform() {
       loadGlobals,
       saveGlobals,
     },
-    send: sendRequest,
+    send,
     // The browser's WebSocket: no handshake headers (browsers can't set them).
     websocketHeaders: false,
     websocket: browserWebSocket,

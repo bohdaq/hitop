@@ -317,6 +317,22 @@ pub struct SendArgs {
     /// `hitop send`): send its cookies, keep the ones the response sets.
     #[serde(default)]
     pub cookies: bool,
+    /// The page's id for `send_cancel` (none: the request can't be cancelled).
+    #[serde(default)]
+    pub id: Option<u64>,
+    /// Time limit (hitop-core's, connect to last byte); none or 0 = no limit.
+    #[serde(default)]
+    pub timeout_ms: Option<u64>,
+}
+
+/// Requests the page can cancel, by its id: how to answer the waiting
+/// `send_request` at once, and the flag that keeps the abandoned request
+/// from saving the cookie jar.
+type Waiting = (std::sync::mpsc::Sender<Result<SendResult, String>>, std::sync::Arc<std::sync::atomic::AtomicBool>);
+
+#[derive(Default)]
+pub struct HttpCalls {
+    running: std::sync::Mutex<HashMap<u64, Waiting>>,
 }
 
 #[derive(Serialize)]
@@ -337,15 +353,51 @@ pub struct SendResult {
     pub cookies: Option<Jar>,
 }
 
+/// Sends a request. With an `id`, the HTTP exchange runs on its own thread
+/// and `send_cancel` answers this call at once: the blocking client can't
+/// stop mid-exchange, so that thread finishes (or hits `timeoutMs`) in the
+/// background and its response and cookies are dropped.
 #[tauri::command(async)]
-pub fn send_request(args: SendArgs) -> Result<SendResult, String> {
+pub fn send_request(state: tauri::State<'_, HttpCalls>, args: SendArgs) -> Result<SendResult, String> {
+    use std::sync::{atomic::AtomicBool, Arc};
+    let Some(id) = args.id else {
+        return send_now(args, &AtomicBool::new(false));
+    };
+    let (tx, rx) = std::sync::mpsc::channel();
+    let cancelled = Arc::new(AtomicBool::new(false));
+    state.running.lock().map_err(|e| e.to_string())?.insert(id, (tx.clone(), cancelled.clone()));
+    std::thread::spawn(move || {
+        let _ = tx.send(send_now(args, &cancelled));
+    });
+    let result = rx.recv().unwrap_or_else(|_| Err("the request stopped".to_string()));
+    if let Ok(mut running) = state.running.lock() {
+        running.remove(&id);
+    }
+    result
+}
+
+/// Cancels a `send_request` made with this id; its call answers "cancelled".
+#[tauri::command]
+pub fn send_cancel(state: tauri::State<'_, HttpCalls>, id: u64) -> Result<(), String> {
+    if let Some((tx, cancelled)) = state.running.lock().map_err(|e| e.to_string())?.remove(&id) {
+        cancelled.store(true, std::sync::atomic::Ordering::SeqCst);
+        let _ = tx.send(Err("cancelled".to_string()));
+    }
+    Ok(())
+}
+
+fn send_now(args: SendArgs, cancelled: &std::sync::atomic::AtomicBool) -> Result<SendResult, String> {
     let body = match (args.body, args.body_encoding.as_deref()) {
         (None, _) => vec![],
         (Some(b), Some("base64")) => B64.decode(b).map_err(|e| format!("invalid base64 body: {e}"))?,
         (Some(b), _) => b.into_bytes(),
     };
+    let timeout = args.timeout_ms.filter(|ms| *ms > 0).map(std::time::Duration::from_millis);
     let mut jar = if args.cookies { Some(Jar::load(GLOBAL_WORKSPACE).map_err(|e| format!("{e:#}"))?) } else { None };
-    let r = http::send_with(&args.method, &args.url, &args.headers, body, http::Options { timeout: None, jar: jar.as_mut() }).map_err(|e| format!("{e:#}"))?;
+    let r = http::send_with(&args.method, &args.url, &args.headers, body, http::Options { timeout, jar: jar.as_mut() }).map_err(|e| format!("{e:#}"))?;
+    if cancelled.load(std::sync::atomic::Ordering::SeqCst) {
+        return Err("cancelled".to_string());
+    }
     if let Some(j) = &jar {
         j.save(GLOBAL_WORKSPACE).map_err(|e| format!("{e:#}"))?;
     }

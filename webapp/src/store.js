@@ -40,6 +40,7 @@ import pmShimText from "../../shared/pm-shim.js?raw";
 import { loadFormat } from "./wasm/format.js";
 import { exampleResponse, snapshotResponse } from "./diff.js";
 import { folderToZip, zipToFolder } from "./zip.js";
+import { loadSettings, saveSettings, seconds } from "./settings.js";
 
 // Postman's pm.* API for scripts (the shim the CLI and desktop run too).
 const pmShim = loadShim(pmShimText);
@@ -353,6 +354,9 @@ export class Store extends EventTarget {
     // Large response bodies across reloads (IndexedDB), null without it;
     // keptBodies: tab id → the body last written there.
     this.responseStore = platform().responses ?? null;
+    // Settings (settings.js), and requests in flight by tab id (AbortController).
+    this.settings = loadSettings();
+    this.inflight = new Map();
     this.keptBodies = new Map();
     this.responsesRestored = this.restoreResponses();
     this.ready = this.restoreFolders();
@@ -547,6 +551,13 @@ export class Store extends EventTarget {
     this.emit();
   }
 
+  // Changes the tab with this id (wherever it is now) without a title change
+  // or a save: for answers that arrive after the tabs may have moved.
+  patchTab(id, updates) {
+    const at = this.tabs.findIndex((t) => t.id === id);
+    if (at !== -1) this.tabs = tabService.updateTab(this.tabs, at, updates);
+  }
+
   // The tab with this id, which may no longer be the current one.
   updateTabById(id, updates) {
     const at = this.tabs.findIndex((t) => t.id === id);
@@ -571,6 +582,7 @@ export class Store extends EventTarget {
 
   closeTab(index) {
     if (this.tabs.length <= 1) return;
+    this.cancel(this.tabs[index].id);
     this.wsDisconnect(this.tabs[index].id);
     this.grpcCancel(this.tabs[index].id);
     const { tabs, newCurrentTab } = tabService.closeTab(this.tabs, index, this.currentTab);
@@ -1302,7 +1314,10 @@ export class Store extends EventTarget {
   // Prepares and sends one request; returns { prepared, res }. Handles form
   // bodies and the cookie jar (proxied requests only: the browser keeps
   // localhost cookies itself and hides Set-Cookie from scripts).
-  async dispatch(source, collectionId) {
+  // `signal` stops it (Cancel, the request timeout); the desktop gets the
+  // timeout too, so Rust gives up as well.
+  async dispatch(source, collectionId, { signal } = {}) {
+    signal ??= this.timeoutSignal();
     let prepared;
     try {
       prepared = await this.prepare(source, collectionId);
@@ -1340,11 +1355,14 @@ export class Store extends EventTarget {
       if (cookie) headers.push({ name: "Cookie", value: cookie });
     }
     const options = { method: source.method, headers: headersObject(headers), ...(p.cookies ? { cookies: this.cookieJarEnabled } : {}) };
+    if (signal) options.signal = signal;
+    if (this.settings.timeoutMs) options.timeoutMs = this.settings.timeoutMs;
     if (body && BODY_METHODS.includes(source.method)) options.body = body;
     let res;
     try {
       res = await p.send(prepared.url, options);
     } catch (e) {
+      if (signal?.aborted) throw signal.reason;
       // fetch says only "Failed to fetch"; for direct requests the usual cause
       // is a server that doesn't allow CORS.
       if (p.name === "web" && !proxied && e instanceof TypeError)
@@ -1396,10 +1414,12 @@ export class Store extends EventTarget {
       ...SAVED_FIELDS(tab),
     };
     this.tabs = tabService.updateTab(this.tabs, index, { loading: true, response: null, statusCode: null, responseHeaders: null, durationMs: null, tests: null, responseCut: false, responseStored: undefined, jsonError: null });
+    // Cancel (store.cancel) and the request timeout (Settings) abort it.
+    const call = this.startCall(tab.id);
     this.emit();
     const started = performance.now();
     try {
-      const { prepared, res } = await this.dispatch(source, tab.loadedCollectionId);
+      const { prepared, res } = await this.dispatch(source, tab.loadedCollectionId, { signal: call.signal });
       const headers = {};
       res.headers.forEach((v, k) => (headers[k] = v));
       const { data, type, raw, jsonError } = await readResponse(res);
@@ -1407,7 +1427,7 @@ export class Store extends EventTarget {
       // The body as received, for Raw (memory only: the tab keeps the formatted one).
       if (raw !== undefined) this.rawBodies.set(tab.id, raw);
       else this.rawBodies.delete(tab.id);
-      this.tabs = tabService.updateTab(this.tabs, index, {
+      this.patchTab(tab.id, {
         response: data,
         responseType: type,
         jsonError: jsonError ?? null,
@@ -1438,15 +1458,56 @@ export class Store extends EventTarget {
         tests = [...tests, { name: "Script after", pass: false, detail: e.message }];
         this.notify(`The script after the request failed: ${e.message}`);
       }
-      this.tabs = tabService.updateTab(this.tabs, index, { tests });
+      this.patchTab(tab.id, { tests });
     } catch (e) {
-      if (e.stage === "prepare") {
-        this.tabs = tabService.updateTab(this.tabs, index, { loading: false });
+      if (call.signal.aborted && call.signal.reason?.name !== "TimeoutError") {
+        // Cancelled: no response, nothing in history.
+        this.patchTab(tab.id, { response: null, responseType: "cancelled", statusCode: null, responseHeaders: null, loading: false });
+      } else if (call.signal.aborted) {
+        const limit = seconds(this.settings.timeoutMs);
+        this.patchTab(tab.id, { response: `Error: No response within ${limit}. The time limit is in Settings, under Requests.`, responseType: "error", statusCode: null, responseHeaders: null, loading: false });
+      } else if (e.stage === "prepare") {
+        this.patchTab(tab.id, { loading: false });
         this.notify(`The request wasn't sent: ${e.message}`);
       } else {
-        this.tabs = tabService.updateTab(this.tabs, index, { response: `Error: ${e.message}`, responseType: "error", statusCode: null, responseHeaders: null, loading: false });
+        this.patchTab(tab.id, { response: `Error: ${e.message}`, responseType: "error", statusCode: null, responseHeaders: null, loading: false });
       }
+    } finally {
+      call.done();
     }
+    this.emit();
+  }
+
+  // A request in flight for this tab: { signal, done() }. The signal aborts on
+  // Cancel (AbortError) or after the Settings time limit (TimeoutError).
+  startCall(tabId) {
+    const controller = new AbortController();
+    const ms = this.settings.timeoutMs;
+    const timer = ms > 0 ? setTimeout(() => controller.abort(new DOMException(`No response within ${seconds(ms)}`, "TimeoutError")), ms) : null;
+    this.inflight.set(tabId, controller);
+    return {
+      signal: controller.signal,
+      done: () => {
+        clearTimeout(timer);
+        if (this.inflight.get(tabId) === controller) this.inflight.delete(tabId);
+      },
+    };
+  }
+
+  // Stops the tab's request in flight (the Cancel button).
+  cancel(tabId = this.tab?.id) {
+    this.inflight.get(tabId)?.abort(new DOMException("Cancelled", "AbortError"));
+  }
+
+  // The Settings time limit as a signal, for requests with no Cancel (runs, schema).
+  timeoutSignal() {
+    const ms = this.settings.timeoutMs;
+    return ms > 0 && typeof AbortSignal.timeout === "function" ? AbortSignal.timeout(ms) : undefined;
+  }
+
+  setSettings(changes) {
+    this.settings = { ...this.settings, ...changes };
+    saveSettings(this.settings);
     this.emit();
   }
 

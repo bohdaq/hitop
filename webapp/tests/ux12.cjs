@@ -97,6 +97,7 @@ function api() {
   // Raw survives the reload too (it's kept with the body).
   await url.fill(`${base}/bigjson`);
   await sendAndWait();
+  await settle(p); // the IndexedDB write follows the batched save
   await p.reload({ waitUntil: 'networkidle' });
   await settle(p);
   await p.getByRole('button', { name: 'Raw', exact: true }).click();
@@ -113,7 +114,36 @@ function api() {
   check('IndexedDB full: a toast says so', full.includes("Couldn't keep a large response"), full.trim().slice(0, 120));
   check('… and the tab is saved the 1.1 way', st.tab.response.length === 64 * 1024 && st.tab.responseCut === true && !st.tab.responseStored, `${st.tab.response.length}`);
   await flag('__idbfull', false);
-  check('bigTabId kept', st.tabs.some((t) => t.id === bigTabId));
+  check('the 1.1 cut tab is still there', st.tabs.some((t) => t.id === bigTabId));
+
+  // --- 6. Cancel a request in flight; the request timeout -------------------------------
+  const histBefore = (await h.stored.history()).length;
+  await url.fill(`${base}/slow`);
+  await p.getByRole('button', { name: 'Send', exact: true }).click();
+  const cancel = p.getByRole('button', { name: 'Cancel', exact: true });
+  await cancel.waitFor({ timeout: 5000 });
+  check('while waiting, Cancel replaces Send', (await p.getByRole('button', { name: 'Send', exact: true }).count()) === 0);
+  await p.waitForTimeout(300);
+  const t0 = Date.now();
+  await cancel.click();
+  await p.getByText('Cancelled', { exact: true }).waitFor({ timeout: 3000 });
+  check('Cancel stops at once and says so', Date.now() - t0 < 2000 && (await p.getByRole('button', { name: 'Send', exact: true }).count()) === 1, `${Date.now() - t0} ms`);
+  await settle(p);
+  check('a cancelled request is not in History', (await h.stored.history()).length === histBefore);
+  check('the server saw it go out', got.some((g) => g.path === '/slow'));
+  if (TAURI) check('[tauri] send_cancel reached Rust with the request id', (h.mock.cancels || []).length === 1 && h.mock.sent.at(-1).id === h.mock.cancels[0], JSON.stringify([h.mock.cancels, h.mock.sent.at(-1)?.id]));
+  // The time limit from Settings (hitop_settings.timeoutMs).
+  await p.evaluate(() => localStorage.setItem('hitop_settings', JSON.stringify({ timeoutMs: 1000 })));
+  await p.reload({ waitUntil: 'networkidle' });
+  await settle(p);
+  await p.getByRole('button', { name: 'Send', exact: true }).click();
+  await p.locator('.response .error-text').waitFor({ timeout: 4000 });
+  const timeoutText = await p.locator('.response .error-text').innerText();
+  check('the request timeout stops a slow request and names the setting', timeoutText.includes('No response within 1 s') && timeoutText.includes('Settings'), timeoutText);
+  if (TAURI) check('[tauri] the time limit goes to Rust too', h.mock.sent.at(-1).timeoutMs === 1000);
+  await p.evaluate(() => localStorage.removeItem('hitop_settings'));
+  await p.reload({ waitUntil: 'networkidle' });
+  await settle(p);
 
   check('no page errors', errors.length === 0, errors.join(' || '));
   server.close();
