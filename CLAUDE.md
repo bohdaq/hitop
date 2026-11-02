@@ -51,7 +51,10 @@ hitop/
 │       │   ├── tests/compat.rs     # format v1 compatibility suite (spec/compat/v1/): read, in-memory read, round trip, canonical write; v1 report shape
 │       │   └── tests/report_html.rs # golden report.html from tests/golden/report/report.json (UPDATE_GOLDEN=1), escaping of every field
 │       ├── hitop-wasm/         # format + model for the web app (wasm-bindgen =0.2.126), own workspace, not published
-│       ├── hitop-sync-crypto/  # MIT client crypto for hitop sync: HPKE key wrap + XChaCha20-Poly1305 blobs; vectors/v1.json (published before hitop)
+│       ├── hitop-sync-crypto/  # MIT client crypto for hitop sync (0.2.0): format 2 key wraps = HPKE Auth mode with the sender's pinned X25519 key
+│       │                       # (seal_wrap/open_wrap; format 1 base mode wrap_key/unwrap_key = legacy), keyring.rs accept_wraps (the one key
+│       │                       # acceptance policy: pinned senders, invite fingerprints, strict, key commitments, no rollback; WorkspaceMemory,
+│       │                       # feature `serde`), XChaCha20-Poly1305 blobs; vectors/v1.json (frozen) + v2.json (published before hitop)
 │       ├── hitop-git/          # desktop Git panel: git2 0.21 + vendored libgit2 (feature `net`: https/ssh, vendored OpenSSL), not published;
 │       │                       # json.rs = the one entry point (desktop `git` command, examples/git-json for the e2e mock); tests on temp repos
 │       └── hitop/              # Binary crate (published to crates.io)
@@ -68,7 +71,7 @@ hitop/
 │           ├── tests/globals.rs # globals below collection/env, secret globals, pm.globals, import, convert
 │           ├── tests/mcp.rs    # hitop mcp: JSON-RPC over stdio for every tool (httpmock, ws echo server), path confinement, no secret value anywhere on stdout
 │           ├── tests/secret_managers.rs # ${secret:...}: stub op/az on PATH + Key Vault mock; the settings file and env precedence; Vault dev and LocalStack (HITOP_TEST_VAULT_ADDR, HITOP_TEST_LOCALSTACK_URL; required on CI)
-│           ├── tests/sync.rs   # two hitop clients against a real sync server (HITOP_SYNC_SERVER_BIN; required when CI is set): create, edit, conflict, resolve, delete, invite/trust/add, viewer, runner, remove, audit; login --sso via Keycloak (HITOP_SYNC_TEST_KEYCLOAK)
+│           ├── tests/sync.rs   # two hitop clients against a real sync server (HITOP_SYNC_SERVER_BIN; required when CI is set): create, edit, conflict, resolve, delete, invite/trust/add, viewer, runner, remove, audit; a malicious server (rusqlite edits its DB: forged/unauthenticated/made-up-device wraps, swapped key, hidden rotation, replay, fake epoch); a hitop 1.1 workspace upgraded; login --sso via Keycloak (HITOP_SYNC_TEST_KEYCLOAK)
 │           ├── tests/telemetry.rs # nothing sent while off, at most once a week (HITOP_TELEMETRY_URL → httpmock)
 │           ├── tests/launch_gate.rs # T11 scenario: Postman import, two environments, login token via pm.environment.set, JUnit
 │           └── src/
@@ -131,7 +134,7 @@ hitop/
 │   ├── src/sync.js             # hitop sync client (web + desktop): SyncClient (HTTP, wasm crypto/plan), withSyncFolders ("hitop-sync:<ws>" folder refs in app storage)
 │   ├── src/views/sync-view.js  # the Sync page (both modes): sign in (email or SSO, paste the code), share, join, conflicts, members/invites/trust, runner credential, audit log (owners)
 │   ├── tests/harness.cjs       # e2e in web or Tauri mode (HITOP_MODE=tauri); tests/tauri-mock.cjs mocks invoke in Node
-│   ├── tests/sync.cjs          # two people against a real sync server (HITOP_SYNC_SERVER_BIN), web and Tauri modes; audit log; SSO via Keycloak (HITOP_SYNC_TEST_KEYCLOAK)
+│   ├── tests/sync.cjs          # two people against a real sync server (HITOP_SYNC_SERVER_BIN), web and Tauri modes; invite code with fingerprint; a malicious server via node:sqlite; audit log; SSO via Keycloak (HITOP_SYNC_TEST_KEYCLOAK)
 │   ├── src/shortcuts.js        # keyboard shortcuts (Mod+Enter, Mod+S, Mod+K, Mod+P, Alt+Shift+N/W/[/], ?): one capture listener in hitop-app.js
 │   ├── src/settings.js, split.js, quick-open.js, collection-tree.js # 1.2: hitop_settings, the pane split, Mod+P fuzzy finder, import merge + folder tree
 │   ├── src/views/settings-view.js, history-view.js # the Settings page (both builds) and the History page
@@ -156,7 +159,7 @@ hitop/
 ├── deploy/                     # build.sh, install.sh, systemd unit, front rws routes, README
 ├── sync-server/                # hitop sync (AGPL-3.0-or-later, own LICENSE/deny.toml): rws app, SQLite or Postgres
 │   ├── src/                    # api.rs (routing, CORS), auth.rs (magic link, passkeys), workspaces.rs (members, wraps, rotation), teams.rs (invites, roles, runner accounts), blobs.rs (CAS + version vectors), oidc.rs (SSO: OIDC code + PKCE, JWKS cache), audit.rs (audit log, hash chain, purge), db.rs (migrations 1-3)
-│   ├── tests/                  # auth, sync, roles (every role × operation, removed member), teams (invites, runners), plaintext, no_crypto_in_server, postgres, sso (mock IdP, common/idp.rs), keycloak (fixtures/keycloak realm), audit
+│   ├── tests/                  # auth, sync, roles (every role × operation, removed member), teams (invites, runners), plaintext, no_crypto_in_server, postgres, sso (mock IdP, common/idp.rs), keycloak (fixtures/keycloak realm), audit, wraps_v2 (format 2 wraps, upgrade of format 1)
 │   ├── deploy/                 # hitop-sync.service, install.sh, rws-routes.toml (sync.hitop.rws8.tech)
 │   └── THREAT_MODEL.md, README.md (self-host guide), Dockerfile
 ├── ios/
@@ -273,10 +276,12 @@ hitop/
 - Usage ping: hitop-core feature `telemetry` (off by default; the CLI crate's default feature turns it on);
   `hitop telemetry on|off|status`; never sent unless on, at most weekly; `HITOP_TELEMETRY_URL` points tests at a mock
 - Sync: `hitop sync login [--sso [--no-browser]]|logout|whoami|ls|init|link|unlink|status|pull|push|resolve|members|invite|accept|add|remove|role|trust|runner create|audit [--json] [--verify] [--mine]`
-  (folders only; `-c <dir>`, default cwd). State in `<config>/hitop/sync/` (account.json, pins.json, links.json, state/<ws>-<hash>.json);
+  (folders only; `-c <dir>`, default cwd). State in `<config>/hitop/sync/` (account.json, pins.json, keys.json = WorkspaceMemory per workspace, links.json, state/<ws>-<hash>.json);
   session + device secret in the keychain (`sync/<host>`) or `HITOP_SYNC_KEY_FILE` (0600; tests use it with `HITOP_KEYCHAIN=off`);
   `HITOP_SYNC_SERVER` (default https://sync.hitop.rws8.tech; http only for localhost); `HITOP_SYNC_RUNNER=hitop-runner-1.<b64url JSON>` = read-only
-  runner credential for `pull`. Wraps only for pinned keys (`--trust <fp>` or a TTY prompt; changed key refused). Exit 1 while a conflict is open,
+  runner credential for `pull` (since 1.2 with `pins`: accepts keys only from those devices). Wraps only for pinned keys (`--trust <fp>` or a TTY prompt; changed key refused);
+  since 1.2 every wrap is format 2 and keys are accepted only via `accept_wraps` (client.rs `refresh_keys`); invite codes `<token>.<fingerprint>`;
+  owners' sync/members upgrade format 1 wraps of pinned non-runner devices (`upgrade_wraps`); `remove` unpins the removed devices. Exit 1 while a conflict is open,
   2 on errors. `hitop schedule --sync` adds a pull step (GitHub: docker image + `secrets.HITOP_SYNC_RUNNER`; needs an image >= 1.1.0) or a pull before
   the cron run. Core `hitop_core::sync` decides; `hitop-sync-crypto` (cli workspace, published before hitop by release-cli.yml when its version is new)
 - MCP: `hitop mcp [folder]` (rmcp 3.8 + tokio, binary crate only): stdio server, workspace = folder or global storage;
@@ -397,9 +402,10 @@ hitop/
 - Secrets: environment `secrets` names, masked editor; `features.js` `exportableEnvironments()`/`maskSecrets()` for exports and run history
 - Sync (both modes): `src/sync.js` + the Sync page (`views/sync-view.js`, added to `platform().pages` in main.js, which also wraps
   `platform().folders` with `withSyncFolders`). A shared collection is a folder collection: on disk (desktop/FS Access) or in app storage under
-  ref `hitop-sync:<ws>` (`hitop_sync_files:<ws>` = files map). localStorage `hitop_sync_account`, `hitop_sync` {pins, links, states}; session +
+  ref `hitop-sync:<ws>` (`hitop_sync_files:<ws>` = files map). localStorage `hitop_sync_account`, `hitop_sync` {pins, links, states, memory}; session +
   device secret through `platform().folderSecrets` (desktop keychain `hitop-sync/<host>`, web localStorage). HTTP: web `fetch` straight to the
-  server (its CORS allows the web origin, never the proxy), desktop `platform().send` (Rust). Crypto and plan: hitop-wasm `sync*` (format.js `sync`)
+  server (its CORS allows the web origin, never the proxy), desktop `platform().send` (Rust). Crypto and plan: hitop-wasm `sync*` (format.js `sync`);
+  keys only through `syncAcceptWraps` (`workspaceKeys`, refusals = `KeyError` {kind, fingerprint}), wraps `syncSealWrap`, owners `upgradeWraps`
 - Secret manager references: `features.js` `secretRefs()`/`withSecretRefs()`; `store.resolveRefs()` (in `prepare`, `wsConnect`, `grpcCall`) asks
   `platform().resolveSecretRefs` (tauri.js → `secret_refs_resolve`; web.js `null` → the request isn't sent, the note names them);
   values in `store.refValues` (memory, reset per send/run), merged by `variables()`, masked via `secretValuesFor()`; Code dialog keeps placeholders
@@ -434,6 +440,8 @@ hitop/
 ### Sync server (`sync-server/`)
 - T24: migration 2 (`users.runner_of`, `invites`); `PUT .../members/:user {role}`, `POST/GET/DELETE .../invites`, `POST /v1/invites/accept`,
   `POST .../runners`; runner accounts `<id>@runner.invalid` (viewer, one workspace, 1-year session, no sign-in/keys/invites/workspaces); `/invite` page
+- 1.2 (no migration): wraps are format 1 (80 bytes) or format 2 (`0x02 || head || sender key id || 80 bytes`; sender must be the caller's key);
+  a format 2 wrap replaces a format 1 one in `POST .../wraps` (`stored`), `GET /v1/workspaces/:ws` keys have `legacyEpochs`, invite accept ignores `.<fingerprint>`
 - T25: migration 3 (`oidc_identities`, `audit_log`, `audit_chain`); SSO `GET /v1/auth/sso`, `POST .../sso/start|finish`, `GET .../sso/callback`
   (env `HITOP_SYNC_OIDC_*`, `HITOP_SYNC_SSO_REQUIRED`; jsonwebtoken 10 with the aws_lc_rs backend + ureq 3); audit `GET /v1/workspaces/:ws/audit[/verify]`, `GET /v1/me/audit`,
   `hitop-sync-server audit-verify`, hourly purge (`HITOP_SYNC_AUDIT_RETENTION_DAYS`, 365), IPs truncated (`HITOP_SYNC_AUDIT_IP`, `HITOP_SYNC_TRUSTED_PROXIES`)

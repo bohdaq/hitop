@@ -54,7 +54,9 @@ hitop sync invite --role viewer -c ./my-api                    # a link to share
 
 In the app: **Members**, then the email and role, then **Invite**.
 
-The person signs in, then accepts the invite with the code from the mail or link (`hitop sync accept <code>`, or **Accept invite** on the Sync page). Accepting doesn't give them access yet: only a member's device can hand over the workspace key, and the server could lie about whose key is whose.
+The invite code hitop shows you ends with your device's key fingerprint (`<code>.<fingerprint>`, also in the link). Send that code or link yourself, in a chat or a message you trust: with it, the other person's hitop accepts the workspace key only from your device. The code in a mailed invite has no fingerprint, because the sync server writes that mail; it works, but then their hitop asks them to compare your fingerprint before it uses the key.
+
+The person signs in, then accepts the invite (`hitop sync accept <code>`, or **Accept invite** on the Sync page). Accepting doesn't give them access yet: only a member's device can hand over the workspace key, and the server could lie about whose key is whose.
 
 So the owner checks the fingerprint:
 
@@ -66,6 +68,19 @@ hitop sync add ada@example.com --trust 'ab12 cd34 …' -c ./my-api
 Compare the fingerprint with the person directly: in person, on a call, or in a chat you already trust. In the app, the accepted invite shows the fingerprint and a **Trust…** button; **Add** stays off until the key is trusted. Once you trust a key, hitop remembers it; if the server ever presents a different key for the same device, hitop refuses to share the workspace key with it.
 
 The new member then opens the workspace: `hitop sync link <workspace> -c ./my-api`, or **Open here** on the Sync page.
+
+## Fingerprints and warnings
+
+Every device has a key, and its **fingerprint** (eight groups of four hex digits) is what people compare. Yours: `hitop sync whoami`, or the top of the Sync page. Everyone's: `hitop sync members`, or **Members**.
+
+hitop checks both directions. It hands the workspace key only to devices you trusted, and it takes a workspace key only from a device you trusted (or the one your invite code named). So a sync server can't slip its own key to a new member, or to anyone at the next key change, and read what they write. When hitop refuses a key, it says why:
+
+- **"handed to this device by device …, key fingerprint …, which you haven't trusted"**: the key came from a device you haven't confirmed (for example, you accepted a mailed invite, or another device of the owner added you). Compare the fingerprint with that person; only if it matches, run `hitop sync trust '<fingerprint>' -c ./my-api` or choose **Trust this device…**, then sync again.
+- **"SECURITY: … doesn't verify against the key you trusted"**, **"… is not the one this device accepted before"**, **"… a key rotation is being hidden"**: someone, most likely the server, tried to give you a key it chose, swap a key, or roll the workspace back. hitop used nothing and wrote nothing. Don't trust anything new; tell the workspace owner and whoever runs the server.
+- **"KEY CHANGED"** next to a device in the member list, or **"WARNING: the server now lists a different key"**: the server shows a new key under a device you already trusted. hitop keeps using the key you trusted and refuses the new one. A person who really has a new key signs in on a new device instead.
+- **"handed out without authentication (made by hitop before 1.2)"**: a workspace shared with hitop 1.1. It keeps working; the owner's next sync with hitop 1.2 or newer replaces those keys with authenticated ones, and members then confirm the owner's fingerprint once.
+
+hitop 1.1 can't read the authenticated keys 1.2 hands out, so once a workspace has a member on 1.2, everyone in it updates (CLI, desktop app and runner images to 1.2 or newer; the web app updates itself).
 
 ## Roles
 
@@ -114,7 +129,7 @@ hitop sync runner create -c ./my-api | gh secret set HITOP_SYNC_RUNNER
 hitop schedule ./my-api --github --sync --env staging
 ```
 
-The workflow pulls the workspace with the credential, then runs it with the [HITOP GitHub Action](run-hitop-in-github-actions.html). The credential decrypts the workspace inside your CI job, so the sync server still sees only ciphertext. For cron on your own machine, `hitop schedule ./my-api --cron "0 6 * * *" --sync` prints a crontab line that pulls as your device, then runs. Revoke a credential like a member: `hitop sync members` lists it, `hitop sync remove <its id>` rotates the key. Generated workflows need an image with `hitop sync`, so use hitop 1.1.0 or later (`--hitop-version`).
+The workflow pulls the workspace with the credential, then runs it with the [HITOP GitHub Action](run-hitop-in-github-actions.html). The credential decrypts the workspace inside your CI job, so the sync server still sees only ciphertext. For cron on your own machine, `hitop schedule ./my-api --cron "0 6 * * *" --sync` prints a crontab line that pulls as your device, then runs. Revoke a credential like a member: `hitop sync members` lists it, `hitop sync remove <its id>` rotates the key. Generated workflows need an image with `hitop sync`, so use hitop 1.1.0 or later (`--hitop-version`). A credential made with hitop 1.2 also names the devices allowed to hand it the workspace key (yours and the owners' and editors' devices you trusted) and accepts keys only from them, which needs a hitop 1.2 image; one made with 1.1 keeps working and warns that it should be replaced.
 
 **Running on the sync server instead** would mean giving the server a key that decrypts the workspace: while it runs your collection it sees your requests, responses and environment values, which is exactly what end-to-end encryption keeps from it. hitop's test server doesn't offer that. If you run your own server and want it to run your monitors, run the runner credential on that host yourself, as its own service with its own limits, and treat that host as one that can read the workspace.
 

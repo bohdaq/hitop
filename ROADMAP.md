@@ -160,6 +160,7 @@ Secret variables: `secret: true` in an environment file, with the value resolved
 | 1.1.0 | Release 1.1.0: CLI (hitop, hitop-core 1.1.0, first hitop-sync-crypto 0.1.0 on crates.io), ghcr image, desktop; sync server + site deployed | done | c79dd1c, 4ebb2e8 (release-cli runs the sync tests with the server + Keycloak), 3055102 (ID token iat/nbf/exp checks); rc cli-v1.1.0-rc.1 (failed: no sync server in release tests) / rc.2, desktop-v1.1.0-rc.1; releases 41420105353, 41420109000 | 2026-11-02 |
 | 1.2 | Same Content-Type on every surface (owner-approved 2026-11-02, release 1.2.0) | done (handoff) | fb636e1 (hitop-core `sending`), d718e28 (hitop send, CLI + MCP tests), 9505a3c (web app through hitop-wasm), ae47ae1 (HitopKit), edc28c5 (spec/sending.md, README, guide, CHANGELOG), ROADMAP; CI 41436745770; not tagged | 2026-11-02 |
 | 1.2 UX | 1.2 Web app UX: deferred items (reviews/2026-11-01-webapp-ux, owner-approved 2026-11-02, release 1.2.0) | done (handoff) | 52598e0 (IndexedDB bodies), d974170 (Cancel, time limit, desktop `send_cancel`), d9b704c (Settings page), 66ed313 (additive import), 81b89e7 (split panes, Mod+P), 8dcac28 (tab ×, History page, request menu, folder groups), docs; CI see notes; not tagged | 2026-11-02 |
+| 1.2 | Signed key wraps: authenticated workspace key wraps in hitop sync (owner-approved 2026-11-02, release 1.2.0) | done (handoff) | e86896d (hitop-sync-crypto 0.2.0), 8af9f85 (sync server), 66610fd (CLI), be8338a (hitop-wasm), 3c82306 (web app + desktop), docs + ROADMAP; CI see notes; not tagged, not deployed | 2026-11-02 |
 
 Common commands referenced below:
 
@@ -1793,6 +1794,65 @@ export PATH="$HOME/.cargo/bin:$PATH"
     (git and sync left to CI). The desktop crate can't build on the agent's machine (no GTK); CI compiles it.
   - Collection format v1, spec/compat and the React app's storage shapes unchanged (new keys and an optional flag only).
 
+#### 1.2 Signed key wraps (2026-11-02)
+- Close the top finding of the sync crypto (THREAT_MODEL, T24 open item): workspace key wraps were HPKE base mode, so a
+  malicious sync server could hand a new member (or anyone, at a fake next epoch) a workspace key of its choosing and
+  read what they then wrote. Owner-approved for 1.2.0.
+- **Notes (2026-11-02, done; deploy, release and the external review are handoffs):**
+  - Decision: **HPKE Auth mode**, not Ed25519 signatures (THREAT_MODEL "Why HPKE Auth mode"). The wrapping device's
+    X25519 key, already pinned and fingerprinted since T24, authenticates the wrap; a separate signing key would need
+    binding to the pinned encryption key, a second round of trust on first use and new fingerprints. Costs written
+    down: only the recipient can verify, key-compromise impersonation (compromised devices out of scope), no signed
+    rotation/member-list record. The status row says "signed" as asked; the wraps are authenticated, not signed.
+  - `hitop-sync-crypto` 0.2.0 (MIT, crates.io API reworked): format 2 wraps `seal_wrap`/`open_wrap`/`wrap_header`
+    (`0x02 || u32 head || u16 len || sender key id || enc || ct`; info `"hitop-sync/v2/wrap"` binds workspace, epoch,
+    head = the sender's current epoch, sender and recipient key ids), `rotate(sender, ...)`, `Device {key_id, keys}`;
+    format 1 `wrap_key`/`unwrap_key` kept (documented as legacy); `accept_wraps` (`keyring.rs`) = the one acceptance
+    policy (pinned senders, inviter fingerprint pinning, strict mode, `key_commitment` per epoch, rollback via the
+    max epoch and wrap heads, notices) with `WorkspaceMemory` (feature `serde`); `Error` gained UntrustedSender,
+    Forged, KeyChanged, Rollback, LegacyRefused, MissingKey (`#[non_exhaustive]`). `vectors/v1.json` untouched; new
+    `vectors/v2.json` (3 wraps, 10 failures, 2 commitments), cross-checked with `@hpke/core` 1.7.4 Auth mode + node
+    crypto in a throwaway script. Crate tests 20 (+2 ignored generators).
+  - Sync server (no migration): a wrap is 80 bytes (format 1) or format 2; shape checked, a format 2 sender must be one
+    of the caller's device keys; a format 2 wrap replaces a format 1 wrap in `POST .../wraps` (upsert with
+    `length(wrapped) = 80`, SQLite and Postgres), never the reverse (`stored` in the answer); `GET /v1/workspaces/:ws`
+    lists `legacyEpochs` per key; invite accept ignores a `.fingerprint` suffix. Tests `tests/wraps_v2.rs` 3, Postgres
+    teams flow +upgrade (run locally against postgres:17-alpine), everything else unchanged and green; the server still
+    links no crypto.
+  - CLI: every wrap is format 2; keys only through `accept_wraps` with `pins.json` and a new `keys.json`
+    (workspace → WorkspaceMemory). `invite` prints `<token>.<fingerprint>` (link and, for mailed invites, a code to send
+    yourself); `accept` parses it, makes the workspace strict and records the inviter; `init` makes it strict;
+    `remove` unpins the removed member's devices; owners' `pull`/`push`/`members` upgrade format 1 wraps of pinned,
+    non-runner devices; `trust` finds keys in every workspace when the folder isn't linked; runner credentials carry
+    `pins` (creator + pinned owner/editor devices) and are strict, 1.1 credentials (no pins) keep legacy with a
+    warning (their wraps are never upgraded). Refusals name the fingerprint and `hitop sync trust`, security ones
+    start with SECURITY. tests/sync.rs: the team flow (code with fingerprint; a mailed code needs `trust`), plus
+    `a_malicious_server_cant_hand_out_its_own_workspace_key` (edits the server's SQLite: unauthenticated wrap, forged in
+    the owner's name, a device the server adds to the owner's account (also refused by the owner's `remove`), swapped
+    key for a known epoch, hidden rotation, old wrap replayed as the new epoch, fake next epoch; nothing written or
+    pushed) and `a_hitop_1_1_workspace_keeps_working_and_is_upgraded` (rewrites all wraps to format 1, drops memory and
+    the inviter pin: warning, owner upgrade, re-sent known key, strict afterwards, 1.1 runner credential, trust for the
+    next rotation). New dev-dependency rusqlite 0.41 (bundled) in the hitop crate.
+  - Web app + desktop (`webapp/src/sync.js`, Sync page): same rules through hitop-wasm (`syncSealWrap`,
+    `syncWrapHeader`, `syncAcceptWraps` returning `{ok, ...}`/`{ok: false, error: {kind}}`, `syncNormalizeFingerprint`,
+    `syncCheckVectorsV2`; `syncWrap`/`syncUnwrap` → `syncWrapLegacy` for tests). localStorage `hitop_sync.memory`;
+    `KeyError` (kind, fingerprint); the page shows key warnings, "Security warning:" errors, "Trust this device…"
+    after comparing, the invite code with the fingerprint, legacy keys in Members. tests/sync.cjs (web and Tauri):
+    invite code carries the fingerprint, the inviter is trusted from it, and a malicious server via `node:sqlite`
+    (unauthenticated wrap, forged in the owner's name, a made-up device with its fingerprint and the Trust button);
+    unit.mjs runs v2 vectors and accept_wraps cases in WASM. `node:sqlite` needs Node 22.13+ (CI: setup-node 22).
+  - HitopKit (Swift) has no sync (no sync code in `ios/HitopKit`): not applicable, nothing to hand off.
+  - Compatibility: hitop 1.1 clients can't open format 2 wraps, and a 1.1 server refuses them. Order: deploy the sync
+    server first, then release CLI/desktop and deploy the web app; once a workspace is upgraded, every member needs
+    1.2. Format v1 and spec/compat untouched (sync is outside format v1).
+  - Docs: THREAT_MODEL (format 2, why Auth mode, "Accepting keys", upgrade of 1.1 workspaces, vectors, residual
+    risks under "What a malicious server can still do", open item 2 done with the review focus), sync-server README
+    (wire formats, `legacyEpochs`, `stored`, invite codes), team guide (invite codes with fingerprints, "Fingerprints
+    and warnings", runner credentials, version note). CLAUDE.md facts.
+  - Remaining limits (THREAT_MODEL): the first fingerprint comparison; members from 1.1 accept format 1 wraps until
+    upgraded; a pinned (or removed but still pinned) member colluding with the server can hand out a key it knows;
+    the member list is unauthenticated (a signed manifest would close the last two).
+
 ---
 
 ## 6. Handoffs and open questions
@@ -1835,6 +1895,8 @@ Agent appends here; owner ticks when done.
 | 2026-11-02 | UX | Eye-check the review fixes on the web app and desktop build: top bar, sidebar fold/filter, tab strip (tabs now at most 16rem wide, so one tab no longer spans the strip), theme toggle now cycles light/dark/system. (The Content-Type question of this row was answered "port it" by the owner and is done in 1.2, row below.) | |
 | 2026-11-02 | 1.2 | Nothing blocking. When releasing 1.2.0: bump the versions as usual (still 1.1.0) and keep the CHANGELOG's behaviour-change note in the release text (CLI raw bodies now get a Content-Type; schemeless URLs get https:// instead of failing). Optional check: `hitop snippet` and the web app's Code dialog for one raw JSON POST should show the same `Content-Type: application/json` line. HitopKit's rules run on Linux in CI; on a Mac the companion uses the same code (`Sending.swift`), nothing extra to do. | |
 | 2026-11-02 | 1.2 UX | Eye-check the 1.2 web app items in a browser and in the desktop build (macOS WKWebView; Windows WebView2 if handy): (1) the drag handle between request and response: feel, cursor, keyboard (Tab to it, arrows, Enter resets), the stacked layout in a narrow window, none on a phone; (2) hide/show the response; (3) Cmd+P / Ctrl+P opens quick open and never the print dialog, Cmd+K still the URL field; (4) Cancel on a slow request in the desktop app (`https://httpbin.org/delay/10`): stops at once; (5) a multi-MB response, then reload/relaunch: the whole body is back (IndexedDB in WKWebView), in a private browser window the 1.1 note instead; (6) Settings: theme, time limit, Clear stored responses; on the desktop the secret managers and (release build) usage ping are sections of the same page; (7) Import with "Add to my collections" next to existing ones; (8) folder groups after a Postman import, right-click menu, the × on tabs, the History page. Screenshots: `reviews/2026-11-01-webapp-ux/shots/after12-*.png` (local). | |
+| 2026-11-02 | 1.2 signed key wraps | **Deploy the sync server before releasing 1.2 clients** (a 1.1 server refuses format 2 wraps with 400 "wrapped key ... must be 80 bytes"): build `sync-server` from main and install it as before (`deploy/install.sh`); no migration, no env change; existing workspaces keep working. Then release CLI/desktop 1.2.0 (hitop-sync-crypto **0.2.0** is published first by release-cli.yml: it is a new version under your token) and deploy the web app. Check on the test server: (1) an existing 1.1 workspace syncs from the 1.2 CLI with a "handed out without authentication" warning; as its owner, `hitop sync pull` prints "Upgraded N workspace key wrap(s)" and a second pull is quiet; (2) a member then sees "re-sent the workspace key you already had" and, after the next rotation, must `hitop sync trust '<owner fingerprint>'`; (3) a fresh invite: `hitop sync invite --role editor -c <dir>` prints a link ending in `.<your fingerprint>`; the invitee accepts it and `hitop sync link` works with no trust step; (4) a 1.1 runner credential still pulls with a warning; make a new one with `hitop sync runner create`; workflows that use 1.2 credentials need image >= 1.2.0. Tell members of shared workspaces to update: hitop 1.1 can't open the new wraps. | |
+| 2026-11-02 | 1.2 signed key wraps | External review (replaces nothing above, adds to it): workspace key wraps are now authenticated (HPKE Auth mode with the pinned device key) and the server-substituted-key finding is closed. Point the reviewer at `cli/crates/hitop-sync-crypto/src/keyring.rs` (`accept_wraps`) and its two callers (`cli/crates/hitop/src/commands/sync/client.rs` `refresh_keys`, `webapp/src/sync.js` `workspaceKeys`), the format 2 `info`/wire layout and `vectors/v2.json`, the legacy path (who still accepts format 1 wraps; the owner's upgrade, `upgrade_wraps`/`upgradeWraps`), runner credential pins, invite-code fingerprints, and the residual risks in THREAT_MODEL "What a malicious server can still do" (first comparison, 1.1 members until upgraded, a pinned or removed-but-pinned member colluding with the server, the unauthenticated member list). Open question for you: should removing a member also tell the other members' clients to unpin that member's devices (needs a signed member list, i.e. the signed manifest of THREAT_MODEL item 3)? | |
 
 ## 7. Setup the owner does before the agent starts
 
