@@ -2,7 +2,7 @@
 
 Releases before 1.2 are listed in ROADMAP.md (section 5) and on the GitHub Releases page.
 
-## 1.2.0 (unreleased)
+## 1.2.0 (2026-11-02)
 
 ### Same Content-Type on every surface
 
