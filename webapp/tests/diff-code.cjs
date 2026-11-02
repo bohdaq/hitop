@@ -132,10 +132,10 @@ function api() {
   const kept = after.filter((i) => i.response);
   check('history keeps the responses, secret masked', kept.length === 2 && kept.every((i) => i.response.status === 200 && !JSON.stringify(i).includes(SECRET)) && after.length === before.length + 2, JSON.stringify(kept[0]?.response)?.slice(0, 200));
 
-  // History dialog offers Compare.
+  // The History page offers Compare.
   await p.getByRole('button', { name: 'History' }).first().click();
   await settle(p);
-  await dialog.getByRole('button', { name: 'Compare responses' }).click();
+  await p.locator('main').getByRole('button', { name: 'Compare responses' }).click();
   await dialog.locator('.compare-summary').waitFor({ timeout: 10000 });
   check('history → Compare responses opens the compare view', (await dialog.locator('.compare-summary').innerText()).length > 0);
 

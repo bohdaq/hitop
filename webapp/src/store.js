@@ -724,6 +724,34 @@ export class Store extends EventTarget {
     this.notify(`Saved "${title}" to ${this.collection(collectionId)?.name ?? "the collection"}`);
   }
 
+  // The sidebar's request menu: rename (open tabs take the new title) and
+  // duplicate (right after it, in the same folder under a file name of its own).
+  renameRequest(collectionId, requestId, name) {
+    const title = name.trim();
+    const request = this.collection(collectionId)?.requests.find((r) => r.id === requestId);
+    if (!title || !request) return;
+    this.collections = collectionService.updateRequestInCollection(this.collections, collectionId, requestId, { ...request, name: title });
+    this.tabs = this.tabs.map((t) => (t.loadedRequestId === requestId && t.loadedCollectionId === collectionId ? { ...t, title } : t));
+    this.emit();
+  }
+
+  duplicateRequest(collectionId, requestId) {
+    const col = this.collection(collectionId);
+    const at = col?.requests.findIndex((r) => r.id === requestId) ?? -1;
+    if (at === -1) return;
+    const { id: _id, file, ...kept } = col.requests[at];
+    const copy = { ...kept, id: generateUniqueId(), name: `${kept.name} (Copy)` };
+    if (typeof file === "string" && file) {
+      const taken = new Set(col.requests.map((r) => r.file));
+      let n = 1;
+      let name = `${file}-copy`;
+      while (taken.has(name)) name = `${file}-copy-${++n}`;
+      copy.file = name;
+    }
+    this.collections = this.collections.map((c) => (c.id === collectionId ? { ...c, requests: [...c.requests.slice(0, at + 1), copy, ...c.requests.slice(at + 1)] } : c));
+    this.openRequest(copy, collectionId);
+  }
+
   deleteRequest(request, collectionId) {
     this.collections = collectionService.deleteRequestFromCollection(this.collections, collectionId, request.id);
     this.tabs = this.tabs.map((t) => (t.loadedRequestId === request.id ? { ...t, loadedRequestId: null, loadedCollectionId: null } : t));
@@ -902,6 +930,11 @@ export class Store extends EventTarget {
 
   clearHistory() {
     this.history = [];
+    this.emit();
+  }
+
+  deleteHistoryItem(item) {
+    this.history = this.history.filter((h) => h !== item);
     this.emit();
   }
 

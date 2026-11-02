@@ -74,6 +74,7 @@ a.brand:focus-visible { outline: 2px solid var(--md-sys-color-primary); outline-
 .tree-row lit-material-icon { width: 18px; height: 18px; color: var(--md-sys-color-on-surface-variant); }
 .tree-row[aria-current="page"] lit-material-icon { color: inherit; }
 .tree-row.heading { font-weight: 600; }
+.tree-row.folder lit-material-icon:first-child { width: 14px; height: 14px; }
 .request-item { position: relative; }
 .request-item .tree-row { padding-right: 36px; }
 .sort-handle { position: absolute; top: 50%; right: 4px; translate: 0 -50%; display: grid; place-items: center; width: 28px; height: 28px; padding: 0; border: 0; border-radius: var(--md-sys-shape-corner-small, 8px); background: none; color: var(--md-sys-color-on-surface-variant); cursor: grab; opacity: 0; }
@@ -98,6 +99,12 @@ a.brand:focus-visible { outline: 2px solid var(--md-sys-color-primary); outline-
 /* Tab strips that don't fit scroll sideways, with a thin scrollbar as the hint. */
 lit-material-tabs::part(tablist) { overflow-x: auto; scrollbar-width: thin; }
 .tab-strip lit-material-tab { max-width: 16rem; }
+/* Close "×" on each tab: a mouse target only (aria-hidden); keyboard users have Alt+Shift+W and the menu. */
+.tab-close { display: inline-grid; place-items: center; width: 20px; height: 20px; margin-inline-start: var(--space-50); border-radius: var(--md-sys-shape-corner-full); color: var(--md-sys-color-on-surface-variant); vertical-align: middle; opacity: 0; cursor: pointer; }
+.tab-close lit-material-icon, .tab-close svg { width: 14px; height: 14px; }
+.tab-close:hover { background: var(--md-sys-color-surface-container-highest); color: var(--md-sys-color-on-surface); }
+lit-material-tab:hover .tab-close, lit-material-tab[selected] .tab-close { opacity: 1; }
+@media (hover: none) { .tab-close { opacity: 1; } }
 .dirty-dot { margin-inline-start: var(--space-50); color: var(--md-sys-color-primary); font-size: 0.7em; vertical-align: middle; }
 
 /* Keyboard shortcuts dialog */
@@ -304,7 +311,13 @@ lit-material-code-block::part(pre) { max-height: 60vh; overflow: auto; font-fami
 .history-item .method { font-family: var(--font-mono); font-size: var(--text-xs); line-height: var(--leading-xs); font-weight: 600; }
 .history-url { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: var(--text-sm); line-height: var(--leading-sm); }
 .history-item time { font-size: var(--text-xs); line-height: var(--leading-xs); color: var(--md-sys-color-on-surface-variant); }
-.history-list { max-height: 60vh; overflow-y: auto; }
+/* History page (views/history-view.js): the page scrolls, not the list. */
+.history-page .history-list { max-height: none; overflow: visible; }
+.history-row { display: flex; align-items: center; gap: var(--space-50); }
+.history-row .history-item { flex: 1; min-width: 0; }
+.history-day { display: grid; gap: var(--space-75); }
+.history-day h2 { margin: 0; font-size: var(--text-sm); line-height: var(--leading-sm); color: var(--md-sys-color-on-surface-variant); }
+.history-filter { max-width: 28rem; }
 
 /* Narrow screens: the sidebar slides over the content */
 .scrim { display: none; }

@@ -288,6 +288,84 @@ function api() {
   await settle(p);
   check('Mod+K still goes to the URL field', await p.evaluate(() => document.activeElement?.closest?.('.url') != null || document.activeElement?.classList.contains('url')));
 
+  // --- 7. Folder groups, the request context menu, tab close buttons, the History page --------
+  const aside = p.locator('aside');
+  const shopId = (await h.stored.collections()).find((c) => c.name === 'Shop').id;
+  const folders = await aside.locator('.tree-row.folder').allInnerTexts();
+  check('sidebar: Postman/OpenAPI folders are groups', folders.map((f) => f.trim()).join() === 'orders,account', folders.join());
+  const ordersFolder = aside.locator('.tree-row.folder', { hasText: 'orders' });
+  await ordersFolder.click();
+  await settle(p);
+  check('a folder folds (remembered)', (await ordersFolder.getAttribute('aria-expanded')) === 'false' && (await aside.getByRole('button', { name: /List orders/ }).count()) === 0 && (await p.evaluate(() => localStorage.getItem('hitop_collapsed_collections'))).includes(`${shopId}/orders`));
+  await ordersFolder.click();
+  await settle(p);
+  const health = () => aside.locator('.tree-row.leaf', { hasText: /^\s*GET\s*Health\s*$/ });
+  await health().click({ button: 'right' });
+  const menu = p.locator('#request-menu');
+  await menu.getByText('Rename', { exact: true }).click();
+  await p.locator('#dialog #name').waitFor();
+  await p.locator('#dialog #name').evaluate((el) => (el.value = 'Health check'));
+  await p.locator('#dialog').getByRole('button', { name: 'Rename' }).click();
+  await settle(p);
+  let shop = (await h.stored.collections()).find((c) => c.name === 'Shop');
+  check('context menu: Rename', shop.requests.some((r) => r.name === 'Health check') && !shop.requests.some((r) => r.name === 'Health'));
+  await aside.locator('.tree-row.leaf', { hasText: 'Health check' }).click({ button: 'right' });
+  await menu.getByText('Duplicate', { exact: true }).click();
+  await settle(p);
+  shop = (await h.stored.collections()).find((c) => c.name === 'Shop');
+  const at = shop.requests.findIndex((r) => r.name === 'Health check');
+  check('context menu: Duplicate, right after it, opened', shop.requests[at + 1]?.name === 'Health check (Copy)' && (await p.locator('.tab-strip lit-material-tab[selected]').innerText()).includes('Health check (Copy)'));
+  const meRow = aside.locator('.tree-row.leaf', { hasText: /^\s*GET\s*Me\s*$/ });
+  await meRow.click({ button: 'right' });
+  await menu.getByText('Duplicate', { exact: true }).click();
+  await settle(p);
+  shop = (await h.stored.collections()).find((c) => c.name === 'Shop');
+  check('… a request in a folder stays in its folder', shop.requests.find((r) => r.name === 'Me (Copy)')?.file === 'account/me-copy');
+  await aside.locator('.tree-row.leaf', { hasText: 'Health check (Copy)' }).click({ button: 'right' });
+  await menu.getByText('Delete', { exact: true }).click();
+  await p.locator('lit-material-confirm-dialog[open]').getByRole('button', { name: 'Delete', exact: true }).click();
+  await settle(p);
+  shop = (await h.stored.collections()).find((c) => c.name === 'Shop');
+  check('context menu: Delete (asks first)', !shop.requests.some((r) => r.name === 'Health check (Copy)'));
+
+  // Close "×" on a tab.
+  const tabCount = async () => (await h.stored.tabs()).tabs.length;
+  const nTabs = await tabCount();
+  await p.getByRole('button', { name: 'New tab' }).click();
+  await settle(p);
+  const lastTab = p.locator('.tab-strip lit-material-tab').last();
+  await lastTab.hover();
+  await lastTab.locator('.tab-close').click();
+  await settle(p);
+  check('the × on a tab closes it', (await tabCount()) === nTabs);
+  await p.getByRole('button', { name: 'New tab' }).click();
+  await url.fill(`${base}/json`);
+  await settle(p);
+  await p.locator('.tab-strip lit-material-tab').last().locator('.tab-close').click();
+  await p.locator('lit-material-confirm-dialog[open]').getByRole('button', { name: 'Cancel' }).click();
+  await settle(p);
+  check('… and asks first when the tab has unsaved content', (await tabCount()) === nTabs + 1);
+  check('the × is hidden from screen readers (keyboard: Alt+Shift+W)', (await p.locator('.tab-close').first().getAttribute('aria-hidden')) === 'true');
+
+  // History as a page.
+  await sendAndWait();
+  await aside.getByRole('button', { name: 'History', exact: true }).click();
+  await settle(p);
+  const histPage = p.locator('main');
+  check('History is a page, marked current in the sidebar', (await histPage.locator('h1').innerText()) === 'History' && (await aside.getByRole('button', { name: 'History', exact: true }).getAttribute('aria-current')) === 'page' && (await histPage.locator('.history-day h2').first().innerText()) === 'Today');
+  const rowsAll = await histPage.locator('.history-row').count();
+  await histPage.getByLabel('Search history').fill('mid');
+  const rowsMid = await histPage.locator('.history-row').count();
+  check('History search filters', rowsMid >= 1 && rowsMid < rowsAll, `${rowsMid}/${rowsAll}`);
+  await histPage.getByLabel('Search history').fill('');
+  const hBefore = (await h.stored.history()).length;
+  await histPage.locator('.history-row').first().getByRole('button', { name: /^Delete / }).click();
+  await settle(p);
+  check('History: delete one entry', (await h.stored.history()).length === hBefore - 1);
+  await histPage.locator('.history-item').first().click();
+  await settle(p);
+  check('History: an entry opens in the request view', (await p.locator('hitop-request').count()) === 1);
+
   check('no page errors', errors.length === 0, errors.join(' || '));
   server.close();
   await h.finish();

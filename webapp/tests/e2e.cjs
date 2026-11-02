@@ -55,10 +55,10 @@ const { results, check } = checker();
   await p.waitForTimeout(400);
   check('save renames request', (await p.locator('aside').innerText()).includes('Create post v2'));
 
-  // 5. History dialog
+  // 5. History (a page since 1.2)
   await p.locator('aside').getByRole('button', { name: 'History' }).click();
   await p.waitForTimeout(400);
-  const hist = await p.locator('.history-list').innerText().catch(() => '');
+  const hist = await p.locator('main .history-page').innerText().catch(() => ''); // grouped by day: one list per day
   check('history lists old + new entries', hist.includes('todos/1') && hist.includes('example.com'), `${hist.split('\n').length} lines`);
   await p.screenshot({ path: `${out}/new-history.png` });
   await p.keyboard.press('Escape');
