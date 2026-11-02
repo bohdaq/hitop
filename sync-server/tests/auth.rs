@@ -164,7 +164,9 @@ fn serves_no_files_and_answers_json() {
     std::fs::remove_file("hitop-sync.db").ok();
     let r = s.call("GET", "/", None, None);
     assert_eq!(r.json["license"], "AGPL-3.0-or-later");
-    assert_eq!(s.call("GET", "/healthz", None, None).json["ok"], true);
+    let health = s.call("GET", "/healthz", None, None).json;
+    assert_eq!((health["ok"].as_bool(), health["database"].as_str()), (Some(true), Some("sqlite")));
+    assert_eq!(health["schema"], hitop_sync_server::Db::schema_version() as i64);
     let page = s.call("GET", "/signin", None, None);
     assert_eq!(page.status, 200);
     assert!(String::from_utf8_lossy(&page.raw).contains("location.hash"));

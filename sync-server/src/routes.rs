@@ -22,9 +22,11 @@ pub fn index(_: &State, _: &Request, _: &PathParams) -> ApiResult {
     ))
 }
 
+/// `GET /healthz`: 200 once the database answers (an uptime check needs nothing more), with the
+/// version, the database kind and its schema version for the status page and the runbook.
 pub fn health(state: &State, _: &Request, _: &PathParams) -> ApiResult {
-    state.db.tx(|tx| tx.query("SELECT 1", &[]))?;
-    Ok((200, json!({ "ok": true })))
+    let (kind, schema) = state.db.tx(|tx| Ok::<_, crate::db::DbError>((tx.kind(), crate::dbtools::schema_of(tx)?)))?;
+    Ok((200, json!({ "ok": true, "version": env!("CARGO_PKG_VERSION"), "database": kind, "schema": schema })))
 }
 
 /// The page a sign-in link opens. The code stays in the URL fragment (never sent to a server or

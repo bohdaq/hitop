@@ -19,6 +19,8 @@
 //!   limits) or `plans` (HITOP Cloud: each org's plan limits are enforced, limits.rs)
 //! - `HITOP_SYNC_PORTAL_URL`: the account portal, named in limit errors (default
 //!   `https://cloud.hitop.rws8.tech/`)
+//! - Request rate limits: see ratelimit.rs (`HITOP_SYNC_RATE_LIMITS=off`, `HITOP_SYNC_RATE_*`)
+//! - `HITOP_SYNC_MAX_JSON_BYTES`: the largest request body except a blob upload (default 1 MiB)
 //! - SSO (OpenID Connect): see oidc.rs (`HITOP_SYNC_OIDC_*`, `HITOP_SYNC_SSO_REQUIRED`)
 //! - mail: see mail.rs
 
@@ -26,6 +28,7 @@ use url::Url;
 
 use crate::audit::IpPolicy;
 use crate::oidc::OidcConfig;
+use crate::ratelimit::RateLimits;
 
 #[derive(Clone, Debug)]
 pub struct Config {
@@ -51,6 +54,10 @@ pub struct Config {
     pub plan_limits: bool,
     /// The account portal (limit errors link to it).
     pub portal_url: String,
+    /// Request rate limits (ratelimit.rs).
+    pub rate_limits: RateLimits,
+    /// The largest request body of any request but a blob upload.
+    pub max_json_bytes: usize,
 }
 
 fn list(value: &str) -> Vec<String> {
@@ -79,6 +86,8 @@ impl Config {
             oidc: None,
             plan_limits: false,
             portal_url: "https://cloud.hitop.rws8.tech/".into(),
+            rate_limits: RateLimits::defaults(),
+            max_json_bytes: 1 << 20,
         }
     }
 
@@ -118,6 +127,17 @@ impl Config {
             Some("plans") => true,
             Some(other) => return Err(format!("HITOP_SYNC_LIMITS must be off or plans, not {other}")),
         };
+        match var("HITOP_SYNC_RATE_LIMITS").as_deref() {
+            None | Some("on") => {}
+            Some("off") => c.rate_limits = RateLimits::off(),
+            Some(other) => return Err(format!("HITOP_SYNC_RATE_LIMITS must be on or off, not {other}")),
+        }
+        let per = |name: &str, default: u32| -> Result<u32, String> { number(name, default.into()).and_then(|n| u32::try_from(n).map_err(|_| format!("{name} must be 0 or more"))) };
+        c.rate_limits.auth_per_minute = per("HITOP_SYNC_RATE_AUTH", c.rate_limits.auth_per_minute)?;
+        c.rate_limits.write_per_minute = per("HITOP_SYNC_RATE_WRITE", c.rate_limits.write_per_minute)?;
+        c.rate_limits.write_ip_per_minute = per("HITOP_SYNC_RATE_WRITE_IP", c.rate_limits.write_ip_per_minute)?;
+        c.rate_limits.create_per_hour = per("HITOP_SYNC_RATE_CREATE", c.rate_limits.create_per_hour)?;
+        c.max_json_bytes = number("HITOP_SYNC_MAX_JSON_BYTES", c.max_json_bytes as i64)? as usize;
         if let Some(url) = var("HITOP_SYNC_PORTAL_URL") {
             c.portal_url = if url.ends_with('/') { url } else { format!("{url}/") };
         }

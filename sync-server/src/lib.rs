@@ -13,6 +13,7 @@ pub mod limits;
 pub mod mail;
 pub mod oidc;
 pub mod orgs;
+pub mod ratelimit;
 mod routes;
 pub mod teams;
 pub mod tokens;

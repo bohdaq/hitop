@@ -115,19 +115,25 @@ pub fn truncate_ip(ip: IpAddr) -> String {
     }
 }
 
+/// The client's full IP (rate limits key on it; the log keeps only `client_of`'s): the TCP peer,
+/// or the last `X-Forwarded-For` entry when the peer is a trusted proxy.
+pub fn real_ip(request: &Request, peer: &str, trusted: &[String]) -> String {
+    let peer = peer.trim_start_matches('[').trim_end_matches(']');
+    if trusted.iter().any(|t| t == peer) {
+        if let Some(h) = request.header("x-forwarded-for") {
+            if let Some(last) = h.value.rsplit(',').map(str::trim).find(|s| !s.is_empty()) {
+                return last.to_string();
+            }
+        }
+    }
+    peer.to_string()
+}
+
 /// The caller as the log records it. `peer` is the TCP peer; when it is a trusted proxy (the
 /// front rws, by default anything on loopback), the client is the last `X-Forwarded-For` entry,
 /// which that proxy appended.
 pub fn client_of(request: &Request, peer: &str, trusted: &[String], policy: IpPolicy) -> Client {
-    let peer = peer.trim_start_matches('[').trim_end_matches(']');
-    let mut ip = peer.to_string();
-    if trusted.iter().any(|t| t == peer) {
-        if let Some(h) = request.header("x-forwarded-for") {
-            if let Some(last) = h.value.rsplit(',').map(str::trim).find(|s| !s.is_empty()) {
-                ip = last.to_string();
-            }
-        }
-    }
+    let ip = real_ip(request, peer, trusted);
     let ip = match policy {
         IpPolicy::Off => String::new(),
         IpPolicy::Truncated => ip.parse::<IpAddr>().map(truncate_ip).unwrap_or_default(),

@@ -176,13 +176,16 @@ pub struct State {
     pub sso: crate::oidc::Sso,
     /// Seconds added to the clock (tests move time forward with it).
     pub clock_offset: AtomicI64,
+    /// Request rate limits (ratelimit.rs).
+    pub limiter: crate::ratelimit::Limiter,
 }
 
 impl State {
     pub fn new(db: Db, mailer: Mailer, config: Config) -> Result<State, String> {
         let webauthn = config.webauthn()?;
         let sso = crate::oidc::Sso::new(config.oidc.clone())?;
-        Ok(State { db, mailer, config, webauthn, ceremonies: Mutex::new(HashMap::new()), sso, clock_offset: AtomicI64::new(0) })
+        let limiter = crate::ratelimit::Limiter::new(config.rate_limits.clone());
+        Ok(State { db, mailer, config, webauthn, ceremonies: Mutex::new(HashMap::new()), sso, clock_offset: AtomicI64::new(0), limiter })
     }
 
     pub fn now(&self) -> i64 {
@@ -285,6 +288,27 @@ impl SyncApp {
         crate::audit::client_of(request, &connection.client.ip, &self.state.config.trusted_proxies, self.state.config.audit_ip)
     }
 
+    /// The body cap of a request: blob uploads may carry a blob, everything else is small JSON.
+    fn max_body(&self, method: &str, path: &str) -> usize {
+        let c = &self.state.config;
+        let blob = method == "PUT" && path.starts_with("/v1/workspaces/") && path.contains("/blobs/");
+        if blob {
+            c.max_request_bytes()
+        } else {
+            c.max_json_bytes.min(c.max_request_bytes()).max(64 * 1024)
+        }
+    }
+
+    fn rate_check(&self, request: &Request, connection: &ConnectionInfo, path: &str) -> Result<(), crate::ratelimit::Refused> {
+        let class = crate::ratelimit::classify(&request.method, path);
+        if class == crate::ratelimit::Class::Read {
+            return Ok(());
+        }
+        let ip = crate::audit::real_ip(request, &connection.client.ip, &self.state.config.trusted_proxies);
+        let session = bearer(request).map(|t| token_hash(&t));
+        self.state.limiter.check(&class, &ip, session.as_deref(), self.state.now())
+    }
+
     /// CORS for the allowed web origins (the web app). Sessions are bearer tokens, never cookies,
     /// so credentials mode stays off.
     fn cors(&self, request: &Request, response: &mut Response) {
@@ -315,8 +339,17 @@ impl Application for SyncApp {
         } else if request.method == "GET" && path == "/v1/auth/sso/callback" {
             set_client(self.client_of(request, connection));
             crate::oidc::callback(&self.state, request)
-        } else if request.body.len() > self.state.config.max_request_bytes() {
+        } else if request.body.len() > self.max_body(&request.method, path) {
             error_response(&ApiError::new(413, "too_large", "request body too large"))
+        } else if let Err(r) = self.rate_check(request, connection, path) {
+            let mut response = error_response(&ApiError {
+                status: 429,
+                code: "rate_limited",
+                message: format!("too many requests ({} limit); try again in {} s", r.limit, r.retry_after),
+                extra: Some(json!({ "limit": r.limit, "retryAfter": r.retry_after })),
+            });
+            response.headers.push(Header { name: "Retry-After".into(), value: r.retry_after.to_string().into() });
+            response
         } else {
             self.router.handle(request, connection).unwrap_or_else(|| error_response(&ApiError::not_found("no such endpoint")))
         };
