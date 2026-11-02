@@ -13,7 +13,9 @@ import "./request-view.js";
 import "./collection-views.js";
 import { WIDE_DIALOGS, codeDialog, compareDialog, refreshCode } from "./tools-dialogs.js";
 import { OPENAPI_DIALOGS, openapiDialog, submitOpenapi } from "./openapi-dialogs.js";
-import { SHORTCUTS, shortcutFor } from "../shortcuts.js";
+import { shortcutFor } from "../shortcuts.js";
+import { shortcutList } from "./shortcut-list.js";
+import "./settings-view.js";
 
 // Collections folded in the sidebar, by id (its own key: nothing else reads it).
 const COLLAPSED_KEY = "hitop_collapsed_collections";
@@ -460,9 +462,7 @@ export class HitopApp extends LitElement {
         break;
       case "shortcuts":
         headline = "Keyboard shortcuts";
-        body = html`<dl class="shortcut-list">
-          ${SHORTCUTS.map(([keys, what]) => html`<dt>${keys.map((k, i) => html`${i ? html`<span class="key-then">${what.startsWith("Leave") ? "then" : "+"}</span>` : nothing}<kbd>${k}</kbd>`)}</dt><dd>${what}</dd>`)}
-        </dl>`;
+        body = html`${shortcutList()}<p class="dialog-note">They're on the Settings page too.</p>`;
         footer = html`
           <div slot="actions" class="dialog-actions">
             <lit-material-button variant="filled" @click=${() => this.closeDialog()}>Close</lit-material-button>
@@ -612,6 +612,7 @@ export class HitopApp extends LitElement {
           <button type="button" class="tree-row" @click=${() => this.openDialog("import")}>${icon("file-arrow-up")}<span>Import</span></button>          ${(platform().pages ?? []).map(
             (page) => html`<button type="button" class="tree-row" aria-current=${kind === page.kind ? "page" : "false"} @click=${() => this.go(page.kind)}>${icon(page.icon)}<span>${page.label}</span></button>`,
           )}
+          <button type="button" class="tree-row" aria-current=${kind === "settings" ? "page" : "false"} @click=${() => this.go("settings")}>${icon("gear-six")}<span>Settings</span></button>
         </div>
       </aside>`;
   }
@@ -675,6 +676,9 @@ export class HitopApp extends LitElement {
     const { kind, collectionId } = s.view;
     const page = platform().pages?.find((p) => p.kind === kind);
     if (page) return page.render(s, this);
+    if (kind === "settings") {
+      return html`<hitop-app-settings .store=${s} .version=${s.version} .app=${this}></hitop-app-settings>`;
+    }
     if (kind === "cookies") {
       return html`<hitop-cookies .store=${s} .version=${s.version} .app=${this}></hitop-cookies>`;
     }

@@ -22,6 +22,8 @@
 //                            for a native jar: send() then gets options.cookies and returns res.cookies
 //   cookiesNote              which requests the jar applies to and where it is kept
 //   pages                    optional: extra sidebar pages [{ kind, label, icon, render(store, app) }]
+//   settingsSections(store, app)  optional: the adapter's own sections of the Settings page (desktop:
+//                            secret managers, the usage ping where built); views/settings-view.js has the rest
 //   onStart(app)             optional: runs once the app is on screen
 //   scripts                  null (scripts run in the page) or { pre(args), post(args) }, async
 //   folders                  null, or { pick, create, read, write, restore, remember, forget, label }

@@ -176,9 +176,8 @@ class HitopSettings extends LitElement {
 
   render() {
     const s = this.status;
+    // Sections of the shared Settings page (views/settings-view.js).
     return html`
-      <div class="page">
-        <header class="page-header"><h1>Settings</h1></header>
         ${this.telemetry
           ? html`<h2>Usage ping</h2>
               ${s
@@ -195,25 +194,24 @@ class HitopSettings extends LitElement {
                   `
                 : html`<p class="hint">${this.error ?? "Loading…"}</p>`}`
           : nothing}
-        ${this.managers ? this.renderManagers() : nothing}
-      </div>`;
+        ${this.managers ? this.renderManagers() : nothing}`;
   }
 }
 
 customElements.define("hitop-settings", HitopSettings);
 
 // `telemetry`: { status(), set(on) } and `managers`: { load(), save(settings,
-// secrets) } from the adapter. Returns the Settings page for the sidebar (the
-// usage ping part only when this build has the ping) and the ping's status.
-export async function settingsPages(telemetry, managers) {
+// secrets) } from the adapter. Returns the desktop's sections of the Settings
+// page (the usage ping part only when this build has the ping) and the ping's status.
+export async function settingsSections(telemetry, managers) {
   let status = null;
   try {
     status = await telemetry.status();
   } catch {
     telemetry = null;
   }
-  const pages = [{ kind: "settings", label: "Settings", icon: "sliders-horizontal", render: () => html`<hitop-settings .telemetry=${telemetry} .managers=${managers}></hitop-settings>` }];
-  return { pages, status };
+  const sections = () => html`<hitop-settings class="desktop-settings" .telemetry=${telemetry} .managers=${managers}></hitop-settings>`;
+  return { sections, status };
 }
 
 // Asked once, on the first start: No (Cancel) has the focus, and Escape or

@@ -1,8 +1,9 @@
-// The desktop's Settings page, in Tauri mode: the usage ping's first-run
-// question (No is the default) and switch, and the secret managers (values to
-// secret-managers.json, tokens to the keychain only). The web app has no
-// Settings page; a desktop build without the ping (Mac App Store) has the
-// page with the secret managers only, and no question.
+// The desktop's sections of the Settings page, in Tauri mode: the usage
+// ping's first-run question (No is the default) and switch, and the secret
+// managers (values to secret-managers.json, tokens to the keychain only). The
+// web app's Settings page has neither (tests/ux12.cjs checks the shared
+// sections); a desktop build without the ping (Mac App Store) has the secret
+// managers only, and no question.
 //   HITOP_MODE=tauri node tests/settings.cjs   (web mode: BASE=... node tests/settings.cjs)
 const fs = require('fs');
 const { launch, checker, TAURI } = require('./harness.cjs');
@@ -19,8 +20,13 @@ const settle = (p) => p.waitForTimeout(400);
   if (!TAURI) {
     await p.goto(h.url, { waitUntil: 'networkidle' });
     await settle(p);
-    check('web app: no Settings page', (await settingsButton().count()) === 0);
     check('web app: no usage ping question', (await p.locator('lit-material-confirm-dialog').count()) === 0);
+    // Since 1.2 the web app has a Settings page too, without the desktop's sections.
+    await settingsButton().click();
+    await settle(p);
+    const text = await p.locator('main').innerText();
+    check('web app: Settings has theme, requests, storage and shortcuts', ['Appearance', 'Requests', 'Storage', 'Keyboard shortcuts'].every((t) => text.includes(t)), text.slice(0, 300));
+    check('web app: Settings has no usage ping and no secret managers', !text.includes('Usage ping') && (await p.locator('section[aria-label="Secret managers"]').count()) === 0);
   } else {
     h.mock.telemetry.asked = false;
     await p.goto(h.url, { waitUntil: 'networkidle' });

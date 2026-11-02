@@ -145,6 +145,43 @@ function api() {
   await p.reload({ waitUntil: 'networkidle' });
   await settle(p);
 
+  // --- 5. Settings: theme, time limit, storage, shortcuts (desktop sections: settings.cjs) ---
+  const goSettings = async () => {
+    await p.locator('aside').getByRole('button', { name: 'Settings', exact: true }).click();
+    await settle(p);
+  };
+  await goSettings();
+  const page = p.locator('main');
+  const sections = await page.locator('section[aria-label]').evaluateAll((els) => els.map((e) => e.getAttribute('aria-label')));
+  check('Settings has its sections', ['Appearance', 'Requests', 'Storage', 'Keyboard shortcuts'].every((n) => sections.includes(n)) && (await page.locator('.shortcut-list').innerText()).includes('Send the request'), sections.join());
+  await p.locator('.settings-theme').click();
+  await p.getByRole('option', { name: 'Dark', exact: true }).click();
+  await settle(p);
+  check('Theme: Dark applies and is remembered under hitop-theme', (await p.evaluate(() => [document.documentElement.getAttribute('color-scheme'), localStorage.getItem('hitop-theme')].join())) === 'dark,dark');
+  await p.locator('.settings-theme').click();
+  await p.getByRole('option', { name: 'Match the system', exact: true }).click();
+  await settle(p);
+  check('Theme: Match the system clears it', (await p.evaluate(() => [document.documentElement.getAttribute('color-scheme'), localStorage.getItem('hitop-theme')].join())) === ',');
+  await p.locator('.settings-timeout').evaluate((el) => {
+    el.value = '2.5';
+    el.dispatchEvent(new Event('change', { bubbles: true }));
+  });
+  await settle(p);
+  check('Time limit: saved in hitop_settings as ms', (await p.evaluate(() => localStorage.getItem('hitop_settings'))) === '{"timeoutMs":2500}' && (await p.locator('.settings-timeout').evaluate((el) => el.supportingText)).includes('within 2.5 s'));
+  await p.locator('.settings-timeout').evaluate((el) => {
+    el.value = '0';
+    el.dispatchEvent(new Event('change', { bubbles: true }));
+  });
+  await settle(p);
+  const facts = await page.locator('.settings-facts').innerText();
+  check('Storage: sizes and the IndexedDB count are shown', facts.includes('Open tabs') && /\d+ kept/.test(facts), facts.replace(/\n/g, ' | '));
+  await page.getByRole('button', { name: 'Clear stored responses' }).click();
+  const ask12 = p.locator('lit-material-confirm-dialog[open]');
+  await ask12.getByRole('button', { name: 'Clear', exact: true }).click();
+  await settle(p);
+  st = await tabs();
+  check('Clear stored responses: no tab keeps a response, IndexedDB is empty', st.tabs.every((t) => t.response == null && !t.responseStored) && (await page.locator('.settings-facts').innerText()).includes('0 kept'));
+
   check('no page errors', errors.length === 0, errors.join(' || '));
   server.close();
   await h.finish();

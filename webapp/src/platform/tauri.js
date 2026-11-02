@@ -8,7 +8,7 @@
 import storageService from "../../../frontend/src/services/storageService.jsx";
 import { localSaves } from "./local-storage.js";
 import { historyFromRust, historyToRust } from "./history.js";
-import { askOnce, settingsPages } from "./tauri-settings.js";
+import { askOnce, settingsSections } from "./tauri-settings.js";
 import { gitApi, gitPages } from "./tauri-git.js";
 import { openResponseStore } from "./response-store.js";
 
@@ -317,9 +317,10 @@ export function createPlatform() {
         }
       }
       // The Settings page: secret managers, and the usage ping where the build has it (not the Mac App Store one).
-      const settings = await settingsPages(telemetry, managers);
-      // The Git panel for collection folders, then Settings.
-      platform.pages = [...gitPages(platform.git), ...settings.pages];
+      const settings = await settingsSections(telemetry, managers);
+      // The Git panel for collection folders; the desktop's sections of the Settings page.
+      platform.pages = gitPages(platform.git);
+      platform.settingsSections = settings.sections;
       platform.onStart = () => askOnce(telemetry, settings.status);
       cache.collections = collections?.length ? collections : null;
       cache.history = historyFromRust(history);

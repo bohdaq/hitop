@@ -342,6 +342,17 @@ hitop-code-editor { display: grid; gap: var(--space-50); align-content: start; }
 .section-header { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: var(--space-200); }
 .section-header h2 { margin: 0; }
 .switch-row { display: flex; align-items: center; gap: var(--space-200); cursor: pointer; }
+/* Settings page (views/settings-view.js); the desktop's sections come from platform/tauri-settings.js. */
+.settings-section { display: grid; gap: var(--space-150, 12px); justify-items: start; }
+.settings-section h2 { margin: 0; }
+.settings-section > lit-material-text-field, .settings-section > lit-material-select { width: min(100%, 22rem); }
+.settings-facts { display: grid; grid-template-columns: max-content minmax(0, 1fr); gap: var(--space-75) var(--space-300); margin: 0; font-size: var(--text-sm); line-height: var(--leading-sm); }
+.settings-facts dt { color: var(--md-sys-color-on-surface-variant); }
+.settings-facts dd { margin: 0; overflow-wrap: anywhere; }
+.settings-notes { margin: 0; padding-left: var(--space-300); color: var(--md-sys-color-on-surface-variant); font-size: var(--text-sm); line-height: var(--leading-sm); }
+.settings-actions { display: flex; flex-wrap: wrap; gap: var(--space-100); }
+.desktop-settings { display: contents; }
+@media (max-width: 600px) { .settings-facts { grid-template-columns: minmax(0, 1fr); } .settings-facts dd { margin-bottom: var(--space-100); } }
 .sm-form { display: grid; gap: var(--space-300); max-width: 44rem; }
 .sm-group { display: grid; gap: var(--space-200); margin: 0; padding: var(--space-200) var(--space-300) var(--space-300); border: 1px solid var(--md-sys-color-outline-variant); border-radius: var(--md-sys-shape-corner-medium); }
 .sm-group legend { padding: 0 var(--space-100); font-weight: 600; }
