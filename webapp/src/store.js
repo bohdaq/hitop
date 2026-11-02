@@ -408,6 +408,8 @@ export class Store extends EventTarget {
     if (!db) return this.tabs.map(storedTab);
     const wanted = new Set();
     const tabs = this.tabs.map((t) => {
+      // A tab without an id can't be found again after a reload: the 1.1 rule.
+      if (t.id == null) return storedTab(t);
       const saved = storedTabInDb(t);
       if (saved === t) return t;
       wanted.add(t.id);
