@@ -15,6 +15,7 @@ func main() {
 	}
 	req.Header.Add("X-Trace", "t-1")
 	req.Header.Add("Authorization", "Bearer {{token}}")
+	req.Header.Add("Content-Type", "text/plain")
 
 	resp, err := http.DefaultClient.Do(req)
 	if err != nil {

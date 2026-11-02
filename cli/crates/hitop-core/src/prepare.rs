@@ -1,6 +1,7 @@
 #![cfg(feature = "native")]
 //! A request as it is sent: variables interpolated, auth applied, then the
-//! pre-request script run (so a script can still override the auth).
+//! pre-request script run (so a script can still override the auth). The URL
+//! then gets a scheme if it has none (`sending::with_scheme`).
 use std::collections::HashMap;
 
 use anyhow::{bail, Result};
@@ -12,6 +13,7 @@ use crate::{
     interpolation::{fill, interpolate, interpolate_lenient},
     model::{Auth, Environment, Header, Request},
     scripting::{run_pre_request_script, PreRequestCtx, PreRequestResult, VariableUpdates},
+    sending::with_scheme,
 };
 
 /// What a request needs to be prepared; borrowed from a saved `Request` or
@@ -114,6 +116,7 @@ pub fn prepare_in(draft: &Draft, scopes: &Scopes, context: &HashMap<String, Valu
         if let Some(name) = missing.first() {
             bail!("variable '{name}' is not defined");
         }
+        pre.url = with_scheme(&pre.url)?;
         return Ok(pre);
     }
     // The script set variables: what it left as built is built again with
@@ -130,6 +133,7 @@ pub fn prepare_in(draft: &Draft, scopes: &Scopes, context: &HashMap<String, Valu
     } else {
         pre.headers.iter().map(|(k, v)| Ok((fill(k, &missing, &vars)?, fill(v, &missing, &vars)?))).collect::<Result<_>>()?
     };
+    pre.url = with_scheme(&pre.url)?;
     Ok(pre)
 }
 
@@ -262,6 +266,20 @@ mod tests {
         let draft = Draft { method: "POST", url: "https://x", headers: &[], body: "", pre_request_script: "pm.variables.set('n', 3)", auth: None, graphql: Some(op) };
         let out = prepare(&draft, &HashMap::new(), &HashMap::new()).unwrap();
         assert_eq!(out.body, r#"{"query":"{ me }","variables":{"n": 3}}"#);
+    }
+
+    #[test]
+    fn a_url_without_a_scheme_gets_one() {
+        let vars: HashMap<String, String> = [("host".into(), "api.example.com".into())].into();
+        let draft = Draft { method: "GET", url: "${host}/users", headers: &[], body: "", pre_request_script: "", auth: None, graphql: None };
+        assert_eq!(prepare(&draft, &vars, &HashMap::new()).unwrap().url, "https://api.example.com/users");
+        let local = Draft { url: "localhost:3000/x", ..draft };
+        assert_eq!(prepare(&local, &vars, &HashMap::new()).unwrap().url, "http://localhost:3000/x");
+        // Also after a script that set the variable.
+        let scripted = Draft { url: "${later}/x", pre_request_script: "pm.variables.set('later', 'localhost')", ..draft };
+        assert_eq!(prepare(&scripted, &vars, &HashMap::new()).unwrap().url, "http://localhost/x");
+        let bad = Draft { url: "users", ..draft };
+        assert_eq!(prepare(&bad, &vars, &HashMap::new()).unwrap_err().to_string(), "\"users\" isn't a URL. Enter a full URL, such as https://api.example.com/users");
     }
 
     #[test]

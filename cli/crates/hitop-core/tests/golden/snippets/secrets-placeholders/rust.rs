@@ -5,6 +5,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         .patch("https://api.example.test/tenants/{{tenant}}/note")
         .header("X-Trace", "t-1")
         .header("Authorization", "Bearer {{token}}")
+        .header("Content-Type", "text/plain")
         .body("plain text\twith a tab")
         .send()?;
     println!("{}", response.status());

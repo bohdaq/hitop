@@ -115,7 +115,8 @@ pub type Outgoing = (Vec<(String, String)>, Vec<u8>);
 /// The headers and body a saved request goes out with after its pre-request
 /// script: a form body (with its `Content-Type`, unless a header sets one)
 /// when the request has one and the script didn't replace the body, else the
-/// prepared body.
+/// prepared body with the Content-Type its text implies, unless a header sets
+/// one (`sending::add_content_type`).
 pub fn outgoing(request: &Request, headers: &[(String, String)], body: &str, variables: &HashMap<String, String>) -> anyhow::Result<Outgoing> {
     let mut headers = headers.to_vec();
     let unchanged = interpolate(&request.body, variables).is_ok_and(|text| text == body);
@@ -126,7 +127,11 @@ pub fn outgoing(request: &Request, headers: &[(String, String)], body: &str, var
             }
             Ok((headers, built.body))
         }
-        _ => Ok((headers, body.as_bytes().to_vec())),
+        _ => {
+            // A raw body (or one the script replaced) says what it is.
+            crate::sending::add_content_type(&request.method, &mut headers, body);
+            Ok((headers, body.as_bytes().to_vec()))
+        }
     }
 }
 

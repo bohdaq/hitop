@@ -18,6 +18,7 @@ pub mod scripting;
 pub mod secret_managers;
 pub mod secret_refs;
 pub mod secrets;
+pub mod sending;
 pub mod snippet;
 pub mod storage;
 pub mod sync;

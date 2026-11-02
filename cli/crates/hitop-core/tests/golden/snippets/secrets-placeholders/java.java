@@ -10,6 +10,7 @@ public class Main {
             .uri(URI.create("https://api.example.test/tenants/{{tenant}}/note"))
             .header("X-Trace", "t-1")
             .header("Authorization", "Bearer {{token}}")
+            .header("Content-Type", "text/plain")
             .method("PATCH", HttpRequest.BodyPublishers.ofString("plain text\twith a tab"))
             .build();
         HttpResponse<String> response = client.send(request, HttpResponse.BodyHandlers.ofString());

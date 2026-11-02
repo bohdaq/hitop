@@ -4,6 +4,7 @@ url = "https://api.example.test/tenants/{{tenant}}/note"
 headers = {
     "X-Trace": "t-1",
     "Authorization": "Bearer {{token}}",
+    "Content-Type": "text/plain",
 }
 data = "plain text\twith a tab".encode("utf-8")
 

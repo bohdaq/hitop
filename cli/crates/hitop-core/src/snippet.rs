@@ -159,7 +159,10 @@ fn build(request: &Request, collection_auth: Option<&Auth>, variables: &HashMap<
         .into_owned()
     };
     let method = if request.method.trim().is_empty() { "GET".to_string() } else { request.method.trim().to_ascii_uppercase() };
+    // The scheme hitop adds when sending; a URL it can't tell (a placeholder
+    // for the host) is written as it is.
     let url = fill(&request.url);
+    let url = crate::sending::with_scheme(&url).unwrap_or(url);
     let headers: Vec<(String, String)> = request.headers.iter().filter(|h| h.enabled && !h.name.trim().is_empty()).map(|h| (fill(&h.name), fill(&h.value))).collect();
     let has = |headers: &[(String, String)], name: &str| headers.iter().any(|(k, v)| k.eq_ignore_ascii_case(name) && !v.is_empty());
     let auth = request.auth.as_ref().or(collection_auth);
@@ -214,7 +217,12 @@ fn build(request: &Request, collection_auth: Option<&Auth>, variables: &HashMap<
             Body::Raw(graphql::request_body(&query, &variables, &name).unwrap_or_else(|_| graphql_body_unchecked(&query, &variables, &name)))
         }
         _ if request.body.is_empty() => Body::None,
-        _ => Body::Raw(fill(&request.body)),
+        _ => {
+            let body = fill(&request.body);
+            // The Content-Type hitop adds when sending a raw body.
+            crate::sending::add_content_type(&method, &mut headers, &body);
+            Body::Raw(body)
+        }
     };
     // hitop sends one value per header name, the last one (a header map).
     let mut unique: Vec<(String, String)> = Vec::new();

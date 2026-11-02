@@ -3,8 +3,9 @@ const response = await fetch("https://api.example.test/tenants/{{tenant}}/note",
   headers: {
     "X-Trace": "t-1",
     "Authorization": "Bearer {{token}}",
+    "Content-Type": "text/plain",
   },
-  body: new TextEncoder().encode("plain text\twith a tab"),
+  body: "plain text\twith a tab",
 });
 
 console.log(response.status);
