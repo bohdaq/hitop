@@ -410,3 +410,30 @@ export function urlEncodedBody(fields) {
     .join("&");
   return { body, contentType: "application/x-www-form-urlencoded" };
 }
+
+// The Content-Type a raw body gets when the request sets none, as Postman,
+// Insomnia and Bruno do: JSON, XML or HTML by its first character, else
+// plain text. Empty bodies get none. Decided when sending, never saved.
+export function rawContentType(body) {
+  const text = typeof body === "string" ? body.trimStart() : "";
+  if (!text) return null;
+  if (text[0] === "{" || text[0] === "[") return "application/json";
+  if (/^<(!doctype html|html)/i.test(text)) return "text/html";
+  if (text[0] === "<") return "application/xml";
+  return "text/plain";
+}
+
+const HAS_SCHEME = /^[a-z][a-z0-9+.-]*:/i;
+const LOCAL_HOST = /^(localhost|127\.\d+\.\d+\.\d+|0\.0\.0\.0|\[::1\])(:\d+)?([/?#]|$)/i;
+const HOST_LIKE = /^[\w-]+(\.[\w-]+)*(:\d+)?([/?#]\S*)?$/;
+
+// A URL as typed, with a scheme: "api.example.com/users" → https://...,
+// "localhost:3000" → http://... (as curl does). Anything else that isn't a
+// URL throws, so nothing is ever fetched relative to the app's own page.
+export function withScheme(url) {
+  const text = String(url ?? "").trim();
+  if (HAS_SCHEME.test(text) && !/^[\w-]+(\.[\w-]+)*:\d/.test(text)) return text;
+  if (LOCAL_HOST.test(text)) return `http://${text}`;
+  if (HOST_LIKE.test(text) && (/^[\w-]+\.[\w-]/.test(text) || /^[\w-]+:\d/.test(text))) return `https://${text}`;
+  throw new Error(`"${text}" isn't a URL. Enter a full URL, such as https://api.example.com/users`);
+}

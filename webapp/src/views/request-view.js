@@ -359,6 +359,9 @@ export class HitopRequest extends LitElement {
                 .entries=${guard([this.headerRowsVersion], () => this.headerRows)}
                 @change=${(e) => this.onHeaders(e)}
               ></lit-material-key-value-editor>
+              ${this.store.autoContentType(t)
+                ? html`<p class="hint auto-header">Content-Type: <code>${this.store.autoContentType(t)}</code> is added when sending, from the body. Add your own Content-Type header to send another.</p>`
+                : nothing}
               ${socket ? socketHeaders(this) : nothing} ${grpc ? grpcMetadataNote() : nothing}`
             : nothing}
           ${this.section === BODY && socket ? socketMessages(this) : nothing}
@@ -461,8 +464,9 @@ export class HitopRequest extends LitElement {
     const heading = html`<h1 class="visually-hidden">Request: ${t.title}</h1>`;
     if (t.kind === "websocket") return html`${heading}${socketLine(this, this.methodSelect())} ${this.renderEditor()} ${socketLog(this)}`;
     if (t.kind === "grpc") return html`${heading}${grpcLine(this, this.methodSelect())} ${this.renderEditor()} ${grpcLog(this)}`;
-    // novalidate: a URL that starts with a variable is no valid type="url"
-    // value, and the browser would then refuse to submit (Send did nothing).
+    // A plain text field: the browser's own URL check refuses \${baseUrl}/x and
+    // shows its own message; the store checks the URL as it is sent instead.
+    const urlError = this.store.urlErrors.get(t.id);
     return html`
       ${heading}
       <form class="request-line" novalidate @submit=${(e) => this.send(e)}>
@@ -471,8 +475,9 @@ export class HitopRequest extends LitElement {
           class="url"
           variant="outlined"
           label="URL"
-          type="url"
           placeholder="https://api.example.com/users or \${baseUrl}/users"
+          ?error=${Boolean(urlError)}
+          error-text=${urlError ?? ""}
           .value=${t.url}
           @input=${(e) => this.set({ url: e.target.value })}
           @keydown=${(e) => e.key === "Enter" && this.send(e)}

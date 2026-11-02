@@ -31,6 +31,8 @@ import {
   secretRefs,
   withSecretRefs,
   urlEncodedBody,
+  rawContentType,
+  withScheme,
 } from "./features.js";
 import { platform } from "./platform/index.js";
 import { fillVariables, forWebApp, isPostmanCollection, loadShim, runScript, scriptScans, usesPostmanApi } from "./pm.js";
@@ -277,6 +279,8 @@ export class Store extends EventTarget {
     // call, schema: { services, source } | null, schemaLoading,
     // schemaError }. Memory only, as the WebSocket log.
     this.grpcTabs = new Map();
+    // What's wrong with a tab's URL, shown under the field until it changes (by tab id).
+    this.urlErrors = new Map();
     // What the main area shows: the request tabs, all collections, one
     // collection, or one collection's variables.
     this.view = { kind: "request", collectionId: null };
@@ -379,6 +383,7 @@ export class Store extends EventTarget {
   // --- tabs ---------------------------------------------------------------
 
   updateTab(updates, index = this.currentTab) {
+    if ("url" in updates && this.tabs[index]) this.urlErrors.delete(this.tabs[index].id);
     let tabs = tabService.updateTab(this.tabs, index, updates);
     const t = tabs[index];
     const title = autoTitle(t);
@@ -776,20 +781,28 @@ export class Store extends EventTarget {
     if (tab?.statusCode != null && tab.responseType !== "error") {
       // Masked like the stored ones, so a secret never shows up as a difference.
       const response = maskSecrets(snapshotResponse({ status: tab.statusCode, headers: tab.responseHeaders, body: tab.response, durationMs: tab.durationMs }), this.secretValuesFor(tab.loadedCollectionId));
-      out.push({ id: "current", label: "Current response", response });
+      out.push({ id: "current", label: "Current response", response, request: `${tab.method} ${tab.url}` });
     }
     (this.loadedRequest(tab)?.examples || []).forEach((e, i) => out.push({ id: `example:${i}`, label: `Example: ${e?.name ?? i + 1}`, response: exampleResponse(e) }));
     for (const h of [...this.history].reverse()) {
       if (!h?.response) continue;
       const when = new Date(h.timestamp).toLocaleString(undefined, { dateStyle: "medium", timeStyle: "short" });
       const what = h.isCollectionRun ? `${h.collectionName} → ${h.requestName}` : `${h.method} ${h.url}`;
-      out.push({ id: `history:${h.id}`, label: `${h.response.status ?? "?"} ${what} · ${when}`, response: h.response });
+      out.push({ id: `history:${h.id}`, label: `${h.response.status ?? "?"} ${what} · ${when}`, response: h.response, request: h.isCollectionRun ? null : `${h.method} ${h.url}` });
     }
     return out;
   }
 
   // The current tab as hitop-wasm's snippet input. Secrets stay {{NAME}}
   // placeholders unless `showSecrets`.
+  // The Content-Type dispatch adds to this tab's raw body (none set, not
+  // GraphQL or a form), for the Headers note and the Code dialog.
+  autoContentType(tab = this.tab) {
+    if (!tab || tab.kind || !BODY_METHODS.includes(tab.method) || (tab.bodyMode && tab.bodyMode !== "raw")) return null;
+    if ((tab.headers || []).some((h) => h.name?.toLowerCase() === "content-type" && h.value)) return null;
+    return rawContentType(tab.requestBody);
+  }
+
   snippetInput(showSecrets = false) {
     const tab = this.tab;
     const request = {
@@ -797,10 +810,13 @@ export class Store extends EventTarget {
       name: tab.title || "",
       url: tab.url || "",
       method: tab.method || "GET",
-      headers: (tab.headers || []).filter((h) => h.name).map((h) => ({ name: h.name, value: h.value ?? "", ...(h.enabled === false ? { enabled: false } : {}) })),
+      // As sent: headers with no value are left out.
+      headers: (tab.headers || []).filter((h) => h.name && h.value).map((h) => ({ name: h.name, value: h.value, ...(h.enabled === false ? { enabled: false } : {}) })),
       body: BODY_METHODS.includes(tab.method) ? tab.requestBody || "" : "",
       ...SAVED_FIELDS(tab),
     };
+    const auto = this.autoContentType(tab);
+    if (auto) request.headers.push({ name: "Content-Type", value: auto });
     const auth = cleanAuth(tab.auth);
     if (auth) request.auth = auth;
     // The web app sends a body only with these methods.
@@ -1104,6 +1120,8 @@ export class Store extends EventTarget {
     let prepared;
     try {
       prepared = await this.prepare(source, collectionId);
+      // A URL whose variables leave it without a scheme gets one too; never a relative fetch.
+      prepared = { ...prepared, url: withScheme(prepared.url) };
     } catch (e) {
       e.stage = "prepare"; // a variable or pre-request script error: nothing was sent
       throw e;
@@ -1123,6 +1141,10 @@ export class Store extends EventTarget {
       const built = mode === "multipart" ? await multipartBody(fields, this.files) : urlEncodedBody(fields);
       body = built.body;
       if (!hasHeader("content-type")) headers.push({ name: "Content-Type", value: built.contentType });
+    } else if (BODY_METHODS.includes(source.method) && body && typeof body === "string" && !hasHeader("content-type")) {
+      // A raw body says what it is, unless the request does (GraphQL already has its own).
+      const type = rawContentType(body);
+      if (type) headers.push({ name: "Content-Type", value: type });
     }
     const p = platform();
     const proxied = p.usesProxy(prepared.url);
@@ -1153,14 +1175,31 @@ export class Store extends EventTarget {
 
   async send() {
     const index = this.currentTab;
-    const tab = this.tabs[index];
+    let tab = this.tabs[index];
     if (!tab.url.trim()) {
+      this.urlErrors.set(tab.id, "Enter a URL, such as https://api.example.com/users");
+      this.emit();
       this.notify("Enter a URL first.");
       return;
     }
     this.refValues = {};
     if (tab.kind === "websocket") return this.wsConnect();
     if (tab.kind === "grpc") return this.grpcCall();
+    // "api.example.com/users" is sent (and kept) as https://api.example.com/users;
+    // a URL with variables is checked once they are filled in (dispatch).
+    if (!tab.url.includes("${")) {
+      try {
+        const url = withScheme(tab.url);
+        if (url !== tab.url) {
+          this.tabs = tabService.updateTab(this.tabs, index, { url });
+          tab = this.tabs[index];
+        }
+      } catch (e) {
+        this.urlErrors.set(tab.id, e.message);
+        this.emit();
+        return;
+      }
+    }
     const source = {
       url: tab.url,
       method: tab.method,

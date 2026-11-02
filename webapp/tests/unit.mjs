@@ -1,6 +1,20 @@
 // Unit checks for features.js (no browser): node tests/unit.mjs
 import assert from "node:assert/strict";
-import { cookieHeader, exportableEnvironments, exportableGlobals, isPostmanGlobals, maskSecrets, mergeGlobals, normalizeGlobals, parseGlobals, mergeCookies, multipartBody, parseEnvironments, parseQuery, secretNames, secretRefs, secretValues, urlEncodedBody, withQuery, withSecretRefs } from "../src/features.js";
+import { cookieHeader, rawContentType, withScheme, exportableEnvironments, exportableGlobals, isPostmanGlobals, maskSecrets, mergeGlobals, normalizeGlobals, parseGlobals, mergeCookies, multipartBody, parseEnvironments, parseQuery, secretNames, secretRefs, secretValues, urlEncodedBody, withQuery, withSecretRefs } from "../src/features.js";
+
+// Raw bodies: a Content-Type by content; URLs typed without a scheme.
+assert.equal(rawContentType(' {"a": 1}'), "application/json");
+assert.equal(rawContentType("[1]"), "application/json");
+assert.equal(rawContentType("<?xml version='1.0'?><a/>"), "application/xml");
+assert.equal(rawContentType("<!DOCTYPE html><p>"), "text/html");
+assert.equal(rawContentType("hello"), "text/plain");
+assert.equal(rawContentType(""), null);
+assert.equal(withScheme("https://x.dev/a"), "https://x.dev/a");
+assert.equal(withScheme("api.example.com/users?a=1"), "https://api.example.com/users?a=1");
+assert.equal(withScheme("api.example.com:8443/v1"), "https://api.example.com:8443/v1");
+assert.equal(withScheme("localhost:3000/x"), "http://localhost:3000/x");
+assert.equal(withScheme("127.0.0.1:8080"), "http://127.0.0.1:8080");
+for (const bad of ["not a url", "users", "/users", ""]) assert.throws(() => withScheme(bad), /isn't a URL/, bad);
 
 const now = Date.parse("2026-10-31T12:00:00Z");
 let jar = mergeCookies([], ["sid=abc; Path=/; HttpOnly", "pref=dark; Domain=example.com; Path=/; Max-Age=3600", "evil=1; Domain=other.com", "old=x; Expires=Thu, 01 Jan 2026 00:00:00 GMT"], "https://api.example.com/v1/login", now);
