@@ -14,6 +14,24 @@ import "./collection-views.js";
 import { WIDE_DIALOGS, codeDialog, compareDialog, refreshCode } from "./tools-dialogs.js";
 import { OPENAPI_DIALOGS, openapiDialog, submitOpenapi } from "./openapi-dialogs.js";
 
+// Collections folded in the sidebar, by id (its own key: nothing else reads it).
+const COLLAPSED_KEY = "hitop_collapsed_collections";
+function loadCollapsed() {
+  try {
+    const v = JSON.parse(localStorage.getItem(COLLAPSED_KEY) || "[]");
+    return Array.isArray(v) ? v.map(String) : [];
+  } catch {
+    return [];
+  }
+}
+function saveCollapsed(ids) {
+  try {
+    localStorage.setItem(COLLAPSED_KEY, JSON.stringify(ids));
+  } catch {
+    // storage full or blocked: folding lasts for this page
+  }
+}
+
 // Import errors in words: a parser's message ("Unexpected token } in JSON at
 // position 41") tells most people nothing.
 function readableError(err, what) {
@@ -25,6 +43,8 @@ export class HitopApp extends LitElement {
   static properties = {
     navOpen: { state: true },
     dialog: { state: true },
+    filter: { state: true },
+    collapsed: { state: true },
     exportFormat: { state: true },
   };
 
@@ -34,6 +54,8 @@ export class HitopApp extends LitElement {
     this.navOpen = false;
     this.dialog = null; // { kind, ...data }
     this.exportFormat = "hitop";
+    this.filter = "";
+    this.collapsed = loadCollapsed();
     this.store.addEventListener("change", () => this.requestUpdate());
     this.store.addEventListener("notify", (e) => this.toast(e.detail));
   }
@@ -352,67 +374,95 @@ export class HitopApp extends LitElement {
 
   // --- sidebar ------------------------------------------------------------------
 
+  // The environment picker: in the top bar, and in the drawer on phones.
+  envSelect() {
+    const s = this.store;
+    return html`<lit-material-select class="env-select" variant="outlined" label="Environment" .value=${s.activeEnvironmentId ?? "none"}
+      @change=${(e) => s.setActiveEnvironment(e.target.value === "none" ? null : e.target.value)}>
+      <lit-material-select-option value="none">No environment</lit-material-select-option>
+      ${s.environments.map((env) => html`<lit-material-select-option value=${env.id}>${s.environmentLabel(env)}</lit-material-select-option>`)}
+    </lit-material-select>`;
+  }
+
+  // Environment picker, a link to its page and the theme: the top bar's
+  // right end, or the top of the drawer on phones (one shows at a time).
+  tools(where) {
+    return html`<div class=${`app-tools ${where}`}>
+      ${this.envSelect()}
+      <lit-material-icon-button aria-label="Manage environments" title="Manage environments" @click=${() => this.go("environments")}>${icon("sliders-horizontal")}</lit-material-icon-button>
+      <lit-material-color-scheme-toggle storage-key="hitop-theme" cycle>
+        ${icon("sun", { slot: "light-icon" })}${icon("moon", { slot: "dark-icon" })}
+      </lit-material-color-scheme-toggle>
+    </div>`;
+  }
+
+  toggleCollection(id) {
+    const key = String(id);
+    this.collapsed = this.collapsed.includes(key) ? this.collapsed.filter((k) => k !== key) : [...this.collapsed, key];
+    saveCollapsed(this.collapsed);
+  }
+
   renderSidebar() {
     const s = this.store;
     const { kind, collectionId } = s.view;
     const activeRequest = kind === "request" ? s.tab?.loadedRequestId : null;
+    const filter = this.filter.trim().toLowerCase();
+    const matches = (r) => !filter || `${methodLabel(r)} ${r.name} ${r.url ?? ""}`.toLowerCase().includes(filter);
     return html`
       <aside class=${`sidebar ${this.navOpen ? "open" : ""}`} aria-label="Collections">
-        ${IS_TAURI
-          ? html`<span class="brand">${unsafeSVG(mark())}<span>HITOP</span></span>`
-          : html`<a class="brand" href="/" aria-label="HITOP home">
-              ${unsafeSVG(mark())}
-              <span>HITOP</span>
-            </a>`}
+        ${this.tools("in-drawer")}
         <lit-material-button variant="filled" class="new-request" @click=${() => (this.navOpen = false, s.newRequestInFirstCollection())}>
           ${icon("plus")} New request
         </lit-material-button>
-        <lit-material-select class="env-select" variant="outlined" label="Environment" .value=${s.activeEnvironmentId ?? "none"}
-          @change=${(e) => {
-            if (e.target.value !== "__manage") return s.setActiveEnvironment(e.target.value === "none" ? null : e.target.value);
-            e.target.value = s.activeEnvironmentId ?? "none"; // "Manage" is an action, not a choice
-            this.go("environments");
-          }}>
-          <lit-material-select-option value="none">No environment</lit-material-select-option>
-          ${s.environments.map((env) => html`<lit-material-select-option value=${env.id}>${s.environmentLabel(env)}</lit-material-select-option>`)}
-          <lit-material-select-option value="__manage">Manage environments…</lit-material-select-option>
-        </lit-material-select>
+        <input type="search" class="tree-filter" placeholder="Filter requests" aria-label="Filter requests" .value=${this.filter}
+          @input=${(e) => (this.filter = e.target.value)} />
         <nav class="tree" aria-label="Collections">
           <button type="button" class="tree-row heading" aria-current=${kind === "collections" ? "page" : "false"} @click=${() => this.go("collections")}>
             ${icon("folders")}<span>Collections</span>
           </button>
           <ul>
-            ${s.collections.map(
-              (c) => html`
+            ${s.collections.map((c) => {
+              const requests = (c.requests || []).filter(matches);
+              if (filter && !requests.length) return nothing;
+              const open = Boolean(filter) || !this.collapsed.includes(String(c.id));
+              return html`
                 <li>
-                  <button type="button" class="tree-row collection" aria-current=${kind === "collection" && collectionId === c.id ? "page" : "false"} @click=${() => this.go("collection", c.id)}>
-                    ${icon("folder-simple")}<span>${c.name}</span>
-                  </button>
-                  <ul>
-                    <li>
-                      <button type="button" class="tree-row leaf" aria-current=${kind === "variables" && collectionId === c.id ? "page" : "false"} @click=${() => this.go("variables", c.id)}>
-                        ${icon("sliders-horizontal")}<span>Variables</span>
-                      </button>
-                    </li>
-                    ${c.requests?.length
-                      ? html`<li>
-                          <lit-material-sortable role="list" label=${`Requests in ${c.name}`} @sort=${(e) => s.moveRequest(c.id, e.detail.from, e.detail.to)}>
-                            ${repeat(
-                              c.requests,
-                              (r) => r.id,
-                              (r) => html`<div role="listitem" class="request-item" data-sort-id=${r.id} data-sort-label=${r.name}>
-                                <button type="button" class="tree-row leaf" aria-current=${activeRequest === r.id ? "page" : "false"} @click=${() => ((this.navOpen = false), s.openRequest(r, c.id))}>
-                                  <span class=${`method-tag m-${methodLabel(r)}`}>${methodLabel(r)}</span><span>${r.name}</span>
-                                </button>
-                                <button type="button" class="sort-handle" data-sort-handle aria-label=${`Reorder ${r.name}`}>${icon("dots-six-vertical")}</button>
-                              </div>`,
-                            )}
-                          </lit-material-sortable>
-                        </li>`
-                      : nothing}
-                  </ul>
-                </li>`,
-            )}
+                  <div class="collection-line">
+                    <button type="button" class="tree-toggle" aria-expanded=${String(open)} aria-label="Requests" title=${`Show or hide the requests in ${c.name}`}
+                      ?disabled=${Boolean(filter)} @click=${() => this.toggleCollection(c.id)}>${icon(open ? "caret-down" : "caret-right")}</button>
+                    <button type="button" class="tree-row collection" aria-current=${kind === "collection" && collectionId === c.id ? "page" : "false"} @click=${() => this.go("collection", c.id)}>
+                      ${icon("folder-simple")}<span>${c.name}</span>
+                    </button>
+                  </div>
+                  ${open
+                    ? html`<ul>
+                        ${filter
+                          ? nothing
+                          : html`<li>
+                              <button type="button" class="tree-row leaf" aria-current=${kind === "variables" && collectionId === c.id ? "page" : "false"} @click=${() => this.go("variables", c.id)}>
+                                ${icon("sliders-horizontal")}<span>Variables</span>
+                              </button>
+                            </li>`}
+                        ${requests.length
+                          ? html`<li>
+                              <lit-material-sortable role="list" label=${`Requests in ${c.name}`} @sort=${(e) => s.moveRequest(c.id, e.detail.from, e.detail.to)}>
+                                ${repeat(
+                                  requests,
+                                  (r) => r.id,
+                                  (r) => html`<div role="listitem" class="request-item" data-sort-id=${r.id} data-sort-label=${r.name}>
+                                    <button type="button" class="tree-row leaf" aria-current=${activeRequest === r.id ? "page" : "false"} @click=${() => ((this.navOpen = false), s.openRequest(r, c.id))}>
+                                      <span class=${`method-tag m-${methodLabel(r)}`}>${methodLabel(r)}</span><span>${r.name}</span>
+                                    </button>
+                                    ${filter ? nothing : html`<button type="button" class="sort-handle" data-sort-handle aria-label=${`Reorder ${r.name}`}>${icon("dots-six-vertical")}</button>`}
+                                  </div>`,
+                                )}
+                              </lit-material-sortable>
+                            </li>`
+                          : nothing}
+                      </ul>`
+                    : nothing}
+                </li>`;
+            })}
           </ul>
         </nav>
         <div class="sidebar-footer">
@@ -508,12 +558,11 @@ export class HitopApp extends LitElement {
         <lit-material-icon-button class="nav-toggle" aria-label=${this.navOpen ? "Close collections" : "Open collections"} aria-expanded=${String(this.navOpen)} @click=${() => (this.navOpen = !this.navOpen)}>
           ${icon(this.navOpen ? "x" : "list")}
         </lit-material-icon-button>
-        <span class="topbar-title">HITOP</span>
+        ${IS_TAURI
+          ? html`<span class="brand">${unsafeSVG(mark())}<span>HITOP</span></span>`
+          : html`<a class="brand" href="/" aria-label="HITOP website">${unsafeSVG(mark())}<span>HITOP</span></a>`}
         <span class="topbar-spacer"></span>
-        ${IS_TAURI ? nothing : html`<a class="topbar-link" href="/">${icon("house")}<span>hitop.rws8.tech</span></a>`}
-        <lit-material-color-scheme-toggle storage-key="hitop-theme">
-          ${icon("sun", { slot: "light-icon" })}${icon("moon", { slot: "dark-icon" })}
-        </lit-material-color-scheme-toggle>
+        ${this.tools("in-topbar")}
       </header>
       <div class="layout">
         ${this.renderSidebar()}

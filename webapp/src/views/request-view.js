@@ -457,11 +457,14 @@ export class HitopRequest extends LitElement {
   render() {
     const t = this.tab;
     if (!t) return nothing;
-    if (t.kind === "websocket") return html`${socketLine(this, this.methodSelect())} ${this.renderEditor()} ${socketLog(this)}`;
-    if (t.kind === "grpc") return html`${grpcLine(this, this.methodSelect())} ${this.renderEditor()} ${grpcLog(this)}`;
+    // The page's heading for screen readers: the tab strip shows the title.
+    const heading = html`<h1 class="visually-hidden">Request: ${t.title}</h1>`;
+    if (t.kind === "websocket") return html`${heading}${socketLine(this, this.methodSelect())} ${this.renderEditor()} ${socketLog(this)}`;
+    if (t.kind === "grpc") return html`${heading}${grpcLine(this, this.methodSelect())} ${this.renderEditor()} ${grpcLog(this)}`;
     // novalidate: a URL that starts with a variable is no valid type="url"
     // value, and the browser would then refuse to submit (Send did nothing).
     return html`
+      ${heading}
       <form class="request-line" novalidate @submit=${(e) => this.send(e)}>
         ${this.methodSelect()}
         <lit-material-text-field
