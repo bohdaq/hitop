@@ -69,6 +69,15 @@ function sourceSelect(id, label, value, sources, onChange) {
   </lit-material-select>`;
 }
 
+// "Before" starts on a response that differs from "After": the newest earlier
+// response of the same request, else any that differs. The newest history
+// item is usually the current response itself, which compared "the same".
+function defaultBefore(sources, right) {
+  const differs = (s) => s.response?.status !== right.response?.status || s.response?.body !== right.response?.body;
+  const others = sources.filter((s) => s !== right && differs(s));
+  return others.find((s) => right.request && s.request === right.request) ?? others[0] ?? sources.find((s) => s !== right);
+}
+
 export function compareDialog(app, d) {
   const sources = app.store.compareSources();
   const footer = html`
@@ -84,8 +93,8 @@ export function compareDialog(app, d) {
       footer,
     };
   }
-  const left = sources.find((s) => s.id === d.left) ?? sources[1];
   const right = sources.find((s) => s.id === d.right) ?? sources[0];
+  const left = sources.find((s) => s.id === d.left) ?? defaultBefore(sources, right);
   const set = (changes) => (app.dialog = { ...app.dialog, left: left.id, right: right.id, ...changes });
   const c = compareResponses(left.response, right.response);
   const changedHeaders = c.headers.filter((h) => h.kind !== "same");
