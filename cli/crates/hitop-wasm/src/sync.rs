@@ -5,7 +5,9 @@ use base64::engine::general_purpose::URL_SAFE_NO_PAD;
 use base64::Engine;
 use hitop_core::format::files::Files;
 use hitop_core::sync::{self, BlobText, RemoteBlob, State};
-use hitop_sync_crypto::{self as crypto, BlobContext, DeviceKeyPair, WorkspaceKey};
+use std::collections::BTreeMap;
+
+use hitop_sync_crypto::{self as crypto, BlobContext, DeviceKeyPair, ReceivedWrap, WorkspaceKey, WorkspaceMemory, WrapHeader};
 use serde::Deserialize;
 use wasm_bindgen::prelude::*;
 
@@ -93,14 +95,111 @@ pub fn random_id() -> String {
     crypto::random_hex::<16>()
 }
 
-#[wasm_bindgen(js_name = syncWrap)]
-pub fn wrap(public_key: &str, workspace: &str, epoch: u32, workspace_key: &str) -> Result<String, JsError> {
+/// A format 1 (legacy, unauthenticated) wrap, as hitop 1.1 made them. The app never makes one;
+/// the tests use it to play a malicious server.
+#[wasm_bindgen(js_name = syncWrapLegacy)]
+pub fn wrap_legacy(public_key: &str, workspace: &str, epoch: u32, workspace_key: &str) -> Result<String, JsError> {
     Ok(b64(&crypto::wrap_key(&unb64("public key", public_key)?, workspace, epoch, &key(workspace_key)?).map_err(err)?))
 }
 
-#[wasm_bindgen(js_name = syncUnwrap)]
-pub fn unwrap(secret: &str, workspace: &str, epoch: u32, wrapped: &str) -> Result<String, JsError> {
-    Ok(b64(crypto::unwrap_key(&device(secret)?, workspace, epoch, &unb64("wrapped key", wrapped)?).map_err(err)?.as_bytes()))
+/// A format 2 (authenticated) wrap of `workspace_key` for epoch `epoch`, made by this device
+/// (`secret`, server key id `sender_key_id`) for one device; `head` = the workspace's current epoch.
+#[wasm_bindgen(js_name = syncSealWrap)]
+#[allow(clippy::too_many_arguments)]
+pub fn seal_wrap(secret: &str, sender_key_id: &str, recipient_key_id: &str, recipient_public_key: &str, workspace: &str, epoch: u32, head: u32, workspace_key: &str) -> Result<String, JsError> {
+    let me = device(secret)?;
+    let pk = unb64("public key", recipient_public_key)?;
+    let w = crypto::seal_wrap(&crypto::Device { key_id: sender_key_id, keys: &me }, &crypto::Recipient { key_id: recipient_key_id, public_key: &pk }, workspace, epoch, head, &key(workspace_key)?).map_err(err)?;
+    Ok(b64(&w))
+}
+
+/// `{legacy: true}` for a format 1 wrap, `{legacy: false, sender, head}` for format 2 (unverified).
+#[wasm_bindgen(js_name = syncWrapHeader)]
+pub fn wrap_header(wrapped: &str) -> Result<String, JsError> {
+    Ok(match crypto::wrap_header(&unb64("wrapped key", wrapped)?).map_err(err)? {
+        WrapHeader::Legacy => serde_json::json!({ "legacy": true }),
+        WrapHeader::Authenticated { sender_key_id, head } => serde_json::json!({ "legacy": false, "sender": sender_key_id, "head": head }),
+    }
+    .to_string())
+}
+
+#[wasm_bindgen(js_name = syncNormalizeFingerprint)]
+pub fn normalize_fingerprint(fp: &str) -> String {
+    crypto::normalize_fingerprint(fp)
+}
+
+#[derive(Deserialize)]
+struct WrapIn {
+    epoch: u32,
+    wrapped: String,
+}
+
+fn keys_in(what: &str, json: &str) -> Result<BTreeMap<String, Vec<u8>>, JsError> {
+    let m: BTreeMap<String, String> = serde_json::from_str(json).map_err(|e| err(format!("{what}: {e}")))?;
+    m.into_iter().map(|(id, pk)| Ok((id, unb64(what, &pk)?))).collect()
+}
+
+/// The error of a refused key as `{kind, message, epoch?, senderKeyId?, fingerprint?}`.
+fn key_error(e: &crypto::Error) -> serde_json::Value {
+    use crypto::Error as E;
+    let mut out = serde_json::json!({ "message": e.to_string() });
+    let (kind, epoch) = match e {
+        E::UntrustedSender { epoch, sender_key_id, fingerprint } => {
+            out["senderKeyId"] = sender_key_id.as_str().into();
+            out["fingerprint"] = fingerprint.as_deref().into();
+            ("untrustedSender", Some(*epoch))
+        }
+        E::Forged { epoch, sender_key_id } => {
+            out["senderKeyId"] = sender_key_id.as_str().into();
+            ("forged", Some(*epoch))
+        }
+        E::KeyChanged { epoch } => ("keyChanged", Some(*epoch)),
+        E::Rollback { current, .. } => ("rollback", Some(*current)),
+        E::LegacyRefused { epoch } => ("legacyRefused", Some(*epoch)),
+        E::MissingKey { epoch } => ("missingKey", Some(*epoch)),
+        _ => ("malformed", None),
+    };
+    out["kind"] = kind.into();
+    if let Some(e) = epoch {
+        out["epoch"] = e.into();
+    }
+    out
+}
+
+/// `hitop_sync_crypto::accept_wraps` for this device (`secret`, `key_id`): `wraps` =
+/// `[{epoch, wrapped}]` from the server, `pinned` and `listed` = `{keyId: publicKey}` (this
+/// device's pins; the server's member device keys, or `{}`), `memory` = the workspace's
+/// `WorkspaceMemory` JSON (`{}` when none). Never throws for a refused key: `{ok: true, keys:
+/// {epoch: key}, current, notices: [{kind, ..., message}], newPins: {keyId: publicKey}, memory}`
+/// or `{ok: false, error: {kind, message, ...}}`.
+#[wasm_bindgen(js_name = syncAcceptWraps)]
+#[allow(clippy::too_many_arguments)]
+pub fn accept_wraps(secret: &str, key_id: &str, workspace: &str, current_epoch: u32, wraps_json: &str, pinned_json: &str, listed_json: &str, memory_json: &str) -> Result<String, JsError> {
+    let me = device(secret)?;
+    let wraps: Vec<WrapIn> = serde_json::from_str(wraps_json).map_err(err)?;
+    let bytes = wraps.iter().map(|w| Ok((w.epoch, unb64("wrapped key", &w.wrapped)?))).collect::<Result<Vec<_>, JsError>>()?;
+    let received: Vec<ReceivedWrap> = bytes.iter().map(|(epoch, wrapped)| ReceivedWrap { epoch: *epoch, wrapped }).collect();
+    let pinned = keys_in("pinned", pinned_json)?;
+    let listed = keys_in("listed", listed_json)?;
+    let mut memory: WorkspaceMemory = serde_json::from_str(if memory_json.trim().is_empty() { "{}" } else { memory_json }).map_err(err)?;
+    let out = match crypto::accept_wraps(&crypto::Device { key_id, keys: &me }, workspace, current_epoch, &received, &pinned, &listed, &mut memory) {
+        Ok(ring) => {
+            let notices: Vec<serde_json::Value> = ring
+                .notices
+                .iter()
+                .map(|n| {
+                    let mut v = serde_json::to_value(n).unwrap_or_default();
+                    v["message"] = n.to_string().into();
+                    v
+                })
+                .collect();
+            let keys: BTreeMap<String, String> = ring.keys.iter().map(|(e, k)| (e.to_string(), b64(k.as_bytes()))).collect();
+            let new_pins: BTreeMap<&str, String> = ring.new_pins.iter().map(|(id, pk)| (id.as_str(), b64(pk))).collect();
+            serde_json::json!({ "ok": true, "keys": keys, "current": ring.current, "notices": notices, "newPins": new_pins, "memory": memory, "legacy": ring.uses_legacy() })
+        }
+        Err(e) => serde_json::json!({ "ok": false, "error": key_error(&e) }),
+    };
+    Ok(out.to_string())
 }
 
 #[wasm_bindgen(js_name = syncBlobEpoch)]
@@ -218,11 +317,85 @@ pub fn check_vectors(json: &str) -> Result<usize, JsError> {
     check_vectors_json(json).map_err(|e| err(format!("{e:#}")))
 }
 
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct VectorsV2 {
+    wraps: Vec<WrapV2>,
+    wrap_failures: Vec<WrapV2Failure>,
+    commitments: Vec<CommitmentV2>,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct WrapV2 {
+    sender_public: String,
+    sender_key_id: String,
+    recipient_secret: String,
+    recipient_key_id: String,
+    workspace_id: String,
+    epoch: u32,
+    head: u32,
+    info: String,
+    wrapped: String,
+    workspace_key: String,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct WrapV2Failure {
+    sender_public: String,
+    recipient_secret: String,
+    recipient_key_id: String,
+    workspace_id: String,
+    epoch: u32,
+    wrapped: String,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct CommitmentV2 {
+    workspace_id: String,
+    epoch: u32,
+    workspace_key: String,
+    commitment: String,
+}
+
+/// Runs `vectors/v2.json` (format 2 wraps, key commitments) through this build.
+pub fn check_vectors_v2_json(json: &str) -> anyhow::Result<usize> {
+    let v: VectorsV2 = serde_json::from_str(json)?;
+    let mut n = 0;
+    for w in &v.wraps {
+        let d = DeviceKeyPair::from_secret_bytes(&unhex(&w.recipient_secret)?)?;
+        anyhow::ensure!(hex(&crypto::wrap_info_v2(&w.workspace_id, w.epoch, w.head, &w.sender_key_id, &w.recipient_key_id)?) == w.info, "wrap info");
+        let o = crypto::open_wrap(&d, &w.recipient_key_id, &unhex(&w.sender_public)?, &w.workspace_id, w.epoch, &unhex(&w.wrapped)?)?;
+        anyhow::ensure!(hex(o.key.as_bytes()) == w.workspace_key && o.sender_key_id == w.sender_key_id && o.head == w.head, "opened wrap");
+        n += 1;
+    }
+    for f in &v.wrap_failures {
+        let d = DeviceKeyPair::from_secret_bytes(&unhex(&f.recipient_secret)?)?;
+        anyhow::ensure!(crypto::open_wrap(&d, &f.recipient_key_id, &unhex(&f.sender_public)?, &f.workspace_id, f.epoch, &unhex(&f.wrapped)?).is_err(), "a wrap failure case opened");
+        n += 1;
+    }
+    for c in &v.commitments {
+        let key = WorkspaceKey::from_bytes(unhex(&c.workspace_key)?.try_into().map_err(|_| anyhow::anyhow!("key length"))?);
+        anyhow::ensure!(crypto::key_commitment(&c.workspace_id, c.epoch, &key) == c.commitment, "key commitment");
+        n += 1;
+    }
+    Ok(n)
+}
+
+#[wasm_bindgen(js_name = syncCheckVectorsV2)]
+pub fn check_vectors_v2(json: &str) -> Result<usize, JsError> {
+    check_vectors_v2_json(json).map_err(|e| err(format!("{e:#}")))
+}
+
 #[cfg(test)]
 mod tests {
     #[test]
     fn the_published_vectors_pass() {
         let n = super::check_vectors_json(include_str!("../../hitop-sync-crypto/vectors/v1.json")).unwrap();
+        assert!(n >= 10, "{n}");
+        let n = super::check_vectors_v2_json(include_str!("../../hitop-sync-crypto/vectors/v2.json")).unwrap();
         assert!(n >= 10, "{n}");
     }
 }
