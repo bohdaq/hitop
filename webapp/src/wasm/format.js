@@ -51,6 +51,11 @@ function api(m) {
         m.syncSealWrap(secret, String(senderKeyId), String(recipientKeyId), recipientPublicKey, workspace, epoch, head, key),
       // { legacy: true } or { legacy: false, sender, head } (not verified).
       wrapHeader: (wrapped) => JSON.parse(m.syncWrapHeader(wrapped)),
+      // Recovery phrases (hitop-sync-crypto 0.3): {words, entropy}; parse → entropy or throws.
+      recoveryNew: () => JSON.parse(m.syncRecoveryNew()),
+      recoveryParse: (words) => m.syncRecoveryParse(String(words ?? "")),
+      recoverySeal: (entropy, accountId, text) => m.syncRecoverySeal(entropy, String(accountId), String(text)),
+      recoveryOpen: (entropy, accountId, blob) => m.syncRecoveryOpen(entropy, String(accountId), blob),
       // hitop-sync-crypto accept_wraps: which keys this device may use. wraps [{ epoch, wrapped }],
       // pinned/listed { keyId: publicKey }, memory = WorkspaceMemory ({} when none) →
       // { ok: true, keys: { epoch: key }, current, notices, newPins, memory, legacy } | { ok: false, error: { kind, message, ... } }.

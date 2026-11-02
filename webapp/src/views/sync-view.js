@@ -1,6 +1,7 @@
 // The Sync page (web and desktop): sign in to a hitop sync server, share a collection with a
-// team end to end encrypted, sync it, resolve conflicts, manage members and invites, and make
-// runner credentials for scheduled runs. Logic in src/sync.js.
+// team end to end encrypted, sync it, resolve conflicts, manage members and invites, make
+// runner credentials for scheduled runs, and a recovery phrase for a lost device. Logic in
+// src/sync.js.
 import { LitElement, html, nothing } from "lit";
 import { confirm } from "@lit-material/confirm";
 import { icon } from "../icons.js";
@@ -35,6 +36,9 @@ class HitopSync extends LitElement {
     audit: { state: true },
     warnings: { state: true },
     untrusted: { state: true },
+    recovery: { state: true },
+    recoveryWords: { state: true },
+    recovering: { state: true },
   };
 
   createRenderRoot() {
@@ -60,6 +64,7 @@ class HitopSync extends LitElement {
     if (!this.sync.account()) return;
     this.fingerprint = await this.sync.fingerprint();
     try {
+      this.recovery = await this.sync.recoveryStatus();
       this.remote = await this.sync.workspaces();
     } catch (e) {
       this.error = errorText(e);
@@ -86,7 +91,54 @@ class HitopSync extends LitElement {
     } finally {
       this.busy = null;
       this.warnings = this.sync.takeNotices();
+      // Keep the recovery data up to date with this device's trust and key memory.
+      if (!String(what).startsWith("recovery") && what !== "signout") {
+        await this.sync.refreshRecovery().catch((e) => (this.error ??= `Couldn't update your recovery data: ${errorText(e)}`));
+      }
     }
+  }
+
+  renderRecovery() {
+    const r = this.recovery;
+    const web = platform().name !== "tauri";
+    return html`<section class="sync-recovery" aria-label="Recovery phrase">
+      <h2>Recovery phrase</h2>
+      ${web ? html`<p class="hint">This device's key lives in this browser's storage: clearing the site's data, or losing this computer, loses it. A recovery phrase brings it back on another device.</p>` : nothing}
+      <p class="hint" role="status" aria-label="Recovery status">${r?.set
+        ? `Recovery phrase set${r.updatedAt ? `, data updated ${new Date(r.updatedAt * 1000).toISOString().slice(0, 16).replace("T", " ")} UTC` : ""}.${r.kept ? " This device keeps it up to date." : ""}`
+        : "No recovery phrase yet: if you lose this device, workspaces only you could open are lost."}</p>
+      <div class="page-actions">
+        <lit-material-button variant="outlined" ?disabled=${Boolean(this.busy)} @click=${() => this.run("recovery-create", async () => {
+          if (r?.set && !(await confirm({ headline: "Make a new recovery phrase?", message: "Your current phrase stops working.", confirmLabel: "Make a new one" }))) return;
+          this.recoveryWords = await this.sync.createRecovery();
+          this.recovery = await this.sync.recoveryStatus();
+        })}>${r?.set ? "Make a new recovery phrase" : "Create recovery phrase"}</lit-material-button>
+        <lit-material-button variant="text" ?disabled=${Boolean(this.busy)} @click=${() => (this.recovering = !this.recovering)}>Recover a lost device</lit-material-button>
+        ${r?.set
+          ? html`<lit-material-button variant="text" ?disabled=${Boolean(this.busy)} @click=${() => this.run("recovery-remove", async () => {
+              if (!(await confirm({ headline: "Remove the recovery phrase?", message: "It then recovers nothing.", confirmLabel: "Remove", destructive: true }))) return;
+              await this.sync.removeRecovery();
+              this.recovery = await this.sync.recoveryStatus();
+            })}>Remove</lit-material-button>`
+          : nothing}
+      </div>
+      ${this.recoveryWords
+        ? html`<p class="sync-note">Write these 24 words down and keep them offline. They are shown only now; with them and your mailbox anyone can become this device.</p>
+            <pre class="code-preview" aria-label="Your recovery phrase">${this.recoveryWords}</pre>
+            <lit-material-button variant="text" @click=${() => (this.recoveryWords = null)}>I wrote it down</lit-material-button>`
+        : nothing}
+      ${this.recovering
+        ? html`<p class="hint">On a new device, after signing in with the same address: type the phrase of the device you lost. This device becomes that one (its key, the devices it trusted).</p>
+            <lit-material-text-field id="sync-recovery-phrase" variant="outlined" label="Recovery phrase (24 words)"></lit-material-text-field>
+            <lit-material-button variant="filled" ?disabled=${Boolean(this.busy)} @click=${() => this.run("recovery-use", async () => {
+              const words = this.field("sync-recovery-phrase");
+              const got = await this.sync.useRecovery(words);
+              this.recovering = false;
+              this.note = `Recovered the device "${got.deviceName}" (fingerprint ${got.fingerprint}) here.`;
+              await this.refresh();
+            })}>Recover</lit-material-button>`
+        : nothing}
+    </section>`;
   }
 
   renderUntrusted() {
@@ -207,7 +259,7 @@ class HitopSync extends LitElement {
                 const conflicts = this.conflicts[c.id] ?? [];
                 const role = (this.remote ?? []).find((w) => w.id === this.sync.link(c.id).workspace)?.role;
                 return html`<li class="sync-item">
-                  <div class="sync-row">
+                  <div class="sync-form">
                     <span><b>${c.name}</b> <span class="hint">${role ?? ""}</span></span>
                     <span class="page-actions">
                       <lit-material-button variant="filled" ?disabled=${Boolean(this.busy)} @click=${() => this.syncOne(c)}>${icon("arrows-clockwise")} Sync now</lit-material-button>
@@ -309,7 +361,7 @@ class HitopSync extends LitElement {
           const who = m.runner ? "Runner credential" : m.email;
           const me = m.userId === this.sync.account().userId;
           return html`<li class="sync-member">
-            <div class="sync-row">
+            <div class="sync-form">
               <span><b>${who}</b>${me ? " (you)" : ""}</span>
               <span class="page-actions">
                 ${owner && !m.runner && !me
@@ -445,6 +497,7 @@ class HitopSync extends LitElement {
       ${this.note ? html`<p class="sync-note" role="status">${this.note}</p>` : nothing}
       ${this.busy ? html`<p class="hint" aria-busy="true">Working…</p>` : nothing}
       ${a ? this.renderShared() : this.renderSignIn()}
+      ${a ? this.renderRecovery() : nothing}
     </div>`;
   }
 }

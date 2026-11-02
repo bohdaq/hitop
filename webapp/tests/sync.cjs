@@ -343,6 +343,43 @@ async function syncServer(extraEnv = {}) {
     console.log('[sync] HITOP_SYNC_TEST_KEYCLOAK not set: the SSO sign-in with Keycloak is skipped');
   }
 
+  // HITOP Cloud C2 recovery phrase: Ada makes one, loses this browser, and on a new one signs in
+  // and recovers with it: the same device (fingerprint), reading the workspace. A wrong or short
+  // phrase recovers nothing.
+  await openSync(ada);
+  check('the page warns that the device key lives in this browser', TAURI || (await S(ada).getByLabel('Recovery phrase').innerText()).includes("browser's storage"));
+  await S(ada).getByRole('button', { name: 'Create recovery phrase' }).click();
+  await idle(ada);
+  const phrase = (await S(ada).getByLabel('Your recovery phrase').innerText()).trim();
+  check('create a recovery phrase (24 words, shown once)', phrase.split(' ').length === 24 && (await S(ada).getByLabel('Recovery status').innerText()).includes('Recovery phrase set'), phrase.slice(0, 20) + (await alertText(ada)));
+  await S(ada).getByRole('button', { name: 'I wrote it down' }).click();
+  check('the phrase is gone from the page', (await S(ada).getByLabel('Your recovery phrase').count()) === 0);
+  const ada2 = await launch({ results });
+  ada2.page.on('pageerror', (e) => errors.push(e.message));
+  await ada2.page.goto(ada2.url, { waitUntil: 'networkidle' });
+  const freshFp = await signIn(ada2, 'ada@example.com');
+  check('a new device signs in with a new key', freshFp !== adaFp);
+  const recover = async (words) => {
+    if ((await S(ada2).getByLabel('Recovery phrase (24 words)').count()) === 0) await S(ada2).getByRole('button', { name: 'Recover a lost device' }).click();
+    await S(ada2).getByLabel('Recovery phrase (24 words)').fill(words);
+    await S(ada2).getByRole('button', { name: 'Recover', exact: true }).click();
+    await idle(ada2);
+  };
+  const other = (await (await import('../src/wasm/format.js')).formatFromBytes(fs.readFileSync(path.join(__dirname, '../src/wasm/pkg/hitop_wasm_bg.wasm')))).sync.recoveryNew().words;
+  await recover(other);
+  check('a wrong recovery phrase recovers nothing', (await alertText(ada2)).includes("doesn't open") && (await S(ada2).getByLabel('Your fingerprint').innerText()).trim() === freshFp, await alertText(ada2));
+  await recover(phrase.split(' ').slice(0, 23).join(' '));
+  check('a short phrase is refused', (await alertText(ada2)).includes('24 words'), await alertText(ada2));
+  await recover(phrase.toUpperCase());
+  check('the right phrase brings the lost device back', (await note(ada2)).includes('Recovered the device') && (await S(ada2).getByLabel('Your fingerprint').innerText()).trim() === adaFp, (await note(ada2)) + (await alertText(ada2)));
+  const adaKeys = server.sql().prepare("SELECT COUNT(*) AS n FROM device_keys k JOIN users u ON u.id = k.user_id WHERE u.email = 'ada@example.com'").get().n;
+  check("the new sign-in's key is gone from the account", Number(adaKeys) === 1, String(adaKeys));
+  await S(ada2).getByRole('button', { name: 'Open here' }).first().click();
+  await idle(ada2);
+  check('the recovered device reads the workspace', JSON.stringify(await requests(ada2, 'Shop API')) === JSON.stringify(await requests(ada, 'Shop API')), JSON.stringify(await requests(ada2, 'Shop API')) + (await alertText(ada2)));
+  await ada2.browser.close();
+  ada2.mock?.cleanup();
+
   // The server never saw plaintext.
   const db = server.database();
   const leaked = ['e2e-sync.test', 'List orders', 'Get order', 'Shop API'].filter((s) => db.includes(Buffer.from(s)));

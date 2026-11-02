@@ -15,7 +15,8 @@
 //                          "hitop-sync/<host>" (desktop: the OS keychain; web: this browser)
 //   hitop_sync             { pins: { keyId: publicKey }, links: { collectionId: { workspace } },
 //                            states: { workspace: hitop-core sync State },
-//                            memory: { workspace: hitop-sync-crypto WorkspaceMemory } }
+//                            memory: { workspace: hitop-sync-crypto WorkspaceMemory },
+//                            recoveryHash: SHA-256 of the recovery data last sealed for the server }
 //
 // Workspace keys are accepted only through hitop-sync-crypto's accept_wraps (the same policy as
 // the CLI): a wrap must be authenticated by a pinned device key (or the inviter's, whose
@@ -47,6 +48,8 @@ const host = (server) => {
   }
 };
 const secretAccount = (server) => `hitop-sync/${host(server)}`;
+// Hex SHA-256 of a text (the recovery data holds the device key: only its hash is kept in storage).
+const sha256 = async (text) => Array.from(new Uint8Array(await crypto.subtle.digest("SHA-256", new TextEncoder().encode(text))), (b) => b.toString(16).padStart(2, "0")).join("");
 
 // A workspace key this device refused (forged, from a device not trusted, swapped, a hidden
 // rotation...): `kind`, and for an untrusted sender its `fingerprint` and `senderKeyId`.
@@ -167,7 +170,7 @@ export class SyncClient {
 
   get data() {
     const d = readJson(STATE_KEY, {});
-    return { pins: d.pins ?? {}, links: d.links ?? {}, states: d.states ?? {}, memory: d.memory ?? {} };
+    return { pins: d.pins ?? {}, links: d.links ?? {}, states: d.states ?? {}, memory: d.memory ?? {}, recoveryHash: d.recoveryHash ?? null };
   }
 
   update(fn) {
@@ -312,10 +315,11 @@ export class SyncClient {
     const old = this.account();
     const oldSecret = old && old.userId === r.json.user.id && old.server === server ? await this.secret() : null;
     const me = await this.http(server, "GET", "/v1/me", undefined, session);
-    let keyId, secret, name;
+    let keyId, secret, name, recovery;
     if (oldSecret && me.json.keys.some((k) => k.id === old.keyId)) {
       ({ keyId, deviceName: name } = old);
       secret = oldSecret.secret;
+      recovery = oldSecret.recovery;
     } else {
       const k = w.keygen();
       name = deviceName || (platform().name === "tauri" ? "HITOP desktop" : `HITOP web (${navigator.userAgent.match(/(Firefox|Edg|Chrome|Safari)/)?.[1] ?? "browser"})`);
@@ -324,7 +328,7 @@ export class SyncClient {
       keyId = added.json.id;
       secret = k.secret;
     }
-    await this.saveSecret(server, { session, secret });
+    await this.saveSecret(server, { session, secret, ...(recovery ? { recovery } : {}) });
     writeJson(ACCOUNT_KEY, { server, email: r.json.user.email ?? email, userId: r.json.user.id, keyId, deviceName: name });
     this.update((d) => (d.pins[keyId] = w.publicKey(secret)));
   }
@@ -335,6 +339,92 @@ export class SyncClient {
     await this.call("POST", "/v1/auth/logout", undefined, { allow: [401] }).catch(() => {});
     await this.saveSecret(a.server, null);
     localStorage.removeItem(ACCOUNT_KEY);
+  }
+
+  // --- recovery phrase (sync-server/THREAT_MODEL.md "Recovery") -----------------------------
+  // The phrase seals this device's recovery data (its key, pins and key memory; the CLI's
+  // `hitop sync recovery` writes and reads the same JSON) for the server to keep. On a new device,
+  // after signing in, the phrase brings the old device back. This device keeps the phrase's bytes
+  // with its secret key and re-seals the data when its pins or memory change.
+
+  async recoveryData() {
+    const a = this.account();
+    const s = await this.secret();
+    const d = this.data;
+    return JSON.stringify({ v: 1, keyId: a.keyId, secret: s.secret, deviceName: a.deviceName ?? "", pins: d.pins, memory: d.memory });
+  }
+
+  async uploadRecovery(entropy, text) {
+    const w = (await loadFormat()).sync;
+    await this.api("PUT", "/v1/me/recovery", { blob: w.recoverySeal(entropy, this.account().userId, text) });
+    const hash = await sha256(text);
+    this.update((d) => (d.recoveryHash = hash));
+  }
+
+  // { set, updatedAt, kept } (kept: this device updates the data).
+  async recoveryStatus() {
+    const me = await this.api("GET", "/v1/me");
+    return { set: Boolean(me.recovery), updatedAt: me.recovery?.updatedAt ?? null, kept: Boolean((await this.secret())?.recovery) };
+  }
+
+  // A new phrase: returns its 24 words, to show once.
+  async createRecovery() {
+    const w = (await loadFormat()).sync;
+    const p = w.recoveryNew();
+    await this.uploadRecovery(p.entropy, await this.recoveryData());
+    const s = await this.secret();
+    await this.saveSecret(this.account().server, { ...s, recovery: p.entropy });
+    return p.words;
+  }
+
+  // On a new device after signing in: become the lost device again.
+  async useRecovery(words) {
+    const w = (await loadFormat()).sync;
+    const entropy = w.recoveryParse(words);
+    const a = this.account();
+    const r = await this.call("GET", "/v1/me/recovery", undefined, { allow: [404] });
+    if (r.status === 404) throw new Error(`${a.email} has no recovery phrase set on ${a.server}`);
+    let data;
+    try {
+      data = JSON.parse(w.recoveryOpen(entropy, a.userId, r.json.blob));
+    } catch {
+      throw new Error(`This recovery phrase doesn't open ${a.email}'s recovery data (a wrong phrase, or one replaced since)`);
+    }
+    const publicKey = w.publicKey(data.secret);
+    const me = await this.api("GET", "/v1/me");
+    const listed = me.keys.find((k) => k.id === data.keyId);
+    if (!listed) throw new Error(`The recovered device ${data.keyId} is no longer on this account`);
+    if (listed.publicKey !== publicKey) throw new Error(`The server lists another key for the recovered device ${data.keyId}: refusing it`);
+    const fresh = a.keyId;
+    const s = await this.secret();
+    this.update((d) => {
+      delete d.pins[fresh];
+      Object.assign(d.pins, data.pins ?? {}, { [data.keyId]: publicKey });
+      Object.assign(d.memory, data.memory ?? {});
+    });
+    await this.saveSecret(a.server, { session: s.session, secret: data.secret, recovery: entropy });
+    writeJson(ACCOUNT_KEY, { ...a, keyId: data.keyId, deviceName: data.deviceName || a.deviceName });
+    this.update((d) => (d.recoveryHash = null));
+    if (fresh !== data.keyId) await this.call("DELETE", `/v1/me/keys/${fresh}`, undefined, { allow: [404, 409] });
+    return { deviceName: data.deviceName || a.deviceName, fingerprint: w.fingerprint(publicKey) };
+  }
+
+  async removeRecovery() {
+    await this.api("DELETE", "/v1/me/recovery");
+    const s = await this.secret();
+    const { recovery, ...rest } = s;
+    void recovery;
+    await this.saveSecret(this.account().server, rest);
+  }
+
+  // After an action: re-seal the recovery data if this device keeps it and it changed.
+  async refreshRecovery() {
+    if (!this.account()) return;
+    const s = await this.secret();
+    if (!s?.recovery) return;
+    const text = await this.recoveryData();
+    if (this.data.recoveryHash === (await sha256(text))) return;
+    await this.uploadRecovery(s.recovery, text);
   }
 
   async fingerprint() {

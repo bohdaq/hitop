@@ -95,6 +95,37 @@ pub fn random_id() -> String {
     crypto::random_hex::<16>()
 }
 
+fn phrase(entropy: &str) -> Result<crypto::RecoveryPhrase, JsError> {
+    let bytes: [u8; 32] = unb64("recovery phrase", entropy)?.try_into().map_err(|_| err("recovery phrase: 32 bytes"))?;
+    Ok(crypto::RecoveryPhrase::from_entropy(bytes))
+}
+
+/// A new recovery phrase: `{words, entropy}` (24 words to show once; its 32 bytes, base64url).
+#[wasm_bindgen(js_name = syncRecoveryNew)]
+pub fn recovery_new() -> String {
+    let p = crypto::RecoveryPhrase::generate();
+    serde_json::json!({ "words": p.to_words(), "entropy": b64(p.entropy()) }).to_string()
+}
+
+/// The 32 bytes (base64url) of a phrase as typed; an error saying what is wrong otherwise.
+#[wasm_bindgen(js_name = syncRecoveryParse)]
+pub fn recovery_parse(words: &str) -> Result<String, JsError> {
+    Ok(b64(crypto::RecoveryPhrase::parse(words).map_err(err)?.entropy()))
+}
+
+/// Seals the recovery data (JSON text) of account `account_id`: the blob, base64url.
+#[wasm_bindgen(js_name = syncRecoverySeal)]
+pub fn recovery_seal(entropy: &str, account_id: &str, plaintext: &str) -> Result<String, JsError> {
+    Ok(b64(&crypto::seal_recovery(&phrase(entropy)?, account_id, plaintext.as_bytes()).map_err(err)?))
+}
+
+/// Opens a recovery blob of account `account_id`: the recovery data (JSON text).
+#[wasm_bindgen(js_name = syncRecoveryOpen)]
+pub fn recovery_open(entropy: &str, account_id: &str, blob: &str) -> Result<String, JsError> {
+    let plain = crypto::open_recovery(&phrase(entropy)?, account_id, &unb64("recovery blob", blob)?).map_err(err)?;
+    String::from_utf8(plain).map_err(|_| err("recovery data: not text"))
+}
+
 /// A format 1 (legacy, unauthenticated) wrap, as hitop 1.1 made them. The app never makes one;
 /// the tests use it to play a malicious server.
 #[wasm_bindgen(js_name = syncWrapLegacy)]
