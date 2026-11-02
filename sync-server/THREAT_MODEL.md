@@ -41,6 +41,12 @@ contents without clients noticing.
   format 2 wrap names one of the caller's own device keys).
 - Blobs: client-chosen id, version, version vector (device id → counter), epoch, tombstone flag,
   and the encrypted envelope.
+- Organizations (HITOP Cloud C1, migration 4): an org's name (typed in the portal), its members
+  and their org roles, pending org invites (addresses), which workspace ids it owns, its plan,
+  seats and limits (entitlements), and daily counters of invites and blob writes. A personal org
+  per account is named "Personal". Org roles never give access to a workspace: that still needs
+  the workspace key wrapped by a member's client. Nothing about workspace contents is added.
+- Personal access tokens: name, scopes, expiry, last use, and the SHA-256 of the token.
 
 The server binary does not link any decryption code: the client crate and the AEAD/HPKE crates
 are dev-dependencies only, and `tests/no_crypto_in_server.rs` fails the build's tests if that

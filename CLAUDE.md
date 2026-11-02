@@ -158,8 +158,10 @@ hitop/
 │   └── src/guard.rs            # address/port policy for the proxy (SSRF guard)
 ├── deploy/                     # build.sh, install.sh, systemd unit, front rws routes, README
 ├── sync-server/                # hitop sync (AGPL-3.0-or-later, own LICENSE/deny.toml): rws app, SQLite or Postgres
-│   ├── src/                    # api.rs (routing, CORS), auth.rs (magic link, passkeys), workspaces.rs (members, wraps, rotation), teams.rs (invites, roles, runner accounts), blobs.rs (CAS + version vectors), oidc.rs (SSO: OIDC code + PKCE, JWKS cache), audit.rs (audit log, hash chain, purge), db.rs (migrations 1-3)
-│   ├── tests/                  # auth, sync, roles (every role × operation, removed member), teams (invites, runners), plaintext, no_crypto_in_server, postgres, sso (mock IdP, common/idp.rs), keycloak (fixtures/keycloak realm), audit, wraps_v2 (format 2 wraps, upgrade of format 1)
+│   ├── src/                    # api.rs (routing, CORS), auth.rs (magic link, passkeys), workspaces.rs (members, wraps, rotation), teams.rs (invites, roles, runner accounts), blobs.rs (CAS + version vectors), oidc.rs (SSO: OIDC code + PKCE, JWKS cache), audit.rs (audit log, hash chain, purge), db.rs (migrations 1-4),
+│   │                           # orgs.rs (organizations, personal orgs, members), limits.rs (plans, entitlements, usage, the one place limits are enforced, grandfather), tokens.rs (personal access tokens)
+│   ├── tests/                  # auth, sync, roles (every role × operation, removed member), teams (invites, runners), plaintext, no_crypto_in_server, postgres, sso (mock IdP, common/idp.rs), keycloak (fixtures/keycloak realm), audit, wraps_v2 (format 2 wraps, upgrade of format 1),
+│   │                           # orgs (org role × operation, other org, tokens), limits (every limit at its boundary per plan), migration (3 → 4 of common/t25.rs, also in postgres)
 │   ├── deploy/                 # hitop-sync.service, install.sh, rws-routes.toml (sync.hitop.rws8.tech)
 │   └── THREAT_MODEL.md, README.md (self-host guide), Dockerfile
 ├── ios/
@@ -173,6 +175,8 @@ hitop/
 ├── spec/run-report.md          # `hitop run --reporter json` report, reportVersion 1, and the JUnit shape (CC BY 4.0)
 ├── brand/                      # logo.svg (master), logo-mono.svg, png/, BRAND.md (name, tagline, colors, asset map), export.sh, check.sh (CI job brand)
 ├── ROADMAP.md                  # agent work order to v1.x: decisions, rules, tranches T0–T26, status
+├── cloud/                      # HITOP Cloud (AGPL, spec/CLOUD_SERVICE.md): portal/ (Lit, served at cloud.hitop.rws8.tech from www/cloud/, npm test = e2e against the sync server),
+│                               # compat/released-cli.sh (a released hitop against this tree's server, CI job compat), policies/ (SOC 2), evidence/access-reviews/, ops-log.md
 ├── launch/                     # launch text drafts for the owner (Show HN, Reddit, TWiR, Product Hunt); never posted by agents
 ├── docs/CNAME                  # only file left: keeps GitHub Pages 301ing bohdaq.github.io/hitop/* → hitop.rws8.tech
 └── CLAUDE.md                   # This file
@@ -449,6 +453,11 @@ hitop/
 - Tests: `cd sync-server && cargo test --workspace`; Postgres: `HITOP_SYNC_TEST_POSTGRES=postgres://... cargo test --features postgres --test postgres`;
   Keycloak: `docker run ... quay.io/keycloak/keycloak:26.4.2 start-dev --import-realm` with `tests/fixtures/keycloak` (README), then `HITOP_SYNC_TEST_KEYCLOAK=http://127.0.0.1:18080`
 - Licenses: `cargo deny --config sync-server/deny.toml --manifest-path sync-server/Cargo.toml --workspace check licenses advisories` (the MIT crypto crate is checked with the cli workspace)
+- HITOP Cloud C1: migration 4 (`orgs`, `org_members`, `org_invites`, `workspaces.org_id`, `entitlements`, `usage_counters`, `api_tokens`; a personal org
+  `personal-<user id>` per person, grandfathered limits); `/v1/orgs/*`, `/v1/me/tokens` (`hitop_pat_` tokens, read/write scopes); plan limits only with
+  `HITOP_SYNC_LIMITS=plans` (default off = self-hosted, no limits): 402 `{error: limit, limit, plan, org, used, max, upgradeUrl}` on creates, never on reads;
+  `HITOP_SYNC_PORTAL_URL`; `hitop-sync-server over-limits` (exit 0 = nobody over) and `set-plan <org> <plan> [seats]`. Plan numbers in `limits::plan_limits`
+  (proposal until the owner sets prices). CLI `hitop sync init --org <name|id>`, `sync ls` shows the org
 - Live at https://sync.hitop.rws8.tech (VM, `hitop-sync.service`, 127.0.0.1:7881, env `/etc/hitop-sync/env`, DB `/var/lib/private/hitop-sync/sync.db`); deploy: copy the release binary + `deploy/` and run `deploy/install.sh`
 - `rws --check` on the VM needs `/etc/rws/admin.env` loaded (admin token), or it fails on any config
 

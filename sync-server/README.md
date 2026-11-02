@@ -70,6 +70,8 @@ docker run -d -p 127.0.0.1:7881:7881 -v hitop-sync:/data --env-file hitop-sync.e
 | `HITOP_SYNC_SSO_REQUIRED` | off | `1`: addresses in the allowed domains (all, when none are set) sign in by SSO only: no sign-in mails, no passkey sign-in |
 | `HITOP_SYNC_OIDC_ASSUME_VERIFIED` | off | `1` for providers that send no `email_verified` (Entra ID); needs allowed domains |
 | `HITOP_SYNC_OIDC_SCOPES`, `HITOP_SYNC_OIDC_NAME` | `openid email profile`, `SSO` | scopes; the provider name clients show |
+| `HITOP_SYNC_LIMITS` | `off` | `plans`: enforce each organization's plan limits (HITOP Cloud). Off, a self-hosted server has no seats, plans or per-org limits |
+| `HITOP_SYNC_PORTAL_URL` | `https://cloud.hitop.rws8.tech/` | the account portal limit errors link to |
 
 The mail server's certificate is always verified (Mozilla roots). Run one server process per
 database: writes are serialized in the process, and passkey challenges live in its memory.
@@ -171,6 +173,24 @@ verifies a wrap (clients do, THREAT_MODEL.md "Authenticated wraps").
 | `GET /v1/workspaces/:ws/audit?limit&before&event&actor&since&until` | the audit log, newest first (owner) → `{events, next, head, anchor}` |
 | `GET /v1/workspaces/:ws/audit/verify` | the server's check of the chain (owner) → `{ok, checked, head, problem}` |
 | `GET /v1/me/audit` | your own account events |
+| `GET/POST /v1/orgs {name}` | your organizations (personal first) → `{orgs: [{id, name, personal, role, plan, status, seats, members, workspaces}]}`; create one (you own it) |
+| `GET/PUT/DELETE /v1/orgs/:org` | read (member); rename (admin); delete an org without workspaces (owner) |
+| `GET/POST /v1/orgs/:org/members {email, role}` | members and pending invites; add an account or invite an address (admin; owners by owners) → `{status: added\|invited}` |
+| `PUT/DELETE /v1/orgs/:org/members/:user` `{role}` | change a role (admin; to or from owner by owners); remove (admin, or yourself); an org keeps one owner |
+| `DELETE /v1/orgs/:org/invites/:email` | cancel an org invite (admin) |
+| `POST /v1/orgs/:org/workspaces {id, wraps}` or `{workspace}` | create a workspace in the org; or move one you own into it (member). `POST /v1/workspaces` also takes `org` |
+| `GET /v1/orgs/:org/usage`, `GET /v1/orgs/:org/limits` | usage next to the plan's limits (`null` = none; `enforced: false` with limits off) |
+| `GET/POST /v1/me/tokens {name, scopes, expiresInDays}`; `DELETE /v1/me/tokens/:id` | personal access tokens (`hitop_pat_...`, scopes `read` or `read write`, at most 365 days); a session only |
+
+With `HITOP_SYNC_LIMITS=plans` a create beyond the org's plan answers **402** `{error: "limit",
+limit, plan, org, used, max, upgradeUrl, message}`: a new workspace, person (seat), device,
+runner credential, invite, or a blob write that makes the org's storage grow. Reads, pulls,
+deletes and writes that don't grow storage are never refused. `GET /v1/workspaces` gives each
+workspace's `org` (`{id, name, personal}`).
+
+Operator commands: `hitop-sync-server over-limits` lists every org over a limit of its plan (exit
+0 when none); `hitop-sync-server set-plan <org> <free|pro|team|business|enterprise> [seats]` sets
+an org's plan until billing does (C3).
 
 Invites can't add anyone by themselves: only a member's client can wrap the workspace key for the
 new member's devices, after checking their fingerprints. Runner accounts (`<id>@runner.invalid`)
@@ -182,6 +202,10 @@ Upgrading from 0.1.0 (T23): the server migrates the database on start (migration
 does).
 Migration 3 (T25) adds `oidc_identities`, `audit_log` and `audit_chain`; nothing to configure
 unless you turn SSO on. Events are logged from the upgrade on.
+Migration 4 (HITOP Cloud C1) adds `orgs`, `org_members`, `org_invites`, `workspaces.org_id`,
+`entitlements`, `usage_counters` and `api_tokens`: every account gets a personal org on Free that
+owns the workspaces it owns, and each personal org's limits are raised to what it already uses
+(grandfathering), so `over-limits` lists nobody after the upgrade. Nothing changes for clients.
 
 A write must name the next version and a version vector that descends from the stored one, under
 the current epoch; otherwise 409 with the current state (`conflict` or `stale_epoch`): fetch,
