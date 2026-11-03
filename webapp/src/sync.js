@@ -17,6 +17,8 @@
 //                            states: { workspace: hitop-core sync State },
 //                            memory: { workspace: hitop-sync-crypto WorkspaceMemory },
 //                            recoveryHash: SHA-256 of the recovery data last sealed for the server }
+//   the secret also holds `recovery` (the phrase's 32 bytes) and `password` (the password's bundle
+//                          key, hitop-sync-crypto 0.4) when this device keeps that key bundle sealed
 //
 // Workspace keys are accepted only through hitop-sync-crypto's accept_wraps (the same policy as
 // the CLI): a wrap must be authenticated by a pinned device key (or the inviter's, whose
@@ -150,6 +152,8 @@ export function withSyncFolders(base) {
     },
   };
 }
+
+const defaultDeviceName = () => (platform().name === "tauri" ? "HITOP desktop" : `HITOP web (${navigator.userAgent.match(/(Firefox|Edg|Chrome|Safari)/)?.[1] ?? "browser"})`);
 
 export class SyncClient {
   constructor(store) {
@@ -315,22 +319,244 @@ export class SyncClient {
     const old = this.account();
     const oldSecret = old && old.userId === r.json.user.id && old.server === server ? await this.secret() : null;
     const me = await this.http(server, "GET", "/v1/me", undefined, session);
-    let keyId, secret, name, recovery;
+    let keyId, secret, name, recovery, password;
     if (oldSecret && me.json.keys.some((k) => k.id === old.keyId)) {
       ({ keyId, deviceName: name } = old);
       secret = oldSecret.secret;
       recovery = oldSecret.recovery;
+      password = oldSecret.password;
     } else {
       const k = w.keygen();
-      name = deviceName || (platform().name === "tauri" ? "HITOP desktop" : `HITOP web (${navigator.userAgent.match(/(Firefox|Edg|Chrome|Safari)/)?.[1] ?? "browser"})`);
+      name = deviceName || defaultDeviceName();
       const added = await this.http(server, "POST", "/v1/me/keys", { name, publicKey: k.publicKey }, session);
       if (added.status !== 201) throw new SyncError(added.status, added.json);
       keyId = added.json.id;
       secret = k.secret;
     }
-    await this.saveSecret(server, { session, secret, ...(recovery ? { recovery } : {}) });
+    await this.saveSecret(server, { session, secret, ...(recovery ? { recovery } : {}), ...(password ? { password } : {}) });
     writeJson(ACCOUNT_KEY, { server, email: r.json.user.email ?? email, userId: r.json.user.id, keyId, deviceName: name });
     this.update((d) => (d.pins[keyId] = w.publicKey(secret)));
+  }
+
+  // What a sign-in page can offer on `server`: {password, emailCode, passkey, sso, google, github}
+  // (null when the server is older than C1b or unreachable).
+  async authMethods(server) {
+    try {
+      const r = await this.http(this.serverUrl(server), "GET", "/v1/auth/methods");
+      return r.status === 200 ? r.json : null;
+    } catch {
+      return null;
+    }
+  }
+
+  // --- passwords (sync-server/THREAT_MODEL.md "Passwords") ---------------------------------
+  // The password never leaves this device: hitop-sync-crypto derives an auth key (sent to the
+  // server) and a bundle key (kept) from it with the account's Argon2id parameters. The bundle
+  // key seals the same key bundle as the recovery phrase, so a password sign-in on a new device
+  // becomes the account's device with no trust step.
+
+  async passwordParams(server, email) {
+    const r = await this.http(server, "POST", "/v1/auth/password/params", { email });
+    if (r.status !== 200) throw new SyncError(r.status, r.json);
+    return r.json.kdf;
+  }
+
+  async signUp(server, email, password) {
+    server = this.serverUrl(server);
+    const w = (await loadFormat()).sync;
+    w.passwordCheck(password);
+    const kdf = w.passwordKdfNew();
+    const keys = w.passwordKeys(password, kdf);
+    const r = await this.http(server, "POST", "/v1/auth/password/signup", { email, kdf, authKey: keys.authKey });
+    if (r.status !== 202) throw new SyncError(r.status, r.json);
+    this.pendingSignUp = { server, email, bundleKey: keys.bundleKey };
+  }
+
+  // The code from the confirmation mail: signs in (a new account, or an existing one gets the password).
+  async finishSignUp(code, deviceName) {
+    const { server, email, bundleKey } = this.pendingSignUp ?? {};
+    if (!server) throw new Error("Create the account first");
+    const r = await this.http(server, "POST", "/v1/auth/password/verify", { token: String(code).trim().split("#").pop() });
+    if (r.status !== 200) throw new SyncError(r.status, r.json);
+    this.pendingSignUp = null;
+    return this.completePasswordSignIn(server, r, email, bundleKey, deviceName);
+  }
+
+  async passwordSignIn(server, email, password, deviceName) {
+    server = this.serverUrl(server);
+    const w = (await loadFormat()).sync;
+    // Refuses parameters weaker than hitop's floor (a server can't weaken them).
+    const keys = w.passwordKeys(password, await this.passwordParams(server, email));
+    const r = await this.http(server, "POST", "/v1/auth/password/login", { email, authKey: keys.authKey });
+    if (r.status !== 200) throw new SyncError(r.status, r.json);
+    return this.completePasswordSignIn(server, r, email, keys.bundleKey, deviceName);
+  }
+
+  // After a password sign-in: a browser without an identity for the account becomes the device
+  // the password's key bundle holds (no new key, no trust step); otherwise it registers or keeps
+  // its key, and seals its own identity when the account has no bundle yet.
+  // → { unlocked: true, deviceName, fingerprint } | { unlocked: false }
+  async completePasswordSignIn(server, r, email, bundleKey, deviceName) {
+    const w = (await loadFormat()).sync;
+    const session = r.json.session;
+    const userId = r.json.user.id;
+    const old = this.account();
+    const oldSecret = old && old.userId === userId && old.server === server ? await this.secret() : null;
+    const me = await this.http(server, "GET", "/v1/me", undefined, session);
+    if (me.status !== 200) throw new SyncError(me.status, me.json);
+    const kept = Boolean(oldSecret && me.json.keys.some((k) => k.id === old.keyId));
+    const b = await this.http(server, "GET", "/v1/me/recovery?method=password", undefined, session);
+    let data = null;
+    if (b.status === 200) {
+      try {
+        data = JSON.parse(w.bundleOpen(bundleKey, userId, b.json.blob));
+      } catch {
+        data = null;
+      }
+    }
+    if (!kept && data) {
+      const got = await this.adopt(server, session, me.json, data, { password: bundleKey }, { email: r.json.user.email ?? email, userId, deviceName });
+      return { unlocked: true, ...got };
+    }
+    await this.completeSignIn(server, r, email, deviceName);
+    const a = this.account();
+    const s = await this.secret();
+    // No bundle yet (or one this password doesn't open): this device seals its identity. A bundle
+    // of this very device: keep its key to re-seal it. Another device's: leave it alone.
+    if (!data || data.keyId === a.keyId) {
+      await this.saveSecret(server, { ...s, password: bundleKey });
+      this.update((d) => (d.recoveryHash = null));
+      await this.refreshRecovery();
+    }
+    return { unlocked: false };
+  }
+
+  // Becomes the device in a key bundle (`data`): the server must list its key id with the same
+  // public key. `extra` goes into the stored secret (`recovery` or `password`).
+  async adopt(server, session, me, data, extra, account) {
+    const w = (await loadFormat()).sync;
+    const publicKey = w.publicKey(data.secret);
+    const listed = me.keys.find((k) => k.id === data.keyId);
+    if (!listed) throw new Error(`The device ${data.keyId} in your key bundle is no longer on this account`);
+    if (listed.publicKey !== publicKey) throw new Error(`The server lists another key for the device ${data.keyId} in your key bundle: refusing it`);
+    this.update((d) => {
+      Object.assign(d.pins, data.pins ?? {}, { [data.keyId]: publicKey });
+      Object.assign(d.memory, data.memory ?? {});
+      d.recoveryHash = null;
+    });
+    await this.saveSecret(server, { session, secret: data.secret, ...extra });
+    const deviceName = data.deviceName || account.deviceName || defaultDeviceName();
+    writeJson(ACCOUNT_KEY, { server, email: account.email, userId: account.userId, keyId: data.keyId, deviceName });
+    return { deviceName, fingerprint: w.fingerprint(publicKey) };
+  }
+
+  // Signed in another way (code, passkey, Google, GitHub) on a new device: the password opens the
+  // key bundle and this device becomes that one (the key its sign-in registered is deleted).
+  async unlockWithPassword(password) {
+    const a = this.account();
+    const w = (await loadFormat()).sync;
+    const keys = w.passwordKeys(password, await this.passwordParams(a.server, a.email));
+    const r = await this.call("GET", "/v1/me/recovery?method=password", undefined, { allow: [404] });
+    if (r.status === 404) throw new Error(`${a.email} has no key bundle sealed with a password on ${a.server}: sign in with your password on a device that has your workspaces, or use your recovery phrase`);
+    let data;
+    try {
+      data = JSON.parse(w.bundleOpen(keys.bundleKey, a.userId, r.json.blob));
+    } catch {
+      throw new Error("That password doesn't open your key bundle");
+    }
+    const s = await this.secret();
+    const fresh = a.keyId;
+    const me = await this.api("GET", "/v1/me");
+    this.update((d) => delete d.pins[fresh]);
+    const got = await this.adopt(a.server, s.session, me, data, { password: keys.bundleKey, ...(s.recovery ? { recovery: s.recovery } : {}) }, a);
+    if (fresh !== data.keyId) await this.call("DELETE", `/v1/me/keys/${fresh}`, undefined, { allow: [404, 409] });
+    return got;
+  }
+
+  async forgotPassword(server, email) {
+    server = this.serverUrl(server);
+    const r = await this.http(server, "POST", "/v1/auth/password/forgot", { email });
+    if (r.status !== 202) throw new SyncError(r.status, r.json);
+    this.pendingReset = { server, email };
+  }
+
+  // The code from the reset mail and a new password: signs in. The old password's key bundle is
+  // gone (`bundleLost`); a browser that still is the account's device keeps its identity and seals
+  // it under the new password, a new one gets a new key and no workspace keys (`keptDevice` false).
+  async resetPassword(code, password, deviceName) {
+    const { server, email } = this.pendingReset ?? {};
+    if (!server) throw new Error("Ask for a reset code first");
+    const w = (await loadFormat()).sync;
+    w.passwordCheck(password);
+    const kdf = w.passwordKdfNew();
+    const keys = w.passwordKeys(password, kdf);
+    const r = await this.http(server, "POST", "/v1/auth/password/reset", { token: String(code).trim().split("#").pop(), kdf, authKey: keys.authKey });
+    if (r.status !== 200) throw new SyncError(r.status, r.json);
+    this.pendingReset = null;
+    const old = this.account();
+    const before = old && old.userId === r.json.user.id && old.server === server ? old.keyId : null;
+    await this.completeSignIn(server, r, email, deviceName);
+    const s = await this.secret();
+    await this.saveSecret(server, { ...s, password: keys.bundleKey });
+    this.update((d) => (d.recoveryHash = null));
+    await this.refreshRecovery();
+    return { bundleLost: Boolean(r.json.bundleLost), keptDevice: before === this.account().keyId };
+  }
+
+  // Sets (no password yet: `current` unused) or changes the password; the key bundle is re-sealed
+  // under the new one in the same request.
+  async changePassword(current, next) {
+    const a = this.account();
+    const w = (await loadFormat()).sync;
+    w.passwordCheck(next);
+    const me = await this.api("GET", "/v1/me");
+    let currentKeys = null;
+    if (me.password?.set) currentKeys = w.passwordKeys(current, await this.passwordParams(a.server, a.email));
+    let text = null;
+    if (currentKeys) {
+      const b = await this.call("GET", "/v1/me/recovery?method=password", undefined, { allow: [404] });
+      if (b.status === 200) {
+        try {
+          text = w.bundleOpen(currentKeys.bundleKey, a.userId, b.json.blob);
+        } catch {
+          text = null;
+        }
+      }
+    }
+    // The bundle of another device stays that device's; otherwise this device's identity.
+    const mine = !text || JSON.parse(text).keyId === a.keyId;
+    if (mine) text = await this.recoveryData();
+    const kdf = w.passwordKdfNew();
+    const keys = w.passwordKeys(next, kdf);
+    await this.api("POST", "/v1/me/password", { ...(currentKeys ? { currentAuthKey: currentKeys.authKey } : {}), kdf, authKey: keys.authKey, bundle: w.bundleSeal(keys.bundleKey, a.userId, text) });
+    const s = await this.secret();
+    const { password, ...rest } = s;
+    void password;
+    await this.saveSecret(a.server, mine ? { ...rest, password: keys.bundleKey } : rest);
+    if (mine) this.update((d) => (d.recoveryHash = null));
+  }
+
+  // "Continue with Google" / "Continue with GitHub": the same pasted one-time code as SSO.
+  async startOAuth(server, kind) {
+    server = this.serverUrl(server);
+    const bytes = crypto.getRandomValues(new Uint8Array(32));
+    const verifier = Array.from(bytes, (b) => b.toString(16).padStart(2, "0")).join("");
+    const digest = new Uint8Array(await crypto.subtle.digest("SHA-256", new TextEncoder().encode(verifier)));
+    const challenge = btoa(String.fromCharCode(...digest)).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
+    const r = await this.http(server, "POST", `/v1/auth/${kind}/start`, { challenge });
+    if (r.status === 404) throw new Error(`This sync server has no sign-in with ${kind === "github" ? "GitHub" : "Google"}`);
+    if (r.status !== 200) throw new SyncError(r.status, r.json);
+    this.pendingOAuth = { server, verifier, kind, url: r.json.url };
+    return r.json.url;
+  }
+
+  async finishOAuth(code, deviceName) {
+    const { server, verifier, kind } = this.pendingOAuth ?? {};
+    if (!server) throw new Error("Start the sign-in first");
+    const r = await this.http(server, "POST", `/v1/auth/${kind}/finish`, { code: String(code).trim(), verifier });
+    if (r.status !== 200) throw new SyncError(r.status, r.json);
+    await this.completeSignIn(server, r, r.json.user.email, deviceName);
+    this.pendingOAuth = null;
   }
 
   async signOut() {
@@ -361,10 +587,19 @@ export class SyncClient {
     this.update((d) => (d.recoveryHash = hash));
   }
 
-  // { set, updatedAt, kept } (kept: this device updates the data).
+  // { set, updatedAt, kept, password, passwordBundle, passwordKept } (kept: this device updates
+  // the data; password: the account has a password; passwordBundle: a key bundle sealed with it).
   async recoveryStatus() {
     const me = await this.api("GET", "/v1/me");
-    return { set: Boolean(me.recovery), updatedAt: me.recovery?.updatedAt ?? null, kept: Boolean((await this.secret())?.recovery) };
+    const s = await this.secret();
+    return {
+      set: Boolean(me.recovery),
+      updatedAt: me.recovery?.updatedAt ?? null,
+      kept: Boolean(s?.recovery),
+      password: Boolean(me.password?.set),
+      passwordBundle: Boolean(me.bundles?.password),
+      passwordKept: Boolean(s?.password),
+    };
   }
 
   // A new phrase: returns its 24 words, to show once.
@@ -402,7 +637,8 @@ export class SyncClient {
       Object.assign(d.pins, data.pins ?? {}, { [data.keyId]: publicKey });
       Object.assign(d.memory, data.memory ?? {});
     });
-    await this.saveSecret(a.server, { session: s.session, secret: data.secret, recovery: entropy });
+    // A password key this device holds now seals the recovered device (refreshRecovery).
+    await this.saveSecret(a.server, { session: s.session, secret: data.secret, recovery: entropy, ...(s.password ? { password: s.password, passwordFresh: true } : {}) });
     writeJson(ACCOUNT_KEY, { ...a, keyId: data.keyId, deviceName: data.deviceName || a.deviceName });
     this.update((d) => (d.recoveryHash = null));
     if (fresh !== data.keyId) await this.call("DELETE", `/v1/me/keys/${fresh}`, undefined, { allow: [404, 409] });
@@ -417,14 +653,40 @@ export class SyncClient {
     await this.saveSecret(this.account().server, rest);
   }
 
-  // After an action: re-seal the recovery data if this device keeps it and it changed.
+  // After an action: re-seal the key bundle of every method this device keeps (the phrase, the
+  // password) if the data changed. A password bundle is re-sealed only while the server's still
+  // opens with this device's key and holds this device (a password changed elsewhere, or another
+  // device's bundle, makes this device forget its key instead).
   async refreshRecovery() {
-    if (!this.account()) return;
+    const a = this.account();
+    if (!a) return;
     const s = await this.secret();
-    if (!s?.recovery) return;
+    if (!s?.recovery && !s?.password) return;
     const text = await this.recoveryData();
-    if (this.data.recoveryHash === (await sha256(text))) return;
-    await this.uploadRecovery(s.recovery, text);
+    const hash = await sha256(text);
+    if (this.data.recoveryHash === hash) return;
+    if (s.password) {
+      const w = (await loadFormat()).sync;
+      const cur = await this.call("GET", "/v1/me/recovery?method=password", undefined, { allow: [404] });
+      let ours = cur.status === 404 || Boolean(s.passwordFresh);
+      if (cur.status === 200 && !ours) {
+        try {
+          ours = JSON.parse(w.bundleOpen(s.password, a.userId, cur.json.blob)).keyId === a.keyId;
+        } catch {
+          ours = false;
+        }
+      }
+      const { passwordFresh, password, ...rest } = s;
+      void passwordFresh;
+      if (ours) {
+        await this.api("PUT", "/v1/me/recovery?method=password", { blob: w.bundleSeal(password, a.userId, text) });
+        if (s.passwordFresh) await this.saveSecret(a.server, { ...rest, password });
+      } else {
+        await this.saveSecret(a.server, rest);
+      }
+    }
+    if (s.recovery) await this.uploadRecovery(s.recovery, text);
+    else this.update((d) => (d.recoveryHash = hash));
   }
 
   async fingerprint() {

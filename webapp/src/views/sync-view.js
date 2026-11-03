@@ -39,6 +39,9 @@ class HitopSync extends LitElement {
     recovery: { state: true },
     recoveryWords: { state: true },
     recovering: { state: true },
+    mode: { state: true },
+    methods: { state: true },
+    resetSent: { state: true },
   };
 
   createRenderRoot() {
@@ -49,6 +52,9 @@ class HitopSync extends LitElement {
     super();
     this.conflicts = {};
     this.shown = null;
+    // Sign-in: "password" (default), "code" (a mailed code), "signup" (waiting for the
+    // confirmation code), "forgot" (reset by mail), "paste" (a code from SSO, Google or GitHub).
+    this.mode = "password";
   }
 
   get sync() {
@@ -58,6 +64,13 @@ class HitopSync extends LitElement {
   connectedCallback() {
     super.connectedCallback();
     this.refresh();
+    if (!this.sync.account()) this.loadMethods(DEFAULT_SERVER);
+  }
+
+  // Which buttons the server's sign-in offers (Google, GitHub); quietly nothing when unknown.
+  async loadMethods(server) {
+    const m = await this.sync.authMethods(server).catch(() => null);
+    if (this.field("sync-server") === server || server === DEFAULT_SERVER) this.methods = m;
   }
 
   async refresh() {
@@ -160,44 +173,163 @@ class HitopSync extends LitElement {
     return this.querySelector(`#${id}`)?.value?.trim() ?? "";
   }
 
+  // A password as typed (spaces kept).
+  rawField(id) {
+    return String(this.querySelector(`#${id}`)?.value ?? "");
+  }
+
+  renderPassword() {
+    const r = this.recovery;
+    const set = Boolean(r?.password);
+    return html`<section class="sync-password" aria-label="Password">
+      <h2>Password</h2>
+      <p class="hint" role="status" aria-label="Password status">${set
+        ? `Your account has a password.${r.passwordBundle ? (r.passwordKept ? " It unlocks this device's keys on a new device." : " It unlocks another device's keys on a new device.") : ""}`
+        : "No password yet: add one to sign in with it, and so that it unlocks your encrypted workspaces on a new device (this device's keys, sealed with it)."}</p>
+      ${r?.passwordBundle && !r?.passwordKept
+        ? html`<div class="sync-form">
+            <lit-material-text-field id="sync-unlock-password" variant="outlined" label="Your password" type="password"></lit-material-text-field>
+            <lit-material-button variant="outlined" ?disabled=${Boolean(this.busy)} @click=${() => this.run("recovery-unlock", async () => {
+              const got = await this.sync.unlockWithPassword(this.rawField("sync-unlock-password"));
+              this.note = `Your password unlocked the device "${got.deviceName}" (fingerprint ${got.fingerprint}) here.`;
+              await this.refresh();
+            })}>Unlock with password</lit-material-button>
+          </div>`
+        : nothing}
+      <div class="sync-form">
+        ${set ? html`<lit-material-text-field id="sync-current-password" variant="outlined" label="Current password" type="password"></lit-material-text-field>` : nothing}
+        <lit-material-text-field id="sync-new-password" variant="outlined" label="New password" type="password"></lit-material-text-field>
+        <lit-material-text-field id="sync-new-password2" variant="outlined" label="Repeat the new password" type="password"></lit-material-text-field>
+        <lit-material-button variant="outlined" ?disabled=${Boolean(this.busy)} @click=${() => this.run("password", async () => {
+          const next = this.rawField("sync-new-password");
+          if (next !== this.rawField("sync-new-password2")) throw new Error("The two new passwords differ");
+          await this.sync.changePassword(this.rawField("sync-current-password"), next);
+          this.note = set ? "Password changed. Your other devices were signed out; they sign in with the new one." : "Password set. It now signs you in and unlocks this device's keys on a new device.";
+          this.recovery = await this.sync.recoveryStatus();
+        })}>${set ? "Change password" : "Set password"}</lit-material-button>
+      </div>
+    </section>`;
+  }
+
   // --- sign in ----------------------------------------------------------------------
 
   renderSignIn() {
     return html`
-      <section aria-label="Sign in">
-        <h2>Sign in</h2>
-        <p class="page-lead">Share collections with your team through a hitop sync server. Everything is encrypted on this device before it leaves: the server stores only ciphertext. Secret values never sync, only their names.</p>
+      <section aria-label="Sign in">${this.renderSignInForms()}</section>`;
+  }
+
+  async browserSignIn(kind) {
+    const server = this.field("sync-server");
+    this.ssoUrl = kind === "sso" ? await this.sync.startSso(server, this.field("sync-email")) : await this.sync.startOAuth(server, kind);
+    this.ssoKind = kind;
+    this.mode = "paste";
+    // The web app opens it in a new tab; the desktop app shows the link to open.
+    if (platform().name !== "tauri") window.open(this.ssoUrl, "_blank", "noopener,noreferrer");
+    this.note = kind === "sso" ? "Sign in on your organization's page, then paste the code it shows here." : `Sign in with ${kind === "github" ? "GitHub" : "Google"}, then paste the code the page shows here.`;
+  }
+
+  signedInNote(r) {
+    if (r?.unlocked) this.note = `Signed in. Your password unlocked your device "${r.deviceName}" (fingerprint ${r.fingerprint}) here: your workspaces open without a trust step.`;
+  }
+
+  renderAlternatives() {
+    const m = this.methods;
+    return html`<div class="page-actions sync-alternatives">
+      ${this.mode === "code"
+        ? html`<lit-material-button variant="text" @click=${() => (this.mode = "password")}>Use a password instead</lit-material-button>`
+        : html`<lit-material-button variant="text" @click=${() => (this.mode = "code")}>Use a code instead</lit-material-button>`}
+      <lit-material-button variant="outlined" ?disabled=${Boolean(this.busy)} @click=${() => this.run("sso", () => this.browserSignIn("sso"))}>Sign in with SSO</lit-material-button>
+      ${m?.google ? html`<lit-material-button variant="outlined" ?disabled=${Boolean(this.busy)} @click=${() => this.run("google", () => this.browserSignIn("google"))}>Continue with Google</lit-material-button>` : nothing}
+      ${m?.github ? html`<lit-material-button variant="outlined" ?disabled=${Boolean(this.busy)} @click=${() => this.run("github", () => this.browserSignIn("github"))}>Continue with GitHub</lit-material-button>` : nothing}
+    </div>`;
+  }
+
+  renderSignInForms() {
+    const mode = this.mode;
+    const pending = this.sync.pending ?? this.sync.pendingSignUp ?? this.sync.pendingReset;
+    const head = html`<h2>${mode === "signup" ? "Confirm your address" : mode === "forgot" ? "Reset your password" : "Sign in"}</h2>
+      <p class="page-lead">Share collections with your team through a hitop sync server. Everything is encrypted on this device before it leaves: the server stores only ciphertext. Secret values never sync, only their names.</p>`;
+    if (mode === "paste") {
+      return html`${head}
+        <p class="hint">Sign-in page (open it in a browser if it didn't open): <a href=${this.ssoUrl} target="_blank" rel="noopener noreferrer">open</a></p>
+        <pre class="code-preview" aria-label="SSO sign-in link">${this.ssoUrl}</pre>
         <div class="sync-form">
-          <lit-material-text-field id="sync-server" variant="outlined" label="Sync server" .value=${this.sync.pending?.server ?? DEFAULT_SERVER}></lit-material-text-field>
-          <lit-material-text-field id="sync-email" variant="outlined" label="Email" type="email" .value=${this.sync.pending?.email ?? ""}></lit-material-text-field>
+          <lit-material-text-field id="sync-sso-code" variant="outlined" label="Code shown after signing in"></lit-material-text-field>
+          <lit-material-button variant="filled" ?disabled=${Boolean(this.busy)}
+            @click=${() => this.run("signin", async () => {
+              if (this.ssoKind === "sso") await this.sync.finishSso(this.field("sync-sso-code"));
+              else await this.sync.finishOAuth(this.field("sync-sso-code"));
+              this.ssoUrl = null;
+              this.mode = "password";
+              if (this.ssoKind !== "sso") this.note = "Signed in. Google and GitHub don't unlock your encrypted workspaces: on a new device, unlock them with your password or your recovery phrase below.";
+              await this.refresh();
+            })}>Sign in</lit-material-button>
+          <lit-material-button variant="text" @click=${() => {
+            this.ssoUrl = null;
+            this.mode = "password";
+          }}>Cancel</lit-material-button>
+        </div>`;
+    }
+    const fields = html`<lit-material-text-field id="sync-server" variant="outlined" label="Sync server" .value=${pending?.server ?? DEFAULT_SERVER}
+        @change=${(e) => this.loadMethods(String(e.target.value ?? "").trim())}></lit-material-text-field>
+      <lit-material-text-field id="sync-email" variant="outlined" label="Email" type="email" .value=${pending?.email ?? ""}></lit-material-text-field>`;
+    if (mode === "signup") {
+      return html`${head}
+        <p class="hint">We mailed a confirmation code to ${this.sync.pendingSignUp?.email ?? "you"}. Paste it (or the whole link) here to finish.</p>
+        <div class="sync-form">
+          <lit-material-text-field id="sync-signup-code" variant="outlined" label="Code from the confirmation mail"></lit-material-text-field>
+          <lit-material-button variant="filled" ?disabled=${Boolean(this.busy)}
+            @click=${() => this.run("signin", async () => {
+              const r = await this.sync.finishSignUp(this.field("sync-signup-code"));
+              this.mode = "password";
+              this.signedInNote(r);
+              await this.refresh();
+            })}>Confirm</lit-material-button>
+          <lit-material-button variant="text" @click=${() => (this.mode = "password")}>Back</lit-material-button>
+        </div>`;
+    }
+    if (mode === "forgot") {
+      return html`${head}
+        <p class="sync-note security" aria-label="Reset warning">A reset signs you in again, but it can't unlock your end-to-end encrypted workspaces on a new device: your old password sealed their keys and nobody, the server included, can open them without it. Keep them with your recovery phrase (Recover a lost device, after signing in) or a device that is still signed in. Remembered it? Go back and sign in.</p>
+        <div class="sync-form">${fields}
+          <lit-material-button variant="outlined" ?disabled=${Boolean(this.busy)}
+            @click=${() => this.run("forgot", async () => {
+              await this.sync.forgotPassword(this.field("sync-server"), this.field("sync-email"));
+              this.resetSent = true;
+              this.note = "If the address has an account, a reset code is on its way.";
+            })}>Send reset code</lit-material-button>
+        </div>
+        ${this.resetSent
+          ? html`<div class="sync-form">
+              <lit-material-text-field id="sync-reset-code" variant="outlined" label="Code from the reset mail"></lit-material-text-field>
+              <lit-material-text-field id="sync-reset-password" variant="outlined" label="New password" type="password"></lit-material-text-field>
+              <lit-material-text-field id="sync-reset-password2" variant="outlined" label="Repeat the new password" type="password"></lit-material-text-field>
+              <lit-material-button variant="filled" ?disabled=${Boolean(this.busy)}
+                @click=${() => this.run("signin", async () => {
+                  const next = this.rawField("sync-reset-password");
+                  if (next !== this.rawField("sync-reset-password2")) throw new Error("The two new passwords differ");
+                  const r = await this.sync.resetPassword(this.field("sync-reset-code"), next);
+                  this.mode = "password";
+                  this.resetSent = false;
+                  this.note = r.keptDevice
+                    ? `Password reset. This device still has your workspaces and sealed them under the new password.${r.bundleLost ? " The old password's key bundle was deleted." : ""}`
+                    : `Password reset.${r.bundleLost ? " Your old password's key bundle is gone: it can't be opened with the new one." : ""} This device has no workspace keys: use your recovery phrase (Recover a lost device, below), or sign in on a device that still has them and set the password there.`;
+                  await this.refresh();
+                })}>Reset password</lit-material-button>
+            </div>`
+          : nothing}
+        <lit-material-button variant="text" @click=${() => (this.mode = "password")}>Back to sign in</lit-material-button>`;
+    }
+    if (mode === "code") {
+      return html`${head}
+        <div class="sync-form">${fields}
           <lit-material-button variant="filled" ?disabled=${Boolean(this.busy)}
             @click=${() => this.run("code", async () => {
               await this.sync.startSignIn(this.field("sync-server"), this.field("sync-email"));
               this.awaitingCode = true;
               this.note = "Check your mail for the sign-in code.";
             })}>Send code</lit-material-button>
-          <lit-material-button variant="outlined" ?disabled=${Boolean(this.busy)}
-            @click=${() => this.run("sso", async () => {
-              this.ssoUrl = await this.sync.startSso(this.field("sync-server"), this.field("sync-email"));
-              this.awaitingCode = false;
-              // The web app opens it in a new tab; the desktop app shows the link to open.
-              if (platform().name !== "tauri") window.open(this.ssoUrl, "_blank", "noopener,noreferrer");
-              this.note = "Sign in on your organization's page, then paste the code it shows here.";
-            })}>Sign in with SSO</lit-material-button>
         </div>
-        ${this.ssoUrl
-          ? html`<p class="hint">Sign-in page (open it in a browser if it didn't open): <a href=${this.ssoUrl} target="_blank" rel="noopener noreferrer">open</a></p>
-              <pre class="code-preview" aria-label="SSO sign-in link">${this.ssoUrl}</pre>
-              <div class="sync-form">
-                <lit-material-text-field id="sync-sso-code" variant="outlined" label="Code shown after signing in"></lit-material-text-field>
-                <lit-material-button variant="filled" ?disabled=${Boolean(this.busy)}
-                  @click=${() => this.run("signin", async () => {
-                    await this.sync.finishSso(this.field("sync-sso-code"));
-                    this.ssoUrl = null;
-                    await this.refresh();
-                  })}>Sign in</lit-material-button>
-              </div>`
-          : nothing}
         ${this.awaitingCode
           ? html`<div class="sync-form">
               <lit-material-text-field id="sync-code" variant="outlined" label="Code from the mail"></lit-material-text-field>
@@ -209,7 +341,31 @@ class HitopSync extends LitElement {
                 })}>Sign in</lit-material-button>
             </div>`
           : nothing}
-      </section>`;
+        ${this.renderAlternatives()}`;
+    }
+    return html`${head}
+      <div class="sync-form">${fields}
+        <lit-material-text-field id="sync-password" variant="outlined" label="Password" type="password"></lit-material-text-field>
+        <lit-material-button variant="filled" ?disabled=${Boolean(this.busy)}
+          @click=${() => this.run("signin", async () => {
+            const r = await this.sync.passwordSignIn(this.field("sync-server"), this.field("sync-email"), this.rawField("sync-password"));
+            this.signedInNote(r);
+            await this.refresh();
+          })}>Sign in</lit-material-button>
+        <lit-material-button variant="outlined" ?disabled=${Boolean(this.busy)}
+          @click=${() => this.run("signup", async () => {
+            await this.sync.signUp(this.field("sync-server"), this.field("sync-email"), this.rawField("sync-password"));
+            this.mode = "signup";
+            this.note = "Check your mail for the confirmation code.";
+          })}>Create account</lit-material-button>
+      </div>
+      <div class="page-actions">
+        <lit-material-button variant="text" @click=${() => {
+          this.mode = "forgot";
+          this.resetSent = false;
+        }}>Forgot password?</lit-material-button>
+      </div>
+      ${this.renderAlternatives()}`;
   }
 
   // --- shared collections -------------------------------------------------------------
@@ -497,6 +653,7 @@ class HitopSync extends LitElement {
       ${this.note ? html`<p class="sync-note" role="status">${this.note}</p>` : nothing}
       ${this.busy ? html`<p class="hint" aria-busy="true">Working…</p>` : nothing}
       ${a ? this.renderShared() : this.renderSignIn()}
+      ${a ? this.renderPassword() : nothing}
       ${a ? this.renderRecovery() : nothing}
     </div>`;
   }

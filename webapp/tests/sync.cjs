@@ -62,7 +62,10 @@ async function syncServer(extraEnv = {}) {
     }
     await new Promise((r) => setTimeout(r, 100));
   }
-  const code = async (email, marker) => {
+  // Mails logged to `email` so far (to wait for the next one).
+  const mails = (email) => log.split(`mail to ${email}:`).length - 1;
+  const code = async (email, marker, after = 0) => {
+    for (let i = 0; i < 100 && mails(email) <= after; i++) await new Promise((r) => setTimeout(r, 100));
     for (let i = 0; i < 100; i++) {
       const parts = log.split(`mail to ${email}:`);
       if (parts.length > 1) {
@@ -80,7 +83,7 @@ async function syncServer(extraEnv = {}) {
     child.kill();
     fs.rmSync(dir, { recursive: true, force: true });
   };
-  return { url, code, database, sql, stop, log: () => log };
+  return { url, code, mails, database, sql, stop, log: () => log };
 }
 
 (async () => {
@@ -109,6 +112,7 @@ async function syncServer(extraEnv = {}) {
   };
   const signIn = async (h, email) => {
     await openSync(h);
+    if (await S(h).getByRole('button', { name: 'Use a code instead' }).count()) await S(h).getByRole('button', { name: 'Use a code instead' }).click();
     await S(h).getByLabel('Sync server').fill(server.url);
     await S(h).getByLabel('Email').fill(email);
     await S(h).getByRole('button', { name: 'Send code' }).click();
@@ -380,9 +384,103 @@ async function syncServer(extraEnv = {}) {
   await ada2.browser.close();
   ada2.mock?.cleanup();
 
+  // HITOP Cloud C1b passwords: Carol signs up with a password (confirmation code by mail) and
+  // shares a collection; on a new device her password signs her in and unlocks her device's keys
+  // (no trust step); a wrong password is refused; a password change re-seals them; a reset by
+  // mail signs in but loses them (the page warns before and after).
+  const fresh = async () => {
+    const h = await launch({ results });
+    h.page.on('pageerror', (e) => errors.push(e.message));
+    await h.page.goto(h.url, { waitUntil: 'networkidle' });
+    await openSync(h);
+    await S(h).getByLabel('Sync server').fill(server.url);
+    return h;
+  };
+  const fp = (h) => S(h).getByLabel('Your fingerprint').innerText().then((t) => t.trim()).catch(() => '');
+  const passwordSignIn = async (h, password) => {
+    await S(h).getByLabel('Email').fill('carol@example.com');
+    await S(h).getByLabel('Password', { exact: true }).fill(password);
+    await S(h).getByRole('button', { name: 'Sign in', exact: true }).click();
+    await idle(h);
+  };
+  const carol = await fresh();
+  await store(carol, `s.addCollection("Carol API"); const c = s.collections.find((c) => c.name === "Carol API");
+    s.collections = s.collections.filter((x) => x.id === c.id).map((x) => x.id === c.id ? { ...x, requests: [{ id: 301, name: "Ping", method: "GET", url: "https://carol.e2e-sync.test/ping", headers: [], body: "" }] } : x);
+    s.emit(); s.save();`);
+  await S(carol).getByLabel('Email').fill('carol@example.com');
+  await S(carol).getByLabel('Password', { exact: true }).fill('short');
+  await S(carol).getByRole('button', { name: 'Create account' }).click();
+  await idle(carol);
+  check('sign-up refuses a short password', (await alertText(carol)).includes('at least 8'), await alertText(carol));
+  await S(carol).getByLabel('Password', { exact: true }).fill('carol correct horse');
+  const before = server.mails('carol@example.com');
+  await S(carol).getByRole('button', { name: 'Create account' }).click();
+  await idle(carol);
+  await S(carol).getByLabel('Code from the confirmation mail').fill(await server.code('carol@example.com', '/signin#', before));
+  await S(carol).getByRole('button', { name: 'Confirm' }).click();
+  await idle(carol);
+  const carolFp = await fp(carol);
+  check('sign up with a password and the mailed code', carolFp.length > 30 && (await S(carol).getByLabel('Password status').innerText()).includes('has a password'), (await alertText(carol)) + (await note(carol)));
+  await S(carol).getByRole('button', { name: 'Share', exact: true }).click();
+  await idle(carol);
+  const bundles = () => server.sql().prepare("SELECT COUNT(*) AS n FROM recovery_blobs b JOIN users u ON u.id = b.user_id WHERE u.email = 'carol@example.com' AND b.method = 'password'").get().n;
+  check("the device's keys are sealed with the password on the server", Number(bundles()) === 1 && (await S(carol).getByLabel('Password status').innerText()).includes("this device's keys"), String(bundles()));
+
+  const carol2 = await fresh();
+  await passwordSignIn(carol2, 'not the password at all');
+  check('a wrong password is refused, without saying which part', (await alertText(carol2)).includes('email address or the password is wrong') && (await fp(carol2)) === '', await alertText(carol2));
+  await passwordSignIn(carol2, 'carol correct horse');
+  check('a password sign-in on a new device unlocks the same device (no new key)', (await note(carol2)).includes('unlocked your device') && (await fp(carol2)) === carolFp, (await note(carol2)) + (await alertText(carol2)));
+  await S(carol2).getByRole('button', { name: 'Open here' }).first().click();
+  await idle(carol2);
+  check('...and opens the workspace with no trust step', JSON.stringify(await requests(carol2, 'Carol API')) === JSON.stringify(await requests(carol, 'Carol API')) && !(await S(carol2).locator('.sync-untrusted').count()), JSON.stringify(await requests(carol2, 'Carol API')) + (await alertText(carol2)) + (await note(carol2)) + JSON.stringify(await store(carol2, 'return s.collections.map((c) => c.name)')));
+
+  // A password change on the first device re-seals the keys; the new password unlocks them.
+  await S(carol).getByLabel('Current password').fill('carol correct horse');
+  await S(carol).getByLabel('New password', { exact: true }).fill('carol new battery staple');
+  await S(carol).getByLabel('Repeat the new password').fill('carol new battery staple');
+  await S(carol).getByRole('button', { name: 'Change password' }).click();
+  await idle(carol);
+  check('change the password', (await note(carol)).includes('Password changed'), (await note(carol)) + (await alertText(carol)));
+  await carol2.browser.close();
+  carol2.mock?.cleanup();
+  const carol3 = await fresh();
+  await passwordSignIn(carol3, 'carol correct horse');
+  check('the old password no longer signs in', (await alertText(carol3)).includes('wrong'), await alertText(carol3));
+  await passwordSignIn(carol3, 'carol new battery staple');
+  check('the new password unlocks the same device', (await fp(carol3)) === carolFp, (await note(carol3)) + (await alertText(carol3)));
+  await carol3.browser.close();
+  carol3.mock?.cleanup();
+
+  // Forgot the password: a reset on a new device signs in but can't unlock the workspace.
+  const carol4 = await fresh();
+  await S(carol4).getByRole('button', { name: 'Forgot password?' }).click();
+  check('the page warns before a reset', (await S(carol4).getByLabel('Reset warning').innerText()).includes("can't unlock your end-to-end encrypted workspaces"));
+  await S(carol4).getByLabel('Sync server').fill(server.url);
+  await S(carol4).getByLabel('Email').fill('carol@example.com');
+  const beforeReset = server.mails('carol@example.com');
+  await S(carol4).getByRole('button', { name: 'Send reset code' }).click();
+  await idle(carol4);
+  await S(carol4).getByLabel('Code from the reset mail').fill(await server.code('carol@example.com', '/signin#', beforeReset));
+  await S(carol4).getByLabel('New password', { exact: true }).fill('carol third password');
+  await S(carol4).getByLabel('Repeat the new password').fill('carol third password');
+  await S(carol4).getByRole('button', { name: 'Reset password' }).click();
+  await idle(carol4);
+  const resetNote = await note(carol4);
+  check('a reset says the old key bundle is gone and this device has no workspace keys', resetNote.includes('key bundle is gone') && resetNote.includes('no workspace keys') && (await fp(carol4)) !== carolFp, resetNote + (await alertText(carol4)));
+  await S(carol4).getByRole('button', { name: 'Open here' }).first().click();
+  await idle(carol4);
+  check('...and the workspace stays closed there', (await requests(carol4, 'Carol API')) === null && (await alertText(carol4)) !== '', JSON.stringify(await requests(carol4, 'Carol API')) + (await alertText(carol4)));
+  await carol4.browser.close();
+  carol4.mock?.cleanup();
+  await carol.browser.close();
+  carol.mock?.cleanup();
+  const pwRow = server.sql().prepare("SELECT hash FROM password_credentials").all();
+  check('the server keeps only Argon2id hashes', pwRow.length === 1 && pwRow.every((r) => r.hash.startsWith('$argon2id$')), JSON.stringify(pwRow.length));
+
   // The server never saw plaintext.
   const db = server.database();
-  const leaked = ['e2e-sync.test', 'List orders', 'Get order', 'Shop API'].filter((s) => db.includes(Buffer.from(s)));
+  const leaked = ['e2e-sync.test', 'List orders', 'Get order', 'Shop API', 'Carol API', 'carol correct horse', 'carol new battery staple'].filter((s) => db.includes(Buffer.from(s)));
   check('the server holds no plaintext', leaked.length === 0, leaked.join(', '));
   check('no page errors', errors.length === 0, errors.join(' | '));
 
