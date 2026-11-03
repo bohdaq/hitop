@@ -2,6 +2,7 @@
 //! version vectors, device public keys and HPKE-wrapped workspace keys. It never holds a key that
 //! decrypts anything; clients encrypt with `hitop-sync-crypto` (MIT). See THREAT_MODEL.md.
 
+pub mod alerts;
 pub mod api;
 pub mod audit;
 pub mod auth;
@@ -19,6 +20,8 @@ pub mod password;
 pub mod ratelimit;
 pub mod recovery;
 mod routes;
+pub mod runs;
+pub mod shares;
 pub mod teams;
 pub mod tokens;
 pub mod workspaces;

@@ -29,6 +29,8 @@
 //!   (or `_FILE`), callback URL `<public URL>/v1/auth/github/callback`; off when unset (github.rs)
 //! - Billing (HITOP Cloud): see billing.rs (`HITOP_SYNC_LS_*`, off unless
 //!   `HITOP_SYNC_LS_WEBHOOK_SECRET` is set) and `HITOP_SYNC_TRIAL_DAYS` (14; 0 = no Team trials)
+//! - Run history and alerts: see runs.rs (`HITOP_SYNC_MAX_RUN_BYTES`, `HITOP_SYNC_RUN_RETENTION_DAYS`,
+//!   `HITOP_SYNC_ALERTS_PER_HOUR`, `HITOP_SYNC_ALERT_WEBHOOKS`)
 //! - mail: see mail.rs
 
 use url::Url;
@@ -78,6 +80,8 @@ pub struct Config {
     pub billing: Option<BillingConfig>,
     /// Days of the Team trial (0 = none).
     pub trial_days: i64,
+    /// Run history and alerts (runs.rs).
+    pub runs: crate::runs::RunsConfig,
 }
 
 /// `<PREFIX>_CLIENT_ID` and `<PREFIX>_CLIENT_SECRET` (or `<PREFIX>_CLIENT_SECRET_FILE`): both or
@@ -129,6 +133,7 @@ impl Config {
             github: None,
             billing: None,
             trial_days: 14,
+            runs: crate::runs::RunsConfig::default(),
         }
     }
 
@@ -173,6 +178,7 @@ impl Config {
         c.github = GithubConfig::from_env(&var)?;
         c.billing = BillingConfig::from_env(&var)?;
         c.trial_days = number("HITOP_SYNC_TRIAL_DAYS", c.trial_days)?;
+        c.runs = crate::runs::RunsConfig::from_env(&var)?;
         match var("HITOP_SYNC_RATE_LIMITS").as_deref() {
             None | Some("on") => {}
             Some("off") => {

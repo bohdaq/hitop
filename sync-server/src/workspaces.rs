@@ -335,7 +335,7 @@ pub fn delete(state: &State, request: &Request, params: &PathParams) -> ApiResul
         let user = authenticate(state, tx, request)?;
         let ws = membership(tx, id, &user)?;
         require(&ws, Role::Owner)?;
-        for table in ["blobs", "wraps", "invites", "members"] {
+        for table in ["blobs", "wraps", "invites", "env_share_wraps", "env_shares", "runs", "alert_deliveries", "alert_state", "alert_settings", "members"] {
             tx.execute(&format!("DELETE FROM {table} WHERE workspace_id = $1"), &[id.into()])?;
         }
         tx.execute("DELETE FROM workspaces WHERE id = $1", &[id.into()])?;
@@ -489,6 +489,8 @@ pub fn remove_member(state: &State, request: &Request, params: &PathParams) -> A
         }
         tx.execute("DELETE FROM members WHERE workspace_id = $1 AND user_id = $2", &[id.into(), (&removed).into()])?;
         tx.execute("DELETE FROM wraps WHERE workspace_id = $1 AND key_id IN (SELECT id FROM device_keys WHERE user_id = $2)", &[id.into(), (&removed).into()])?;
+        // Their devices' wraps of shared environment values go too (shares.rs).
+        tx.execute("DELETE FROM env_share_wraps WHERE workspace_id = $1 AND user_id = $2", &[id.into(), (&removed).into()])?;
         rotate_to(tx, &user, &ws, &input)?;
         // A removed runner credential stops existing (its sessions and key go with it).
         let runner = tx.execute("DELETE FROM users WHERE id = $1 AND runner_of = $2", &[(&removed).into(), id.into()])? > 0;

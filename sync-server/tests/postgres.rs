@@ -368,3 +368,44 @@ fn postgres_billing() {
     delivered(&s, &ls::invoice("subscription_payment_refunded", "1", true, "2026-11-21T10:00:00.000000Z"), "applied");
     assert_eq!(s.call("GET", &format!("/v1/orgs/{org}/limits"), Some(&ada.session), None).json["planInForce"], "free");
 }
+
+#[test]
+fn postgres_runs_alerts_and_shares() {
+    let Some(url) = database("runs") else {
+        eprintln!("HITOP_SYNC_TEST_POSTGRES not set: skipped");
+        return;
+    };
+    let s = Server::with("pg-runs", |c| {
+        c.database = url.clone();
+        c.plan_limits = true;
+    });
+    let ada = Device::new(&s, "ada@example.com");
+    let k1 = create_workspace(&s, &ada, WS);
+    let org = format!("personal-{}", ada.user_id);
+    hitop_sync_server::limits::set_plan(s.app.state(), &org, "pro", 0).unwrap();
+    assert_eq!(s.call("PUT", &format!("/v1/workspaces/{WS}/alerts"), Some(&ada.session), Some(json!({ "email": ["ada@example.com"], "missedAfterMinutes": 60 }))).status, 200);
+    for (id, status) in [("r1", "passed"), ("r2", "failed")] {
+        let detail = crypto::seal_run(&k1, WS, id, 1, b"{\"reportVersion\":1}").unwrap();
+        let r = s.call("POST", &format!("/v1/workspaces/{WS}/runs"), Some(&ada.session), Some(json!({ "id": id, "startedAt": 1, "collection": "c", "environment": "e", "status": status, "requests": 2, "failed": u8::from(status == "failed"), "detail": b64(&detail) })));
+        assert_eq!((r.status, r.json["stored"].as_str()), (201, Some("status+report")), "{}", r.json);
+    }
+    let list = s.call("GET", &format!("/v1/workspaces/{WS}/runs"), Some(&ada.session), None);
+    assert_eq!(list.json["runs"].as_array().unwrap().len(), 2);
+    let one = s.call("GET", &format!("/v1/workspaces/{WS}/runs/r2"), Some(&ada.session), None);
+    assert_eq!(crypto::open_run(&ada.workspace_key(&s, WS, 1), WS, "r2", &unb64(one.json["detail"].as_str().unwrap())).unwrap(), b"{\"reportVersion\":1}");
+    assert_eq!(hitop_sync_server::alerts::deliver_pending(s.app.state()).unwrap(), 1);
+    s.advance(2 * 3600);
+    assert_eq!(hitop_sync_server::alerts::tick(s.app.state()).unwrap(), 1);
+    s.advance(31 * 86_400);
+    assert_eq!(hitop_sync_server::runs::purge(s.app.state()).unwrap(), 2);
+    let ada = Device::new(&s, "ada@example.com");
+    let share = "0123456789abcdef0123456789abcdef";
+    let key = crypto::WorkspaceKey::generate();
+    let pk = ada.keys.public_key();
+    let wrap = crypto::seal_share_wrap(&crypto::Device { key_id: &ada.key_id, keys: &ada.keys }, &crypto::Recipient { key_id: &ada.key_id, public_key: &pk }, WS, share, 1, &key).unwrap();
+    let sealed = crypto::seal_share(&key, WS, share, 1, b"{}").unwrap();
+    let r = s.call("PUT", &format!("/v1/workspaces/{WS}/env-shares/{share}"), Some(&ada.session), Some(json!({ "version": 1, "sealed": b64(&sealed), "wraps": [{ "keyId": ada.key_id, "wrapped": b64(&wrap) }] })));
+    assert_eq!(r.status, 200, "{}", r.json);
+    assert_eq!(s.call("GET", &format!("/v1/workspaces/{WS}/env-shares"), Some(&ada.session), None).json["shares"][0]["version"], 1);
+    assert_eq!(s.call("DELETE", &format!("/v1/workspaces/{WS}"), Some(&ada.session), None).status, 204, "the workspace goes with its runs, alerts and shares");
+}

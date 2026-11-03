@@ -1,7 +1,7 @@
 //! `hitop-sync-server`: listens where rws's settings say (`RWS_CONFIG_IP`, `RWS_CONFIG_PORT`,
 //! default 127.0.0.1:7881 here) behind a TLS-terminating proxy. Settings: config.rs, mail.rs.
 
-use hitop_sync_server::{audit, billing, dbtools, limits, Config, Db, Mailer, State, SyncApp};
+use hitop_sync_server::{alerts, audit, billing, dbtools, limits, runs, Config, Db, Mailer, State, SyncApp};
 use rust_web_server::server::Server;
 
 fn main() {
@@ -111,7 +111,23 @@ fn main() {
         if let Err(e) = limits::purge(purger.state()) {
             eprintln!("hitop-sync-server: usage purge: {e}");
         }
+        match runs::purge(purger.state()) {
+            Ok(0) => {}
+            Ok(n) => eprintln!("hitop-sync-server: purged {n} runs past their history"),
+            Err(e) => eprintln!("hitop-sync-server: run purge: {e}"),
+        }
+        if let Err(e) = alerts::tick(purger.state()) {
+            eprintln!("hitop-sync-server: missed-run check: {e}");
+        }
         std::thread::sleep(std::time::Duration::from_secs(3600));
+    });
+    // Alert delivery: queued alerts (alerts.rs), every 5 s.
+    let deliverer = app.clone();
+    std::thread::spawn(move || loop {
+        if let Err(e) = alerts::deliver_pending(deliverer.state()) {
+            eprintln!("hitop-sync-server: alert delivery: {e}");
+        }
+        std::thread::sleep(std::time::Duration::from_secs(5));
     });
     let runtime = tokio::runtime::Builder::new_multi_thread().enable_all().build().expect("tokio runtime");
     runtime.block_on(async {

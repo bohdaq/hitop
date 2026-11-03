@@ -333,6 +333,12 @@ pub fn org_of_workspace(tx: &mut Tx, ws: &str) -> Result<String, DbError> {
 
 /// The 402 for a create beyond `max`.
 pub fn refused(state: &State, tx: &mut Tx, e: &Entitlement, metric: Metric, used: i64, max: i64) -> ApiError {
+    refused_named(state, tx, e, metric.name(), metric.what(), used, max)
+}
+
+/// [`refused`] for a limit outside [`Metric`] (run history and alerts, runs.rs): `limit` names it
+/// `limit`, `what` in the message; `max` 0 = the plan doesn't have it.
+pub fn refused_named(state: &State, tx: &mut Tx, e: &Entitlement, limit: &str, what: &str, used: i64, max: i64) -> ApiError {
     let (name, personal) = tx
         .query_one("SELECT name, personal_of FROM orgs WHERE id = $1", &[(&e.org).into()])
         .ok()
@@ -344,8 +350,12 @@ pub fn refused(state: &State, tx: &mut Tx, e: &Entitlement, metric: Metric, used
     ApiError {
         status: 402,
         code: "limit",
-        message: format!("plan limit: the {plan} plan of {whose} allows {max} {}; nothing was changed. See or change the plan at {url}", metric.what()),
-        extra: Some(json!({ "limit": metric.name(), "plan": plan, "org": e.org, "used": used, "max": max, "upgradeUrl": url })),
+        message: if max == 0 {
+            format!("plan limit: the {plan} plan of {whose} has no {what}; nothing was changed. See or change the plan at {url}")
+        } else {
+            format!("plan limit: the {plan} plan of {whose} allows {max} {what}; nothing was changed. See or change the plan at {url}")
+        },
+        extra: Some(json!({ "limit": limit, "plan": plan, "org": e.org, "used": used, "max": max, "upgradeUrl": url })),
     }
 }
 

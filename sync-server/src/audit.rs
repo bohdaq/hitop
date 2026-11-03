@@ -79,6 +79,11 @@ pub const CLOUD_EVENTS: &[&str] = &[
     "plan_changed",
     "token_created",
     "token_revoked",
+    // C4, on the workspace's chain: alert settings changed (channels, never webhook URLs),
+    // shared environment values updated or deleted.
+    "alerts_changed",
+    "env_share_updated",
+    "env_share_deleted",
 ];
 
 /// Who called: the client IP (truncated, or empty when the server is set not to keep it) and

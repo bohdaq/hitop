@@ -52,5 +52,22 @@ pub fn fill(s: &Server) -> usize {
             tx.execute("UPDATE entitlements SET ls_item_id = '7', ls_order_id = '9', ls_updated_at = 5 WHERE org_id = (SELECT MIN(org_id) FROM entitlements)", &[])
         })
         .unwrap();
+    // C4: run history (a sealed report, status rows, a queued alert) and a shared environment.
+    let run = |id: &str, status: &str| {
+        let detail = crypto::seal_run(&k2, WS, id, 2, b"{\"reportVersion\":1}").unwrap();
+        let r = s.call("POST", &format!("/v1/workspaces/{WS}/runs"), Some(&ada.session), Some(json!({ "id": id, "startedAt": 1, "collection": "c", "environment": "e", "status": status, "requests": 1, "failed": u8::from(status == "failed"), "detail": b64(&detail) })));
+        assert_eq!(r.status, 201, "{}", r.json);
+    };
+    run("run-1", "failed");
+    let r = s.call("PUT", &format!("/v1/workspaces/{WS}/alerts"), Some(&ada.session), Some(json!({ "email": ["ada@example.com"], "missedAfterMinutes": 60 })));
+    assert_eq!(r.status, 200, "{}", r.json);
+    run("run-2", "passed");
+    let share_key = crypto::WorkspaceKey::generate();
+    let share = "00112233445566778899aabbccddeeff";
+    let pk = ada.keys.public_key();
+    let wrap = crypto::seal_share_wrap(&crypto::Device { key_id: &ada.key_id, keys: &ada.keys }, &crypto::Recipient { key_id: &ada.key_id, public_key: &pk }, WS, share, 1, &share_key).unwrap();
+    let sealed = crypto::seal_share(&share_key, WS, share, 1, b"{}").unwrap();
+    let r = s.call("PUT", &format!("/v1/workspaces/{WS}/env-shares/{share}"), Some(&ada.session), Some(json!({ "version": 1, "sealed": b64(&sealed), "wraps": [{ "keyId": ada.key_id, "wrapped": b64(&wrap) }] })));
+    assert_eq!(r.status, 200, "{}", r.json);
     s.app.state().db.tx(|tx| tx.query_one("SELECT COUNT(*) FROM audit_chain", &[])).unwrap().unwrap().int(0) as usize
 }

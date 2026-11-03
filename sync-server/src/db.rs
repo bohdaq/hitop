@@ -297,6 +297,8 @@ impl Tx<'_> {
 /// passwords (password.rs). 7: HITOP Cloud C3 billing (billing.rs): the Lemon Squeezy ids and
 /// ordering mark on `entitlements`, `billing_events` (ids and outcomes of webhook deliveries,
 /// never their bodies) and `trials`.
+/// 8: HITOP Cloud C4 run history (runs.rs), alerts (alerts.rs), shared environment values
+/// (shares.rs).
 const MIGRATIONS: &[&str] = &[r"
 CREATE TABLE users (
   id TEXT PRIMARY KEY,
@@ -546,6 +548,78 @@ CREATE TABLE trials (
 );
 CREATE INDEX trials_user ON trials(user_id);
 CREATE INDEX trials_domain ON trials(email_domain);
+", r"
+CREATE TABLE runs (
+  workspace_id TEXT NOT NULL REFERENCES workspaces(id) ON DELETE CASCADE,
+  id TEXT NOT NULL,
+  uploader TEXT NOT NULL,
+  collection TEXT NOT NULL DEFAULT '',
+  environment TEXT NOT NULL DEFAULT '',
+  status TEXT NOT NULL,
+  started_at BIGINT NOT NULL,
+  duration_ms BIGINT NOT NULL DEFAULT 0,
+  requests BIGINT NOT NULL DEFAULT 0,
+  failed BIGINT NOT NULL DEFAULT 0,
+  failed_names TEXT NOT NULL DEFAULT '',
+  detail {BLOB} NOT NULL,
+  detail_bytes BIGINT NOT NULL DEFAULT 0,
+  created_at BIGINT NOT NULL,
+  PRIMARY KEY (workspace_id, id)
+);
+CREATE INDEX runs_series ON runs(workspace_id, collection, environment, created_at);
+CREATE INDEX runs_created ON runs(created_at);
+CREATE TABLE alert_settings (
+  workspace_id TEXT PRIMARY KEY REFERENCES workspaces(id) ON DELETE CASCADE,
+  settings TEXT NOT NULL,
+  updated_by TEXT NOT NULL,
+  updated_at BIGINT NOT NULL
+);
+CREATE TABLE alert_state (
+  workspace_id TEXT NOT NULL REFERENCES workspaces(id) ON DELETE CASCADE,
+  collection TEXT NOT NULL,
+  environment TEXT NOT NULL,
+  last_status TEXT NOT NULL,
+  last_run_at BIGINT NOT NULL,
+  missed_alerted_at BIGINT NOT NULL DEFAULT 0,
+  PRIMARY KEY (workspace_id, collection, environment)
+);
+CREATE TABLE alert_deliveries (
+  id TEXT PRIMARY KEY,
+  workspace_id TEXT NOT NULL REFERENCES workspaces(id) ON DELETE CASCADE,
+  event TEXT NOT NULL,
+  channel TEXT NOT NULL,
+  collection TEXT NOT NULL DEFAULT '',
+  environment TEXT NOT NULL DEFAULT '',
+  run_id TEXT NOT NULL DEFAULT '',
+  failed_names TEXT NOT NULL DEFAULT '',
+  outcome TEXT NOT NULL,
+  attempts BIGINT NOT NULL DEFAULT 0,
+  created_at BIGINT NOT NULL,
+  updated_at BIGINT NOT NULL
+);
+CREATE INDEX alert_deliveries_ws ON alert_deliveries(workspace_id, created_at);
+CREATE INDEX alert_deliveries_outcome ON alert_deliveries(outcome);
+CREATE TABLE env_shares (
+  workspace_id TEXT NOT NULL REFERENCES workspaces(id) ON DELETE CASCADE,
+  id TEXT NOT NULL,
+  version BIGINT NOT NULL,
+  sealed {BLOB} NOT NULL,
+  created_by TEXT NOT NULL,
+  updated_by TEXT NOT NULL,
+  updated_at BIGINT NOT NULL,
+  PRIMARY KEY (workspace_id, id)
+);
+CREATE TABLE env_share_wraps (
+  workspace_id TEXT NOT NULL,
+  share_id TEXT NOT NULL,
+  key_id TEXT NOT NULL,
+  user_id TEXT NOT NULL,
+  version BIGINT NOT NULL,
+  wrapped {BLOB} NOT NULL,
+  PRIMARY KEY (workspace_id, share_id, key_id),
+  FOREIGN KEY (workspace_id, share_id) REFERENCES env_shares(workspace_id, id) ON DELETE CASCADE
+);
+CREATE INDEX env_share_wraps_user ON env_share_wraps(workspace_id, user_id);
 "];
 
 /// Steps in Rust that run in the same transaction as a migration's SQL (index = migration

@@ -487,6 +487,7 @@ fn limits_json(state: &State, tx: &mut Tx, org: &str) -> Result<Json, ApiError> 
         "enforced": enforced,
         "limits": limits,
         "upgradeUrl": format!("{}#/orgs/{org}/plan", state.config.portal_url),
+        "runs": crate::runs::plan_json(state, tx, org)?,
     }))
 }
 
@@ -510,6 +511,7 @@ pub fn get_usage(state: &State, request: &Request, params: &PathParams) -> ApiRe
         let u = limits::usage(state, tx, org)?;
         let mut out = limits_json(state, tx, org)?;
         out["usage"] = u.json();
+        out["usage"]["runsToday"] = crate::runs::runs_today(state, tx, org)?.into();
         Ok((200, out))
     })
 }

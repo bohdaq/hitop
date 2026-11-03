@@ -281,6 +281,18 @@ impl SyncApp {
             ("GET", "/v1/workspaces/:ws/audit", crate::audit::list),
             ("GET", "/v1/workspaces/:ws/audit/verify", crate::audit::verify_endpoint),
             ("GET", "/v1/workspaces/:ws/changes", crate::blobs::changes),
+            // HITOP Cloud C4: run history, alerts, shared environment values.
+            ("GET", "/v1/workspaces/:ws/run-policy", crate::runs::get_policy),
+            ("GET", "/v1/workspaces/:ws/runs", crate::runs::list),
+            ("POST", "/v1/workspaces/:ws/runs", crate::runs::upload),
+            ("GET", "/v1/workspaces/:ws/runs/:id", crate::runs::get),
+            ("GET", "/v1/workspaces/:ws/alerts", crate::alerts::get),
+            ("PUT", "/v1/workspaces/:ws/alerts", crate::alerts::put),
+            ("GET", "/v1/workspaces/:ws/alert-deliveries", crate::alerts::deliveries),
+            ("GET", "/v1/workspaces/:ws/env-shares", crate::shares::list),
+            ("PUT", "/v1/workspaces/:ws/env-shares/:id", crate::shares::put),
+            ("DELETE", "/v1/workspaces/:ws/env-shares/:id", crate::shares::delete),
+            ("POST", "/v1/workspaces/:ws/env-shares/:id/wraps", crate::shares::add_wraps),
             // HITOP Cloud C1: organizations, plans and limits, access tokens.
             ("GET", "/v1/orgs", crate::orgs::list),
             ("POST", "/v1/orgs", crate::orgs::create),
@@ -340,8 +352,12 @@ impl SyncApp {
     fn max_body(&self, method: &str, path: &str) -> usize {
         let c = &self.state.config;
         let blob = method == "PUT" && path.starts_with("/v1/workspaces/") && path.contains("/blobs/");
+        // A run upload carries a sealed report (runs.rs).
+        let run = method == "POST" && path.starts_with("/v1/workspaces/") && path.ends_with("/runs");
         if blob {
             c.max_request_bytes()
+        } else if run {
+            (c.runs.max_run_bytes / 3 * 4 + 64 * 1024).max(c.max_json_bytes.min(c.max_request_bytes()).max(64 * 1024))
         } else {
             c.max_json_bytes.min(c.max_request_bytes()).max(64 * 1024)
         }
