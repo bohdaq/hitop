@@ -18,7 +18,7 @@ homepage = "https://github.com/bohdaq/hitop"
 
 [workspace.dependencies]
 hitop-core = { path = "crates/hitop-core", version = "1.2.0" }
-hitop-sync-crypto = { path = "crates/hitop-sync-crypto", version = "0.3.0" }
+hitop-sync-crypto = { path = "crates/hitop-sync-crypto", version = "0.4.0" }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 reqwest = { version = "0.12", features = ["blocking", "rustls-tls", "json"], default-features = false }
@@ -26,3 +26,10 @@ boa_engine = "0.22"
 dirs = "5"
 thiserror = "1"
 anyhow = "1"
+
+# Password hashing (hitop-sync-crypto) is far too slow unoptimized: tests and debug builds would
+# spend seconds per sign-in.
+[profile.dev.package.argon2]
+opt-level = 3
+[profile.dev.package.blake2]
+opt-level = 3

@@ -1,6 +1,6 @@
 [package]
 name = "hitop-sync-crypto"
-version = "0.3.0"
+version = "0.4.0"
 edition = "2021"
 authors = ["Bohdan Tsap <bohdaq@gmail.com>"]
 license = "MIT"
@@ -15,6 +15,10 @@ hpke = { version = "0.15.1", default-features = false, features = ["alloc", "get
 chacha20poly1305 = { version = "0.11", default-features = false, features = ["alloc"] }
 getrandom = "0.4"
 zeroize = "1"
+# Passwords (since 0.4): Argon2id, then HKDF-SHA256 into the auth key and the bundle key; NFC first.
+argon2 = { version = "0.5.3", default-features = false, features = ["alloc", "zeroize"] }
+hkdf = "0.13"
+unicode-normalization = { version = "0.1.25", default-features = false }
 # Key fingerprints (already in the tree through hpke).
 sha2 = { version = "0.11", default-features = false }
 # `serde` feature: WorkspaceMemory (de)serializes, Notice serializes (the clients keep and show them).

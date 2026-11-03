@@ -72,6 +72,7 @@ dependencies = [
  "blake2",
  "cpufeatures 0.2.17",
  "password-hash",
+ "zeroize",
 ]
 
 [[package]]
@@ -1121,12 +1122,15 @@ checksum = "7f24254aa9a54b5c858eaee2f5bccdb46aaf0e486a595ed5fd8f86ba55232a70"
 
 [[package]]
 name = "hitop-sync-crypto"
-version = "0.3.0"
+version = "0.4.0"
 dependencies = [
+ "argon2",
  "chacha20poly1305",
  "getrandom 0.4.3",
+ "hkdf",
  "hpke",
  "sha2 0.11.1",
+ "unicode-normalization",
  "zeroize",
 ]
 

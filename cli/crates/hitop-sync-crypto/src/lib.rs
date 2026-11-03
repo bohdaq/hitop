@@ -28,9 +28,13 @@
 //! - **Recovery** (since 0.3): a 24-word phrase ([`RecoveryPhrase`], BIP-39 words) seals an
 //!   account's recovery blob ([`seal_recovery`]), which the server keeps, so a lost device can
 //!   be brought back on a new one.
+//! - **Passwords** (since 0.4): [`derive_password_keys`] turns a password and the account's
+//!   [`PasswordKdf`] (Argon2id) into an auth key for the server and a bundle key that seals the
+//!   same key bundle as the phrase, so a password sign-in on a new device unlocks it.
 //!
-//! Byte layouts are in `sync-server/THREAT_MODEL.md`, `vectors/v1.json` (blobs, format 1 wraps)
-//! and `vectors/v2.json` (format 2 wraps, key commitments), which every implementation must pass.
+//! Byte layouts are in `sync-server/THREAT_MODEL.md`, `vectors/v1.json` (blobs, format 1 wraps),
+//! `vectors/v2.json` (format 2 wraps, key commitments) and `vectors/password.json` (password
+//! keys), which every implementation must pass.
 
 use chacha20poly1305::aead::{Aead, Payload};
 use chacha20poly1305::{Key, KeyInit, XChaCha20Poly1305, XNonce};
@@ -41,7 +45,9 @@ use hpke::{Deserializable, Kem as _, OpModeR, OpModeS, Serializable};
 use zeroize::{Zeroize, ZeroizeOnDrop};
 
 mod keyring;
+mod password;
 mod recovery;
+pub use password::{check_new_password, derive_password_keys, normalize_password, PasswordKdf, PasswordKeys, AUTH_KEY_INFO, BUNDLE_KEY_INFO, DEFAULT_ITERATIONS, DEFAULT_MEMORY_KIB, DEFAULT_PARALLELISM, MAX_ITERATIONS, MAX_MEMORY_KIB, MAX_PARALLELISM, MAX_PASSWORD_BYTES, MIN_ITERATIONS, MIN_MEMORY_KIB, MIN_PASSWORD_CHARS, PASSWORD_AD, PASSWORD_ALG, SALT_LEN};
 pub use recovery::{open_key_bundle, open_recovery, recovery_associated_data, seal_key_bundle, seal_key_bundle_with_nonce, seal_recovery, seal_recovery_with_nonce, RecoveryPhrase, PHRASE_WORDS, RECOVERY_AAD_LABEL, RECOVERY_FORMAT, RECOVERY_KEY_LABEL};
 pub use keyring::{accept_wraps, key_commitment, normalize_fingerprint, Keyring, Notice, ReceivedWrap, WorkspaceMemory};
 
@@ -103,6 +109,9 @@ pub enum Error {
     MissingKey { epoch: u32 },
     /// A recovery phrase that isn't one (word count, unknown word, checksum): the message says which.
     Phrase(String),
+    /// A password or password KDF a client must not use (too short, or parameters a server
+    /// weakened): the message says which. Since 0.4.
+    Password(String),
 }
 
 impl std::fmt::Display for Error {
@@ -134,6 +143,7 @@ impl std::fmt::Display for Error {
             ),
             Error::MissingKey { epoch } => write!(f, "this device has no key for the workspace's current epoch {epoch} yet"),
             Error::Phrase(why) => write!(f, "not a recovery phrase: {why}"),
+            Error::Password(why) => write!(f, "{why}"),
         }
     }
 }
