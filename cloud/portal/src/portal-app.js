@@ -5,6 +5,8 @@
 //   #/                 organizations          #/orgs/<id>        an organization
 //   #/orgs/<id>/plan   its plan               #/tokens           access tokens
 //   #/account          the account            #sso=<code>        back from single sign-on
+//   #/runs             workspaces' run history  #/workspaces/<ws>/runs[/<run>]  one workspace's
+//                      (HITOP Cloud C4: status rows and alert settings; the sealed reports open in hitop)
 import { LitElement, html, nothing } from "lit";
 import { Api, ApiError, DEFAULT_SERVER, changePassword, normalizeServer, passkeySignIn, passwordReset, passwordSignIn, passwordSignUp, registerPasskey, ssoFinish, ssoStart } from "./api.js";
 
@@ -182,6 +184,14 @@ export class HitopCloud extends LitElement {
           this.api.get(`/v1/orgs/${encodeURIComponent(id)}/billing`).catch(() => null),
         ]);
         this.data = { org, members, usage, billing };
+      } else if (parts[0] === "runs") {
+        this.data = { workspaces: (await this.api.get("/v1/workspaces")).workspaces };
+      } else if (parts[0] === "workspaces" && parts[1]) {
+        const ws = decodeURIComponent(parts[1]);
+        const [runs, info] = await Promise.all([this.api.get(`/v1/workspaces/${ws}/runs?limit=200`), this.api.get(`/v1/workspaces/${ws}`)]);
+        const alerts = info.role === "owner" ? await this.api.get(`/v1/workspaces/${ws}/alerts`).catch(() => null) : null;
+        const deliveries = info.role === "owner" ? (await this.api.get(`/v1/workspaces/${ws}/alert-deliveries`).catch(() => ({ deliveries: [] }))).deliveries : [];
+        this.data = { workspace: ws, runs, info, alerts, deliveries, run: parts[3] ? decodeURIComponent(parts[3]) : null };
       } else if (parts[0] === "tokens") {
         this.data = { tokens: (await this.api.get("/v1/me/tokens")).tokens };
       } else if (parts[0] === "account") {
@@ -216,11 +226,11 @@ export class HitopCloud extends LitElement {
     if (nav) {
       nav.replaceChildren();
       if (this.signedInNow) {
-        for (const [href, label] of [["#/", "Organizations"], ["#/tokens", "Access tokens"], ["#/account", "Account"]]) {
+        for (const [href, label] of [["#/", "Organizations"], ["#/runs", "Run history"], ["#/tokens", "Access tokens"], ["#/account", "Account"]]) {
           const a = document.createElement("a");
           a.href = href;
           a.textContent = label;
-          if (this.route === href || (href === "#/" && this.route.startsWith("#/orgs"))) a.setAttribute("aria-current", "page");
+          if (this.route === href || (href === "#/" && this.route.startsWith("#/orgs")) || (href === "#/runs" && this.route.startsWith("#/workspaces"))) a.setAttribute("aria-current", "page");
           nav.append(a);
         }
       }
@@ -393,6 +403,8 @@ export class HitopCloud extends LitElement {
     let page;
     if (parts[0] === "orgs" && this.data.org) page = parts[2] === "plan" ? this.renderPlan() : this.renderOrg();
     else if (parts[0] === "tokens" && this.data.tokens) page = this.renderTokens();
+    else if (parts[0] === "runs" && this.data.workspaces) page = this.renderWorkspaces();
+    else if (parts[0] === "workspaces" && this.data.runs) page = this.renderRuns();
     else if (parts[0] === "account" && this.data.me) page = this.renderAccount();
     else if (this.data.orgs) page = this.renderOrgs();
     else page = html`<p>Loading…</p>`;
@@ -405,6 +417,93 @@ export class HitopCloud extends LitElement {
           this.data = {};
         })}>Sign out</lit-material-button></p>
       ${page}`;
+  }
+
+  // --- run history (HITOP Cloud C4) --------------------------------------------------------
+
+  renderWorkspaces() {
+    const list = this.data.workspaces;
+    return html`
+      <section aria-label="Run history">
+        <h1>Run history</h1>
+        <p class="page-lead">Runs your own CI and cron upload (<code>hitop run --sync-report</code>, <code>hitop schedule --sync</code>): the server keeps a status row per run and the full report sealed end to end. This portal holds no keys, so it shows the status rows; open a report in hitop (<code>hitop sync runs --id &lt;run&gt;</code>, or the app's Sync page). HITOP never runs your collections on its machines.</p>
+        ${list.length
+          ? html`<table class="portal-table" aria-label="Workspaces">
+              <thead><tr><th>Workspace</th><th>Your role</th><th>Organization</th></tr></thead>
+              <tbody>${list.map((w) => html`<tr><td><a href="#/workspaces/${w.id}/runs"><code>${w.id.slice(0, 8)}</code></a></td><td>${w.role}</td><td>${w.org ? (w.org.personal ? "Personal" : w.org.name) : ""}</td></tr>`)}</tbody>
+            </table>`
+          : html`<p class="hint">No workspaces yet: share a collection from hitop first.</p>`}
+      </section>`;
+  }
+
+  renderRuns() {
+    const { workspace: ws, runs, info, alerts, deliveries, run } = this.data;
+    const when = (t) => new Date(t * 1000).toISOString().replace("T", " ").replace(/:\d\d\.\d+Z$/, " UTC");
+    const one = run ? runs.runs.find((r) => r.id === run) : null;
+    return html`
+      <section aria-label="Workspace run history">
+        <h1>Run history <code>${ws.slice(0, 8)}</code></h1>
+        <p class="page-lead">Kept ${runs.historyDays ? `${runs.historyDays} days` : "without a time limit"}${runs.sealedHistory ? "" : html`; this plan keeps <strong>status rows only</strong> (sealed reports from Pro on, <a href="#/">see the plan</a>)`}. You are ${info.role}.</p>
+        ${runs.series.length
+          ? html`<p aria-label="Last status">${runs.series.map((x) => html`<span class="portal-chip status-${x.status}">${x.collection || "collection"}${x.environment ? ` (${x.environment})` : ""}: ${x.status}</span> `)}</p>`
+          : nothing}
+        ${one
+          ? html`<div class="portal-run" aria-label="Run ${one.id}">
+              <h2>Run <code>${one.id}</code></h2>
+              <p>${one.status} at ${when(one.createdAt)}, ${one.requests - one.failed}/${one.requests} requests passed, ${one.durationMs} ms${one.runner ? ", from a runner credential" : ""}.</p>
+              ${one.failedNames.length ? html`<p>Failed: ${one.failedNames.join(", ")}</p>` : nothing}
+              <p class="hint">${one.hasReport ? html`The full report is sealed: open it in hitop with <code>hitop sync runs --id ${one.id}</code> or on the app's Sync page (Run history).` : "This run has a status row only."}</p>
+            </div>`
+          : nothing}
+        <table class="portal-table" aria-label="Runs">
+          <thead><tr><th>Time</th><th>Status</th><th>Collection</th><th>Passed</th><th>Duration</th><th>Report</th></tr></thead>
+          <tbody>
+            ${runs.runs.map((r) => html`<tr class=${r.status === "failed" ? "portal-full" : ""}>
+              <td><a href="#/workspaces/${ws}/runs/${r.id}">${when(r.createdAt)}</a></td><td>${r.status}</td>
+              <td>${r.collection}${r.environment ? ` (${r.environment})` : ""}</td>
+              <td>${r.status === "sealed" ? "-" : `${r.requests - r.failed}/${r.requests}`}</td><td>${r.status === "sealed" ? "-" : `${r.durationMs} ms`}</td>
+              <td>${r.hasReport ? "sealed" : "status only"}</td>
+            </tr>`)}
+          </tbody>
+        </table>
+        ${runs.runs.length ? nothing : html`<p class="hint">No runs yet.</p>`}
+        ${alerts ? this.renderAlerts(ws, alerts, deliveries) : html`<p class="hint">Alerts are set by the workspace's owners.</p>`}
+      </section>`;
+  }
+
+  renderAlerts(ws, a, deliveries) {
+    const s = a.settings;
+    const channels = a.plan?.alertChannels ?? ["email"];
+    const urls = (kind) => s.webhooks.filter((w) => w.kind === kind).map((w) => w.url).join("\n");
+    return html`
+      <h2>Alerts</h2>
+      <p class="hint">When a collection and environment change status (failed, passes again) or miss a run: the status and a link, never a response, body or secret value. This plan: ${channels.join(", ")}.</p>
+      <div class="portal-form portal-stack">
+        <lit-material-text-field id="alert-email" variant="outlined" label="Mail to members (comma separated)" .value=${s.email.join(", ")}></lit-material-text-field>
+        ${channels.includes("webhook") ? html`<lit-material-text-field id="alert-webhook" variant="outlined" label="Webhook URLs (https, one per line)" .value=${urls("webhook")}></lit-material-text-field>` : nothing}
+        ${channels.includes("slack") ? html`<lit-material-text-field id="alert-slack" variant="outlined" label="Slack incoming webhook URLs" .value=${urls("slack")}></lit-material-text-field>` : nothing}
+        <lit-material-text-field id="alert-missed" variant="outlined" type="number" label="Missed-run alert after minutes (0 = off)" .value=${String(s.missedAfterMinutes ?? 0)}></lit-material-text-field>
+        <label><input type="checkbox" id="alert-names" .checked=${Boolean(s.failedNames)}> Name failed requests in status rows and alerts</label>
+        <label><input type="checkbox" id="alert-rows" .checked=${s.statusRows !== false}> Keep status rows (off: history only, no alerts)</label>
+        <lit-material-button variant="filled" ?disabled=${Boolean(this.busy)} @click=${() => this.run("alerts", async () => {
+          const lines = (id) => this.raw(id).split(/[\n,]/).map((x) => x.trim()).filter(Boolean);
+          await this.api.call("PUT", `/v1/workspaces/${ws}/alerts`, {
+            email: lines("alert-email"),
+            webhooks: [...lines("alert-webhook").map((url) => ({ kind: "webhook", url })), ...lines("alert-slack").map((url) => ({ kind: "slack", url }))],
+            missedAfterMinutes: Number(this.raw("alert-missed") || 0),
+            failedNames: this.querySelector("#alert-names")?.checked ?? false,
+            statusRows: this.querySelector("#alert-rows")?.checked ?? true,
+          });
+          await this.go(this.route);
+          this.note = "Alert settings saved.";
+        })}>Save alerts</lit-material-button>
+      </div>
+      ${deliveries.length
+        ? html`<table class="portal-table" aria-label="Alerts sent">
+            <thead><tr><th>Time</th><th>Event</th><th>Channel</th><th>Outcome</th></tr></thead>
+            <tbody>${deliveries.map((d) => html`<tr><td>${new Date(d.createdAt * 1000).toISOString().slice(0, 16).replace("T", " ")}</td><td>${d.event}</td><td>${d.channel.split(":")[0]}</td><td>${d.outcome}</td></tr>`)}</tbody>
+          </table>`
+        : nothing}`;
   }
 
   // --- organizations ---------------------------------------------------------------------
@@ -449,6 +548,9 @@ export class HitopCloud extends LitElement {
           })}
         </tbody>
       </table>
+      ${u.usage.runsToday !== undefined
+        ? html`<p class="hint" data-metric="runsPerDay">Run uploads today: ${u.usage.runsToday}${u.runs?.runsPerDay ? ` of ${u.runs.runsPerDay}` : ""}; run history kept ${u.runs?.historyDays ? `${u.runs.historyDays} days` : "without a limit"}${u.runs && !u.runs.sealedHistory ? " (status rows only on this plan)" : ""}.</p>`
+        : nothing}
       ${u.usage.guests ? html`<p class="hint">${u.usage.guests} guest viewer(s); ${u.limits.guestViewers} of them free on this plan.</p>` : nothing}
       ${u.enforced ? nothing : html`<p class="hint">This server enforces no plan limits (self-hosted).</p>`}`;
   }

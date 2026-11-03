@@ -234,6 +234,33 @@ async function syncServer(portalOrigin, extraEnv = {}) {
     const seats = () => app.locator('tr[data-metric="seats"]').innerText();
     check("usage: one seat of three", /\t1\t3/.test(await seats()), await seats());
 
+    // HITOP Cloud C4: run history. A workspace of Ada's gets a run (a status row, as a runner
+    // uploads it; Free keeps status rows only); the portal lists it and sets the alerts.
+    const adaSession = JSON.parse(await page.evaluate(() => localStorage.getItem("hitop_cloud"))).session;
+    const key = (await server.api("POST", "/v1/me/keys", adaSession, { name: "e2e", publicKey: crypto.randomBytes(32).toString("base64url") })).json.id;
+    const wsId = crypto.randomBytes(16).toString("hex");
+    check("a workspace for the run history", (await server.api("POST", "/v1/workspaces", adaSession, { id: wsId, wraps: [{ keyId: key, wrapped: crypto.randomBytes(80).toString("base64url") }] })).status === 201);
+    const up = await server.api("POST", `/v1/workspaces/${wsId}/runs`, adaSession, { id: "portal-run-1", startedAt: 1793700000, collection: "Shop", environment: "prod", status: "failed", durationMs: 50, requests: 2, failed: 1 });
+    check("a run is uploaded", up.status === 201 && up.json.stored === "status", JSON.stringify(up.json));
+    check("usage: run uploads today against the plan", (await app.locator('[data-metric="runsPerDay"]').innerText().catch(() => "")).includes("Run uploads today: 0 of 100"), await app.innerText());
+    await page.goto(`${origin}/#/runs`);
+    await idle();
+    await app.getByRole("link", { name: wsId.slice(0, 8) }).click();
+    await idle();
+    const runsText = await app.getByLabel("Runs", { exact: true }).innerText().catch(() => "");
+    check("the run history lists the status row", runsText.includes("failed") && runsText.includes("Shop (prod)") && runsText.includes("1/2") && runsText.includes("status only"), runsText + (await alertText()));
+    check("Free keeps status rows only, and says so", (await app.innerText()).includes("status rows only"));
+    await page.goto(`${origin}/#/workspaces/${wsId}/runs/portal-run-1`);
+    await idle();
+    check("an alert's link opens the run", (await app.getByLabel("Run portal-run-1").innerText().catch(() => "")).includes("1/2 requests passed"), await app.innerText());
+    check("Free alerts are mail only", (await app.getByLabel("Webhook URLs (https, one per line)").count()) === 0);
+    await app.getByLabel("Mail to members (comma separated)").fill("ada@example.com");
+    await app.getByRole("button", { name: "Save alerts" }).click();
+    await idle();
+    check("an owner saves the alert settings", (await app.locator('[role="status"]').innerText().catch(() => "")).includes("Alert settings saved") && (await server.api("GET", `/v1/workspaces/${wsId}/alerts`, adaSession)).json.settings.email[0] === "ada@example.com", await alertText());
+    await page.goto(`${origin}/#/orgs/${orgId}`);
+    await idle();
+
     await app.getByLabel("Email to invite").fill("bob@example.com");
     await app.getByRole("button", { name: "Invite", exact: true }).click();
     await idle();
