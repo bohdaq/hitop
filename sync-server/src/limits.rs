@@ -145,10 +145,10 @@ pub struct Entitlement {
 }
 
 impl Entitlement {
-    /// The plan whose limits apply: a lapsed, paused or refunded subscription is on Free (nothing
-    /// deleted). An ended trial or cancelled period becomes `expired` (`billing::expire`).
+    /// The plan whose limits apply: a lapsed, paused, refunded or not yet paid (`incomplete`)
+    /// subscription is on Free (nothing deleted). An ended trial or cancelled period becomes `expired` (`billing::expire`).
     pub fn plan_in_force(&self) -> &str {
-        if matches!(self.status.as_str(), "expired" | "unpaid" | "paused" | "refunded") {
+        if matches!(self.status.as_str(), "expired" | "unpaid" | "paused" | "refunded" | "incomplete") {
             "free"
         } else {
             &self.plan

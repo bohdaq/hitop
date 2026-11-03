@@ -27,8 +27,8 @@
 //!   (or `_FILE`), redirect URI `<public URL>/v1/auth/google/callback`; off when unset (oidc.rs)
 //! - "Continue with GitHub": `HITOP_SYNC_GITHUB_CLIENT_ID` and `HITOP_SYNC_GITHUB_CLIENT_SECRET`
 //!   (or `_FILE`), callback URL `<public URL>/v1/auth/github/callback`; off when unset (github.rs)
-//! - Billing (HITOP Cloud): see billing.rs (`HITOP_SYNC_LS_*`, off unless
-//!   `HITOP_SYNC_LS_WEBHOOK_SECRET` is set) and `HITOP_SYNC_TRIAL_DAYS` (14; 0 = no Team trials)
+//! - Billing (HITOP Cloud, Stripe Managed Payments): see billing.rs (`HITOP_SYNC_STRIPE_*`, off
+//!   unless `HITOP_SYNC_STRIPE_SECRET_KEY` and `HITOP_SYNC_STRIPE_WEBHOOK_SECRET` are set) and `HITOP_SYNC_TRIAL_DAYS` (14; 0 = no Team trials)
 //! - Run history and alerts: see runs.rs (`HITOP_SYNC_MAX_RUN_BYTES`, `HITOP_SYNC_RUN_RETENTION_DAYS`,
 //!   `HITOP_SYNC_ALERTS_PER_HOUR`, `HITOP_SYNC_ALERT_WEBHOOKS`)
 //! - `HITOP_SYNC_HOST_KEY` (64 hex characters) or `HITOP_SYNC_HOST_KEY_FILE`: the host key the
@@ -82,7 +82,7 @@ pub struct Config {
     pub google: Option<OidcConfig>,
     /// "Continue with GitHub" (OAuth 2); `None` when not configured.
     pub github: Option<GithubConfig>,
-    /// Lemon Squeezy billing (billing.rs); `None` when not configured.
+    /// Stripe billing (billing.rs); `None` when not configured.
     pub billing: Option<BillingConfig>,
     /// Days of the Team trial (0 = none).
     pub trial_days: i64,

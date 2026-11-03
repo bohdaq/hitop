@@ -1,0 +1,30 @@
+{
+  "id": "evt_1QhitopCharge000001",
+  "object": "event",
+  "api_version": "2026-10-28.endive",
+  "created": 1793700000,
+  "livemode": false,
+  "pending_webhooks": 1,
+  "request": { "id": null, "idempotency_key": null },
+  "type": "charge.refunded",
+  "data": {
+    "object": {
+      "id": "ch_Hitop0001",
+      "object": "charge",
+      "amount": 800,
+      "amount_captured": 800,
+      "amount_refunded": 800,
+      "billing_details": { "email": "ada@example.com", "name": "Ada Lovelace", "address": { "country": "GB" } },
+      "captured": true,
+      "created": 1793700000,
+      "currency": "usd",
+      "customer": "cus_Hitop0001",
+      "livemode": false,
+      "paid": true,
+      "payment_intent": "pi_Hitop0001",
+      "refunded": true,
+      "status": "succeeded"
+    },
+    "previous_attributes": { "amount_refunded": 0, "refunded": false }
+  }
+}

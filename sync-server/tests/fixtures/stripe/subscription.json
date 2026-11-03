@@ -1,0 +1,62 @@
+{
+  "id": "evt_1QhitopSubscription1",
+  "object": "event",
+  "api_version": "2026-10-28.endive",
+  "created": 1793700000,
+  "livemode": false,
+  "pending_webhooks": 1,
+  "request": { "id": "req_Hitop", "idempotency_key": null },
+  "type": "customer.subscription.created",
+  "data": {
+    "object": {
+      "id": "sub_Hitop0001",
+      "object": "subscription",
+      "billing_cycle_anchor": 1793700000,
+      "cancel_at": null,
+      "cancel_at_period_end": false,
+      "canceled_at": null,
+      "collection_method": "charge_automatically",
+      "created": 1793700000,
+      "currency": "usd",
+      "customer": "cus_Hitop0001",
+      "ended_at": null,
+      "items": {
+        "object": "list",
+        "data": [
+          {
+            "id": "si_Hitop0001",
+            "object": "subscription_item",
+            "created": 1793700000,
+            "current_period_end": 1825236000,
+            "current_period_start": 1793700000,
+            "metadata": {},
+            "price": {
+              "id": "price_team_annual",
+              "object": "price",
+              "active": true,
+              "currency": "usd",
+              "product": "prod_HitopTeam",
+              "recurring": { "interval": "year", "interval_count": 1, "usage_type": "licensed" },
+              "tax_behavior": "exclusive",
+              "type": "recurring",
+              "unit_amount": 12000
+            },
+            "quantity": 3,
+            "subscription": "sub_Hitop0001"
+          }
+        ],
+        "has_more": false,
+        "total_count": 1,
+        "url": "/v1/subscription_items?subscription=sub_Hitop0001"
+      },
+      "latest_invoice": "in_Hitop0001",
+      "livemode": false,
+      "metadata": {},
+      "start_date": 1793700000,
+      "status": "active",
+      "trial_end": null,
+      "trial_start": null
+    },
+    "previous_attributes": null
+  }
+}

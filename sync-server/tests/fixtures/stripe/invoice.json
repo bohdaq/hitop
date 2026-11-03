@@ -1,0 +1,33 @@
+{
+  "id": "evt_1QhitopInvoice00001",
+  "object": "event",
+  "api_version": "2026-10-28.endive",
+  "created": 1793700000,
+  "livemode": false,
+  "pending_webhooks": 1,
+  "request": { "id": null, "idempotency_key": null },
+  "type": "invoice.paid",
+  "data": {
+    "object": {
+      "id": "in_Hitop0001",
+      "object": "invoice",
+      "amount_due": 36000,
+      "amount_paid": 36000,
+      "attempt_count": 1,
+      "billing_reason": "subscription_cycle",
+      "created": 1793700000,
+      "currency": "usd",
+      "customer": "cus_Hitop0001",
+      "customer_email": "ada@example.com",
+      "customer_name": "Ada Lovelace",
+      "livemode": false,
+      "parent": {
+        "type": "subscription_details",
+        "quote_details": null,
+        "subscription_details": { "metadata": {}, "subscription": "sub_Hitop0001" }
+      },
+      "status": "paid",
+      "total": 36000
+    }
+  }
+}

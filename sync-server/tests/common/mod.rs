@@ -20,7 +20,7 @@ pub mod dns;
 pub mod fill;
 pub mod github;
 pub mod idp;
-pub mod lemonsqueezy;
+pub mod stripe;
 pub mod orgsso;
 pub mod pw;
 pub mod t25;

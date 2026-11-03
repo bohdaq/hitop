@@ -185,7 +185,7 @@ pub struct State {
     pub github: crate::github::Github,
     /// Wrong passwords per address (password.rs).
     pub password_failures: crate::password::Backoff,
-    /// Calls to the Lemon Squeezy API (billing.rs), DNS over HTTPS (orgsso.rs).
+    /// Calls to the Stripe API (billing.rs), DNS over HTTPS (orgsso.rs).
     pub billing_http: ureq::Agent,
     /// Single sign-on per organization: verified domains and providers (orgsso.rs).
     pub org_sso: crate::orgsso::OrgSso,
@@ -313,8 +313,8 @@ impl SyncApp {
             ("POST", "/v1/orgs/:org/workspaces", crate::orgs::workspaces),
             ("GET", "/v1/orgs/:org/usage", crate::orgs::get_usage),
             ("GET", "/v1/orgs/:org/limits", crate::orgs::get_limits),
-            // HITOP Cloud C3: billing (Lemon Squeezy), trials.
-            ("POST", "/v1/billing/lemonsqueezy", crate::billing::webhook),
+            // HITOP Cloud C3: billing (Stripe Managed Payments), trials.
+            ("POST", "/v1/billing/stripe", crate::billing::webhook),
             ("GET", "/v1/orgs/:org/billing", crate::billing::get),
             ("POST", "/v1/orgs/:org/billing/checkout", crate::billing::checkout),
             ("GET", "/v1/orgs/:org/billing/portal", crate::billing::portal),

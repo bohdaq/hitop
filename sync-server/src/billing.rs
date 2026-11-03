@@ -1,70 +1,86 @@
-//! Billing for HITOP Cloud (spec/CLOUD_SERVICE.md section 6, tranche C3): Lemon Squeezy as the
-//! merchant of record, a 14-day Team trial run by this server, and the endpoints the portal uses.
-//! Off unless configured (a self-hosted server sells nothing): every endpoint here answers 404
-//! `billing_off` without `HITOP_SYNC_LS_WEBHOOK_SECRET`.
+//! Billing for HITOP Cloud (spec/CLOUD_SERVICE.md section 6, tranche C3): **Stripe Managed
+//! Payments** (Stripe is the merchant of record: it sells to the buyer and handles VAT and sales
+//! tax), a 14-day Team trial run by this server, and the endpoints the portal uses. Off unless
+//! configured (a self-hosted server sells nothing): every endpoint here answers 404 `billing_off`
+//! without the Stripe keys.
 //!
 //! Settings:
 //!
-//! - `HITOP_SYNC_LS_WEBHOOK_SECRET` (or `_FILE`): the webhook's signing secret. Turns billing on.
-//! - `HITOP_SYNC_LS_STORE_ID`: the store; events of any other store are recorded and ignored.
-//! - `HITOP_SYNC_LS_VARIANT_PRO_ANNUAL`, `_PRO_MONTHLY`, `_TEAM_ANNUAL`, `_TEAM_MONTHLY`, and since
-//!   C5 `_BUSINESS_ANNUAL`, `_BUSINESS_MONTHLY`: the variant ids (at least one). The variant decides
-//!   the plan; prices live in Lemon Squeezy. Business isn't sold until its variants are set.
-//! - `HITOP_SYNC_LS_API_KEY` (or `_FILE`): for checkouts, seat changes and customer portal links.
-//!   Without it the webhook still updates plans, and those three answer 409 `billing_api_off`.
-//! - `HITOP_SYNC_LS_TEST_MODE`: `off` (default) refuses test-mode events (a test purchase must
-//!   never grant a live plan); `on` accepts them (the store in test mode, before launch).
-//! - `HITOP_SYNC_LS_API_URL`: the API (default `https://api.lemonsqueezy.com`; tests point it at
-//!   a fake).
+//! - `HITOP_SYNC_STRIPE_SECRET_KEY` (or `_FILE`): a secret key (`sk_…`) or restricted key
+//!   (`rk_…`; write on Checkout Sessions, Subscriptions and Customer portal, read on Prices). Its mode decides
+//!   which events count: a test key (`_test_`) only test-mode events, a live key only live ones.
+//! - `HITOP_SYNC_STRIPE_WEBHOOK_SECRET` (or `_FILE`): the webhook endpoint's signing secret
+//!   (`whsec_…`). Billing is on when both are set (one without the other is a startup error).
+//! - Prices: by default found by their **lookup keys** in Stripe (`pro_monthly`, `pro_yearly`,
+//!   `team_monthly`, `team_yearly`, `business_monthly`, `business_yearly`: `GET /v1/prices`,
+//!   cached 10 minutes), so the two secrets are all the server needs. Optional overrides:
+//!   `HITOP_SYNC_STRIPE_PRICE_<PRO|TEAM|BUSINESS>_<MONTHLY|ANNUAL>` = a price id (`price_…`). The
+//!   price decides the plan (by id, else by the lookup key the event's price carries); amounts
+//!   live in Stripe. A plan isn't sold until a price for it is found.
+//! - `HITOP_SYNC_STRIPE_API_URL`: the API (default `https://api.stripe.com`; tests use a fake).
 //! - `HITOP_SYNC_TRIAL_DAYS`: the Team trial (default 14; 0 = no trials). Trials run on this
 //!   server, no card, but only where plans are sold: `HITOP_SYNC_LIMITS=plans` and billing on.
 //!
-//! **Webhook** (`POST /v1/billing/lemonsqueezy`). The `X-Signature` header must be the hex
-//! HMAC-SHA256 of the raw body under the signing secret (compared in constant time) before the
-//! body is parsed: anything else is a 401 and nothing is read. Lemon Squeezy's body has no event
-//! id and its retries resend the same bytes, so a delivery's id is the SHA-256 of the body: one
-//! already seen answers 200 `duplicate` and changes nothing. Bodies are never stored (they hold
-//! the buyer's name, address and card brand); `billing_events` keeps the id, event name, org,
-//! subscription id, the resource's `updated_at` and the outcome. Every verified delivery answers
-//! 200 with its outcome (`applied`, `duplicate`, `stale`, `unmatched`, `ignored`, `wrong_store`,
-//! `test_mode_refused`, `unknown_variant`, `superseded`), so Lemon Squeezy doesn't retry what
-//! will never apply; only a database failure answers 500 (Lemon Squeezy retries it).
+//! Every API call sends `Stripe-Version: 2026-10-28.endive` (`STRIPE_VERSION`); the webhook
+//! endpoint must be created with the same version, since event bodies follow the endpoint's.
+//!
+//! **Webhook** (`POST /v1/billing/stripe`). `Stripe-Signature: t=<secs>,v1=<hex>[,v1=…]` must hold
+//! a `v1` that is the hex HMAC-SHA256 of `"<t>.<raw body>"` under the signing secret (constant-time
+//! compare; two `v1` while a secret is rolled) and `t` within 5 minutes of now, before the body is
+//! parsed: anything else is a 401 and nothing is read. Deliveries are idempotent by the event id
+//! (`evt_…`): one already seen answers 200 `duplicate` and changes nothing. Bodies are never stored
+//! (they hold the buyer's name, address and email); `billing_events` keeps the event id, type,
+//! org, subscription id, `created` and the outcome. An event of the other mode than the key
+//! (`livemode`) is `livemode_mismatch`: a test purchase never grants a live plan. Every verified
+//! delivery answers 200 with its outcome (`applied`, `duplicate`, `stale`, `unmatched`, `ignored`,
+//! `livemode_mismatch`, `unknown_price`, `superseded`), so Stripe doesn't retry what will never
+//! apply; only a database failure answers 500 (Stripe retries it).
+//!
+//! **Events.** `checkout.session.completed` ties the session's subscription and customer to the
+//! org; `customer.subscription.*` (`created`, `updated`, `deleted`, `paused`, `resumed`) set plan
+//! (from the price), seats (the item quantity), status and period end; `invoice.payment_failed`
+//! → `past_due` (the portal's banner, plan kept), `invoice.paid` → `active` again; a fully
+//! refunded `charge.refunded` → `refunded`. Anything else is `ignored`.
+//!
+//! **Columns.** Migration 7 named them for the first provider; they hold Stripe's ids now:
+//! `entitlements.ls_customer_id` = `cus_…`, `ls_subscription_id` = `sub_…`, `ls_variant_id` = the
+//! price `price_…`, `ls_item_id` = the subscription item `si_…`, `ls_order_id` = the Checkout
+//! Session `cs_…`, `ls_updated_at` = the ordering mark (event `created`, microseconds);
+//! `billing_events.id` = the event id, `test_mode` = not `livemode`.
 //!
 //! **Which org.** Checkouts are made by this server only (`POST .../billing/checkout`), with
-//! `custom_data` = the org id, the buyer's user id and an HMAC of both under a secret of this
-//! server. The webhook proves Lemon Squeezy sent an event, not that the buyer may change the org it
-//! names, so an event takes its org from the subscription id already on an `entitlements` row,
-//! else from signed custom data; neither = `unmatched` (recorded, nothing changed;
-//! `hitop-sync-server billing-events --unmatched` lists them).
+//! `client_reference_id` = the org id and metadata (on the session and the subscription) = the org
+//! id, the buyer's user id and an HMAC of both under a secret of this server. The webhook proves
+//! Stripe sent an event, not that the buyer may change the org it names, so an event takes its org
+//! from the subscription (or customer) id already on an `entitlements` row, else from signed
+//! metadata; neither = `unmatched` (recorded, nothing changed; `hitop-sync-server billing-events
+//! --unmatched` lists them, `billing-link` ties one to an org).
 //!
-//! **Ordering.** Subscription events apply when the subscription's `updated_at` is not older than
-//! the last one applied for it (`entitlements.ls_updated_at`, microseconds); older ones are
-//! `stale`. Invoice events (`subscription_payment_*`) carry an invoice, not the subscription: they
-//! apply only when the invoice is not older than that mark and never move it, except a refund,
-//! which does (so the `subscription_updated` Lemon Squeezy sends with a renewal isn't held back
-//! by the invoice before it). An event for another subscription than the org's takes over only when
-//! it is live and the org's own is not (a new purchase after a refund or an expiry); otherwise it is
-//! `superseded` and ignored (an old subscription cancelled after a refund can't take the org back).
+//! **Ordering.** Stripe doesn't deliver in order. Subscription events apply when their `created`
+//! is not older than the last one applied for that subscription (`ls_updated_at`); older ones are
+//! `stale`. Several events share a second at purchase time: on a tie the later delivery wins.
+//! Invoice events apply only when not older than that mark and never move it; a refund does. An
+//! event for another subscription than the org's takes over only when it is live and the org's own
+//! is not (a new purchase after a refund or an expiry); otherwise it is `superseded` and ignored.
 //!
-//! **Status → limits** (`limits::Entitlement::plan_in_force`): `active`, `on_trial`, `past_due`
-//! (the portal shows a "payment failed" banner while Lemon Squeezy retries) and `cancelled` (until
-//! the period ends) keep the plan; `unpaid`, `expired`, `paused` and `refunded` are Free limits.
-//! Nothing is ever deleted: creates beyond Free are refused, reads and pulls always work. A full
-//! refund (`subscription_payment_refunded` of a fully refunded invoice, or `order_refunded` of the
-//! subscription's order) sets `refunded`, and it stays: later subscription events update the ids
-//! and period but not the status, until a newer paid invoice (`subscription_payment_success`) or
-//! `subscription_resumed` lifts it. A partial refund changes nothing.
+//! **Status → limits** (`limits::Entitlement::plan_in_force`): Stripe's `active`, `trialing`
+//! (stored as `on_trial`: `trialing` is this server's own trial), `past_due` and a subscription set
+//! to cancel (`cancel_at_period_end` or `cancel_at`: stored as `cancelled`, until the period ends)
+//! keep the plan; `unpaid`, `paused`, `incomplete`, `canceled` and `incomplete_expired` (stored as
+//! `expired`) and `refunded` are Free limits. Nothing is ever deleted: creates beyond Free are
+//! refused, reads and pulls always work. A full refund stays: later subscription events update the
+//! ids and period but not the status, until a newer `invoice.paid` or
+//! `customer.subscription.resumed` lifts it. A partial refund changes nothing.
 //!
-//! **Seats.** Team is per seat: the subscription item's quantity is the seats bought. `POST
-//! .../billing/seats` sets it through the API: more seats are invoiced at once (prorated), fewer
-//! take effect at once with no credit (`disable_prorations`: the lower price starts at the next
-//! renewal), and never below the seats in use. Pro is one person (its limits, 1 + 2 guests, don't
-//! follow the quantity).
+//! **Seats.** Team and Business are per seat: the subscription item's quantity is the seats
+//! bought. `POST .../billing/seats` updates it: more seats are invoiced at once, prorated
+//! (`proration_behavior=always_invoice`, `payment_behavior=error_if_incomplete`: a declined card
+//! changes nothing), fewer take effect at once with no credit (`proration_behavior=none`: the lower
+//! price from the next renewal), and never below the seats in use. Pro is one person.
 //!
 //! **Trials.** One 14-day Team trial per team org, per account and per email domain (common free
 //! mail domains excepted), no card. The trial ends at `period_end` (`expire`, at every limit
-//! check and hourly): the org drops to Free limits with nothing deleted. Buying during a trial
-//! replaces it.
+//! check and hourly): the org drops to Free limits with nothing deleted. Buying replaces it.
 
 use rust_web_server::request::Request;
 use rust_web_server::router::PathParams;
@@ -79,39 +95,62 @@ use crate::db::{DbError, Tx};
 use crate::limits;
 use crate::orgs::{self, OrgRole};
 
-pub const DEFAULT_API_URL: &str = "https://api.lemonsqueezy.com";
+pub const DEFAULT_API_URL: &str = "https://api.stripe.com";
+/// The API version every call pins (and the webhook endpoint must use).
+pub const STRIPE_VERSION: &str = "2026-10-28.endive";
+/// How far a signature's `t` may be from now (Stripe's libraries use the same 5 minutes).
+pub const SIGNATURE_TOLERANCE_SECS: i64 = 300;
 /// Seats of a Team trial (a proposal, like every number in limits.rs).
 pub const TRIAL_SEATS: i64 = 5;
 const MAX_SEATS: i64 = 1000;
 
-/// One purchasable variant.
+/// One purchasable price.
 #[derive(Clone, Debug, PartialEq, Eq)]
-pub struct Variant {
+pub struct Price {
     pub plan: &'static str,
     pub period: &'static str,
     pub id: String,
 }
 
+/// (plan, period, Stripe lookup key) of everything sold through checkout.
+pub const LOOKUP_KEYS: &[(&str, &str, &str)] = &[
+    ("pro", "annual", "pro_yearly"),
+    ("pro", "monthly", "pro_monthly"),
+    ("team", "annual", "team_yearly"),
+    ("team", "monthly", "team_monthly"),
+    ("business", "annual", "business_yearly"),
+    ("business", "monthly", "business_monthly"),
+];
+/// Prices found by lookup key, and when.
+pub type LookedUp = std::sync::Arc<std::sync::Mutex<Option<(i64, Vec<Price>)>>>;
+/// Form fields of a Stripe request.
+type Form = Vec<(&'static str, String)>;
+/// How long prices found by lookup key are kept.
+const LOOKUP_TTL_SECS: i64 = 600;
+
 #[derive(Clone)]
 pub struct BillingConfig {
+    pub secret_key: String,
     pub webhook_secret: String,
-    pub store_id: String,
-    pub variants: Vec<Variant>,
-    pub api_key: Option<String>,
+    /// Explicit price ids (`HITOP_SYNC_STRIPE_PRICE_*`); they win over lookup keys.
+    pub prices: Vec<Price>,
     pub api_url: String,
-    pub test_mode: bool,
+    /// The key is a live key: only `livemode: true` events count (else only test ones).
+    pub live: bool,
+    /// Prices found by lookup key and when (shared by the clones of this config).
+    pub looked_up: LookedUp,
 }
 
 impl std::fmt::Debug for BillingConfig {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         // Never the secrets.
-        f.debug_struct("BillingConfig").field("store_id", &self.store_id).field("variants", &self.variants).field("api_key", &self.api_key.is_some()).field("api_url", &self.api_url).field("test_mode", &self.test_mode).finish()
+        f.debug_struct("BillingConfig").field("prices", &self.prices).field("api_url", &self.api_url).field("live", &self.live).finish()
     }
 }
 
 fn secret_of(var: &dyn Fn(&str) -> Option<String>, name: &str) -> Result<Option<String>, String> {
     match (var(name), var(&format!("{name}_FILE"))) {
-        (Some(s), _) => Ok(Some(s)),
+        (Some(s), _) => Ok(Some(s.trim().to_string()).filter(|s| !s.is_empty())),
         (None, Some(path)) => Ok(Some(std::fs::read_to_string(&path).map_err(|e| format!("{name}_FILE {path}: {e}"))?.trim().to_string()).filter(|s| !s.is_empty())),
         (None, None) => Ok(None),
     }
@@ -119,38 +158,103 @@ fn secret_of(var: &dyn Fn(&str) -> Option<String>, name: &str) -> Result<Option<
 
 impl BillingConfig {
     pub fn from_env(var: &dyn Fn(&str) -> Option<String>) -> Result<Option<BillingConfig>, String> {
-        let Some(webhook_secret) = secret_of(var, "HITOP_SYNC_LS_WEBHOOK_SECRET")? else {
-            return Ok(None);
+        let key = secret_of(var, "HITOP_SYNC_STRIPE_SECRET_KEY")?;
+        let hook = secret_of(var, "HITOP_SYNC_STRIPE_WEBHOOK_SECRET")?;
+        let (secret_key, webhook_secret) = match (key, hook) {
+            (None, None) => return Ok(None),
+            (Some(k), Some(h)) => (k, h),
+            _ => return Err("billing needs both HITOP_SYNC_STRIPE_SECRET_KEY and HITOP_SYNC_STRIPE_WEBHOOK_SECRET (or neither)".into()),
         };
-        let store_id = var("HITOP_SYNC_LS_STORE_ID").ok_or("HITOP_SYNC_LS_STORE_ID must be set with HITOP_SYNC_LS_WEBHOOK_SECRET")?;
-        let mut variants = Vec::new();
+        if !(secret_key.starts_with("sk_") || secret_key.starts_with("rk_")) {
+            return Err("HITOP_SYNC_STRIPE_SECRET_KEY must be a Stripe secret key (sk_…) or restricted key (rk_…)".into());
+        }
+        if !webhook_secret.starts_with("whsec_") {
+            return Err("HITOP_SYNC_STRIPE_WEBHOOK_SECRET must be the endpoint's signing secret (whsec_…)".into());
+        }
+        let mut prices = Vec::new();
         for (plan, period) in [("pro", "annual"), ("pro", "monthly"), ("team", "annual"), ("team", "monthly"), ("business", "annual"), ("business", "monthly")] {
-            let name = format!("HITOP_SYNC_LS_VARIANT_{}_{}", plan.to_uppercase(), period.to_uppercase());
-            if let Some(id) = var(&name) {
-                if id.parse::<u64>().is_err() {
-                    return Err(format!("{name} must be a Lemon Squeezy variant id (a number)"));
+            let name = format!("HITOP_SYNC_STRIPE_PRICE_{}_{}", plan.to_uppercase(), period.to_uppercase());
+            if let Some(id) = var(&name).map(|s| s.trim().to_string()).filter(|s| !s.is_empty()) {
+                if !id.starts_with("price_") {
+                    return Err(format!("{name} must be a Stripe price id (price_…)"));
                 }
-                variants.push(Variant { plan, period, id });
+                prices.push(Price { plan, period, id });
             }
         }
-        if variants.is_empty() {
-            return Err("billing needs at least one HITOP_SYNC_LS_VARIANT_<PRO|TEAM|BUSINESS>_<ANNUAL|MONTHLY>".into());
-        }
-        let api_url = var("HITOP_SYNC_LS_API_URL").unwrap_or_else(|| DEFAULT_API_URL.into()).trim_end_matches('/').to_string();
+        let api_url = var("HITOP_SYNC_STRIPE_API_URL").unwrap_or_else(|| DEFAULT_API_URL.into()).trim_end_matches('/').to_string();
         if !crate::oidc::secure_url(&api_url) {
-            return Err(format!("HITOP_SYNC_LS_API_URL must be an https:// URL (http:// only on localhost): {api_url}"));
+            return Err(format!("HITOP_SYNC_STRIPE_API_URL must be an https:// URL (http:// only on localhost): {api_url}"));
         }
-        let test_mode = match var("HITOP_SYNC_LS_TEST_MODE").as_deref() {
-            None | Some("off") => false,
-            Some("on") => true,
-            Some(other) => return Err(format!("HITOP_SYNC_LS_TEST_MODE must be on or off, not {other}")),
-        };
-        Ok(Some(BillingConfig { webhook_secret, store_id, variants, api_key: secret_of(var, "HITOP_SYNC_LS_API_KEY")?, api_url, test_mode }))
+        let live = secret_key.contains("_live_");
+        Ok(Some(BillingConfig { secret_key, webhook_secret, prices, api_url, live, looked_up: Default::default() }))
     }
 
-    fn variant(&self, id: &str) -> Option<&Variant> {
-        self.variants.iter().find(|v| v.id == id)
+    /// A config with these explicit prices and nothing looked up yet.
+    pub fn new(secret_key: &str, webhook_secret: &str, prices: Vec<Price>, api_url: &str, live: bool) -> BillingConfig {
+        BillingConfig { secret_key: secret_key.into(), webhook_secret: webhook_secret.into(), prices, api_url: api_url.into(), live, looked_up: Default::default() }
     }
+
+    /// The plan a subscription item's price sells: an explicit id, a looked-up id, or the lookup
+    /// key the price object carries.
+    fn plan_of(&self, price: &Json) -> Option<Price> {
+        let id = ref_id(price);
+        if let Some(p) = self.prices.iter().find(|p| p.id == id) {
+            return Some(p.clone());
+        }
+        if let Some((_, found)) = self.looked_up.lock().unwrap_or_else(|e| e.into_inner()).as_ref() {
+            if let Some(p) = found.iter().find(|p| p.id == id) {
+                return Some(p.clone());
+            }
+        }
+        let key = price["lookup_key"].as_str()?;
+        LOOKUP_KEYS.iter().find(|(_, _, k)| *k == key).map(|(plan, period, _)| Price { plan, period, id })
+    }
+}
+
+/// What is on sale: the explicit prices, then the lookup keys' prices for the rest (from Stripe,
+/// cached). `Err` only when Stripe was needed and couldn't answer.
+fn prices(state: &State, c: &BillingConfig) -> Result<Vec<Price>, ApiError> {
+    let missing: Vec<&(&str, &str, &str)> = LOOKUP_KEYS.iter().filter(|(plan, period, _)| !c.prices.iter().any(|p| p.plan == *plan && p.period == *period)).collect();
+    let mut all = c.prices.clone();
+    if missing.is_empty() {
+        return Ok(all);
+    }
+    let now = state.now();
+    let cached = c.looked_up.lock().unwrap_or_else(|e| e.into_inner()).clone().filter(|(at, _)| now - at < LOOKUP_TTL_SECS && *at <= now);
+    let found = match cached {
+        Some((_, found)) => found,
+        None => {
+            let mut query = url::form_urlencoded::Serializer::new(String::new());
+            query.append_pair("active", "true").append_pair("limit", "100");
+            for (_, _, key) in &missing {
+                query.append_pair("lookup_keys[]", key);
+            }
+            let doc = stripe_call(state, c, "GET", &format!("/v1/prices?{}", query.finish()), &[])?;
+            let found: Vec<Price> = doc["data"]
+                .as_array()
+                .map(|list| {
+                    list.iter()
+                        .filter(|p| p["active"].as_bool() != Some(false) && p["recurring"].is_object())
+                        .filter_map(|p| {
+                            let key = p["lookup_key"].as_str()?;
+                            let id = p["id"].as_str().filter(|id| id.starts_with("price_"))?;
+                            LOOKUP_KEYS.iter().find(|(_, _, k)| *k == key).map(|(plan, period, _)| Price { plan, period, id: id.to_string() })
+                        })
+                        .collect()
+                })
+                .unwrap_or_default();
+            *c.looked_up.lock().unwrap_or_else(|e| e.into_inner()) = Some((now, found.clone()));
+            found
+        }
+    };
+    for (plan, period, _) in missing {
+        if let Some(p) = found.iter().find(|p| p.plan == *plan && p.period == *period) {
+            all.push(p.clone());
+        }
+    }
+    // Always in LOOKUP_KEYS order (the portal lists them so).
+    all.sort_by_key(|p| LOOKUP_KEYS.iter().position(|(plan, period, _)| *plan == p.plan && *period == p.period));
+    Ok(all)
 }
 
 // --- signatures ----------------------------------------------------------------------------
@@ -177,11 +281,37 @@ fn same(a: &[u8], b: &[u8]) -> bool {
     a.len() == b.len() && a.iter().zip(b).fold(0u8, |acc, (x, y)| acc | (x ^ y)) == 0
 }
 
-/// Lemon Squeezy's `X-Signature`: hex HMAC-SHA256 of the raw body.
-pub fn signature_ok(secret: &str, body: &[u8], header: Option<&str>) -> bool {
+/// The `v1` signature Stripe puts in `Stripe-Signature` for `body` signed at `t`.
+pub fn stripe_signature(secret: &str, t: i64, body: &[u8]) -> String {
+    let mut payload = format!("{t}.").into_bytes();
+    payload.extend_from_slice(body);
+    hex(&hmac_sha256(secret.as_bytes(), &payload))
+}
+
+/// Stripe's `Stripe-Signature` check: one `t`, any `v1` matching, `t` within the tolerance of `now`.
+pub fn signature_ok(secret: &str, body: &[u8], header: Option<&str>, now: i64) -> bool {
     let Some(h) = header else { return false };
-    let expected = hex(&hmac_sha256(secret.as_bytes(), body));
-    same(expected.as_bytes(), h.trim().to_ascii_lowercase().as_bytes())
+    let mut t: Option<i64> = None;
+    let mut v1 = Vec::new();
+    for part in h.split(',') {
+        match part.trim().split_once('=') {
+            Some(("t", v)) => {
+                if t.is_some() {
+                    return false;
+                }
+                t = v.trim().parse().ok();
+            }
+            Some(("v1", v)) => v1.push(v.trim().to_ascii_lowercase()),
+            _ => {}
+        }
+    }
+    let Some(t) = t else { return false };
+    if (now - t).abs() > SIGNATURE_TOLERANCE_SECS {
+        return false;
+    }
+    let expected = stripe_signature(secret, t, body);
+    // Every candidate is compared (no early exit on the first match).
+    v1.iter().fold(false, |ok, s| same(expected.as_bytes(), s.as_bytes()) | ok)
 }
 
 fn custom_sig(tx: &mut Tx, org: &str, user: &str) -> Result<String, ApiError> {
@@ -189,53 +319,11 @@ fn custom_sig(tx: &mut Tx, org: &str, user: &str) -> Result<String, ApiError> {
     Ok(hex(&hmac_sha256(&key, format!("hitop-billing/v1\n{org}\n{user}").as_bytes())))
 }
 
-// --- time ----------------------------------------------------------------------------------
-
-/// `2026-11-03T10:00:00.000000Z` (or without fraction, or with an offset of `+00:00`) →
-/// microseconds since 1970. `None` for anything else.
-pub fn parse_time(s: &str) -> Option<i64> {
-    let s = s.trim();
-    let (main, zone_ok) = if let Some(m) = s.strip_suffix('Z') { (m, true) } else if let Some(m) = s.strip_suffix("+00:00") { (m, true) } else { (s, false) };
-    if !zone_ok || main.len() < 19 {
-        return None;
-    }
-    let b = main.as_bytes();
-    if b[4] != b'-' || b[7] != b'-' || !(b[10] == b'T' || b[10] == b' ') || b[13] != b':' || b[16] != b':' {
-        return None;
-    }
-    let n = |r: std::ops::Range<usize>| main.get(r)?.parse::<i64>().ok();
-    let (y, mo, d, h, mi, se) = (n(0..4)?, n(5..7)?, n(8..10)?, n(11..13)?, n(14..16)?, n(17..19)?);
-    if !(1..=12).contains(&mo) || !(1..=31).contains(&d) || h > 23 || mi > 59 || se > 60 {
-        return None;
-    }
-    let mut micros = 0i64;
-    if let Some(frac) = main.get(19..).filter(|f| !f.is_empty()) {
-        let digits = frac.strip_prefix('.')?;
-        if digits.is_empty() || !digits.bytes().all(|c| c.is_ascii_digit()) {
-            return None;
-        }
-        let six: String = digits.chars().chain(std::iter::repeat('0')).take(6).collect();
-        micros = six.parse().ok()?;
-    }
-    // Days from the civil date (Howard Hinnant's algorithm).
-    let (yy, m) = if mo <= 2 { (y - 1, mo + 9) } else { (y, mo - 3) };
-    let era = yy.div_euclid(400);
-    let yoe = yy - era * 400;
-    let doy = (153 * m + 2) / 5 + d - 1;
-    let doe = yoe * 365 + yoe / 4 - yoe / 100 + doy;
-    let days = era * 146_097 + doe - 719_468;
-    Some(((days * 86_400 + h * 3600 + mi * 60 + se) * 1_000_000) + micros)
-}
-
-fn secs(attrs: &Json, field: &str) -> Option<i64> {
-    attrs[field].as_str().and_then(parse_time).map(|us| us.div_euclid(1_000_000))
-}
-
-/// A JSON id (Lemon Squeezy sends numbers in attributes and strings in `data.id`).
-fn id_of(v: &Json) -> String {
+/// A Stripe reference: an id string, or an expanded object's `id`.
+fn ref_id(v: &Json) -> String {
     match v {
         Json::String(s) => s.clone(),
-        Json::Number(n) => n.to_string(),
+        Json::Object(o) => o.get("id").and_then(Json::as_str).unwrap_or_default().to_string(),
         _ => String::new(),
     }
 }
@@ -264,6 +352,10 @@ fn row(tx: &mut Tx, org: &str) -> Result<Row, DbError> {
         .unwrap_or_else(|| Row { plan: "free".into(), status: "active".into(), ..Row::default() }))
 }
 
+fn customer_of(tx: &mut Tx, org: &str) -> Result<String, DbError> {
+    Ok(tx.query_one("SELECT ls_customer_id FROM entitlements WHERE org_id = $1", &[org.into()])?.map(|r| r.text(0)).unwrap_or_default())
+}
+
 fn ensure_row(state: &State, tx: &mut Tx, org: &str) -> Result<(), DbError> {
     tx.execute(
         "INSERT INTO entitlements (org_id, plan, seats, limits, status, period_end, updated_at) VALUES ($1, 'free', 0, '{}', 'active', 0, $2) ON CONFLICT (org_id) DO NOTHING",
@@ -288,7 +380,7 @@ fn record_change(state: &State, tx: &mut Tx, org: &str, before: &Row, after: &Ro
     )
 }
 
-fn write_row(state: &State, tx: &mut Tx, org: &str, r: &Row, customer: Option<&str>, variant: Option<&str>) -> Result<(), DbError> {
+fn write_row(state: &State, tx: &mut Tx, org: &str, r: &Row, customer: Option<&str>, price: Option<&str>) -> Result<(), DbError> {
     ensure_row(state, tx, org)?;
     tx.execute(
         "UPDATE entitlements SET plan = $1, seats = $2, status = $3, period_end = $4, ls_subscription_id = $5, ls_item_id = $6, ls_order_id = $7, ls_updated_at = $8, updated_at = $9 WHERE org_id = $10",
@@ -297,8 +389,8 @@ fn write_row(state: &State, tx: &mut Tx, org: &str, r: &Row, customer: Option<&s
     if let Some(c) = customer.filter(|c| !c.is_empty()) {
         tx.execute("UPDATE entitlements SET ls_customer_id = $1 WHERE org_id = $2", &[c.into(), org.into()])?;
     }
-    if let Some(v) = variant.filter(|v| !v.is_empty()) {
-        tx.execute("UPDATE entitlements SET ls_variant_id = $1 WHERE org_id = $2", &[v.into(), org.into()])?;
+    if let Some(p) = price.filter(|p| !p.is_empty()) {
+        tx.execute("UPDATE entitlements SET ls_variant_id = $1 WHERE org_id = $2", &[p.into(), org.into()])?;
     }
     Ok(())
 }
@@ -333,55 +425,58 @@ struct Outcome {
     outcome: &'static str,
     org: String,
     subscription: String,
-    updated_at: i64,
 }
 
 impl Outcome {
     fn new(outcome: &'static str) -> Outcome {
-        Outcome { outcome, org: String::new(), subscription: String::new(), updated_at: 0 }
+        Outcome { outcome, org: String::new(), subscription: String::new() }
+    }
+
+    fn of(outcome: &'static str, subscription: &str) -> Outcome {
+        Outcome { outcome, org: String::new(), subscription: subscription.to_string() }
     }
 }
 
-/// `POST /v1/billing/lemonsqueezy`: a Lemon Squeezy webhook delivery (module docs).
+/// `POST /v1/billing/stripe`: a Stripe webhook delivery (module docs).
 pub fn webhook(state: &State, request: &Request, _: &PathParams) -> ApiResult {
     let c = config(state)?;
-    let sig = request.header("x-signature").map(|h| h.value.to_string());
-    if !signature_ok(&c.webhook_secret, &request.body, sig.as_deref()) {
-        return Err(ApiError::new(401, "bad_signature", "X-Signature doesn't match the body"));
+    let sig = request.header("stripe-signature").map(|h| h.value.to_string());
+    if !signature_ok(&c.webhook_secret, &request.body, sig.as_deref(), state.now()) {
+        return Err(ApiError::new(401, "bad_signature", "Stripe-Signature doesn't match the body (or is too old)"));
     }
     let doc: Json = serde_json::from_slice(&request.body).map_err(|_| ApiError::bad("the body isn't JSON"))?;
-    let event = doc["meta"]["event_name"].as_str().unwrap_or_default().to_string();
-    if let Some(h) = request.header("x-event-name") {
-        if h.value != event.as_str() {
-            return Err(ApiError::bad("X-Event-Name doesn't match meta.event_name"));
-        }
+    let id = doc["id"].as_str().unwrap_or_default().to_string();
+    if !id.starts_with("evt_") || doc["object"] != "event" {
+        return Err(ApiError::bad("the body isn't a Stripe event"));
     }
-    let id = hex(&Sha256::digest(&request.body));
+    let event = doc["type"].as_str().unwrap_or_default().to_string();
+    let mark = doc["created"].as_i64().unwrap_or(0).saturating_mul(1_000_000);
+    let livemode = doc["livemode"].as_bool().unwrap_or(false);
     state.db.tx(|tx| {
         if tx.query_one("SELECT outcome FROM billing_events WHERE id = $1", &[(&id).into()])?.is_some() {
             return Ok((200, json!({ "outcome": "duplicate" })));
         }
-        let test = doc["data"]["attributes"]["test_mode"].as_bool().unwrap_or(false);
-        let o = apply(state, tx, c, &event, &doc)?;
+        let o = if livemode != c.live { Outcome::new("livemode_mismatch") } else { apply(state, tx, c, &event, &doc["data"]["object"], mark)? };
         tx.execute(
             "INSERT INTO billing_events (id, event_name, org_id, subscription_id, resource_updated_at, test_mode, outcome, received_at) VALUES ($1, $2, $3, $4, $5, $6, $7, $8)",
-            &[(&id).into(), (&event).into(), (&o.org).into(), (&o.subscription).into(), o.updated_at.into(), i64::from(test).into(), o.outcome.into(), state.now().into()],
+            &[(&id).into(), (&event).into(), (&o.org).into(), (&o.subscription).into(), mark.into(), i64::from(!livemode).into(), o.outcome.into(), state.now().into()],
         )?;
         if o.outcome != "applied" {
-            eprintln!("hitop-sync-server: billing: {event} {}: {}", if o.subscription.is_empty() { "-" } else { &o.subscription }, o.outcome);
+            eprintln!("hitop-sync-server: billing: {event} {} {}: {}", id, if o.subscription.is_empty() { "-" } else { &o.subscription }, o.outcome);
         }
         Ok((200, json!({ "outcome": o.outcome, "org": if o.org.is_empty() { Json::Null } else { o.org.clone().into() } })))
     })
 }
 
-/// The org an event belongs to: the subscription's row, else verified custom data.
-fn org_for(tx: &mut Tx, subscription: &str, custom: &Json) -> Result<Option<String>, ApiError> {
+/// The org an event belongs to: the subscription's row, else verified metadata.
+fn org_for(tx: &mut Tx, subscription: &str, meta: &Json) -> Result<Option<String>, ApiError> {
     if !subscription.is_empty() {
         if let Some(r) = tx.query_one("SELECT org_id FROM entitlements WHERE ls_subscription_id = $1", &[subscription.into()])? {
             return Ok(Some(r.text(0)));
         }
     }
-    let (org, user, sig) = (id_of(&custom["org_id"]), id_of(&custom["user_id"]), custom["sig"].as_str().unwrap_or_default().to_string());
+    let text = |k: &str| meta[k].as_str().unwrap_or_default().to_string();
+    let (org, user, sig) = (text("org_id"), text("user_id"), text("sig"));
     if org.is_empty() || user.is_empty() || sig.is_empty() {
         return Ok(None);
     }
@@ -391,76 +486,124 @@ fn org_for(tx: &mut Tx, subscription: &str, custom: &Json) -> Result<Option<Stri
     Ok(tx.query_one("SELECT id FROM orgs WHERE id = $1", &[(&org).into()])?.map(|r| r.text(0)))
 }
 
-fn apply(state: &State, tx: &mut Tx, c: &BillingConfig, event: &str, doc: &Json) -> Result<Outcome, ApiError> {
-    let data = &doc["data"];
-    let attrs = &data["attributes"];
-    let custom = &doc["meta"]["custom_data"];
-    if !attrs["store_id"].is_null() && id_of(&attrs["store_id"]) != c.store_id {
-        return Ok(Outcome::new("wrong_store"));
-    }
-    if attrs["test_mode"].as_bool() == Some(true) && !c.test_mode {
-        return Ok(Outcome::new("test_mode_refused"));
-    }
-    let updated = attrs["updated_at"].as_str().and_then(parse_time).unwrap_or(0);
-    match data["type"].as_str().unwrap_or_default() {
-        "subscriptions" => subscription_event(state, tx, c, event, &id_of(&data["id"]), attrs, custom, updated),
-        "subscription-invoices" => invoice_event(state, tx, event, &id_of(&attrs["subscription_id"]), attrs, custom, updated),
-        "orders" => order_event(state, tx, event, &id_of(&data["id"]), attrs, custom, updated),
+fn apply(state: &State, tx: &mut Tx, c: &BillingConfig, event: &str, obj: &Json, mark: i64) -> Result<Outcome, ApiError> {
+    match event {
+        "checkout.session.completed" => session_event(state, tx, obj),
+        e if e.starts_with("customer.subscription.") && obj["object"] == "subscription" => subscription_event(state, tx, c, event, obj, mark),
+        "invoice.paid" | "invoice.payment_failed" => invoice_event(state, tx, event, obj, mark),
+        "charge.refunded" => refund_event(state, tx, event, obj, mark),
         _ => Ok(Outcome::new("ignored")),
     }
 }
 
-#[allow(clippy::too_many_arguments)]
-fn subscription_event(state: &State, tx: &mut Tx, c: &BillingConfig, event: &str, sub: &str, attrs: &Json, custom: &Json, updated: i64) -> Result<Outcome, ApiError> {
-    let mut out = Outcome { outcome: "applied", org: String::new(), subscription: sub.to_string(), updated_at: updated };
-    let Some(org) = org_for(tx, sub, custom)? else {
+/// `checkout.session.completed`: the purchase's subscription and customer, for the signed org.
+/// The plan itself comes from the subscription events (which may arrive before or after this).
+fn session_event(state: &State, tx: &mut Tx, s: &Json) -> Result<Outcome, ApiError> {
+    let sub = ref_id(&s["subscription"]);
+    let mut out = Outcome::of("ignored", &sub);
+    if s["mode"] != "subscription" || sub.is_empty() {
+        return Ok(out);
+    }
+    let Some(org) = org_for(tx, &sub, &s["metadata"])? else {
         out.outcome = "unmatched";
         return Ok(out);
     };
     out.org = org.clone();
-    let variant_id = id_of(&attrs["variant_id"]);
-    let Some(variant) = c.variant(&variant_id) else {
-        out.outcome = "unknown_variant";
+    let before = row(tx, &org)?;
+    let mut after = row(tx, &org)?;
+    if before.sub != sub {
+        if !before.sub.is_empty() && LIVE.contains(&before.status.as_str()) {
+            out.outcome = "superseded";
+            return Ok(out);
+        }
+        // A new subscription (none yet, or the old one ended): its events will now match.
+        after = Row { sub: sub.clone(), item: String::new(), mark: 0, ..after };
+    }
+    after.order = s["id"].as_str().unwrap_or_default().to_string();
+    write_row(state, tx, &org, &after, Some(&ref_id(&s["customer"])), None)?;
+    out.outcome = "applied";
+    Ok(out)
+}
+
+/// Stripe's subscription status → ours (module docs).
+fn status_of(sub: &Json) -> &'static str {
+    let cancelling = sub["cancel_at_period_end"].as_bool() == Some(true) || sub["cancel_at"].as_i64().is_some();
+    match sub["status"].as_str().unwrap_or_default() {
+        "active" | "trialing" if cancelling => "cancelled",
+        "active" => "active",
+        "trialing" => "on_trial",
+        "past_due" => "past_due",
+        "unpaid" => "unpaid",
+        "paused" => "paused",
+        "canceled" | "incomplete_expired" => "expired",
+        // `incomplete` (the first payment didn't go through yet) and anything new: no plan.
+        _ => "incomplete",
+    }
+}
+
+fn subscription_event(state: &State, tx: &mut Tx, c: &BillingConfig, event: &str, s: &Json, mark: i64) -> Result<Outcome, ApiError> {
+    let sub = s["id"].as_str().unwrap_or_default().to_string();
+    let mut out = Outcome::of("applied", &sub);
+    let Some(org) = org_for(tx, &sub, &s["metadata"])? else {
+        out.outcome = "unmatched";
         return Ok(out);
     };
-    let status = attrs["status"].as_str().unwrap_or_default().to_string();
+    out.org = org.clone();
+    let item = &s["items"]["data"][0];
+    let price_id = ref_id(&item["price"]);
+    let Some(price) = c.plan_of(&item["price"]) else {
+        out.outcome = "unknown_price";
+        return Ok(out);
+    };
+    let status = status_of(s);
     let before = row(tx, &org)?;
     if !before.sub.is_empty() && before.sub != sub {
         // Another subscription: a live one replaces the org's only while the org's own isn't
         // running (a new purchase after a refund or expiry); a lapsed one never does, and neither
         // does a late event of an old subscription once a newer one runs.
-        if !LIVE.contains(&status.as_str()) || LIVE.contains(&before.status.as_str()) {
+        if !LIVE.contains(&status) || LIVE.contains(&before.status.as_str()) {
             out.outcome = "superseded";
             return Ok(out);
         }
-    } else if updated < before.mark {
+    } else if mark < before.mark {
         out.outcome = "stale";
         return Ok(out);
     }
     let same_sub = before.sub == sub;
+    let period = item["current_period_end"].as_i64();
+    let period_end = match status {
+        "cancelled" => s["cancel_at"].as_i64().or(period),
+        "expired" => s["ended_at"].as_i64().or(period),
+        _ => period,
+    };
     let mut after = Row {
-        plan: variant.plan.to_string(),
-        seats: if per_seat(variant.plan) { attrs["first_subscription_item"]["quantity"].as_i64().unwrap_or(before.seats).clamp(1, MAX_SEATS) } else { 1 },
-        status: status.clone(),
-        period_end: secs(attrs, "ends_at").or_else(|| secs(attrs, "renews_at")).unwrap_or(before.period_end),
-        sub: sub.to_string(),
-        item: Some(id_of(&attrs["first_subscription_item"]["id"])).filter(|s| !s.is_empty()).unwrap_or_else(|| if same_sub { before.item.clone() } else { String::new() }),
-        order: Some(id_of(&attrs["order_id"])).filter(|s| !s.is_empty()).unwrap_or_else(|| if same_sub { before.order.clone() } else { String::new() }),
-        mark: updated.max(if same_sub { before.mark } else { 0 }),
+        plan: price.plan.to_string(),
+        seats: if per_seat(price.plan) { item["quantity"].as_i64().unwrap_or(before.seats).clamp(1, MAX_SEATS) } else { 1 },
+        status: status.to_string(),
+        period_end: period_end.unwrap_or(before.period_end),
+        sub: sub.clone(),
+        item: Some(item["id"].as_str().unwrap_or_default().to_string()).filter(|s| !s.is_empty()).unwrap_or_else(|| if same_sub { before.item.clone() } else { String::new() }),
+        order: if same_sub { before.order.clone() } else { String::new() },
+        mark: mark.max(if same_sub { before.mark } else { 0 }),
     };
     // A refund stays until a resume or a newer paid invoice (module docs).
-    if same_sub && before.status == "refunded" && event != "subscription_resumed" {
+    if same_sub && before.status == "refunded" && event != "customer.subscription.resumed" {
         after.status = "refunded".into();
     }
-    write_row(state, tx, &org, &after, Some(&id_of(&attrs["customer_id"])), Some(&variant_id))?;
+    write_row(state, tx, &org, &after, Some(&ref_id(&s["customer"])), Some(&price_id))?;
     record_change(state, tx, &org, &before, &after, "billing", event_name(event), None)?;
     Ok(out)
 }
 
-#[allow(clippy::too_many_arguments)]
-fn invoice_event(state: &State, tx: &mut Tx, event: &str, sub: &str, attrs: &Json, custom: &Json, updated: i64) -> Result<Outcome, ApiError> {
-    let mut out = Outcome { outcome: "applied", org: String::new(), subscription: sub.to_string(), updated_at: updated };
-    let Some(org) = org_for(tx, sub, custom)? else {
+fn invoice_event(state: &State, tx: &mut Tx, event: &str, inv: &Json, mark: i64) -> Result<Outcome, ApiError> {
+    let details = &inv["parent"]["subscription_details"];
+    let sub = Some(ref_id(&details["subscription"])).filter(|s| !s.is_empty()).unwrap_or_else(|| ref_id(&inv["subscription"]));
+    let mut out = Outcome::of("applied", &sub);
+    if sub.is_empty() {
+        out.outcome = "ignored";
+        return Ok(out);
+    }
+    let Some(org) = org_for(tx, &sub, &details["metadata"])? else {
         out.outcome = "unmatched";
         return Ok(out);
     };
@@ -470,18 +613,14 @@ fn invoice_event(state: &State, tx: &mut Tx, event: &str, sub: &str, attrs: &Jso
         out.outcome = "superseded";
         return Ok(out);
     }
-    if updated < before.mark {
+    if mark < before.mark {
         out.outcome = "stale";
         return Ok(out);
     }
     let mut after = row(tx, &org)?;
     match event {
-        "subscription_payment_failed" if matches!(before.status.as_str(), "active" | "on_trial") => after.status = "past_due".into(),
-        "subscription_payment_success" | "subscription_payment_recovered" if matches!(before.status.as_str(), "past_due" | "unpaid" | "refunded") => after.status = "active".into(),
-        "subscription_payment_refunded" if attrs["refunded"].as_bool() == Some(true) => {
-            after.status = "refunded".into();
-            after.mark = before.mark.max(updated);
-        }
+        "invoice.payment_failed" if matches!(before.status.as_str(), "active" | "on_trial") => after.status = "past_due".into(),
+        "invoice.paid" if matches!(before.status.as_str(), "past_due" | "unpaid" | "refunded") => after.status = "active".into(),
         _ => {
             out.outcome = "ignored";
             return Ok(out);
@@ -492,26 +631,23 @@ fn invoice_event(state: &State, tx: &mut Tx, event: &str, sub: &str, attrs: &Jso
     Ok(out)
 }
 
-fn order_event(state: &State, tx: &mut Tx, event: &str, order: &str, attrs: &Json, custom: &Json, updated: i64) -> Result<Outcome, ApiError> {
-    let mut out = Outcome { outcome: "ignored", org: String::new(), subscription: String::new(), updated_at: updated };
-    if event != "order_refunded" {
-        // order_created: the subscription events carry the state.
-        return Ok(out);
-    }
-    let found = tx.query_one("SELECT org_id, ls_subscription_id FROM entitlements WHERE ls_order_id = $1 AND ls_order_id <> ''", &[order.into()])?;
-    let Some(r) = found else {
-        out.outcome = if org_for(tx, "", custom)?.is_some() { "ignored" } else { "unmatched" };
-        return Ok(out);
-    };
+/// `charge.refunded`: a full refund (by the owner, or by Stripe/Link support) ends the plan.
+fn refund_event(state: &State, tx: &mut Tx, event: &str, charge: &Json, mark: i64) -> Result<Outcome, ApiError> {
+    let customer = ref_id(&charge["customer"]);
+    let mut out = Outcome::new("unmatched");
+    let found = if customer.is_empty() { None } else { tx.query_one("SELECT org_id, ls_subscription_id FROM entitlements WHERE ls_customer_id = $1", &[(&customer).into()])? };
+    let Some(r) = found else { return Ok(out) };
     let org = r.text(0);
     out.org = org.clone();
     out.subscription = r.text(1);
-    if attrs["refunded"].as_bool() != Some(true) && attrs["status"].as_str() != Some("refunded") {
-        // A partial refund changes nothing.
+    let amount = charge["amount"].as_i64().unwrap_or(0);
+    let full = charge["refunded"].as_bool() == Some(true) || (amount > 0 && charge["amount_refunded"].as_i64().unwrap_or(0) >= amount);
+    if !full {
+        out.outcome = "ignored";
         return Ok(out);
     }
     let before = row(tx, &org)?;
-    let after = Row { status: "refunded".into(), mark: before.mark.max(updated), ..row(tx, &org)? };
+    let after = Row { status: "refunded".into(), mark: before.mark.max(mark), ..row(tx, &org)? };
     write_row(state, tx, &org, &after, None, None)?;
     record_change(state, tx, &org, &before, &after, "billing", event_name(event), None)?;
     out.outcome = "applied";
@@ -521,19 +657,15 @@ fn order_event(state: &State, tx: &mut Tx, event: &str, order: &str, attrs: &Jso
 /// Event names as `&'static str` for the audit detail (unknown ones as "other").
 fn event_name(e: &str) -> &'static str {
     const KNOWN: &[&str] = &[
-        "subscription_created",
-        "subscription_updated",
-        "subscription_cancelled",
-        "subscription_resumed",
-        "subscription_expired",
-        "subscription_paused",
-        "subscription_unpaused",
-        "subscription_payment_success",
-        "subscription_payment_failed",
-        "subscription_payment_recovered",
-        "subscription_payment_refunded",
-        "order_created",
-        "order_refunded",
+        "checkout.session.completed",
+        "customer.subscription.created",
+        "customer.subscription.updated",
+        "customer.subscription.deleted",
+        "customer.subscription.paused",
+        "customer.subscription.resumed",
+        "invoice.paid",
+        "invoice.payment_failed",
+        "charge.refunded",
     ];
     KNOWN.iter().find(|k| **k == e).copied().unwrap_or("other")
 }
@@ -561,13 +693,13 @@ pub fn per_seat(plan: &str) -> bool {
     matches!(plan, "team" | "business")
 }
 
-fn offers(c: Option<&BillingConfig>, personal: bool) -> Vec<Json> {
+fn offers(on_sale: &[Price], personal: bool) -> Vec<Json> {
     let plans: &[&str] = if personal { &["pro"] } else { &["team", "business"] };
-    c.map(|c| c.variants.iter().filter(|v| plans.contains(&v.plan)).map(|v| json!({ "plan": v.plan, "period": v.period })).collect()).unwrap_or_default()
+    on_sale.iter().filter(|p| plans.contains(&p.plan)).map(|p| json!({ "plan": p.plan, "period": p.period })).collect()
 }
 
-/// A Lemon Squeezy subscription that is still running (perhaps unpaid or paused): change it in
-/// the customer portal rather than buying a second one.
+/// A Stripe subscription that is still running (perhaps unpaid or paused): change it in the
+/// customer portal rather than buying a second one.
 fn subscribed(r: &Row) -> bool {
     !r.sub.is_empty() && matches!(r.status.as_str(), "active" | "on_trial" | "past_due" | "cancelled" | "paused" | "unpaid")
 }
@@ -617,6 +749,9 @@ fn trial_refusal(state: &State, tx: &mut Tx, org: &orgs::Org, user: &User, r: &R
 /// `GET /v1/orgs/:org/billing` (member): plan, status, seats bought and used, what can be bought.
 pub fn get(state: &State, request: &Request, params: &PathParams) -> ApiResult {
     let org = params.get("org").unwrap_or_default();
+    // What is on sale (perhaps a Stripe call, so before the transaction); without Stripe's
+    // answer only the explicit prices are offered.
+    let on_sale = state.config.billing.as_ref().map(|c| prices(state, c).unwrap_or_else(|_| c.prices.clone())).unwrap_or_default();
     state.db.tx(|tx| {
         let (user, o) = caller(state, tx, request, org, OrgRole::Member)?;
         expire(state, tx, Some(org))?;
@@ -631,8 +766,8 @@ pub fn get(state: &State, request: &Request, params: &PathParams) -> ApiResult {
             json!({
                 "org": org,
                 "enabled": c.is_some(),
-                "checkout": c.is_some_and(|c| c.api_key.is_some()),
-                "testMode": c.is_some_and(|c| c.test_mode),
+                "checkout": c.is_some(),
+                "testMode": c.is_some_and(|c| !c.live),
                 "plan": r.plan,
                 "planInForce": e.plan_in_force(),
                 "status": r.status,
@@ -641,7 +776,7 @@ pub fn get(state: &State, request: &Request, params: &PathParams) -> ApiResult {
                 "periodEnd": r.period_end,
                 "pastDue": r.status == "past_due",
                 "subscribed": subscribed(&r),
-                "offers": offers(c, o.personal),
+                "offers": offers(&on_sale, o.personal),
                 "trial": {
                     "available": trial_no.is_none(),
                     "why": trial_no,
@@ -687,51 +822,57 @@ struct CheckoutIn {
     seats: Option<i64>,
 }
 
-fn api_key(c: &BillingConfig) -> Result<&str, ApiError> {
-    c.api_key.as_deref().ok_or_else(|| ApiError::conflict("billing_api_off", "buying needs the Lemon Squeezy API key on this server (HITOP_SYNC_LS_API_KEY)", json!({})))
-}
-
-/// One Lemon Squeezy API call (JSON:API), outside any database transaction.
-fn ls_call(state: &State, c: &BillingConfig, method: &str, path: &str, body: Option<&Json>) -> Result<Json, ApiError> {
-    let key = api_key(c)?;
+/// One Stripe API call (form-encoded, pinned version), outside any database transaction.
+fn stripe_call(state: &State, c: &BillingConfig, method: &str, path: &str, form: &[(&str, String)]) -> Result<Json, ApiError> {
     let url = format!("{}{path}", c.api_url);
-    let http = &state.billing_http;
-    let auth = format!("Bearer {key}");
-    let result = match (method, body) {
-        ("POST", Some(b)) => http.post(&url).header("Accept", "application/vnd.api+json").header("Content-Type", "application/vnd.api+json").header("Authorization", &auth).send(b.to_string()),
-        ("PATCH", Some(b)) => http.patch(&url).header("Accept", "application/vnd.api+json").header("Content-Type", "application/vnd.api+json").header("Authorization", &auth).send(b.to_string()),
-        _ => http.get(&url).header("Accept", "application/vnd.api+json").header("Authorization", &auth).call(),
+    let auth = format!("Bearer {}", c.secret_key);
+    let result = if method == "GET" {
+        state.billing_http.get(&url).header("Authorization", &auth).header("Stripe-Version", STRIPE_VERSION).call()
+    } else {
+        let body = url::form_urlencoded::Serializer::new(String::new()).extend_pairs(form.iter().map(|(k, v)| (*k, v.as_str()))).finish();
+        let idempotency = uuid::Uuid::new_v4().to_string();
+        state
+            .billing_http
+            .post(&url)
+            .header("Authorization", &auth)
+            .header("Stripe-Version", STRIPE_VERSION)
+            .header("Idempotency-Key", &idempotency)
+            .header("Content-Type", "application/x-www-form-urlencoded")
+            .send(body)
     };
     let unreachable = |e: String| {
-        eprintln!("hitop-sync-server: Lemon Squeezy: {e}");
-        ApiError::new(503, "billing_unreachable", "Lemon Squeezy is unreachable; try again")
+        eprintln!("hitop-sync-server: Stripe: {e}");
+        ApiError::new(503, "billing_unreachable", "Stripe is unreachable; try again")
     };
     let mut res = result.map_err(|e| unreachable(format!("{method} {path}: {e}")))?;
     let status = res.status().as_u16();
     let text = res.body_mut().with_config().limit(1 << 20).read_to_string().map_err(|e| unreachable(format!("{method} {path}: {e}")))?;
     let doc: Json = serde_json::from_str(&text).unwrap_or(Json::Null);
     if !(200..300).contains(&status) {
-        let detail = doc["errors"][0]["detail"].as_str().unwrap_or("").to_string();
-        eprintln!("hitop-sync-server: Lemon Squeezy {method} {path}: {status} {detail}");
-        return Err(ApiError::new(502, "billing_refused", format!("Lemon Squeezy refused the request ({status}){}", if detail.is_empty() { String::new() } else { format!(": {detail}") })));
+        let message = doc["error"]["message"].as_str().unwrap_or("").to_string();
+        eprintln!("hitop-sync-server: Stripe {method} {path}: {status} {}", doc["error"]["code"].as_str().unwrap_or(""));
+        return Err(ApiError::new(502, "billing_refused", format!("Stripe refused the request ({status}){}", if message.is_empty() { String::new() } else { format!(": {message}") })));
     }
     Ok(doc)
 }
 
-/// `POST /v1/orgs/:org/billing/checkout {"plan","period","seats"}` (admin) → `{url}`: a Lemon
-/// Squeezy checkout for the org (Pro for a personal org, Team per seat for a team org).
+/// `POST /v1/orgs/:org/billing/checkout {"plan","period","seats"}` (admin) → `{url}`: a Stripe
+/// Checkout Session with Managed Payments (Pro for a personal org, Team or Business per seat for
+/// a team org).
 pub fn checkout(state: &State, request: &Request, params: &PathParams) -> ApiResult {
     let c = config(state)?;
     let org = params.get("org").unwrap_or_default().to_string();
     let input: CheckoutIn = body(request)?;
     let period = input.period.unwrap_or_else(|| "annual".into());
-    let (user, body) = state.db.tx(|tx| -> Result<(User, Json), ApiError> {
+    // An explicit price needs no Stripe call; anything else is found by lookup key.
+    let on_sale = if c.prices.iter().any(|p| p.plan == input.plan && p.period == period) { c.prices.clone() } else { prices(state, c)? };
+    let (user, form) = state.db.tx(|tx| -> Result<(User, Form), ApiError> {
         let (user, o) = caller(state, tx, request, &org, OrgRole::Admin)?;
         let allowed = if o.personal { input.plan == "pro" } else { per_seat(&input.plan) };
         if !allowed {
             return Err(ApiError::bad(if o.personal { "a personal account buys Pro; for Team or Business, create an organization" } else { "an organization buys Team or Business (per seat); Pro is for one person's personal account" }));
         }
-        let variant = c.variants.iter().find(|v| v.plan == input.plan && v.period == period).ok_or_else(|| ApiError::bad(format!("{} {period} isn't on sale here", input.plan)))?;
+        let price = on_sale.iter().find(|p| p.plan == input.plan && p.period == period).ok_or_else(|| ApiError::bad(format!("{} {period} isn't on sale here", input.plan)))?;
         let r = row(tx, &org)?;
         if subscribed(&r) {
             return Err(ApiError::conflict("already_subscribed", "this organization has a subscription: change it in the billing portal", json!({})));
@@ -745,50 +886,46 @@ pub fn checkout(state: &State, request: &Request, params: &PathParams) -> ApiRes
             return Err(ApiError::bad(format!("the organization uses {used} seat(s): buy at least that many")));
         }
         let sig = custom_sig(tx, &org, &user.id)?;
-        let body = json!({
-            "data": {
-                "type": "checkouts",
-                "attributes": {
-                    "checkout_data": {
-                        "email": user.email,
-                        "custom": { "org_id": org, "user_id": user.id, "sig": sig },
-                        "variant_quantities": [{ "variant_id": variant.id.parse::<u64>().unwrap_or(0), "quantity": quantity }],
-                    },
-                    "product_options": {
-                        "enabled_variants": [variant.id.parse::<u64>().unwrap_or(0)],
-                        "redirect_url": format!("{}#/orgs/{org}/plan", state.config.portal_url),
-                    },
-                    "test_mode": c.test_mode,
-                },
-                "relationships": {
-                    "store": { "data": { "type": "stores", "id": c.store_id } },
-                    "variant": { "data": { "type": "variants", "id": variant.id } },
-                },
-            }
-        });
-        Ok((user, body))
+        let back = format!("{}#/orgs/{org}/plan", state.config.portal_url);
+        let form = vec![
+            ("mode", "subscription".to_string()),
+            ("managed_payments[enabled]", "true".to_string()),
+            ("line_items[0][price]", price.id.clone()),
+            ("line_items[0][quantity]", quantity.to_string()),
+            ("success_url", format!("{back}?checkout=done")),
+            ("cancel_url", back),
+            ("customer_email", user.email.clone()),
+            ("client_reference_id", org.clone()),
+            ("metadata[org_id]", org.clone()),
+            ("metadata[user_id]", user.id.clone()),
+            ("metadata[sig]", sig.clone()),
+            ("subscription_data[metadata][org_id]", org.clone()),
+            ("subscription_data[metadata][user_id]", user.id.clone()),
+            ("subscription_data[metadata][sig]", sig),
+        ];
+        Ok((user, form))
     })?;
-    let doc = ls_call(state, c, "POST", "/v1/checkouts", Some(&body))?;
-    let url = doc["data"]["attributes"]["url"].as_str().ok_or_else(|| ApiError::new(502, "billing_refused", "Lemon Squeezy sent no checkout URL"))?.to_string();
+    let doc = stripe_call(state, c, "POST", "/v1/checkout/sessions", &form)?;
+    let url = doc["url"].as_str().ok_or_else(|| ApiError::new(502, "billing_refused", "Stripe sent no checkout URL"))?.to_string();
     state.db.tx(|tx| audit::record(tx, state, Event::new(&orgs::chain(&org), "checkout_started", Some(&user)).target(&org).detail(json!({ "plan": input.plan, "period": period }))))?;
     Ok((200, json!({ "url": url })))
 }
 
-/// `GET /v1/orgs/:org/billing/portal` (admin) → `{url}`: the Lemon Squeezy customer portal of the
-/// org's subscription (card, receipts, cancel, monthly/annual), a fresh signed link each time.
+/// `GET /v1/orgs/:org/billing/portal` (admin) → `{url}`: a Stripe customer portal session for the
+/// org's customer (card, invoices, cancel, monthly/annual), a fresh short-lived link each time.
 pub fn portal(state: &State, request: &Request, params: &PathParams) -> ApiResult {
     let c = config(state)?;
     let org = params.get("org").unwrap_or_default().to_string();
-    let sub = state.db.tx(|tx| -> Result<String, ApiError> {
+    let customer = state.db.tx(|tx| -> Result<String, ApiError> {
         caller(state, tx, request, &org, OrgRole::Admin)?;
-        let r = row(tx, &org)?;
-        if r.sub.is_empty() {
+        let customer = customer_of(tx, &org)?;
+        if customer.is_empty() {
             return Err(ApiError::conflict("no_subscription", "this organization has no subscription yet", json!({})));
         }
-        Ok(r.sub)
+        Ok(customer)
     })?;
-    let doc = ls_call(state, c, "GET", &format!("/v1/subscriptions/{sub}"), None)?;
-    let url = doc["data"]["attributes"]["urls"]["customer_portal"].as_str().ok_or_else(|| ApiError::new(502, "billing_refused", "Lemon Squeezy sent no customer portal URL"))?;
+    let doc = stripe_call(state, c, "POST", "/v1/billing_portal/sessions", &[("customer", customer), ("return_url", format!("{}#/orgs/{org}/plan", state.config.portal_url))])?;
+    let url = doc["url"].as_str().ok_or_else(|| ApiError::new(502, "billing_refused", "Stripe sent no customer portal URL"))?;
     Ok((200, json!({ "url": url })))
 }
 
@@ -798,16 +935,15 @@ struct SeatsIn {
     seats: i64,
 }
 
-/// `POST /v1/orgs/:org/billing/seats {"seats"}` (admin): Team seats bought (module docs).
+/// `POST /v1/orgs/:org/billing/seats {"seats"}` (admin): Team or Business seats bought (module docs).
 pub fn seats(state: &State, request: &Request, params: &PathParams) -> ApiResult {
     let c = config(state)?;
-    api_key(c)?;
     let org = params.get("org").unwrap_or_default().to_string();
     let input: SeatsIn = body(request)?;
-    let (user, item, before) = state.db.tx(|tx| -> Result<(User, String, i64), ApiError> {
+    let (user, sub, item, before) = state.db.tx(|tx| -> Result<(User, String, String, i64), ApiError> {
         let (user, _) = caller(state, tx, request, &org, OrgRole::Admin)?;
         let r = row(tx, &org)?;
-        if !per_seat(&r.plan) || r.item.is_empty() || !matches!(r.status.as_str(), "active" | "on_trial" | "past_due") {
+        if !per_seat(&r.plan) || r.sub.is_empty() || r.item.is_empty() || !matches!(r.status.as_str(), "active" | "on_trial" | "past_due") {
             return Err(ApiError::conflict("no_subscription", "seats change on a live Team or Business subscription", json!({})));
         }
         let used = limits::usage(state, tx, &org)?.seats;
@@ -817,28 +953,27 @@ pub fn seats(state: &State, request: &Request, params: &PathParams) -> ApiResult
         if input.seats < used {
             return Err(ApiError::bad(format!("the organization uses {used} seat(s): remove people first")));
         }
-        Ok((user, r.item, r.seats))
+        Ok((user, r.sub, r.item, r.seats))
     })?;
     if input.seats == before {
         return Ok((200, json!({ "org": org, "seats": before })));
     }
-    let more = input.seats > before;
-    let body = json!({
-        "data": {
-            "type": "subscription-items",
-            "id": item,
-            "attributes": if more { json!({ "quantity": input.seats, "invoice_immediately": true }) } else { json!({ "quantity": input.seats, "disable_prorations": true }) },
-        }
-    });
-    let doc = ls_call(state, c, "PATCH", &format!("/v1/subscription-items/{item}"), Some(&body))?;
-    let quantity = doc["data"]["attributes"]["quantity"].as_i64().unwrap_or(input.seats).clamp(1, MAX_SEATS);
-    let item_updated = doc["data"]["attributes"]["updated_at"].as_str().and_then(parse_time).unwrap_or(0);
+    let mut form = vec![("items[0][id]", item.clone()), ("items[0][quantity]", input.seats.to_string())];
+    if input.seats > before {
+        form.push(("proration_behavior", "always_invoice".into()));
+        form.push(("payment_behavior", "error_if_incomplete".into()));
+    } else {
+        form.push(("proration_behavior", "none".into()));
+    }
+    let doc = stripe_call(state, c, "POST", &format!("/v1/subscriptions/{sub}"), &form)?;
+    let quantity = doc["items"]["data"].as_array().and_then(|items| items.iter().find(|i| i["id"] == item.as_str())).and_then(|i| i["quantity"].as_i64()).unwrap_or(input.seats).clamp(1, MAX_SEATS);
     state.db.tx(|tx| -> Result<(), ApiError> {
         let b = row(tx, &org)?;
         if b.item != item {
             return Ok(());
         }
-        let after = Row { seats: quantity, mark: b.mark.max(item_updated), ..row(tx, &org)? };
+        // The mark stays: Stripe's `customer.subscription.updated` for this change follows.
+        let after = Row { seats: quantity, ..row(tx, &org)? };
         write_row(state, tx, &org, &after, None, None)?;
         record_change(state, tx, &org, &b, &after, "seats", "seats_changed", Some(&user))?;
         Ok(())
@@ -892,27 +1027,65 @@ mod tests {
     }
 
     #[test]
-    fn signatures() {
-        let body = br#"{"meta":{"event_name":"order_created"}}"#;
-        let good = hex(&hmac_sha256(b"s3cret", body));
-        assert!(signature_ok("s3cret", body, Some(&good)));
-        assert!(signature_ok("s3cret", body, Some(&good.to_uppercase())));
-        assert!(!signature_ok("s3cret", body, None));
-        assert!(!signature_ok("other", body, Some(&good)));
-        assert!(!signature_ok("s3cret", b"{}", Some(&good)));
-        assert!(!signature_ok("s3cret", body, Some(&good[..63])));
+    fn stripe_signatures() {
+        let body = br#"{"id":"evt_1","object":"event"}"#;
+        let now = 1_800_000_000;
+        let good = stripe_signature("whsec_s3cret", now, body);
+        let h = |s: &str| Some(s.to_string());
+        assert!(signature_ok("whsec_s3cret", body, h(&format!("t={now},v1={good}")).as_deref(), now));
+        // Order doesn't matter, v0 and unknown parts are skipped, a second v1 (secret rolling) is fine.
+        assert!(signature_ok("whsec_s3cret", body, h(&format!("v0=abc,v1={},t={now},v1={good},x=1", "0".repeat(64))).as_deref(), now + 299));
+        assert!(!signature_ok("whsec_s3cret", body, None, now));
+        assert!(!signature_ok("whsec_s3cret", body, h(&format!("v1={good}")).as_deref(), now), "no t");
+        assert!(!signature_ok("whsec_s3cret", body, h(&format!("t={now},t={now},v1={good}")).as_deref(), now), "two t");
+        assert!(!signature_ok("whsec_s3cret", body, h(&format!("t={now},v1={good}")).as_deref(), now + 301), "too old");
+        assert!(!signature_ok("whsec_s3cret", body, h(&format!("t={now},v1={good}")).as_deref(), now - 301), "from the future");
+        assert!(!signature_ok("whsec_other", body, h(&format!("t={now},v1={good}")).as_deref(), now));
+        assert!(!signature_ok("whsec_s3cret", b"{}", h(&format!("t={now},v1={good}")).as_deref(), now));
+        assert!(!signature_ok("whsec_s3cret", body, h(&format!("t={},v1={good}", now + 1)).as_deref(), now), "t is signed");
+        assert!(!signature_ok("whsec_s3cret", body, h(&format!("t={now},v0={good}")).as_deref(), now), "only v1 counts");
+        // Stripe's documented construction: HMAC-SHA256 over "<t>.<body>" with the secret as given.
+        assert_eq!(good, hex(&hmac_sha256(b"whsec_s3cret", format!("{now}.{}", std::str::from_utf8(body).unwrap()).as_bytes())));
     }
 
     #[test]
-    fn times() {
-        assert_eq!(parse_time("1970-01-01T00:00:00Z"), Some(0));
-        assert_eq!(parse_time("1970-01-01T00:00:01.000001Z"), Some(1_000_001));
-        assert_eq!(parse_time("2022-11-12T00:00:00.000000Z"), Some(1_668_211_200_000_000));
-        assert_eq!(parse_time("2024-02-29T12:30:15.5Z"), Some(1_709_209_815_500_000));
-        assert_eq!(parse_time("2026-11-03T10:00:00+00:00"), parse_time("2026-11-03T10:00:00Z"));
-        for bad in ["", "2026-11-03", "2026-13-01T00:00:00Z", "2026-11-03T10:00:00+02:00", "2026-11-03T10:00:00.Z", "x026-11-03T10:00:00Z"] {
-            assert_eq!(parse_time(bad), None, "{bad}");
+    fn stripe_statuses() {
+        let s = |v: Json| status_of(&v);
+        assert_eq!(s(json!({ "status": "active" })), "active");
+        assert_eq!(s(json!({ "status": "active", "cancel_at_period_end": true })), "cancelled");
+        assert_eq!(s(json!({ "status": "active", "cancel_at": 1_800_000_000 })), "cancelled");
+        assert_eq!(s(json!({ "status": "trialing" })), "on_trial", "never our own trial's status");
+        assert_eq!(s(json!({ "status": "past_due", "cancel_at_period_end": true })), "past_due", "the banner wins");
+        assert_eq!(s(json!({ "status": "canceled" })), "expired");
+        assert_eq!(s(json!({ "status": "incomplete_expired" })), "expired");
+        assert_eq!(s(json!({ "status": "incomplete" })), "incomplete");
+        assert_eq!(s(json!({ "status": "something_new" })), "incomplete");
+        for (stripe, ours) in [("unpaid", "unpaid"), ("paused", "paused")] {
+            assert_eq!(s(json!({ "status": stripe })), ours);
         }
+    }
+
+    #[test]
+    fn config_from_env() {
+        let env = |pairs: &'static [(&'static str, &'static str)]| move |k: &str| pairs.iter().find(|(n, _)| *n == k).map(|(_, v)| v.to_string());
+        assert!(BillingConfig::from_env(&env(&[])).unwrap().is_none(), "off when unset");
+        assert!(BillingConfig::from_env(&env(&[("HITOP_SYNC_STRIPE_SECRET_KEY", "sk_test_x")])).is_err(), "one without the other");
+        let base: &[(&str, &str)] = &[("HITOP_SYNC_STRIPE_SECRET_KEY", "sk_test_x"), ("HITOP_SYNC_STRIPE_WEBHOOK_SECRET", "whsec_y"), ("HITOP_SYNC_STRIPE_PRICE_TEAM_ANNUAL", "price_t")];
+        let c = BillingConfig::from_env(&env(base)).unwrap().unwrap();
+        assert_eq!((c.live, c.prices.len(), c.api_url.as_str()), (false, 1, DEFAULT_API_URL));
+        assert!(!format!("{c:?}").contains("sk_test_x") && !format!("{c:?}").contains("whsec_y"), "Debug never shows secrets");
+        let live = BillingConfig::from_env(&env(&[("HITOP_SYNC_STRIPE_SECRET_KEY", "rk_live_x"), ("HITOP_SYNC_STRIPE_WEBHOOK_SECRET", "whsec_y"), ("HITOP_SYNC_STRIPE_PRICE_PRO_MONTHLY", "price_p")])).unwrap().unwrap();
+        assert!(live.live);
+        let bare = BillingConfig::from_env(&env(&[("HITOP_SYNC_STRIPE_SECRET_KEY", "sk_test_x"), ("HITOP_SYNC_STRIPE_WEBHOOK_SECRET", "whsec_y")])).unwrap().unwrap();
+        assert!(bare.prices.is_empty(), "the two secrets are enough: prices by lookup key");
+        let p = |id: &str, key: &str| bare.plan_of(&json!({ "id": id, "lookup_key": key }));
+        assert_eq!(p("price_x", "team_yearly"), Some(Price { plan: "team", period: "annual", id: "price_x".into() }));
+        assert_eq!(p("price_y", "business_monthly").map(|p| p.plan), Some("business"));
+        assert_eq!(p("price_z", "something_else"), None);
+        assert_eq!(c.plan_of(&json!("price_t")).map(|p| p.plan), Some("team"), "an explicit id, unexpanded");
+        assert!(BillingConfig::from_env(&env(&[("HITOP_SYNC_STRIPE_SECRET_KEY", "sk_test_x"), ("HITOP_SYNC_STRIPE_WEBHOOK_SECRET", "whsec_y"), ("HITOP_SYNC_STRIPE_PRICE_PRO_MONTHLY", "101")])).is_err(), "not a price id");
+        assert!(BillingConfig::from_env(&env(&[("HITOP_SYNC_STRIPE_SECRET_KEY", "pk_test_x"), ("HITOP_SYNC_STRIPE_WEBHOOK_SECRET", "whsec_y"), ("HITOP_SYNC_STRIPE_PRICE_PRO_MONTHLY", "price_p")])).is_err(), "a publishable key");
+        assert!(BillingConfig::from_env(&env(&[("HITOP_SYNC_STRIPE_SECRET_KEY", "sk_test_x"), ("HITOP_SYNC_STRIPE_WEBHOOK_SECRET", "whsec_y"), ("HITOP_SYNC_STRIPE_PRICE_PRO_MONTHLY", "price_p"), ("HITOP_SYNC_STRIPE_API_URL", "http://api.example.com")])).is_err());
     }
 
     #[test]
