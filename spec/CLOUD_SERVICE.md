@@ -690,11 +690,11 @@ server-side row, never a new file in `environments/`.
 
 **Status (2026-11-03): built and tested off the VM; nothing applied.**
 
-- Commits on `main`: 3b84f21 (`migrate-db`, `db-stats`, `snapshot`), 4cc36f5 (rate limits, body
-  caps, `/healthz` detail), a4ad645 (hitop-sync-crypto 0.3.0 recovery phrases), f49bf04 (server
-  recovery blobs, migration 5), 4b01e3a (CLI `hitop sync recovery`), 94c677d (`dump`, snapshot
-  reads), 0e9e762 (Sync page recovery), 9f7107b (deploy and ops scripts, units), 9abdfd9 (key
-  bundle per unlock method), bf0b55f (CI job `ops`), then docs.
+- Commits on `main`: 7183eba (`migrate-db`, `db-stats`, `snapshot`), 160154f (rate limits, body
+  caps, `/healthz` detail), 9bd3542 (hitop-sync-crypto 0.3.0 recovery phrases), bb59aa2 (server
+  recovery blobs, migration 5), 1dc61fa (CLI `hitop sync recovery`), 59fa124 (`dump`, snapshot
+  reads), 7fb2597 (Sync page recovery), 83906f3 (deploy and ops scripts, units), f65d6de (key
+  bundle per unlock method), 14b71e8 (CI job `ops`), 1002717 (status page), 196811c (docs).
 - **Database**: `hitop-sync-server migrate-db --from --to` copies every table (the list comes from
   the migrations, columns per backend) into an empty database, reading one snapshot of the source
   and writing one transaction on the target, then compares row counts and per-table content hashes
