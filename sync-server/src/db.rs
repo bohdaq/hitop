@@ -294,7 +294,8 @@ impl Tx<'_> {
 /// `limits::grandfather` raises each personal org's limits to its usage (`migrate`), so no
 /// existing account is over a limit. 5: HITOP Cloud C2 key bundles (recovery.rs), one opaque
 /// blob per account and unlock method (`phrase` now; a password later). 6: HITOP Cloud C1b
-/// passwords (password.rs). 7: HITOP Cloud C3 billing (billing.rs): the Lemon Squeezy ids and
+/// passwords (password.rs). 7: HITOP Cloud C3 billing (billing.rs): the provider ids (Stripe since 2026-11-03; the columns
+/// keep their `ls_` names) and
 /// ordering mark on `entitlements`, `billing_events` (ids and outcomes of webhook deliveries,
 /// never their bodies) and `trials`.
 /// 8: HITOP Cloud C4 run history (runs.rs), alerts (alerts.rs), shared environment values

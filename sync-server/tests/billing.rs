@@ -150,7 +150,8 @@ fn team_with_three_seats_a_fourth_seat_then_payment_failed_and_deleted() {
     assert_eq!((sent.get("managed_payments[enabled]"), sent.get("mode")), (Some("true"), Some("subscription")), "Managed Payments on");
     assert_eq!((sent.get("line_items[0][price]"), sent.get("line_items[0][quantity]")), (Some(st::TEAM_ANNUAL), Some("3")));
     assert_eq!(sent.get("customer_email"), Some("ada@example.com"));
-    assert!(sent.get("success_url").unwrap().contains(&format!("#/orgs/{org}/plan")));
+    assert_eq!(sent.get("success_url"), sent.get("cancel_url"), "back to the plan page either way");
+    assert!(sent.get("success_url").unwrap().ends_with(&format!("#/orgs/{org}/plan")));
     assert_eq!((meta["org_id"].as_str(), meta["user_id"].as_str()), (Some(org.as_str()), Some(ada.user_id.as_str())));
     assert_eq!(meta["sig"].as_str().unwrap().len(), 64);
 

@@ -27,7 +27,7 @@
       "payment_status": "paid",
       "status": "complete",
       "subscription": "sub_Hitop0001",
-      "success_url": "https://cloud.test.example/#/orgs/org-id/plan?checkout=done",
+      "success_url": "https://cloud.test.example/#/orgs/org-id/plan",
       "url": null
     }
   }

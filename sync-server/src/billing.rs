@@ -892,7 +892,9 @@ pub fn checkout(state: &State, request: &Request, params: &PathParams) -> ApiRes
             ("managed_payments[enabled]", "true".to_string()),
             ("line_items[0][price]", price.id.clone()),
             ("line_items[0][quantity]", quantity.to_string()),
-            ("success_url", format!("{back}?checkout=done")),
+            // The plan page shows the new plan once the webhook has applied it (the hash router
+            // takes no query, so none is added).
+            ("success_url", back.clone()),
             ("cancel_url", back),
             ("customer_email", user.email.clone()),
             ("client_reference_id", org.clone()),
