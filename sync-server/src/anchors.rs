@@ -327,7 +327,7 @@ type Mailing = (Json, Vec<String>);
 
 /// Makes today's anchor for every org that gets them (team orgs; on HITOP Cloud those on Business
 /// or Enterprise) and mails it to the owners when a head moved since the org's last anchor. Runs
-/// hourly (main.rs); at most one anchor an org a day. Returns how many it made.
+/// hourly, the first an hour after start (main.rs); at most one anchor an org a day. Returns how many it made.
 pub fn daily(state: &State) -> Result<usize, ApiError> {
     if !state.config.audit_anchors {
         return Ok(0);

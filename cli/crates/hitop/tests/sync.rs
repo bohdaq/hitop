@@ -1216,6 +1216,14 @@ fn an_org_audit_export_checks_against_its_anchor_and_a_rewrite_shows() {
         r.json().unwrap_or(serde_json::Value::Null)
     };
     let org = call(reqwest::Method::POST, "/v1/orgs", serde_json::json!({ "name": "Acme" }))["id"].as_str().unwrap().to_string();
+    // With HITOP_SYNC_LIMITS=plans (CI runs this file again so) the export is Business.
+    let o = std::process::Command::new(std::env::var_os("HITOP_SYNC_SERVER_BIN").unwrap())
+        .args(["set-plan", &org, "business", "10"])
+        .env("HITOP_SYNC_DATABASE", format!("sqlite:{}", server.dir.path().join("sync.db").display()))
+        .env("HITOP_SYNC_MAIL", "log")
+        .output()
+        .unwrap();
+    assert!(o.status.success(), "{}", String::from_utf8_lossy(&o.stderr));
     call(reqwest::Method::POST, &format!("/v1/orgs/{org}/workspaces"), serde_json::json!({ "workspace": ws }));
 
     // The export, saved and checked; the server's key pinned here.

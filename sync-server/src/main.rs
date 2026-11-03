@@ -119,12 +119,18 @@ fn main() {
         if let Err(e) = alerts::tick(purger.state()) {
             eprintln!("hitop-sync-server: missed-run check: {e}");
         }
-        match hitop_sync_server::anchors::daily(purger.state()) {
+        std::thread::sleep(std::time::Duration::from_secs(3600));
+    });
+    // Daily audit anchors (anchors.rs): hourly, the first an hour after start, so a start (an
+    // upgrade, a database move and its row checks) writes nothing by itself.
+    let anchorer = app.clone();
+    std::thread::spawn(move || loop {
+        std::thread::sleep(std::time::Duration::from_secs(3600));
+        match hitop_sync_server::anchors::daily(anchorer.state()) {
             Ok(0) => {}
             Ok(n) => eprintln!("hitop-sync-server: {n} daily audit anchors"),
             Err(e) => eprintln!("hitop-sync-server: audit anchors: {}", e.message),
         }
-        std::thread::sleep(std::time::Duration::from_secs(3600));
     });
     // Alert delivery: queued alerts (alerts.rs), every 5 s.
     let deliverer = app.clone();
