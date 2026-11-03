@@ -9,7 +9,7 @@ These terms cover HITOP Cloud: the hosted sync service at `sync.hitop.rws8.tech`
 
 ## Who we are
 
-HITOP Cloud is run by Bohdan Tsap ("we"). Contact: [bohdaq@gmail.com](mailto:bohdaq@gmail.com). Paid plans are sold by Lemon Squeezy as merchant of record; its terms apply to the purchase itself.
+HITOP Cloud is run by Bohdan Tsap ("we"). Contact: [bohdaq@gmail.com](mailto:bohdaq@gmail.com). Paid plans are sold through Stripe Managed Payments: Stripe ("Sold through Link") is the merchant of record, and its terms apply to the purchase itself.
 
 ## Your account
 

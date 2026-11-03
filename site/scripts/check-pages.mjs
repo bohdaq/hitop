@@ -32,7 +32,7 @@ for (const f of [...files(join(site, "src")), ...files(join(site, "content")), .
 }
 const pricing = text(read("pricing.html"));
 check(!/Is there a subscription\?\s*No\b/.test(pricing), "pricing.html: the subscription answer must not be No");
-for (const p of ["$6", "$10", "$20", "HITOP Cloud", "Free forever", "Lemon Squeezy"]) check(pricing.includes(p), `pricing.html must show ${p}`);
+for (const p of ["$6", "$10", "$20", "HITOP Cloud", "Free forever", "Stripe", "plus applicable tax"]) check(pricing.includes(p), `pricing.html must show ${p}`);
 check(/id="refunds"/.test(read("pricing.html")), "pricing.html needs the #refunds anchor (the portal links it)");
 
 // Legal drafts.

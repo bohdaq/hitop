@@ -62,7 +62,7 @@ export function render() {
       <p>Delete a workspace in the app or with <code>hitop sync</code>; email <a href="mailto:bohdaq@gmail.com">bohdaq@gmail.com</a> to have your account removed. A sync server someone else runs, for example your employer's, keeps what its operator configures.</p>
 
       <h2>HITOP Cloud plans, only if you buy one</h2>
-      <p>Paid HITOP Cloud plans are sold by Lemon Squeezy as merchant of record. Lemon Squeezy collects your name, address, payment details and tax information under its own privacy policy; HITOP never sees your card. The sync server keeps your organization's plan, seats, status and the Lemon Squeezy subscription, order and customer ids, plus the ids and outcomes of Lemon Squeezy's notifications (not their content). A Team trial records the organization, the account that started it and its email domain, so each gets one trial.</p>
+      <p>Paid HITOP Cloud plans are sold through Stripe Managed Payments: Stripe (with Link, "Sold through Link") is the merchant of record. Stripe collects your name, email, billing address, payment details and tax information under its own privacy policy; HITOP never sees your card. The sync server keeps your organization's plan, seats, status and the Stripe customer, subscription, price and checkout ids, plus the ids and outcomes of Stripe's notifications (not their content). A Team trial records the organization, the account that started it and its email domain, so each gets one trial.</p>
 
       <h2>Children</h2>
       <p>HITOP does not knowingly collect information from anyone, including children under 13.</p>

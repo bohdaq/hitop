@@ -1,6 +1,6 @@
 // /pricing.html: the same URL as the old site, so existing links keep working. The apps and the
 // CLI stay free (or paid once); HITOP Cloud (spec/CLOUD_SERVICE.md section 3 and 8) is the only
-// subscription. Prices are the owner's (Q4) until Lemon Squeezy's checkout shows the final ones.
+// subscription. Prices are the owner's (Q4), set in Stripe; Stripe's checkout shows the final ones.
 import { html } from "lit";
 import { unsafeHTML } from "lit/directives/unsafe-html.js";
 import { icon } from "../icons.js";
@@ -35,21 +35,21 @@ const TIERS = [
   {
     name: "Pro",
     price: "$6",
-    note: "A month, billed yearly ($8 monthly). One person",
+    note: "A month, billed yearly ($8 monthly), plus applicable tax. One person",
     points: ["You plus 2 guests, 25 workspaces", "2 GB, 10 devices", "10 runner credentials", "Run history and webhook alerts from your runners"],
     action: [PORTAL, "Get Pro"],
   },
   {
     name: "Team",
     price: "$10",
-    note: "Per seat a month, billed yearly ($12 monthly)",
+    note: "Per seat a month, billed yearly ($12 monthly), plus applicable tax",
     points: ["Unlimited workspaces, roles and invites", "10 GB plus 1 GB per seat", "5 guest viewers free", "Run history, Slack alerts, shared secrets", "14 day free trial, no card"],
     action: [PORTAL, "Start the Team trial"],
   },
   {
     name: "Business and Enterprise",
     price: "$20",
-    note: "Per seat a month for Business. Enterprise by quote",
+    note: "Per seat a month for Business, plus applicable tax. Enterprise by quote",
     points: ["Your own SSO provider for your verified domains", "Signed audit export, daily anchors to the owners", "Admin console across every workspace", "A year of run history, priority support", "Enterprise: self hosted with a support contract"],
     action: ["mailto:bohdaq@gmail.com?subject=HITOP%20Cloud%20Business", "Talk to us"],
   },
@@ -60,8 +60,8 @@ const FAQ = [
   ["Can HITOP Cloud read my collections?", "No. Collections are encrypted on your devices before they are sent, and the server never holds a key that opens them. The security page says what the server does see, and that no outside firm has reviewed the encryption yet."],
   ["Do you run monitors for me?", "No. Run your collections in your CI or with hitop schedule; HITOP Cloud keeps the encrypted run history and sends alerts when a run starts or stops failing. Running your collection on our machines would need a key we are built never to hold."],
   ["What counts as a seat?", "Every person in the organization or in one of its workspaces, viewers included. Team includes 5 guest viewers for free, so you can show a collection to a stakeholder. Runner credentials never count."],
-  ["What happens if I go over a limit or stop paying?", "New workspaces, people or uploads beyond the plan are refused with a note that names the limit. Nothing is deleted or locked: you can always read, pull and export. After a failed payment Lemon Squeezy retries for about two weeks before the plan drops to Free limits."],
-  ["Who handles payment and tax?", "Lemon Squeezy is the merchant of record: it takes the card, adds VAT or sales tax where it applies, and sends the receipts. HITOP never sees your card."],
+  ["What happens if I go over a limit or stop paying?", "New workspaces, people or uploads beyond the plan are refused with a note that names the limit. Nothing is deleted or locked: you can always read, pull and export. After a failed payment Stripe retries it for a while (the retry schedule is set in Stripe) before the plan drops to Free limits."],
+  ["Who handles payment and tax?", "Stripe is the merchant of record (Stripe Managed Payments; the checkout says \"Sold through Link\"): it takes the payment, adds VAT or sales tax where it applies, and sends the receipts and invoices. HITOP never sees your card."],
   ["Can I get a refund?", html`<span id="refunds">HITOP Cloud: a full refund within 14 days of the first payment, by mail to <a href="mailto:bohdaq@gmail.com">bohdaq@gmail.com</a>. App Store purchases are refunded by Apple at reportaproblem.apple.com.</span>`],
   ["Can I buy HITOP Cloud in the Mac or iOS app?", "No. You can sign in to sync there; plans are bought on the web."],
   ["Why pay for the native apps?", "They send requests from the operating system, so they reach localhost with no CORS setup and machines on your network as well as public APIs, and they keep working when you are offline."],
@@ -84,7 +84,7 @@ function tierCards() {
           </article>`,
       )}
     </div>
-    <p class="section-lead small">Prices in US dollars before tax; Lemon Squeezy shows your currency at checkout. Run history and alerts arrive with the paid launch.</p>`;
+    <p class="section-lead small">Prices in US dollars, plus applicable tax; Stripe's checkout may show your currency. Run history and alerts arrive with the paid launch.</p>`;
 }
 
 export function render() {

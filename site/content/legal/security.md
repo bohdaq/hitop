@@ -17,7 +17,7 @@ Passwords never reach the server: your app derives two keys from the password (A
 
 - Your email address, your devices' names and public keys, and hashes of your session tokens.
 - Who is in which workspace, how many files it has, their sizes and when they change.
-- Organizations, members, plans and seats, and the Lemon Squeezy ids of a subscription (never card data: Lemon Squeezy takes the payment).
+- Organizations, members, plans and seats, and the Stripe ids of a subscription (never card data: Stripe takes the payment).
 - A security log per workspace and account (sign-ins, members, invites, key rotations), with IP addresses cut to their first three parts. It is hash chained, so a changed or removed entry shows.
 
 If someone took over the server, they could refuse service, show you old versions or hide changes, and see the metadata above. They could not read your collections, and your app refuses keys it has not pinned. The full list of what is and isn't protected is in the [threat model](https://github.com/bohdaq/hitop/blob/main/sync-server/THREAT_MODEL.md).
