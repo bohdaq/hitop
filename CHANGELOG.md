@@ -40,12 +40,14 @@ Releases before 1.2 are listed in ROADMAP.md (section 5) and on the GitHub Relea
   <anchor.json>` (or `--file <export>` offline) recomputes the chains and catches a log rewritten
   after the anchor was sent. The server's audit key is pinned on first use.
 - **Admin console** (portal → Admin): every workspace of the org with its people, every member's
-  device; transfer a workspace's ownership, ask its owners to rotate the key, remove a lost device
-  everywhere. `hitop sync rotate` rotates a workspace's key (owners); status, pull and push say when
+  device; transfer a workspace's ownership, ask its owners to rotate the key, take a lost device out
+  of the org's workspaces (its personal and other orgs' workspaces untouched). `hitop sync rotate` rotates a workspace's key (owners); status, pull and push say when
   an admin asked for it.
-- **Business plan** ($20 per seat a month yearly, $25 monthly; proposal) sold through
+- **Business plan** ($20 per seat a month billed yearly, $240 a seat; $25 monthly; confirmed) sold through
   Stripe once its prices exist (lookup keys `business_yearly`/`business_monthly`); drafts of the SLA and a
-  support page with the priority support address (not in force yet).
+  support page: one address for everyone, support@hitop.rws8.tech, best effort with Business
+  answered first, no response-time promise (not in force yet). Migration 11
+  (`workspace_excluded_keys`) keeps a removed device out of the org's workspaces.
 - Sync server: migration 9 (`org_sso`, `org_domains`, `org_audit_settings`, `audit_anchors`,
   `workspaces.rotation_requested_at|_by`); new settings `HITOP_SYNC_HOST_KEY[_FILE]`,
   `HITOP_SYNC_DNS_URL`, `HITOP_SYNC_AUDIT_ANCHORS`. Older clients keep working unchanged.

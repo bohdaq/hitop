@@ -31,7 +31,6 @@ Ask by mail within 30 days after the month ends. Credits are taken off the next 
 
 ## Support
 
-Business: priority support by mail to **business-support@hitop.rws8.tech** (proposed address, not
-active until this page is approved), answered within one business day (Monday to Friday, CET,
-public holidays excepted); an outage of the sync API within four hours, at any time. Free, Pro and
-Team: best effort through the public issue tracker. Details on the [support page](/legal/support.html).
+Support is **best effort** for every plan, with no response-time promise: mail
+**support@hitop.rws8.tech**. Business requests are answered first (priority by plan). Details on
+the [support page](/legal/support.html).

@@ -22,7 +22,7 @@ The owner's answers to Q1–Q18 (section 10). The rest of this file follows them
 | Q1 | Name: HITOP Cloud | no |
 | Q2 | Stay under `hitop.rws8.tech` | no |
 | Q3 | Billing: **Stripe Managed Payments** (Stripe is the merchant of record); since 2026-11-03, see Later decisions | yes (was Paddle, then Lemon Squeezy) |
-| Q4 | Prices: Pro $6, Team $10 per seat, Business $20 per seat, Enterprise by quote (annual; monthly costs more); a proposal until set in Stripe | no |
+| Q4 | Prices: Pro $6, Team $10 per seat, Business $20 per seat (confirmed 2026-11-03: $240 a seat a year, $25 a month), Enterprise by quote (annual; monthly costs more); Pro and Team a proposal until set in Stripe | no |
 | Q5 | Viewers count as seats; 5 free guest viewers per Team org | no |
 | Q6 | AGPL + paid support and indemnity, no dual licence | no |
 | Q7 | Portal and billing code: this repo, `cloud/`, AGPL | no |
@@ -44,6 +44,10 @@ The owner's answers to Q1–Q18 (section 10). The rest of this file follows them
 | --- | --- | --- |
 | 2026-11-03 | Normal sign-in and sign-up before C2 is applied: email + password (sign-up with email verification, password reset) **and** "Continue with Google" / "Continue with GitHub". Mail codes, passkeys and SSO stay. | New tranche C1b (after C2's code, before C2 is applied on the VM). Owner registers the Google and GitHub OAuth apps. |
 | 2026-11-03 | **Billing through Stripe Managed Payments**, replacing Lemon Squeezy (Q3): Stripe is the seller of record and handles VAT and sales tax, receipts, fraud, disputes and order support ("Sold through Link"). The owner set up the Stripe sandbox: products Pro, Team, Business, USD prices, tax-exclusive, tax category "SaaS – business use", flat rate with quantity = seats, lookup keys `pro_monthly`, `pro_yearly`, `team_monthly`, `team_yearly`, `business_monthly`, `business_yearly`. | C3's provider code is replaced (built for Lemon Squeezy, deployed with billing off, nothing sold): Checkout Sessions with `managed_payments[enabled]=true`, webhook `/v1/billing/stripe`, prices by lookup key, the customer portal for changes. Every "Lemon Squeezy" in this file reads Stripe now; the provider-independent parts (entitlements, seats, trial, grace) stay. Status in C3 below. |
+| 2026-11-03 | **Org admin "remove device" reaches only the org's workspaces** (C5): the device's wraps and shared-value wraps in the org's workspaces are deleted, the device is excluded from those workspaces from then on, and only they ask for a rotation; the member's personal and other orgs' workspaces and the device key itself stay untouched. | admin.rs `remove_device`, migration 11 (`workspace_excluded_keys`), portal Admin page, tests, THREAT_MODEL "Organizations"; replaces C5's "removed from the account everywhere". |
+| 2026-11-03 | **One support address for everyone: support@hitop.rws8.tech**; Business gets priority by plan (answered first). | Replaces the proposed `business-support@hitop.rws8.tech` in the SLA and support drafts and section 11. |
+| 2026-11-03 | **SLA: no response-time promise.** A 99.5% monthly uptime target and best-effort support only. | The 4-hour outage answer and the one-business-day answer are removed from the SLA and support drafts and this file. |
+| 2026-11-03 | **Business price confirmed**: $20 per seat a month billed yearly ($240 per seat a year), $25 per seat month to month (plus applicable tax). | No longer a proposal for Business (site `TIERS`, portal `PRICES`, Stripe prices). |
 | 2026-11-03 | The password also unlocks the end-to-end keys on a new device (a password-derived key wraps the account's key bundle, like the recovery phrase). | The server stores one more wrapped bundle per account (never the password or keys). A forgotten password loses the keys unless the person has a recovery phrase or another device; reset says so. Google/GitHub sign-in alone doesn't unlock keys. |
 
 ## 1. One page summary
@@ -1134,8 +1138,9 @@ Stripe API and event bodies shaped like Stripe's documented ones; not deployed).
   heads mailed to the org owners (default) or, opt-in per org, published at
   `status.*/audit-anchors/<org>/<date>.json` (public anchors leak workspace count and ids, so
   not the default), closing THREAT_MODEL item 7; admin console in the portal (all org workspaces,
-  members, transfer owner, force rotation, remove device org-wide); priority support address and
-  the SLA page (99.5%, shared host).
+  members, transfer owner, force rotation, remove a device from the org's workspaces); the support
+  address (support@hitop.rws8.tech, Business first) and the SLA page (99.5%, shared host, best
+  effort support).
 - **Done when:** `tests/sso.rs` and `tests/keycloak.rs` run per org (two orgs, two issuers, a
   user of org A can't sign in through org B's IdP); domain claim tests; export verify with
   `hitop sync audit --verify --anchor <file>`; admin console e2e; the T25 handoff ("hosted SSO:
@@ -1178,8 +1183,9 @@ Stripe API and event bodies shaped like Stripe's documented ones; not deployed).
 - **Admin console** (`admin.rs`, portal `#/orgs/<org>/admin`): every org workspace with members
   and roles, every member device; transfer owner (to a current member), ask for a key rotation
   (`rotationRequested` on the workspace; `hitop sync rotate` does it and clears it; status, pull and
-  push tell owners), remove a device from the member's account everywhere (its wraps go, its
-  workspaces ask for a rotation). Team has the basic console (list, transfer owner); Business adds
+  push tell owners), remove a device from the org's workspaces only (owner decision 2026-11-03:
+  its wraps there go, migration 11 `workspace_excluded_keys` keeps it out of them, they ask for a
+  rotation; the device key, the member's personal and other orgs' workspaces stay). Team has the basic console (list, transfer owner); Business adds
   the rotation request and device removal.
 - **Business plan**: (since the Stripe move) the prices with lookup keys `business_yearly` and
   `business_monthly`, or `HITOP_SYNC_STRIPE_PRICE_BUSINESS_*` (off while none exists);
@@ -1187,17 +1193,20 @@ Stripe API and event bodies shaped like Stripe's documented ones; not deployed).
   SSO and domains (402 `sso`), export and anchors (402 `auditExport`), the admin actions (402
   `adminActions`) need Business or Enterprise; the console list Team and up (402
   `adminConsole`); sign-in never stops when a plan lapses. Self-hosted: everything, no gate.
-- **Site drafts** (behind `DRAFT`): `/legal/sla.html` with the priority support line,
-  `/legal/support.html` (proposed address `business-support@hitop.rws8.tech`, response times),
+- **Site drafts** (behind `DRAFT`): `/legal/sla.html` (99.5% target, best-effort support, no
+  response times: owner decision 2026-11-03), `/legal/support.html` (support@hitop.rws8.tech for
+  everyone, Business answered first),
   the DoH resolver in the sub-processor list, Business points on the pricing page.
 - **Migration 9** (SQLite and Postgres): `org_sso`, `org_domains`, `org_audit_settings`,
   `audit_anchors`, `workspaces.rotation_requested_at|_by`; `migrate-db`/`db-stats` copy them
   (`tests/common/fill.rs` fills every one).
 - **Deviations**: forced rotation is a request the owners' clients carry out (`hitop sync rotate`,
-  manual), since the server holds no key; "remove device org-wide" deletes the device key from the
-  member's account (it can't be in some workspaces and not others), so it also drops that device's
-  keys of the member's personal and other-org workspaces and asks those to rotate, with the org
-  admin named as the requester (owner question: keep, or limit to org workspaces only); public anchors are served by
+  manual), since the server holds no key; "remove device" first deleted the device key from the
+  account everywhere, and since the owner's decision of 2026-11-03 reaches only the org's
+  workspaces: the device stays on the account, and is excluded per workspace (migration 11) from
+  every org workspace the member is in at removal time, so the next rotation neither asks for nor
+  accepts a wrap for it there (an org workspace the member joins later can wrap it again: an
+  admin removes it again; a new device registration is a new key); public anchors are served by
   the sync server at `/v1/audit-anchors/...`, the `status.*/audit-anchors/` route waits for the
   `status.` DNS (owner); domain checks need a DoH resolver (a sub-processor, unset on the test
   server); no re-seal command for a new host key (orgs save their secret again); the web app's
@@ -1421,7 +1430,7 @@ All questions were answered by the owner on 2026-11-02 (section 0).
 | 2026-11-03 | C6 | **SOC 2 Type 1**: work through the owner decisions S1–S12 in `cloud/soc2-type1-readiness.md` (scope and "as of" date, compliance tool and auditor, policy approval and the signed 2026-Q4 access review, backups and the first restore drill, uptime checker, 2FA on every operator account, single-operator oversight and change review, training record / risk register / tabletop, vendor reports, review timing, pinning Actions, legal drafts); load the evidence into the tool; book the audit. | |
 | 2026-11-03 | C6 | **Enterprise drafts**: fill and approve `/legal/enterprise-agreement.html` (legal entity, governing law, fees, response times, supported versions, upgrade windows, liability cap, insurance) and `/legal/security-questionnaire.html` (check each answer; it is the basis for the first customer questionnaire). Approval = `DRAFT = false` with the other drafts. | |
 | 2026-11-03 | C6 | **SCIM and the image**: nothing to set on the server. Decide whether to keep the deactivation rule (out of the org and of what SCIM gave; account and sessions stay) and the `userName` = email rule. The signed image appears with the next `cli-v*` tag (agents don't tag); after it, check `cosign verify` as in `sync-server/README.md`. Decide later whether to build arm64 images. | |
-| 2026-11-03 | C5 | **Approve the drafts**: `/legal/sla.html` (99.5%, shared host, credits, priority support line) and `/legal/support.html`; pick the **priority support address** (proposal `business-support@hitop.rws8.tech`: create the mailbox or alias, or tell the agent another) and whether outage answers within 4 hours are promised. Approval = `DRAFT = false` (with the C3 drafts). | |
-| 2026-11-03 | C5 | **Business in Stripe** (with the C3 Stripe row): product HITOP Cloud Business, per seat, $240 per seat a year and $25 per seat a month (the proposal), lookup keys `business_yearly` and `business_monthly`. Business isn't sold until those prices exist. | sandbox: yes, 2026-11-03 |
+| 2026-11-03 | C5 | **Approve the drafts**: `/legal/sla.html` (99.5% monthly target, shared host, credits, best-effort support with no response times) and `/legal/support.html`; create the mailbox or alias **support@hitop.rws8.tech** (one address for everyone, Business answered first; owner decision 2026-11-03). Approval = `DRAFT = false` (with the C3 drafts). | address and SLA terms decided 2026-11-03; mailbox and approval open |
+| 2026-11-03 | C5 | **Business in Stripe** (with the C3 Stripe row): product HITOP Cloud Business, per seat, $240 per seat a year and $25 per seat a month (confirmed by the owner 2026-11-03), lookup keys `business_yearly` and `business_monthly`. Business isn't sold until those prices exist. | sandbox: yes, 2026-11-03 |
 | 2026-11-03 | C5 | **Per-org SSO on the hosted server** (only when you want Business SSO live; Q15 says not on the test server): a host key line `HITOP_SYNC_HOST_KEY=<openssl rand -hex 32>` in `/etc/hitop-sync/env` (keep a copy offline, never in backups) and a DNS-over-HTTPS resolver `HITOP_SYNC_DNS_URL` (e.g. Cloudflare; add it to the sub-processor list); RUNBOOK "Business features (C5)". Until then every per-org SSO endpoint answers 404 `org_sso_off`. | |
 | 2026-11-03 | C5 | Optional: DNS `status.hitop.rws8.tech` (C0 row) also carries public audit anchors once an rws route sends `/audit-anchors/` to the sync server's `/v1/audit-anchors/` (the agent adds the route with your go). | |

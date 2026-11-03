@@ -685,10 +685,17 @@ out of the server and manage every workspace of the org. What that adds:
   members and roles) and every device key of the org's members: metadata the server holds anyway,
   never contents. It transfers a workspace's ownership to one of its current members (they already
   hold the key), asks a workspace's owners to rotate (a flag: the server can't rotate, it holds no
-  key; `hitop sync rotate` does it and clears the flag), and removes a member's device key from
-  their account (its wraps go, its workspaces ask for a rotation). Removing a device stops the
-  server handing it new keys; the device keeps whatever it already decrypted, and the keys of past
-  epochs it holds open those epochs' blobs until the owners rotate and rewrite.
+  key; `hitop sync rotate` does it and clears the flag), and removes a member's device from **the
+  org's workspaces only** (owner decision 2026-11-03): its wraps and shared-value wraps there go,
+  each of those workspaces excludes the key from then on (`workspace_excluded_keys`: the server
+  neither lists it to the owners' clients nor stores a wrap for it there, from anyone), and they ask
+  for a rotation. The device key itself and its access to the member's personal and other orgs'
+  workspaces stay: an org admin can't touch what isn't the org's. Removing a device stops the server
+  handing it new keys of those workspaces; the device keeps whatever it already decrypted, and the
+  keys of past epochs it holds open those epochs' blobs until the owners rotate and rewrite. A
+  malicious server could ignore the exclusion and keep serving the device (as with any removal:
+  the owners' pinned keys and the rotation are the defence); an org workspace the member joins
+  later isn't covered until an admin removes the device again.
 
 ## SCIM provisioning (HITOP Cloud C6)
 

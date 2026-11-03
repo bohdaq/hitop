@@ -49,8 +49,8 @@ const TIERS = [
   {
     name: "Business and Enterprise",
     price: "$20",
-    note: "Per seat a month for Business, plus applicable tax. Enterprise by quote",
-    points: ["Your own SSO provider for your verified domains", "Signed audit export, daily anchors to the owners", "Admin console across every workspace", "A year of run history, priority support", "Enterprise: self hosted with a support contract"],
+    note: "Business: per seat a month, billed yearly ($240 a seat; $25 monthly), plus applicable tax. Enterprise by quote",
+    points: ["Your own SSO provider for your verified domains", "Signed audit export, daily anchors to the owners", "Admin console across every workspace", "A year of run history, support answered first (best effort, support@hitop.rws8.tech)", "Enterprise: self hosted with a support contract"],
     action: ["mailto:bohdaq@gmail.com?subject=HITOP%20Cloud%20Business", "Talk to us"],
   },
 ];

@@ -1,30 +1,23 @@
 ---
 path: "/legal/support.html"
 title: "Support · HITOP Cloud"
-description: "How to reach HITOP Cloud support, and how fast Business customers get an answer."
+description: "How to reach HITOP Cloud support: one address for everyone, best effort, Business first."
 ---
 
 # Support
 
-## Business: priority support
+## Everyone: support@hitop.rws8.tech
 
-Mail **business-support@hitop.rws8.tech** (proposed address, not active until this page is
-approved) from an address of your organization. Name the organization and, for a problem with a
-sign-in or a request, the time it happened (UTC) and what you saw. Never send a password, a
-recovery phrase, a session, an access token or a collection's secret values: we never need them.
+Mail **support@hitop.rws8.tech** from an address of your organization. Name the organization and,
+for a problem with a sign-in or a request, the time it happened (UTC) and what you saw. Never send
+a password, a recovery phrase, a session, an access token or a collection's secret values: we never
+need them. Bugs can also go to https://github.com/bohdaq/hitop/issues (never with secrets in it).
 
-| What | First answer |
-| --- | --- |
-| The sync API is down or refuses every request | within 4 hours, any day |
-| Anything else (sign-in, SSO, billing, a bug) | within 1 business day (Monday to Friday, CET) |
+Support is **best effort**, with no promised response time. **Business** requests are answered
+first (priority by plan), then Team, Pro and Free.
 
 The availability target and the credits are in the [SLA](/legal/sla.html): 99.5% a month, on one
 shared server.
-
-## Free, Pro and Team
-
-Best effort: open an issue at https://github.com/bohdaq/hitop/issues (never with secrets in it), or
-mail the address on the pricing page for billing questions.
 
 ## Enterprise
 

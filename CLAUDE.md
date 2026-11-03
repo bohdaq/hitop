@@ -491,7 +491,7 @@ hitop/
   keyed by `Flow.org` (all SSO flows in `state.sso.flows`, one callback); `sso_required_for` checks `state.org_sso` (in memory, `orgsso::reload` after
   writes: never open a db tx in it). Audit: `GET /v1/orgs/:org/audit/export` (JSONL, answered outside the router in api.rs), daily anchors (hourly
   worker, mailed to owners, `HITOP_SYNC_AUDIT_ANCHORS`), `/v1/audit/key`, `/v1/audit-anchors/:org/:day` (public opt-in). Admin: `/v1/orgs/:org/admin`
-  (+ owner transfer, rotation request, device removal). `limits::require_plan` gates features (402 `sso`/`auditExport`/`adminConsole`/`adminActions`).
+  (+ owner transfer, rotation request, device removal from the org's workspaces only: migration 11 `workspace_excluded_keys`, honoured by exact_wraps/insert_wraps/key lists/shares). `limits::require_plan` gates features (402 `sso`/`auditExport`/`adminConsole`/`adminActions`).
   Business prices: lookup keys `business_yearly|_monthly`. The server links `ring` (own secrets only; `no_crypto_in_server` bans client crates)
 - Live at https://sync.hitop.rws8.tech (VM, `hitop-sync.service`, 127.0.0.1:7881, env `/etc/hitop-sync/env`, DB `/var/lib/private/hitop-sync/sync.db`); deploy: copy the release binary + `deploy/` and run `deploy/install.sh`
 - `rws --check` on the VM needs `/etc/rws/admin.env` loaded (admin token), or it fails on any config

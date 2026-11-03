@@ -423,7 +423,8 @@ C5 endpoints: `GET/PUT/DELETE /v1/orgs/:org/sso`, `POST .../sso/test`, `GET/POST
 `GET /v1/orgs/:org/audit/export` (JSON lines), `GET/POST .../audit/anchors`, `PUT
 .../audit/settings`, `GET /v1/audit/key`, `GET /v1/audit-anchors/:org/:day`; `GET
 /v1/orgs/:org/admin`, `PUT .../admin/workspaces/:ws/owner {userId, keepOwners?}`, `POST
-.../admin/workspaces/:ws/rotation`, `DELETE .../admin/devices/:key`. `GET /v1/auth/sso?email=`
+.../admin/workspaces/:ws/rotation`, `DELETE .../admin/devices/:key` (takes the device out of the
+org's workspaces only; the key and the member's other workspaces stay). `GET /v1/auth/sso?email=`
 names the org's provider; `POST /v1/auth/sso/start` takes `org` or finds it from `email`.
 
 HITOP Cloud C6 (migration 10: `scim_tokens`, `scim_users`, `scim_groups`, `scim_group_members`,
