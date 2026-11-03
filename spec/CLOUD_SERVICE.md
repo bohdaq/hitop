@@ -1308,7 +1308,7 @@ host) are not built (Q18: EU only; they wait for a paying customer or a section 
   deactivation clearing invites; another org's token sees nothing; plans Team/Pro/Free 402,
   Enterprise allowed, revoke on a lapsed plan, seats 402), `tests/support_bundle.rs`, scim/support
   unit tests, `postgres_scim` (CI Postgres 17), `cargo test --workspace` and clippy with all
-  features green; portal e2e + SCIM checks; the image job on CI.
+  features green; portal e2e 86/86 (7 new SCIM checks: off until a token, token shown once, IdP provisioning, group roles, the waiting invite, revoke); site build + `check-pages.mjs`; the image job on CI.
 - **Deviations**: the "compliance tool shows no open control without an owner decision" and "the
   first questionnaire filled" parts are owner items (the tool isn't picked; the answers page is the
   questionnaire basis); groups' roles are set in the portal, not taken from IdP attributes;
