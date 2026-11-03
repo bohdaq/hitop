@@ -96,6 +96,10 @@ pub struct Secret {
     /// recovered with it: the device re-seals the recovery data when its pins or memory change.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub recovery: Option<String>,
+    /// The bundle key of the account's password (base64url) when this device is the device the
+    /// password's key bundle holds: it re-seals that bundle when its pins or memory change.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub password: Option<String>,
 }
 
 impl Secret {

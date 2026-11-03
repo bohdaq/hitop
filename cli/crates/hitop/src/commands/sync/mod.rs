@@ -5,6 +5,7 @@
 
 mod audit;
 mod client;
+mod password;
 mod recovery;
 mod sso;
 mod store;
@@ -26,22 +27,33 @@ use store::{Account, Link, RunnerCredential, Secret};
 
 #[derive(Subcommand)]
 pub enum SyncCmd {
-    /// Sign in by email (a code is mailed to you) or with single sign-on (--sso), and register
-    /// this device's key
+    /// Sign in with your email and password (asked for), or a mailed code (--code), single
+    /// sign-on (--sso), Google (--google) or GitHub (--github). A password sign-in on a new
+    /// computer unlocks your end-to-end keys: no trust step
     Login {
         /// Your address (with --sso: optional, a hint for the sign-in page)
-        #[arg(long, required_unless_present = "sso")]
+        #[arg(long, required_unless_present_any = ["sso", "google", "github"])]
         email: Option<String>,
-        /// Sign in with the server's identity provider (SSO) in a browser
-        #[arg(long)]
-        sso: bool,
-        /// With --sso: don't open a browser here; print the link and paste the code shown after
-        /// signing in (for SSH sessions)
-        #[arg(long, requires = "sso")]
-        no_browser: bool,
-        /// The code from the sign-in mail (asked for on a terminal when left out)
-        #[arg(long, allow_hyphen_values = true)]
+        /// Sign in with a code mailed to you instead of the password. Alone, it mails one (put it
+        /// last); with the code from the mail, it signs in
+        #[arg(long, num_args = 0..=1, default_missing_value = "", allow_hyphen_values = true, value_name = "CODE")]
         code: Option<String>,
+        /// Sign in with the server's identity provider (SSO) in a browser
+        #[arg(long, conflicts_with_all = ["google", "github", "code", "password_stdin"])]
+        sso: bool,
+        /// Continue with Google in a browser
+        #[arg(long, conflicts_with_all = ["github", "code", "password_stdin"])]
+        google: bool,
+        /// Continue with GitHub in a browser
+        #[arg(long, conflicts_with_all = ["code", "password_stdin"])]
+        github: bool,
+        /// With --sso, --google or --github: don't open a browser here; print the link and paste
+        /// the code shown after signing in (for SSH sessions)
+        #[arg(long)]
+        no_browser: bool,
+        /// Read the password from the first line of stdin (scripts)
+        #[arg(long)]
+        password_stdin: bool,
         /// Sync server (default https://sync.hitop.rws8.tech, or HITOP_SYNC_SERVER)
         #[arg(long)]
         server: Option<String>,
@@ -49,6 +61,25 @@ pub enum SyncCmd {
         #[arg(long)]
         name: Option<String>,
     },
+    /// Make an account with your email and a password: confirm the address with the code mailed
+    /// to you (asked for on a terminal, or run again with --code)
+    Signup {
+        #[arg(long)]
+        email: String,
+        /// The code from the confirmation mail (finishes a sign-up started earlier)
+        #[arg(long, allow_hyphen_values = true)]
+        code: Option<String>,
+        /// Read the password from the first line of stdin (scripts)
+        #[arg(long)]
+        password_stdin: bool,
+        #[arg(long)]
+        server: Option<String>,
+        #[arg(long)]
+        name: Option<String>,
+    },
+    /// Your password: set or change it, reset a forgotten one by mail, or unlock your keys with it
+    #[command(subcommand)]
+    Password(PasswordCmd),
     /// Sign out on this device (forgets the session and the device key)
     Logout,
     /// The account, this device and its key fingerprint
@@ -192,6 +223,43 @@ pub enum RunnerCmd {
 }
 
 #[derive(Subcommand)]
+pub enum PasswordCmd {
+    /// Add a password to your account, or change it (asks for the current one). Re-seals your
+    /// key bundle; other devices are signed out
+    Set {
+        /// Read the passwords from stdin: the current one on the first line (when the account has
+        /// one), then the new one
+        #[arg(long)]
+        password_stdin: bool,
+    },
+    /// Forgot your password: mails a reset code
+    Forgot {
+        #[arg(long)]
+        email: String,
+        #[arg(long)]
+        server: Option<String>,
+    },
+    /// Choose a new password with the code from the reset mail. Your old password's key bundle
+    /// is gone after this: unlock your workspaces with the recovery phrase or another device
+    Reset {
+        #[arg(long, allow_hyphen_values = true)]
+        code: String,
+        #[arg(long)]
+        password_stdin: bool,
+        #[arg(long)]
+        server: Option<String>,
+        #[arg(long)]
+        name: Option<String>,
+    },
+    /// After signing in another way (code, Google, GitHub): unlock your keys with the password,
+    /// so this computer becomes your device
+    Unlock {
+        #[arg(long)]
+        password_stdin: bool,
+    },
+}
+
+#[derive(Subcommand)]
 pub enum RecoveryCmd {
     /// Make a 24-word recovery phrase (printed once; write it down) and keep this device's
     /// recovery data, sealed with it, on the server. Replaces an earlier phrase
@@ -230,7 +298,7 @@ pub struct TrustArgs {
 }
 
 pub fn run(cmd: SyncCmd) -> Result<i32> {
-    let refresh = !matches!(cmd, SyncCmd::Login { .. } | SyncCmd::Logout | SyncCmd::Recovery(_));
+    let refresh = !matches!(cmd, SyncCmd::Login { .. } | SyncCmd::Signup { .. } | SyncCmd::Logout | SyncCmd::Recovery(_) | SyncCmd::Password(_));
     let result = run_cmd(cmd);
     // Keep the recovery data up to date with this device's trust and key memory.
     if refresh && result.is_ok() && std::env::var_os(store::RUNNER_ENV).is_none() {
@@ -241,13 +309,33 @@ pub fn run(cmd: SyncCmd) -> Result<i32> {
 
 fn run_cmd(cmd: SyncCmd) -> Result<i32> {
     match cmd {
-        SyncCmd::Login { email, sso, no_browser, code, server, name } => {
-            if sso {
-                sso_login(email.as_deref(), no_browser, server, name).map(|_| 0)
+        SyncCmd::Login { email, code, sso, google, github, no_browser, password_stdin, server, name } => {
+            let browser = if sso {
+                Some("sso")
+            } else if google {
+                Some("google")
+            } else if github {
+                Some("github")
             } else {
-                login(email.as_deref().unwrap_or_default(), code, server, name).map(|_| 0)
+                None
+            };
+            if no_browser && browser.is_none() {
+                bail!("--no-browser goes with --sso, --google or --github");
             }
+            let email = email.unwrap_or_default();
+            match (browser, code) {
+                (Some(kind), _) => browser_login(kind, Some(email.as_str()).filter(|e| !e.is_empty()), no_browser, server, name),
+                (None, Some(code)) if code_is_flag(&code) => bail!("--code took {code} as the code: put --code last to have a code mailed, or give the code after it"),
+                (None, Some(code)) => login(&email, Some(code).filter(|c| !c.is_empty()), server, name),
+                (None, None) => password::login(&email, password_stdin, server, name),
+            }
+            .map(|_| 0)
         }
+        SyncCmd::Signup { email, code, password_stdin, server, name } => password::signup(&email, code, password_stdin, server, name).map(|_| 0),
+        SyncCmd::Password(PasswordCmd::Set { password_stdin }) => password::set(password_stdin).map(|_| 0),
+        SyncCmd::Password(PasswordCmd::Forgot { email, server }) => password::forgot(&email, server).map(|_| 0),
+        SyncCmd::Password(PasswordCmd::Reset { code, password_stdin, server, name }) => password::reset(&code, password_stdin, server, name).map(|_| 0),
+        SyncCmd::Password(PasswordCmd::Unlock { password_stdin }) => password::unlock(password_stdin).map(|_| 0),
         SyncCmd::Logout => logout().map(|_| 0),
         SyncCmd::Whoami => whoami().map(|_| 0),
         SyncCmd::Ls => ls().map(|_| 0),
@@ -303,7 +391,7 @@ pub(crate) fn ask(prompt: &str) -> Result<String> {
     Ok(line.trim().to_string())
 }
 
-fn default_server() -> String {
+pub(crate) fn default_server() -> String {
     std::env::var("HITOP_SYNC_SERVER").ok().filter(|s| !s.is_empty()).unwrap_or_else(|| store::DEFAULT_SERVER.to_string())
 }
 
@@ -334,52 +422,79 @@ fn login(email: &str, code: Option<String>, server: Option<String>, name: Option
                 println!("Then: hitop sync login --email {email} --code <code from the mail>");
                 return Ok(());
             }
+
             ask("Code from the mail (or the part after # in its link): ")?
         }
     };
     let code = code.rsplit('#').next().unwrap_or(&code).trim().to_string();
     let r = anon.call("POST", "/v1/auth/email/verify", Some(json!({ "token": code })))?;
-    finish_login(&server, &r, email, name)
+    finish_login(&server, &r, email, name, None)
 }
 
-fn sso_login(email: Option<&str>, no_browser: bool, server: Option<String>, name: Option<String>) -> Result<()> {
+/// `--code` with nothing after it swallowed the next flag (`--code --server ...`).
+fn code_is_flag(code: &str) -> bool {
+    code.starts_with("--")
+}
+
+/// `--sso`, `--google`, `--github`: a browser sign-in through the server.
+fn browser_login(kind: &str, email: Option<&str>, no_browser: bool, server: Option<String>, name: Option<String>) -> Result<()> {
     let server = server.unwrap_or_else(default_server);
     let anon = Api::new(&server, None)?;
-    let r = sso::sign_in(&anon, email, no_browser, interactive(), ask)?;
+    let r = sso::sign_in(&anon, kind, email, no_browser, interactive(), ask)?;
     let email = r["user"]["email"].as_str().unwrap_or("").to_string();
-    finish_login(&server, &r, &email, name)
+    finish_login(&server, &r, &email, name, None)
 }
 
 /// After a sign-in (`r` = `{session, user}`): keep this device's key or register a new one, and
-/// save the account.
-fn finish_login(server: &str, r: &Value, email: &str, name: Option<String>) -> Result<()> {
+/// save the account. `bundle_key` (a password sign-in): on a computer without this account's
+/// device, the password's key bundle makes it that device (no new key, no trust step); a device
+/// that is the bundle's device (or the first with a password) keeps the key to re-seal it.
+pub(crate) fn finish_login(server: &str, r: &Value, email: &str, name: Option<String>, bundle_key: Option<[u8; 32]>) -> Result<()> {
     let server = server.to_string();
     let session = r["session"].as_str().context("no session in the answer")?.to_string();
     let user_id = r["user"]["id"].as_str().unwrap_or("").to_string();
+    let email = r["user"]["email"].as_str().unwrap_or(email).to_string();
     let api = Api::new(&server, Some(session.clone()))?;
 
     // The same account on this device again: keep its key.
     let previous = Account::load()?.filter(|a| a.server.trim_end_matches('/') == server.trim_end_matches('/') && a.user_id == user_id);
     let reuse = previous.as_ref().and_then(|a| store::load_secret(&a.server).ok().map(|s| (a.clone(), s)));
     let me = api.call("GET", "/v1/me", None)?;
-    let (key_id, keys, device_name, recovery) = match reuse.filter(|(a, _)| me["keys"].as_array().is_some_and(|k| k.iter().any(|k| k["id"] == a.key_id.as_str()))) {
-        Some((a, s)) => (a.key_id.clone(), s.device()?, a.device_name.clone(), s.recovery),
+    let reuse = reuse.filter(|(a, _)| me["keys"].as_array().is_some_and(|k| k.iter().any(|k| k["id"] == a.key_id.as_str())));
+    if let (None, Some(bk)) = (&reuse, &bundle_key) {
+        if let Some(fp) = password::adopt(&api, &server, &email, &user_id, &session, bk)? {
+            let a = Account::load()?.context("no account after unlocking")?;
+            println!("Signed in to {server} as {email}.");
+            println!("Unlocked with your password: this computer is your device \"{}\", key fingerprint {}", a.device_name, fp.bold());
+            println!("Your workspaces: hitop sync ls; link a folder: hitop sync link <workspace> -c <folder>");
+            return Ok(());
+        }
+    }
+    let (key_id, keys, device_name, recovery, password) = match reuse {
+        Some((a, s)) => (a.key_id.clone(), s.device()?, a.device_name.clone(), s.recovery, s.password),
         None => {
             let keys = DeviceKeyPair::generate();
             let device_name = name.unwrap_or_else(|| format!("hitop CLI on {}", hostname()));
             let r = api.call("POST", "/v1/me/keys", Some(json!({ "name": device_name, "publicKey": b64(&keys.public_key()) })))?;
-            (r["id"].as_str().context("no key id")?.to_string(), keys, device_name, None)
+            (r["id"].as_str().context("no key id")?.to_string(), keys, device_name, None, None)
         }
     };
     let new_key = !me["keys"].as_array().is_some_and(|k| k.iter().any(|k| k["id"] == key_id.as_str()));
-    store::save_secret(&server, &Secret { session, secret: b64(&keys.secret_bytes()), recovery })?;
+    store::save_secret(&server, &Secret { session, secret: b64(&keys.secret_bytes()), recovery, password })?;
     let mut pins = store::load_pins()?;
     pins.insert(key_id.clone(), b64(&keys.public_key()));
     store::save_pins(&pins)?;
-    Account { server: server.clone(), email: r["user"]["email"].as_str().unwrap_or(email).to_string(), user_id, key_id, device_name: device_name.clone() }.save()?;
+    let account = Account { server: server.clone(), email: email.clone(), user_id, key_id, device_name: device_name.clone() };
+    account.save()?;
+    if let Some(bk) = &bundle_key {
+        password::claim_bundle(&api, &account, bk)?;
+    }
     println!("Signed in to {server} as {email}.");
     println!("This device: {device_name}, key fingerprint {}", crypto::fingerprint(&keys.public_key()).bold());
     println!("Tell your team this fingerprint when they add you, and check theirs.");
+    if new_key && bundle_key.is_none() && !me["bundles"]["password"].is_null() {
+        println!("Your keys are sealed with your password: hitop sync password unlock makes this computer your device (no trust step).");
+    }
     if !me["recovery"].is_null() && new_key {
         println!("Lost your other device? Its recovery phrase brings it back here: hitop sync recovery use");
     }

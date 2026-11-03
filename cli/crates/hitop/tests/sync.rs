@@ -188,9 +188,9 @@ impl Client {
         (account["keyId"].as_str().unwrap().to_string(), keys)
     }
 
-    /// Signs in; returns this device's key fingerprint.
+    /// Signs in with a mailed code; returns this device's key fingerprint.
     fn login(&self, server: &SyncServer, email: &str) -> String {
-        let first = self.ok(&["sync", "login", "--email", email]);
+        let first = self.ok(&["sync", "login", "--email", email, "--code"]);
         assert!(first.contains("--code"), "{first}");
         let code = server.code_for(email, "/signin#");
         let out = self.ok(&["sync", "login", "--email", email, "--code", &code]);
@@ -709,6 +709,16 @@ fn sync_commands_explain_what_is_missing() {
     let (code, err) = cmd(&["sync", "login", "--email", "a@example.com", "--code", "-iPhD7m9", "--server", "http://sync.example.com"]);
     assert_eq!(code, 2);
     assert!(err.contains("https") && !err.contains("unexpected argument"), "{err}");
+    // A password is asked for by default: without a terminal it must come on stdin.
+    let (code, err) = cmd(&["sync", "login", "--email", "a@example.com", "--server", "https://sync.example.com"]);
+    assert_eq!(code, 2);
+    assert!(err.contains("--password-stdin"), "{err}");
+    let (code, err) = cmd(&["sync", "login", "--email", "a@example.com", "--server", "https://sync.example.com", "--code", "--name"]);
+    assert_eq!(code, 2);
+    assert!(err.contains("put --code last"), "{err}");
+    let (code, err) = cmd(&["sync", "login", "--google", "--github"]);
+    assert_eq!(code, 2);
+    assert!(err.contains("cannot be used with"), "{err}");
     let (_, err) = cmd(&["sync", "accept", "-iPhD7m9"]);
     assert!(!err.contains("unexpected argument"), "{err}");
     let o = Command::cargo_bin("hitop").unwrap().env("HITOP_SYNC_RUNNER", "nonsense").args(["sync", "pull"]).output().unwrap();
@@ -836,10 +846,120 @@ fn sso_login_through_keycloak() {
     assert!(String::from_utf8_lossy(&out.stdout).contains("as alice@corp.test"));
     assert!(alice.ok(&["sync", "whoami"]).contains("alice@corp.test"));
     // SSO is required for corp.test: no mailed links.
-    let o = alice.run(&["sync", "login", "--email", "alice@corp.test"]);
+    let o = alice.run(&["sync", "login", "--email", "alice@corp.test", "--code"]);
     assert_eq!(o.code, 2);
     assert!(o.stderr.contains("single sign-on"), "{}", o.stderr);
     // The sign-in is in her account log.
     let mine = alice.ok(&["sync", "audit", "--mine", "--json"]);
     assert!(mine.contains("\"sso_linked\"") && mine.contains("\"method\": \"sso\""), "{mine}");
+}
+
+/// HITOP Cloud C1b passwords: Ada signs up with a password (the mailed code confirms it), shares
+/// a folder with Bob. On a new computer her password signs her in **and** unlocks her device's
+/// keys: same key, same trust, the workspace reads with no trust step. A password change re-seals
+/// the bundle and signs her other computers out. A reset by mail on a third computer signs in
+/// but can't unlock anything (it says so); once a device that has the keys signs in with the new
+/// password, it seals them again and the third computer unlocks them.
+#[test]
+fn a_password_signs_in_and_unlocks_the_keys_on_a_new_computer() {
+    let Some(server) = server() else { return };
+    let (ada, bob) = (Client::new(&server), Client::new(&server));
+    let stdin = |c: &Client, args: &[&str], input: &str| Client::out(c.cmd().args(args).write_stdin(input.to_string()).output().unwrap());
+
+    // Sign-up in two runs (no terminal): the password, then the code from the mail.
+    let short = stdin(&ada, &["sync", "signup", "--email", "ada@example.com", "--password-stdin"], "short\n");
+    assert_eq!(short.code, 2);
+    assert!(short.stderr.contains("at least 8"), "{}", short.stderr);
+    let o = stdin(&ada, &["sync", "signup", "--email", "ada@example.com", "--password-stdin"], "first long password\n");
+    assert_eq!(o.code, 0, "{}", o.stderr);
+    assert!(o.stdout.contains("--code"), "{}", o.stdout);
+    let code = server.code_for("ada@example.com", "/signin#");
+    let o = stdin(&ada, &["sync", "signup", "--email", "ada@example.com", "--code", &code, "--password-stdin"], "first long password\n");
+    assert_eq!(o.code, 0, "{}\n{}", o.stdout, o.stderr);
+    assert!(o.stdout.contains("Account confirmed") && o.stdout.contains("key fingerprint"), "{}", o.stdout);
+    let (ada_key, ada_keys) = ada.device();
+    let (ws, a, _) = share_with_bob(&server, &ada, &bob);
+    write(&a, "requests/new-order.yaml", &request("New order", "https://internal.example.test/orders/new"));
+    ada.ok(&["sync", "push", "-c", a.to_str().unwrap()]);
+
+    // The server keeps a hash of the auth key and a sealed bundle: never the password or a key.
+    let hash: String = server.db().query_row("SELECT hash FROM password_credentials", [], |r| r.get(0)).unwrap();
+    assert!(hash.starts_with("$argon2id$"), "{hash}");
+    let bundles: i64 = server.db().query_row("SELECT COUNT(*) FROM recovery_blobs WHERE method = 'password'", [], |r| r.get(0)).unwrap();
+    assert_eq!(bundles, 1);
+    let db = server.database();
+    assert!(!String::from_utf8_lossy(&db).contains("first long password"));
+    assert!(!db.windows(32).any(|w| w == ada_keys.secret_bytes()), "no device secret on the server");
+
+    // A new computer: a wrong password fails; the right one unlocks Ada's device.
+    let ada2 = Client::new(&server);
+    let o = stdin(&ada2, &["sync", "login", "--email", "ada@example.com", "--password-stdin"], "not my password\n");
+    assert_eq!(o.code, 2);
+    assert!(o.stderr.contains("the password is wrong"), "{}", o.stderr);
+    let o = stdin(&ada2, &["sync", "login", "--email", "ada@example.com", "--password-stdin"], "first long password\n");
+    assert_eq!(o.code, 0, "{}\n{}", o.stdout, o.stderr);
+    assert!(o.stdout.contains("Unlocked with your password") && o.stdout.contains(&crypto::fingerprint(&ada_keys.public_key())), "{}", o.stdout);
+    assert_eq!(ada2.device().0, ada_key, "the same device");
+    let ada_keys_n: i64 = server.db().query_row("SELECT COUNT(*) FROM device_keys k JOIN users u ON u.id = k.user_id WHERE u.email = 'ada@example.com'", [], |r| r.get(0)).unwrap();
+    assert_eq!(ada_keys_n, 1, "no new key registered");
+    let a2 = ada2.folder("shop");
+    ada2.ok(&["sync", "link", &ws, "-c", a2.to_str().unwrap()]);
+    assert_eq!(snapshot(&a2), snapshot(&a));
+    let members = ada2.ok(&["sync", "members", "-c", a2.to_str().unwrap()]);
+    assert!(!members.contains("not trusted"), "{members}");
+
+    // A change on the first computer: re-sealed, the second is signed out and needs the new one.
+    let wrong = stdin(&ada, &["sync", "password", "set", "--password-stdin"], "not the current one\nsecond long password\n");
+    assert_eq!(wrong.code, 2);
+    assert!(wrong.stderr.contains("current password is wrong"), "{}", wrong.stderr);
+    let o = stdin(&ada, &["sync", "password", "set", "--password-stdin"], "first long password\nsecond long password\n");
+    assert_eq!(o.code, 0, "{}", o.stderr);
+    assert!(o.stdout.contains("Password changed"), "{}", o.stdout);
+    assert_eq!(ada2.run(&["sync", "ls"]).code, 2, "signed out");
+    assert_eq!(stdin(&ada2, &["sync", "login", "--email", "ada@example.com", "--password-stdin"], "first long password\n").code, 2);
+    let o = stdin(&ada2, &["sync", "login", "--email", "ada@example.com", "--password-stdin"], "second long password\n");
+    assert_eq!(o.code, 0, "{}", o.stderr);
+    assert_eq!(ada2.device().0, ada_key);
+    ada2.ok(&["sync", "pull", "-c", a2.to_str().unwrap()]);
+
+    // Forgot on a third computer: warned before, signed in after, but no keys.
+    let ada3 = Client::new(&server);
+    let o = ada3.run(&["sync", "password", "forgot", "--email", "ada@example.com"]);
+    assert_eq!(o.code, 0, "{}", o.stderr);
+    assert!(o.stderr.contains("can't unlock your end-to-end encrypted workspaces"), "{}", o.stderr);
+    let code = server.code_for("ada@example.com", "/signin#");
+    let o = stdin(&ada3, &["sync", "password", "reset", "--code", &code, "--password-stdin"], "third long password\n");
+    assert_eq!(o.code, 0, "{}\n{}", o.stdout, o.stderr);
+    assert!(o.stderr.contains("is gone") && o.stderr.contains("no workspace keys"), "{}", o.stderr);
+    assert_ne!(ada3.device().0, ada_key);
+    let a3 = ada3.folder("shop");
+    assert_ne!(ada3.run(&["sync", "link", &ws, "-c", a3.to_str().unwrap()]).code, 0, "no workspace key here");
+    assert_eq!(ada.run(&["sync", "ls"]).code, 2, "the reset signed every other session out");
+
+    // The first computer signs in with the new password and seals its keys under it; then the
+    // third unlocks them.
+    let o = stdin(&ada, &["sync", "login", "--email", "ada@example.com", "--password-stdin"], "third long password\n");
+    assert_eq!(o.code, 0, "{}", o.stderr);
+    assert_eq!(ada.device().0, ada_key);
+    let o = stdin(&ada3, &["sync", "password", "unlock", "--password-stdin"], "third long password\n");
+    assert_eq!(o.code, 0, "{}\n{}", o.stdout, o.stderr);
+    assert_eq!(ada3.device().0, ada_key);
+    let a3 = ada3.folder("shop3");
+    ada3.ok(&["sync", "link", &ws, "-c", a3.to_str().unwrap()]);
+    assert_eq!(snapshot(&a3), snapshot(&a));
+    let mine = ada.ok(&["sync", "audit", "--mine", "--json"]);
+    for event in ["password_set", "password_changed", "password_reset"] {
+        assert!(mine.contains(&format!("\"{event}\"")), "{event}: {mine}");
+    }
+}
+
+/// `--google` / `--github` on a server without those apps: a clear refusal.
+#[test]
+fn google_and_github_need_the_server_to_offer_them() {
+    let Some(server) = server() else { return };
+    for flag in ["--google", "--github"] {
+        let o = Client::new(&server).run(&["sync", "login", flag, "--no-browser"]);
+        assert_eq!(o.code, 2);
+        assert!(o.stderr.contains("doesn't offer sign-in with"), "{}", o.stderr);
+    }
 }

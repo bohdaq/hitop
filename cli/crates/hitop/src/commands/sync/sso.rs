@@ -1,6 +1,7 @@
-//! `hitop sync login --sso`: single sign-on through the sync server's identity provider.
+//! `hitop sync login --sso`: single sign-on through the sync server's identity provider; and
+//! `--google` / `--github` (since C1b), the same flow with the server's Google or GitHub app.
 //!
-//! The server is the OpenID Connect client (it holds the client secret); this command only opens
+//! The server is the OpenID Connect / OAuth client (it holds the client secret); this command only opens
 //! the provider's page and collects the one-time code: on a loopback listener the browser is sent
 //! back to (`http://127.0.0.1:<port>/`), or pasted from the server's page (`--no-browser`, or
 //! when no browser opens). Finishing needs a verifier that never leaves this process, so a code
@@ -65,15 +66,29 @@ fn wait_for_code(listener: &TcpListener) -> Result<String> {
             Err(e) => return Err(e.into()),
         }
     }
-    bail!("no answer from the browser in 10 minutes; run `hitop sync login --sso` again")
+    bail!("no answer from the browser in 10 minutes; run `hitop sync login` again")
 }
 
-/// Signs in by SSO; returns the server's session answer (`{session, expiresAt, user}`).
-pub fn sign_in(api: &Api, email: Option<&str>, no_browser: bool, interactive: bool, ask: impl Fn(&str) -> Result<String>) -> Result<Value> {
-    let info = api.call("GET", "/v1/auth/sso", None)?;
-    if info["enabled"] != true {
-        bail!("this sync server has no single sign-on; sign in with --email");
-    }
+/// Signs in by `kind` (`sso`, `google`, `github`); returns the server's session answer
+/// (`{session, expiresAt, user}`).
+pub fn sign_in(api: &Api, kind: &str, email: Option<&str>, no_browser: bool, interactive: bool, ask: impl Fn(&str) -> Result<String>) -> Result<Value> {
+    let name = match kind {
+        "sso" => {
+            let info = api.call("GET", "/v1/auth/sso", None)?;
+            if info["enabled"] != true {
+                bail!("this sync server has no single sign-on; sign in with --email");
+            }
+            info["name"].as_str().unwrap_or("SSO").to_string()
+        }
+        _ => {
+            let label = if kind == "google" { "Google" } else { "GitHub" };
+            let methods = api.raw("GET", "/v1/auth/methods", None)?;
+            if methods.json[kind] != true {
+                bail!("this sync server doesn't offer sign-in with {label}; sign in with --email");
+            }
+            label.to_string()
+        }
+    };
     let verifier = hitop_sync_crypto::random_hex::<32>();
     let challenge = b64(&Sha256::digest(verifier.as_bytes()));
     let listener = if no_browser { None } else { TcpListener::bind("127.0.0.1:0").ok() };
@@ -87,9 +102,11 @@ pub fn sign_in(api: &Api, email: Option<&str>, no_browser: bool, interactive: bo
     if let Some(e) = email {
         body["email"] = json!(e);
     }
-    let start = api.call("POST", "/v1/auth/sso/start", Some(body))?;
+    if kind == "github" {
+        body.as_object_mut().map(|o| o.remove("email"));
+    }
+    let start = api.call("POST", &format!("/v1/auth/{kind}/start"), Some(body))?;
     let url = start["url"].as_str().context("no sign-in URL in the answer")?;
-    let name = info["name"].as_str().unwrap_or("SSO");
     let code = match &listener {
         Some(l) => {
             if open_browser(url) {
@@ -104,7 +121,7 @@ pub fn sign_in(api: &Api, email: Option<&str>, no_browser: bool, interactive: bo
             ask("Code shown after signing in: ")?
         }
     };
-    let r = api.raw("POST", "/v1/auth/sso/finish", Some(json!({ "code": code.trim(), "verifier": verifier })))?;
+    let r = api.raw("POST", &format!("/v1/auth/{kind}/finish"), Some(json!({ "code": code.trim(), "verifier": verifier })))?;
     if r.status != 200 {
         return Err(super::client::api_error(&r));
     }
