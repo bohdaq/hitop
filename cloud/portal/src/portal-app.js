@@ -7,6 +7,8 @@
 //   #/account          the account            #sso=<code>        back from single sign-on
 //   #/runs             workspaces' run history  #/workspaces/<ws>/runs[/<run>]  one workspace's
 //                      (HITOP Cloud C4: status rows and alert settings; the sealed reports open in hitop)
+//   #/orgs/<id>/admin  admin console (C5: every workspace, member and device of the org)
+//   #/orgs/<id>/sso    single sign-on and domains (C5)   #/orgs/<id>/audit  audit export, anchors (C5)
 import { LitElement, html, nothing } from "lit";
 import { Api, ApiError, DEFAULT_SERVER, changePassword, normalizeServer, passkeySignIn, passwordReset, passwordSignIn, passwordSignUp, registerPasskey, ssoFinish, ssoStart } from "./api.js";
 
@@ -57,7 +59,21 @@ const METRICS = [
 const PRICES = {
   pro: { annual: "$6 a month, billed yearly", monthly: "$8 a month" },
   team: { annual: "$10 per seat a month, billed yearly", monthly: "$12 per seat a month" },
+  business: { annual: "$20 per seat a month, billed yearly", monthly: "$25 per seat a month" },
 };
+
+// Downloads `body` (a string or a Blob) as `name` (no server round trip: the portal already
+// fetched it with the session).
+function download(name, body, type = "application/json") {
+  const blob = body instanceof Blob ? body : new Blob([body], { type });
+  const a = document.createElement("a");
+  a.href = URL.createObjectURL(blob);
+  a.download = name;
+  document.body.append(a);
+  a.click();
+  a.remove();
+  setTimeout(() => URL.revokeObjectURL(a.href), 1000);
+}
 
 const STATUS_NOTES = {
   trialing: "Team trial",
@@ -184,6 +200,13 @@ export class HitopCloud extends LitElement {
           this.api.get(`/v1/orgs/${encodeURIComponent(id)}/billing`).catch(() => null),
         ]);
         this.data = { org, members, usage, billing };
+        // C5 pages: a refusal (402 on a plan without them) shows with its "See plans" link.
+        const sub = { admin: "admin", sso: "sso", audit: "audit/anchors" }[parts[2]];
+        if (sub) {
+          const extra = await this.api.get(`/v1/orgs/${encodeURIComponent(id)}/${sub}`).then((v) => ({ v }), (e) => ({ e }));
+          this.data = { ...this.data, [parts[2]]: extra.v ?? null };
+          if (extra.e) throw extra.e;
+        }
       } else if (parts[0] === "runs") {
         this.data = { workspaces: (await this.api.get("/v1/workspaces")).workspaces };
       } else if (parts[0] === "workspaces" && parts[1]) {
@@ -388,6 +411,10 @@ export class HitopCloud extends LitElement {
   providerButton(kind, label) {
     return html`<lit-material-button variant="outlined" ?disabled=${Boolean(this.busy)} @click=${() => this.run(kind, async () => {
       const s = normalizeServer(this.field("server"));
+      // Organizations bring their own SSO (C5): the server finds it from the work address.
+      if (kind === "sso" && (this.sso?.orgSso || this.methods?.sso?.orgSso) && !this.field("email")) {
+        throw new Error("Enter your work address first: it tells the server which organization's single sign-on to use.");
+      }
       this.account = { server: s };
       save(this.account);
       location.assign(await ssoStart(new Api(s), this.field("email"), kind));
@@ -401,7 +428,10 @@ export class HitopCloud extends LitElement {
   renderSignedIn() {
     const parts = this.route.replace(/^#\/?/, "").split("/").filter(Boolean);
     let page;
-    if (parts[0] === "orgs" && this.data.org) page = parts[2] === "plan" ? this.renderPlan() : this.renderOrg();
+    if (parts[0] === "orgs" && this.data.org) {
+      const sub = { plan: () => this.renderPlan(), admin: () => this.renderAdmin(), sso: () => this.renderSso(), audit: () => this.renderAudit() }[parts[2]];
+      page = sub ? sub() : this.renderOrg();
+    }
     else if (parts[0] === "tokens" && this.data.tokens) page = this.renderTokens();
     else if (parts[0] === "runs" && this.data.workspaces) page = this.renderWorkspaces();
     else if (parts[0] === "workspaces" && this.data.runs) page = this.renderRuns();
@@ -566,6 +596,9 @@ export class HitopCloud extends LitElement {
         <h1>${org.personal ? "Personal" : org.name}</h1>
         <p class="page-lead">Plan <strong>${org.plan}</strong>${org.seats ? html`, ${org.seats} seat(s)` : nothing}. You are ${org.role}. <a href="#/orgs/${org.id}/plan">${this.data.billing?.enabled ? "Plan and billing" : "Plan details"}</a></p>
         ${this.pastDueBanner()}
+        ${admin && !org.personal
+          ? html`<p aria-label="Organization pages"><a href="#/orgs/${org.id}/admin">Admin console</a> · <a href="#/orgs/${org.id}/sso">Single sign-on</a> · <a href="#/orgs/${org.id}/audit">Audit</a></p>`
+          : nothing}
         <h2>Usage</h2>
         ${this.renderUsage(usage)}
         <h2>Members</h2>
@@ -651,7 +684,7 @@ export class HitopCloud extends LitElement {
         ${this.pastDueBanner()}
         ${usage.planInForce !== usage.plan ? html`<p class="portal-error" role="alert">The ${usage.plan} plan is ${STATUS_NOTES[status] || `${status}: Free limits`}. Nothing was deleted.</p>` : nothing}
         ${billing && org.plan !== "free"
-          ? html`<p aria-label="Subscription">Status: <strong>${STATUS_NOTES[status] || status}</strong>${billing.seats && org.plan === "team" ? html`, ${billing.seats} seat(s) bought, ${billing.seatsUsed} in use` : nothing}${billing.periodEnd ? html`; ${status === "trialing" ? "the trial ends" : status === "cancelled" ? "ends" : "renews"} ${date(billing.periodEnd)}` : nothing}.</p>`
+          ? html`<p aria-label="Subscription">Status: <strong>${STATUS_NOTES[status] || status}</strong>${billing.seats && ["team", "business"].includes(org.plan) ? html`, ${billing.seats} seat(s) bought, ${billing.seatsUsed} in use` : nothing}${billing.periodEnd ? html`; ${status === "trialing" ? "the trial ends" : status === "cancelled" ? "ends" : "renews"} ${date(billing.periodEnd)}` : nothing}.</p>`
           : nothing}
         ${this.renderUsage(usage)}
         ${billing?.enabled ? this.renderBilling(org, billing, admin, base) : html`<p>This server sells no plans. Over a limit, hitop refuses new workspaces, people, devices or uploads that grow storage. Reading and pulling never stop, and nothing is deleted.</p>`}
@@ -674,7 +707,7 @@ export class HitopCloud extends LitElement {
             location.assign(url);
           })}>Manage billing</lit-material-button>
         </div>`);
-        if (org.plan === "team" && ["active", "on_trial", "past_due"].includes(billing.status)) {
+        if (["team", "business"].includes(org.plan) && ["active", "on_trial", "past_due"].includes(billing.status)) {
           parts.push(html`<h2>Seats</h2>
             <p class="hint">Every person in the organization or its workspaces is a seat (viewers too); 5 guest viewers are free. More seats are charged at once, prorated. Fewer seats take effect now, with no credit: the lower price starts at the next renewal.</p>
             <div class="portal-form">${seatsField("seats-change", billing.seats)}
@@ -693,27 +726,39 @@ export class HitopCloud extends LitElement {
       parts.push(html`<p class="hint">An owner or admin of the organization buys its plan.</p>`);
       return parts;
     }
-    const plan = org.personal ? "pro" : "team";
-    parts.push(html`<h2>${org.personal ? "HITOP Cloud Pro" : "HITOP Cloud Team"}</h2>
-      <p class="hint">${org.personal
-        ? "Pro: one person and two guests, 25 workspaces, 2 GB, 10 devices, run history and webhook alerts. For a team, create an organization and buy Team there."
-        : "Team: per seat, unlimited workspaces, 10 GB + 1 GB per seat, 5 free guest viewers, run history and Slack alerts."}
-        Prices: ${["annual", "monthly"].filter((p) => billing.offers.some((o) => o.period === p)).map((p) => PRICES[plan][p]).join(" or ")}, plus tax where it applies. <a href="https://hitop.rws8.tech/pricing.html">Pricing</a></p>`);
-    if (!billing.offers.length) {
-      parts.push(html`<p class="hint">${org.personal ? "Pro" : "Team"} isn't on sale on this server yet.</p>`);
-    } else if (!billing.checkout) {
-      parts.push(html`<p class="hint">Checkout isn't open on this server yet.</p>`);
-    } else {
-      parts.push(html`<div class="portal-form" aria-label="Buy">
-        ${plan === "team" ? seatsField("seats-buy", Math.max(1, billing.seatsUsed)) : nothing}
-        ${billing.offers.map((o) => html`<lit-material-button variant=${o.period === "annual" ? "filled" : "outlined"} ?disabled=${Boolean(this.busy)} @click=${() => this.run("checkout", async () => {
-          const body = { plan: o.plan, period: o.period };
-          if (plan === "team") body.seats = Number(this.querySelector("#seats-buy").value);
-          const { url } = await this.api.call("POST", `${base}/checkout`, body);
-          location.assign(url);
-        })}>Buy ${o.plan === "pro" ? "Pro" : "Team"}, ${o.period === "annual" ? "yearly" : "monthly"}</lit-material-button>`)}
-      </div>
-      <p class="hint">The checkout is Lemon Squeezy's page (they take the payment; HITOP never sees the card). Refunds: see the <a href="https://hitop.rws8.tech/pricing.html#refunds">pricing page</a>.</p>`);
+    const plans = org.personal ? ["pro"] : ["team", "business"];
+    const TEXT = {
+      pro: "Pro: one person and two guests, 25 workspaces, 2 GB, 10 devices, run history and webhook alerts. For a team, create an organization and buy Team there.",
+      team: "Team: per seat, unlimited workspaces, 10 GB + 1 GB per seat, 5 free guest viewers, run history and Slack alerts, the basic admin console.",
+      business: "Business: per seat, 50 GB + 2 GB per seat, single sign-on with your own identity provider and domains, signed audit export and daily anchors, the full admin console, a year of run history.",
+    };
+    const NAME = { pro: "Pro", team: "Team", business: "Business" };
+    for (const plan of plans) {
+      const offers = billing.offers.filter((o) => o.plan === plan);
+      // Business shows once its variants are on sale (C5); Team and Pro always say where they stand.
+      if (plan === "business" && !offers.length) continue;
+      parts.push(html`<h2>HITOP Cloud ${NAME[plan]}</h2>
+        <p class="hint">${TEXT[plan]}
+          Prices: ${["annual", "monthly"].filter((p) => offers.some((o) => o.period === p)).map((p) => PRICES[plan][p]).join(" or ")}, plus tax where it applies. <a href="https://hitop.rws8.tech/pricing.html">Pricing</a></p>`);
+      if (!offers.length) {
+        parts.push(html`<p class="hint">${NAME[plan]} isn't on sale on this server yet.</p>`);
+      } else if (!billing.checkout) {
+        parts.push(html`<p class="hint">Checkout isn't open on this server yet.</p>`);
+      } else {
+        const seatsId = `seats-buy-${plan}`;
+        parts.push(html`<div class="portal-form" aria-label="Buy ${NAME[plan]}">
+          ${plan !== "pro" ? seatsField(seatsId, Math.max(1, billing.seatsUsed)) : nothing}
+          ${offers.map((o) => html`<lit-material-button variant=${o.period === "annual" ? "filled" : "outlined"} ?disabled=${Boolean(this.busy)} @click=${() => this.run("checkout", async () => {
+            const body = { plan: o.plan, period: o.period };
+            if (plan !== "pro") body.seats = Number(this.querySelector(`#${seatsId}`).value);
+            const { url } = await this.api.call("POST", `${base}/checkout`, body);
+            location.assign(url);
+          })}>Buy ${NAME[o.plan]}, ${o.period === "annual" ? "yearly" : "monthly"}</lit-material-button>`)}
+        </div>`);
+      }
+    }
+    if (billing.offers.length && billing.checkout) {
+      parts.push(html`<p class="hint">The checkout is Lemon Squeezy's page (they take the payment; HITOP never sees the card). Refunds: see the <a href="https://hitop.rws8.tech/pricing.html#refunds">pricing page</a>.</p>`);
     }
     if (billing.trial?.available && org.role === "owner") {
       parts.push(html`<div class="portal-form">
@@ -725,6 +770,219 @@ export class HitopCloud extends LitElement {
       </div>`);
     }
     return parts;
+  }
+
+  // --- HITOP Cloud C5: admin console, single sign-on, audit -------------------------------
+
+  orgBack(org) {
+    return html`<p><a href="#/orgs/${org.id}">Back to ${org.name}</a></p>`;
+  }
+
+  renderAdmin() {
+    const { org, admin: a } = this.data;
+    if (!a) return html`<section aria-label="Admin console"><h1>Admin console</h1>${this.orgBack(org)}</section>`;
+    const base = `/v1/orgs/${encodeURIComponent(org.id)}/admin`;
+    const reload = () => this.go(this.route);
+    return html`
+      <section aria-label="Admin console">
+        <h1>Admin console: ${org.name}</h1>
+        <p class="page-lead">Every workspace of the organization, its people and their devices. An organization role never opens a workspace: this page shows who has access, never what is inside, and the server holds no key to show it.</p>
+        <h2>Workspaces</h2>
+        ${a.workspaces.length ? nothing : html`<p class="hint">No workspaces in this organization yet (<code>hitop sync init --org ${org.name}</code>).</p>`}
+        ${a.workspaces.map((w) => {
+          const people = w.members.filter((m) => !m.runner);
+          return html`<div class="portal-card" aria-label="Workspace ${w.id.slice(0, 8)}">
+            <h3><code>${w.id.slice(0, 8)}</code> ${w.rotationRequested ? html`<span class="portal-chip status-failed" aria-label="Rotation requested">key rotation requested by ${w.rotationRequested.by}</span>` : nothing}</h3>
+            <p class="hint">Key epoch ${w.epoch}, ${bytes(w.bytes)}, created ${date(w.createdAt)}.</p>
+            <table class="portal-table" aria-label="People of ${w.id.slice(0, 8)}">
+              <thead><tr><th>Email</th><th>Role</th></tr></thead>
+              <tbody>${w.members.map((m) => html`<tr><td>${m.email}</td><td>${m.runner ? "runner" : m.role}</td></tr>`)}</tbody>
+            </table>
+            <div class="portal-form">
+              ${a.actions.transferOwner
+                ? html`<select id="owner-${w.id}" aria-label="New owner of ${w.id.slice(0, 8)}">${people.map((m) => html`<option value=${m.userId}>${m.email}</option>`)}</select>
+                  <label><input type="checkbox" id="keep-${w.id}" /> Keep the other owners</label>
+                  <lit-material-button variant="outlined" ?disabled=${Boolean(this.busy)} @click=${() => this.run("owner", async () => {
+                    const userId = this.querySelector(`#owner-${w.id}`).value;
+                    await this.api.call("PUT", `${base}/workspaces/${w.id}/owner`, { userId, keepOwners: this.querySelector(`#keep-${w.id}`).checked });
+                    await reload();
+                    this.note = `${people.find((m) => m.userId === userId)?.email} owns ${w.id.slice(0, 8)} now.`;
+                  })}>Transfer ownership</lit-material-button>`
+                : nothing}
+              ${a.actions.forceRotation
+                ? html`<lit-material-button variant="outlined" ?disabled=${Boolean(this.busy)} @click=${() => this.run("rotation", async () => {
+                    await this.api.call("POST", `${base}/workspaces/${w.id}/rotation`);
+                    await reload();
+                    this.note = "Rotation requested: the workspace's owners are asked to rotate its key (their hitop does it; the server can't).";
+                  })}>Ask for a key rotation</lit-material-button>`
+                : nothing}
+            </div>
+          </div>`;
+        })}
+        <h2>Devices</h2>
+        <p class="hint">Device keys of the organization's members. Removing one (a lost or stolen laptop) takes it off the person's account everywhere; every workspace it held a key for asks its owners for a rotation. The person's other devices keep working.</p>
+        <table class="portal-table" aria-label="Devices">
+          <thead><tr><th>Email</th><th>Device</th><th>Added</th><th>Workspaces here</th><th></th></tr></thead>
+          <tbody>${a.devices.map((d) => html`<tr>
+            <td>${d.email}</td><td>${d.name}</td><td>${date(d.createdAt)}</td><td>${d.orgWorkspaces}</td>
+            <td>${a.actions.removeDevice
+              ? html`<lit-material-button variant="text" ?disabled=${Boolean(this.busy)} @click=${() => this.run("device", async () => {
+                  if (!confirm(`Remove the device "${d.name}" of ${d.email}? It is removed from their account everywhere, its copies of workspace keys are deleted, and its workspaces ask for a key rotation. Their other devices keep working.`)) return;
+                  await this.api.call("DELETE", `${base}/devices/${encodeURIComponent(d.keyId)}`);
+                  await reload();
+                  this.note = `Removed ${d.name} of ${d.email}.`;
+                })}>Remove</lit-material-button>`
+              : nothing}</td>
+          </tr>`)}</tbody>
+        </table>
+        ${a.actions.forceRotation ? nothing : html`<p class="hint">Key rotation requests and removing devices come with Business. <a class="portal-upgrade" href="#/orgs/${org.id}/plan">See plans</a></p>`}
+        ${this.orgBack(org)}
+      </section>`;
+  }
+
+  renderSso() {
+    const { org, sso } = this.data;
+    const owner = org.role === "owner";
+    const base = `/v1/orgs/${encodeURIComponent(org.id)}`;
+    const reload = () => this.go(this.route);
+    if (!sso) return html`<section aria-label="Single sign-on"><h1>Single sign-on</h1>${this.orgBack(org)}</section>`;
+    if (!sso.available) {
+      return html`<section aria-label="Single sign-on"><h1>Single sign-on</h1>
+        <p class="page-lead" aria-label="Not available">${sso.reason}. A self-hosted server turns it on with a host key (<code>HITOP_SYNC_HOST_KEY_FILE</code>, see the sync server's README).</p>${this.orgBack(org)}</section>`;
+    }
+    const c = sso.config || {};
+    const verified = sso.domains.filter((d) => d.verified).length;
+    return html`
+      <section aria-label="Single sign-on">
+        <h1>Single sign-on: ${org.name}</h1>
+        <p class="page-lead">Your people sign in with your identity provider (OpenID Connect: Entra ID, Google Workspace, Okta, Keycloak...). It signs in only addresses of domains you verified here. Like every sign-in it gives access, never keys: workspaces stay end-to-end encrypted.</p>
+        ${sso.allowed ? nothing : html`<p class="portal-warning" role="alert">Single sign-on comes with Business. <a class="portal-upgrade" href="#/orgs/${org.id}/plan">See plans</a></p>`}
+        <h2>Domains</h2>
+        <p class="hint">Prove you own a domain with a DNS TXT record${sso.dnsVerification ? "" : " (this server can't look them up yet: HITOP_SYNC_DNS_URL isn't set)"}.</p>
+        <table class="portal-table" aria-label="Domains">
+          <thead><tr><th>Domain</th><th>TXT record</th><th>Value</th><th>Status</th><th></th></tr></thead>
+          <tbody>${sso.domains.map((d) => html`<tr>
+            <td>${d.domain}</td><td><code>${d.record}</code></td><td><code>${d.value}</code></td>
+            <td>${d.verified ? `verified ${date(d.verifiedAt)}` : "not verified"}</td>
+            <td>
+              ${d.verified ? nothing : html`<lit-material-button variant="text" ?disabled=${Boolean(this.busy)} @click=${() => this.run("verify", async () => {
+                const r = await this.api.call("POST", `${base}/domains/${encodeURIComponent(d.domain)}/verify`);
+                await reload();
+                if (r.problem) throw new Error(r.problem);
+                this.note = `${d.domain} is verified.`;
+              })}>Verify</lit-material-button>`}
+              <lit-material-button variant="text" ?disabled=${Boolean(this.busy)} @click=${() => this.run("undomain", async () => {
+                await this.api.call("DELETE", `${base}/domains/${encodeURIComponent(d.domain)}`);
+                await reload();
+              })}>Remove</lit-material-button>
+            </td>
+          </tr>`)}</tbody>
+        </table>
+        <div class="portal-form">
+          <lit-material-text-field id="sso-domain" variant="outlined" label="Domain to claim"></lit-material-text-field>
+          <lit-material-button variant="outlined" ?disabled=${Boolean(this.busy)} @click=${() => this.run("domain", async () => {
+            const d = await this.api.call("POST", `${base}/domains`, { domain: this.field("sso-domain") });
+            await reload();
+            this.note = `Publish the TXT record ${d.record} with the value ${d.value}, then Verify.`;
+          })}>Claim domain</lit-material-button>
+        </div>
+        <h2>Identity provider</h2>
+        <p class="hint">Register a web application (confidential client, authorization code with PKCE) with the redirect URI <code aria-label="Redirect URI">${sso.redirectUri}</code>. ${verified ? "" : "Verify a domain first: nobody can sign in through it until then."}${owner ? "" : " Only owners change these settings."}</p>
+        <div class="portal-form portal-stack" aria-label="SSO settings">
+          <lit-material-text-field id="sso-issuer" variant="outlined" label="Issuer URL" .value=${c.issuer || ""} ?disabled=${!owner}></lit-material-text-field>
+          <lit-material-text-field id="sso-client" variant="outlined" label="Client ID" .value=${c.clientId || ""} ?disabled=${!owner}></lit-material-text-field>
+          <lit-material-text-field id="sso-secret" variant="outlined" type="password" label="Client secret" placeholder=${c.hasSecret ? "stored (leave empty to keep it)" : ""} ?disabled=${!owner}></lit-material-text-field>
+          <lit-material-text-field id="sso-name" variant="outlined" label="Button name" .value=${c.name || "SSO"} ?disabled=${!owner}></lit-material-text-field>
+          <lit-material-text-field id="sso-scopes" variant="outlined" label="Scopes" .value=${c.scopes || "openid email profile"} ?disabled=${!owner}></lit-material-text-field>
+          <lit-material-text-field id="sso-groups-claim" variant="outlined" label="Groups claim" .value=${c.groupsClaim || "groups"} ?disabled=${!owner}></lit-material-text-field>
+          <lit-material-text-field id="sso-groups" variant="outlined" label="Required groups (comma separated, empty = any)" .value=${(c.requiredGroups || []).join(", ")} ?disabled=${!owner}></lit-material-text-field>
+          <label><input type="checkbox" id="sso-required" .checked=${Boolean(c.required)} ?disabled=${!owner} /> SSO required: your domains' addresses sign in only through it (no mail codes, passwords, passkeys, Google or GitHub)</label>
+          <label><input type="checkbox" id="sso-assume" .checked=${Boolean(c.assumeVerified)} ?disabled=${!owner} /> The provider doesn't send email_verified (Entra ID): trust its addresses in your verified domains</label>
+          <label><input type="checkbox" id="sso-enabled" .checked=${c.enabled !== false} ?disabled=${!owner} /> On</label>
+          ${owner
+            ? html`<lit-material-button variant="filled" ?disabled=${Boolean(this.busy)} @click=${() => this.run("sso-save", async () => {
+                const body = {
+                  issuer: this.field("sso-issuer"),
+                  clientId: this.field("sso-client"),
+                  name: this.field("sso-name"),
+                  scopes: this.field("sso-scopes"),
+                  groupsClaim: this.field("sso-groups-claim"),
+                  requiredGroups: this.field("sso-groups").split(",").map((g) => g.trim()).filter(Boolean),
+                  required: this.querySelector("#sso-required").checked,
+                  assumeVerified: this.querySelector("#sso-assume").checked,
+                  enabled: this.querySelector("#sso-enabled").checked,
+                };
+                if (this.raw("sso-secret")) body.clientSecret = this.raw("sso-secret");
+                await this.api.call("PUT", `${base}/sso`, body);
+                await reload();
+                this.note = "Single sign-on saved.";
+              })}>Save</lit-material-button>`
+            : nothing}
+          ${sso.configured
+            ? html`<lit-material-button variant="outlined" ?disabled=${Boolean(this.busy)} @click=${() => this.run("sso-test", async () => {
+                const r = await this.api.call("POST", `${base}/sso/test`);
+                if (!r.ok) throw new Error(`The provider check failed: ${r.error}`);
+                this.note = "The provider answers: discovery and keys fetched.";
+              })}>Test</lit-material-button>`
+            : nothing}
+          ${sso.configured && owner
+            ? html`<lit-material-button variant="text" ?disabled=${Boolean(this.busy)} @click=${() => this.run("sso-delete", async () => {
+                if (!confirm("Remove single sign-on? People sign in as before (mail code, password, passkey); accounts stay.")) return;
+                await this.api.call("DELETE", `${base}/sso`);
+                await reload();
+                this.note = "Single sign-on removed.";
+              })}>Remove single sign-on</lit-material-button>`
+            : nothing}
+        </div>
+        <p class="hint">People sign in with <code>hitop sync login --sso --email you@your-domain</code>, or "Sign in with SSO" and their work address in the apps and here.</p>
+        ${this.orgBack(org)}
+      </section>`;
+  }
+
+  renderAudit() {
+    const { org, audit } = this.data;
+    const owner = org.role === "owner";
+    const base = `/v1/orgs/${encodeURIComponent(org.id)}/audit`;
+    if (!audit) return html`<section aria-label="Audit"><h1>Audit</h1>${this.orgBack(org)}</section>`;
+    const setting = (key, value) => this.run("audit-settings", async () => {
+      await this.api.call("PUT", `${base}/settings`, { [key]: value });
+      await this.go(this.route);
+      this.note = "Audit settings saved.";
+    });
+    return html`
+      <section aria-label="Audit">
+        <h1>Audit: ${org.name}</h1>
+        <p class="page-lead">The audit log of the organization and its workspaces (sign-ins aside: who added, removed or invited whom, roles, key rotations, SSO and admin changes). Never contents, keys or tokens.</p>
+        <h2>Signed export</h2>
+        <p class="hint">JSON lines: every chain's rows and head, signed by the server (Ed25519, key <code>${audit.keyId}</code>). Keep it next to the anchors you were mailed: <code>hitop sync audit --verify --anchor anchor.json</code> recomputes the chains and checks each anchored head is still there, so a rewritten log shows.</p>
+        <div class="portal-form">
+          <lit-material-button variant="filled" ?disabled=${Boolean(this.busy)} @click=${() => this.run("export", async () => {
+            const r = await fetch(`${this.api.server}${base}/export`, { headers: { Authorization: `Bearer ${this.account.session}` } });
+            if (!r.ok) throw new ApiError(r.status, await r.json().catch(() => null));
+            download(`hitop-audit-${org.id}-${new Date().toISOString().slice(0, 10)}.jsonl`, await r.blob());
+          })}>Download signed export</lit-material-button>
+          <lit-material-button variant="outlined" ?disabled=${Boolean(this.busy)} @click=${() => this.run("anchor", async () => {
+            const a = await this.api.call("POST", `${base}/anchors`);
+            download(`hitop-anchor-${org.id}-${a.day}-now.json`, JSON.stringify(a, null, 2));
+          })}>Anchor now</lit-material-button>
+        </div>
+        <h2>Daily anchors</h2>
+        <p class="hint">Once a day the server signs the heads of the organization's chains${audit.anchorsOn ? "" : " (turned off on this server)"}; when they moved, it mails the anchor to the owners. Keep those mails: <code>hitop sync audit --verify --anchor anchor.json</code> checks the log against one.</p>
+        <div class="portal-form portal-stack" aria-label="Anchor settings">
+          <label><input type="checkbox" id="audit-mail" .checked=${audit.mailAnchors} ?disabled=${!owner || Boolean(this.busy)} @change=${(e) => setting("mailAnchors", e.target.checked)} /> Mail anchors to the owners</label>
+          <label><input type="checkbox" id="audit-public" .checked=${audit.publicAnchors} ?disabled=${!owner || Boolean(this.busy)} @change=${(e) => setting("publicAnchors", e.target.checked)} /> Publish anchors (anyone can fetch them at <code>${audit.publicUrl}&lt;day&gt;.json</code>; they show how many workspaces the organization has and their ids)</label>
+        </div>
+        ${audit.anchors.length
+          ? html`<table class="portal-table" aria-label="Anchors">
+              <thead><tr><th>Day</th><th>Chains</th><th>Mailed</th><th></th></tr></thead>
+              <tbody>${audit.anchors.map((x) => html`<tr>
+                <td>${x.day}</td><td>${x.anchor?.chains?.length ?? 0}</td><td>${x.mailedAt ? date(x.mailedAt) : "no"}</td>
+                <td><lit-material-button variant="text" @click=${() => download(`hitop-anchor-${org.id}-${x.day}.json`, JSON.stringify(x.anchor, null, 2))}>Download</lit-material-button></td>
+              </tr>`)}</tbody>
+            </table>`
+          : html`<p class="hint" aria-label="No anchors">No daily anchor yet: the first one comes within the hour.</p>`}
+        ${this.orgBack(org)}
+      </section>`;
   }
 
   // --- access tokens and the account -------------------------------------------------------

@@ -10,7 +10,12 @@
 // Squeezy would send (fixtures of sync-server/tests/fixtures/lemonsqueezy), a 4th member refused
 // with a "See plans" link, a 4th seat bought (quantity 4 sent to Lemon Squeezy), the member added,
 // payment failed (the banner), a refund (Free limits), expired (Free, nothing removed), a bad
-// signature refused, the billing portal link. Serves dist/ (npm run build) with a few lines of Node.
+// signature refused, the billing portal link; C5: Business bought (per seat), the admin console
+// (workspaces, people, devices; transfer ownership, a rotation request, a device removed), single
+// sign-on per org (a domain claimed and verified through a fake DNS-over-HTTPS resolver, the
+// provider saved and tested), the audit page (signed export, an anchor, the settings), the SSO
+// button asking for the work address, and a server without a host key saying SSO isn't available.
+// Serves dist/ (npm run build) with a few lines of Node.
 //   (cd ../../webapp && npm run wasm)  # the password crypto: the web app's hitop-wasm build
 //   HITOP_SYNC_SERVER_BIN=../../sync-server/target/debug/hitop-sync-server npm test
 const { spawn } = require("child_process");
@@ -55,7 +60,18 @@ function serve(dir, port) {
 
 // Lemon Squeezy as the server calls it (checkouts, subscription items, subscriptions) plus the two
 // pages a browser is sent to (checkout, billing portal).
-const LS = { secret: "e2e-webhook-secret", key: "e2e-api-key", store: "4242", teamAnnual: "201", teamMonthly: "202", proAnnual: "101" };
+const LS = { secret: "e2e-webhook-secret", key: "e2e-api-key", store: "4242", teamAnnual: "201", teamMonthly: "202", proAnnual: "101", businessAnnual: "301", businessMonthly: "302" };
+
+// A DNS-over-HTTPS resolver (the JSON API) answering the TXT records the test sets (C5 domains).
+function fakeDns(port) {
+  const records = new Map();
+  const server = http.createServer((req, res) => {
+    const name = new URL(req.url, "http://x").searchParams.get("name");
+    const txt = records.get(name) || [];
+    res.writeHead(200, { "Content-Type": "application/dns-json" }).end(JSON.stringify(txt.length ? { Status: 0, Answer: txt.map((t) => ({ name, type: 16, TTL: 60, data: `"${t}"` })) } : { Status: 3 }));
+  });
+  return new Promise((resolve) => server.listen(port, "127.0.0.1", () => resolve({ server, records, url: `http://127.0.0.1:${port}/dns-query` })));
+}
 function fakeLemonSqueezy(port) {
   const seen = [];
   const server = http.createServer((req, res) => {
@@ -179,7 +195,15 @@ async function syncServer(portalOrigin, extraEnv = {}) {
   const origin = `http://localhost:${portalPort}`;
   const portal = await serve(dist, portalPort);
   const ls = await fakeLemonSqueezy(await freePort());
+  const dns = await fakeDns(await freePort());
+  const keyDir = fs.mkdtempSync(path.join(os.tmpdir(), "hitop-portal-hostkey-"));
+  const hostKey = path.join(keyDir, "host.key");
+  fs.writeFileSync(hostKey, crypto.randomBytes(32).toString("hex"), { mode: 0o600 });
   const server = await syncServer(origin, {
+    HITOP_SYNC_HOST_KEY_FILE: hostKey,
+    HITOP_SYNC_DNS_URL: dns.url,
+    HITOP_SYNC_LS_VARIANT_BUSINESS_ANNUAL: LS.businessAnnual,
+    HITOP_SYNC_LS_VARIANT_BUSINESS_MONTHLY: LS.businessMonthly,
     HITOP_SYNC_LS_WEBHOOK_SECRET: LS.secret,
     HITOP_SYNC_LS_STORE_ID: LS.store,
     HITOP_SYNC_LS_VARIANT_TEAM_ANNUAL: LS.teamAnnual,
@@ -295,7 +319,7 @@ async function syncServer(portalOrigin, extraEnv = {}) {
     check("the plan page shows the Free limits", (await app.innerText()).includes("Free: 3 people"));
 
     // Billing (C3): buy Team with 3 seats.
-    await page.getByLabel("Seats").fill("3");
+    await app.getByLabel("Buy Team").getByLabel("Seats").fill("3");
     await app.getByRole("button", { name: "Buy Team, yearly" }).click();
     await page.waitForURL(`${ls.url}/checkout/**`, { timeout: 10000 });
     const made = ls.seen.find((r) => r.method === "POST" && r.path === "/v1/checkouts");
@@ -349,6 +373,147 @@ async function syncServer(portalOrigin, extraEnv = {}) {
     check("expired: Free limits, all 4 people still there, reads work", expired.json.outcome === "applied" && people.members.length + people.invites.length === 4 && reads.status === 200, JSON.stringify(expired.json));
     const fifth = await server.api("POST", `/v1/orgs/${orgId}/members`, bobSession, { email: "eve@example.com", role: "member" });
     check("...and creates beyond Free are refused", fifth.status === 402 && fifth.json.plan === "free", JSON.stringify(fifth.json));
+
+    // HITOP Cloud C5: a Business org (bought per seat), its admin console, single sign-on with a
+    // verified domain, the audit page. Acme is on Free limits now: its admin console says so.
+    await page.goto(`${origin}/#/orgs/${orgId}/admin`);
+    await idle();
+    check("the admin console on Free: refused with a See plans link", (await alertText()).includes("admin console") && (await app.locator('[role="alert"] a.portal-upgrade').count()) === 1, await alertText());
+    const globex = (await server.api("POST", "/v1/orgs", adaSession, { name: "Globex" })).json.id;
+    check("Bob joins Globex", (await server.api("POST", `/v1/orgs/${globex}/members`, adaSession, { email: "bob@example.com", role: "member" })).status === 201);
+    await page.goto(`${origin}/#/orgs/${globex}/plan`);
+    await idle();
+    check("the plan page offers Business next to Team", (await app.getByRole("button", { name: "Buy Business, yearly" }).count()) === 1 && (await app.innerText()).includes("$20 per seat a month"), await app.innerText());
+    await app.getByLabel("Buy Business").getByLabel("Seats").fill("3");
+    await app.getByRole("button", { name: "Buy Business, yearly" }).click();
+    await page.waitForURL(`${ls.url}/checkout/**`, { timeout: 10000 });
+    const bizCheckout = ls.seen.filter((r) => r.method === "POST" && r.path === "/v1/checkouts").pop();
+    const bizCustom = bizCheckout?.body.data.attributes.checkout_data.custom;
+    check("Buy Business: the Business variant, 3 seats, Globex", bizCustom?.org_id === globex && bizCheckout.body.data.relationships.variant.data.id === LS.businessAnnual && bizCheckout.body.data.attributes.checkout_data.variant_quantities[0].quantity === 3, JSON.stringify(bizCheckout?.body));
+    const biz = await deliver(subscriptionEvent("subscription_created", "2", LS.businessAnnual, "active", 3, "2026-11-03T12:00:00.000000Z", bizCustom));
+    check("...the purchase applies: Business", biz.json.outcome === "applied" && (await server.api("GET", `/v1/orgs/${globex}/limits`, adaSession)).json.planInForce === "business", JSON.stringify(biz.json));
+    // Ada's workspace moves into Globex; Bob (one device) edits it.
+    check("the workspace moves into Globex", (await server.api("POST", `/v1/orgs/${globex}/workspaces`, adaSession, { workspace: wsId })).status === 200);
+    const bobKey = (await server.api("POST", "/v1/me/keys", bobSession, { name: "bob-laptop", publicKey: crypto.randomBytes(32).toString("base64url") })).json.id;
+    const bobAdded = await server.api("POST", `/v1/workspaces/${wsId}/members`, adaSession, { email: "bob@example.com", role: "editor", wraps: [{ keyId: bobKey, wrapped: crypto.randomBytes(80).toString("base64url") }] });
+    check("Bob is added to the workspace", bobAdded.status === 201, JSON.stringify(bobAdded.json));
+
+    await page.goto(`${origin}/#/orgs/${globex}`);
+    await idle();
+    await app.getByRole("link", { name: "Admin console" }).click();
+    await idle();
+    const card = app.getByLabel(`Workspace ${wsId.slice(0, 8)}`);
+    const wsPeople = await app.getByLabel(`People of ${wsId.slice(0, 8)}`).innerText().catch(() => "");
+    check("admin console: the org's workspace and its people", /ada@example\.com\s+owner/.test(wsPeople) && /bob@example\.com\s+editor/.test(wsPeople), wsPeople + (await alertText()));
+    const devices = await app.getByRole("table", { name: "Devices" }).innerText().catch(() => "");
+    check("admin console: the members' devices", devices.includes("bob-laptop") && devices.includes("e2e"), devices);
+    check("no key material on the page", !(await app.innerText()).includes("wrapped"));
+    await app.getByLabel(`New owner of ${wsId.slice(0, 8)}`).selectOption({ label: "bob@example.com" });
+    await card.getByRole("button", { name: "Transfer ownership" }).click();
+    await idle();
+    const roles = (await server.api("GET", `/v1/workspaces/${wsId}`, bobSession)).json.members.map((m) => `${m.email}:${m.role}`).sort().join();
+    check("transfer ownership: Bob owns it, Ada edits", roles === "ada@example.com:editor,bob@example.com:owner", roles + (await alertText()));
+    await card.getByRole("button", { name: "Ask for a key rotation" }).click();
+    await idle();
+    check("a rotation request shows on the workspace", (await app.getByLabel("Rotation requested").count()) === 1 && (await server.api("GET", `/v1/workspaces/${wsId}`, bobSession)).json.rotationRequested?.by === "ada@example.com", await alertText());
+    let dialog = "";
+    page.once("dialog", (d) => {
+      dialog = d.message();
+      d.accept();
+    });
+    await app.getByRole("table", { name: "Devices" }).getByRole("row").filter({ hasText: "bob-laptop" }).getByRole("button", { name: "Remove" }).click();
+    await idle();
+    const after = (await server.api("GET", `/v1/orgs/${globex}/admin`, adaSession)).json;
+    check("a device removed everywhere, after a warning", dialog.includes("removed from their account everywhere") && !after.devices.some((d) => d.name === "bob-laptop") && !(await app.getByRole("table", { name: "Devices" }).innerText()).includes("bob-laptop"), dialog + JSON.stringify(after.devices));
+
+    // Single sign-on: claim globex.test, publish the TXT record, verify; the provider.
+    await page.goto(`${origin}/#/orgs/${globex}`);
+    await idle();
+    await app.getByRole("link", { name: "Single sign-on" }).click();
+    await idle();
+    await app.getByLabel("Domain to claim").fill("globex.test");
+    await app.getByRole("button", { name: "Claim domain" }).click();
+    await idle();
+    const domains = await app.getByRole("table", { name: "Domains" }).innerText().catch(() => "");
+    const txt = /hitop-verify=[0-9a-f]{32}/.exec(domains)?.[0];
+    check("a claimed domain shows the TXT record to publish", domains.includes("_hitop-verify.globex.test") && Boolean(txt) && domains.includes("not verified"), domains + (await alertText()));
+    await app.getByRole("table", { name: "Domains" }).getByRole("row").filter({ hasText: "globex.test" }).getByRole("button", { name: "Verify" }).click();
+    await idle();
+    check("verify before the record exists: says so", (await alertText()).includes("no TXT record"), await alertText());
+    dns.records.set("_hitop-verify.globex.test", ["v=spf1 -all", txt]);
+    await app.getByRole("table", { name: "Domains" }).getByRole("row").filter({ hasText: "globex.test" }).getByRole("button", { name: "Verify" }).click();
+    await idle();
+    check("...and after: verified", (await app.getByRole("table", { name: "Domains" }).innerText()).includes("verified 20"), await alertText());
+    check("the redirect URI to register", (await app.getByLabel("Redirect URI").innerText()) === `${server.url}/v1/auth/sso/callback`);
+    const deadIdp = `http://127.0.0.1:${await freePort()}/realm`;
+    await app.getByLabel("Issuer URL").fill(deadIdp);
+    await app.getByLabel("Client ID").fill("hitop-portal-e2e");
+    await app.getByLabel("Client secret").fill("e2e-client-secret");
+    await app.getByLabel("Button name").fill("Globex SSO");
+    await app.getByRole("button", { name: "Save" }).click();
+    await idle();
+    const ssoApi = await server.api("GET", `/v1/orgs/${globex}/sso`, adaSession);
+    check("the provider is saved, the secret never comes back", (await app.locator('[role="status"]').innerText().catch(() => "")).includes("saved") && ssoApi.json.config?.issuer === deadIdp && ssoApi.json.config.hasSecret && !JSON.stringify(ssoApi.json).includes("e2e-client-secret") && !(await app.innerText()).includes("e2e-client-secret"), JSON.stringify(ssoApi.json) + (await alertText()));
+    await app.getByRole("button", { name: "Test" }).click();
+    await idle();
+    check("Test reports an unreachable provider", (await alertText()).includes("provider check failed"), await alertText());
+
+    // Audit: the signed export, an anchor now, the settings.
+    await page.goto(`${origin}/#/orgs/${globex}/audit`);
+    await idle();
+    check("no daily anchor yet", (await app.getByLabel("No anchors").count()) === 1, await app.innerText());
+    let dl = page.waitForEvent("download");
+    await app.getByRole("button", { name: "Download signed export" }).click();
+    const exported = fs.readFileSync(await (await dl).path(), "utf8").trim().split("\n").map((l) => JSON.parse(l));
+    check("the signed export downloads: header, chains, events, signature", exported[0].type === "hitop-audit-export" && exported.some((l) => l.type === "chain" && l.chain === wsId) && exported.some((l) => l.event === "owner_transferred") && exported.at(-1).type === "signature" && exported.at(-1).alg === "Ed25519", JSON.stringify(exported.at(-1)));
+    dl = page.waitForEvent("download");
+    await app.getByRole("button", { name: "Anchor now" }).click();
+    const anchor = JSON.parse(fs.readFileSync(await (await dl).path(), "utf8"));
+    check("Anchor now downloads a signed anchor of every chain", anchor.type === "hitop-audit-anchor" && anchor.org === globex && anchor.chains.some((c) => c.chain === wsId) && anchor.signature.length > 40, JSON.stringify(anchor).slice(0, 300));
+    await app.locator("#audit-public").check();
+    await idle();
+    const settings = (await server.api("GET", `/v1/orgs/${globex}/audit/anchors`, adaSession)).json;
+    check("an owner publishes the anchors (opt-in), mail stays on", settings.publicAnchors === true && settings.mailAnchors === true && (await app.innerText()).includes("how many workspaces"), JSON.stringify(settings));
+
+    // The SSO button now asks for the work address, then starts with that org's provider.
+    {
+      const ctx = await browser.newContext();
+      await ctx.addInitScript((s) => localStorage.setItem("hitop_cloud", JSON.stringify({ server: s })), server.url);
+      const p2 = await ctx.newPage();
+      const a2 = p2.locator("hitop-cloud");
+      let started = null;
+      p2.on("request", (r) => {
+        if (r.url().endsWith("/v1/auth/sso/start")) started = JSON.parse(r.postData() || "{}");
+      });
+      await p2.goto(`${origin}/`);
+      await a2.getByRole("button", { name: "Sign in with SSO" }).waitFor({ timeout: 10000 });
+      await a2.getByLabel("Email").fill("");
+      await a2.getByRole("button", { name: "Sign in with SSO" }).click();
+      await p2.waitForTimeout(300);
+      check("the SSO button asks for the work address", (await a2.locator('[role="alert"]').innerText().catch(() => "")).includes("work address"));
+      await a2.getByLabel("Email").fill("zoe@globex.test");
+      await a2.getByRole("button", { name: "Sign in with SSO" }).click();
+      await p2.waitForTimeout(800);
+      check("...and starts with it (the org's provider, unreachable here)", started?.email === "zoe@globex.test" && (await a2.locator('[role="alert"]').innerText().catch(() => "")).includes("identity provider"), JSON.stringify(started));
+      await ctx.close();
+    }
+    // A server without a host key (the hosted test server): no single sign-on per org.
+    {
+      const plain = await syncServer(origin);
+      try {
+        const zed = await plain.signIn("zed@example.com");
+        const zorg = (await plain.api("POST", "/v1/orgs", zed, { name: "Zed" })).json.id;
+        const ctx = await browser.newContext();
+        await ctx.addInitScript(([s, t]) => localStorage.setItem("hitop_cloud", JSON.stringify({ server: s, session: t, email: "zed@example.com" })), [plain.url, zed]);
+        const p3 = await ctx.newPage();
+        await p3.goto(`${origin}/#/orgs/${zorg}/sso`);
+        await p3.locator("hitop-cloud").getByLabel("Not available").waitFor({ timeout: 10000 });
+        check("without a host key: single sign-on isn't available", (await p3.locator("hitop-cloud").getByLabel("Not available").innerText()).includes("isn't available on this server"));
+        await ctx.close();
+      } finally {
+        plain.stop();
+      }
+    }
 
     // Access tokens.
     await page.getByRole("navigation", { name: "Portal" }).getByRole("link", { name: "Access tokens" }).click();
@@ -464,7 +629,9 @@ async function syncServer(portalOrigin, extraEnv = {}) {
     await browser.close();
     portal.close();
     ls.server.close();
+    dns.server.close();
     server.stop();
+    fs.rmSync(keyDir, { recursive: true, force: true });
   }
   const failed = results.filter((r) => !r.ok);
   console.log(`${results.length - failed.length}/${results.length} passed`);
