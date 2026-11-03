@@ -101,6 +101,18 @@ date (UTC), who, what, the commit, the checks run after it.
   the site and the portal. Billing: RUNBOOK "Billing (Lemon Squeezy, C3)" once the owner's test
   store gives the store id, variant ids, API key and webhook secret.
 
+## 2026-11-03 C3 and C4 deployed to the test server (13:08–13:15 UTC)
+
+- Who: agent. What: acf2b84 (`--features postgres`; CI 41634478273 green). Dump first:
+  `/root/pre-c3c4-20261103T130805Z` (postgres, 10 rows).
+- `install.sh`: `/healthz` `{"database":"postgres","ok":true,"schema":8}` (migrations 7 and 8);
+  0 over a limit. Billing off (no `HITOP_SYNC_LS_*`): `/v1/billing/lemonsqueezy` 404, no trial.
+  install.sh's own health check ran before the restart finished and printed a connect error;
+  the server was up a second later.
+- `deploy/deploy.sh`: site (pricing with Free/$6/$10/$20, `/security.html` and `/legal/*` as
+  noindex drafts), web app (run history, shared values), portal (Plan page, run history); `/`,
+  `/pricing.html`, `/security.html`, `/cloud/` 200; rws8.tech, lit.rws8.tech, mail.rws8.tech 200.
+
 <!-- Next entry (template): record: commit, backup file names (sync.db.bak-<ts>), the row
 counts before and after (users, workspaces, members; orgs with personal_of <> '' = users with
 runner_of = ''), `hitop-sync-server over-limits` output (0 over a limit), curl of /healthz on sync
