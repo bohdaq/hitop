@@ -186,6 +186,13 @@ fn has_html_reporter(version: &str) -> bool {
     v > (0, 3, 0)
 }
 
+/// `hitop sync report` (run history, HITOP Cloud C4) came after 1.2.
+fn has_sync_report(version: &str) -> bool {
+    let core = version.trim_start_matches('v').split(['-', '+']).next().unwrap_or_default();
+    let mut parts = core.split('.').map(|p| p.parse::<u64>().unwrap_or(0));
+    (parts.next().unwrap_or(0), parts.next().unwrap_or(0)) > (1, 2)
+}
+
 /// `hitop sync` came after 1.0.0.
 fn has_sync(version: &str) -> bool {
     let core = version.trim_start_matches('v').split(['-', '+']).next().unwrap_or_default();
@@ -210,6 +217,10 @@ fn github(args: &ScheduleArgs, t: &Target, cron: &Cron) -> Result<()> {
         println!("  hitop sync runner create -c {} | gh secret set HITOP_SYNC_RUNNER", sh(&args.folder.to_string_lossy()));
         if !has_sync(&version) {
             eprintln!("{} hitop {version}'s image has no `hitop sync`; pass --hitop-version with a release after 1.0.0", "Note:".yellow().bold());
+        } else if has_sync_report(&version) {
+            println!("Each run's report goes to the workspace's history (`hitop sync runs`; alerts: `hitop sync alerts`).");
+        } else {
+            eprintln!("{} hitop {version} can't upload runs to the workspace's history; a release after 1.2 can (--hitop-version)", "Note:".yellow().bold());
         }
     }
     if !t.secret_vars.is_empty() {
@@ -301,6 +312,17 @@ fn workflow(t: &Target, cron: &Cron, path: &str, version: &str) -> Result<String
     }
     y.push_str(&format!("          reporter: {}\n", if html { "cli,junit,json,html" } else { "cli,junit,json" }));
     y.push_str(&format!("          artifact-name: hitop-{}-junit\n", t.slug));
+    if t.sync && has_sync_report(version) {
+        // The run history (HITOP Cloud C4): the report the Action wrote, sealed in the job with
+        // the runner credential; the server gets a status row and ciphertext.
+        y.push_str("      - name: Upload the run to the workspace history (hitop sync)\n        if: always() && steps.hitop.outputs.report-dir != ''\n");
+        y.push_str("        env:\n          HITOP_SYNC_RUNNER: ${{ secrets.HITOP_SYNC_RUNNER }}\n          REPORT_DIR: ${{ steps.hitop.outputs.report-dir }}\n");
+        y.push_str("        run: |\n");
+        y.push_str(&format!(
+            "          docker run --rm --user \"$(id -u)\" -e HOME=/tmp -e HITOP_KEYCHAIN=off -e HITOP_SYNC_RUNNER -v \"$(realpath \"$REPORT_DIR\"):/report:ro\" {} sync report /report/report.json\n",
+            sh(&format!("ghcr.io/bohdaq/hitop:{version}"))
+        ));
+    }
     if html {
         y.push_str("      - name: HTML report\n        if: always() && steps.hitop.outputs.report-dir != ''\n");
         y.push_str("        uses: actions/upload-artifact@v7\n        with:\n");
@@ -360,6 +382,10 @@ fn cron_line(cron: &Cron, exe: &Path, folder: &Path, env: Option<&str>, log_dir:
     cmd.push_str(&format!(" && {} run {}", sh(&exe.to_string_lossy()), sh(&folder.to_string_lossy())));
     if let Some(e) = env {
         cmd.push_str(&format!(" --env {}", sh(e)));
+    }
+    if sync {
+        // The run history and shared values of the workspace (HITOP Cloud C4).
+        cmd.push_str(" --sync-report --sync-secrets");
     }
     cmd.push_str(&format!(
         " --reporter cli,junit,json,html --out {}/\"$(date -u +%Y%m%dT%H%M%SZ)\" >> {} 2>&1",

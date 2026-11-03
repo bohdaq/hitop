@@ -66,6 +66,51 @@ fn ask(label: &str) -> Option<String> {
     rpassword::prompt_password(format!("Value for secret {label}: ")).ok()
 }
 
+/// A keychain with values shared end to end (`hitop sync secrets share`) beneath it: the
+/// keychain's own value wins; where it has none (or there is no keychain, CI), the shared one.
+struct WithShared<'a> {
+    inner: &'a dyn SecretStore,
+    shared: &'a BTreeMap<String, String>,
+}
+
+impl SecretStore for WithShared<'_> {
+    fn get(&self, account: &str) -> std::result::Result<Option<String>, StoreError> {
+        match self.inner.get(account) {
+            Ok(Some(v)) => Ok(Some(v)),
+            Ok(None) => Ok(self.shared.get(account).cloned()),
+            Err(e) => match self.shared.get(account) {
+                Some(v) => Ok(Some(v.clone())),
+                None => Err(e),
+            },
+        }
+    }
+    fn set(&self, account: &str, value: &str) -> std::result::Result<(), StoreError> {
+        self.inner.set(account, value)
+    }
+    fn delete(&self, account: &str) -> std::result::Result<bool, StoreError> {
+        self.inner.delete(account)
+    }
+}
+
+/// [`resolve`] with shared values (keychain accounts → values) below the keychain:
+/// `HITOP_SECRET_*`, `--secret` and your keychain win over them.
+pub fn resolve_with_shared(workspace: &str, environment: Option<&Environment>, flags: &SecretFlags, shared: &BTreeMap<String, String>) -> Result<Secrets> {
+    let pairs = flags.pairs()?;
+    let needs_any = !pairs.is_empty() || environment.is_some_and(|e| !e.secrets.is_empty());
+    if !needs_any {
+        return Ok(Secrets::default());
+    }
+    let os = store();
+    let store = WithShared { inner: os.as_ref(), shared };
+    let lookup = |k: &str| std::env::var(k).ok();
+    let prompt: &dyn Fn(&str) -> Option<String> = &ask;
+    let resolved = secrets::resolve(&Lookup { workspace, environment, flags: &pairs, store: &store, lookup_env: &lookup, prompt: interactive().then_some(prompt) })?;
+    for note in &resolved.notes {
+        eprintln!("{} {note}", "note:".yellow());
+    }
+    Ok(resolved.secrets)
+}
+
 /// Resolves the environment's secrets and the `--secret` flags (env var,
 /// flag, keychain, then a prompt on a terminal). Notes go to stderr.
 pub fn resolve(workspace: &str, environment: Option<&Environment>, flags: &SecretFlags) -> Result<Secrets> {

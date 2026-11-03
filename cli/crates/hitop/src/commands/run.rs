@@ -116,6 +116,17 @@ pub struct RunArgs {
 
     #[command(flatten)]
     cookies: CookieFlags,
+
+    /// Upload the run to the folder's hitop sync workspace history: a status row (passed or
+    /// failed, timing, counts) and the report sealed end to end (as a member, or with
+    /// HITOP_SYNC_RUNNER). A failed upload is a warning; the exit code is the run's
+    #[arg(long)]
+    sync_report: bool,
+
+    /// Use the environment's secret values shared end to end in the hitop sync workspace
+    /// (`hitop sync secrets share`), under your own: HITOP_SECRET_*, --secret and your keychain win
+    #[arg(long)]
+    sync_secrets: bool,
 }
 
 fn var_pairs(vars: &[String]) -> Result<HashMap<String, String>> {
@@ -163,7 +174,20 @@ fn plan(args: &RunArgs) -> Result<Plan> {
         Some(e) => Some(e),
         None => source.environment(args.env.as_deref())?,
     };
-    let secrets = secret::resolve(&source.workspace(), environment.as_ref(), &args.secrets)?;
+    let shared = match (&environment, args.sync_secrets) {
+        (Some(e), true) if !e.secrets.is_empty() => {
+            let dir = source.folder().map(Path::to_path_buf).unwrap_or_else(|| PathBuf::from("."));
+            match super::sync::shared_values(&dir, &e.name, &source.workspace()) {
+                Ok(v) => v,
+                Err(err) => {
+                    eprintln!("{} shared secret values not used: {err:#}", "warning:".yellow());
+                    Default::default()
+                }
+            }
+        }
+        _ => Default::default(),
+    };
+    let secrets = secret::resolve_with_shared(&source.workspace(), environment.as_ref(), &args.secrets, &shared)?;
     let (globals, global_secrets) = secret::resolve_globals(&source.workspace(), &source.globals()?, &args.secrets)?;
     let files = match source.folder() {
         Some(dir) => request_files(dir, &source.collection)?,
@@ -268,6 +292,13 @@ pub fn run(args: RunArgs) -> Result<i32> {
         print_summary(&report);
     }
     write_reports(&report, reporters, &args.out)?;
+    if args.sync_report {
+        let dir = match args.collection.as_deref() {
+            Some(c) if format::is_folder(Path::new(c)) => PathBuf::from(c),
+            _ => PathBuf::from("."),
+        };
+        super::sync::upload_run(&dir, &report);
+    }
     Ok(if report.passed { 0 } else { 1 })
 }
 

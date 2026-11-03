@@ -7,6 +7,8 @@ mod audit;
 mod client;
 mod password;
 mod recovery;
+mod runs;
+mod shares;
 mod sso;
 mod store;
 
@@ -181,6 +183,67 @@ pub enum SyncCmd {
     /// Runner credentials for scheduled runs (CI, cron)
     #[command(subcommand)]
     Runner(RunnerCmd),
+    /// The workspace's run history (uploaded with `hitop run --sync-report` or `hitop sync
+    /// report`): status rows, or one run's report opened on this device (--id)
+    Runs {
+        /// One run: its full report, decrypted here
+        #[arg(long)]
+        id: Option<String>,
+        /// Print JSON (the rows, or with --id the report.json)
+        #[arg(long)]
+        json: bool,
+        /// At most this many runs, newest first
+        #[arg(long, default_value_t = 30)]
+        limit: usize,
+        #[command(flatten)]
+        folder: FolderArgs,
+    },
+    /// Upload a run's report.json (from `hitop run --reporter json`, or the GitHub Action) to the
+    /// workspace's history: a status row and the report sealed end to end. As a member or with
+    /// HITOP_SYNC_RUNNER
+    Report {
+        /// The report.json a run wrote
+        file: PathBuf,
+        #[command(flatten)]
+        folder: FolderArgs,
+    },
+    /// Alerts when a scheduled run fails, passes again or doesn't come (owners): mail to members,
+    /// a JSON webhook, Slack. Without flags, shows the settings
+    Alerts {
+        /// Mail alerts to this member (repeatable)
+        #[arg(long, value_name = "ADDRESS")]
+        email: Vec<String>,
+        /// Stop all alert mail (then --email adds addresses again)
+        #[arg(long)]
+        no_email: bool,
+        /// POST a JSON body to this https URL on each alert (repeatable)
+        #[arg(long, value_name = "URL")]
+        webhook: Vec<String>,
+        /// A Slack incoming webhook URL (repeatable)
+        #[arg(long, value_name = "URL")]
+        slack: Vec<String>,
+        /// Remove every webhook (then --webhook/--slack add them again)
+        #[arg(long)]
+        no_webhooks: bool,
+        /// Whether status rows and alerts may name the failed requests
+        #[arg(long, value_parser = ["on", "off"])]
+        failed_names: Option<String>,
+        /// off = history only, no status rows and no alerts
+        #[arg(long, value_parser = ["on", "off"])]
+        status_rows: Option<String>,
+        /// Alert once when no run came for this many minutes (0 = off)
+        #[arg(long, value_name = "MINUTES")]
+        missed_after: Option<i64>,
+        /// The last alerts sent and how they went
+        #[arg(long)]
+        log: bool,
+        #[command(flatten)]
+        folder: FolderArgs,
+    },
+    /// Share an environment's secret values end to end with the team's devices (opt-in), list or
+    /// stop shares. Values never go into the folder's files
+    #[command(subcommand)]
+    Secrets(SecretsCmd),
     /// A recovery phrase: brings this device back on a new computer if you lose it
     #[command(subcommand)]
     Recovery(RecoveryCmd),
@@ -217,6 +280,44 @@ pub enum RunnerCmd {
     Create {
         #[arg(long, default_value = "runner")]
         name: String,
+        #[command(flatten)]
+        folder: FolderArgs,
+    },
+}
+
+#[derive(Subcommand)]
+pub enum SecretsCmd {
+    /// Seal the environment's secret values (from your keychain or HITOP_SECRET_*) for the
+    /// trusted devices of the workspace's owners and editors (and --viewers, --runner); asks
+    /// before sharing, naming who gets them
+    Share {
+        #[arg(long = "env", value_name = "ENV")]
+        env: String,
+        /// Viewers' devices get them too
+        #[arg(long)]
+        viewers: bool,
+        /// This runner credential (user id, see `hitop sync members`) gets them (repeatable)
+        #[arg(long, value_name = "ID")]
+        runner: Vec<String>,
+        /// Every runner credential of the workspace gets them
+        #[arg(long)]
+        runners: bool,
+        /// Don't ask (after checking who gets them)
+        #[arg(long)]
+        yes: bool,
+        #[command(flatten)]
+        trust: TrustArgs,
+        #[command(flatten)]
+        secrets: crate::commands::secret::SecretFlags,
+        #[command(flatten)]
+        folder: FolderArgs,
+    },
+    /// The shared environments: their secret names (never the values) and who has them
+    Ls(FolderArgs),
+    /// Stop sharing an environment's values
+    Unshare {
+        #[arg(long = "env", value_name = "ENV")]
+        env: String,
         #[command(flatten)]
         folder: FolderArgs,
     },
@@ -358,6 +459,16 @@ fn run_cmd(cmd: SyncCmd) -> Result<i32> {
         SyncCmd::Role { email, role, folder } => set_role(&folder.path(), &email, &role).map(|_| 0),
         SyncCmd::Trust { fingerprints, folder } => trust_cmd(&folder.path(), &fingerprints).map(|_| 0),
         SyncCmd::Runner(RunnerCmd::Create { name, folder }) => runner_create(&folder.path(), &name).map(|_| 0),
+        SyncCmd::Runs { id, json, limit, folder } => runs::list(&folder.path(), json, id.as_deref(), limit).map(|_| 0),
+        SyncCmd::Report { file, folder } => runs::report_file(&file, &folder.path()).map(|_| 0),
+        SyncCmd::Alerts { email, no_email, webhook, slack, no_webhooks, failed_names, status_rows, missed_after, log, folder } => runs::alerts(
+            &folder.path(),
+            runs::AlertChanges { email, no_email, webhook, slack, no_webhooks, failed_names: failed_names.map(|v| v == "on"), status_rows: status_rows.map(|v| v == "on"), missed_after, log },
+        )
+        .map(|_| 0),
+        SyncCmd::Secrets(SecretsCmd::Share { env, viewers, runner, runners, yes, trust, secrets, folder }) => shares::share(&folder.path(), &env, viewers, runner, runners, yes, &trust, &secrets).map(|_| 0),
+        SyncCmd::Secrets(SecretsCmd::Ls(folder)) => shares::ls(&folder.path()).map(|_| 0),
+        SyncCmd::Secrets(SecretsCmd::Unshare { env, folder }) => shares::unshare(&folder.path(), &env).map(|_| 0),
         SyncCmd::Recovery(RecoveryCmd::Create) => recovery::create().map(|_| 0),
         SyncCmd::Recovery(RecoveryCmd::Use { phrase_file }) => recovery::use_phrase(phrase_file.as_deref()).map(|_| 0),
         SyncCmd::Recovery(RecoveryCmd::Status) => recovery::status().map(|_| 0),
@@ -377,6 +488,17 @@ fn run_cmd(cmd: SyncCmd) -> Result<i32> {
             Ok(0)
         }
     }
+}
+
+/// `hitop run --sync-report`: uploads the run to the folder's workspace history (a warning when it
+/// can't; the run's exit code stays).
+pub fn upload_run(dir: &Path, report: &hitop_core::report::Report) {
+    runs::upload_after_run(dir, report)
+}
+
+/// `hitop run --sync-secrets`: the shared values of `env` as keychain accounts of `keychain_ws`.
+pub fn shared_values(dir: &Path, env: &str, keychain_ws: &str) -> Result<BTreeMap<String, String>> {
+    shares::values_for_run(dir, env, keychain_ws)
 }
 
 fn interactive() -> bool {
@@ -852,6 +974,7 @@ fn sync_folder(t: &Target, dir: &Path, push: bool) -> Result<(Plan, usize)> {
             }
         }
         if !again {
+            shares::reseal(&t.api, &t.device, &t.workspace);
             return Ok((plan, 0));
         }
     }
@@ -1067,6 +1190,9 @@ fn members(dir: &Path, trust: &TrustArgs) -> Result<()> {
         }
         println!("Gave the workspace key to {} new device(s).", missing.len());
     }
+    if info["role"] != "viewer" {
+        shares::reseal(&s.api, &s.device, &ws_id);
+    }
     let legacy = info["members"].as_array().cloned().unwrap_or_default().iter().flat_map(|m| m["keys"].as_array().cloned().unwrap_or_default()).any(|k| k["legacyEpochs"].as_array().is_some_and(|e| !e.is_empty()));
     if legacy {
         if info["role"] == "owner" {
@@ -1164,6 +1290,7 @@ fn add(dir: &Path, email: &str, role: Option<&str>, trust: &TrustArgs) -> Result
     for (epoch, key) in ws.keys.iter().filter(|(e, _)| **e != ws.epoch) {
         s.api.call("POST", &format!("/v1/workspaces/{ws_id}/wraps"), Some(json!({ "epoch": epoch, "wraps": wraps_for(&s.device, &recipients, &ws_id, *epoch, ws.epoch, key)? })))?;
     }
+    shares::reseal(&s.api, &s.device, &ws_id);
     println!("Added {email} as {role}. They run: hitop sync link {ws_id} -c <folder>");
     Ok(())
 }
@@ -1193,6 +1320,17 @@ fn remove(dir: &Path, email: &str, trust: &TrustArgs) -> Result<()> {
     let n = ws.reencrypt_all(&s.device.key_id)?;
     println!("Removed {email}. New workspace key (epoch {next}); re-encrypted {n} file(s).");
     println!("They keep any copies they already have; nothing written from now on is readable to them.");
+    match shares::rekey_all(&s.api, &s.device, &ws_id) {
+        Ok((0, 0)) => {}
+        Ok((k, closed)) => {
+            println!("Re-keyed {k} shared environment(s) for the remaining devices.");
+            if closed > 0 {
+                eprintln!("{} {closed} shared environment(s) weren't shared with this device: whoever shared them re-shares them (`hitop sync secrets share`)", "note:".yellow());
+            }
+            eprintln!("{} {email} could see the shared secret values: rotate those secrets where they come from", "note:".yellow());
+        }
+        Err(e) => eprintln!("{} shared environments not re-keyed: {e:#}", "warning:".yellow()),
+    }
     Ok(())
 }
 
@@ -1238,7 +1376,11 @@ fn trust_cmd(dir: &Path, fingerprints: &[String]) -> Result<()> {
         pins.insert(c.key_id.clone(), b64(&c.public_key));
         println!("Trusted {} ({}).", c.owner, c.name);
     }
-    store::save_pins(&pins)
+    store::save_pins(&pins)?;
+    for ws in &workspaces {
+        shares::reseal(&s.api, &s.device, ws);
+    }
+    Ok(())
 }
 
 fn runner_create(dir: &Path, name: &str) -> Result<()> {

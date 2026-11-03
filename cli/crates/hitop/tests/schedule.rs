@@ -272,4 +272,34 @@ fn sync_pulls_the_shared_collection_before_the_run() {
     let folder = dir.canonicalize().unwrap();
     let pull = line.find(&format!(" sync pull -c '{}'", folder.display())).expect("a pull");
     assert!(pull < line.find(" run '").unwrap(), "{line}");
+    assert!(line.contains(" --sync-report --sync-secrets "), "C4: the run goes to the history: {line}");
+    assert!(!text.contains("sync report"), "1.1.0 has no `hitop sync report`");
+}
+
+#[test]
+fn sync_uploads_the_run_to_the_history_with_a_release_after_1_2() {
+    let (repo, _dir) = repo();
+    let home = TempDir::new().unwrap();
+    hitop(&home, repo.path())
+        .args(["schedule", "./apis/shop", "--github", "--sync", "--env", "local", "--hitop-version", "1.3.0", "--name", "History"])
+        .assert()
+        .code(0)
+        .stdout(contains("workspace's history"));
+    let file = repo.path().join(".github/workflows/hitop-history.yml");
+    let text = fs::read_to_string(&file).unwrap();
+    let run = text.find("uses: bohdaq/hitop-action@v1").unwrap();
+    let upload = text.find("Upload the run to the workspace history").expect("an upload step");
+    assert!(run < upload, "{text}");
+    for needle in [
+        "        if: always() && steps.hitop.outputs.report-dir != ''\n        env:\n          HITOP_SYNC_RUNNER: ${{ secrets.HITOP_SYNC_RUNNER }}\n          REPORT_DIR: ${{ steps.hitop.outputs.report-dir }}\n",
+        "-v \"$(realpath \"$REPORT_DIR\"):/report:ro\" 'ghcr.io/bohdaq/hitop:1.3.0' sync report /report/report.json\n",
+    ] {
+        assert!(text.contains(needle), "{needle}\n{text}");
+    }
+    lint(&file);
+    hitop(&home, repo.path())
+        .args(["schedule", "./apis/shop", "--github", "--sync", "--hitop-version", "1.2.0", "--name", "Older", "--force"])
+        .assert()
+        .code(0)
+        .stderr(contains("can't upload runs"));
 }

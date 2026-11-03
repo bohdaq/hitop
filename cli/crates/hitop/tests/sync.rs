@@ -963,3 +963,222 @@ fn google_and_github_need_the_server_to_offer_them() {
         assert!(o.stderr.contains("doesn't offer sign-in with"), "{}", o.stderr);
     }
 }
+
+/// The server's log after `needle` shows up (alerts are delivered every few seconds).
+fn wait_for_log(server: &SyncServer, needle: &str) -> String {
+    for _ in 0..200 {
+        let log = server.log.lock().unwrap().clone();
+        if log.contains(needle) {
+            return log;
+        }
+        std::thread::sleep(Duration::from_millis(100));
+    }
+    panic!("{needle} not in the server's log:\n{}", server.log.lock().unwrap());
+}
+
+/// With HITOP_SYNC_LIMITS=plans (CI runs this file again so), run history and shared values need
+/// a paid plan: the operator command gives `who`'s personal org Team with 10 seats.
+fn paid(server: &SyncServer, who: &Client) {
+    let account: serde_json::Value = serde_json::from_str(&std::fs::read_to_string(who.config("account.json")).unwrap()).unwrap();
+    let org = format!("personal-{}", account["userId"].as_str().unwrap());
+    let o = std::process::Command::new(std::env::var_os("HITOP_SYNC_SERVER_BIN").unwrap())
+        .args(["set-plan", &org, "team", "10"])
+        .env("HITOP_SYNC_DATABASE", format!("sqlite:{}", server.dir.path().join("sync.db").display()))
+        .env("HITOP_SYNC_MAIL", "log")
+        .output()
+        .unwrap();
+    assert!(o.status.success(), "{}", String::from_utf8_lossy(&o.stderr));
+}
+
+fn runner_id(members: &str) -> String {
+    members.lines().find_map(|l| l.trim().strip_prefix("runner credential ")).unwrap().split_whitespace().next().unwrap().to_string()
+}
+
+/// HITOP Cloud C4: a runner uploads its run (`hitop run --sync-report`); the history and the
+/// sealed report open on another member's computer; `hitop sync report` uploads a report.json;
+/// alerts go out on a status change; the server holds no request, URL or response.
+#[test]
+fn run_history_from_a_runner_opens_on_another_members_computer() {
+    let Some(server) = server() else { return };
+    let mock = httpmock::MockServer::start();
+    let ok = mock.mock(|w, t| {
+        w.path("/health-7c1e");
+        t.status(200).body("all good, unique-response-body-91f2");
+    });
+    let (ada, bob) = (Client::new(&server), Client::new(&server));
+    ada.login(&server, "ada@example.com");
+    paid(&server, &ada);
+    let (ws, a, b) = share_with_bob(&server, &ada, &bob);
+    // Only requests to the mock (the folder's sample request and list-orders go).
+    std::fs::remove_dir_all(a.join("requests")).unwrap();
+    write(&a, "requests/health.yaml", &request("Health", &format!("{}/health-7c1e", mock.base_url())));
+    ada.ok(&["sync", "push", "-c", a.to_str().unwrap()]);
+    bob.ok(&["sync", "link", &ws, "-c", b.to_str().unwrap()]);
+    let alerts = ada.ok(&["sync", "alerts", "--email", "ada@example.com", "--missed-after", "60", "-c", a.to_str().unwrap()]);
+    assert!(alerts.contains("Mail to: ada@example.com") && alerts.contains("after 60 minutes"), "{alerts}");
+    assert_eq!(bob.run(&["sync", "alerts", "-c", b.to_str().unwrap()]).code, 2, "owners only");
+
+    // CI: pull with the runner credential, run, upload.
+    let cred = ada.ok(&["sync", "runner", "create", "--name", "ci", "-c", a.to_str().unwrap()]).trim().to_string();
+    let ci = Client::new(&server);
+    let r = ci.folder("checkout");
+    let o = Client::out(ci.cmd().env("HITOP_SYNC_RUNNER", &cred).args(["sync", "pull", "-c", r.to_str().unwrap()]).output().unwrap());
+    assert_eq!(o.code, 0, "{}", o.stderr);
+    let o = Client::out(ci.cmd().env("HITOP_SYNC_RUNNER", &cred).args(["run", r.to_str().unwrap(), "--sync-report"]).output().unwrap());
+    assert_eq!(o.code, 0, "{}\n{}", o.stdout, o.stderr);
+    assert!(o.stderr.contains("run uploaded"), "{}", o.stderr);
+    ok.assert();
+
+    // Bob sees it and opens the report on his computer.
+    let list = bob.ok(&["sync", "runs", "-c", b.to_str().unwrap()]);
+    assert!(list.contains("passed") && list.contains("Shop"), "{list}");
+    let rows: serde_json::Value = serde_json::from_str(&bob.ok(&["sync", "runs", "--json", "-c", b.to_str().unwrap()])).unwrap();
+    let id = rows["runs"][0]["id"].as_str().unwrap().to_string();
+    assert_eq!(rows["runs"][0]["runner"], true);
+    let report: serde_json::Value = serde_json::from_str(&bob.ok(&["sync", "runs", "--id", &id, "--json", "-c", b.to_str().unwrap()])).unwrap();
+    assert_eq!(report["reportVersion"], 1);
+    assert_eq!(report["collections"][0]["iterations"][0]["requests"][0]["name"], "Health");
+    let shown = bob.ok(&["sync", "runs", "--id", &id, "-c", b.to_str().unwrap()]);
+    assert!(shown.contains("Health") && shown.contains("1/1 requests passed"), "{shown}");
+
+    // A failing run, uploaded from its report.json by a member: an alert mail.
+    mock.mock(|w, t| {
+        w.path("/broken-55aa");
+        t.status(500);
+    });
+    write(&a, "requests/broken.yaml", &request("Broken", &format!("{}/broken-55aa", mock.base_url())));
+    let out = ada.folder("out");
+    let o = ada.run(&["run", a.to_str().unwrap(), "--reporter", "json", "--out", out.to_str().unwrap()]);
+    assert_eq!(o.code, 1);
+    let up = ada.ok(&["sync", "report", out.join("report.json").to_str().unwrap(), "-c", a.to_str().unwrap()]);
+    assert!(up.contains("(failed)") && up.contains("status+report"), "{up}");
+    let log = wait_for_log(&server, "mail to ada@example.com: HITOP: A scheduled run failed");
+    assert!(log.contains("Shop failed: 1 of 2 requests failed"), "{log}");
+    assert!(ada.ok(&["sync", "alerts", "--log", "-c", a.to_str().unwrap()]).contains("failed"));
+
+    // The server keeps status rows and ciphertext: no URL, request file, response or body.
+    let db = server.database();
+    for needle in ["health-7c1e", "broken-55aa", "unique-response-body-91f2", "Health", "Broken"] {
+        assert!(!db.windows(needle.len()).any(|w| w == needle.as_bytes()), "{needle} is in the server's database");
+    }
+    // A runner credential reads no history.
+    let o = Client::out(ci.cmd().env("HITOP_SYNC_RUNNER", &cred).args(["sync", "audit", "-c", r.to_str().unwrap()]).output().unwrap());
+    assert_eq!(o.code, 2);
+}
+
+/// HITOP Cloud C4: shared environment values. Opt-in, for the devices the sharer picks: a viewer
+/// left out sees names only; the server's database and the folders hold no value; a member added
+/// afterwards and a runner named in the share get them; a removed member's wraps are gone and the
+/// share is re-keyed.
+#[test]
+fn shared_secret_values_reach_only_the_devices_they_are_for() {
+    let Some(server) = server() else { return };
+    let mock = httpmock::MockServer::start();
+    let api = mock.mock(|w, t| {
+        w.path("/me-3d9a").header("authorization", "Bearer tok-shared-8e41");
+        t.status(200);
+    });
+    let (ada, bob) = (Client::new(&server), Client::new(&server));
+    ada.login(&server, "ada@example.com");
+    paid(&server, &ada);
+    let (ws, a, b) = share_with_bob(&server, &ada, &bob);
+    std::fs::remove_dir_all(a.join("requests")).unwrap();
+    write(&a, "requests/me.yaml", &format!("name: Me\nmethod: GET\nurl: {}/me-3d9a\nheaders:\n- name: Authorization\n  value: Bearer ${{token}}\n", mock.base_url()));
+    write(&a, "environments/prod.yaml", "variables:\n  token:\n    secret: true\n");
+    ada.ok(&["sync", "push", "-c", a.to_str().unwrap()]);
+    bob.ok(&["sync", "link", &ws, "-c", b.to_str().unwrap()]);
+    let cy = Client::new(&server);
+    let cy_fp = cy.login(&server, "cy@example.com");
+    ada.ok(&["sync", "invite", "cy@example.com", "--role", "viewer", "-c", a.to_str().unwrap()]);
+    cy.ok(&["sync", "accept", &server.code_for("cy@example.com", "hitop sync accept")]);
+    ada.ok(&["sync", "add", "cy@example.com", "--trust", &cy_fp, "-c", a.to_str().unwrap()]);
+    let cf = cy.folder("shop");
+    let ada_fp = ada.ok(&["sync", "whoami"]).lines().find_map(|l| l.split("fingerprint ").nth(1)).unwrap().trim().to_string();
+    cy.ok(&["sync", "trust", &ada_fp]);
+    cy.ok(&["sync", "link", &ws, "-c", cf.to_str().unwrap()]);
+
+    // Nothing shared yet: Bob has no value (no terminal to ask).
+    assert_eq!(bob.run(&["run", b.to_str().unwrap(), "--env", "prod", "--sync-secrets"]).code, 2);
+    // Ada shares prod's values from her environment; without --yes and no terminal, nothing happens.
+    let shared = |extra: &[&str]| {
+        let mut args = vec!["sync", "secrets", "share", "--env", "prod", "-c", a.to_str().unwrap()];
+        args.extend_from_slice(extra);
+        Client::out(ada.cmd().env("HITOP_SECRET_PROD_TOKEN", "tok-shared-8e41").args(&args).output().unwrap())
+    };
+    let o = shared(&[]);
+    assert_eq!(o.code, 2);
+    assert!(o.stderr.contains("bob@example.com") && o.stderr.contains("--yes"), "{}", o.stderr);
+    let o = shared(&["--yes"]);
+    assert_eq!(o.code, 0, "{}", o.stderr);
+    assert!(o.stdout.contains("version 1"), "{}", o.stdout);
+
+    // Bob's run gets the value (masked in the output); his own value would win.
+    let o = bob.run(&["run", b.to_str().unwrap(), "--env", "prod", "--sync-secrets"]);
+    assert_eq!(o.code, 0, "{}\n{}", o.stdout, o.stderr);
+    assert!(!o.stdout.contains("tok-shared-8e41"));
+    api.assert_calls(1);
+    // The viewer wasn't picked: names only.
+    let ls = cy.ok(&["sync", "secrets", "ls", "-c", cf.to_str().unwrap()]);
+    assert!(ls.contains("can't open") && !ls.contains("tok-shared"), "{ls}");
+    assert_eq!(cy.run(&["run", cf.to_str().unwrap(), "--env", "prod", "--sync-secrets"]).code, 2);
+    let ls = bob.ok(&["sync", "secrets", "ls", "-c", b.to_str().unwrap()]);
+    assert!(ls.contains("prod (version 1): token") && ls.contains("ada@example.com") && ls.contains("bob@example.com") && !ls.contains("cy@"), "{ls}");
+
+    // A member added later gets the values in the same command that adds them.
+    let dan = Client::new(&server);
+    let dan_fp = dan.login(&server, "dan@example.com");
+    let invited = ada.ok(&["sync", "invite", "--role", "editor", "-c", a.to_str().unwrap()]);
+    dan.ok(&["sync", "accept", invited.lines().find(|l| l.contains("/invite#")).unwrap().trim()]);
+    let o = ada.run(&["sync", "add", "dan@example.com", "--trust", &dan_fp, "-c", a.to_str().unwrap()]);
+    assert_eq!(o.code, 0, "{}", o.stderr);
+    assert!(o.stderr.contains("Handed the shared environment values to 1 new device"), "{}", o.stderr);
+    let df = dan.folder("shop");
+    dan.ok(&["sync", "link", &ws, "-c", df.to_str().unwrap()]);
+    assert_eq!(dan.run(&["run", df.to_str().unwrap(), "--env", "prod", "--sync-secrets"]).code, 0);
+
+    // A runner named in the share runs with it.
+    let cred = ada.ok(&["sync", "runner", "create", "--name", "ci", "-c", a.to_str().unwrap()]).trim().to_string();
+    let rid = runner_id(&ada.ok(&["sync", "members", "-c", a.to_str().unwrap()]));
+    let ci = Client::new(&server);
+    let r = ci.folder("checkout");
+    let in_ci = |args: &[&str]| Client::out(ci.cmd().env("HITOP_SYNC_RUNNER", &cred).args(args).output().unwrap());
+    assert_eq!(in_ci(&["sync", "pull", "-c", r.to_str().unwrap()]).code, 0);
+    assert_eq!(in_ci(&["run", r.to_str().unwrap(), "--env", "prod", "--sync-secrets"]).code, 2, "not shared with the runner yet");
+    let o = shared(&["--yes", "--runner", &rid]);
+    assert!(o.stdout.contains("version 2"), "{}\n{}", o.stdout, o.stderr);
+    let o = in_ci(&["run", r.to_str().unwrap(), "--env", "prod", "--sync-secrets", "--sync-report"]);
+    assert_eq!(o.code, 0, "{}\n{}", o.stdout, o.stderr);
+
+    // No value on the server or in any folder's files.
+    let db = server.database();
+    assert!(!db.windows(15).any(|w| w == b"tok-shared-8e41"), "a value is in the server's database");
+    for dir in [&a, &b, &cf, &df, &r] {
+        for (path, text) in snapshot(dir) {
+            assert!(!text.contains("tok-shared-8e41"), "{path}");
+        }
+    }
+
+    // Ada removes Bob: his wraps go and the share is re-keyed for whoever is left.
+    let (bob_key, _) = bob.device();
+    let out = ada.run(&["sync", "remove", "bob@example.com", "-c", a.to_str().unwrap()]);
+    assert_eq!(out.code, 0, "{}", out.stderr);
+    assert!(out.stdout.contains("Re-keyed 1 shared environment") && out.stderr.contains("rotate those secrets"), "{}\n{}", out.stdout, out.stderr);
+    let left: i64 = server.db().query_row("SELECT COUNT(*) FROM env_share_wraps WHERE key_id = ?1", [&bob_key], |r| r.get(0)).unwrap();
+    assert_eq!(left, 0);
+    let version: i64 = server.db().query_row("SELECT version FROM env_shares WHERE workspace_id = ?1", [&ws], |r| r.get(0)).unwrap();
+    assert_eq!(version, 3);
+    assert_eq!(dan.run(&["run", df.to_str().unwrap(), "--env", "prod", "--sync-secrets"]).code, 0, "the others still have it");
+    // A server that hands out the older version again is refused.
+    let set_version = |v: i64| {
+        server.db().execute("UPDATE env_shares SET version = ?1 WHERE workspace_id = ?2", rusqlite::params![v, ws]).unwrap();
+        server.db().execute("UPDATE env_share_wraps SET version = ?1 WHERE workspace_id = ?2", rusqlite::params![v, ws]).unwrap();
+    };
+    set_version(2);
+    let o = dan.run(&["sync", "secrets", "ls", "-c", df.to_str().unwrap()]);
+    assert_eq!(o.code, 2);
+    assert!(o.stderr.contains("older version"), "{}", o.stderr);
+    // Unsharing.
+    set_version(3);
+    ada.ok(&["sync", "secrets", "unshare", "--env", "prod", "-c", a.to_str().unwrap()]);
+    assert_eq!(dan.run(&["run", df.to_str().unwrap(), "--env", "prod", "--sync-secrets"]).code, 2);
+}

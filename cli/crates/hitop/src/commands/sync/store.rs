@@ -15,7 +15,9 @@
 //! - `recovery.json`: a hash of the recovery data this device last sealed for the server
 //!   (`hitop sync recovery`, recovery.rs);
 //! - `audit-heads.json`: the last audit-log head each workspace's `hitop sync audit --verify`
-//!   saw (workspace → seq and hash), so a rewritten log is noticed next time.
+//!   saw (workspace → seq and hash), so a rewritten log is noticed next time;
+//! - `shares.json`: the newest version of each shared environment this device opened (never a
+//!   value: shared values are fetched and opened when a run needs them, and kept in memory only).
 //!
 //! A runner (CI, cron) uses `HITOP_SYNC_RUNNER` instead: one value holding a runner credential
 //! (`hitop sync runner create` prints it), read-only and for one workspace.
@@ -231,6 +233,19 @@ pub fn load_audit_heads() -> Result<AuditHeads> {
 
 pub fn save_audit_heads(heads: &AuditHeads) -> Result<()> {
     write_json(&dir()?.join("audit-heads.json"), heads)
+}
+
+/// `shares.json`: per workspace, the newest version this device opened of each shared environment
+/// (share id → version), so a server can't hand out an older version (with older values or
+/// recipients) as the current one.
+pub type ShareVersions = BTreeMap<String, BTreeMap<String, u32>>;
+
+pub fn load_share_versions() -> Result<ShareVersions> {
+    read_json(&dir()?.join("shares.json"))
+}
+
+pub fn save_share_versions(v: &ShareVersions) -> Result<()> {
+    write_json(&dir()?.join("shares.json"), v)
 }
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
