@@ -126,3 +126,15 @@ select {
   border-top: 1px solid var(--md-sys-color-outline-variant);
   padding-top: var(--space-200);
 }
+
+.portal-upgrade {
+  margin-left: var(--space-100);
+  font-weight: 600;
+}
+
+.portal-seats input {
+  width: 6rem;
+  margin-left: var(--space-75);
+  font: inherit;
+  padding: var(--space-50) var(--space-75);
+}

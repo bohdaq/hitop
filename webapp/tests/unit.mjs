@@ -47,6 +47,7 @@ import { dirname, join, relative } from "node:path";
 import { fileURLToPath } from "node:url";
 import { formatFromBytes } from "../src/wasm/format.js";
 import { historyFromRust, historyToRust } from "../src/platform/history.js";
+import { planLink } from "../src/plan-link.js";
 
 const here = dirname(fileURLToPath(import.meta.url));
 const format = await formatFromBytes(readFileSync(join(here, "../src/wasm/pkg/hitop_wasm_bg.wasm")));
@@ -278,6 +279,16 @@ assert.throws(() => schemaFromResponse('{"errors": [{"message": "introspection i
   assert.equal(st.entries["hitop.yaml"].version, 1);
   assert.equal(sync.isSyncedPath("requests/a.yaml"), true);
   assert.equal(sync.isSyncedPath("../a.yaml"), false);
+}
+
+// HITOP Cloud C3: the Sync page's "Manage plan" link on a refused create.
+{
+  const limit = (upgradeUrl, status = 402, error = "limit") => ({ status, body: { error, upgradeUrl } });
+  assert.equal(planLink(limit("https://cloud.hitop.rws8.tech/#/orgs/o1/plan")), "https://cloud.hitop.rws8.tech/#/orgs/o1/plan");
+  assert.equal(planLink(limit("http://localhost:5173/#/orgs/o1/plan")), "http://localhost:5173/#/orgs/o1/plan");
+  for (const bad of [limit("javascript:alert(1)"), limit("http://evil.example/"), limit("not a url"), limit("https://x/", 403), limit("https://x/", 402, "other"), new Error("x"), null]) {
+    assert.equal(planLink(bad), null, JSON.stringify(bad?.body));
+  }
 }
 
 console.log("unit checks passed");

@@ -1,6 +1,7 @@
 // <hitop-cloud>: the HITOP Cloud portal. Sign in (email + password, Google, GitHub, mail code,
 // passkey or single sign-on, all through the sync server), organizations, members and roles, usage against the plan's limits, the plan
-// (read only until billing opens), access tokens and passkeys. Light DOM, hash routes:
+// (buy Pro or Team through Lemon Squeezy, seats, the Team trial, the billing portal), access tokens
+// and passkeys. Light DOM, hash routes:
 //   #/                 organizations          #/orgs/<id>        an organization
 //   #/orgs/<id>/plan   its plan               #/tokens           access tokens
 //   #/account          the account            #sso=<code>        back from single sign-on
@@ -49,6 +50,25 @@ const METRICS = [
   ["invitesPerDay", "Invites today", String],
 ];
 
+// The owner's prices (spec/CLOUD_SERVICE.md Q4), shown until Lemon Squeezy's checkout shows the
+// real ones; Lemon Squeezy adds tax and shows the buyer's currency.
+const PRICES = {
+  pro: { annual: "$6 a month, billed yearly", monthly: "$8 a month" },
+  team: { annual: "$10 per seat a month, billed yearly", monthly: "$12 per seat a month" },
+};
+
+const STATUS_NOTES = {
+  trialing: "Team trial",
+  on_trial: "trial",
+  active: "active",
+  past_due: "payment failed, being retried",
+  cancelled: "cancelled, runs until the period ends",
+  paused: "paused: Free limits until it resumes",
+  unpaid: "unpaid: Free limits",
+  expired: "ended: Free limits",
+  refunded: "refunded: Free limits",
+};
+
 const PLAN_NOTES = {
   free: "Free: 3 people, 3 shared workspaces, 100 MB, 3 devices per person, 5 runner credentials.",
   pro: "Pro: one person and two guests, 25 workspaces, 2 GB, 10 devices, 10 runner credentials.",
@@ -71,6 +91,7 @@ export class HitopCloud extends LitElement {
     mode: { state: true },
     resetSent: { state: true },
     newToken: { state: true },
+    limitHit: { state: true },
   };
 
   constructor() {
@@ -88,6 +109,8 @@ export class HitopCloud extends LitElement {
     this.mode = "password";
     this.resetSent = false;
     this.newToken = null;
+    // The 402 body of the last refused create (its plan link is shown with the error).
+    this.limitHit = null;
   }
 
   createRenderRoot() {
@@ -122,6 +145,7 @@ export class HitopCloud extends LitElement {
   async run(what, fn) {
     this.busy = what;
     this.error = "";
+    this.limitHit = null;
     try {
       await fn();
     } catch (e) {
@@ -131,6 +155,7 @@ export class HitopCloud extends LitElement {
         this.error = "Your session ended. Sign in again.";
       } else {
         this.error = e.message || String(e);
+        if (e instanceof ApiError && e.status === 402 && e.body?.error === "limit") this.limitHit = e.body;
       }
     } finally {
       this.busy = "";
@@ -149,12 +174,14 @@ export class HitopCloud extends LitElement {
       const parts = this.route.replace(/^#\/?/, "").split("/").filter(Boolean);
       if (parts[0] === "orgs" && parts[1]) {
         const id = decodeURIComponent(parts[1]);
-        const [org, members, usage] = await Promise.all([
+        const [org, members, usage, billing] = await Promise.all([
           this.api.get(`/v1/orgs/${encodeURIComponent(id)}`),
           this.api.get(`/v1/orgs/${encodeURIComponent(id)}/members`),
           this.api.get(`/v1/orgs/${encodeURIComponent(id)}/usage`),
+          // An older server has no billing: the plan page then shows the plan only.
+          this.api.get(`/v1/orgs/${encodeURIComponent(id)}/billing`).catch(() => null),
         ]);
-        this.data = { org, members, usage };
+        this.data = { org, members, usage, billing };
       } else if (parts[0] === "tokens") {
         this.data = { tokens: (await this.api.get("/v1/me/tokens")).tokens };
       } else if (parts[0] === "account") {
@@ -208,7 +235,11 @@ export class HitopCloud extends LitElement {
   render() {
     return html`
       <div aria-busy=${this.busy ? "true" : "false"}>
-        ${this.error ? html`<p class="portal-error" role="alert">${this.error}</p>` : nothing}
+        ${this.error
+          ? html`<p class="portal-error" role="alert">${this.error}${this.limitHit?.org
+              ? html` <a class="portal-upgrade" href="#/orgs/${this.limitHit.org}/plan">See plans</a>`
+              : nothing}</p>`
+          : nothing}
         ${this.note ? html`<p class="portal-note" role="status">${this.note}</p>` : nothing}
         ${this.signedInNow ? this.renderSignedIn() : this.renderSignIn()}
       </div>`;
@@ -431,7 +462,8 @@ export class HitopCloud extends LitElement {
     return html`
       <section aria-label="Organization">
         <h1>${org.personal ? "Personal" : org.name}</h1>
-        <p class="page-lead">Plan <strong>${org.plan}</strong>${org.seats ? html`, ${org.seats} seat(s)` : nothing}. You are ${org.role}. <a href="#/orgs/${org.id}/plan">Plan details</a></p>
+        <p class="page-lead">Plan <strong>${org.plan}</strong>${org.seats ? html`, ${org.seats} seat(s)` : nothing}. You are ${org.role}. <a href="#/orgs/${org.id}/plan">${this.data.billing?.enabled ? "Plan and billing" : "Plan details"}</a></p>
+        ${this.pastDueBanner()}
         <h2>Usage</h2>
         ${this.renderUsage(usage)}
         <h2>Members</h2>
@@ -498,17 +530,99 @@ export class HitopCloud extends LitElement {
       </section>`;
   }
 
+  pastDueBanner() {
+    const b = this.data.billing;
+    if (!b?.pastDue) return nothing;
+    return html`<p class="portal-warning" role="alert" aria-label="Payment failed">The last payment failed. Lemon Squeezy retries it and mails the buyer; update the card in the billing portal. Until the retries run out the plan stays as it is; then Free limits apply (nothing is deleted).</p>`;
+  }
+
   renderPlan() {
-    const { org, usage } = this.data;
+    const { org, usage, billing } = this.data;
+    const admin = org.role === "owner" || org.role === "admin";
+    const base = `/v1/orgs/${encodeURIComponent(org.id)}/billing`;
+    const date = (secs) => (secs ? new Date(secs * 1000).toISOString().slice(0, 10) : "");
+    const status = billing ? billing.status : usage.status;
     return html`
       <section aria-label="Plan">
         <h1>Plan: ${org.plan}</h1>
         <p class="page-lead">${PLAN_NOTES[usage.planInForce] || ""}${usage.grandfathered ? " Your limits were raised to what you used before plans existed." : ""}</p>
-        ${usage.planInForce !== usage.plan ? html`<p class="portal-error" role="alert">The ${usage.plan} subscription is ${usage.status}: Free limits apply until it is paid. Nothing was deleted.</p>` : nothing}
+        ${this.pastDueBanner()}
+        ${usage.planInForce !== usage.plan ? html`<p class="portal-error" role="alert">The ${usage.plan} plan is ${STATUS_NOTES[status] || `${status}: Free limits`}. Nothing was deleted.</p>` : nothing}
+        ${billing && org.plan !== "free"
+          ? html`<p aria-label="Subscription">Status: <strong>${STATUS_NOTES[status] || status}</strong>${billing.seats && org.plan === "team" ? html`, ${billing.seats} seat(s) bought, ${billing.seatsUsed} in use` : nothing}${billing.periodEnd ? html`; ${status === "trialing" ? "the trial ends" : status === "cancelled" ? "ends" : "renews"} ${date(billing.periodEnd)}` : nothing}.</p>`
+          : nothing}
         ${this.renderUsage(usage)}
-        <p>Paid plans (Pro, Team, Business) open soon; prices are not final. Over a limit, hitop refuses new workspaces, people, devices or uploads that grow storage. Reading and pulling never stop, and nothing is deleted.</p>
+        ${billing?.enabled ? this.renderBilling(org, billing, admin, base) : html`<p>This server sells no plans. Over a limit, hitop refuses new workspaces, people, devices or uploads that grow storage. Reading and pulling never stop, and nothing is deleted.</p>`}
         <p><a href="#/orgs/${org.id}">Back to ${org.personal ? "Personal" : org.name}</a></p>
       </section>`;
+  }
+
+  renderBilling(org, billing, admin, base) {
+    const reload = () => this.go(this.route);
+    const seatsField = (id, value) => html`<label class="portal-seats">Seats <input id=${id} type="number" min=${Math.max(1, billing.seatsUsed)} max="1000" .value=${String(value)} /></label>`;
+    const parts = [];
+    if (billing.testMode) parts.push(html`<p class="hint">Test mode: purchases here are Lemon Squeezy test purchases.</p>`);
+    if (billing.subscribed) {
+      parts.push(html`<h2>Billing</h2>
+        <p class="hint">Card, receipts, monthly or yearly, cancel: in Lemon Squeezy's billing portal (Lemon Squeezy is the merchant of record and sends the receipts).</p>`);
+      if (admin) {
+        parts.push(html`<div class="portal-form">
+          <lit-material-button variant="filled" ?disabled=${Boolean(this.busy)} @click=${() => this.run("billing-portal", async () => {
+            const { url } = await this.api.get(`${base}/portal`);
+            location.assign(url);
+          })}>Manage billing</lit-material-button>
+        </div>`);
+        if (org.plan === "team" && ["active", "on_trial", "past_due"].includes(billing.status)) {
+          parts.push(html`<h2>Seats</h2>
+            <p class="hint">Every person in the organization or its workspaces is a seat (viewers too); 5 guest viewers are free. More seats are charged at once, prorated. Fewer seats take effect now, with no credit: the lower price starts at the next renewal.</p>
+            <div class="portal-form">${seatsField("seats-change", billing.seats)}
+              <lit-material-button variant="outlined" ?disabled=${Boolean(this.busy)} @click=${() => this.run("seats", async () => {
+                const seats = Number(this.querySelector("#seats-change").value);
+                const r = await this.api.call("POST", `${base}/seats`, { seats });
+                await reload();
+                this.note = `${r.seats} seat(s).`;
+              })}>Change seats</lit-material-button>
+            </div>`);
+        }
+      }
+      return parts;
+    }
+    if (!admin) {
+      parts.push(html`<p class="hint">An owner or admin of the organization buys its plan.</p>`);
+      return parts;
+    }
+    const plan = org.personal ? "pro" : "team";
+    parts.push(html`<h2>${org.personal ? "HITOP Cloud Pro" : "HITOP Cloud Team"}</h2>
+      <p class="hint">${org.personal
+        ? "Pro: one person and two guests, 25 workspaces, 2 GB, 10 devices, run history and webhook alerts. For a team, create an organization and buy Team there."
+        : "Team: per seat, unlimited workspaces, 10 GB + 1 GB per seat, 5 free guest viewers, run history and Slack alerts."}
+        Prices: ${["annual", "monthly"].filter((p) => billing.offers.some((o) => o.period === p)).map((p) => PRICES[plan][p]).join(" or ")}, plus tax where it applies. <a href="https://hitop.rws8.tech/pricing.html">Pricing</a></p>`);
+    if (!billing.offers.length) {
+      parts.push(html`<p class="hint">${org.personal ? "Pro" : "Team"} isn't on sale on this server yet.</p>`);
+    } else if (!billing.checkout) {
+      parts.push(html`<p class="hint">Checkout isn't open on this server yet.</p>`);
+    } else {
+      parts.push(html`<div class="portal-form" aria-label="Buy">
+        ${plan === "team" ? seatsField("seats-buy", Math.max(1, billing.seatsUsed)) : nothing}
+        ${billing.offers.map((o) => html`<lit-material-button variant=${o.period === "annual" ? "filled" : "outlined"} ?disabled=${Boolean(this.busy)} @click=${() => this.run("checkout", async () => {
+          const body = { plan: o.plan, period: o.period };
+          if (plan === "team") body.seats = Number(this.querySelector("#seats-buy").value);
+          const { url } = await this.api.call("POST", `${base}/checkout`, body);
+          location.assign(url);
+        })}>Buy ${o.plan === "pro" ? "Pro" : "Team"}, ${o.period === "annual" ? "yearly" : "monthly"}</lit-material-button>`)}
+      </div>
+      <p class="hint">The checkout is Lemon Squeezy's page (they take the payment; HITOP never sees the card). Refunds: see the <a href="https://hitop.rws8.tech/pricing.html#refunds">pricing page</a>.</p>`);
+    }
+    if (billing.trial?.available && org.role === "owner") {
+      parts.push(html`<div class="portal-form">
+        <lit-material-button variant="outlined" ?disabled=${Boolean(this.busy)} @click=${() => this.run("trial", async () => {
+          await this.api.call("POST", `${base}/trial`, {});
+          await reload();
+          this.note = `Team trial started: ${billing.trial.days} days, ${billing.trial.seats} seats, no card. Afterwards Free limits apply unless you buy Team; nothing is deleted.`;
+        })}>Start the ${billing.trial.days}-day Team trial</lit-material-button>
+      </div>`);
+    }
+    return parts;
   }
 
   // --- access tokens and the account -------------------------------------------------------

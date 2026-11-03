@@ -5,10 +5,16 @@
 // (made, used, revoked), a passkey (added, then signing in with it through a virtual
 // authenticator), sign out; passwords (C1b): create an account with a password and the mailed
 // code, a wrong password, sign in, change it (the key bundle re-sealed under the new one), forgot
-// and reset (the warning, the bundle gone). Serves dist/ (npm run build) with a few lines of Node.
+// and reset (the warning, the bundle gone); billing (C3) against a fake Lemon Squeezy API: buy Team
+// with 3 seats (the checkout page, the signed custom data), the signed webhook deliveries Lemon
+// Squeezy would send (fixtures of sync-server/tests/fixtures/lemonsqueezy), a 4th member refused
+// with a "See plans" link, a 4th seat bought (quantity 4 sent to Lemon Squeezy), the member added,
+// payment failed (the banner), a refund (Free limits), expired (Free, nothing removed), a bad
+// signature refused, the billing portal link. Serves dist/ (npm run build) with a few lines of Node.
 //   (cd ../../webapp && npm run wasm)  # the password crypto: the web app's hitop-wasm build
 //   HITOP_SYNC_SERVER_BIN=../../sync-server/target/debug/hitop-sync-server npm test
 const { spawn } = require("child_process");
+const crypto = require("crypto");
 const fs = require("fs");
 const http = require("http");
 const net = require("net");
@@ -47,7 +53,58 @@ function serve(dir, port) {
   return new Promise((resolve) => server.listen(port, "127.0.0.1", () => resolve(server)));
 }
 
-async function syncServer(portalOrigin) {
+// Lemon Squeezy as the server calls it (checkouts, subscription items, subscriptions) plus the two
+// pages a browser is sent to (checkout, billing portal).
+const LS = { secret: "e2e-webhook-secret", key: "e2e-api-key", store: "4242", teamAnnual: "201", teamMonthly: "202", proAnnual: "101" };
+function fakeLemonSqueezy(port) {
+  const seen = [];
+  const server = http.createServer((req, res) => {
+    let raw = "";
+    req.on("data", (d) => (raw += d));
+    req.on("end", () => {
+      const p = new URL(req.url, "http://x").pathname;
+      const body = raw ? JSON.parse(raw) : null;
+      seen.push({ method: req.method, path: p, body, authorized: req.headers.authorization === `Bearer ${LS.key}` });
+      const json = (status, v) => res.writeHead(status, { "Content-Type": "application/vnd.api+json" }).end(JSON.stringify(v));
+      if (p.startsWith("/checkout/") || p.startsWith("/billing")) {
+        res.writeHead(200, { "Content-Type": "text/html" }).end(`<!doctype html><title>Lemon Squeezy (fake)</title><h1>Lemon Squeezy (fake) ${p}</h1>`);
+      } else if (req.headers.authorization !== `Bearer ${LS.key}`) {
+        json(401, { errors: [{ detail: "Unauthenticated." }] });
+      } else if (req.method === "POST" && p === "/v1/checkouts") {
+        json(201, { data: { type: "checkouts", id: "c0ffee", attributes: { url: `http://127.0.0.1:${port}/checkout/c0ffee` } } });
+      } else if (req.method === "PATCH" && p.startsWith("/v1/subscription-items/")) {
+        json(200, { data: { type: "subscription-items", id: p.split("/").pop(), attributes: { quantity: body.data.attributes.quantity, updated_at: "2026-11-03T11:00:00.000000Z" } } });
+      } else if (req.method === "GET" && p.startsWith("/v1/subscriptions/")) {
+        json(200, { data: { type: "subscriptions", id: p.split("/").pop(), attributes: { urls: { customer_portal: `http://127.0.0.1:${port}/billing?signature=fresh` } } } });
+      } else {
+        json(404, { errors: [{ detail: "Not Found" }] });
+      }
+    });
+  });
+  return new Promise((resolve) => server.listen(port, "127.0.0.1", () => resolve({ server, seen, url: `http://127.0.0.1:${port}` })));
+}
+
+const fixture = (name) => JSON.parse(fs.readFileSync(path.join(__dirname, "../../../sync-server/tests/fixtures/lemonsqueezy", `${name}.json`), "utf8"));
+
+function subscriptionEvent(event, id, variant, status, quantity, updated, custom) {
+  const b = fixture("subscription");
+  b.meta.event_name = event;
+  b.meta.custom_data = custom;
+  b.data.id = id;
+  Object.assign(b.data.attributes, { store_id: Number(LS.store), variant_id: Number(variant), order_id: Number(`9${id}`), status, updated_at: updated });
+  Object.assign(b.data.attributes.first_subscription_item, { id: Number(`7${id}`), quantity });
+  if (["cancelled", "expired"].includes(status)) b.data.attributes.ends_at = "2027-11-03T10:00:00.000000Z";
+  return b;
+}
+
+function invoiceEvent(event, sub, refunded, updated) {
+  const b = fixture("subscription_invoice");
+  b.meta.event_name = event;
+  Object.assign(b.data.attributes, { store_id: Number(LS.store), subscription_id: Number(sub), refunded, status: refunded ? "refunded" : "paid", updated_at: updated });
+  return b;
+}
+
+async function syncServer(portalOrigin, extraEnv = {}) {
   const bin = process.env.HITOP_SYNC_SERVER_BIN;
   if (!bin) {
     if (process.env.CI) throw new Error("HITOP_SYNC_SERVER_BIN must be set on CI");
@@ -72,6 +129,7 @@ async function syncServer(portalOrigin) {
       HITOP_SYNC_ALLOWED_ORIGINS: portalOrigin,
       HITOP_SYNC_LIMITS: "plans",
       HITOP_SYNC_PORTAL_URL: `${portalOrigin}/`,
+      ...extraEnv,
     },
     stdio: ["ignore", "ignore", "pipe"],
   });
@@ -120,7 +178,24 @@ async function syncServer(portalOrigin) {
   // localhost, not 127.0.0.1: WebAuthn needs a domain name as the relying party id.
   const origin = `http://localhost:${portalPort}`;
   const portal = await serve(dist, portalPort);
-  const server = await syncServer(origin);
+  const ls = await fakeLemonSqueezy(await freePort());
+  const server = await syncServer(origin, {
+    HITOP_SYNC_LS_WEBHOOK_SECRET: LS.secret,
+    HITOP_SYNC_LS_STORE_ID: LS.store,
+    HITOP_SYNC_LS_VARIANT_TEAM_ANNUAL: LS.teamAnnual,
+    HITOP_SYNC_LS_VARIANT_TEAM_MONTHLY: LS.teamMonthly,
+    HITOP_SYNC_LS_VARIANT_PRO_ANNUAL: LS.proAnnual,
+    HITOP_SYNC_LS_API_KEY: LS.key,
+    HITOP_SYNC_LS_API_URL: ls.url,
+    HITOP_SYNC_LS_TEST_MODE: "on",
+  });
+  // A webhook delivery as Lemon Squeezy sends it: the raw bytes, signed.
+  const deliver = async (body, signature) => {
+    const raw = JSON.stringify(body);
+    const sig = signature ?? crypto.createHmac("sha256", LS.secret).update(raw).digest("hex");
+    const r = await fetch(`${server.url}/v1/billing/lemonsqueezy`, { method: "POST", headers: { "Content-Type": "application/json", "X-Event-Name": body.meta.event_name, "X-Signature": sig }, body: raw });
+    return { status: r.status, json: await r.json() };
+  };
   const browser = await chromium.launch();
   const context = await browser.newContext();
   const page = await context.newPage();
@@ -191,6 +266,62 @@ async function syncServer(portalOrigin) {
     await idle();
     await page.getByRole("heading", { name: "Plan: free" }).waitFor({ timeout: 10000 });
     check("the plan page shows the Free limits", (await app.innerText()).includes("Free: 3 people"));
+
+    // Billing (C3): buy Team with 3 seats.
+    await page.getByLabel("Seats").fill("3");
+    await app.getByRole("button", { name: "Buy Team, yearly" }).click();
+    await page.waitForURL(`${ls.url}/checkout/**`, { timeout: 10000 });
+    const made = ls.seen.find((r) => r.method === "POST" && r.path === "/v1/checkouts");
+    const custom = made?.body.data.attributes.checkout_data.custom;
+    check("Buy Team opens Lemon Squeezy's checkout for 3 seats of the org", made?.authorized && custom.org_id === orgId && made.body.data.attributes.checkout_data.variant_quantities[0].quantity === 3 && made.body.data.relationships.variant.data.id === LS.teamAnnual, JSON.stringify(made?.body));
+    const bad = await deliver(subscriptionEvent("subscription_created", "1", LS.teamAnnual, "active", 3, "2026-11-03T10:00:00.000000Z", custom), "0".repeat(64));
+    check("a webhook with a bad signature is refused", bad.status === 401, JSON.stringify(bad));
+    const created = await deliver(subscriptionEvent("subscription_created", "1", LS.teamAnnual, "active", 3, "2026-11-03T10:00:00.000000Z", custom));
+    const again = await deliver(subscriptionEvent("subscription_created", "1", LS.teamAnnual, "active", 3, "2026-11-03T10:00:00.000000Z", custom));
+    check("the signed purchase applies, its replay doesn't", created.json.outcome === "applied" && again.json.outcome === "duplicate", JSON.stringify([created, again]));
+    await page.goto(`${origin}/#/orgs/${orgId}/plan`);
+    await idle();
+    await page.getByRole("heading", { name: "Plan: team" }).waitFor({ timeout: 10000 });
+    check("back on the plan page: Team, 3 seats", (await app.getByLabel("Subscription").innerText()).includes("3 seat(s) bought, 3 in use"), await app.innerText());
+    // A 4th member: refused with a link to the plans, then a 4th seat, then added.
+    await page.goto(`${origin}/#/orgs/${orgId}`);
+    await idle();
+    await app.getByLabel("Email to invite").fill("dave@example.com");
+    await app.getByRole("button", { name: "Invite", exact: true }).click();
+    await idle();
+    const seeing = app.locator('[role="alert"] a.portal-upgrade');
+    check("a 4th member is refused, with a See plans link", (await alertText()).includes("team plan") && (await seeing.getAttribute("href")) === `#/orgs/${orgId}/plan`, await alertText());
+    await seeing.click();
+    await idle();
+    await page.getByLabel("Seats").fill("4");
+    await app.getByRole("button", { name: "Change seats" }).click();
+    await idle();
+    const patch = ls.seen.find((r) => r.method === "PATCH");
+    check("a 4th seat: quantity 4 sent to Lemon Squeezy, charged at once", patch?.path === "/v1/subscription-items/71" && patch.body.data.attributes.quantity === 4 && patch.body.data.attributes.invoice_immediately === true, JSON.stringify(patch?.body));
+    const dave = await server.api("POST", `/v1/orgs/${orgId}/members`, bobSession, { email: "dave@example.com", role: "member" });
+    check("...and the 4th member fits", dave.status === 201, JSON.stringify(dave.json));
+    await deliver(subscriptionEvent("subscription_updated", "1", LS.teamAnnual, "active", 4, "2026-11-03T11:00:01.000000Z", custom));
+    // Payment failed: the banner, still Team.
+    await deliver(invoiceEvent("subscription_payment_failed", "1", false, "2027-11-03T10:00:00.000000Z"));
+    await deliver(subscriptionEvent("subscription_updated", "1", LS.teamAnnual, "past_due", 4, "2027-11-03T10:00:01.000000Z", custom));
+    await page.reload();
+    await idle();
+    check("payment failed: the banner, still Team", (await app.getByLabel("Payment failed").count()) === 1 && (await app.innerText()).includes("Plan: team"), await app.innerText());
+    // The billing portal opens Lemon Squeezy's page.
+    await app.getByRole("button", { name: "Manage billing" }).click();
+    await page.waitForURL(`${ls.url}/billing**`, { timeout: 10000 });
+    check("Manage billing opens the Lemon Squeezy customer portal", page.url().includes("signature=fresh"), page.url());
+    // A refund ends the plan; expired is Free too; nothing is removed.
+    const refunded = await deliver(invoiceEvent("subscription_payment_refunded", "1", true, "2027-11-04T10:00:00.000000Z"));
+    await page.goto(`${origin}/#/orgs/${orgId}/plan`);
+    await idle();
+    check("a refund: Free limits", refunded.json.outcome === "applied" && (await alertText()).includes("refunded: Free limits"), await alertText());
+    const expired = await deliver(subscriptionEvent("subscription_expired", "1", LS.teamAnnual, "expired", 4, "2027-11-17T10:00:00.000000Z", custom));
+    const people = (await server.api("GET", `/v1/orgs/${orgId}/members`, bobSession)).json;
+    const reads = await server.api("GET", "/v1/workspaces", bobSession);
+    check("expired: Free limits, all 4 people still there, reads work", expired.json.outcome === "applied" && people.members.length + people.invites.length === 4 && reads.status === 200, JSON.stringify(expired.json));
+    const fifth = await server.api("POST", `/v1/orgs/${orgId}/members`, bobSession, { email: "eve@example.com", role: "member" });
+    check("...and creates beyond Free are refused", fifth.status === 402 && fifth.json.plan === "free", JSON.stringify(fifth.json));
 
     // Access tokens.
     await page.getByRole("navigation", { name: "Portal" }).getByRole("link", { name: "Access tokens" }).click();
@@ -305,6 +436,7 @@ async function syncServer(portalOrigin) {
   } finally {
     await browser.close();
     portal.close();
+    ls.server.close();
     server.stop();
   }
   const failed = results.filter((r) => !r.ok);

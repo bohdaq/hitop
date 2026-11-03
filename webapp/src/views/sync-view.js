@@ -6,9 +6,11 @@ import { LitElement, html, nothing } from "lit";
 import { confirm } from "@lit-material/confirm";
 import { icon } from "../icons.js";
 import { DEFAULT_SERVER, KeyError, SyncClient } from "../sync.js";
+import { planLink } from "../plan-link.js";
 import { platform } from "../platform/index.js";
 
 const errorText = (e) => (e && e.message) || String(e);
+
 
 export function syncClient(store) {
   store.syncClient ??= new SyncClient(store);
@@ -36,6 +38,7 @@ class HitopSync extends LitElement {
     audit: { state: true },
     warnings: { state: true },
     untrusted: { state: true },
+    limitUrl: { state: true },
     recovery: { state: true },
     recoveryWords: { state: true },
     recovering: { state: true },
@@ -94,9 +97,11 @@ class HitopSync extends LitElement {
     this.error = null;
     this.note = null;
     this.untrusted = null;
+    this.limitUrl = null;
     try {
       await fn();
     } catch (e) {
+      this.limitUrl = planLink(e);
       // A refused workspace key: forged, swapped or a hidden rotation is a security warning; a
       // key from a device not trusted yet can be trusted after comparing its fingerprint.
       this.error = e instanceof KeyError && e.security ? `Security warning: ${errorText(e)}` : errorText(e);
@@ -642,10 +647,13 @@ class HitopSync extends LitElement {
               this.remote = null;
             })}>Sign out</lit-material-button></p>
           ${a.server === DEFAULT_SERVER && platform().name !== "tauri"
-            ? html`<p class="hint">Organizations, members, usage and plan: <a href="https://cloud.hitop.rws8.tech/" target="_blank" rel="noopener noreferrer">HITOP Cloud</a></p>`
+            ? html`<p class="hint">Plan, organizations, members and usage: <a href="https://cloud.hitop.rws8.tech/" target="_blank" rel="noopener noreferrer">Manage plan on HITOP Cloud</a></p>`
             : nothing}`
         : nothing}
       ${this.error ? html`<lit-material-alert variant="error" role="alert">${this.error}</lit-material-alert>` : nothing}
+      ${this.limitUrl && platform().name !== "tauri"
+        ? html`<p class="hint" aria-label="Plan limit">A plan with more room: <a href=${this.limitUrl} target="_blank" rel="noopener noreferrer">Manage plan</a></p>`
+        : nothing}
       ${this.untrusted ? this.renderUntrusted() : nothing}
       ${this.warnings?.length
         ? html`<ul class="sync-warnings" aria-label="Key warnings">${this.warnings.map((w) => html`<li class=${w.kind === "senderKeyChanged" ? "sync-note security" : "hint"}>${icon("warning-circle")} ${w.message}</li>`)}</ul>`
