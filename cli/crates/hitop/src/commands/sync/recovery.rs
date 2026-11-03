@@ -23,7 +23,9 @@ use sha2::{Digest, Sha256};
 use super::client::{b64, unb64, Api};
 use super::store::{self, Account, Pins};
 
-/// What the recovery blob holds (JSON). The web app writes and reads the same shape.
+/// The key bundle the recovery blob holds (JSON; the web app writes and reads the same shape).
+/// Sealed under an unlock key: the recovery phrase now; a password-derived key can seal the same
+/// bundle later (`hitop_sync_crypto::seal_key_bundle`, server method `password`).
 #[derive(Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct RecoveryData {

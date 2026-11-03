@@ -292,8 +292,8 @@ impl Tx<'_> {
 /// (orgs.rs), entitlements and usage (limits.rs), API tokens (tokens.rs): every person gets a
 /// personal org (`personal-<user id>`, Free) that owns the workspaces they own; after the SQL,
 /// `limits::grandfather` raises each personal org's limits to its usage (`migrate`), so no
-/// existing account is over a limit. 5: HITOP Cloud C2 recovery blobs (recovery.rs), one opaque
-/// blob per account.
+/// existing account is over a limit. 5: HITOP Cloud C2 key bundles (recovery.rs), one opaque
+/// blob per account and unlock method (`phrase` now; a password later).
 const MIGRATIONS: &[&str] = &[r"
 CREATE TABLE users (
   id TEXT PRIMARY KEY,
@@ -486,10 +486,12 @@ UPDATE workspaces SET org_id = COALESCE((SELECT 'personal-' || MIN(m.user_id) FR
   WHERE m.workspace_id = workspaces.id AND m.role = 'owner' AND u.runner_of = ''), '');
 ", r"
 CREATE TABLE recovery_blobs (
-  user_id TEXT PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
+  user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  method TEXT NOT NULL,
   blob {BLOB} NOT NULL,
   created_at BIGINT NOT NULL,
-  updated_at BIGINT NOT NULL
+  updated_at BIGINT NOT NULL,
+  PRIMARY KEY (user_id, method)
 );
 "];
 

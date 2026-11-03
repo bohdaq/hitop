@@ -42,7 +42,7 @@ use zeroize::{Zeroize, ZeroizeOnDrop};
 
 mod keyring;
 mod recovery;
-pub use recovery::{open_recovery, recovery_associated_data, seal_recovery, seal_recovery_with_nonce, RecoveryPhrase, PHRASE_WORDS, RECOVERY_AAD_LABEL, RECOVERY_FORMAT, RECOVERY_KEY_LABEL};
+pub use recovery::{open_key_bundle, open_recovery, recovery_associated_data, seal_key_bundle, seal_key_bundle_with_nonce, seal_recovery, seal_recovery_with_nonce, RecoveryPhrase, PHRASE_WORDS, RECOVERY_AAD_LABEL, RECOVERY_FORMAT, RECOVERY_KEY_LABEL};
 pub use keyring::{accept_wraps, key_commitment, normalize_fingerprint, Keyring, Notice, ReceivedWrap, WorkspaceMemory};
 
 /// First byte of every blob envelope.

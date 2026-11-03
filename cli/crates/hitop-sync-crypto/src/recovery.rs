@@ -10,6 +10,10 @@
 //!   tag (16)`, associated data `"hitop-sync/v1/recovery" || u16 len || account id`, so the server
 //!   can't hand one account's blob to another. The server stores only the blob.
 //!
+//! The blob is a **key bundle** sealed under an unlock key ([`seal_key_bundle`]); the phrase is
+//! the first unlock method. A later one (a password) seals the same bundle under its own key and
+//! is stored beside it (the server keys bundles by account and method), so no format changes.
+//!
 //! What a client puts in the blob is its business (hitop: the device key, its key id, its pins
 //! and its [`crate::WorkspaceMemory`] per workspace, as JSON; THREAT_MODEL.md "Recovery"). The
 //! phrase has 256 bits of entropy: nobody guesses it, the server included.
@@ -125,10 +129,33 @@ pub fn seal_recovery(phrase: &RecoveryPhrase, account_id: &str, plaintext: &[u8]
 /// [`seal_recovery`] with a caller-chosen nonce. Only for test vectors.
 #[doc(hidden)]
 pub fn seal_recovery_with_nonce(phrase: &RecoveryPhrase, account_id: &str, plaintext: &[u8], nonce: &[u8; 24]) -> Result<Vec<u8>, Error> {
-    let aad = recovery_associated_data(account_id)?;
     let mut key = phrase.recovery_key();
-    let cipher = XChaCha20Poly1305::new(&Key::from(key));
+    let r = seal_key_bundle_with_nonce(&key, account_id, plaintext, nonce);
     key.zeroize();
+    r
+}
+
+/// Opens a recovery blob of the account `account_id`: [`Error::Decrypt`] for a wrong phrase,
+/// another account's blob, or tampered bytes.
+pub fn open_recovery(phrase: &RecoveryPhrase, account_id: &str, blob: &[u8]) -> Result<Vec<u8>, Error> {
+    let mut key = phrase.recovery_key();
+    let r = open_key_bundle(&key, account_id, blob);
+    key.zeroize();
+    r
+}
+
+/// Seals an account's **key bundle** (what a client needs to be its device again) under a 32-byte
+/// unlock key. The recovery phrase is one way to get that key ([`RecoveryPhrase::recovery_key`]);
+/// another (a password through a slow KDF, say) seals the same bundle under its own key, stored as
+/// a bundle of its own next to the phrase's. Same layout as a recovery blob.
+pub fn seal_key_bundle(unlock_key: &[u8; 32], account_id: &str, plaintext: &[u8]) -> Result<Vec<u8>, Error> {
+    seal_key_bundle_with_nonce(unlock_key, account_id, plaintext, &random::<24>())
+}
+
+#[doc(hidden)]
+pub fn seal_key_bundle_with_nonce(unlock_key: &[u8; 32], account_id: &str, plaintext: &[u8], nonce: &[u8; 24]) -> Result<Vec<u8>, Error> {
+    let aad = recovery_associated_data(account_id)?;
+    let cipher = XChaCha20Poly1305::new(&Key::from(*unlock_key));
     let ciphertext = cipher.encrypt(&XNonce::from(*nonce), Payload { msg: plaintext, aad: &aad }).map_err(|_| Error::Malformed("plaintext (too long)"))?;
     let mut out = Vec::with_capacity(1 + 24 + ciphertext.len());
     out.push(RECOVERY_FORMAT);
@@ -137,21 +164,18 @@ pub fn seal_recovery_with_nonce(phrase: &RecoveryPhrase, account_id: &str, plain
     Ok(out)
 }
 
-/// Opens a recovery blob of the account `account_id`: [`Error::Decrypt`] for a wrong phrase,
-/// another account's blob, or tampered bytes.
-pub fn open_recovery(phrase: &RecoveryPhrase, account_id: &str, blob: &[u8]) -> Result<Vec<u8>, Error> {
+/// Opens a key bundle sealed by [`seal_key_bundle`] with this unlock key.
+pub fn open_key_bundle(unlock_key: &[u8; 32], account_id: &str, blob: &[u8]) -> Result<Vec<u8>, Error> {
     if blob.len() < 1 + 24 + crate::TAG_LEN {
-        return Err(Error::Malformed("recovery blob (too short)"));
+        return Err(Error::Malformed("key bundle (too short)"));
     }
     if blob[0] != RECOVERY_FORMAT {
-        return Err(Error::Malformed("recovery blob (unknown format)"));
+        return Err(Error::Malformed("key bundle (unknown format)"));
     }
     let aad = recovery_associated_data(account_id)?;
     let mut nonce = [0u8; 24];
     nonce.copy_from_slice(&blob[1..25]);
-    let mut key = phrase.recovery_key();
-    let cipher = XChaCha20Poly1305::new(&Key::from(key));
-    key.zeroize();
+    let cipher = XChaCha20Poly1305::new(&Key::from(*unlock_key));
     cipher.decrypt(&XNonce::from(nonce), Payload { msg: &blob[25..], aad: &aad }).map_err(|_| Error::Decrypt)
 }
 
@@ -228,6 +252,10 @@ mod tests {
         // Pinned so other implementations (and later versions) can check theirs.
         let hex: String = blob.iter().map(|b| format!("{b:02x}")).collect();
         assert_eq!(hex, PINNED_BLOB);
+        // A key bundle under the same key is the same bytes (the phrase is one unlock method).
+        assert_eq!(seal_key_bundle_with_nonce(&p.recovery_key(), "u1", b"hello", &[9u8; 24]).unwrap(), blob);
+        assert_eq!(open_key_bundle(&p.recovery_key(), "u1", &blob).unwrap(), b"hello");
+        assert_eq!(open_key_bundle(&[1u8; 32], "u1", &blob), Err(Error::Decrypt));
     }
 
     const PINNED_BLOB: &str = "010909090909090909090909090909090909090909090909092d66bbd3da67f3e04ae5c641f630d30b4c87331c84";

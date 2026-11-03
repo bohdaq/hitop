@@ -187,7 +187,7 @@ pub fn me(state: &State, request: &Request, _: &PathParams) -> ApiResult {
         let user = authenticate(state, tx, request)?;
         let keys = tx.query("SELECT id, name, public_key FROM device_keys WHERE user_id = $1 ORDER BY created_at, id", &[(&user.id).into()])?;
         let passkeys = tx.query("SELECT id, name FROM passkeys WHERE user_id = $1 ORDER BY created_at, id", &[(&user.id).into()])?;
-        let recovery = tx.query_one("SELECT updated_at FROM recovery_blobs WHERE user_id = $1", &[(&user.id).into()])?;
+        let recovery = tx.query_one("SELECT updated_at FROM recovery_blobs WHERE user_id = $1 AND method = 'phrase'", &[(&user.id).into()])?;
         Ok((
             200,
             json!({

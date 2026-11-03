@@ -1,6 +1,7 @@
-//! Account recovery (HITOP Cloud C2, THREAT_MODEL.md "Recovery"): the server keeps one opaque
-//! recovery blob per account, sealed on a client under a key from a 24-word phrase the person
-//! wrote down. It can't open it and never sees the phrase; it only stores, returns and deletes it,
+//! Account recovery (HITOP Cloud C2, THREAT_MODEL.md "Recovery"): the server keeps opaque key
+//! bundles per account and **unlock method**, sealed on a client: `phrase` (a key from the 24-word
+//! recovery phrase the person wrote down) today; a password-derived key is the next method, stored
+//! as its own row (`?method=`, [`METHODS`]), with no change to the format. It can't open it and never sees the phrase; it only stores, returns and deletes it,
 //! and audits each of those. A device brought back from it may delete the key its sign-in on the
 //! new computer registered, while that key holds no workspace key yet (`DELETE /v1/me/keys/:id`).
 //!
@@ -16,6 +17,18 @@ use crate::api::{b64, bearer, body, unb64, ApiError, ApiResult, State};
 use crate::audit::{self, Event};
 use crate::auth::{authenticate, User};
 use crate::db::Tx;
+
+/// The unlock methods a key bundle can be stored for (`?method=`, default `phrase`).
+pub const METHODS: &[&str] = &["phrase"];
+
+fn method(request: &Request) -> Result<String, ApiError> {
+    let m = crate::api::query(request).get("method").cloned().unwrap_or_else(|| "phrase".into());
+    if METHODS.contains(&m.as_str()) {
+        Ok(m)
+    } else {
+        Err(ApiError::bad(format!("unknown unlock method {m:?} (known: {})", METHODS.join(", "))))
+    }
+}
 
 /// The largest recovery blob (a device key, its pins and what it remembers per workspace).
 pub const MAX_RECOVERY_BYTES: usize = 256 * 1024;
@@ -39,19 +52,20 @@ struct PutRecovery {
 pub fn put(state: &State, request: &Request, _: &PathParams) -> ApiResult {
     let input: PutRecovery = body(request)?;
     let blob = unb64("blob", &input.blob)?;
+    let method = method(request)?;
     if blob.is_empty() || blob.len() > MAX_RECOVERY_BYTES {
         return Err(ApiError::new(413, "too_large", format!("a recovery blob has 1 to {MAX_RECOVERY_BYTES} bytes")));
     }
     state.db.tx(|tx| {
         let user = device_session(state, tx, request)?;
         let now = state.now();
-        let replaced = tx.query_one("SELECT created_at FROM recovery_blobs WHERE user_id = $1", &[(&user.id).into()])?.is_some();
+        let replaced = tx.query_one("SELECT created_at FROM recovery_blobs WHERE user_id = $1 AND method = $2", &[(&user.id).into(), (&method).into()])?.is_some();
         tx.execute(
-            "INSERT INTO recovery_blobs (user_id, blob, created_at, updated_at) VALUES ($1, $2, $3, $3)
-             ON CONFLICT (user_id) DO UPDATE SET blob = excluded.blob, updated_at = excluded.updated_at",
-            &[(&user.id).into(), blob.clone().into(), now.into()],
+            "INSERT INTO recovery_blobs (user_id, method, blob, created_at, updated_at) VALUES ($1, $2, $3, $4, $4)
+             ON CONFLICT (user_id, method) DO UPDATE SET blob = excluded.blob, updated_at = excluded.updated_at",
+            &[(&user.id).into(), (&method).into(), blob.clone().into(), now.into()],
         )?;
-        audit::record(tx, state, Event::new(audit::ACCOUNT, "recovery_set", Some(&user)).target(&user.id).detail(json!({ "bytes": blob.len(), "replaced": replaced })))?;
+        audit::record(tx, state, Event::new(audit::ACCOUNT, "recovery_set", Some(&user)).target(&user.id).detail(json!({ "method": method, "bytes": blob.len(), "replaced": replaced })))?;
         Ok((200, json!({ "updatedAt": now })))
     })
 }
@@ -59,25 +73,27 @@ pub fn put(state: &State, request: &Request, _: &PathParams) -> ApiResult {
 /// `GET /v1/me/recovery`: the blob (404 when there is none). Audited: a person sees in their
 /// account log when it was fetched.
 pub fn get(state: &State, request: &Request, _: &PathParams) -> ApiResult {
+    let method = method(request)?;
     state.db.tx(|tx| {
         let user = device_session(state, tx, request)?;
-        let Some(row) = tx.query_one("SELECT blob, created_at, updated_at FROM recovery_blobs WHERE user_id = $1", &[(&user.id).into()])? else {
+        let Some(row) = tx.query_one("SELECT blob, created_at, updated_at FROM recovery_blobs WHERE user_id = $1 AND method = $2", &[(&user.id).into(), (&method).into()])? else {
             return Err(ApiError::not_found("this account has no recovery phrase set"));
         };
-        audit::record(tx, state, Event::new(audit::ACCOUNT, "recovery_fetched", Some(&user)).target(&user.id))?;
+        audit::record(tx, state, Event::new(audit::ACCOUNT, "recovery_fetched", Some(&user)).target(&user.id).detail(json!({ "method": method })))?;
         Ok((200, json!({ "blob": b64(&row.bytes(0)), "createdAt": row.int(1), "updatedAt": row.int(2) })))
     })
 }
 
 /// `DELETE /v1/me/recovery`: forgets the blob (the phrase no longer recovers anything).
 pub fn delete(state: &State, request: &Request, _: &PathParams) -> ApiResult {
+    let method = method(request)?;
     state.db.tx(|tx| {
         let user = device_session(state, tx, request)?;
-        let n = tx.execute("DELETE FROM recovery_blobs WHERE user_id = $1", &[(&user.id).into()])?;
+        let n = tx.execute("DELETE FROM recovery_blobs WHERE user_id = $1 AND method = $2", &[(&user.id).into(), (&method).into()])?;
         if n == 0 {
             return Err(ApiError::not_found("this account has no recovery phrase set"));
         }
-        audit::record(tx, state, Event::new(audit::ACCOUNT, "recovery_removed", Some(&user)).target(&user.id))?;
+        audit::record(tx, state, Event::new(audit::ACCOUNT, "recovery_removed", Some(&user)).target(&user.id).detail(json!({ "method": method })))?;
         Ok((204, json!(null)))
     })
 }
