@@ -239,6 +239,11 @@ jobs:
             sync-server
       - name: Build site, web app and server
         run: ./deploy/build.sh
+      # HITOP Cloud C3: the security page's sentences, no "no subscription" promise, legal drafts
+      # stay drafts (site/scripts/check-pages.mjs).
+      - name: Site checks
+        working-directory: site
+        run: node scripts/check-pages.mjs
       # tests/sync.cjs: two people in the app against a real sync server (web and desktop modes).
       - name: Sync server for tests/sync.cjs
         run: |

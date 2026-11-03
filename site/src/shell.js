@@ -4,6 +4,7 @@ import { html } from "lit";
 import { unsafeHTML } from "lit/directives/unsafe-html.js";
 import { mark } from "./brand/mark.js";
 import { icon } from "./icons.js";
+import { DRAFT, LEGAL_LINKS } from "./legal-status.js";
 
 export const ORIGIN = "https://hitop.rws8.tech";
 export const GITHUB = "https://github.com/bohdaq/hitop";
@@ -66,6 +67,7 @@ export function footer() {
           <li><a href="/pricing.html">Pricing</a></li>
           <li><a href="/terms/">Guides</a></li>
           <li><a href="/privacy.html">Privacy</a></li>
+          ${DRAFT ? "" : LEGAL_LINKS.map(([href, label]) => html`<li><a href=${href}>${label}</a></li>`)}
           <li><a href=${`${GITHUB}/issues`}>Report a problem</a></li>
           <li><a href=${GITHUB}>GitHub</a></li>
           <li><a href=${`${GITHUB}/blob/main/LICENSE`}>MIT license</a></li>

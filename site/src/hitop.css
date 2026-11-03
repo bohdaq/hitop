@@ -107,3 +107,13 @@
 .page-text .downloads { list-style: none; padding: 0; display: grid; gap: var(--space-200); }
 .downloads li { display: flex; flex-wrap: wrap; align-items: baseline; gap: var(--space-50) var(--space-200); }
 .downloads span { color: var(--md-sys-color-on-surface-variant); font-size: var(--text-sm); line-height: var(--leading-sm); }
+
+/* HITOP Cloud legal pages (drafts until approved, legal-status.js) */
+.draft-banner {
+  padding: var(--space-200);
+  border: 1px solid var(--md-sys-color-outline-variant);
+  border-radius: var(--md-sys-shape-corner-large);
+  background: var(--md-sys-color-primary-container);
+  color: var(--md-sys-color-on-primary-container);
+}
+.legal-date { margin-top: var(--space-500); font-size: var(--text-sm); line-height: var(--leading-sm); color: var(--md-sys-color-on-surface-variant); }

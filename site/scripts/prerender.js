@@ -16,6 +16,7 @@ import * as privacyPage from "../src/pages/privacy.js";
 import * as notFoundPage from "../src/pages/not-found.js";
 import * as downloadPage from "../src/pages/download.js";
 import { pages as termsPages } from "../src/pages/terms.js";
+import { pages as legalPages } from "../src/pages/legal.js";
 
 const site = join(dirname(fileURLToPath(import.meta.url)), "..");
 const publicAssets = join(site, "public-assets");
@@ -31,7 +32,7 @@ function write(path, content) {
 }
 
 homePage.meta.jsonLd = homePage.structuredData();
-const pages = [homePage, pricingPage, downloadPage, privacyPage, notFoundPage, ...termsPages];
+const pages = [homePage, pricingPage, downloadPage, privacyPage, notFoundPage, ...termsPages, ...legalPages];
 for (const page of pages) {
   const body = await collectResult(render(await page.render()));
   const out = page.meta.path.endsWith("/") ? `${page.meta.path}index.html` : page.meta.path;

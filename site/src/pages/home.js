@@ -21,7 +21,8 @@ const TILES = [
   ["plugs-connected", "HTTP, GraphQL, WebSocket, gRPC", "GraphQL with schema completion, WebSocket connections with saved messages (the web app and CLI), and gRPC calls from the CLI by server reflection or .proto files."],
   ["file-code", "From OpenAPI or Postman", "Turn an OpenAPI 3.0 or 3.1 spec or a Postman export into a collection, then sync the next spec version without losing your edits."],
   ["git-diff", "Code snippets and diffs", "Copy a request as curl, fetch, Python, Go, Java or Rust, and compare a response with a saved example or an earlier one."],
-  ["shield-check", "Nothing to sign up for", "No account, no workspace sync, no analytics. Collections live on your device and move as a JSON file, or as Postman v2.1."],
+  ["shield-check", "No account needed", "No sign up and no analytics. Collections live on your device as files. HITOP Cloud, for sharing them, is optional and end to end encrypted."],
+  ["users-three", "Team sync, encrypted", html`Share a collection with your team through HITOP Cloud or your own sync server. Files are encrypted on your device; the server stores ciphertext. <a href="/pricing.html">Free for 3 people</a>.`],
 ];
 
 const STEPS = [
@@ -36,12 +37,12 @@ const FAQ = [
   ["Can I test localhost?", "Yes. The web app sends requests to localhost straight from your browser, so your local API must allow the origin https://hitop.rws8.tech in its CORS headers. For other machines on your network, use the Mac app, the CLI or an extension: browsers block a public page from calling them."],
   ["Is it really free?", "The web app, the Chrome and Firefox extensions and the CLI are free and MIT licensed. The Mac app is $4.99 and the iOS app is $2.99, each paid once."],
   ["Can I bring my Postman collections?", "Yes. Import Postman v2.1 collections, and export back to Postman v2.1 or HITOP JSON."],
-  ["Where is my data stored?", "On your device: browser storage for the web app and extensions, files for the Mac app and CLI, app storage on iOS. Nothing is synced to a server."],
+  ["Where is my data stored?", "On your device: browser storage for the web app and extensions, files for the Mac app and CLI, app storage on iOS. Nothing is synced to a server unless you turn on hitop sync, which encrypts it on your device first."],
   ["Does it work offline?", "The Mac app, the iOS app and the CLI work with no internet connection, which is handy for local and air gapped services."],
   ["Can I run collections in CI?", html`Yes, with the CLI: <code>hitop run ./my-api --env ci --reporter junit</code> runs a collection folder from your repository with its scripts and variables and writes a JUnit report (or JSON, or one HTML page). <code>hitop schedule</code> writes a scheduled workflow for you. On GitHub there is an <a href="/terms/run-hitop-in-github-actions.html">action</a>, and a Docker image for other pipelines.`],
 ];
 
-const TAGLINE = ["Your requests, keys and responses stay on your device.", "No account, no workspace sync, no tracking."];
+const TAGLINE = ["Your requests, keys and responses stay on your device.", "No account, no tracking. Sync only if you want it, encrypted."];
 
 // A request as the app shows it: the hero's picture of the product.
 const RESPONSE = `{
