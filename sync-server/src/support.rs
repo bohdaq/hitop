@@ -44,9 +44,7 @@ const SHOWN: &[&str] = &[
     "HITOP_SYNC_ALERT_WEBHOOKS",
     "HITOP_SYNC_DNS_URL",
     "HITOP_SYNC_MAIL",
-    "HITOP_SYNC_LS_TEST_MODE",
-    "HITOP_SYNC_LS_STORE_ID",
-    "HITOP_SYNC_LS_API_URL",
+    "HITOP_SYNC_STRIPE_API_URL",
     "HITOP_SYNC_GITHUB_URL",
     "HITOP_SYNC_GITHUB_API_URL",
     "HITOP_SYNC_GOOGLE_ISSUER",
@@ -96,7 +94,7 @@ pub fn shown_value(name: &str, value: &str) -> String {
         // The sender address: only its domain.
         return value.rsplit_once('@').map_or_else(|| "(set)".into(), |(_, d)| format!("<address>@{}", d.trim_end_matches('>')));
     }
-    let listed = SHOWN.contains(&name) || name.starts_with("HITOP_SYNC_LS_VARIANT_") || (name.starts_with("RWS_CONFIG_") && !secret);
+    let listed = SHOWN.contains(&name) || name.starts_with("HITOP_SYNC_STRIPE_PRICE_") || (name.starts_with("RWS_CONFIG_") && !secret);
     if listed && !secret {
         scrub_line(value)
     } else {
@@ -319,7 +317,7 @@ mod tests {
 
     #[test]
     fn settings_are_redacted_by_name() {
-        assert_eq!(shown_value("HITOP_SYNC_LS_API_KEY", "abc"), "(set)");
+        assert_eq!(shown_value("HITOP_SYNC_STRIPE_SECRET_KEY", "sk_x"), "(set)");
         assert_eq!(shown_value("HITOP_SYNC_HOST_KEY", "00"), "(set)");
         assert_eq!(shown_value("HITOP_SYNC_OIDC_CLIENT_SECRET_FILE", "/x"), "(set)");
         assert_eq!(shown_value("HITOP_SYNC_SOMETHING_NEW", "x"), "(set)");

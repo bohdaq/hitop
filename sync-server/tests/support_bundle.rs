@@ -10,10 +10,9 @@ use std::process::Command;
 use common::{fill, Server};
 
 const SECRETS: &[(&str, &str)] = &[
-    ("HITOP_SYNC_LS_WEBHOOK_SECRET", "whsec-very-secret-1"),
-    ("HITOP_SYNC_LS_API_KEY", "lsk_api_key_value_2"),
-    ("HITOP_SYNC_LS_STORE_ID", "4242"),
-    ("HITOP_SYNC_LS_VARIANT_TEAM_ANNUAL", "777"),
+    ("HITOP_SYNC_STRIPE_WEBHOOK_SECRET", "whsec_verysecret1"),
+    ("HITOP_SYNC_STRIPE_SECRET_KEY", "sk_test_apikeyvalue2"),
+    ("HITOP_SYNC_STRIPE_PRICE_TEAM_ANNUAL", "price_team777"),
     ("HITOP_SYNC_HOST_KEY", "ab12ab12ab12ab12ab12ab12ab12ab12ab12ab12ab12ab12ab12ab12ab12ab12"),
     ("HITOP_SYNC_PASSWORD_PEPPER", "pepper-value-3-long-enough-for-it"),
     ("HITOP_SYNC_GITHUB_CLIENT_ID", "gh-client-id-4"),
@@ -36,7 +35,7 @@ fn a_support_bundle_has_what_support_needs_and_nothing_of_the_customers() {
              failed to send for ada@example.com\n\
              hitop-sync-server: alert {}-1 (webhook): failed: connection refused by 10.0.0.7\n\
              hitop-sync-server: audit purge: database is locked\n\
-             hitop-sync-server: Lemon Squeezy POST /v1/checkouts: 500 token=lsk_api_key_value_2abcdef1234\n",
+             hitop-sync-server: Lemon Squeezy POST /v1/checkouts: 500 token=sk_test_apikeyvalue2abcdef1234\n",
             fill::WS
         ),
     )
@@ -65,9 +64,9 @@ fn a_support_bundle_has_what_support_needs_and_nothing_of_the_customers() {
     assert!(b["versions"]["databaseVersion"].as_str().unwrap().starts_with('3'));
     assert_eq!(b["config"]["settings"]["HITOP_SYNC_LIMITS"], "off");
     assert_eq!(b["config"]["settings"]["HITOP_SYNC_PUBLIC_URL"], "https://sync.example.com/");
-    assert_eq!(b["config"]["settings"]["HITOP_SYNC_LS_VARIANT_TEAM_ANNUAL"], "777");
+    assert_eq!(b["config"]["settings"]["HITOP_SYNC_STRIPE_PRICE_TEAM_ANNUAL"], "price_team777");
     assert_eq!(b["config"]["settings"]["SMTP_URL"], "smtp://mail.example.net:587");
-    for (k, _) in SECRETS.iter().filter(|(k, _)| !k.contains("VARIANT") && !k.contains("STORE") && *k != "SMTP_URL") {
+    for (k, _) in SECRETS.iter().filter(|(k, _)| !k.contains("PRICE") && *k != "SMTP_URL") {
         assert_eq!(b["config"]["settings"][k], "(set)", "{k}");
     }
     assert_eq!(b["config"]["in effect"]["billing"], true);
@@ -85,7 +84,7 @@ fn a_support_bundle_has_what_support_needs_and_nothing_of_the_customers() {
     assert!(errors.iter().any(|l| l.contains("<id>") && l.contains("<ip>")), "{errors:?}");
 
     // Nothing of the customers': every text value in the identifying columns, every secret.
-    let mut forbidden: Vec<String> = SECRETS.iter().filter(|(k, _)| !k.contains("VARIANT") && !k.contains("STORE")).map(|(_, v)| v.to_string()).collect();
+    let mut forbidden: Vec<String> = SECRETS.iter().filter(|(k, _)| !k.contains("PRICE")).map(|(_, v)| v.to_string()).collect();
     forbidden.extend(["smtp-password-6".to_string(), "mailer".to_string()]);
     let columns = [
         ("users", "id"),
