@@ -38,6 +38,13 @@ The owner's answers to Q1–Q18 (section 10). The rest of this file follows them
 | Q17 | **SOC 2 groundwork starts now** (C1/C2); owner picks a compliance tool and auditor; Type 1 first | yes (was when the first enterprise asks) |
 | Q18 | EU only at launch; US region later on demand | no |
 
+### Later decisions
+
+| Date | Decision | What it changes |
+| --- | --- | --- |
+| 2026-11-03 | Normal sign-in and sign-up before C2 is applied: email + password (sign-up with email verification, password reset) **and** "Continue with Google" / "Continue with GitHub". Mail codes, passkeys and SSO stay. | New tranche C1b (after C2's code, before C2 is applied on the VM). Owner registers the Google and GitHub OAuth apps. |
+| 2026-11-03 | The password also unlocks the end-to-end keys on a new device (a password-derived key wraps the account's key bundle, like the recovery phrase). | The server stores one more wrapped bundle per account (never the password or keys). A forgotten password loses the keys unless the person has a recovery phrase or another device; reset says so. Google/GitHub sign-in alone doesn't unlock keys. |
+
 ## 1. One page summary
 
 **The offer.** HITOP stays a free, MIT, local-first API client with a git-native format, a CLI, a
