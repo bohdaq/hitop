@@ -75,6 +75,18 @@ date (UTC), who, what, the commit, the checks run after it.
   (`HITOP_SYNC_GOOGLE_CLIENT_ID/SECRET`, `HITOP_SYNC_GITHUB_CLIENT_ID/SECRET`; redirect URIs
   `https://sync.hitop.rws8.tech/v1/auth/google/callback` and `.../github/callback`).
 
+## 2026-11-03 C1b deployed to the test server (10:55–11:05 UTC)
+
+- Who: agent. What: 6ae47c9 (`--features postgres`). Dump first: `/root/pre-c1b-20261103T…Z`
+  (`sync.pgdump`, 10 rows). A first try loaded `/etc/hitop-sync/env` with `. env`: the `&` in
+  the Postgres URL cut it, so `dump` used the default `sqlite:hitop-sync.db` and wrote an empty
+  dump; the stray files (`/home/ubuntu/hitop-sync.db*`, the empty dump) were removed. The
+  service itself was never affected (systemd reads the file literally).
+- `install.sh`: `/healthz` `{"database":"postgres","ok":true,"schema":6}`; 0 over a limit;
+  `/v1/auth/methods` password on (signup, reset), Google and GitHub off (no client ids yet).
+- `deploy/deploy.sh`: site, web app (Sync page "Forgot password"), portal; `/`, `/terms/`,
+  `/cloud/`, `/cloud/healthz` 200; rws8.tech, lit.rws8.tech, mail.rws8.tech 200.
+
 <!-- Next entry (template): record: commit, backup file names (sync.db.bak-<ts>), the row
 counts before and after (users, workspaces, members; orgs with personal_of <> '' = users with
 runner_of = ''), `hitop-sync-server over-limits` output (0 over a limit), curl of /healthz on sync
