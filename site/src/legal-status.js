@@ -12,5 +12,7 @@ export const LEGAL_LINKS = [
   ["/legal/sla.html", "SLA"],
   ["/legal/support.html", "Support"],
   ["/legal/subprocessors.html", "Sub-processors"],
+  ["/legal/security-questionnaire.html", "Security questionnaire"],
+  ["/legal/enterprise-agreement.html", "Enterprise agreement"],
   ["/security.html", "Security"],
 ];
