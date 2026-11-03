@@ -226,7 +226,7 @@ pub fn list(state: &State, request: &Request, _: &PathParams) -> ApiResult {
     state.db.tx(|tx| {
         let user = authenticate(state, tx, request)?;
         let rows = tx.query(
-            "SELECT w.id, m.role, w.epoch, w.seq, COALESCE(o.id, ''), COALESCE(o.name, ''), COALESCE(o.personal_of, '') FROM workspaces w JOIN members m ON m.workspace_id = w.id
+            "SELECT w.id, m.role, w.epoch, w.seq, COALESCE(o.id, ''), COALESCE(o.name, ''), COALESCE(o.personal_of, ''), w.rotation_requested_at FROM workspaces w JOIN members m ON m.workspace_id = w.id
              LEFT JOIN orgs o ON o.id = w.org_id WHERE m.user_id = $1 ORDER BY w.created_at, w.id",
             &[(&user.id).into()],
         )?;
@@ -234,7 +234,12 @@ pub fn list(state: &State, request: &Request, _: &PathParams) -> ApiResult {
             .iter()
             .map(|r| {
                 let org = if r.text(4).is_empty() { Json::Null } else { json!({ "id": r.text(4), "name": r.text(5), "personal": !r.text(6).is_empty() }) };
-                json!({ "id": r.text(0), "role": r.text(1), "epoch": r.int(2), "seq": r.int(3), "org": org })
+                let mut w = json!({ "id": r.text(0), "role": r.text(1), "epoch": r.int(2), "seq": r.int(3), "org": org });
+                // Only when asked (admin.rs), so older clients see the shape they know.
+                if r.int(7) > 0 {
+                    w["rotationRequested"] = json!(true);
+                }
+                w
             })
             .collect();
         Ok((200, json!({ "workspaces": list })))
@@ -324,7 +329,8 @@ pub fn get(state: &State, request: &Request, params: &PathParams) -> ApiResult {
                 "keys": keys_json,
             }));
         }
-        Ok((200, json!({ "id": ws.id, "epoch": ws.epoch, "seq": ws.seq, "bytes": ws.bytes, "role": ws.role.as_str(), "members": members })))
+        let rotation = rotation_requested(tx, id)?;
+        Ok((200, json!({ "id": ws.id, "epoch": ws.epoch, "seq": ws.seq, "bytes": ws.bytes, "role": ws.role.as_str(), "members": members, "rotationRequested": rotation })))
     })
 }
 
@@ -463,7 +469,8 @@ fn rotate_to(tx: &mut Tx, user: &User, ws: &Workspace, input: &Rotation) -> Resu
     let members = member_ids(tx, &ws.id)?;
     let wraps = exact_wraps(tx, user, &members, &input.wraps)?;
     insert_wraps(tx, &ws.id, input.epoch, &wraps)?;
-    tx.execute("UPDATE workspaces SET epoch = $1 WHERE id = $2", &[input.epoch.into(), (&ws.id).into()])?;
+    // A rotation asked for by an org admin (admin.rs) is done.
+    tx.execute("UPDATE workspaces SET epoch = $1, rotation_requested_at = 0, rotation_requested_by = '' WHERE id = $2", &[input.epoch.into(), (&ws.id).into()])?;
     Ok(())
 }
 
@@ -516,6 +523,14 @@ pub fn rotate(state: &State, request: &Request, params: &PathParams) -> ApiResul
         audit::record(tx, state, Event::new(id, "key_rotated", Some(&user)).detail(json!({ "epoch": input.epoch, "reason": "rotate" })))?;
         Ok((200, json!({ "epoch": input.epoch })))
     })
+}
+
+/// `{at, by}` when an org admin asked the owners to rotate the workspace key (admin.rs), else null.
+pub fn rotation_requested(tx: &mut Tx, ws: &str) -> Result<Json, ApiError> {
+    Ok(tx
+        .query_one("SELECT rotation_requested_at, rotation_requested_by FROM workspaces WHERE id = $1", &[ws.into()])?
+        .filter(|r| r.int(0) > 0)
+        .map_or(Json::Null, |r| json!({ "at": r.int(0), "by": r.text(1) })))
 }
 
 pub fn require_role(ws: &Workspace, role: Role) -> Result<(), ApiError> {

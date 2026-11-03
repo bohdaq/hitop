@@ -7,8 +7,9 @@
 //!
 //! - `HITOP_SYNC_LS_WEBHOOK_SECRET` (or `_FILE`): the webhook's signing secret. Turns billing on.
 //! - `HITOP_SYNC_LS_STORE_ID`: the store; events of any other store are recorded and ignored.
-//! - `HITOP_SYNC_LS_VARIANT_PRO_ANNUAL`, `_PRO_MONTHLY`, `_TEAM_ANNUAL`, `_TEAM_MONTHLY`: the
-//!   variant ids (at least one). The variant decides the plan; prices live in Lemon Squeezy.
+//! - `HITOP_SYNC_LS_VARIANT_PRO_ANNUAL`, `_PRO_MONTHLY`, `_TEAM_ANNUAL`, `_TEAM_MONTHLY`, and since
+//!   C5 `_BUSINESS_ANNUAL`, `_BUSINESS_MONTHLY`: the variant ids (at least one). The variant decides
+//!   the plan; prices live in Lemon Squeezy. Business isn't sold until its variants are set.
 //! - `HITOP_SYNC_LS_API_KEY` (or `_FILE`): for checkouts, seat changes and customer portal links.
 //!   Without it the webhook still updates plans, and those three answer 409 `billing_api_off`.
 //! - `HITOP_SYNC_LS_TEST_MODE`: `off` (default) refuses test-mode events (a test purchase must
@@ -123,7 +124,7 @@ impl BillingConfig {
         };
         let store_id = var("HITOP_SYNC_LS_STORE_ID").ok_or("HITOP_SYNC_LS_STORE_ID must be set with HITOP_SYNC_LS_WEBHOOK_SECRET")?;
         let mut variants = Vec::new();
-        for (plan, period) in [("pro", "annual"), ("pro", "monthly"), ("team", "annual"), ("team", "monthly")] {
+        for (plan, period) in [("pro", "annual"), ("pro", "monthly"), ("team", "annual"), ("team", "monthly"), ("business", "annual"), ("business", "monthly")] {
             let name = format!("HITOP_SYNC_LS_VARIANT_{}_{}", plan.to_uppercase(), period.to_uppercase());
             if let Some(id) = var(&name) {
                 if id.parse::<u64>().is_err() {
@@ -133,7 +134,7 @@ impl BillingConfig {
             }
         }
         if variants.is_empty() {
-            return Err("billing needs at least one HITOP_SYNC_LS_VARIANT_<PRO|TEAM>_<ANNUAL|MONTHLY>".into());
+            return Err("billing needs at least one HITOP_SYNC_LS_VARIANT_<PRO|TEAM|BUSINESS>_<ANNUAL|MONTHLY>".into());
         }
         let api_url = var("HITOP_SYNC_LS_API_URL").unwrap_or_else(|| DEFAULT_API_URL.into()).trim_end_matches('/').to_string();
         if !crate::oidc::secure_url(&api_url) {
@@ -439,7 +440,7 @@ fn subscription_event(state: &State, tx: &mut Tx, c: &BillingConfig, event: &str
     let same_sub = before.sub == sub;
     let mut after = Row {
         plan: variant.plan.to_string(),
-        seats: if variant.plan == "team" { attrs["first_subscription_item"]["quantity"].as_i64().unwrap_or(before.seats).clamp(1, MAX_SEATS) } else { 1 },
+        seats: if per_seat(variant.plan) { attrs["first_subscription_item"]["quantity"].as_i64().unwrap_or(before.seats).clamp(1, MAX_SEATS) } else { 1 },
         status: status.clone(),
         period_end: secs(attrs, "ends_at").or_else(|| secs(attrs, "renews_at")).unwrap_or(before.period_end),
         sub: sub.to_string(),
@@ -555,9 +556,14 @@ fn caller(state: &State, tx: &mut Tx, request: &Request, org: &str, need: OrgRol
     Ok((user, o))
 }
 
+/// Team and Business are sold per seat (the subscription item's quantity).
+pub fn per_seat(plan: &str) -> bool {
+    matches!(plan, "team" | "business")
+}
+
 fn offers(c: Option<&BillingConfig>, personal: bool) -> Vec<Json> {
-    let plan = if personal { "pro" } else { "team" };
-    c.map(|c| c.variants.iter().filter(|v| v.plan == plan).map(|v| json!({ "plan": v.plan, "period": v.period })).collect()).unwrap_or_default()
+    let plans: &[&str] = if personal { &["pro"] } else { &["team", "business"] };
+    c.map(|c| c.variants.iter().filter(|v| plans.contains(&v.plan)).map(|v| json!({ "plan": v.plan, "period": v.period })).collect()).unwrap_or_default()
 }
 
 /// A Lemon Squeezy subscription that is still running (perhaps unpaid or paused): change it in
@@ -566,12 +572,18 @@ fn subscribed(r: &Row) -> bool {
     !r.sub.is_empty() && matches!(r.status.as_str(), "active" | "on_trial" | "past_due" | "cancelled" | "paused" | "unpaid")
 }
 
+const FREE_MAIL: &[&str] = &[
+    "gmail.com", "googlemail.com", "outlook.com", "hotmail.com", "live.com", "yahoo.com", "icloud.com", "me.com", "proton.me", "protonmail.com", "gmx.de", "gmx.net", "web.de", "mail.ru", "yandex.ru", "aol.com", "fastmail.com", "zoho.com", "example.com",
+];
+
+/// A public mail provider's domain (no company owns it).
+pub fn free_mail(domain: &str) -> bool {
+    FREE_MAIL.contains(&domain)
+}
+
 fn trial_domain(email: &str) -> String {
-    const FREE_MAIL: &[&str] = &[
-        "gmail.com", "googlemail.com", "outlook.com", "hotmail.com", "live.com", "yahoo.com", "icloud.com", "me.com", "proton.me", "protonmail.com", "gmx.de", "gmx.net", "web.de", "mail.ru", "yandex.ru", "aol.com", "fastmail.com", "zoho.com", "example.com",
-    ];
     let d = email.rsplit_once('@').map(|(_, d)| d.to_lowercase()).unwrap_or_default();
-    if FREE_MAIL.contains(&d.as_str()) {
+    if free_mail(&d) {
         String::new()
     } else {
         d
@@ -715,9 +727,9 @@ pub fn checkout(state: &State, request: &Request, params: &PathParams) -> ApiRes
     let period = input.period.unwrap_or_else(|| "annual".into());
     let (user, body) = state.db.tx(|tx| -> Result<(User, Json), ApiError> {
         let (user, o) = caller(state, tx, request, &org, OrgRole::Admin)?;
-        let want = if o.personal { "pro" } else { "team" };
-        if input.plan != want {
-            return Err(ApiError::bad(if o.personal { "a personal account buys Pro; for Team, create an organization" } else { "an organization buys Team (per seat); Pro is for one person's personal account" }));
+        let allowed = if o.personal { input.plan == "pro" } else { per_seat(&input.plan) };
+        if !allowed {
+            return Err(ApiError::bad(if o.personal { "a personal account buys Pro; for Team or Business, create an organization" } else { "an organization buys Team or Business (per seat); Pro is for one person's personal account" }));
         }
         let variant = c.variants.iter().find(|v| v.plan == input.plan && v.period == period).ok_or_else(|| ApiError::bad(format!("{} {period} isn't on sale here", input.plan)))?;
         let r = row(tx, &org)?;
@@ -725,7 +737,7 @@ pub fn checkout(state: &State, request: &Request, params: &PathParams) -> ApiRes
             return Err(ApiError::conflict("already_subscribed", "this organization has a subscription: change it in the billing portal", json!({})));
         }
         let used = limits::usage(state, tx, &org)?.seats.max(1);
-        let quantity = if want == "team" { input.seats.unwrap_or(used) } else { 1 };
+        let quantity = if per_seat(&input.plan) { input.seats.unwrap_or(used) } else { 1 };
         if !(1..=MAX_SEATS).contains(&quantity) {
             return Err(ApiError::bad(format!("seats must be 1 to {MAX_SEATS}")));
         }
@@ -795,8 +807,8 @@ pub fn seats(state: &State, request: &Request, params: &PathParams) -> ApiResult
     let (user, item, before) = state.db.tx(|tx| -> Result<(User, String, i64), ApiError> {
         let (user, _) = caller(state, tx, request, &org, OrgRole::Admin)?;
         let r = row(tx, &org)?;
-        if r.plan != "team" || r.item.is_empty() || !matches!(r.status.as_str(), "active" | "on_trial" | "past_due") {
-            return Err(ApiError::conflict("no_subscription", "seats change on a live Team subscription", json!({})));
+        if !per_seat(&r.plan) || r.item.is_empty() || !matches!(r.status.as_str(), "active" | "on_trial" | "past_due") {
+            return Err(ApiError::conflict("no_subscription", "seats change on a live Team or Business subscription", json!({})));
         }
         let used = limits::usage(state, tx, &org)?.seats;
         if !(1..=MAX_SEATS).contains(&input.seats) {

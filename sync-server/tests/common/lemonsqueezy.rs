@@ -19,6 +19,8 @@ pub const PRO_ANNUAL: &str = "101";
 pub const PRO_MONTHLY: &str = "102";
 pub const TEAM_ANNUAL: &str = "201";
 pub const TEAM_MONTHLY: &str = "202";
+pub const BUSINESS_ANNUAL: &str = "301";
+pub const BUSINESS_MONTHLY: &str = "302";
 
 #[derive(Debug, Clone)]
 pub struct Seen {

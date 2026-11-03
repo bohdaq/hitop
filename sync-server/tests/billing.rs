@@ -419,3 +419,43 @@ fn the_team_trial() {
     delivered(&s, &ls::subscription("subscription_created", "40", ls::TEAM_ANNUAL, "active", 6, "2026-11-20T10:00:00.000000Z", custom), "applied");
     assert_eq!(add_org_member(&s, &ada, &org, "f@example.com").status, 201);
 }
+
+#[test]
+fn business_is_sold_per_seat_once_its_variants_are_set() {
+    use hitop_sync_server::billing::Variant;
+    let mock = MockLs::start();
+    // Without Business variants (C3's setup), Business isn't on sale.
+    let s = server("billing-business-off", &mock);
+    let ada = Device::new(&s, "ada@example.com");
+    let org = org_create(&s, &ada, "Acme");
+    assert_eq!(s.call("POST", &format!("/v1/orgs/{org}/billing/checkout"), Some(&ada.session), Some(json!({ "plan": "business", "seats": 1 }))).status, 400);
+
+    let mut c = mock.config();
+    c.variants.push(Variant { plan: "business", period: "annual", id: ls::BUSINESS_ANNUAL.into() });
+    c.variants.push(Variant { plan: "business", period: "monthly", id: ls::BUSINESS_MONTHLY.into() });
+    let s = Server::with("billing-business", |cfg| {
+        cfg.plan_limits = true;
+        cfg.billing = Some(c);
+    });
+    let ada = Device::new(&s, "ada@example.com");
+    let org = org_create(&s, &ada, "Acme");
+    assert_eq!(add_org_member(&s, &ada, &org, "bob@example.com").status, 201);
+    let offers = billing(&s, &ada, &org)["offers"].clone();
+    assert!(offers.as_array().unwrap().contains(&json!({ "plan": "business", "period": "annual" })), "{offers}");
+    // A personal account still buys Pro only.
+    let personal = format!("personal-{}", ada.user_id);
+    assert_eq!(s.call("POST", &format!("/v1/orgs/{personal}/billing/checkout"), Some(&ada.session), Some(json!({ "plan": "business" }))).status, 400);
+
+    let custom = checkout(&s, &mock, &ada, &org, "business", "annual", Some(4));
+    let sent = mock.last("POST").body;
+    assert_eq!(sent["data"]["attributes"]["checkout_data"]["variant_quantities"], json!([{ "variant_id": 301, "quantity": 4 }]));
+    delivered(&s, &ls::subscription("subscription_created", "9", ls::BUSINESS_ANNUAL, "active", 4, "2026-11-03T10:00:00.000000Z", custom), "applied");
+    let l = limits(&s, &ada, &org);
+    assert_eq!((l["planInForce"].as_str(), l["seats"].as_i64(), l["limits"]["seats"].as_i64()), (Some("business"), Some(4), Some(4)));
+    // Business features open: the audit export, the admin console's actions.
+    assert_eq!(s.call("GET", &format!("/v1/orgs/{org}/audit/export"), Some(&ada.session), None).status, 200);
+    assert_eq!(s.call("GET", &format!("/v1/orgs/{org}/admin"), Some(&ada.session), None).json["actions"]["removeDevice"], true);
+    // Seats change through the API as for Team.
+    let r = s.call("POST", &format!("/v1/orgs/{org}/billing/seats"), Some(&ada.session), Some(json!({ "seats": 5 })));
+    assert_eq!((r.status, r.json["seats"].as_i64()), (200, Some(5)), "{}", r.json);
+}

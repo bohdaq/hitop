@@ -620,6 +620,50 @@ CREATE TABLE env_share_wraps (
   FOREIGN KEY (workspace_id, share_id) REFERENCES env_shares(workspace_id, id) ON DELETE CASCADE
 );
 CREATE INDEX env_share_wraps_user ON env_share_wraps(workspace_id, user_id);
+", r"
+CREATE TABLE org_sso (
+  org_id TEXT PRIMARY KEY REFERENCES orgs(id) ON DELETE CASCADE,
+  issuer TEXT NOT NULL,
+  client_id TEXT NOT NULL,
+  client_secret {BLOB} NOT NULL,
+  scopes TEXT NOT NULL,
+  name TEXT NOT NULL,
+  groups_claim TEXT NOT NULL,
+  required_groups TEXT NOT NULL DEFAULT '',
+  required BIGINT NOT NULL DEFAULT 0,
+  assume_verified BIGINT NOT NULL DEFAULT 0,
+  enabled BIGINT NOT NULL DEFAULT 1,
+  updated_by TEXT NOT NULL,
+  updated_at BIGINT NOT NULL
+);
+CREATE TABLE org_domains (
+  org_id TEXT NOT NULL REFERENCES orgs(id) ON DELETE CASCADE,
+  domain TEXT NOT NULL,
+  token TEXT NOT NULL,
+  verified_at BIGINT NOT NULL DEFAULT 0,
+  checked_at BIGINT NOT NULL DEFAULT 0,
+  created_by TEXT NOT NULL,
+  created_at BIGINT NOT NULL,
+  PRIMARY KEY (org_id, domain)
+);
+CREATE INDEX org_domains_domain ON org_domains(domain, verified_at);
+CREATE TABLE org_audit_settings (
+  org_id TEXT PRIMARY KEY REFERENCES orgs(id) ON DELETE CASCADE,
+  mail_anchors BIGINT NOT NULL DEFAULT 1,
+  public_anchors BIGINT NOT NULL DEFAULT 0,
+  updated_by TEXT NOT NULL,
+  updated_at BIGINT NOT NULL
+);
+CREATE TABLE audit_anchors (
+  org_id TEXT NOT NULL REFERENCES orgs(id) ON DELETE CASCADE,
+  day TEXT NOT NULL,
+  body TEXT NOT NULL,
+  created_at BIGINT NOT NULL,
+  mailed_at BIGINT NOT NULL DEFAULT 0,
+  PRIMARY KEY (org_id, day)
+);
+ALTER TABLE workspaces ADD COLUMN rotation_requested_at BIGINT NOT NULL DEFAULT 0;
+ALTER TABLE workspaces ADD COLUMN rotation_requested_by TEXT NOT NULL DEFAULT '';
 "];
 
 /// Steps in Rust that run in the same transaction as a migration's SQL (index = migration

@@ -35,12 +35,15 @@ jsonwebtoken = { version = "10.3", default-features = false, features = ["aws_lc
 ureq = { version = "3", default-features = false, features = ["rustls"] }
 # Passwords (password.rs): the server's own Argon2id hash of the clients' auth keys.
 argon2 = { version = "0.5.3", default-features = false, features = ["alloc", "password-hash", "zeroize"] }
+# HITOP Cloud C5 (already in the tree through lettre's `ring` feature): AES-256-GCM for the
+# server's own secrets at rest under the host key (per-org OIDC client secrets, hostkey.rs) and
+# Ed25519 for signed audit exports and daily anchors (anchors.rs). Never client data.
+ring = "0.17.14"
 
 [dev-dependencies]
 # Tests act as the clients: they encrypt with the client crate and check the server only ever
 # holds ciphertext. The server itself never links it (see tests/no_crypto_in_server.rs).
 hitop-sync-crypto = { path = "../cli/crates/hitop-sync-crypto" }
-ring = "0.17"
 webauthn-authenticator-rs = { version = "0.6", default-features = false, features = ["softpasskey"] }
 
 [profile.release]

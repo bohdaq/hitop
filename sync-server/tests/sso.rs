@@ -399,3 +399,164 @@ fn config_errors_are_reported_and_audited() {
     .unwrap()
     .is_some_and(|c| c.assume_verified && c.allowed_domains == ["corp.test"]));
 }
+
+// --- single sign-on per organization (HITOP Cloud C5, orgsso.rs) -------------------------------
+
+use common::dns::MockDns;
+use common::orgsso;
+
+fn org_idp_config(idp: &MockIdp, name: &str) -> Value {
+    json!({ "issuer": idp.issuer, "clientId": idp::CLIENT_ID, "clientSecret": idp::CLIENT_SECRET, "name": name })
+}
+
+/// A sign-in through an org's provider: start with `extra` (`email` or `org`), the provider answers
+/// with `token(flow)`, callback. The session, or the refusal reason from the audit log.
+fn org_sign_in(s: &Server, idp: &MockIdp, extra: Value, token: impl FnOnce(&SsoFlow) -> String) -> Result<String, String> {
+    let mut extra = extra;
+    extra["returnTo"] = json!("http://127.0.0.1:45678/done");
+    let flow = orgsso::start(s, extra).unwrap_or_else(|r| panic!("start: {} {}", r.status, r.json));
+    idp.next(token(&flow), &flow.pkce);
+    let reply = sso_callback(s, &format!("code={}&state={}", idp::GOOD_CODE, flow.state));
+    match sso_code(&reply) {
+        Some(code) => {
+            let r = sso_finish(s, &code, &flow.verifier);
+            assert_eq!(r.status, 200, "{}", r.json);
+            Ok(r.json["session"].as_str().unwrap().to_string())
+        }
+        None => Err(refused_reason(s)),
+    }
+}
+
+fn email_of(s: &Server, session: &str) -> String {
+    s.call("GET", "/v1/me", Some(session), None).json["email"].as_str().unwrap().to_string()
+}
+
+#[test]
+fn two_orgs_two_issuers_each_provider_signs_in_only_its_own_domains() {
+    let dns = MockDns::start();
+    let s = orgsso::server("sso-orgs", &dns, |_| {});
+    let (idp_a, idp_b) = (MockIdp::start(), MockIdp::start());
+    let ada = Device::new(&s, "ada@a.test");
+    let ben = Device::new(&s, "ben@b.test");
+    let a = orgsso::org(&s, &ada, "Org A");
+    let b = orgsso::org(&s, &ben, "Org B");
+    orgsso::claim(&s, &dns, &ada, &a, "a.test");
+    orgsso::claim(&s, &dns, &ben, &b, "b.test");
+    assert_eq!(orgsso::configure(&s, &ada, &a, org_idp_config(&idp_a, "A login")).status, 200);
+    assert_eq!(orgsso::configure(&s, &ben, &b, org_idp_config(&idp_b, "B login")).status, 200);
+
+    // The sign-in page learns the org from the address; the server has no SSO of its own.
+    let info = s.call("GET", "/v1/auth/sso?email=cy@a.test", None, None).json;
+    assert_eq!((info["enabled"].as_bool(), info["name"].as_str(), info["org"].as_str()), (Some(true), Some("A login"), Some(a.as_str())));
+    let plain = s.call("GET", "/v1/auth/sso", None, None).json;
+    assert_eq!((plain["enabled"].as_bool(), plain["orgSso"].as_bool()), (Some(true), Some(true)));
+    // A 1.1/1.2 client with no address hint: told to give it.
+    let r = orgsso::start(&s, json!({})).err().unwrap();
+    assert_eq!(r.status, 400);
+    assert!(r.json["message"].as_str().unwrap().contains("--email"), "{}", r.json);
+
+    // Ada signs in through A's provider (by the address hint) into her account.
+    let session = org_sign_in(&s, &idp_a, json!({ "email": "ada@a.test" }), |f| {
+        assert!(f.url.as_str().starts_with(&idp_a.issuer), "A's provider");
+        idp_a.sign(&idp_a.claims("a-ada", "ada@a.test", &f.nonce))
+    })
+    .unwrap();
+    assert_eq!(s.call("GET", "/v1/me", Some(&session), None).json["id"], ada.user_id.as_str());
+    // Ben through B's, by org id.
+    let session = org_sign_in(&s, &idp_b, json!({ "org": b }), |f| idp_b.sign(&idp_b.claims("b-ben", "ben@b.test", &f.nonce))).unwrap();
+    assert_eq!(email_of(&s, &session), "ben@b.test");
+
+    // B's provider can't sign in a user of A, whatever it says about the address.
+    let why = org_sign_in(&s, &idp_b, json!({ "org": b }), |f| idp_b.sign(&idp_b.claims("b-mallory", "ada@a.test", &f.nonce))).unwrap_err();
+    assert_eq!(why, "domain_not_allowed");
+    // Nor an address of no verified domain.
+    assert_eq!(org_sign_in(&s, &idp_b, json!({ "org": b }), |f| idp_b.sign(&idp_b.claims("b-x", "x@elsewhere.test", &f.nonce))).unwrap_err(), "domain_not_allowed");
+    // A's sign-in doesn't take a token from B's provider (other keys, other issuer).
+    assert_eq!(org_sign_in(&s, &idp_a, json!({ "org": a }), |f| idp_b.sign(&idp_a.claims("a-ada", "ada@a.test", &f.nonce))).unwrap_err(), "bad_token");
+    assert_eq!(org_sign_in(&s, &idp_a, json!({ "org": a }), |f| idp_a.sign(&idp_b.claims("a-ada", "ada@a.test", &f.nonce))).unwrap_err(), "bad_token");
+
+    // One identity per (issuer, subject): each org's issuer.
+    let ids = s.app.state().db.tx(|tx| tx.query("SELECT issuer, email FROM oidc_identities ORDER BY email", &[])).unwrap();
+    let ids: Vec<(String, String)> = ids.iter().map(|r| (r.text(0), r.text(1))).collect();
+    assert_eq!(ids, vec![(idp_a.issuer.clone(), "ada@a.test".into()), (idp_b.issuer.clone(), "ben@b.test".into())]);
+    // The client secret is sealed at rest and never sent back.
+    assert!(!s.disk_bytes().windows(idp::CLIENT_SECRET.len()).any(|w| w == idp::CLIENT_SECRET.as_bytes()), "the secret isn't on disk in the clear");
+    let got = s.call("GET", &format!("/v1/orgs/{a}/sso"), Some(&ada.session), None).json;
+    assert_eq!((got["config"]["hasSecret"].as_bool(), got["config"]["clientId"].as_str()), (Some(true), Some(idp::CLIENT_ID)));
+    assert!(!got.to_string().contains(idp::CLIENT_SECRET));
+}
+
+#[test]
+fn org_sso_required_owner_only_and_the_servers_own_sso_cant_get_around_it() {
+    let dns = MockDns::start();
+    let (idp_a, idp_env) = (MockIdp::start(), MockIdp::start());
+    let env = idp_env.config();
+    let s = orgsso::server("sso-org-required", &dns, |c| c.oidc = Some(env));
+    let ada = Device::new(&s, "ada@a.test");
+    let a = orgsso::org(&s, &ada, "Org A");
+    // "SSO required" needs a verified domain; then only owners set it, with a session.
+    let mut cfg = org_idp_config(&idp_a, "A login");
+    cfg["required"] = json!(true);
+    assert_eq!(orgsso::configure(&s, &ada, &a, cfg.clone()).status, 400);
+    orgsso::claim(&s, &dns, &ada, &a, "a.test");
+    let cy = Device::new(&s, "cy@a.test");
+    assert_eq!(s.call("POST", &format!("/v1/orgs/{a}/members"), Some(&ada.session), Some(json!({ "email": "cy@a.test", "role": "admin" }))).status, 201);
+    assert_eq!(orgsso::configure(&s, &cy, &a, cfg.clone()).status, 403, "admins don't change SSO");
+    let token = s.call("POST", "/v1/me/tokens", Some(&ada.session), Some(json!({ "name": "ci", "scopes": ["read", "write"] }))).json["token"].as_str().unwrap().to_string();
+    assert_eq!(s.call("PUT", &format!("/v1/orgs/{a}/sso"), Some(&token), Some(cfg.clone())).status, 403, "not with an access token");
+    assert_eq!(orgsso::configure(&s, &ada, &a, cfg).status, 200);
+
+    // The domain's addresses sign in only through the org's provider.
+    let r = s.call("POST", "/v1/auth/email", None, Some(json!({ "email": "dee@a.test" })));
+    assert_eq!((r.status, r.json["error"].as_str()), (403, Some("sso_required")));
+    assert_eq!(s.call("POST", "/v1/auth/email", None, Some(json!({ "email": "dee@other.test" }))).status, 202);
+    // The server's own SSO doesn't either (its provider would sign in anyone).
+    let (_, reply) = run(&s, &idp_env, None, |f| idp_env.sign(&idp_env.claims("env-ada", "ada@a.test", &f.nonce)));
+    assert!(sso_code(&reply).is_none());
+    assert_eq!(refused_reason(&s), "sso_required");
+    // Through the org's provider it works.
+    let session = org_sign_in(&s, &idp_a, json!({ "email": "ada@a.test" }), |f| idp_a.sign(&idp_a.claims("a-ada", "ada@a.test", &f.nonce))).unwrap();
+    assert_eq!(email_of(&s, &session), "ada@a.test");
+    // Turned off: mail sign-in comes back.
+    assert_eq!(s.call("DELETE", &format!("/v1/orgs/{a}/sso"), Some(&ada.session), None).status, 204);
+    assert_eq!(s.call("POST", "/v1/auth/email", None, Some(json!({ "email": "dee@a.test" }))).status, 202);
+    let events: Vec<String> = audit_rows(&s, &format!("org:{a}")).iter().map(|r| r["event"].as_str().unwrap().to_string()).collect();
+    for e in ["org_domain_added", "org_domain_verified", "org_sso_updated", "org_sso_deleted"] {
+        assert!(events.iter().any(|x| x == e), "{e} in {events:?}");
+    }
+    assert!(!audit_rows(&s, &format!("org:{a}")).iter().any(|r| r.to_string().contains(idp::CLIENT_SECRET)));
+}
+
+#[test]
+fn org_sso_is_off_without_a_host_key_and_a_business_plan_on_hitop_cloud() {
+    // The hosted test server: no host key, so nothing of it is reachable (owner decision Q15).
+    let s = Server::new("sso-org-off");
+    let ada = Device::new(&s, "ada@a.test");
+    let a = orgsso::org(&s, &ada, "Org A");
+    assert_eq!(s.call("GET", &format!("/v1/orgs/{a}/sso"), Some(&ada.session), None).json["available"], false);
+    let r = s.call("PUT", &format!("/v1/orgs/{a}/sso"), Some(&ada.session), Some(json!({ "issuer": "https://idp.example", "clientId": "c", "clientSecret": "s" })));
+    assert_eq!((r.status, r.json["error"].as_str()), (404, Some("org_sso_off")));
+    assert_eq!(s.call("POST", &format!("/v1/orgs/{a}/domains"), Some(&ada.session), Some(json!({ "domain": "a.test" }))).status, 404);
+    assert_eq!(s.call("GET", "/v1/auth/sso", None, None).json, json!({ "enabled": false }));
+    assert_eq!(s.call("POST", "/v1/auth/sso/start", None, Some(json!({ "challenge": b64(&[0; 32]), "org": a }))).status, 404);
+
+    // HITOP Cloud: Business or Enterprise.
+    let dns = MockDns::start();
+    let s = orgsso::server("sso-org-plan", &dns, |c| c.plan_limits = true);
+    let ada = Device::new(&s, "ada@a.test");
+    let a = orgsso::org(&s, &ada, "Org A");
+    let r = s.call("POST", &format!("/v1/orgs/{a}/domains"), Some(&ada.session), Some(json!({ "domain": "a.test" })));
+    assert_eq!((r.status, r.json["limit"].as_str()), (402, Some("sso")), "{}", r.json);
+    let personal = format!("personal-{}", ada.user_id);
+    assert_eq!(s.call("POST", &format!("/v1/orgs/{personal}/domains"), Some(&ada.session), Some(json!({ "domain": "a.test" }))).status, 400, "not a personal account");
+    hitop_sync_server::limits::set_plan(s.app.state(), &a, "business", 5).unwrap();
+    orgsso::claim(&s, &dns, &ada, &a, "a.test");
+    let idp = MockIdp::start();
+    assert_eq!(orgsso::configure(&s, &ada, &a, org_idp_config(&idp, "A")).status, 200);
+    assert_eq!(s.call("POST", &format!("/v1/orgs/{a}/sso/test"), Some(&ada.session), None).json, json!({ "ok": true }));
+    // A lapsed plan locks nobody out: sign-in keeps working, changes don't.
+    hitop_sync_server::limits::set_plan(s.app.state(), &a, "free", 0).unwrap();
+    let session = org_sign_in(&s, &idp, json!({ "email": "ada@a.test" }), |f| idp.sign(&idp.claims("a-ada", "ada@a.test", &f.nonce))).unwrap();
+    assert_eq!(email_of(&s, &session), "ada@a.test");
+    assert_eq!(orgsso::configure(&s, &ada, &a, org_idp_config(&idp, "A2")).status, 402);
+}

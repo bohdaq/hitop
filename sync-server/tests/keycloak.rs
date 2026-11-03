@@ -9,6 +9,9 @@
 //! ```
 //!
 //! Without the variable the tests are skipped, except in CI (`CI` set), where they fail.
+//! The second realm (`hitop-b-realm.json`, imported from the same directory) is another
+//! organization's provider for the per-org tests (orgsso.rs): two orgs, two issuers.
+//!
 //! A test signs in the way a browser does: it opens the authorization URL the server made,
 //! posts the realm's login form with the user's password, and hands the provider's redirect
 //! back to the server, in process.
@@ -261,4 +264,83 @@ fn a_wrong_issuer_setting_is_a_config_error() {
     assert_eq!(reply.status, 400);
     let events: Vec<String> = audit_rows(&s, "").iter().map(|r| r["event"].as_str().unwrap().to_string()).collect();
     assert!(events.contains(&"sso_config_error".to_string()) && events.contains(&"signin_failed".to_string()), "{events:?}");
+}
+
+// --- per organization (HITOP Cloud C5): org A = realm hitop (corp.test), org B = realm hitop-b
+// (b.test), each configured through the API with its own client secret. -------------------------
+
+mod per_org {
+    use super::*;
+    use common::dns::MockDns;
+    use common::orgsso;
+
+    struct Two {
+        s: Server,
+        a: String,
+        b: String,
+    }
+
+    fn two_orgs(name: &str, kc: &str, required: bool) -> Two {
+        let dns = MockDns::start();
+        let s = orgsso::server(name, &dns, |_| {});
+        let ada = Device::new(&s, "admin@corp.test");
+        let ben = Device::new(&s, "admin@b.test");
+        let a = orgsso::org(&s, &ada, "Corp");
+        let b = orgsso::org(&s, &ben, "B");
+        orgsso::claim(&s, &dns, &ada, &a, "corp.test");
+        orgsso::claim(&s, &dns, &ben, &b, "b.test");
+        let r = orgsso::configure(&s, &ada, &a, json!({ "issuer": format!("{kc}/realms/hitop"), "clientId": "hitop-sync", "clientSecret": CLIENT_SECRET, "name": "Corp SSO", "required": required }));
+        assert_eq!(r.status, 200, "{}", r.json);
+        let r = orgsso::configure(&s, &ben, &b, json!({ "issuer": format!("{kc}/realms/hitop-b"), "clientId": "hitop-sync", "clientSecret": "hitop-sync-test-secret-b", "name": "B SSO" }));
+        assert_eq!(r.status, 200, "{}", r.json);
+        assert_eq!(s.call("POST", &format!("/v1/orgs/{a}/sso/test"), Some(&ada.session), None).json["ok"], true);
+        Two { s, a, b }
+    }
+
+    fn org_sso(s: &Server, extra: serde_json::Value, username: &str, password: &str) -> Result<String, String> {
+        let mut extra = extra;
+        extra["returnTo"] = json!("http://127.0.0.1:45679/");
+        let flow = orgsso::start(s, extra).unwrap_or_else(|r| panic!("{}", r.json));
+        let reply = back_to_server(s, &browser_login(flow.url.as_str(), username, password));
+        let Some(code) = sso_code(&reply) else {
+            return Err(String::from_utf8_lossy(&reply.raw).into_owned());
+        };
+        let r = sso_finish(s, &code, &flow.verifier);
+        assert_eq!(r.status, 200, "{}", r.json);
+        Ok(r.json["session"].as_str().unwrap().to_string())
+    }
+
+    #[test]
+    fn each_org_signs_in_its_own_people_and_never_the_others() {
+        let Some(kc) = keycloak() else { return };
+        let t = two_orgs("kc-orgs", &kc, false);
+        let s = &t.s;
+        // alice (corp.test) through org A's realm, found by her address.
+        let alice = org_sso(s, json!({ "email": "alice@corp.test" }), "alice", "alice-test-pw").unwrap();
+        assert_eq!(s.call("GET", "/v1/me", Some(&alice), None).json["email"], "alice@corp.test");
+        // erin (b.test) through org B's.
+        let erin = org_sso(s, json!({ "org": t.b }), "erin", "erin-test-pw").unwrap();
+        assert_eq!(s.call("GET", "/v1/me", Some(&erin), None).json["email"], "erin@b.test");
+        // B's realm says mallory is alice@corp.test (verified): refused, corp.test is A's domain.
+        let page = org_sso(s, json!({ "org": t.b }), "mallory", "mallory-test-pw").unwrap_err();
+        assert!(page.contains("in a domain allowed to sign in here"), "{page}");
+        // bob@other.test is in A's realm but not A's domain.
+        assert!(org_sso(s, json!({ "org": t.a }), "bob", "bob-test-pw").unwrap_err().contains("in a domain allowed to sign in here"));
+        // The identities are per issuer.
+        let ids = s.app.state().db.tx(|tx| tx.query("SELECT issuer, email FROM oidc_identities ORDER BY email", &[])).unwrap();
+        let ids: Vec<(String, String)> = ids.iter().map(|r| (r.text(0), r.text(1))).collect();
+        assert_eq!(ids, vec![(format!("{kc}/realms/hitop"), "alice@corp.test".into()), (format!("{kc}/realms/hitop-b"), "erin@b.test".into())]);
+    }
+
+    #[test]
+    fn an_orgs_sso_required_turns_off_the_other_sign_ins_for_its_domain() {
+        let Some(kc) = keycloak() else { return };
+        let t = two_orgs("kc-orgs-required", &kc, true);
+        let s = &t.s;
+        let r = s.call("POST", "/v1/auth/email", None, Some(json!({ "email": "alice@corp.test" })));
+        assert_eq!((r.status, r.json["error"].as_str()), (403, Some("sso_required")));
+        assert_eq!(s.call("POST", "/v1/auth/email", None, Some(json!({ "email": "erin@b.test" }))).status, 202, "B didn't require it");
+        assert!(org_sso(s, json!({ "email": "alice@corp.test" }), "alice", "alice-test-pw").is_ok());
+        assert!(org_sso(s, json!({ "org": t.a }), "dave", "dave-test-pw").is_ok());
+    }
 }

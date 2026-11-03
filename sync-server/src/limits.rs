@@ -359,6 +359,21 @@ pub fn refused_named(state: &State, tx: &mut Tx, e: &Entitlement, limit: &str, w
     }
 }
 
+/// A feature only some plans have (HITOP Cloud C5: SSO, audit export, admin console): with
+/// `HITOP_SYNC_LIMITS=plans`, refused with 402 `limit` = `feature` unless the plan in force is one
+/// of `plans`. A self-hosted server has every feature.
+pub fn require_plan(state: &State, tx: &mut Tx, org: &str, feature: &str, what: &str, plans: &[&str]) -> Result<(), ApiError> {
+    if !state.config.plan_limits {
+        return Ok(());
+    }
+    crate::billing::expire(state, tx, Some(org))?;
+    let e = entitlement(tx, org)?;
+    if plans.contains(&e.plan_in_force()) {
+        return Ok(());
+    }
+    Err(refused_named(state, tx, &e, feature, what, 0, 0))
+}
+
 /// Refuses when `used_after` would exceed the org's limit for `metric`.
 fn check(state: &State, tx: &mut Tx, org: &str, metric: Metric, used_after: impl FnOnce(&mut Tx, &Limits) -> Result<i64, DbError>) -> Result<(), ApiError> {
     if !state.config.plan_limits || org.is_empty() {

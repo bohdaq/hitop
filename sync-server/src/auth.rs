@@ -172,7 +172,12 @@ pub fn email_verify(state: &State, request: &Request, _: &PathParams) -> ApiResu
 /// `GET /v1/auth/methods`: what a sign-in page can offer on this server.
 pub fn methods(state: &State, _: &Request, _: &PathParams) -> ApiResult {
     let mail = state.mailer.enabled();
-    let sso = state.config.oidc.as_ref().map(|c| json!({ "name": c.name, "required": c.sso_required, "domains": c.allowed_domains }));
+    let mut sso = state.config.oidc.as_ref().map(|c| json!({ "name": c.name, "required": c.sso_required, "domains": c.allowed_domains }));
+    // Orgs with their own SSO (orgsso.rs): offer "Sign in with SSO", which asks for the address.
+    if state.org_sso.any() {
+        let s = sso.get_or_insert_with(|| json!({ "name": "SSO", "required": false, "domains": [] }));
+        s["orgSso"] = json!(true);
+    }
     Ok((
         200,
         json!({

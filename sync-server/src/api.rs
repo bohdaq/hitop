@@ -91,7 +91,7 @@ pub fn json_response(status: u16, body: &Json) -> Response {
     Response::json(phrase(status), body.to_string().into_bytes())
 }
 
-fn error_response(e: &ApiError) -> Response {
+pub(crate) fn error_response(e: &ApiError) -> Response {
     let mut body = json!({ "error": e.code, "message": e.message });
     if let Some(Json::Object(extra)) = &e.extra {
         for (k, v) in extra {
@@ -185,8 +185,10 @@ pub struct State {
     pub github: crate::github::Github,
     /// Wrong passwords per address (password.rs).
     pub password_failures: crate::password::Backoff,
-    /// Calls to the Lemon Squeezy API (billing.rs).
+    /// Calls to the Lemon Squeezy API (billing.rs), DNS over HTTPS (orgsso.rs).
     pub billing_http: ureq::Agent,
+    /// Single sign-on per organization: verified domains and providers (orgsso.rs).
+    pub org_sso: crate::orgsso::OrgSso,
 }
 
 impl State {
@@ -196,6 +198,9 @@ impl State {
         let limiter = crate::ratelimit::Limiter::new(config.rate_limits.clone());
         let google = crate::oidc::Sso::provider_of("google", config.google.clone(), vec![crate::oidc::GOOGLE_ISSUER_ALT.into()])?;
         let github = crate::github::Github::new(config.github.clone());
+        let domains = db.tx(crate::orgsso::load).map_err(|e| e.to_string())?;
+        let org_sso = crate::orgsso::OrgSso::default();
+        org_sso.set_domains(domains);
         Ok(State {
             db,
             mailer,
@@ -209,6 +214,7 @@ impl State {
             github,
             password_failures: crate::password::Backoff::default(),
             billing_http: crate::oidc::http_agent(),
+            org_sso,
         })
     }
 
@@ -314,6 +320,24 @@ impl SyncApp {
             ("GET", "/v1/orgs/:org/billing/portal", crate::billing::portal),
             ("POST", "/v1/orgs/:org/billing/seats", crate::billing::seats),
             ("POST", "/v1/orgs/:org/billing/trial", crate::billing::start_trial),
+            // HITOP Cloud C5: SSO per org, domain claims, audit export and anchors, admin console.
+            ("GET", "/v1/orgs/:org/sso", crate::orgsso::get),
+            ("PUT", "/v1/orgs/:org/sso", crate::orgsso::put),
+            ("DELETE", "/v1/orgs/:org/sso", crate::orgsso::delete),
+            ("POST", "/v1/orgs/:org/sso/test", crate::orgsso::test),
+            ("GET", "/v1/orgs/:org/domains", crate::orgsso::list_domains),
+            ("POST", "/v1/orgs/:org/domains", crate::orgsso::add_domain),
+            ("POST", "/v1/orgs/:org/domains/:domain/verify", crate::orgsso::verify_domain),
+            ("DELETE", "/v1/orgs/:org/domains/:domain", crate::orgsso::delete_domain),
+            ("GET", "/v1/audit/key", crate::anchors::key),
+            ("GET", "/v1/orgs/:org/audit/anchors", crate::anchors::list),
+            ("POST", "/v1/orgs/:org/audit/anchors", crate::anchors::now),
+            ("PUT", "/v1/orgs/:org/audit/settings", crate::anchors::put_settings),
+            ("GET", "/v1/audit-anchors/:org/:day", crate::anchors::public),
+            ("GET", "/v1/orgs/:org/admin", crate::admin::get),
+            ("PUT", "/v1/orgs/:org/admin/workspaces/:ws/owner", crate::admin::transfer_owner),
+            ("POST", "/v1/orgs/:org/admin/workspaces/:ws/rotation", crate::admin::force_rotation),
+            ("DELETE", "/v1/orgs/:org/admin/devices/:key", crate::admin::remove_device),
             ("GET", "/v1/me/tokens", crate::tokens::list),
             ("POST", "/v1/me/tokens", crate::tokens::create),
             ("DELETE", "/v1/me/tokens/:id", crate::tokens::delete),
@@ -409,6 +433,11 @@ impl Application for SyncApp {
         } else if request.method == "GET" && path == "/v1/auth/github/callback" {
             set_client(self.client_of(request, connection));
             crate::github::callback(&self.state, request)
+        } else if let Some(org) = (request.method == "GET").then(|| path.strip_prefix("/v1/orgs/").and_then(|r| r.strip_suffix("/audit/export"))).flatten().filter(|o| !o.is_empty() && !o.contains('/')) {
+            // JSON lines, not one JSON value (anchors.rs).
+            set_client(self.client_of(request, connection));
+            let org = percent_encoding::percent_decode_str(org).decode_utf8_lossy().into_owned();
+            crate::anchors::export(&self.state, request, &org)
         } else if request.body.len() > self.max_body(&request.method, path) {
             error_response(&ApiError::new(413, "too_large", "request body too large"))
         } else if let Err(r) = self.rate_check(request, connection, path) {

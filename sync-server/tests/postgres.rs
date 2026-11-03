@@ -409,3 +409,45 @@ fn postgres_runs_alerts_and_shares() {
     assert_eq!(s.call("GET", &format!("/v1/workspaces/{WS}/env-shares"), Some(&ada.session), None).json["shares"][0]["version"], 1);
     assert_eq!(s.call("DELETE", &format!("/v1/workspaces/{WS}"), Some(&ada.session), None).status, 204, "the workspace goes with its runs, alerts and shares");
 }
+
+/// HITOP Cloud C5 on Postgres: a domain claim and SSO per org, the signed export and an anchor,
+/// the admin console's actions (migration 9).
+#[test]
+fn postgres_org_sso_audit_export_and_admin() {
+    use common::dns::MockDns;
+    use common::idp::{self, MockIdp};
+    use common::orgsso;
+    let Some(url) = database("c5") else {
+        eprintln!("HITOP_SYNC_TEST_POSTGRES not set: skipped");
+        return;
+    };
+    let dns = MockDns::start();
+    let s = orgsso::server("pg-c5", &dns, |c| c.database = url.clone());
+    let ada = Device::new(&s, "ada@a.test");
+    let bob = Device::new(&s, "bob@a.test");
+    let org = orgsso::org(&s, &ada, "Org A");
+    assert_eq!(s.call("POST", &format!("/v1/orgs/{org}/members"), Some(&ada.session), Some(json!({ "email": "bob@a.test", "role": "member" }))).status, 201);
+    orgsso::claim(&s, &dns, &ada, &org, "a.test");
+    let idp = MockIdp::start();
+    let r = orgsso::configure(&s, &ada, &org, json!({ "issuer": idp.issuer, "clientId": idp::CLIENT_ID, "clientSecret": idp::CLIENT_SECRET, "required": true }));
+    assert_eq!(r.status, 200, "{}", r.json);
+    assert_eq!(s.call("POST", "/v1/auth/email", None, Some(json!({ "email": "bob@a.test" }))).status, 403);
+    let flow = orgsso::start(&s, json!({ "email": "ada@a.test", "returnTo": "http://127.0.0.1:4000/" })).unwrap_or_else(|r| panic!("{}", r.json));
+    idp.next(idp.sign(&idp.claims("sub-ada", "ada@a.test", &flow.nonce)), &flow.pkce);
+    let code = sso_code(&sso_callback(&s, &format!("code={}&state={}", idp::GOOD_CODE, flow.state))).unwrap();
+    assert_eq!(s.call("GET", "/v1/me", Some(sso_finish(&s, &code, &flow.verifier).json["session"].as_str().unwrap()), None).json["id"], ada.user_id.as_str());
+
+    create_workspace(&s, &ada, WS);
+    assert_eq!(s.call("POST", &format!("/v1/orgs/{org}/workspaces"), Some(&ada.session), Some(json!({ "workspace": WS }))).status, 200);
+    let export = s.call("GET", &format!("/v1/orgs/{org}/audit/export"), Some(&ada.session), None);
+    assert_eq!(export.status, 200);
+    assert!(String::from_utf8_lossy(&export.raw).lines().last().unwrap().contains("\"type\":\"signature\""));
+    assert_eq!(hitop_sync_server::anchors::daily(s.app.state()).unwrap(), 1);
+    assert_eq!(s.call("GET", &format!("/v1/orgs/{org}/audit/anchors"), Some(&ada.session), None).json["anchors"].as_array().unwrap().len(), 1);
+    let admin = s.call("GET", &format!("/v1/orgs/{org}/admin"), Some(&ada.session), None);
+    assert_eq!(admin.json["workspaces"][0]["id"], WS);
+    assert_eq!(s.call("POST", &format!("/v1/orgs/{org}/admin/workspaces/{WS}/rotation"), Some(&ada.session), None).status, 202);
+    let r = s.call("DELETE", &format!("/v1/orgs/{org}/admin/devices/{}", bob.key_id), Some(&ada.session), None);
+    assert_eq!(r.status, 200, "{}", r.json);
+    assert!(!s.call("GET", &format!("/v1/workspaces/{WS}"), Some(&ada.session), None).json["rotationRequested"].is_null());
+}

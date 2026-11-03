@@ -119,6 +119,11 @@ fn main() {
         if let Err(e) = alerts::tick(purger.state()) {
             eprintln!("hitop-sync-server: missed-run check: {e}");
         }
+        match hitop_sync_server::anchors::daily(purger.state()) {
+            Ok(0) => {}
+            Ok(n) => eprintln!("hitop-sync-server: {n} daily audit anchors"),
+            Err(e) => eprintln!("hitop-sync-server: audit anchors: {}", e.message),
+        }
         std::thread::sleep(std::time::Duration::from_secs(3600));
     });
     // Alert delivery: queued alerts (alerts.rs), every 5 s.

@@ -1,0 +1,92 @@
+{
+  "realm": "hitop-b",
+  "enabled": true,
+  "sslRequired": "none",
+  "registrationAllowed": false,
+  "loginWithEmailAllowed": true,
+  "verifyEmail": false,
+  "accessTokenLifespan": 300,
+  "groups": [
+    {
+      "name": "hitop-users",
+      "path": "/hitop-users"
+    }
+  ],
+  "clients": [
+    {
+      "clientId": "hitop-sync",
+      "name": "hitop sync (test, second org)",
+      "enabled": true,
+      "protocol": "openid-connect",
+      "publicClient": false,
+      "clientAuthenticatorType": "client-secret",
+      "secret": "hitop-sync-test-secret-b",
+      "standardFlowEnabled": true,
+      "directAccessGrantsEnabled": false,
+      "implicitFlowEnabled": false,
+      "serviceAccountsEnabled": false,
+      "redirectUris": [
+        "https://sync.test.example/v1/auth/sso/callback",
+        "http://127.0.0.1*"
+      ],
+      "webOrigins": [],
+      "attributes": {
+        "pkce.code.challenge.method": "S256"
+      },
+      "protocolMappers": [
+        {
+          "name": "groups",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-group-membership-mapper",
+          "config": {
+            "claim.name": "groups",
+            "full.path": "false",
+            "id.token.claim": "true",
+            "access.token.claim": "false",
+            "userinfo.token.claim": "false"
+          }
+        }
+      ]
+    }
+  ],
+  "users": [
+    {
+      "username": "erin",
+      "email": "erin@b.test",
+      "emailVerified": true,
+      "firstName": "Erin",
+      "lastName": "Test",
+      "enabled": true,
+      "requiredActions": [],
+      "groups": [
+        "/hitop-users"
+      ],
+      "credentials": [
+        {
+          "type": "password",
+          "value": "erin-test-pw",
+          "temporary": false
+        }
+      ]
+    },
+    {
+      "username": "mallory",
+      "email": "alice@corp.test",
+      "emailVerified": true,
+      "firstName": "Mallory",
+      "lastName": "Test",
+      "enabled": true,
+      "requiredActions": [],
+      "groups": [
+        "/hitop-users"
+      ],
+      "credentials": [
+        {
+          "type": "password",
+          "value": "mallory-test-pw",
+          "temporary": false
+        }
+      ]
+    }
+  ]
+}

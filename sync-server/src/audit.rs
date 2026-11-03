@@ -84,6 +84,18 @@ pub const CLOUD_EVENTS: &[&str] = &[
     "alerts_changed",
     "env_share_updated",
     "env_share_deleted",
+    // C5 (orgsso.rs, anchors.rs, admin.rs): on the org's chain, and on a workspace's chain for
+    // the admin actions that touch it.
+    "org_sso_updated",
+    "org_sso_deleted",
+    "org_domain_added",
+    "org_domain_verified",
+    "org_domain_removed",
+    "audit_exported",
+    "audit_settings_changed",
+    "owner_transferred",
+    "rotation_requested",
+    "device_removed",
 ];
 
 /// Who called: the client IP (truncated, or empty when the server is set not to keep it) and

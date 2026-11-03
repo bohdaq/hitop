@@ -114,6 +114,18 @@ pub fn org_membership(tx: &mut Tx, org: &str, user: &User) -> Result<Org, ApiErr
     Ok(Org { id: row.text(0), name: row.text(1), personal: !row.text(2).is_empty(), role: OrgRole::parse(&row.text(3))?, created_at: row.int(4) })
 }
 
+/// The signed-in person and their role in `org` (404 when not a member, 403 below `need`).
+/// `session_only`: an access token isn't enough (changes to SSO, billing, admin actions).
+pub fn org_caller(state: &State, tx: &mut Tx, request: &Request, org: &str, need_role: OrgRole, session_only: bool) -> Result<(User, Org), ApiError> {
+    let user = person(state, tx, request)?;
+    let o = org_membership(tx, org, &user)?;
+    if session_only && crate::api::bearer(request).is_some_and(|t| t.starts_with(crate::tokens::PREFIX)) {
+        return Err(ApiError::forbidden("this needs a signed-in session, not an access token"));
+    }
+    need(&o, need_role)?;
+    Ok((user, o))
+}
+
 fn need(org: &Org, role: OrgRole) -> Result<(), ApiError> {
     if org.role < role {
         return Err(ApiError::forbidden(format!("this needs the {} role in the organization", role.as_str())));

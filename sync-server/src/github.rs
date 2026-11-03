@@ -102,7 +102,7 @@ pub fn start(state: &State, request: &Request, _: &PathParams) -> ApiResult {
         .append_pair("code_challenge", &pkce_challenge)
         .append_pair("code_challenge_method", "S256")
         .append_pair("allow_signup", "true");
-    state.github.flows.remember_flow(&state_token, Flow { expires: now + FLOW_TTL, nonce: String::new(), pkce_verifier, client_challenge, return_to }, now);
+    state.github.flows.remember_flow(&state_token, Flow { expires: now + FLOW_TTL, nonce: String::new(), pkce_verifier, client_challenge, return_to, org: None }, now);
     Ok((200, json!({ "url": url.to_string(), "expiresAt": now + FLOW_TTL })))
 }
 

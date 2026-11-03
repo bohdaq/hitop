@@ -1,8 +1,11 @@
 //! hitop sync server (AGPL-3.0-or-later): stores end-to-end encrypted workspace blobs, their
 //! version vectors, device public keys and HPKE-wrapped workspace keys. It never holds a key that
-//! decrypts anything; clients encrypt with `hitop-sync-crypto` (MIT). See THREAT_MODEL.md.
+//! decrypts client data; clients encrypt with `hitop-sync-crypto` (MIT). (Its own secrets, such as
+//! per-org OIDC client secrets, it seals under its host key, hostkey.rs.) See THREAT_MODEL.md.
 
+pub mod admin;
 pub mod alerts;
+pub mod anchors;
 pub mod api;
 pub mod audit;
 pub mod auth;
@@ -12,10 +15,12 @@ pub mod config;
 pub mod db;
 pub mod dbtools;
 pub mod github;
+pub mod hostkey;
 pub mod limits;
 pub mod mail;
 pub mod oidc;
 pub mod orgs;
+pub mod orgsso;
 pub mod password;
 pub mod ratelimit;
 pub mod recovery;

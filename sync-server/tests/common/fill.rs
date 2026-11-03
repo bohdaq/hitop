@@ -69,5 +69,24 @@ pub fn fill(s: &Server) -> usize {
     let sealed = crypto::seal_share(&share_key, WS, share, 1, b"{}").unwrap();
     let r = s.call("PUT", &format!("/v1/workspaces/{WS}/env-shares/{share}"), Some(&ada.session), Some(json!({ "version": 1, "sealed": b64(&sealed), "wraps": [{ "keyId": ada.key_id, "wrapped": b64(&wrap) }] })));
     assert_eq!(r.status, 200, "{}", r.json);
+    // C5: an org's audit settings and its daily anchor (through the server), a verified domain and
+    // an SSO configuration (as the server writes them: this server has no host key).
+    let org = s.call("POST", "/v1/orgs", Some(&ada.session), Some(json!({ "name": "Corp" }))).json["id"].as_str().unwrap().to_string();
+    let r = s.call("PUT", &format!("/v1/orgs/{org}/audit/settings"), Some(&ada.session), Some(json!({ "publicAnchors": true })));
+    assert_eq!(r.status, 200, "{}", r.json);
+    assert_eq!(hitop_sync_server::anchors::daily(s.app.state()).unwrap(), 2);
+    let secret = super::orgsso::host_key().seal(&format!("org-sso-secret:{org}"), b"secret");
+    s.app
+        .state()
+        .db
+        .tx(|tx| {
+            tx.execute("INSERT INTO org_domains (org_id, domain, token, verified_at, checked_at, created_by, created_at) VALUES ($1, 'corp.test', 'abc', 5, 5, $2, 1)", &[(&org).into(), (&ada.user_id).into()])?;
+            tx.execute(
+                "INSERT INTO org_sso (org_id, issuer, client_id, client_secret, scopes, name, groups_claim, updated_by, updated_at) VALUES ($1, 'https://idp.test', 'c', $2, 'openid email', 'SSO', 'groups', $3, 1)",
+                &[(&org).into(), secret.into(), (&ada.user_id).into()],
+            )?;
+            tx.execute("UPDATE workspaces SET rotation_requested_at = 7, rotation_requested_by = 'ada@example.com' WHERE id = $1", &[WS.into()])
+        })
+        .unwrap();
     s.app.state().db.tx(|tx| tx.query_one("SELECT COUNT(*) FROM audit_chain", &[])).unwrap().unwrap().int(0) as usize
 }

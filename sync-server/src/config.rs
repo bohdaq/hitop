@@ -31,6 +31,11 @@
 //!   `HITOP_SYNC_LS_WEBHOOK_SECRET` is set) and `HITOP_SYNC_TRIAL_DAYS` (14; 0 = no Team trials)
 //! - Run history and alerts: see runs.rs (`HITOP_SYNC_MAX_RUN_BYTES`, `HITOP_SYNC_RUN_RETENTION_DAYS`,
 //!   `HITOP_SYNC_ALERTS_PER_HOUR`, `HITOP_SYNC_ALERT_WEBHOOKS`)
+//! - `HITOP_SYNC_HOST_KEY_FILE`: a file with the host key (64 hex characters) the server seals its
+//!   own secrets under (hostkey.rs). Without it, single sign-on per organization is off.
+//! - `HITOP_SYNC_DNS_URL`: a DNS-over-HTTPS resolver's JSON API for domain verification (orgsso.rs,
+//!   e.g. `https://cloudflare-dns.com/dns-query`; unset = domains can't be verified)
+//! - Audit anchors: `HITOP_SYNC_AUDIT_ANCHORS` (`on` default, `off`), see anchors.rs
 //! - mail: see mail.rs
 
 use url::Url;
@@ -82,6 +87,12 @@ pub struct Config {
     pub trial_days: i64,
     /// Run history and alerts (runs.rs).
     pub runs: crate::runs::RunsConfig,
+    /// The host key (hostkey.rs); `None` = per-org SSO off.
+    pub host_key: Option<crate::hostkey::HostKey>,
+    /// DNS-over-HTTPS JSON endpoint for domain verification; `None` = off.
+    pub dns_url: Option<String>,
+    /// Daily audit anchors (anchors.rs).
+    pub audit_anchors: bool,
 }
 
 /// `<PREFIX>_CLIENT_ID` and `<PREFIX>_CLIENT_SECRET` (or `<PREFIX>_CLIENT_SECRET_FILE`): both or
@@ -134,6 +145,9 @@ impl Config {
             billing: None,
             trial_days: 14,
             runs: crate::runs::RunsConfig::default(),
+            host_key: None,
+            dns_url: None,
+            audit_anchors: true,
         }
     }
 
@@ -179,6 +193,18 @@ impl Config {
         c.billing = BillingConfig::from_env(&var)?;
         c.trial_days = number("HITOP_SYNC_TRIAL_DAYS", c.trial_days)?;
         c.runs = crate::runs::RunsConfig::from_env(&var)?;
+        c.host_key = crate::hostkey::HostKey::from_env(&var)?;
+        if let Some(u) = var("HITOP_SYNC_DNS_URL").filter(|u| u != "off") {
+            if !crate::oidc::secure_url(&u) {
+                return Err(format!("HITOP_SYNC_DNS_URL must be an https:// URL (http:// only on localhost): {u}"));
+            }
+            c.dns_url = Some(u);
+        }
+        c.audit_anchors = match var("HITOP_SYNC_AUDIT_ANCHORS").as_deref() {
+            None | Some("on") => true,
+            Some("off") => false,
+            Some(other) => return Err(format!("HITOP_SYNC_AUDIT_ANCHORS must be on or off, not {other}")),
+        };
         match var("HITOP_SYNC_RATE_LIMITS").as_deref() {
             None | Some("on") => {}
             Some("off") => {

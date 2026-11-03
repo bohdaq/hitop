@@ -188,9 +188,15 @@ pub fn google_from_env(var: &dyn Fn(&str) -> Option<String>) -> Result<Option<Oi
     Ok(Some(c))
 }
 
-/// Is `email` limited to SSO sign-in (`HITOP_SYNC_SSO_REQUIRED`)?
+/// Is `email` limited to SSO sign-in: the server's (`HITOP_SYNC_SSO_REQUIRED`), or its domain is
+/// verified by an org with "SSO required" (orgsso.rs)?
 pub fn sso_required_for(state: &State, email: &str) -> bool {
-    state.config.oidc.as_ref().is_some_and(|c| c.sso_required && c.domain_allowed(email))
+    state.config.oidc.as_ref().is_some_and(|c| c.sso_required && c.domain_allowed(email)) || org_required_for(state, email).is_some()
+}
+
+/// The org whose "SSO required" covers `email`'s domain, if any.
+pub fn org_required_for(state: &State, email: &str) -> Option<String> {
+    state.org_sso.for_email(email).filter(|p| p.required).map(|p| p.org)
 }
 
 #[derive(Clone, Debug)]
@@ -213,6 +219,8 @@ pub(crate) struct Flow {
     pub(crate) pkce_verifier: String,
     pub(crate) client_challenge: String,
     pub(crate) return_to: Option<Url>,
+    /// The org whose provider this sign-in uses (orgsso.rs); `None` = the server's own.
+    pub(crate) org: Option<String>,
 }
 
 /// A signed-in browser's one-time code, between callback and finish.
@@ -380,6 +388,12 @@ impl Sso {
         let keys = self.keys.lock().unwrap_or_else(|e| e.into_inner());
         keys.as_ref().and_then(lookup).unwrap_or_else(|| Err(format!("no key {} in the provider's JWKS", kid.unwrap_or("(none)"))))
     }
+
+    /// Fetches the discovery document and the keys (a configuration check).
+    pub fn check_provider(&self, config: &OidcConfig, now: i64) -> Result<(), String> {
+        let p = self.provider(config, now)?;
+        self.fetch_keys(&p, now)
+    }
 }
 
 fn config(sso: &Sso) -> Result<&OidcConfig, ApiError> {
@@ -403,15 +417,25 @@ fn config_error(state: &State, message: String) -> ApiError {
     ApiError::new(503, "sso_unavailable", "single sign-on is misconfigured or the identity provider is unreachable; the server log has details")
 }
 
-/// `GET /v1/auth/sso` → `{enabled, name, required, domains}`: whether to show "Sign in with SSO".
-pub fn info(state: &State, _: &Request, _: &PathParams) -> ApiResult {
-    Ok((
-        200,
-        match &state.config.oidc {
-            None => json!({ "enabled": false }),
-            Some(c) => json!({ "enabled": true, "name": c.name, "required": c.sso_required, "domains": c.allowed_domains }),
-        },
-    ))
+/// `GET /v1/auth/sso[?email=]` → `{enabled, name, required, domains}`: whether to show "Sign in
+/// with SSO". With `email` whose domain an org with SSO verified: that org's (`org`, its name and
+/// "required"). `orgSso: true` when orgs sign in by SSO here (clients then ask for the address).
+pub fn info(state: &State, request: &Request, _: &PathParams) -> ApiResult {
+    let q = query(request);
+    if let Some(p) = q.get("email").map(|e| e.trim().to_lowercase()).and_then(|e| state.org_sso.for_email(&e)).filter(|p| p.sso) {
+        let domain = q.get("email").map(|e| crate::orgsso::domain_of(e)).unwrap_or_default();
+        return Ok((200, json!({ "enabled": true, "name": p.name, "required": p.required, "domains": [domain], "org": p.org })));
+    }
+    let orgs = state.org_sso.any();
+    let mut out = match &state.config.oidc {
+        None if orgs => json!({ "enabled": true, "name": "SSO", "required": false, "domains": [] }),
+        None => json!({ "enabled": false }),
+        Some(c) => json!({ "enabled": true, "name": c.name, "required": c.sso_required, "domains": c.allowed_domains }),
+    };
+    if orgs {
+        out["orgSso"] = json!(true);
+    }
+    Ok((200, out))
 }
 
 /// Where the browser may be sent with the one-time code: the CLI's loopback listener
@@ -448,28 +472,54 @@ struct Start {
     email: Option<String>,
 }
 
-/// `POST /v1/auth/sso/start {challenge, returnTo?, email?}` → `{url, expiresAt}`: open `url` in a
-/// browser.
+/// `POST /v1/auth/sso/start {challenge, returnTo?, email?, org?}` → `{url, expiresAt}`: open `url`
+/// in a browser. The provider: `org`'s, else the org that verified the `email` hint's domain, else
+/// the server's own (orgsso.rs).
 pub fn start(state: &State, request: &Request, _: &PathParams) -> ApiResult {
-    start_with(state, &state.sso, request)
+    let raw: Json = serde_json::from_slice(&request.body).unwrap_or(Json::Null);
+    let named = raw["org"].as_str().map(str::to_string);
+    let hinted = raw["email"].as_str().map(|e| e.trim().to_lowercase()).and_then(|e| state.org_sso.for_email(&e)).filter(|p| p.sso).map(|p| p.org);
+    let org = match (named, hinted) {
+        (Some(n), _) => Some(n),
+        (None, Some(h)) => Some(h),
+        (None, None) if state.config.oidc.is_none() && state.org_sso.any() => {
+            return Err(ApiError::bad("enter your work address (hitop sync login --sso --email <address>) so the server finds your organization's single sign-on"));
+        }
+        (None, None) => None,
+    };
+    match org {
+        None => start_with(state, &state.sso, None, request),
+        Some(org) => {
+            if state.config.host_key.is_none() {
+                return Err(ApiError::new(404, "org_sso_off", "single sign-on per organization isn't available on this server"));
+            }
+            let sso = crate::orgsso::provider(state, &org).map_err(|e| ApiError::new(404, "sso_off", format!("no single sign-on for this organization: {e}")))?;
+            start_with(state, &sso, Some(org), request)
+        }
+    }
 }
 
 /// `POST /v1/auth/google/start`: as [`start`], with Google.
 pub fn google_start(state: &State, request: &Request, _: &PathParams) -> ApiResult {
-    start_with(state, &state.google, request)
+    start_with(state, &state.google, None, request)
 }
 
 /// The start of a browser sign-in: the client's challenge (32 bytes, base64url), where to send the
 /// code, and an address hint.
 pub(crate) fn start_input(state: &State, request: &Request) -> Result<(String, Option<Url>, Option<String>), ApiError> {
-    let input: Start = body(request)?;
+    let mut raw: Json = body(request)?;
+    // `org` is read by `start` (SSO only); the rest is the same for every provider.
+    if let Some(o) = raw.as_object_mut() {
+        o.remove("org");
+    }
+    let input: Start = serde_json::from_value(raw).map_err(|e| ApiError::bad(format!("invalid JSON body: {e}")))?;
     let challenge = URL_SAFE_NO_PAD.decode(input.challenge.trim_end_matches('=')).ok().filter(|b| b.len() == 32).ok_or_else(|| ApiError::bad("challenge must be base64url(SHA-256(verifier)), 32 bytes"))?;
     let return_to = input.return_to.as_deref().filter(|s| !s.is_empty()).map(|r| return_to(state, r)).transpose()?;
     let hint = input.email.as_deref().map(str::trim).filter(|e| !e.is_empty()).map(normalize_email).transpose()?;
     Ok((URL_SAFE_NO_PAD.encode(challenge), return_to, hint))
 }
 
-fn start_with(state: &State, sso: &Sso, request: &Request) -> ApiResult {
+fn start_with(state: &State, sso: &Sso, org: Option<String>, request: &Request) -> ApiResult {
     let c = config(sso)?;
     let (client_challenge, return_to, hint) = start_input(state, request)?;
     if let Some(e) = &hint {
@@ -498,7 +548,10 @@ fn start_with(state: &State, sso: &Sso, request: &Request) -> ApiResult {
             q.append_pair("login_hint", h);
         }
     }
-    sso.flows.remember_flow(&state_token, Flow { expires: now + FLOW_TTL, nonce, pkce_verifier, client_challenge, return_to }, now);
+    // Every SSO flow, the server's own and each org's, waits in the server's SSO flows: the
+    // callback finds which provider it belongs to from it.
+    let flows = if sso.kind == "sso" { &state.sso.flows } else { &sso.flows };
+    flows.remember_flow(&state_token, Flow { expires: now + FLOW_TTL, nonce, pkce_verifier, client_challenge, return_to, org }, now);
     Ok((200, json!({ "url": url.to_string(), "expiresAt": now + FLOW_TTL })))
 }
 
@@ -688,9 +741,26 @@ pub(crate) fn failed(state: &State, method: &str, why: Refused) -> Response {
 }
 
 /// `GET /v1/auth/sso/callback?code&state` (the browser, from the provider). Answers a page or
-/// a redirect, never JSON.
+/// a redirect, never JSON. The flow says whose provider: the server's or an org's.
 pub fn callback(state: &State, request: &Request) -> Response {
-    callback_with(state, &state.sso, request)
+    let q = query(request);
+    let now = state.now();
+    let Some(flow) = q.get("state").and_then(|s| state.sso.flows.take_flow(s, now)) else {
+        return failed(state, "sso", refused("unknown_state", "this sign-in expired or was already used"));
+    };
+    match flow.org.clone() {
+        None => match state.sso.config.as_ref() {
+            Some(c) => complete(state, &state.sso, c, flow, &q),
+            None => failed_page("single sign-on isn't configured on this server"),
+        },
+        Some(org) => match crate::orgsso::provider(state, &org) {
+            Ok(sso) => match sso.config.as_ref() {
+                Some(c) => complete(state, &sso, c, flow, &q),
+                None => failed_page("this organization has no single sign-on"),
+            },
+            Err(e) => failed(state, "sso", refused("sso_off", e)),
+        },
+    }
 }
 
 /// `GET /v1/auth/google/callback`.
@@ -708,6 +778,13 @@ fn callback_with(state: &State, sso: &Sso, request: &Request) -> Response {
     let Some(flow) = q.get("state").and_then(|s| sso.flows.take_flow(s, now)) else {
         return failed(state, kind, refused("unknown_state", "this sign-in expired or was already used"));
     };
+    complete(state, sso, c, flow, &q)
+}
+
+/// The rest of a callback once its flow is known.
+fn complete(state: &State, sso: &Sso, c: &OidcConfig, flow: Flow, q: &HashMap<String, String>) -> Response {
+    let kind = sso.kind;
+    let now = state.now();
     if let Some(error) = q.get("error") {
         let detail = q.get("error_description").map(|d| format!(": {d}")).unwrap_or_default();
         return failed(state, kind, refused("provider_error", format!("the identity provider said {error}{detail}")));
@@ -730,16 +807,22 @@ fn callback_with(state: &State, sso: &Sso, request: &Request) -> Response {
         Ok(i) => i,
         Err(why) => return failed(state, kind, why),
     };
-    // Google (and GitHub) never get around a "sign in with SSO only" domain.
+    // Google (and GitHub) never get around a "sign in with SSO only" domain; nor does the
+    // server's own SSO get around an org's "SSO required" (only that org's provider does).
     if kind != "sso" && sso_required_for(state, &identity.email) {
         let email = identity.email.clone();
         return failed(state, kind, Refused { reason: "sso_required", message: format!("{email} signs in with single sign-on on this server"), email });
+    }
+    if kind == "sso" && org_required_for(state, &identity.email).is_some_and(|o| flow.org.as_deref() != Some(o.as_str())) {
+        let email = identity.email.clone();
+        return failed(state, kind, Refused { reason: "sso_required", message: format!("{email} signs in with its organization's single sign-on"), email });
     }
     let user = match state.db.tx(|tx| account(tx, state, c, &identity)) {
         Ok(u) => u,
         Err(e) => return failed_page(&e.message),
     };
-    hand_off(state, &sso.flows, kind, &user, flow)
+    let flows = if kind == "sso" { &state.sso.flows } else { &sso.flows };
+    hand_off(state, flows, kind, &user, flow)
 }
 
 /// After a provider signed the browser in: a one-time code for the client that started, sent
@@ -811,7 +894,10 @@ struct Finish {
 
 /// `POST /v1/auth/sso/finish {code, verifier}` → a session, like the other sign-ins.
 pub fn finish(state: &State, request: &Request, _: &PathParams) -> ApiResult {
-    config(&state.sso)?;
+    // Org providers hand their codes over here too, so a server without its own SSO still finishes.
+    if state.config.oidc.is_none() && state.config.host_key.is_none() {
+        config(&state.sso)?;
+    }
     finish_with(state, &state.sso.flows, "sso", request)
 }
 
