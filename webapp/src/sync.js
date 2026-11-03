@@ -496,11 +496,17 @@ export class SyncClient {
     const old = this.account();
     const before = old && old.userId === r.json.user.id && old.server === server ? old.keyId : null;
     await this.completeSignIn(server, r, email, deviceName);
-    const s = await this.secret();
-    await this.saveSecret(server, { ...s, password: keys.bundleKey });
-    this.update((d) => (d.recoveryHash = null));
-    await this.refreshRecovery();
-    return { bundleLost: Boolean(r.json.bundleLost), keptDevice: before === this.account().keyId };
+    // This device (if it was the account's already) seals itself under the new password. A new
+    // device doesn't claim the password's bundle: it holds no workspace key, and the next
+    // password sign-in of a device that does should be what the password unlocks (as the CLI).
+    const keptDevice = Boolean(before) && before === this.account().keyId;
+    if (keptDevice) {
+      const s = await this.secret();
+      await this.saveSecret(server, { ...s, password: keys.bundleKey });
+      this.update((d) => (d.recoveryHash = null));
+      await this.refreshRecovery();
+    }
+    return { bundleLost: Boolean(r.json.bundleLost), keptDevice };
   }
 
   // Sets (no password yet: `current` unused) or changes the password; the key bundle is re-sealed

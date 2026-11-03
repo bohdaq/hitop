@@ -671,7 +671,7 @@ server-side row, never a new file in `environments/`.
 **Status (2026-11-03): built, not deployed.** (C2 itself was applied the same morning, at the
 owner's go-ahead, before this tranche: its deploy is a normal version deploy on Postgres.)
 
-- Commits on `main`: COMMITS.
+- Commits on `main`: 3c7ad34 (hitop-sync-crypto 0.4.0), bd13fd9 (server: passwords, migration 6, Google, GitHub), 3553626 (hitop-wasm), b3fe3d0 (Sync page), 6c66a8d (portal), 6875b15 (CLI), c25548e (docs), and the web reset fix after it.
 - **Key derivation** (THREAT_MODEL "Passwords"; hitop-sync-crypto 0.4.0 `derive_password_keys`,
   `vectors/password.json`): `master = Argon2id(NFC(password), salt, m=64 MiB, t=3, p=1, ad
   "hitop-sync/v1/password")`; `authKey = HKDF(master, "…/auth")` goes to the server, which keeps
@@ -704,6 +704,12 @@ owner's go-ahead, before this tranche: its deploy is a normal version deploy on 
   sign-in page and a Password section (re-seals the bundle on change; it never makes one).
 - **TOTP**: not built (documented follow-up in THREAT_MODEL "Passwords"); passkeys stay the
   phishing-resistant option.
+- **Deviations**: the wrong-password backoff is its own per-address table (password.rs `Backoff`,
+  off with `HITOP_SYNC_RATE_LIMITS=off`) beside the C2 IP limiter, which still covers every
+  `/v1/auth/*` request; its 429 carries `retryAfter` in the body, not a `Retry-After` header. A
+  reset on a computer that wasn't the account's device signs in with a new key but doesn't claim
+  the password's bundle (it holds no workspace key); the next password sign-in of a device that
+  has the keys seals them again, and `password unlock` then works anywhere.
 - **Tests, as run**: `sync-server` `cargo test --workspace` (new `tests/password.rs`,
   `tests/oauth.rs` with mock Google (common/idp.rs) and mock GitHub (common/github.rs)),
   `--features postgres` (new `postgres_passwords`; `migrate_db` fill has a password account);
