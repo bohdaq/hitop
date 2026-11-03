@@ -72,6 +72,10 @@ docker run -d -p 127.0.0.1:7881:7881 -v hitop-sync:/data --env-file hitop-sync.e
 | `HITOP_SYNC_OIDC_SCOPES`, `HITOP_SYNC_OIDC_NAME` | `openid email profile`, `SSO` | scopes; the provider name clients show |
 | `HITOP_SYNC_LIMITS` | `off` | `plans`: enforce each organization's plan limits (HITOP Cloud). Off, a self-hosted server has no seats, plans or per-org limits |
 | `HITOP_SYNC_PORTAL_URL` | `https://cloud.hitop.rws8.tech/` | the account portal limit errors link to |
+| `HITOP_SYNC_RATE_LIMITS` | `on` | `off` turns the request rate limits off (src/ratelimit.rs) |
+| `HITOP_SYNC_RATE_AUTH`, `HITOP_SYNC_RATE_WRITE`, `HITOP_SYNC_RATE_WRITE_IP`, `HITOP_SYNC_RATE_CREATE` | 60, 600, 1200 a minute; 200 an hour | `POST /v1/auth/*` per client IP; writes per session and per IP; creates (workspaces, orgs, tokens, keys, runners, invites, recovery) per session. Over: 429 `{error: "rate_limited", limit, retryAfter}` + `Retry-After`; 0 = no limit |
+| `HITOP_SYNC_MAX_JSON_BYTES` | 1 MiB | the largest body of any request but a blob upload (413) |
+| `HITOP_SYNC_PG_DUMP` | `pg_dump` | the pg_dump command `dump` runs (may have arguments) |
 
 The mail server's certificate is always verified (Mozilla roots). Run one server process per
 database: writes are serialized in the process, and passkey challenges live in its memory.
@@ -124,15 +128,25 @@ log in your privacy notice.
 
 ### Reverse proxy
 
-Forward everything for your host to `127.0.0.1:7881`, and rate limit `/v1/auth/*` per client IP
-(the server limits sign-in mails per address, not per IP). rws example:
+Forward everything for your host to `127.0.0.1:7881`. The server rate limits sign-in requests per
+client IP and writes per session itself (it reads the client from `X-Forwarded-For` of a trusted
+proxy, `HITOP_SYNC_TRUSTED_PROXIES`); proxy limits per IP on top are still a good idea. rws example:
 [deploy/rws-routes.toml](deploy/rws-routes.toml).
 
-### Backups
+### Backups and database moves
 
-SQLite: `sqlite3 /var/lib/private/hitop-sync/sync.db ".backup /backup/sync-$(date +%F).db"`
-(safe while running). Postgres: `pg_dump`. Backups hold only ciphertext, but they do hold
-account emails and membership; protect them like any personal data.
+- `hitop-sync-server dump <empty dir>`: a backup (`sync.db`, a consistent SQLite snapshot, or
+  `sync.pgdump` from `pg_dump` run in the same snapshot) plus `manifest.json` with the row count and
+  content hash of every table in exactly that data. `snapshot <file>`: a SQLite copy alone.
+- `db-stats [--json]`: those counts and hashes for the configured database (equal hashes = the same
+  rows, across SQLite and Postgres).
+- `migrate-db --from <url> --to <url>`: copies every table into an empty database (SQLite →
+  Postgres, or back into a new SQLite file), then compares counts and hashes and runs
+  `audit-verify` on the target; exit 0 only when all hold. Refuses a target with rows in it.
+- HITOP Cloud runs them through `deploy/backup.sh` (age-encrypted, to an S3 bucket elsewhere),
+  `deploy/restore-drill.sh`, `deploy/cutover-postgres.sh` / `rollback-postgres.sh`; see
+  `../cloud/RUNBOOK.md`. Backups hold only ciphertext, but they do hold account emails and
+  membership; protect them like any personal data.
 
 ## API (v1)
 
@@ -191,6 +205,13 @@ workspace's `org` (`{id, name, personal}`).
 Operator commands: `hitop-sync-server over-limits` lists every org over a limit of its plan (exit
 0 when none); `hitop-sync-server set-plan <org> <free|pro|team|business|enterprise> [seats]` sets
 an org's plan until billing does (C3).
+
+Recovery (C2): `PUT/GET/DELETE /v1/me/recovery[?method=phrase]` keep one opaque key bundle per
+account and unlock method (at most 256 KiB; only `phrase` for now), sealed by the client
+(`hitop_sync_crypto::seal_recovery`); only a signed-in device's session may use them (not access
+tokens or runner credentials), each step is in the account's audit log, and `GET /v1/me` has
+`recovery: {updatedAt} | null`. `DELETE /v1/me/keys/:id` removes one of your own device keys while
+it holds no workspace key (409 `key_in_use` otherwise).
 
 Invites can't add anyone by themselves: only a member's client can wrap the workspace key for the
 new member's devices, after checking their fingerprints. Runner accounts (`<id>@runner.invalid`)

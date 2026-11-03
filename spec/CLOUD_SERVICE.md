@@ -533,7 +533,7 @@ server-side row, never a new file in `environments/`.
 | --- | --- | --- | --- |
 | C0 | Owner decisions and accounts | decisions done; accounts open | owner |
 | C1 | Organizations, plans, entitlements; portal MVP; SOC 2 policies and first access review | **deployed** to the test server 2026-11-02 (2049e95, CI green; `cloud/ops-log.md`); left: the `cloud.` route after the owner's DNS, and the owner's approvals | the 1.2 sync server deployed to the test server first (ROADMAP section 6, "1.2 signed key wraps") so migration 4 and the 1.2 deploy don't collide |
-| C2 | Harden the current VM: Postgres, limits, backups + drill, recovery key, status page, runbook | open | C0 (bucket, backup key, uptime checker, `status.` DNS), C1 |
+| C2 | Harden the current VM: Postgres, limits, backups + drill, recovery key, status page, runbook | **built** 2026-11-03, CI green, **not applied** to the VM (status below; apply: `cloud/RUNBOOK.md` "Apply C2") | C0 (bucket, backup key, uptime checker, `status.` DNS), C1 |
 | C3 | Lemon Squeezy billing, pricing page, prompts, legal and security pages: **paid launch of Pro and Team** | open | C1, C2, C0 (store approved, mail service, legal drafts reviewed) |
 | C4 | Run history and alerts from your own runners; shared environment secrets | open | C3 (can start after C1; ships after C3) |
 | C5 | Business tier: hosted SSO per org, audit export + anchoring, admin console | open | C3 |
@@ -687,6 +687,78 @@ server-side row, never a new file in `environments/`.
 - Needs: C0 (bucket, age key, uptime checker, `status.` DNS), C1.
 - Owner handoffs: create the bucket and keep the age private key offline; place the bucket
   credentials; add the `status.` DNS record; agree the write-freeze time for the Postgres switch.
+
+**Status (2026-11-03): built and tested off the VM; nothing applied.**
+
+- Commits on `main`: 3b84f21 (`migrate-db`, `db-stats`, `snapshot`), 4cc36f5 (rate limits, body
+  caps, `/healthz` detail), a4ad645 (hitop-sync-crypto 0.3.0 recovery phrases), f49bf04 (server
+  recovery blobs, migration 5), 4b01e3a (CLI `hitop sync recovery`), 94c677d (`dump`, snapshot
+  reads), 0e9e762 (Sync page recovery), 9f7107b (deploy and ops scripts, units), 9abdfd9 (key
+  bundle per unlock method), bf0b55f (CI job `ops`), then docs.
+- **Database**: `hitop-sync-server migrate-db --from --to` copies every table (the list comes from
+  the migrations, columns per backend) into an empty database, reading one snapshot of the source
+  and writing one transaction on the target, then compares row counts and per-table content hashes
+  (rows hashed and sorted in Rust, so SQLite and Postgres agree) and runs `audit-verify` on the
+  target; refuses a non-empty target; works both ways (Postgres → a new SQLite file = a rollback
+  that keeps later writes). Also `db-stats`, `dump` (SQLite `VACUUM INTO`, or `pg_dump --snapshot`
+  of the transaction the manifest's stats come from) and `snapshot`. Scripts:
+  `sync-server/deploy/postgres-setup.sh` (own cluster `hitop`, `listen_addresses = ''`, socket port
+  5433, scram role with a generated password in root-only `/etc/hitop-sync/postgres.url`; a `main`
+  cluster the package install made is disabled; an existing Postgres is left alone),
+  `cutover-postgres.sh` (preflight, write freeze, backups, migrate, switch, verify, rolls itself
+  back), `rollback-postgres.sh` (`--snapshot` for the frozen file).
+- **systemd**: the hitop-sync and hitop-server units are sandboxed (`systemd-analyze security`
+  exposure 1.4 each); resource drop-ins for both and for `postgresql@<major>-hitop`
+  (`cloud/ops/systemd/`: CPUQuota, CPU/IO weight 50, MemoryHigh/Max, TasksMax).
+  `cloud/ops/install.sh <part>` applies each part with backups and puts a unit back when it stops
+  answering; `remove <part>` undoes it.
+- **Alerts**: `cloud/ops/disk-alert.sh` + timer (15 min): a disk over 80%, the Postgres data over
+  10 GiB, the last good backup older than 3 h; journal, and mail through 127.0.0.1:587 once per 6 h
+  per problem.
+- **Backups**: `backup.sh` (hourly timer, the service's dynamic user, recipients as a systemd
+  credential): `dump`, `tar | age -R`, upload with `s3.sh` (curl `--aws-sigv4`, so the only new
+  tool on the VM is `age`; S3 or a directory). Pruning is optional; recommended: a write-only key and
+  a 35-day lifecycle rule on the bucket. `restore-drill.sh` (runs where the private key is): newest
+  backup → scratch database (a SQLite file, `--scratch-url`, or a throwaway postgres:17 container),
+  counts and hashes against the manifest, `audit-verify`, an evidence file for
+  `cloud/evidence/restore-drills/`.
+- **Recovery key**: `hitop sync recovery create|use|status|remove` and the Sync page (both builds;
+  it warns that the web app's device key lives in browser storage). A 24-word BIP-39 phrase seals
+  the device's key bundle (key id, secret, pins, key memory); the server keeps it per account and
+  unlock method (`?method=phrase`). A password unlock (next tranche) is one more row: the client
+  seals the same bundle under a password-derived key (`seal_key_bundle` takes any 32-byte unlock
+  key). `use` checks the listed public key and deletes the key the new login registered.
+  THREAT_MODEL "Recovery" (open item 4 done). hitop-sync-crypto 0.3.0 (additive; the compat job
+  runs the released 1.1/1.2 clients unchanged).
+- **Abuse**: fixed windows in the server (`ratelimit.rs`): sign-in 60/min per client IP (the full
+  IP from the trusted proxy, not the /24 the log keeps), writes 600/min per session and 1200/min per
+  IP, creates 200/h per session; 429 + `Retry-After`; JSON bodies capped at 1 MiB except blob
+  uploads.
+- **Status**: `/healthz` adds the version, database kind and schema. `cloud/status/` is a static
+  page + `check.sh` feeder meant to run **off** the VM; recommended instead: the checker's hosted
+  page on `status.` (RUNBOOK "Uptime and status page").
+- **Runbook**: `cloud/RUNBOOK.md` (apply C2, deploy, rollback, restore, Postgres down, disk full,
+  neighbour, incident + template, rotate secrets, revoke sessions, uptime and status, move host).
+- **Deviations**: hourly encrypted dumps instead of a nightly dump + WAL archiving (RPO 1 h, no
+  archive plumbing on the shared host); JSON logs and a metrics endpoint not done (the unit keeps
+  `RWS_CONFIG_LOG_FORMAT=off` for the privacy promise; `/healthz` detail only); the disposable-mail
+  list for Free and a report-abuse page left for C3 with the legal pages; per-org creates are the
+  existing plan limits plus the per-session create rate.
+- **Done when, as run**: `cargo test --workspace` (new `migrate_db`, `abuse`, `recovery`) and
+  `--features postgres --test postgres` (8, incl. SQLite → Postgres → SQLite and dump + pg_restore)
+  on CI; `cli/tests/sync.rs` `a_lost_device_comes_back_with_its_recovery_phrase`;
+  `webapp/tests/sync.cjs` recovery checks in web and Tauri modes; CI job `ops`
+  (`cloud/ops/test/ops-e2e.sh`: backup → drill on SQLite, LocalStack S3 and Postgres, wrong key,
+  tampered backup, no recipients, alerts, status feeder, `systemd-analyze verify/security`;
+  `cutover-sim.sh`: cutover, refused second run, rollback keeps writes, non-empty target;
+  `postgres-setup-docker.sh` in ubuntu:24.04). **Not yet** (VM, owner): a drill of a real backup
+  committed as evidence; `systemctl show` on the VM; row counts after the real switch; 7 days green
+  on the checker.
+- **Apply** (agent, when told): RUNBOOK "Apply C2" steps 1–5 need nothing from the owner but the
+  write-freeze time for step 5; steps 6–8 need the owner items.
+- **Owner items** (section 11): a bucket at another provider or region with a write-only key and a
+  35-day lifecycle rule; an age key pair (public key to the VM, private key offline); the uptime
+  checker; DNS `status.`; the write-freeze time; an alert address (`ALERT_TO`).
 
 ### C3 Lemon Squeezy billing, pricing page, prompts: paid launch of Pro and Team
 
@@ -872,6 +944,7 @@ All questions were answered by the owner on 2026-11-02 (section 0).
 | 2026-11-02 | C0 | Pick the SOC 2 compliance tool (Vanta, Drata, Secureframe or a spreadsheet) and the auditor; Type 1 first. | |
 | 2026-11-02 | C1 | Read and approve the policies in `cloud/policies/`; confirm the first access review (`cloud/evidence/access-reviews/2026-Q4.md`: fill the "owner lists" rows, sign) and the vendor list (`cloud/policies/vendors.md`: the VM provider, DNS provider). Then quarterly access reviews. | |
 | 2026-11-02 | C2 | Agree the write-freeze time for the SQLite → Postgres switch; keep the backup key offline. | |
+| 2026-11-03 | C2 | For the built C2 (status in section 9): bucket with a write-only key and a 35-day lifecycle rule; an age key pair (public key to `/etc/hitop-sync/backup-recipients.txt`, private key offline); uptime checker monitors (`cloud/RUNBOOK.md`); the `status.` CNAME; an alert address; then run the first restore drill on your computer and commit its evidence. | |
 | 2026-11-02 | C3 | Lawyer review of the drafts: ToS, privacy update, DPA, sub-processor list, SLA (99.5%, shared host), refund policy. Approve the security page wording (no external review yet; shared server). Confirm the App Store position (guideline 3.1.3). | |
 | 2026-11-02 | C3 | Switch the Lemon Squeezy store to live, place the live keys, give the paid-launch green light, post the launch yourself (drafts in `launch/`). | |
 | 2026-11-02 | later | External crypto review (Q13: not a launch gate). Scope: ROADMAP section 6 rows T23/T24/T25/1.2; `sync-server/THREAT_MODEL.md`, `cli/crates/hitop-sync-crypto`, `cli/crates/hitop-core/src/sync.rs`, `cli/crates/hitop/src/commands/sync/`, `webapp/src/sync.js`, `sync-server/src/{oidc,audit,workspaces,blobs}.rs`. Rough budget €10–25k. Tell the agent when it starts; the security page links the summary when done. | |

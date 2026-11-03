@@ -382,6 +382,36 @@ every row).
   operator can also simply not record an event, or purge. Anchoring heads outside the server
   (signed, or published) would close the first; not in v1.
 
+## Recovery (HITOP Cloud C2)
+
+A person whose only device is lost would lose every workspace no other member holds. `hitop sync
+recovery create` (or the Sync page) makes a **recovery phrase**: 32 random bytes as 24 BIP-39
+English words (the last carries a checksum, so a typo is caught; `hitop_sync_crypto::RecoveryPhrase`).
+
+- **What is sealed**: the device's **key bundle**: its key id and X25519 secret key, its name, its
+  pins and its `WorkspaceMemory` per workspace, as JSON. It is sealed with XChaCha20-Poly1305 under
+  SHA-256(`"hitop-sync/v1/recovery-key"` || phrase bytes), associated data
+  `"hitop-sync/v1/recovery" || u16 len || account id` (`seal_recovery`; layout pinned in a test).
+  The server keeps it per account and unlock method (`phrase`), returns it only to a signed-in
+  device of that account (not access tokens or runner credentials), and audits set, fetch and
+  delete. It never sees the phrase or the key.
+- **Recovering**: on a new device, after signing in to the same account, the phrase opens the
+  bundle; the client checks that the server still lists the recovered key id **with the same public
+  key**, then becomes that device (its pins and key memory included, so the acceptance policy
+  carries on: no new trust decisions, no lowered strictness). The key the new sign-in registered is
+  deleted while it holds no wrap (`DELETE /v1/me/keys/:id`). Teammates see nothing new: the device
+  key is the one they already trust.
+- **Kept current**: the device that made (or used) the phrase keeps its bytes next to its secret
+  key and re-seals the bundle when its pins or memory change (CLI after each sync command, the
+  Sync page after each action), so a recovery restores what it knew last.
+- **Threats**: the phrase plus the person's sign-in (mailbox, passkey or SSO) is the device: keep it
+  offline. A server can't open the bundle (256-bit phrase), move it to another account (associated
+  data) or change it (authenticated encryption); it can withhold or
+  delete it (denial of recovery) or serve an old version (the device then knows less than it did:
+  rollback of pins and memory to that point, which `accept_wraps` still bounds by the epochs in the
+  old memory). A future password unlock seals the same bundle under a slow-KDF key as a second
+  method; its strength is the password's, which is why the phrase stays the default.
+
 ## What a malicious server can still do
 
 - **See metadata**: account emails, who is in which workspace, number and size of blobs, blob ids
@@ -444,7 +474,9 @@ process's own TLS (the front proxy terminates TLS); post-quantum security (X2551
    and the owner's upgrade), the runner credential's pins, and the residual risks listed under
    "Hand out a workspace key of its own choosing".
 3. Consider a signed workspace manifest (hidden-blob detection) and per-member signatures.
-4. A recovery story for lost devices (a recovery key from `DeviceKeyPair::derive`, printed once).
+4. Done in C2: a recovery story for lost devices (recovery phrase sealing the device's key bundle,
+   "Recovery"). The review should check the bundle's binding to the account and the listing check
+   on use.
 5. The web app's device key in localStorage (a non-extractable WebCrypto key can't be used by the
    Rust HPKE code; an IndexedDB-wrapped key would only move the problem).
 6. Done in T24: key fingerprints and trust-on-first-use pinning in every client.

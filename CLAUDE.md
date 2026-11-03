@@ -51,7 +51,7 @@ hitop/
 │       │   ├── tests/compat.rs     # format v1 compatibility suite (spec/compat/v1/): read, in-memory read, round trip, canonical write; v1 report shape
 │       │   └── tests/report_html.rs # golden report.html from tests/golden/report/report.json (UPDATE_GOLDEN=1), escaping of every field
 │       ├── hitop-wasm/         # format + model for the web app (wasm-bindgen =0.2.126), own workspace, not published
-│       ├── hitop-sync-crypto/  # MIT client crypto for hitop sync (0.2.0): format 2 key wraps = HPKE Auth mode with the sender's pinned X25519 key
+│       ├── hitop-sync-crypto/  # MIT client crypto for hitop sync (0.3.0; recovery.rs: BIP-39 RecoveryPhrase (wordlist/bip39-english.txt), seal_recovery / seal_key_bundle): format 2 key wraps = HPKE Auth mode with the sender's pinned X25519 key
 │       │                       # (seal_wrap/open_wrap; format 1 base mode wrap_key/unwrap_key = legacy), keyring.rs accept_wraps (the one key
 │       │                       # acceptance policy: pinned senders, invite fingerprints, strict, key commitments, no rollback; WorkspaceMemory,
 │       │                       # feature `serde`), XChaCha20-Poly1305 blobs; vectors/v1.json (frozen) + v2.json (published before hitop)
@@ -158,11 +158,12 @@ hitop/
 │   └── src/guard.rs            # address/port policy for the proxy (SSRF guard)
 ├── deploy/                     # build.sh, install.sh, systemd unit, front rws routes, README
 ├── sync-server/                # hitop sync (AGPL-3.0-or-later, own LICENSE/deny.toml): rws app, SQLite or Postgres
-│   ├── src/                    # api.rs (routing, CORS), auth.rs (magic link, passkeys), workspaces.rs (members, wraps, rotation), teams.rs (invites, roles, runner accounts), blobs.rs (CAS + version vectors), oidc.rs (SSO: OIDC code + PKCE, JWKS cache), audit.rs (audit log, hash chain, purge), db.rs (migrations 1-4),
+│   ├── src/                    # api.rs (routing, CORS), auth.rs (magic link, passkeys), workspaces.rs (members, wraps, rotation), teams.rs (invites, roles, runner accounts), blobs.rs (CAS + version vectors), oidc.rs (SSO: OIDC code + PKCE, JWKS cache), audit.rs (audit log, hash chain, purge), db.rs (migrations 1-5), dbtools.rs (db-stats, migrate-db, dump), ratelimit.rs, recovery.rs (key bundles),
 │   │                           # orgs.rs (organizations, personal orgs, members), limits.rs (plans, entitlements, usage, the one place limits are enforced, grandfather), tokens.rs (personal access tokens)
 │   ├── tests/                  # auth, sync, roles (every role × operation, removed member), teams (invites, runners), plaintext, no_crypto_in_server, postgres, sso (mock IdP, common/idp.rs), keycloak (fixtures/keycloak realm), audit, wraps_v2 (format 2 wraps, upgrade of format 1),
-│   │                           # orgs (org role × operation, other org, tokens), limits (every limit at its boundary per plan), migration (3 → 4 of common/t25.rs, also in postgres)
-│   ├── deploy/                 # hitop-sync.service, install.sh, rws-routes.toml (sync.hitop.rws8.tech)
+│   │                           # orgs (org role × operation, other org, tokens), limits (every limit at its boundary per plan), migration (3 → 4 of common/t25.rs, also in postgres), migrate_db, abuse, recovery
+│   ├── deploy/                 # hitop-sync.service, install.sh, rws-routes.toml (sync.hitop.rws8.tech); C2: postgres-setup.sh, cutover-postgres.sh, rollback-postgres.sh,
+│   │                           # backup.sh + s3.sh + hitop-sync-backup.{service,timer}, restore-drill.sh, backup.env.example
 │   └── THREAT_MODEL.md, README.md (self-host guide), Dockerfile
 ├── ios/
 │   ├── HiTop/                  # the live App Store iOS app (listed as "HiTop HTTP Client", shown as HITOP; editor, own JSON storage); frozen but for names
@@ -176,7 +177,8 @@ hitop/
 ├── brand/                      # logo.svg (master), logo-mono.svg, png/, BRAND.md (name, tagline, colors, asset map), export.sh, check.sh (CI job brand)
 ├── ROADMAP.md                  # agent work order to v1.x: decisions, rules, tranches T0–T26, status
 ├── cloud/                      # HITOP Cloud (AGPL, spec/CLOUD_SERVICE.md): portal/ (Lit, served at cloud.hitop.rws8.tech from www/cloud/, npm test = e2e against the sync server),
-│                               # compat/released-cli.sh (a released hitop against this tree's server, CI job compat), policies/ (SOC 2), evidence/access-reviews/, ops-log.md
+│                               # compat/released-cli.sh (a released hitop against this tree's server, CI job compat), policies/ (SOC 2), evidence/access-reviews/, ops-log.md,
+│                               # RUNBOOK.md, ops/ (systemd drop-ins, disk-alert.sh, install.sh <part>, test/: ops-e2e.sh, cutover-sim.sh, postgres-setup-docker.sh = CI job ops), status/ (static page + check.sh, off-VM)
 ├── launch/                     # launch text drafts for the owner (Show HN, Reddit, TWiR, Product Hunt); never posted by agents
 ├── docs/CNAME                  # only file left: keeps GitHub Pages 301ing bohdaq.github.io/hitop/* → hitop.rws8.tech
 └── CLAUDE.md                   # This file
@@ -279,7 +281,7 @@ hitop/
   `run`/`requests send` send saved `bodyMode` urlencoded/multipart bodies (`form::outgoing`)
 - Usage ping: hitop-core feature `telemetry` (off by default; the CLI crate's default feature turns it on);
   `hitop telemetry on|off|status`; never sent unless on, at most weekly; `HITOP_TELEMETRY_URL` points tests at a mock
-- Sync: `hitop sync login [--sso [--no-browser]]|logout|whoami|ls|init|link|unlink|status|pull|push|resolve|members|invite|accept|add|remove|role|trust|runner create|audit [--json] [--verify] [--mine]`
+- Sync: `hitop sync login [--sso [--no-browser]]|logout|whoami|ls|init|link|unlink|status|pull|push|resolve|members|invite|accept|add|remove|role|trust|runner create|audit [--json] [--verify] [--mine]|recovery create|use [--phrase-file F|-]|status|remove`
   (folders only; `-c <dir>`, default cwd). State in `<config>/hitop/sync/` (account.json, pins.json, keys.json = WorkspaceMemory per workspace, links.json, state/<ws>-<hash>.json);
   session + device secret in the keychain (`sync/<host>`) or `HITOP_SYNC_KEY_FILE` (0600; tests use it with `HITOP_KEYCHAIN=off`);
   `HITOP_SYNC_SERVER` (default https://sync.hitop.rws8.tech; http only for localhost); `HITOP_SYNC_RUNNER=hitop-runner-1.<b64url JSON>` = read-only
@@ -458,6 +460,12 @@ hitop/
   `HITOP_SYNC_LIMITS=plans` (default off = self-hosted, no limits): 402 `{error: limit, limit, plan, org, used, max, upgradeUrl}` on creates, never on reads;
   `HITOP_SYNC_PORTAL_URL`; `hitop-sync-server over-limits` (exit 0 = nobody over) and `set-plan <org> <plan> [seats]`. Plan numbers in `limits::plan_limits`
   (proposal until the owner sets prices). CLI `hitop sync init --org <name|id>`, `sync ls` shows the org
+- HITOP Cloud C2 (built 2026-11-03, NOT applied on the VM; spec/CLOUD_SERVICE.md C2 status, cloud/RUNBOOK.md "Apply C2"): migration 5 `recovery_blobs`
+  (user_id, method; `PUT/GET/DELETE /v1/me/recovery[?method=phrase]`, device sessions only; `DELETE /v1/me/keys/:id` for an own key without wraps);
+  `hitop-sync-server db-stats [--json] | migrate-db --from --to | dump <dir> | snapshot <file>` (migrate-db/dump/stats read one snapshot: `Db::read_tx`);
+  rate limits `HITOP_SYNC_RATE_*` (429 `rate_limited`), `HITOP_SYNC_MAX_JSON_BYTES`; `/healthz` = {ok, version, database, schema}. Tests needing pg_dump:
+  `HITOP_SYNC_TEST_PG_DUMP`/`_PG_RESTORE` (docker postgres:17-alpine commands). MinIO images aren't public any more: S3 tests use LocalStack (`SERVICES=s3`).
+  The VM build must be `--features postgres` from C2 on
 - Live at https://sync.hitop.rws8.tech (VM, `hitop-sync.service`, 127.0.0.1:7881, env `/etc/hitop-sync/env`, DB `/var/lib/private/hitop-sync/sync.db`); deploy: copy the release binary + `deploy/` and run `deploy/install.sh`
 - `rws --check` on the VM needs `/etc/rws/admin.env` loaded (admin token), or it fails on any config
 
