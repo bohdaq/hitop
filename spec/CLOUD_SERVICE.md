@@ -537,7 +537,7 @@ server-side row, never a new file in `environments/`.
 | C1b | Normal sign-in and sign-up: email + password (mailed confirmation, reset, change), Continue with Google / GitHub, the password unlocks the key bundle on a new device | **deployed** to the test server 2026-11-03 (schema 6; Google/GitHub off until the OAuth apps exist) | C1, C2's code; the owner registers the Google and GitHub OAuth apps |
 | C3 | Lemon Squeezy billing, pricing page, prompts, legal and security pages: **paid launch of Pro and Team** | **deployed** to the test server 2026-11-03 (schema 8, billing off: no `HITOP_SYNC_LS_*` until the owner's store exists; legal pages `DRAFT`; status below) | C1, C2, C0 (store approved, mail service, legal drafts reviewed) |
 | C4 | Run history and alerts from your own runners; shared environment secrets | **deployed** to the test server 2026-11-03 (schema 8; `cloud/ops-log.md`) | C3 (sells it); deploy with or after C3's migration 7 |
-| C5 | Business tier: hosted SSO per org, audit export + anchoring, admin console | **built**, not deployed (2026-11-03; schema 9; per-org SSO off on the test server, no host key: Q15; status below) | C3 |
+| C5 | Business tier: hosted SSO per org, audit export + anchoring, admin console | **deployed** to the test server 2026-11-03 (schema 9; per-org SSO off: no host key or DoH resolver, Q15; Business not sold until its variants exist; drafts behind DRAFT; status below) | C3 |
 | C6 | Enterprise: SCIM, self-host support offer, SOC 2 Type 1 readiness; second region and own host on demand | open | C5, owner (contracts, auditor) |
 | C7 | Deferred: hosted monitors (until confidential computing), mock servers, docs publishing, comments | not planned | revisit with the triggers in section 4 and demand evidence |
 

@@ -113,6 +113,17 @@ date (UTC), who, what, the commit, the checks run after it.
   noindex drafts), web app (run history, shared values), portal (Plan page, run history); `/`,
   `/pricing.html`, `/security.html`, `/cloud/` 200; rws8.tech, lit.rws8.tech, mail.rws8.tech 200.
 
+## 2026-11-03 C5 deployed to the test server
+
+- Who: agent. What: c7d43aa (`--features postgres`; CI 41657398691 green). Dump first:
+  `/root/pre-c5-<ts>` (postgres, 10 rows).
+- `install.sh`: `/healthz` schema 9; 0 over a limit. `HITOP_SYNC_HOST_KEY` and
+  `HITOP_SYNC_DNS_URL` unset (Q15), so per-org SSO answers `org_sso_off`; `/v1/auth/methods`
+  unchanged (`sso: null`). Business variants unset: not sold.
+- `deploy/deploy.sh`: site (`/legal/support.html` draft), portal (Admin, Single sign-on, Audit
+  pages); `/`, `/pricing.html`, `/cloud/` 200; rws8.tech, lit.rws8.tech, mail.rws8.tech 200;
+  `rws --check` OK.
+
 <!-- Next entry (template): record: commit, backup file names (sync.db.bak-<ts>), the row
 counts before and after (users, workspaces, members; orgs with personal_of <> '' = users with
 runner_of = ''), `hitop-sync-server over-limits` output (0 over a limit), curl of /healthz on sync
