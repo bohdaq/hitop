@@ -497,6 +497,108 @@ pub fn check_vectors_v2(json: &str) -> Result<usize, JsError> {
     check_vectors_v2_json(json).map_err(|e| err(format!("{e:#}")))
 }
 
+
+// ---- HITOP Cloud C4: run reports and shared environment values (hitop-sync-crypto 0.5) ----
+
+/// The epoch a sealed run report is under.
+#[wasm_bindgen(js_name = syncRunEpoch)]
+pub fn run_epoch(envelope: &str) -> Result<u32, JsError> {
+    crypto::run_epoch(&unb64("report", envelope)?).map_err(err)
+}
+
+/// Opens run `run_id`'s sealed report with the key of its epoch: the report.json text.
+#[wasm_bindgen(js_name = syncRunOpen)]
+pub fn run_open(workspace_key: &str, workspace: &str, run_id: &str, envelope: &str) -> Result<String, JsError> {
+    let plain = crypto::open_run(&key(workspace_key)?, workspace, run_id, &unb64("report", envelope)?).map_err(|e| err(format!("run {run_id}: {e}")))?;
+    String::from_utf8(plain).map_err(err)
+}
+
+/// Seals a run report (report.json text) as run `run_id` under the key of `epoch`.
+#[wasm_bindgen(js_name = syncRunSeal)]
+pub fn run_seal(workspace_key: &str, workspace: &str, run_id: &str, epoch: u32, report: &str) -> Result<String, JsError> {
+    Ok(b64(&crypto::seal_run(&key(workspace_key)?, workspace, run_id, epoch, report.as_bytes()).map_err(err)?))
+}
+
+/// The sender key id a share wrap names (unverified).
+#[wasm_bindgen(js_name = syncShareWrapSender)]
+pub fn share_wrap_sender(wrapped: &str) -> Result<String, JsError> {
+    crypto::share_wrap_sender(&unb64("share wrap", wrapped)?).map_err(err)
+}
+
+/// Opens version `version` of share `share_id` for this device (`secret`, `key_id`): the wrap is
+/// verified against `sender_public_key` (the pinned key of the device it names), then the sealed
+/// content opened. `{key, content}` (content = the JSON text).
+#[wasm_bindgen(js_name = syncShareOpen)]
+#[allow(clippy::too_many_arguments)]
+pub fn share_open(secret: &str, key_id: &str, sender_public_key: &str, workspace: &str, share_id: &str, version: u32, wrapped: &str, sealed: &str) -> Result<String, JsError> {
+    let me = device(secret)?;
+    let k = crypto::open_share_wrap(&me, key_id, &unb64("sender key", sender_public_key)?, workspace, share_id, version, &unb64("share wrap", wrapped)?).map_err(|e| err(format!("share {share_id}: {e}")))?;
+    let plain = crypto::open_share(&k, workspace, share_id, version, &unb64("share", sealed)?).map_err(|e| err(format!("share {share_id}: {e}")))?;
+    Ok(serde_json::json!({ "key": b64(k.as_bytes()), "content": String::from_utf8(plain).map_err(err)? }).to_string())
+}
+
+/// Seals share content (JSON text) as version `version` under `share_key`.
+#[wasm_bindgen(js_name = syncShareSeal)]
+pub fn share_seal(share_key: &str, workspace: &str, share_id: &str, version: u32, content: &str) -> Result<String, JsError> {
+    Ok(b64(&crypto::seal_share(&key(share_key)?, workspace, share_id, version, content.as_bytes()).map_err(err)?))
+}
+
+/// Wraps a share key (version `version`) for one device, made by this device.
+#[wasm_bindgen(js_name = syncShareWrap)]
+#[allow(clippy::too_many_arguments)]
+pub fn share_wrap(secret: &str, sender_key_id: &str, recipient_key_id: &str, recipient_public_key: &str, workspace: &str, share_id: &str, version: u32, share_key: &str) -> Result<String, JsError> {
+    let me = device(secret)?;
+    let pk = unb64("public key", recipient_public_key)?;
+    let w = crypto::seal_share_wrap(&crypto::Device { key_id: sender_key_id, keys: &me }, &crypto::Recipient { key_id: recipient_key_id, public_key: &pk }, workspace, share_id, version, &key(share_key)?).map_err(err)?;
+    Ok(b64(&w))
+}
+
+/// Runs `vectors/shared.json` through this build. Returns how many cases passed.
+pub fn check_shared_vectors_json(json: &str) -> anyhow::Result<usize> {
+    let v: serde_json::Value = serde_json::from_str(json)?;
+    let s = |x: &serde_json::Value, k: &str| x[k].as_str().unwrap_or("").to_string();
+    let n32 = |x: &serde_json::Value, k: &str| x[k].as_u64().unwrap_or(0) as u32;
+    let k = |hexed: &str| -> anyhow::Result<WorkspaceKey> { Ok(WorkspaceKey::from_bytes(unhex(hexed)?.try_into().map_err(|_| anyhow::anyhow!("key length"))?)) };
+    let mut n = 0;
+    for r in v["runs"].as_array().into_iter().flatten() {
+        let nonce: [u8; 24] = unhex(&s(r, "nonce"))?.try_into().map_err(|_| anyhow::anyhow!("nonce"))?;
+        let sealed = crypto::seal_run_with_nonce(&k(&s(r, "key"))?, &s(r, "workspaceId"), &s(r, "id"), n32(r, "number"), &unhex(&s(r, "plaintext"))?, &nonce)?;
+        anyhow::ensure!(hex(&sealed) == s(r, "envelope"), "run envelope {}", s(r, "name"));
+        anyhow::ensure!(hex(&crypto::open_run(&k(&s(r, "key"))?, &s(r, "workspaceId"), &s(r, "id"), &sealed)?) == s(r, "plaintext"), "run plaintext");
+        n += 1;
+    }
+    for r in v["shares"].as_array().into_iter().flatten() {
+        let nonce: [u8; 24] = unhex(&s(r, "nonce"))?.try_into().map_err(|_| anyhow::anyhow!("nonce"))?;
+        let sealed = crypto::seal_share_with_nonce(&k(&s(r, "key"))?, &s(r, "workspaceId"), &s(r, "id"), n32(r, "number"), &unhex(&s(r, "plaintext"))?, &nonce)?;
+        anyhow::ensure!(hex(&sealed) == s(r, "envelope"), "share envelope {}", s(r, "name"));
+        n += 1;
+    }
+    let wraps = v["shareWraps"].as_array().cloned().unwrap_or_default();
+    for w in &wraps {
+        let device = DeviceKeyPair::derive(&unhex(&s(w, "recipientIkm"))?);
+        let key = crypto::open_share_wrap(&device, &s(w, "recipientKeyId"), &unhex(&s(w, "senderPublic"))?, &s(w, "workspaceId"), &s(w, "shareId"), n32(w, "version"), &unhex(&s(w, "wrapped"))?)?;
+        anyhow::ensure!(hex(key.as_bytes()) == s(w, "shareKey"), "share key {}", s(w, "name"));
+        n += 1;
+    }
+    let device = DeviceKeyPair::derive(&unhex(&s(&wraps[0], "recipientIkm"))?);
+    for f in v["failures"].as_array().into_iter().flatten() {
+        let bytes = unhex(&s(f, "bytes"))?;
+        let failed = match s(f, "kind").as_str() {
+            "run" => crypto::open_run(&k(&s(f, "key"))?, &s(f, "workspaceId"), &s(f, "id"), &bytes).is_err(),
+            "share" => crypto::open_share(&k(&s(f, "key"))?, &s(f, "workspaceId"), &s(f, "id"), n32(f, "number"), &bytes).is_err(),
+            _ => crypto::open_share_wrap(&device, &s(f, "recipientKeyId"), &unhex(&s(f, "senderPublic"))?, &s(f, "workspaceId"), &s(f, "id"), n32(f, "number"), &bytes).is_err(),
+        };
+        anyhow::ensure!(failed, "{} must fail", s(f, "name"));
+        n += 1;
+    }
+    Ok(n)
+}
+
+#[wasm_bindgen(js_name = syncCheckSharedVectors)]
+pub fn check_shared_vectors(json: &str) -> Result<usize, JsError> {
+    check_shared_vectors_json(json).map_err(|e| err(format!("{e:#}")))
+}
+
 #[cfg(test)]
 mod tests {
     #[test]
@@ -506,5 +608,6 @@ mod tests {
         let n = super::check_vectors_v2_json(include_str!("../../hitop-sync-crypto/vectors/v2.json")).unwrap();
         assert!(n >= 10, "{n}");
         assert_eq!(super::check_password_vectors_json(include_str!("../../hitop-sync-crypto/vectors/password.json")).unwrap(), 3);
+        assert!(super::check_shared_vectors_json(include_str!("../../hitop-sync-crypto/vectors/shared.json")).unwrap() >= 12);
     }
 }
