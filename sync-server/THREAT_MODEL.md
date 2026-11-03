@@ -507,6 +507,30 @@ per password (a new salt at every change or reset).
 - **TOTP second factor**: not in C1b (a follow-up). Passkeys already give a phishing-resistant
   sign-in; a TOTP step would sit after `password/login` and before the session.
 
+## Hosted service (HITOP Cloud C3)
+
+HITOP Cloud runs this server for paying customers. What that adds:
+
+- **Billing never touches workspace data.** Lemon Squeezy (merchant of record) takes payment; the
+  server learns an org's plan, seats, status and the Lemon Squeezy ids, and keeps the ids and
+  outcomes of webhook deliveries, never their bodies (buyer name, address, card brand). Plans only
+  decide which creates are allowed; no plan state ever deletes, locks or reads a blob, and reads
+  and pulls work on every plan (`limits.rs`).
+- **Webhooks are authenticated before they are read**: hex HMAC-SHA256 of the raw body under the
+  webhook's signing secret, compared in constant time. A replayed delivery (same bytes) is
+  recognised by its hash; an older subscription state is ignored (`updated_at` per subscription).
+- **A paid event can't be pointed at someone else's org.** The org comes from a subscription id the
+  server already tied to it, or from checkout custom data the server signed (HMAC of org and buyer
+  under a server secret) when an admin of that org started the checkout. Unsigned or mismatched
+  data is recorded as `unmatched` and changes nothing. Events from another store, and test-mode
+  events unless the operator allows them, are ignored.
+- **Billing actions need a signed-in session** of an org admin (owners for the trial); a personal
+  access token can read the plan but never buy, change seats or open the billing portal.
+- **Shared host.** The service runs on one VM shared with other sites (spec section 5). A
+  compromise of that host is a compromise of the server in this document: it sees the metadata
+  above and can deny service, not read collections. The security page says so, and that no
+  external review of the encryption has been done yet.
+
 ## What a malicious server can still do
 
 - **See metadata**: account emails, who is in which workspace, number and size of blobs, blob ids

@@ -75,6 +75,8 @@ fn off_unless_configured() {
     let org = org_create(&s, &d, "Acme");
     let b = billing(&s, &d, &org);
     assert_eq!((b["enabled"].as_bool(), b["checkout"].as_bool(), b["offers"].as_array().unwrap().len()), (Some(false), Some(false), 0));
+    assert_eq!(b["trial"]["available"], false, "trials open with billing");
+    assert_eq!(s.call("POST", &format!("/v1/orgs/{org}/billing/trial"), Some(&d.session), Some(json!({}))).status, 409);
     assert_eq!(s.call("POST", &format!("/v1/orgs/{org}/billing/checkout"), Some(&d.session), Some(json!({ "plan": "team" }))).status, 404);
 }
 

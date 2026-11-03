@@ -535,7 +535,7 @@ server-side row, never a new file in `environments/`.
 | C1 | Organizations, plans, entitlements; portal MVP; SOC 2 policies and first access review | **deployed** to the test server 2026-11-02 (2049e95, CI green; `cloud/ops-log.md`); left: the `cloud.` route after the owner's DNS, and the owner's approvals | the 1.2 sync server deployed to the test server first (ROADMAP section 6, "1.2 signed key wraps") so migration 4 and the 1.2 deploy don't collide |
 | C2 | Harden the current VM: Postgres, limits, backups + drill, recovery key, status page, runbook | **applied** 2026-11-03 except backups, restore drill and uptime (owner: later); the sync server runs on Postgres (`cloud/ops-log.md`) | C0 (bucket, backup key, uptime checker, `status.` DNS), C1 |
 | C1b | Normal sign-in and sign-up: email + password (mailed confirmation, reset, change), Continue with Google / GitHub, the password unlocks the key bundle on a new device | **deployed** to the test server 2026-11-03 (schema 6; Google/GitHub off until the OAuth apps exist) | C1, C2's code; the owner registers the Google and GitHub OAuth apps |
-| C3 | Lemon Squeezy billing, pricing page, prompts, legal and security pages: **paid launch of Pro and Team** | open | C1, C2, C0 (store approved, mail service, legal drafts reviewed) |
+| C3 | Lemon Squeezy billing, pricing page, prompts, legal and security pages: **paid launch of Pro and Team** | **built**, not deployed (2026-11-03; migration 7; billing off until the owner's store exists; status below) | C1, C2, C0 (store approved, mail service, legal drafts reviewed) |
 | C4 | Run history and alerts from your own runners; shared environment secrets | open | C3 (can start after C1; ships after C3) |
 | C5 | Business tier: hosted SSO per org, audit export + anchoring, admin console | open | C3 |
 | C6 | Enterprise: SCIM, self-host support offer, SOC 2 Type 1 readiness; second region and own host on demand | open | C5, owner (contracts, auditor) |
@@ -851,6 +851,75 @@ owner's go-ahead, before this tranche: its deploy is a normal version deploy on 
   wording; switch the store to live and place the live keys; give the launch green light; post the
   launch.
 
+**Status (2026-11-03): built and tested with recorded payloads and a fake API; not deployed; no
+Lemon Squeezy store yet.**
+
+- Commits on `main`: 14509b4 (server: `billing.rs`, migration 7, tests), 0dba027 (portal, web app
+  Sync page), 7e42ab4 (site: pricing, home, privacy, security and legal drafts, check script), and
+  the docs commit after them.
+- **Webhook** `POST /v1/billing/lemonsqueezy`, checked against Lemon Squeezy's documentation
+  (2026-11-03: signing, request format, event types, subscription, invoice and order objects):
+  `X-Signature` = hex HMAC-SHA256 of the raw body, constant-time compare, **before** parsing
+  (401). Lemon Squeezy sends no event id and retries with the same bytes, so a delivery's id is
+  the SHA-256 of its body (`billing_events`; replay = `duplicate`, nothing changes). Ordering:
+  subscription events apply when the subscription's `updated_at` (microseconds) is not older than
+  the last applied (`entitlements.ls_updated_at`), else `stale`; invoice events never move that
+  mark, except a refund. The org comes from the subscription id already on an `entitlements` row,
+  else from `custom_data` the server signed at checkout (org, buyer, HMAC under a server secret):
+  a share link or a forged org is `unmatched` (recorded, nothing changes;
+  `hitop-sync-server billing-link` fixes it). Wrong store and test-mode events (unless
+  `HITOP_SYNC_LS_TEST_MODE=on`) are ignored. Every verified delivery answers 200 with its outcome;
+  only a database error answers 500 (Lemon Squeezy retries). Bodies are never stored.
+- **Events → entitlements** (all 13 of section 6): `subscription_*` set plan (from the variant id),
+  seats (Team: the item quantity), status, period end and the ids; `subscription_payment_failed`
+  → `past_due` (banner, plan kept), `_success`/`_recovered` → `active`; a full
+  `subscription_payment_refunded` or `order_refunded` → `refunded`; `order_created` and partial
+  refunds are recorded only. Plan in force: `active`, `on_trial`, `past_due`, `cancelled` (until
+  the period ends), `trialing` keep the plan; `expired`, `unpaid`, `paused`, `refunded` are Free
+  limits. Nothing is deleted on any status (tests read every blob after expiry).
+- **Seats (Q5)**: as C1 counts them (members, pending invites, workspace people; viewers are seats;
+  Team's 5 guest viewers free). `POST .../billing/seats` changes the Team subscription item's
+  quantity through the API: more = `invoice_immediately` (prorated, charged now), fewer =
+  `disable_prorations`, never below the seats in use.
+- **Checkout**: `POST .../billing/checkout` (an org admin with a session; access tokens can't buy)
+  creates the checkout through the API with the buyer's email, the signed custom data, the variant
+  and quantity, and the portal's plan page as the redirect. **Customer portal**: a fresh signed URL
+  from `GET /v1/subscriptions/:id` each time (they expire in 24 h, so none is stored).
+- **Trial**: 14 days of Team (5 seats, a proposal), no card, once per org, per account and per
+  company email domain (free-mail domains excepted); ends by `billing::expire` (at every limit
+  check, every read of the plan, hourly). Only where billing is configured.
+- **Prices (Q4)**: never in the server (the variant decides the plan); the portal and pricing page
+  show $6 / $10 / $20 (monthly $8 / $12 / $25) as the owner's figures until Lemon Squeezy shows the
+  final ones.
+- **Clients**: portal Plan page (buy yearly/monthly with seats, trial, Manage billing, seats,
+  status line, payment-failed banner), "See plans" link on a 402 anywhere in the portal; web app
+  Sync page "Manage plan" link on a 402 (https only, never in the desktop build) and the HITOP Cloud
+  link renamed "Manage plan on HITOP Cloud"; CLI unchanged (the server's 402 message names the plan
+  and the URL).
+- **Site**: pricing page (free forever first, the Cloud tiers, the apps, rewritten FAQ with
+  "Is there a subscription?" → only for HITOP Cloud, "Do you run monitors?" → no, refunds `#refunds`),
+  home copy ("No account needed", "Team sync, encrypted"), a billing section in `/privacy.html`;
+  `/security.html` (with both sentences) and `/legal/{terms,privacy,dpa,sla,subprocessors}.html`
+  from `site/content/legal/*.md`, drafts behind `site/src/legal-status.js` `DRAFT` (banner,
+  noindex, out of the sitemap, linked from nothing). `site/scripts/check-pages.mjs` (CI job `web`).
+- **Docs**: THREAT_MODEL "Hosted service (HITOP Cloud C3)", sync-server README (status line,
+  endpoints, settings), RUNBOOK "Billing (Lemon Squeezy, C3)" and secret rotation, CHANGELOG.
+- **Deviations**: checkout is a plain redirect to Lemon Squeezy's page, not the Lemon.js overlay
+  (no third-party script in the portal); fewer seats take effect at once with no credit (Lemon
+  Squeezy's `disable_prorations`) instead of waiting for the renewal; `paused` counts as Free; a
+  refund stays until a newer paid invoice or `subscription_resumed`; a trial needs billing on;
+  Business isn't sold yet (C5); the e2e "in test mode" is the portal e2e against a fake API and
+  recorded-shape deliveries, not the owner's real test store (that check is a handoff); mail
+  through the transactional service is configuration (`SMTP_URL`), waiting for the owner's pick;
+  the `cloud.` portal links on the pricing page need the owner's DNS before the deploy.
+- **Done when, as run**: `cargo test --workspace` (new `tests/billing.rs`: 8 tests, every event,
+  bad signatures refused before parsing, replay, out of order, Team 3 seats → 4th member after a 4th
+  seat, payment failed → expired with every byte readable, refunds, trial, roles, unmatched and
+  forged orgs) and `--features postgres --test postgres` (new `postgres_billing`; `migrate_db`
+  copies `billing_events` and `trials`); clippy; portal e2e (44 checks, 13 new for billing);
+  `webapp` unit (plan link); site build + `check-pages.mjs`. **Not yet** (owner): the same flow
+  against the real test store, the switch to live, the green light.
+
 ### C4 Run history and alerts from your own runners; shared environment secrets
 
 - Goal: the history and alerts people pay Postman for, without HITOP running anything on its
@@ -1014,5 +1083,7 @@ All questions were answered by the owner on 2026-11-02 (section 0).
 | 2026-11-03 | C1b | Register the OAuth apps and place their ids and secrets in `/etc/hitop-sync/env` (or `_FILE`): **Google** (Cloud console → Credentials → OAuth client ID, Web application; consent screen with `openid`, `email`; authorized redirect URI `https://sync.hitop.rws8.tech/v1/auth/google/callback`) → `HITOP_SYNC_GOOGLE_CLIENT_ID/SECRET`; **GitHub** (Settings → Developer settings → OAuth Apps; callback URL `https://sync.hitop.rws8.tech/v1/auth/github/callback`) → `HITOP_SYNC_GITHUB_CLIENT_ID/SECRET`. Optional: a password pepper (`HITOP_SYNC_PASSWORD_PEPPER_FILE`, kept out of backups). | |
 | 2026-11-02 | C3 | Lawyer review of the drafts: ToS, privacy update, DPA, sub-processor list, SLA (99.5%, shared host), refund policy. Approve the security page wording (no external review yet; shared server). Confirm the App Store position (guideline 3.1.3). | |
 | 2026-11-02 | C3 | Switch the Lemon Squeezy store to live, place the live keys, give the paid-launch green light, post the launch yourself (drafts in `launch/`). | |
+| 2026-11-03 | C3 | **Lemon Squeezy store (test mode first)**: (1) Products: **HITOP Cloud Pro** (subscription; variants "Yearly" $72/year = $6 a month and "Monthly" $8/month, quantity fixed at 1) and **HITOP Cloud Team** (subscription, **"Charge per unit / quantity" on**, variants "Yearly" $120 per seat per year and "Monthly" $12 per seat per month; let the buyer pick the quantity); Business later (C5). No Lemon Squeezy free trial on these variants (our server runs the trial). (2) Settings → API: a key → `HITOP_SYNC_LS_API_KEY`. (3) Settings → Webhooks: URL `https://sync.hitop.rws8.tech/v1/billing/lemonsqueezy`, a signing secret (6–40 random characters) → `HITOP_SYNC_LS_WEBHOOK_SECRET`, events: `order_created`, `order_refunded`, `subscription_created`, `subscription_updated`, `subscription_cancelled`, `subscription_resumed`, `subscription_expired`, `subscription_paused`, `subscription_unpaused`, `subscription_payment_success`, `subscription_payment_failed`, `subscription_payment_recovered`, `subscription_payment_refunded`. (4) The store id → `HITOP_SYNC_LS_STORE_ID`; the four variant ids → `HITOP_SYNC_LS_VARIANT_PRO_ANNUAL`, `_PRO_MONTHLY`, `_TEAM_ANNUAL`, `_TEAM_MONTHLY`; `HITOP_SYNC_LS_TEST_MODE=on` while in test mode. Put them in `/etc/hitop-sync/env` (root only; secrets may be `_FILE` paths) or hand them to the agent through that file, never in chat or git. Settings → Customer portal on (cancel, update payment method, switch between the two variants of a product). (5) Then tell the agent: deploy C3 and run the test purchase (Team, 3 seats, then a 4th, a failed payment with Lemon Squeezy's test card, a refund). | |
+| 2026-11-03 | C3 | **Approve the drafts**: `site/content/legal/*.md` (terms: fill in the governing law; sub-processors: the VM provider and data centre, the mail service, the backup storage, the uptime checker) and the security page wording; the refund policy (proposal on the pricing page: full refund within 14 days of the first payment); the trial (14 days, 5 seats). Approval = set `DRAFT = false` in `site/src/legal-status.js` (or tell the agent). Also: DNS `cloud.hitop.rws8.tech` (the pricing page links the portal there) and the mail service before live. | |
 | 2026-11-02 | later | External crypto review (Q13: not a launch gate). Scope: ROADMAP section 6 rows T23/T24/T25/1.2; `sync-server/THREAT_MODEL.md`, `cli/crates/hitop-sync-crypto`, `cli/crates/hitop-core/src/sync.rs`, `cli/crates/hitop/src/commands/sync/`, `webapp/src/sync.js`, `sync-server/src/{oidc,audit,workspaces,blobs}.rs`. Rough budget €10–25k. Tell the agent when it starts; the security page links the summary when done. | |
 | 2026-11-02 | C6 | Book the SOC 2 Type 1 audit; sign the enterprise contract template; decide the US region and an own host when a customer or a trigger (section 5) asks. | |

@@ -87,6 +87,20 @@ date (UTC), who, what, the commit, the checks run after it.
 - `deploy/deploy.sh`: site, web app (Sync page "Forgot password"), portal; `/`, `/terms/`,
   `/cloud/`, `/cloud/healthz` 200; rws8.tech, lit.rws8.tech, mail.rws8.tech 200.
 
+## 2026-11-03 C3 built, not deployed (Lemon Squeezy billing, pricing, legal drafts)
+
+- Who: agent. What: billing in the sync server (`src/billing.rs`, migration 7: additive, SQLite
+  and Postgres; `billing_events`, `trials`, three columns on `entitlements`), the portal's Plan
+  page (buy, seats, trial, Manage billing, banner), the Sync page's Manage plan link, the pricing
+  page, home and privacy copy, the security page and legal drafts (noindex, unlinked). Nothing
+  applied on the VM; billing stays off there until the owner's store exists.
+- Deploy (when told): a dump first, then the usual version deploy (`--features postgres`,
+  RUNBOOK "Deploy a new sync server version"); `/healthz` must say schema 7 (8 if C4 ships in the
+  same binary). With no `HITOP_SYNC_LS_*` set nothing changes for anyone (`/v1/orgs/<org>/billing`
+  answers `enabled: false`, and the Team trial is off too: it opens with billing). Then `deploy/deploy.sh` for
+  the site and the portal. Billing: RUNBOOK "Billing (Lemon Squeezy, C3)" once the owner's test
+  store gives the store id, variant ids, API key and webhook secret.
+
 <!-- Next entry (template): record: commit, backup file names (sync.db.bak-<ts>), the row
 counts before and after (users, workspaces, members; orgs with personal_of <> '' = users with
 runner_of = ''), `hitop-sync-server over-limits` output (0 over a limit), curl of /healthz on sync

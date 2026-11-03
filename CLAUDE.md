@@ -159,7 +159,7 @@ hitop/
 │   └── src/guard.rs            # address/port policy for the proxy (SSRF guard)
 ├── deploy/                     # build.sh, install.sh, systemd unit, front rws routes, README
 ├── sync-server/                # hitop sync (AGPL-3.0-or-later, own LICENSE/deny.toml): rws app, SQLite or Postgres
-│   ├── src/                    # api.rs (routing, CORS), auth.rs (magic link, passkeys), workspaces.rs (members, wraps, rotation), teams.rs (invites, roles, runner accounts), blobs.rs (CAS + version vectors), oidc.rs (SSO + Continue with Google: OIDC code + PKCE, JWKS cache, `Sso` per provider kind), github.rs (Continue with GitHub, OAuth 2), password.rs (passwords, backoff), audit.rs (audit log, hash chain, purge), db.rs (migrations 1-6), dbtools.rs (db-stats, migrate-db, dump), ratelimit.rs, recovery.rs (key bundles),
+│   ├── src/                    # api.rs (routing, CORS), auth.rs (magic link, passkeys), workspaces.rs (members, wraps, rotation), teams.rs (invites, roles, runner accounts), blobs.rs (CAS + version vectors), oidc.rs (SSO + Continue with Google: OIDC code + PKCE, JWKS cache, `Sso` per provider kind), github.rs (Continue with GitHub, OAuth 2), password.rs (passwords, backoff), audit.rs (audit log, hash chain, purge), db.rs (migrations 1-7), billing.rs (Lemon Squeezy, trials), dbtools.rs (db-stats, migrate-db, dump), ratelimit.rs, recovery.rs (key bundles),
 │   │                           # orgs.rs (organizations, personal orgs, members), limits.rs (plans, entitlements, usage, the one place limits are enforced, grandfather), tokens.rs (personal access tokens)
 │   ├── tests/                  # auth, sync, roles (every role × operation, removed member), teams (invites, runners), plaintext, no_crypto_in_server, postgres, sso (mock IdP, common/idp.rs), keycloak (fixtures/keycloak realm), audit, wraps_v2 (format 2 wraps, upgrade of format 1),
 │   │                           # orgs (org role × operation, other org, tokens), limits (every limit at its boundary per plan), migration (3 → 4 of common/t25.rs, also in postgres), migrate_db, abuse, recovery
@@ -476,6 +476,12 @@ hitop/
   adopts the bundle's device (no new key, no trust step); only that device keeps `password` (bundleKey) in its secret and re-seals while the server's bundle
   still opens with it; a reset deletes the bundle (`bundleLost`), and a new device after a reset doesn't claim it. Tests: sync-server tests/password.rs, oauth.rs
   (common/github.rs mock GitHub, common/pw.rs helpers); argon2 needs `[profile.dev.package.argon2] opt-level = 3` (cli, hitop-wasm, sync-server)
+- HITOP Cloud C3: `billing.rs` (Lemon Squeezy, off unless `HITOP_SYNC_LS_WEBHOOK_SECRET`): `POST /v1/billing/lemonsqueezy` (HMAC X-Signature
+  before parsing, delivery id = sha256 of the body, `updated_at` order per subscription, org from the subscription id or server-signed custom data,
+  bodies never stored), `/v1/orgs/:org/billing[/checkout|/portal|/seats|/trial]`; migration 7 (`entitlements.ls_item_id/ls_order_id/ls_updated_at`,
+  `billing_events`, `trials`); `paused`/`refunded` = Free limits, `billing::expire` ends trials and cancelled periods; tests `tests/billing.rs` with
+  `common/lemonsqueezy.rs` (fake API, signed fixtures in `tests/fixtures/lemonsqueezy/`); `billing-events`, `billing-link` commands.
+  Site: `site/src/legal-status.js` DRAFT gates `/security.html` + `/legal/*.html` (content/legal/*.md); `site/scripts/check-pages.mjs` in CI
 - Live at https://sync.hitop.rws8.tech (VM, `hitop-sync.service`, 127.0.0.1:7881, env `/etc/hitop-sync/env`, DB `/var/lib/private/hitop-sync/sync.db`); deploy: copy the release binary + `deploy/` and run `deploy/install.sh`
 - `rws --check` on the VM needs `/etc/rws/admin.env` loaded (admin token), or it fails on any config
 

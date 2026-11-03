@@ -141,11 +141,37 @@ a neighbour is a trigger to move hosts (spec section 5).
   old public key in it until the 35 days of old backups have expired, then remove it; keep the old
   private key offline until then).
 - **SMTP password** (`SMTP_URL`), **OIDC client secret**, Lemon Squeezy keys (C3): edit
-  `/etc/hitop-sync/env` (back it up first), `systemctl restart hitop-sync`.
+  `/etc/hitop-sync/env` (back it up first), `systemctl restart hitop-sync`. Webhook signing
+  secret: set the new one in Lemon Squeezy and the env file within a minute of each other;
+  deliveries in between fail with 401 and Lemon Squeezy retries them (3 times, up to about 2.5
+  minutes), else resend them from the dashboard.
 - **Revoke sessions**: one person: `DELETE FROM sessions WHERE user_id = '<id>'` (and
   `api_tokens`); everyone: `DELETE FROM sessions` (all clients sign in again; their device keys and
   workspaces stay). Run against the live database (`psql -p 5433 -U postgres hitop_sync` as the
   postgres user, or stop the service for SQLite and use `sqlite3`).
+
+## Billing (Lemon Squeezy, C3)
+
+- **Settings** (root-only `/etc/hitop-sync/env`, or `_FILE` paths to root-only files):
+  `HITOP_SYNC_LS_WEBHOOK_SECRET` (turns billing on), `HITOP_SYNC_LS_STORE_ID`,
+  `HITOP_SYNC_LS_VARIANT_PRO_ANNUAL`, `..._PRO_MONTHLY`, `..._TEAM_ANNUAL`, `..._TEAM_MONTHLY`,
+  `HITOP_SYNC_LS_API_KEY`, `HITOP_SYNC_LS_TEST_MODE=on` while the store is in test mode. Restart
+  `hitop-sync`; `GET /v1/orgs/<org>/billing` shows `enabled` and `checkout`.
+- **Check a delivery**: Lemon Squeezy dashboard → Settings → Webhooks → the webhook → recent
+  deliveries (resend one there); on the VM `hitop-sync-server billing-events` (load the env file as
+  systemd does, see "Deploy") lists the latest outcomes. `unmatched` = no org: a purchase made
+  outside the portal's checkout; find the org with the buyer, then `hitop-sync-server billing-link
+  <org> <subscription id>` and resend the delivery. `wrong_store` / `unknown_variant` = the env
+  doesn't match the store; `test_mode_refused` = a test purchase with test mode off.
+- **Test → live**: in Lemon Squeezy switch the store to live, create the live API key and the live
+  webhook (its own signing secret), copy the live variant ids; replace the five values above and
+  set `HITOP_SYNC_LS_TEST_MODE=off` (or remove it); restart. Test-mode subscriptions stay on their
+  orgs until they expire; end one at once with `set-plan <org> free`.
+- **Refund**: issue it in the Lemon Squeezy dashboard; the refund webhook sets the org to Free
+  limits (`refunded`). A later paid invoice lifts it.
+- **A customer's plan by hand** (an outage of the webhook, a goodwill extension):
+  `hitop-sync-server set-plan <org> <plan> [seats]`; the next webhook event of the subscription
+  sets it again.
 
 ## Uptime and status page
 

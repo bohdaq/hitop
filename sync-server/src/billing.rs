@@ -15,8 +15,8 @@
 //!   never grant a live plan); `on` accepts them (the store in test mode, before launch).
 //! - `HITOP_SYNC_LS_API_URL`: the API (default `https://api.lemonsqueezy.com`; tests point it at
 //!   a fake).
-//! - `HITOP_SYNC_TRIAL_DAYS`: the Team trial (default 14; 0 = no trials). Trials need
-//!   `HITOP_SYNC_LIMITS=plans`, not Lemon Squeezy.
+//! - `HITOP_SYNC_TRIAL_DAYS`: the Team trial (default 14; 0 = no trials). Trials run on this
+//!   server, no card, but only where plans are sold: `HITOP_SYNC_LIMITS=plans` and billing on.
 //!
 //! **Webhook** (`POST /v1/billing/lemonsqueezy`). The `X-Signature` header must be the hex
 //! HMAC-SHA256 of the raw body under the signing secret (compared in constant time) before the
@@ -578,7 +578,7 @@ fn trial_domain(email: &str) -> String {
 
 /// Whether `user` may start a trial for `org` (None) or why not.
 fn trial_refusal(state: &State, tx: &mut Tx, org: &orgs::Org, user: &User, r: &Row) -> Result<Option<&'static str>, DbError> {
-    if !state.config.plan_limits || state.config.trial_days <= 0 {
+    if !state.config.plan_limits || state.config.billing.is_none() || state.config.trial_days <= 0 {
         return Ok(Some("trials are off on this server"));
     }
     if org.personal {

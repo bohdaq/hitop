@@ -4,6 +4,29 @@ Releases before 1.2 are listed in ROADMAP.md (section 5) and on the GitHub Relea
 
 ## Unreleased
 
+### HITOP Cloud: paid plans through Lemon Squeezy (C3, built, not live)
+
+- **Buy Pro or Team in the portal** (Plan page): Pro for one person's account, Team per seat for
+  an organization, yearly or monthly. The checkout and the receipts are Lemon Squeezy's (merchant
+  of record); HITOP never sees the card. **Manage billing** opens Lemon Squeezy's customer portal
+  (card, receipts, cancel). Team admins change seats there too: more seats are charged at once,
+  fewer start at the next renewal.
+- **14-day Team trial**, no card, once per organization, account and company email domain.
+- **Nothing is ever deleted by a plan.** A failed payment shows a banner while Lemon Squeezy
+  retries; when the plan ends (expired, unpaid, paused, refunded or a trial over) Free limits
+  apply: new workspaces, people or uploads beyond them are refused, everything stored stays
+  readable.
+- A refused create in the portal links **See plans**; the web app's Sync page shows **Manage
+  plan** (not in the desktop app: no purchase links there).
+- Site: the pricing page lists HITOP Cloud (Free, Pro $6, Team $10 per seat, Business $20, prices
+  until the store shows the final ones) next to the free apps; the home page and privacy policy
+  no longer say there is no sync; the security page and the terms, Cloud privacy notice, DPA, SLA
+  and sub-processor list are drafts awaiting review (not linked yet).
+- Sync server: `src/billing.rs`, migration 7 (`billing_events`, `trials`, Lemon Squeezy ids on
+  `entitlements`), `POST /v1/billing/lemonsqueezy` (signed webhooks), `/v1/orgs/:org/billing*`,
+  commands `billing-events` and `billing-link`. Settings `HITOP_SYNC_LS_*` and
+  `HITOP_SYNC_TRIAL_DAYS`; billing stays off on a self-hosted server.
+
 ### hitop sync: normal sign-in and sign-up (HITOP Cloud C1b)
 
 - **Email and password.** `hitop sync signup --email you@example.com` (or **Create account** on
