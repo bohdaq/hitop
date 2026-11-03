@@ -24,6 +24,8 @@ trap cleanup EXIT
 pass=0
 ok() { pass=$((pass + 1)); echo "PASS $*"; }
 fail() { echo "FAIL $*"; exit 1; }
+# Locally a missing tool skips its part; on CI (CI set) nothing may be skipped.
+skip() { if [ -n "${CI:-}" ]; then fail "skipped on CI: $*"; fi; echo "SKIP $*"; }
 free_port() { python3 -c 'import socket; s=socket.socket(); s.bind(("127.0.0.1",0)); print(s.getsockname()[1])'; }
 
 # A sync server on $1 (database URL), mail to its log; prints "url log".
@@ -78,7 +80,7 @@ if [ -n "${S3_ENDPOINT:-}" ]; then
   grep -q '"pruned": 1' "$t/b3.out" && ! list_objects | grep -q 20200101 && [ "$(list_objects | grep -c '^hitop-sync-')" = 2 ] && ok "S3: BACKUP_KEEP_DAYS prunes only what is older" || fail "prune: $(cat "$t/b3.out") $(list_objects)"
   unset BACKUP_TARGET
 else
-  echo "SKIP S3 (S3_ENDPOINT not set)"
+  skip "S3 (S3_ENDPOINT not set)"
 fi
 
 # ---- Postgres -------------------------------------------------------------------------------
@@ -97,7 +99,7 @@ if [ -n "${HITOP_SYNC_TEST_POSTGRES:-}" ] && [ -n "${HITOP_SYNC_TEST_PG_DUMP:-}"
     && grep -q PASSED "$t"/evidence-pg/*.md && grep -q "pg_dump-custom" "$t"/evidence-pg/*.md && ok "Postgres: pg_dump in one snapshot, pg_restore into a scratch database, rows and hashes equal" || { cat "$t/drill-pg.out"; fail "Postgres drill"; }
   for d in "$src" "$dst"; do PGPASSWORD="$pw" $psql_cmd "$bare" -qc "DROP DATABASE IF EXISTS $d WITH (FORCE)" >/dev/null 2>&1 || true; done
 else
-  echo "SKIP Postgres backup (HITOP_SYNC_TEST_POSTGRES / _PG_DUMP / _PG_RESTORE not set)"
+  skip "Postgres backup (HITOP_SYNC_TEST_POSTGRES / _PG_DUMP / _PG_RESTORE not set)"
 fi
 
 # ---- disk-alert.sh ----------------------------------------------------------------------------
@@ -146,7 +148,7 @@ if command -v systemd-analyze >/dev/null; then
     python3 -c "import sys; sys.exit(0 if float('$score') <= 3.0 else 1)" && ok "systemd-analyze security $n: exposure $score (at most 3.0, 'OK')" || fail "$n exposure $score"
   done
 else
-  echo "SKIP systemd-analyze (not installed)"
+  skip "systemd-analyze (not installed)"
 fi
 
 echo "ops-e2e: $pass checks passed"

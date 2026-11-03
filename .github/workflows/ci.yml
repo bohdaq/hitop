@@ -163,7 +163,58 @@ jobs:
       - run: cargo test --locked --features postgres --test postgres
         env:
           HITOP_SYNC_TEST_POSTGRES: postgres://postgres:ci@127.0.0.1:5432/postgres
+          # dump/restore with the server's major version (C2 backups).
+          HITOP_SYNC_TEST_PG_DUMP: docker run --rm -i --network host -e PGPASSWORD postgres:17-alpine pg_dump
+          HITOP_SYNC_TEST_PG_RESTORE: docker run --rm -i --network host -e PGPASSWORD postgres:17-alpine pg_restore
       - run: cargo clippy --locked --workspace --all-targets --all-features -- -D warnings
+
+  ops:
+    # HITOP Cloud C2 (spec/CLOUD_SERVICE.md): the VM scripts without a VM. Backups to a directory and
+    # to an S3 API (LocalStack), restore drills on SQLite and Postgres, cutover to Postgres and back,
+    # postgres-setup.sh in ubuntu:24.04, disk alerts, the status feeder, systemd-analyze on the units.
+    name: Ops scripts (backups, restore drill, Postgres cutover, units)
+    runs-on: ubuntu-24.04
+    services:
+      postgres:
+        image: postgres:17-alpine
+        env:
+          POSTGRES_PASSWORD: ci
+        ports: ["5432:5432"]
+        options: --health-cmd pg_isready --health-interval 2s --health-timeout 5s --health-retries 15
+      localstack:
+        image: localstack/localstack:4.4
+        env:
+          SERVICES: s3
+        ports: ["4566:4566"]
+        options: --health-cmd "curl -fs http://localhost:4566/_localstack/health" --health-interval 3s --health-timeout 5s --health-retries 30
+    env:
+      BIN: sync-server/target/debug/hitop-sync-server
+      HITOP_SYNC_TEST_POSTGRES: postgres://postgres:ci@127.0.0.1:5432/postgres
+      HITOP_SYNC_TEST_PG_DUMP: docker run --rm -i --network host -e PGPASSWORD postgres:17-alpine pg_dump
+      HITOP_SYNC_TEST_PG_RESTORE: docker run --rm -i --network host -e PGPASSWORD postgres:17-alpine pg_restore
+      HITOP_SYNC_TEST_PSQL: docker run --rm -i --network host -e PGPASSWORD postgres:17-alpine psql
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: sync-server
+      - name: age
+        run: sudo apt-get update -q && sudo apt-get install -y -q age
+      - name: Build the sync server (with Postgres)
+        env:
+          CARGO_PROFILE_DEV_DEBUG: "0"
+        run: cargo build --locked --features postgres --manifest-path sync-server/Cargo.toml
+      - name: Backups, restore drills, alerts, status feeder, units
+        env:
+          S3_ENDPOINT: http://127.0.0.1:4566
+          S3_ACCESS_KEY_ID: test
+          S3_SECRET_ACCESS_KEY: test
+        run: cloud/ops/test/ops-e2e.sh
+      - name: Cutover to Postgres and rollback
+        run: cloud/ops/test/cutover-sim.sh
+      - name: postgres-setup.sh in ubuntu:24.04
+        run: cloud/ops/test/postgres-setup-docker.sh
 
   web:
     name: Site and web app (end to end)
