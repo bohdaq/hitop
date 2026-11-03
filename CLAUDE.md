@@ -88,7 +88,7 @@ hitop/
 │               ├── commands/openapi.rs # `hitop import openapi <file|url>`, `hitop openapi sync <file|url> <folder> [--dry-run] [--prune]`
 │               ├── commands/ws.rs  # `hitop ws <url|request> [-c]`: stdin or --send/--message, --count, --wait, --timeout, --json
 │               ├── commands/grpc.rs # `hitop grpc <target> <Service/Method> | list [service] | describe <symbol>`, saved requests with -c
-│               ├── commands/sync/ # `hitop sync ...`: mod.rs (commands, TOFU pins), client.rs (API + hitop-sync-crypto), store.rs (account, keychain/HITOP_SYNC_KEY_FILE, links, state, runner credential, audit-heads.json), sso.rs (login --sso/--google/--github: loopback listener or paste), password.rs (login by password, signup, password set|forgot|reset|unlock, adopt = become the bundle's device), audit.rs (audit, local chain check)
+│               ├── commands/sync/ # `hitop sync ...`: mod.rs (commands, TOFU pins), client.rs (API + hitop-sync-crypto), store.rs (account, keychain/HITOP_SYNC_KEY_FILE, links, state, runner credential, audit-heads.json, audit-keys.json = pinned server audit keys), sso.rs (login --sso/--google/--github: loopback listener or paste), password.rs (login by password, signup, password set|forgot|reset|unlock, adopt = become the bundle's device), audit.rs (audit, local chain check; C5 org export --export/--file/--anchor: Ed25519 via ring, binary crate only)
 │               ├── commands/mcp.rs # `hitop mcp [folder]`: MCP server over stdio (rmcp), the twelve tools, masking, path confinement
 │               ├── commands/telemetry.rs # `hitop telemetry on|off|status` and the background ping (feature `telemetry`)
 │               └── output.rs       # Colored output, syntect highlighting
@@ -159,10 +159,11 @@ hitop/
 │   └── src/guard.rs            # address/port policy for the proxy (SSRF guard)
 ├── deploy/                     # build.sh, install.sh, systemd unit, front rws routes, README
 ├── sync-server/                # hitop sync (AGPL-3.0-or-later, own LICENSE/deny.toml): rws app, SQLite or Postgres
-│   ├── src/                    # api.rs (routing, CORS), auth.rs (magic link, passkeys), workspaces.rs (members, wraps, rotation), teams.rs (invites, roles, runner accounts), blobs.rs (CAS + version vectors), oidc.rs (SSO + Continue with Google: OIDC code + PKCE, JWKS cache, `Sso` per provider kind), github.rs (Continue with GitHub, OAuth 2), password.rs (passwords, backoff), audit.rs (audit log, hash chain, purge), db.rs (migrations 1-7), billing.rs (Lemon Squeezy, trials), dbtools.rs (db-stats, migrate-db, dump), ratelimit.rs, recovery.rs (key bundles),
-│   │                           # orgs.rs (organizations, personal orgs, members), limits.rs (plans, entitlements, usage, the one place limits are enforced, grandfather), tokens.rs (personal access tokens)
+│   ├── src/                    # api.rs (routing, CORS), auth.rs (magic link, passkeys), workspaces.rs (members, wraps, rotation), teams.rs (invites, roles, runner accounts), blobs.rs (CAS + version vectors), oidc.rs (SSO + Continue with Google: OIDC code + PKCE, JWKS cache, `Sso` per provider kind), github.rs (Continue with GitHub, OAuth 2), password.rs (passwords, backoff), audit.rs (audit log, hash chain, purge), db.rs (migrations 1-9), billing.rs (Lemon Squeezy, trials), dbtools.rs (db-stats, migrate-db, dump), ratelimit.rs, recovery.rs (key bundles),
+│   │                           # orgs.rs (organizations, personal orgs, members), limits.rs (plans, entitlements, usage, the one place limits are enforced, grandfather), tokens.rs (personal access tokens);
+│   │                           # C5: hostkey.rs (host key, AES-256-GCM for the server's own secrets), orgsso.rs (SSO per org, domain claims by DNS TXT over DoH), anchors.rs (signed audit export, daily anchors), admin.rs (org admin console)
 │   ├── tests/                  # auth, sync, roles (every role × operation, removed member), teams (invites, runners), plaintext, no_crypto_in_server, postgres, sso (mock IdP, common/idp.rs), keycloak (fixtures/keycloak realm), audit, wraps_v2 (format 2 wraps, upgrade of format 1),
-│   │                           # orgs (org role × operation, other org, tokens), limits (every limit at its boundary per plan), migration (3 → 4 of common/t25.rs, also in postgres), migrate_db, abuse, recovery
+│   │                           # orgs (org role × operation, other org, tokens), limits (every limit at its boundary per plan), migration (3 → 4 of common/t25.rs, also in postgres), migrate_db, abuse, recovery; C5: domains (common/dns.rs fake DoH), audit_export, admin, sso/keycloak per org (common/orgsso.rs, fixtures/keycloak/hitop-b-realm.json)
 │   ├── deploy/                 # hitop-sync.service, install.sh, rws-routes.toml (sync.hitop.rws8.tech); C2: postgres-setup.sh, cutover-postgres.sh, rollback-postgres.sh,
 │   │                           # backup.sh + s3.sh + hitop-sync-backup.{service,timer}, restore-drill.sh, backup.env.example
 │   └── THREAT_MODEL.md, README.md (self-host guide), Dockerfile
@@ -282,7 +283,7 @@ hitop/
   `run`/`requests send` send saved `bodyMode` urlencoded/multipart bodies (`form::outgoing`)
 - Usage ping: hitop-core feature `telemetry` (off by default; the CLI crate's default feature turns it on);
   `hitop telemetry on|off|status`; never sent unless on, at most weekly; `HITOP_TELEMETRY_URL` points tests at a mock
-- Sync: `hitop sync login --email E [--password-stdin] | --code [CODE] | --sso|--google|--github [--no-browser]`, `signup --email [--code] [--password-stdin]`, `password set|forgot|reset --code|unlock`, `logout|whoami|ls|init|link|unlink|status|pull|push|resolve|members|invite|accept|add|remove|role|trust|runner create|audit [--json] [--verify] [--mine]|recovery create|use [--phrase-file F|-]|status|remove`
+- Sync: `hitop sync login --email E [--password-stdin] | --code [CODE] | --sso|--google|--github [--no-browser]`, `signup --email [--code] [--password-stdin]`, `password set|forgot|reset --code|unlock`, `logout|whoami|ls|init|link|unlink|status|pull|push|resolve|members|invite|accept|add|remove|role|trust|rotate|runner create|audit [--json] [--verify [--file F] [--anchor F]...] [--mine] [--export --org O [--out F]]|recovery create|use [--phrase-file F|-]|status|remove`
   (folders only; `-c <dir>`, default cwd). State in `<config>/hitop/sync/` (account.json, pins.json, keys.json = WorkspaceMemory per workspace, links.json, state/<ws>-<hash>.json);
   session + device secret in the keychain (`sync/<host>`) or `HITOP_SYNC_KEY_FILE` (0600; tests use it with `HITOP_KEYCHAIN=off`);
   `HITOP_SYNC_SERVER` (default https://sync.hitop.rws8.tech; http only for localhost); `HITOP_SYNC_RUNNER=hitop-runner-1.<b64url JSON>` = read-only
@@ -482,6 +483,14 @@ hitop/
   `billing_events`, `trials`); `paused`/`refunded` = Free limits, `billing::expire` ends trials and cancelled periods; tests `tests/billing.rs` with
   `common/lemonsqueezy.rs` (fake API, signed fixtures in `tests/fixtures/lemonsqueezy/`); `billing-events`, `billing-link` commands.
   Site: `site/src/legal-status.js` DRAFT gates `/security.html` + `/legal/*.html` (content/legal/*.md); `site/scripts/check-pages.mjs` in CI
+- HITOP Cloud C5 (built, not deployed): migration 9 (`org_sso`, `org_domains`, `org_audit_settings`, `audit_anchors`, `workspaces.rotation_requested_at|_by`).
+  SSO per org: `/v1/orgs/:org/sso[/test]`, `/v1/orgs/:org/domains[/:d/verify]`; off (404 `org_sso_off`) without `HITOP_SYNC_HOST_KEY[_FILE]` (the test
+  server keeps it unset, Q15); TXT `_hitop-verify.<d>` via `HITOP_SYNC_DNS_URL`; an org's provider signs in only its verified domains; flow in oidc.rs
+  keyed by `Flow.org` (all SSO flows in `state.sso.flows`, one callback); `sso_required_for` checks `state.org_sso` (in memory, `orgsso::reload` after
+  writes: never open a db tx in it). Audit: `GET /v1/orgs/:org/audit/export` (JSONL, answered outside the router in api.rs), daily anchors (hourly
+  worker, mailed to owners, `HITOP_SYNC_AUDIT_ANCHORS`), `/v1/audit/key`, `/v1/audit-anchors/:org/:day` (public opt-in). Admin: `/v1/orgs/:org/admin`
+  (+ owner transfer, rotation request, device removal). `limits::require_plan` gates features (402 `sso`/`auditExport`/`adminConsole`/`adminActions`).
+  Business variants `HITOP_SYNC_LS_VARIANT_BUSINESS_ANNUAL|_MONTHLY`. The server links `ring` (own secrets only; `no_crypto_in_server` bans client crates)
 - Live at https://sync.hitop.rws8.tech (VM, `hitop-sync.service`, 127.0.0.1:7881, env `/etc/hitop-sync/env`, DB `/var/lib/private/hitop-sync/sync.db`); deploy: copy the release binary + `deploy/` and run `deploy/install.sh`
 - `rws --check` on the VM needs `/etc/rws/admin.env` loaded (admin token), or it fails on any config
 

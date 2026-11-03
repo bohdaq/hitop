@@ -122,6 +122,31 @@ It doesn't end existing sessions; to lock someone out at once, delete them:
 A broken setting (wrong issuer, unreachable provider, refused client) answers 503 and is written to
 the server log and the audit log (`sso_config_error`).
 
+### Single sign-on per organization (HITOP Cloud C5)
+
+On a server run for several organizations, each can bring its own provider for the domains it
+proves it owns. Off unless the server has a **host key**: `HITOP_SYNC_HOST_KEY` = 64 hex characters
+(`openssl rand -hex 32`) in the root-only env file, or `HITOP_SYNC_HOST_KEY_FILE` = a file holding
+them (Docker, Kubernetes). Keep a copy offline and **out of database backups**: it opens the
+organizations' client secrets, which the database keeps sealed under it.
+Domain verification also needs `HITOP_SYNC_DNS_URL`, a DNS-over-HTTPS resolver's JSON API (e.g.
+`https://cloudflare-dns.com/dns-query` or `https://dns.google/resolve`; the resolver learns which
+domains are being verified). Then an org owner or admin (portal → Single sign-on, or the API):
+
+1. claims a domain (`POST /v1/orgs/:org/domains {"domain"}`) and publishes the TXT record it
+   names, `_hitop-verify.<domain>` = `hitop-verify=<token>`, then verifies it (`POST
+   .../domains/<domain>/verify`). One org at a time per domain; free-mail domains can't be claimed.
+2. registers a confidential web client at their provider with the server's one redirect URI
+   (`<public URL>/v1/auth/sso/callback`) and saves issuer, client id and secret (`PUT
+   /v1/orgs/:org/sso`, owners). `POST .../sso/test` checks discovery and keys.
+
+People sign in with `hitop sync login --sso --email <you@corp.example>` (1.1 and 1.2 clients too)
+or Sign in with SSO and their address. An org's provider signs in only addresses of the org's
+verified domains; "SSO required" turns every other sign-in off for those domains, including the
+server's own SSO. On HITOP Cloud (`HITOP_SYNC_LIMITS=plans`) configuring needs Business or
+Enterprise; signing in never stops when a plan lapses. Without a host key nothing of this is
+reachable (404 `org_sso_off`), and the server's own `HITOP_SYNC_OIDC_*` SSO works as before.
+
 ### Passwords, Google and GitHub
 
 People can sign up and sign in with an email address and a password (confirmed by a mailed
@@ -169,6 +194,16 @@ when one is broken). On a copy, so the service's files keep their owner:
 `sudo sqlite3 /var/lib/private/hitop-sync/sync.db ".backup /root/audit.db" && sudo env HITOP_SYNC_DATABASE=sqlite:/root/audit.db hitop-sync-server audit-verify; sudo rm -f /root/audit.db*`. Rows past
 `HITOP_SYNC_AUDIT_RETENTION_DAYS` are purged hourly. If you run a service for others, mention the
 log in your privacy notice.
+
+Organizations (C5): owners and admins download a **signed export** of every chain of the org (the
+org's own and each workspace's) as JSON lines (`GET /v1/orgs/:org/audit/export`, `hitop sync audit
+--export --org <org>`), signed with the server's Ed25519 key (`GET /v1/audit/key`; its seed is a
+row of `server_secrets`). Once a day the server signs an **anchor** of the org's chain heads and
+mails it to the org's owners when a head moved (`HITOP_SYNC_AUDIT_ANCHORS=off` stops it; needs
+`SMTP_URL`); owners may make the anchors public at `GET /v1/audit-anchors/:org/<day>.json` (it shows
+how many workspaces the org has and their ids). `hitop sync audit --verify --anchor <file>` checks a
+fresh export against a saved anchor: a log rewritten after the anchor left no longer matches. On
+HITOP Cloud: Business and Enterprise.
 
 ### Reverse proxy
 
@@ -309,6 +344,17 @@ Migration 6 (HITOP Cloud C1b) adds `password_credentials`, `password_tokens` and
 `server_secrets`; nothing changes for existing accounts or older clients. `GET /v1/me` adds
 `password: {set, updatedAt}` and `bundles: {method: {updatedAt}}` (`recovery` still means the
 phrase).
+
+Migration 9 (HITOP Cloud C5) adds `org_sso`, `org_domains`, `org_audit_settings`,
+`audit_anchors` and `workspaces.rotation_requested_at|_by`; nothing changes for older clients
+(`rotationRequested` appears in workspace answers only when an org admin asks for a rotation).
+C5 endpoints: `GET/PUT/DELETE /v1/orgs/:org/sso`, `POST .../sso/test`, `GET/POST
+/v1/orgs/:org/domains`, `POST .../domains/:domain/verify`, `DELETE .../domains/:domain`;
+`GET /v1/orgs/:org/audit/export` (JSON lines), `GET/POST .../audit/anchors`, `PUT
+.../audit/settings`, `GET /v1/audit/key`, `GET /v1/audit-anchors/:org/:day`; `GET
+/v1/orgs/:org/admin`, `PUT .../admin/workspaces/:ws/owner {userId, keepOwners?}`, `POST
+.../admin/workspaces/:ws/rotation`, `DELETE .../admin/devices/:key`. `GET /v1/auth/sso?email=`
+names the org's provider; `POST /v1/auth/sso/start` takes `org` or finds it from `email`.
 
 A write must name the next version and a version vector that descends from the stored one, under
 the current epoch; otherwise 409 with the current state (`conflict` or `stale_epoch`): fetch,

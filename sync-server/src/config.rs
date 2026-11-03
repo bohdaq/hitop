@@ -31,8 +31,9 @@
 //!   `HITOP_SYNC_LS_WEBHOOK_SECRET` is set) and `HITOP_SYNC_TRIAL_DAYS` (14; 0 = no Team trials)
 //! - Run history and alerts: see runs.rs (`HITOP_SYNC_MAX_RUN_BYTES`, `HITOP_SYNC_RUN_RETENTION_DAYS`,
 //!   `HITOP_SYNC_ALERTS_PER_HOUR`, `HITOP_SYNC_ALERT_WEBHOOKS`)
-//! - `HITOP_SYNC_HOST_KEY_FILE`: a file with the host key (64 hex characters) the server seals its
-//!   own secrets under (hostkey.rs). Without it, single sign-on per organization is off.
+//! - `HITOP_SYNC_HOST_KEY` (64 hex characters) or `HITOP_SYNC_HOST_KEY_FILE`: the host key the
+//!   server seals its own secrets under (hostkey.rs). Without it, single sign-on per organization
+//!   is off.
 //! - `HITOP_SYNC_DNS_URL`: a DNS-over-HTTPS resolver's JSON API for domain verification (orgsso.rs,
 //!   e.g. `https://cloudflare-dns.com/dns-query`; unset = domains can't be verified)
 //! - Audit anchors: `HITOP_SYNC_AUDIT_ANCHORS` (`on` default, `off`), see anchors.rs

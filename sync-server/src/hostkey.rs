@@ -1,5 +1,5 @@
-//! The host key (HITOP Cloud C5): a 32-byte key in a file on the server's host
-//! (`HITOP_SYNC_HOST_KEY_FILE`, 64 hex characters, root only, kept out of database backups), under
+//! The host key (HITOP Cloud C5): a 32-byte key on the server's host (`HITOP_SYNC_HOST_KEY`, 64
+//! hex characters, or `HITOP_SYNC_HOST_KEY_FILE`; root only, kept out of database backups), under
 //! which the server seals **its own** secrets at rest: today the per-organization OIDC client
 //! secrets (orgsso.rs). A database dump or backup alone doesn't reveal them.
 //!
@@ -60,8 +60,12 @@ impl HostKey {
         Ok(HostKey { key })
     }
 
-    /// `HITOP_SYNC_HOST_KEY_FILE`; `None` when unset.
+    /// `HITOP_SYNC_HOST_KEY` (the hex itself, e.g. in the root-only env file systemd reads) or
+    /// `HITOP_SYNC_HOST_KEY_FILE`; `None` when neither is set.
     pub fn from_env(var: &dyn Fn(&str) -> Option<String>) -> Result<Option<HostKey>, String> {
+        if let Some(hex) = var("HITOP_SYNC_HOST_KEY") {
+            return Self::parse(&hex).map(Some).map_err(|e| format!("HITOP_SYNC_HOST_KEY: {e}"));
+        }
         let Some(path) = var("HITOP_SYNC_HOST_KEY_FILE") else {
             return Ok(None);
         };

@@ -44,6 +44,8 @@ hitop sync login --sso
 # opens your organization's sign-in page; over SSH: hitop sync login --sso --no-browser
 ```
 
+On a server where organizations bring their own provider (HITOP Cloud Business), add your work address so the server finds yours: `hitop sync login --sso --email you@company.example`.
+
 In the app choose **Sign in with SSO**, sign in on the page that opens, and paste the code it shows. The server may require SSO for your company's domain, and then sign-in mails don't work for it. SSO only replaces how you sign in: your device still makes its own key, and your team still checks its fingerprint before sharing a workspace with it.
 
 ## Share a collection
@@ -193,6 +195,15 @@ hitop sync audit --mine                 # your own sign-ins and failed sign-ins
 ```
 
 In the app it is under **Members** → **Show audit log**. Each entry is chained to the one before it with a hash, so an edited or deleted entry shows up in `--verify`; your computer also remembers the last entry it checked, so a log rewritten from there on is caught next time. Entries hold who did what and when, the first three parts of the IP address (the last part is dropped) and the app's user agent, never file contents or keys. The test server keeps them for a year.
+
+On HITOP Cloud Business the server also mails the organization's owners a signed **anchor** of the log's latest entries once a day, and owners and admins can download the whole organization's log, signed:
+
+```bash
+hitop sync audit --export --org "Acme"                 # every workspace of the org, signed, checked here
+hitop sync audit --verify --anchor anchor.json         # a fresh export against an anchor you kept (the saved mail works too)
+```
+
+A log rewritten after an anchor was mailed no longer matches it.
 
 ## What stays where
 

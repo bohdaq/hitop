@@ -4,6 +4,31 @@ Releases before 1.2 are listed in ROADMAP.md (section 5) and on the GitHub Relea
 
 ## Unreleased
 
+### HITOP Cloud Business: SSO per organization, signed audit export and daily anchors, admin console (C5, built, not deployed)
+
+- **Single sign-on per organization**: an org claims its domains (a DNS TXT record
+  `_hitop-verify.<domain>`, checked over DNS over HTTPS) and brings its own OpenID Connect
+  provider (portal → Single sign-on). Its provider signs in only addresses of its verified
+  domains; "SSO required" turns every other sign-in off for them. The client secret is sealed at
+  rest under the server's host key. Sign in with `hitop sync login --sso --email <work address>`
+  (1.1 and 1.2 clients too). Off unless the server has a host key (`HITOP_SYNC_HOST_KEY`); the
+  hosted test server keeps it off.
+- **Signed audit export and daily anchors**: `hitop sync audit --export --org <org>` downloads
+  every chain of the org as signed JSON lines; once a day the server signs the org's chain heads
+  and mails them to the owners (public anchors are opt-in). `hitop sync audit --verify --anchor
+  <anchor.json>` (or `--file <export>` offline) recomputes the chains and catches a log rewritten
+  after the anchor was sent. The server's audit key is pinned on first use.
+- **Admin console** (portal → Admin): every workspace of the org with its people, every member's
+  device; transfer a workspace's ownership, ask its owners to rotate the key, remove a lost device
+  everywhere. `hitop sync rotate` rotates a workspace's key (owners); status, pull and push say when
+  an admin asked for it.
+- **Business plan** ($20 per seat a month yearly, $25 monthly; proposal) sold through Lemon
+  Squeezy once `HITOP_SYNC_LS_VARIANT_BUSINESS_ANNUAL`/`_MONTHLY` are set; drafts of the SLA and a
+  support page with the priority support address (not in force yet).
+- Sync server: migration 9 (`org_sso`, `org_domains`, `org_audit_settings`, `audit_anchors`,
+  `workspaces.rotation_requested_at|_by`); new settings `HITOP_SYNC_HOST_KEY[_FILE]`,
+  `HITOP_SYNC_DNS_URL`, `HITOP_SYNC_AUDIT_ANCHORS`. Older clients keep working unchanged.
+
 ### HITOP Cloud: run history and alerts from your own runners, shared environment values (C4, built, not deployed)
 
 - **Run history**: `hitop run <folder> --sync-report` (as a member, or in CI with

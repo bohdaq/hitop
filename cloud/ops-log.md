@@ -133,3 +133,16 @@ and on hitop.rws8.tech/cloud/healthz. -->
   `HITOP_SYNC_RUN_RETENTION_DAYS` (plans set retention on HITOP Cloud), `HITOP_SYNC_ALERTS_PER_HOUR`.
   After it: `hitop-sync-server db-stats` lists the new tables; `over-limits` still 0.
 
+## 2026-11-03 C5 built, not deployed (SSO per org, audit export and anchors, admin console, Business)
+
+- Who: agent. What: HITOP Cloud C5 on `main` (spec/CLOUD_SERVICE.md C5 status): 59dea46 (server,
+  migration 9: `org_sso`, `org_domains`, `org_audit_settings`, `audit_anchors`,
+  `workspaces.rotation_requested_at|_by`; tested on SQLite and Postgres), a87841e (CLI), 9cbed61
+  (portal), then site drafts and docs. Nothing applied on the VM.
+- Deploy (when told): a dump (`hitop-sync-server dump /root/pre-c5-<ts>`), then `install.sh` with
+  the `--features postgres` build; `/healthz` must say schema 9; `deploy/deploy.sh` for the site
+  (SLA and support drafts, noindex) and the portal. **Leave `HITOP_SYNC_HOST_KEY` and
+  `HITOP_SYNC_DNS_URL` unset** (owner decision Q15: no SSO on the test server; every per-org SSO
+  endpoint answers 404 `org_sso_off`). No other setting is required; Business stays unsold until
+  `HITOP_SYNC_LS_VARIANT_BUSINESS_*` exist; daily anchors run only for Business orgs (none there).
+  After it: `db-stats` lists the four new tables; `over-limits` still 0.

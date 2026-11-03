@@ -10,6 +10,7 @@ export const LEGAL_LINKS = [
   ["/legal/privacy.html", "HITOP Cloud privacy"],
   ["/legal/dpa.html", "DPA"],
   ["/legal/sla.html", "SLA"],
+  ["/legal/support.html", "Support"],
   ["/legal/subprocessors.html", "Sub-processors"],
   ["/security.html", "Security"],
 ];

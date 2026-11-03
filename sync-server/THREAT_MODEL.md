@@ -64,6 +64,12 @@ contents without clients noticing.
   settings (members' addresses, webhook and Slack URLs, whether failed names are allowed, the
   missed-run interval), each series' last status, and a 30-day log of alerts sent (event, channel
   kind and position, outcome; never the URL).
+- SSO per organization (C5, migration 9, `org_sso`, `org_domains`): each org's provider settings
+  (issuer, client id, scopes, button name, groups claim and required groups, "required") with
+  the **client secret sealed under the host key**, and the domains it claimed (the TXT token,
+  when verified). Audit (C5, `org_audit_settings`, `audit_anchors`): each org's anchor settings
+  and every daily anchor it made (chain ids and heads, signed). Admin (C5): when an org admin
+  asked a workspace to rotate its key, and who.
 - Shared environment values (C4, `env_shares`, `env_share_wraps`): per shared environment a random
   share id, a version, the sealed content and one wrap of the share's key per recipient device
   (with the device's key id and its account); see "Shared environment values".
@@ -71,7 +77,10 @@ contents without clients noticing.
 The server binary does not link any decryption code: the client crate and the AEAD/HPKE crates
 are dev-dependencies only, and `tests/no_crypto_in_server.rs` fails the build's tests if that
 changes. `tests/plaintext.rs` runs a full two-member session with a key rotation and checks that
-no plaintext, workspace key or device secret appears in the database files or in any answer.
+no plaintext, workspace key or device secret appears in the database files or in any answer. Since C5 the server links `ring` (already in the tree through the mail client's TLS) for
+**its own** secrets only: AES-256-GCM to seal per-org OIDC client secrets under the host key, and
+Ed25519 to sign audit exports and anchors. Neither ever touches a blob, a wrap or a report; the
+banned client crates stay out (`tests/no_crypto_in_server.rs`).
 
 ## Construction
 
@@ -412,8 +421,8 @@ every row).
 - **Limits**: this is tamper evidence, not tamper proofing. Someone who can write the database
   (the operator, or an attacker on the host) can rewrite a whole chain with fresh hashes and a new
   head; only a client that pinned an earlier head notices, and only for rows up to that head. The
-  operator can also simply not record an event, or purge. Anchoring heads outside the server
-  (signed, or published) would close the first; not in v1.
+  operator can also simply not record an event, or purge. Daily anchors mailed to org owners
+  close the first for the orgs that get them (C5, "Organizations").
 
 ## Recovery (HITOP Cloud C2)
 
@@ -619,6 +628,57 @@ trusted (pinned) devices of the workspace's owners and editors, the viewers' onl
   values (they had them); the share key's recipients are only as good as the fingerprints people
   compared.
 
+## Organizations: SSO, domains, audit anchors, admin (HITOP Cloud C5)
+
+Business customers bring their own identity provider, prove their domains, take the audit log
+out of the server and manage every workspace of the org. What that adds:
+
+- **The host key** (`HITOP_SYNC_HOST_KEY` or `_FILE`, hostkey.rs) seals the orgs' OIDC client
+  secrets at rest (AES-256-GCM, a fresh nonce, associated data naming the org), so a database dump
+  or backup alone doesn't give anyone an org's client secret. The server holds the key: its
+  operator, or an attacker on the host, can open them. The secret is never answered, logged or put
+  in the audit log. Without a host key per-org SSO is off entirely (the hosted test server, owner
+  decision Q15).
+- **An org's provider signs in only its own verified domains.** A domain is verified by a TXT
+  record `_hitop-verify.<domain>` = `hitop-verify=<random token>` looked up over DNS over HTTPS
+  (`HITOP_SYNC_DNS_URL`); a domain is verified for one org at a time, and the first to prove it
+  keeps it (a later TXT change doesn't move it; the operator settles disputes); free-mail domains
+  can't be claimed. Every sign-in through org B's provider is checked against B's verified domains
+  (oidc.rs's domain check with `allowed_domains` = those domains, never "any"), so B's provider,
+  or B's admin who controls it, can't sign in `ada@a.example` of org A whatever its token says
+  (`tests/sso.rs`, `tests/keycloak.rs` with two realms). The flow is oidc.rs's (PKCE, state,
+  nonce, every ID token check); the sign-in's state names the org, and there is one callback URL.
+  "SSO required" for an org's domains turns off sign-in mails, passwords, passkeys, Google,
+  GitHub and the server's own SSO for those addresses (checked in memory, from the domains table,
+  wherever those sign-ins are checked). What remains: the resolver (and DNS) is trusted to answer
+  the TXT record truthfully when it is checked, so whoever controls a domain's DNS at that moment
+  can claim it. A provider can sign in its own domains' people and register device keys for them,
+  but, as for the server's SSO, can't decrypt anything (members wrap keys only for devices whose
+  fingerprints they confirmed).
+- **Audit anchors (closes open item 7).** Once a day the server signs (Ed25519, its own key, a
+  server secret; public half at `GET /v1/audit/key`) the heads of every chain of an org (the
+  org's chain and each of its workspaces') and mails them to the org's owners when a head moved;
+  public at `/v1/audit-anchors/<org>/<day>.json` only when the owners opt in (a public anchor
+  shows how many workspaces the org has and their ids). The signed export (`GET
+  /v1/orgs/:org/audit/export`, JSON lines, an Ed25519 signature over `"hitop-sync/v1/audit-export"
+  || 0x00 || SHA-256(the lines before)`) carries every row with its hash inputs. `hitop sync audit
+  --verify --anchor <anchor.json>` recomputes every chain and checks that each anchored head is in
+  the export at that seq with that hash; it pins the server's key on first use. A server (or
+  someone with its database) that rewrites a chain after an anchor left is caught by anyone holding
+  that anchor (`tests/audit_export.rs`, `cli/crates/hitop/tests/sync.rs`). What remains: the server
+  holds the signing key, so a signature says the server made the file, not that it is honest; the
+  protection is the anchor already in the owners' mailboxes. Rows written and rewritten between two
+  anchors, an event never recorded, and rows purged by retention ("purged, can't check") aren't
+  caught. A server that suppresses the mail is noticed only by owners who expect it.
+- **The admin console** shows org owners and admins every workspace of the org (ids, sizes,
+  members and roles) and every device key of the org's members: metadata the server holds anyway,
+  never contents. It transfers a workspace's ownership to one of its current members (they already
+  hold the key), asks a workspace's owners to rotate (a flag: the server can't rotate, it holds no
+  key; `hitop sync rotate` does it and clears the flag), and removes a member's device key from
+  their account (its wraps go, its workspaces ask for a rotation). Removing a device stops the
+  server handing it new keys; the device keeps whatever it already decrypted, and the keys of past
+  epochs it holds open those epochs' blobs until the owners rotate and rewrite.
+
 ## What a malicious server can still do
 
 - **See metadata**: account emails, who is in which workspace, number and size of blobs, blob ids
@@ -688,5 +748,6 @@ process's own TLS (the front proxy terminates TLS); post-quantum security (X2551
 5. The web app's device key in localStorage (a non-extractable WebCrypto key can't be used by the
    Rust HPKE code; an IndexedDB-wrapped key would only move the problem).
 6. Done in T24: key fingerprints and trust-on-first-use pinning in every client.
-7. Audit log heads anchored outside the server (signed or published), so a rewritten chain is
-   detectable without a pinned head.
+7. Done in C5: audit log heads anchored outside the server (daily signed anchors mailed to org
+   owners, public opt-in; `hitop sync audit --verify --anchor`; "Organizations"). The review should
+   check the export and anchor formats, the CLI's checks, and the per-org SSO domain rule.

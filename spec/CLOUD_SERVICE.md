@@ -33,7 +33,7 @@ The owner's answers to Q1–Q18 (section 10). The rest of this file follows them
 | Q12 | Transactional mail service before paid launch (owner picks: Postmark or SES) | no |
 | Q13 | **External crypto review later**; the paid launch doesn't wait; the security page says no review has been done yet | yes (was before paid launch) |
 | Q14 | Hosted Free tier: 3 members, 3 workspaces, 100 MB | no |
-| Q15 | No SSO on the shared test server until the Business tier | no |
+| Q15 | No SSO on the shared test server until the Business tier | no (C5 built per-org SSO; it stays off there: no host key) |
 | Q16 | App Store builds: sign-in only, no purchase UI (owner checks guideline 3.1.3) | no |
 | Q17 | **SOC 2 groundwork starts now** (C1/C2); owner picks a compliance tool and auditor; Type 1 first | yes (was when the first enterprise asks) |
 | Q18 | EU only at launch; US region later on demand | no |
@@ -537,7 +537,7 @@ server-side row, never a new file in `environments/`.
 | C1b | Normal sign-in and sign-up: email + password (mailed confirmation, reset, change), Continue with Google / GitHub, the password unlocks the key bundle on a new device | **deployed** to the test server 2026-11-03 (schema 6; Google/GitHub off until the OAuth apps exist) | C1, C2's code; the owner registers the Google and GitHub OAuth apps |
 | C3 | Lemon Squeezy billing, pricing page, prompts, legal and security pages: **paid launch of Pro and Team** | **deployed** to the test server 2026-11-03 (schema 8, billing off: no `HITOP_SYNC_LS_*` until the owner's store exists; legal pages `DRAFT`; status below) | C1, C2, C0 (store approved, mail service, legal drafts reviewed) |
 | C4 | Run history and alerts from your own runners; shared environment secrets | **deployed** to the test server 2026-11-03 (schema 8; `cloud/ops-log.md`) | C3 (sells it); deploy with or after C3's migration 7 |
-| C5 | Business tier: hosted SSO per org, audit export + anchoring, admin console | open | C3 |
+| C5 | Business tier: hosted SSO per org, audit export + anchoring, admin console | **built**, not deployed (2026-11-03; schema 9; per-org SSO off on the test server, no host key: Q15; status below) | C3 |
 | C6 | Enterprise: SCIM, self-host support offer, SOC 2 Type 1 readiness; second region and own host on demand | open | C5, owner (contracts, auditor) |
 | C7 | Deferred: hosted monitors (until confidential computing), mock servers, docs publishing, comments | not planned | revisit with the triggers in section 4 and demand evidence |
 
@@ -1060,6 +1060,83 @@ Lemon Squeezy store yet.**
 - Needs: C3.
 - Owner handoffs: approve the SLA text and the support address.
 
+**Status (2026-11-03): built, not deployed. Per-org SSO stays off on the hosted test server
+(Q15: no host key there).**
+
+- Commits on `main`: 59dea46 (server: migration 9, `orgsso.rs`, `hostkey.rs`, `anchors.rs`,
+  `admin.rs`, Business in `billing.rs`, tests), a87841e (CLI: `hitop sync audit --export`,
+  `--verify --file/--anchor`, `hitop sync rotate`, rotation notes), 9cbed61 (portal: Admin, Single
+  sign-on, Audit pages, Business on the Plan page), then the site drafts and docs commit.
+- **SSO per org** (`orgsso.rs`): `GET/PUT/DELETE /v1/orgs/:org/sso` (owners change it with a
+  session; admins read), `POST .../sso/test`; issuer, client id, secret, scopes, name, groups
+  claim, required groups, `required`, `assumeVerified`, `enabled`. The client secret is sealed with
+  AES-256-GCM under the **host key** (`HITOP_SYNC_HOST_KEY` or `_FILE`) and never answered.
+  oidc.rs's flow keyed by org: one callback URL; `POST /v1/auth/sso/start` takes `org` or finds it
+  from the `email` hint's verified domain; `GET /v1/auth/sso?email=` names the org's provider.
+  An org's provider signs in **only addresses of its verified domains**; "SSO required" closes
+  every other sign-in (mail, password, passkey, Google, GitHub, the server's own SSO) for those
+  domains. 1.1/1.2 clients: `hitop sync login --sso --email <work address>`; without the address
+  the server answers 400 naming `--email`. Without a host key every endpoint answers 404
+  `org_sso_off` and `/v1/auth/sso` is unchanged.
+- **Domains**: `GET/POST /v1/orgs/:org/domains`, `POST .../domains/:domain/verify`, `DELETE`;
+  TXT `_hitop-verify.<domain>` = `hitop-verify=<token>` looked up over DNS over HTTPS
+  (`HITOP_SYNC_DNS_URL`, a resolver's JSON API; unset = 503 `dns_off`); one org at a time (the first
+  to verify keeps it), no free-mail domains, at most 20 per org.
+- **Audit export and anchors** (`anchors.rs`): `GET /v1/orgs/:org/audit/export` (owners, admins):
+  JSON lines (header, chains with head and `purgedThrough`, every event with its hash inputs, an
+  Ed25519 signature line over the SHA-256 of the lines before); daily anchors of the org's chain
+  heads (canonical text signed), mailed to the owners when a head moved; public at
+  `GET /v1/audit-anchors/:org/:day` only when the owners opt in (`PUT .../audit/settings`);
+  `GET/POST .../audit/anchors`; `GET /v1/audit/key`; `HITOP_SYNC_AUDIT_ANCHORS=off`. The signing
+  key's seed is a `server_secrets` row. CLI: `hitop sync audit --export --org <org> [--out]`,
+  `--verify --file <export> [--anchor <file>]...`, `--verify --anchor <file>...` (online); the
+  anchor file may be the saved mail; the server's key is pinned on first use
+  (`audit-keys.json`). Closes THREAT_MODEL item 7.
+- **Admin console** (`admin.rs`, portal `#/orgs/<org>/admin`): every org workspace with members
+  and roles, every member device; transfer owner (to a current member), ask for a key rotation
+  (`rotationRequested` on the workspace; `hitop sync rotate` does it and clears it; status, pull and
+  push tell owners), remove a device from the member's account everywhere (its wraps go, its
+  workspaces ask for a rotation). Team has the basic console (list, transfer owner); Business adds
+  the rotation request and device removal.
+- **Business plan**: `HITOP_SYNC_LS_VARIANT_BUSINESS_ANNUAL` and `_MONTHLY` (off while unset);
+  per seat like Team (checkout, seats, webhook quantity). Plans with `HITOP_SYNC_LIMITS=plans`:
+  SSO and domains (402 `sso`), export and anchors (402 `auditExport`), the admin actions (402
+  `adminActions`) need Business or Enterprise; the console list Team and up (402
+  `adminConsole`); sign-in never stops when a plan lapses. Self-hosted: everything, no gate.
+- **Site drafts** (behind `DRAFT`): `/legal/sla.html` with the priority support line,
+  `/legal/support.html` (proposed address `business-support@hitop.rws8.tech`, response times),
+  the DoH resolver in the sub-processor list, Business points on the pricing page.
+- **Migration 9** (SQLite and Postgres): `org_sso`, `org_domains`, `org_audit_settings`,
+  `audit_anchors`, `workspaces.rotation_requested_at|_by`; `migrate-db`/`db-stats` copy them
+  (`tests/common/fill.rs` fills every one).
+- **Deviations**: forced rotation is a request the owners' clients carry out (`hitop sync rotate`,
+  manual), since the server holds no key; "remove device org-wide" deletes the device key from the
+  member's account (it can't be in some workspaces and not others); public anchors are served by
+  the sync server at `/v1/audit-anchors/...`, the `status.*/audit-anchors/` route waits for the
+  `status.` DNS (owner); domain checks need a DoH resolver (a sub-processor, unset on the test
+  server); no re-seal command for a new host key (orgs save their secret again); the web app's
+  Sync page doesn't offer `rotate` or the export (CLI and portal do).
+- **Done when, as run**: `sync-server` `cargo test --workspace --features postgres` (Postgres 17)
+  green with Keycloak 26.4.2: new `tests/sso.rs` per-org cases (two orgs, two issuers; B's provider
+  can't sign in A's user; tokens from the other provider refused; SSO required beats the server's
+  own SSO; off without a host key; plan gate), `tests/keycloak.rs` `per_org::*` (realms `hitop`
+  and `hitop-b`: alice through A, erin through B, B's "alice@corp.test" refused), `tests/domains.rs`
+  (TXT verify, one org at a time, free mail, admins only, no resolver), `tests/audit_export.rs`
+  (export and anchors verify, a rewrite after the mailed anchor caught, public opt-in, plans),
+  `tests/admin.rs`, `tests/billing.rs` Business, `postgres_org_sso_audit_export_and_admin`,
+  `migrate_db` with the new tables; clippy. CLI `tests/sync.rs`
+  `an_org_audit_export_checks_against_its_anchor_and_a_rewrite_shows` (export, anchor JSON and
+  saved mail, a byte changed, a rewritten chain, a changed server key, the rotation note, `rotate`)
+  and the audit unit tests; portal e2e 54 → 78 checks (admin console, SSO and domains with a fake
+  resolver, audit export and anchors, Business purchase, no host key); site build +
+  `check-pages.mjs`; compat job (released 1.1/1.2 against this server) on CI. ROADMAP section 6
+  notes the T25 handoff as superseded.
+- **Deploy** (not done): a dump, the usual version deploy (`--features postgres`), `/healthz`
+  schema 9, `deploy/deploy.sh` for site and portal. Nothing new is required: leave
+  `HITOP_SYNC_HOST_KEY` and `HITOP_SYNC_DNS_URL` unset on the test server (per-org SSO off, Q15).
+  Daily anchors start for Business orgs (none on the test server). Business is sold once the owner
+  adds its variants.
+
 ### C6 Enterprise: SCIM, self-host support offer, SOC 2 Type 1; region and host on demand
 
 - Goal: close enterprise deals without a bespoke project per customer.
@@ -1169,3 +1246,7 @@ All questions were answered by the owner on 2026-11-02 (section 0).
 | 2026-11-03 | C3 | **Approve the drafts**: `site/content/legal/*.md` (terms: fill in the governing law; sub-processors: the VM provider and data centre, the mail service, the backup storage, the uptime checker) and the security page wording; the refund policy (proposal on the pricing page: full refund within 14 days of the first payment); the trial (14 days, 5 seats). Approval = set `DRAFT = false` in `site/src/legal-status.js` (or tell the agent). Also: DNS `cloud.hitop.rws8.tech` (the pricing page links the portal there) and the mail service before live. | |
 | 2026-11-02 | later | External crypto review (Q13: not a launch gate). Scope: ROADMAP section 6 rows T23/T24/T25/1.2; `sync-server/THREAT_MODEL.md`, `cli/crates/hitop-sync-crypto`, `cli/crates/hitop-core/src/sync.rs`, `cli/crates/hitop/src/commands/sync/`, `webapp/src/sync.js`, `sync-server/src/{oidc,audit,workspaces,blobs}.rs`. Rough budget €10–25k. Tell the agent when it starts; the security page links the summary when done. | |
 | 2026-11-02 | C6 | Book the SOC 2 Type 1 audit; sign the enterprise contract template; decide the US region and an own host when a customer or a trigger (section 5) asks. | |
+| 2026-11-03 | C5 | **Approve the drafts**: `/legal/sla.html` (99.5%, shared host, credits, priority support line) and `/legal/support.html`; pick the **priority support address** (proposal `business-support@hitop.rws8.tech`: create the mailbox or alias, or tell the agent another) and whether outage answers within 4 hours are promised. Approval = `DRAFT = false` (with the C3 drafts). | |
+| 2026-11-03 | C5 | **Business in Lemon Squeezy** (with the C3 store): product **HITOP Cloud Business**, "Charge per unit / quantity" on, variants "Yearly" $240 per seat per year and "Monthly" $25 per seat per month (the proposal; tell the agent other prices: `cloud/portal/src/portal-app.js` `PRICES`, `site/src/pages/pricing.js` `TIERS`); the variant ids → `HITOP_SYNC_LS_VARIANT_BUSINESS_ANNUAL` and `_BUSINESS_MONTHLY` in `/etc/hitop-sync/env`. Business isn't sold until they are set. | |
+| 2026-11-03 | C5 | **Per-org SSO on the hosted server** (only when you want Business SSO live; Q15 says not on the test server): a host key line `HITOP_SYNC_HOST_KEY=<openssl rand -hex 32>` in `/etc/hitop-sync/env` (keep a copy offline, never in backups) and a DNS-over-HTTPS resolver `HITOP_SYNC_DNS_URL` (e.g. Cloudflare; add it to the sub-processor list); RUNBOOK "Business features (C5)". Until then every per-org SSO endpoint answers 404 `org_sso_off`. | |
+| 2026-11-03 | C5 | Optional: DNS `status.hitop.rws8.tech` (C0 row) also carries public audit anchors once an rws route sends `/audit-anchors/` to the sync server's `/v1/audit-anchors/` (the agent adds the route with your go). | |

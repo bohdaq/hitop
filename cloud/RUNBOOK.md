@@ -140,6 +140,10 @@ a neighbour is a trigger to move hosts (spec section 5).
 - **Age key**: the owner makes a new key pair offline; replace `backup-recipients.txt` (keep the
   old public key in it until the 35 days of old backups have expired, then remove it; keep the old
   private key offline until then).
+- **Host key** (`HITOP_SYNC_HOST_KEY`, C5): it seals the organizations' OIDC client
+  secrets. There is no re-seal command yet: a new key means every org with SSO saves its client
+  secret again (portal → Single sign-on). Keep the key out of database backups and a copy offline;
+  losing it turns per-org SSO into config errors (503) until secrets are saved again, nothing else.
 - **SMTP password** (`SMTP_URL`), **OIDC client secret**, Lemon Squeezy keys (C3): edit
   `/etc/hitop-sync/env` (back it up first), `systemctl restart hitop-sync`. Webhook signing
   secret: set the new one in Lemon Squeezy and the env file within a minute of each other;
@@ -155,6 +159,7 @@ a neighbour is a trigger to move hosts (spec section 5).
 - **Settings** (root-only `/etc/hitop-sync/env`, or `_FILE` paths to root-only files):
   `HITOP_SYNC_LS_WEBHOOK_SECRET` (turns billing on), `HITOP_SYNC_LS_STORE_ID`,
   `HITOP_SYNC_LS_VARIANT_PRO_ANNUAL`, `..._PRO_MONTHLY`, `..._TEAM_ANNUAL`, `..._TEAM_MONTHLY`,
+  and for Business (C5) `..._BUSINESS_ANNUAL`, `..._BUSINESS_MONTHLY` (Business isn't sold until set),
   `HITOP_SYNC_LS_API_KEY`, `HITOP_SYNC_LS_TEST_MODE=on` while the store is in test mode. Restart
   `hitop-sync`; `GET /v1/orgs/<org>/billing` shows `enabled` and `checkout`.
 - **Check a delivery**: Lemon Squeezy dashboard → Settings → Webhooks → the webhook → recent
@@ -174,6 +179,25 @@ a neighbour is a trigger to move hosts (spec section 5).
 - **A customer's plan by hand** (an outage of the webhook, a goodwill extension):
   `hitop-sync-server set-plan <org> <plan> [seats]`; the next webhook event of the subscription
   sets it again.
+
+## Business features (C5): SSO per org, audit anchors, admin console
+
+- **The test server keeps per-org SSO off** (owner decision Q15): no `HITOP_SYNC_HOST_KEY_FILE`,
+  no `HITOP_SYNC_DNS_URL`. To turn it on later (owner's go): back up `/etc/hitop-sync/env`, then
+  as root `echo "HITOP_SYNC_HOST_KEY=$(openssl rand -hex 32)" >> /etc/hitop-sync/env` (the env
+  file is root-only and read by systemd before it drops to the dynamic user, which couldn't read a
+  root-only key file; keep a copy of the line offline), add
+  `HITOP_SYNC_DNS_URL=https://cloudflare-dns.com/dns-query` (a sub-processor: add it to the list),
+  restart, check `GET /v1/orgs/<org>/sso` says `available: true`.
+- **Daily anchors** go out from the hourly worker (one per Business org a day, mailed to owners
+  when a head moved). Check: `SELECT org_id, day, mailed_at FROM audit_anchors ORDER BY day DESC
+  LIMIT 20`. Stop them with `HITOP_SYNC_AUDIT_ANCHORS=off`. Public anchors are served by the sync
+  server at `/v1/audit-anchors/<org>/<day>.json`; a `status.` route
+  (`status.hitop.rws8.tech/audit-anchors/` → that path) needs the `status.` DNS and an rws route
+  (owner's go).
+- **A customer asks to unclaim a domain** verified by another org (a takeover dispute): check the
+  TXT record yourself, then `DELETE FROM org_domains WHERE domain = '<d>' AND org_id = '<old org>'`
+  and restart (the server reloads domains at start and after every change through the API).
 
 ## Uptime and status page
 
