@@ -78,6 +78,7 @@ fn phrase(status: u16) -> &'static StatusCodeReasonPhrase {
         409 => s.n409_conflict,
         413 => s.n413_payload_too_large,
         429 => s.n429_too_many_requests,
+        501 => s.n501_not_implemented,
         503 => s.n503_service_unavailable,
         502 => s.n502_bad_gateway,
         _ => s.n500_internal_server_error,
@@ -338,6 +339,11 @@ impl SyncApp {
             ("PUT", "/v1/orgs/:org/admin/workspaces/:ws/owner", crate::admin::transfer_owner),
             ("POST", "/v1/orgs/:org/admin/workspaces/:ws/rotation", crate::admin::force_rotation),
             ("DELETE", "/v1/orgs/:org/admin/devices/:key", crate::admin::remove_device),
+            // HITOP Cloud C6: SCIM tokens and group roles (the SCIM API itself is /scim/v2, scim.rs).
+            ("GET", "/v1/orgs/:org/scim", crate::scim::get),
+            ("POST", "/v1/orgs/:org/scim/tokens", crate::scim::create_token),
+            ("DELETE", "/v1/orgs/:org/scim/tokens/:id", crate::scim::delete_token),
+            ("PUT", "/v1/orgs/:org/scim/groups/:group", crate::scim::put_group),
             ("GET", "/v1/me/tokens", crate::tokens::list),
             ("POST", "/v1/me/tokens", crate::tokens::create),
             ("DELETE", "/v1/me/tokens/:id", crate::tokens::delete),
@@ -449,6 +455,10 @@ impl Application for SyncApp {
             });
             response.headers.push(Header { name: "Retry-After".into(), value: r.retry_after.to_string().into() });
             response
+        } else if path.starts_with("/scim/v2/") || path == "/scim/v2" {
+            // SCIM 2.0 (scim.rs): its own errors, content type and PATCH, which the router lacks.
+            set_client(self.client_of(request, connection));
+            crate::scim::handle(&self.state, request, path)
         } else {
             self.router.handle(request, connection).unwrap_or_else(|| error_response(&ApiError::not_found("no such endpoint")))
         };

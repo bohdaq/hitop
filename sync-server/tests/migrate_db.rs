@@ -52,7 +52,7 @@ fn sqlite_to_sqlite_copies_every_row_and_verifies_the_audit_chains() {
     let dst = format!("sqlite:{}", out_dir.join("copy.db").display());
 
     let before = dbtools::stats(&s.app.state().db).unwrap();
-    for t in ["users", "device_keys", "workspaces", "members", "wraps", "blobs", "invites", "audit_log", "audit_chain", "orgs", "org_members", "entitlements", "api_tokens", "sessions", "billing_events", "trials", "runs", "env_shares", "org_sso", "org_domains", "org_audit_settings", "audit_anchors"] {
+    for t in ["users", "device_keys", "workspaces", "members", "wraps", "blobs", "invites", "audit_log", "audit_chain", "orgs", "org_members", "entitlements", "api_tokens", "sessions", "billing_events", "trials", "runs", "env_shares", "org_sso", "org_domains", "org_audit_settings", "audit_anchors", "scim_tokens", "scim_users", "scim_groups", "scim_group_members", "scim_group_workspaces", "scim_grants"] {
         assert!(before.tables.iter().any(|x| x.table == t && x.rows > 0), "{t} has rows to copy");
     }
     let o = bin(&["migrate-db", "--from", &src, "--to", &dst], None);

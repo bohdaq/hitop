@@ -298,7 +298,10 @@ impl Tx<'_> {
 /// ordering mark on `entitlements`, `billing_events` (ids and outcomes of webhook deliveries,
 /// never their bodies) and `trials`.
 /// 8: HITOP Cloud C4 run history (runs.rs), alerts (alerts.rs), shared environment values
-/// (shares.rs).
+/// (shares.rs). 9: HITOP Cloud C5 SSO per org, domains, audit anchors, rotation requests.
+/// 10: HITOP Cloud C6 SCIM provisioning (scim.rs): per-org tokens (hashes), the directory's users
+/// and groups as the IdP sent them, a group's org role and workspace roles, and the workspace
+/// grants SCIM made (so it only ever takes back what it gave).
 const MIGRATIONS: &[&str] = &[r"
 CREATE TABLE users (
   id TEXT PRIMARY KEY,
@@ -664,6 +667,61 @@ CREATE TABLE audit_anchors (
 );
 ALTER TABLE workspaces ADD COLUMN rotation_requested_at BIGINT NOT NULL DEFAULT 0;
 ALTER TABLE workspaces ADD COLUMN rotation_requested_by TEXT NOT NULL DEFAULT '';
+", r"
+CREATE TABLE scim_tokens (
+  id TEXT PRIMARY KEY,
+  org_id TEXT NOT NULL REFERENCES orgs(id) ON DELETE CASCADE,
+  name TEXT NOT NULL,
+  token_hash TEXT NOT NULL UNIQUE,
+  created_by TEXT NOT NULL,
+  created_at BIGINT NOT NULL,
+  last_used_at BIGINT NOT NULL DEFAULT 0
+);
+CREATE INDEX scim_tokens_org ON scim_tokens(org_id);
+CREATE TABLE scim_users (
+  id TEXT PRIMARY KEY,
+  org_id TEXT NOT NULL REFERENCES orgs(id) ON DELETE CASCADE,
+  user_name TEXT NOT NULL,
+  external_id TEXT NOT NULL DEFAULT '',
+  display_name TEXT NOT NULL DEFAULT '',
+  name_json TEXT NOT NULL DEFAULT '{}',
+  active BIGINT NOT NULL DEFAULT 1,
+  created_at BIGINT NOT NULL,
+  updated_at BIGINT NOT NULL,
+  UNIQUE (org_id, user_name)
+);
+CREATE TABLE scim_groups (
+  id TEXT PRIMARY KEY,
+  org_id TEXT NOT NULL REFERENCES orgs(id) ON DELETE CASCADE,
+  display_name TEXT NOT NULL,
+  external_id TEXT NOT NULL DEFAULT '',
+  org_role TEXT NOT NULL DEFAULT '',
+  created_at BIGINT NOT NULL,
+  updated_at BIGINT NOT NULL
+);
+CREATE INDEX scim_groups_org ON scim_groups(org_id);
+CREATE TABLE scim_group_members (
+  group_id TEXT NOT NULL REFERENCES scim_groups(id) ON DELETE CASCADE,
+  user_id TEXT NOT NULL REFERENCES scim_users(id) ON DELETE CASCADE,
+  PRIMARY KEY (group_id, user_id)
+);
+CREATE INDEX scim_group_members_user ON scim_group_members(user_id);
+CREATE TABLE scim_group_workspaces (
+  group_id TEXT NOT NULL REFERENCES scim_groups(id) ON DELETE CASCADE,
+  workspace_id TEXT NOT NULL REFERENCES workspaces(id) ON DELETE CASCADE,
+  role TEXT NOT NULL,
+  PRIMARY KEY (group_id, workspace_id)
+);
+CREATE TABLE scim_grants (
+  org_id TEXT NOT NULL REFERENCES orgs(id) ON DELETE CASCADE,
+  workspace_id TEXT NOT NULL REFERENCES workspaces(id) ON DELETE CASCADE,
+  email TEXT NOT NULL,
+  role TEXT NOT NULL,
+  kind TEXT NOT NULL,
+  created_at BIGINT NOT NULL,
+  PRIMARY KEY (workspace_id, email)
+);
+CREATE INDEX scim_grants_org ON scim_grants(org_id, email);
 "];
 
 /// Steps in Rust that run in the same transaction as a migration's SQL (index = migration

@@ -65,7 +65,8 @@ pub fn create(state: &State, request: &Request, params: &PathParams) -> ApiResul
         let ws = membership(tx, id, &user)?;
         require(&ws, Role::Owner)?;
         tx.execute("DELETE FROM invites WHERE workspace_id = $1 AND expires_at <= $2", &[id.into(), now.into()])?;
-        let open = tx.query_one("SELECT COUNT(*) FROM invites WHERE workspace_id = $1", &[id.into()])?.map_or(0, |r| r.int(0));
+        // SCIM's invites (scim.rs) don't count: a large directory group mustn't block owners' invites.
+        let open = tx.query_one("SELECT COUNT(*) FROM invites WHERE workspace_id = $1 AND created_by NOT LIKE 'scim:%'", &[id.into()])?.map_or(0, |r| r.int(0));
         if open >= MAX_OPEN_INVITES {
             return Err(ApiError::new(429, "rate_limited", "this workspace has too many open invites; delete some"));
         }
@@ -110,6 +111,7 @@ pub fn list(state: &State, request: &Request, params: &PathParams) -> ApiResult 
         let user = authenticate(state, tx, request)?;
         let ws = membership(tx, id, &user)?;
         require(&ws, Role::Owner)?;
+        crate::scim::accept_pending(state, tx, id)?;
         let rows = tx.query(
             "SELECT i.id, i.email, i.role, i.created_at, i.expires_at, i.accepted_by, COALESCE(u.email, '') FROM invites i LEFT JOIN users u ON u.id = i.accepted_by WHERE i.workspace_id = $1 AND i.expires_at > $2 ORDER BY i.created_at, i.id",
             &[id.into(), now.into()],

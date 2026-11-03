@@ -457,3 +457,39 @@ fn postgres_org_sso_audit_export_and_admin() {
     assert_eq!(r.status, 200, "{}", r.json);
     assert!(!s.call("GET", &format!("/v1/workspaces/{WS}"), Some(&ada.session), None).json["rotationRequested"].is_null());
 }
+
+#[test]
+fn postgres_scim() {
+    let Some(url) = database("c6") else {
+        eprintln!("HITOP_SYNC_TEST_POSTGRES not set: skipped");
+        return;
+    };
+    let s = Server::with("pg-c6", |c| c.database = url.clone());
+    let ada = Device::new(&s, "ada@corp.test");
+    let bob = Device::new(&s, "bob@corp.test");
+    let org = s.call("POST", "/v1/orgs", Some(&ada.session), Some(json!({ "name": "Corp" }))).json["id"].as_str().unwrap().to_string();
+    let k = create_workspace(&s, &ada, WS);
+    assert_eq!(s.call("POST", &format!("/v1/orgs/{org}/workspaces"), Some(&ada.session), Some(json!({ "workspace": WS }))).status, 200);
+    let token = s.call("POST", &format!("/v1/orgs/{org}/scim/tokens"), Some(&ada.session), Some(json!({ "name": "IdP" }))).json["token"].as_str().unwrap().to_string();
+    let scim = |m: &str, p: &str, b: Option<serde_json::Value>| s.call(m, &format!("/scim/v2{p}"), Some(&token), b);
+    let r = scim("POST", "/Users", Some(json!({ "userName": "bob@corp.test", "displayName": "Bob" })));
+    assert_eq!(r.status, 201, "{}", r.json);
+    let bob_id = r.json["id"].as_str().unwrap().to_string();
+    assert_eq!(scim("POST", "/Users", Some(json!({ "userName": "dee@corp.test" }))).status, 201);
+    assert_eq!(scim("GET", "/Users?filter=userName%20eq%20%22bob%40corp.test%22", None).json["totalResults"], 1);
+    let g = scim("POST", "/Groups", Some(json!({ "displayName": "Team", "members": [{ "value": bob_id }] }))).json["id"].as_str().unwrap().to_string();
+    let r = s.call("PUT", &format!("/v1/orgs/{org}/scim/groups/{g}"), Some(&ada.session), Some(json!({ "orgRole": "admin", "workspaces": [{ "workspace": WS, "role": "editor" }] })));
+    assert_eq!(r.status, 200, "{}", r.json);
+    let inv = s.call("GET", &format!("/v1/workspaces/{WS}/invites"), Some(&ada.session), None).json;
+    assert_eq!(inv["invites"][0]["accepted"]["userId"], bob.user_id.as_str(), "{inv}");
+    let wraps = wraps_for(&[(bob.key_id.clone(), bob.keys.public_key().to_vec())], WS, 1, &k);
+    assert_eq!(s.call("POST", &format!("/v1/workspaces/{WS}/members"), Some(&ada.session), Some(json!({ "email": "bob@corp.test", "role": "editor", "wraps": wraps }))).status, 201);
+    let patch = json!({ "schemas": ["urn:ietf:params:scim:api:messages:2.0:PatchOp"], "Operations": [{ "op": "replace", "path": "active", "value": false }] });
+    assert_eq!(scim("PATCH", &format!("/Users/{bob_id}"), Some(patch)).status, 200);
+    let ws = s.call("GET", &format!("/v1/workspaces/{WS}"), Some(&ada.session), None).json;
+    assert_eq!(ws["members"].as_array().unwrap().len(), 1, "{ws}");
+    assert!(!ws["rotationRequested"].is_null());
+    let info = s.call("GET", &format!("/v1/orgs/{org}/scim"), Some(&ada.session), None).json;
+    assert_eq!((info["users"].clone(), info["activeUsers"].clone()), (json!(2), json!(1)), "{info}");
+    assert_eq!(scim("DELETE", &format!("/Groups/{g}"), None).status, 204);
+}

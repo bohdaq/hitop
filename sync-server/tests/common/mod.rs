@@ -38,6 +38,8 @@ pub struct Reply {
     pub json: Value,
     pub headers: Vec<(String, String)>,
     pub raw: Vec<u8>,
+    /// The body's media type (rws sets `Content-Type` from it when it writes the response).
+    pub content_type: Option<String>,
 }
 
 impl Reply {
@@ -95,7 +97,8 @@ impl Server {
         let raw: Vec<u8> = response.content_range_list.iter().flat_map(|r| r.body.clone()).collect();
         let json = serde_json::from_slice(&raw).unwrap_or(Value::Null);
         let headers = response.headers.iter().map(|h| (h.name.to_string(), h.value.to_string())).collect();
-        Reply { status: response.status_code, json, headers, raw }
+        let content_type = response.content_range_list.first().map(|r| r.content_type.to_string());
+        Reply { status: response.status_code, json, headers, raw, content_type }
     }
 
     /// The token from the last sign-in mail to `email`.

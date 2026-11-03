@@ -42,6 +42,14 @@ fn main() {
         print_stats(&stats, args.iter().any(|a| a == "--json"));
         std::process::exit(0);
     }
+    // `hitop-sync-server support-bundle [--out <file>] [--log <file> | --unit <name> | --no-journal]
+    // [--since-hours <n>]`: versions, schema, redacted settings, row counts, health counts and
+    // scrubbed error lines for support (support.rs); never customer data or secrets.
+    if command == Some("support-bundle") {
+        let path = support_bundle(&state, &args[1..]).unwrap_or_else(|e| fail(e));
+        println!("support bundle written to {path} (read it before you send it)");
+        std::process::exit(0);
+    }
     // `hitop-sync-server dump <dir>`: a backup (data file + manifest.json with its row counts and
     // hashes); deploy/backup.sh encrypts and uploads it. HITOP_SYNC_PG_DUMP: the pg_dump command.
     if command == Some("dump") {
@@ -224,4 +232,32 @@ fn migrate_db(args: &[String], config: &Config) -> Result<i32, String> {
     let state = State::new(target, Mailer::Off, c)?;
     let bad = print_audit_verify(&state)?;
     Ok(if bad == 0 { 0 } else { 1 })
+}
+
+fn support_bundle(state: &State, args: &[String]) -> Result<String, String> {
+    let usage = "usage: hitop-sync-server support-bundle [--out <file>] [--log <file> | --unit <name> | --no-journal] [--since-hours <n>]";
+    let mut opts = hitop_sync_server::support::Options::default();
+    let mut out = None;
+    let mut it = args.iter();
+    while let Some(a) = it.next() {
+        match a.as_str() {
+            "--out" => out = Some(it.next().ok_or(usage)?.clone()),
+            "--log" => opts.log = Some(it.next().ok_or(usage)?.into()),
+            "--unit" => opts.unit = it.next().ok_or(usage)?.clone(),
+            "--no-journal" => opts.journal = false,
+            "--since-hours" => opts.since_hours = it.next().and_then(|n| n.parse().ok()).ok_or(usage)?,
+            _ => return Err(usage.into()),
+        }
+    }
+    let env: Vec<(String, String)> = std::env::vars().collect();
+    let bundle = hitop_sync_server::support::bundle(state, &opts, &env).map_err(|e| e.to_string())?;
+    let path = out.unwrap_or_else(|| format!("hitop-support-{}.json", state.now()));
+    let text = serde_json::to_string_pretty(&bundle).map_err(|e| e.to_string())? + "\n";
+    let mut o = std::fs::OpenOptions::new();
+    o.write(true).create_new(true);
+    #[cfg(unix)]
+    std::os::unix::fs::OpenOptionsExt::mode(&mut o, 0o600);
+    let mut f = o.open(&path).map_err(|e| format!("{path}: {e}"))?;
+    std::io::Write::write_all(&mut f, text.as_bytes()).map_err(|e| format!("{path}: {e}"))?;
+    Ok(path)
 }

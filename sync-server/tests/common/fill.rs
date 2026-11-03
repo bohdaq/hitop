@@ -88,5 +88,16 @@ pub fn fill(s: &Server) -> usize {
             tx.execute("UPDATE workspaces SET rotation_requested_at = 7, rotation_requested_by = 'ada@example.com' WHERE id = $1", &[WS.into()])
         })
         .unwrap();
+    // C6: SCIM: a token, two users (one without an account), a group giving the org workspace, so
+    // a grant and the invite it makes.
+    let r = s.call("POST", &format!("/v1/orgs/{org}/workspaces"), Some(&ada.session), Some(json!({ "workspace": WS })));
+    assert_eq!(r.status, 200, "{}", r.json);
+    let token = s.call("POST", &format!("/v1/orgs/{org}/scim/tokens"), Some(&ada.session), Some(json!({ "name": "IdP" }))).json["token"].as_str().unwrap().to_string();
+    let cy_scim = s.call("POST", "/scim/v2/Users", Some(&token), Some(json!({ "userName": "cy@example.com" }))).json["id"].as_str().unwrap().to_string();
+    let r = s.call("POST", "/scim/v2/Users", Some(&token), Some(json!({ "userName": "fay@example.com" })));
+    assert_eq!(r.status, 201, "{}", r.json);
+    let group = s.call("POST", "/scim/v2/Groups", Some(&token), Some(json!({ "displayName": "Team", "members": [{ "value": cy_scim }] }))).json["id"].as_str().unwrap().to_string();
+    let r = s.call("PUT", &format!("/v1/orgs/{org}/scim/groups/{group}"), Some(&ada.session), Some(json!({ "workspaces": [{ "workspace": WS, "role": "viewer" }] })));
+    assert_eq!(r.status, 200, "{}", r.json);
     s.app.state().db.tx(|tx| tx.query_one("SELECT COUNT(*) FROM audit_chain", &[])).unwrap().unwrap().int(0) as usize
 }
