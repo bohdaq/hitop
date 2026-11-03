@@ -34,7 +34,7 @@ Copy both to the VM, unpack in a fresh directory, and as root:
    `systemctl show`, exposure ≈ 1.4). Rollback: `cloud/ops/install.sh remove hardening`.
 3. **Alerts**: write `/etc/hitop-sync/alert.env` (`ALERT_TO=<owner address>`; mail goes through
    127.0.0.1:587 with `ALERT_SMTP_USER`/`ALERT_SMTP_PASSWORD` of the `noreply` account, the same as
-   `SMTP_URL`), then `cloud/ops/install.sh disk-alert`. Rollback: `install.sh remove disk-alert`.
+   `SMTP_URL`; `ALERT_SMTP_TLS_NAME=mail.rws8.tech`, the certificate's name), then `cloud/ops/install.sh disk-alert`. Rollback: `install.sh remove disk-alert`.
 4. **Postgres**: `sync-server/deploy/postgres-setup.sh`, then `cloud/ops/install.sh pg-limits`.
    Nothing uses it yet. Rollback: `pg_dropcluster --stop <major> hitop` (and `apt purge postgresql`
    if the script installed it).

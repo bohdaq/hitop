@@ -12,8 +12,9 @@
 # ALERT_REPEAT_HOURS (6) per problem. Exit 1 while anything is wrong, 0 otherwise.
 #
 # Settings: /etc/hitop-sync/alert.env (optional, root only): ALERT_TO, ALERT_FROM, ALERT_SMTP
-# (curl URL, default smtp://127.0.0.1:587), ALERT_SMTP_USER, ALERT_SMTP_PASSWORD; and the
-# thresholds above. ALERT_CMD replaces the mail (tests).
+# (curl URL, default smtp://127.0.0.1:587), ALERT_SMTP_TLS_NAME (the name on the mail server's
+# certificate when ALERT_SMTP points at an address, like the sync server's SMTP_TLS_SERVER_NAME),
+# ALERT_SMTP_USER, ALERT_SMTP_PASSWORD; and the thresholds above. ALERT_CMD replaces the mail (tests).
 set -uo pipefail
 
 DISK_PATHS="${DISK_PATHS:-/ /var/lib/postgresql /var/lib/private/hitop-sync}"
@@ -66,7 +67,15 @@ send() {
   local msg; msg="$(mktemp)"
   printf 'From: %s\r\nTo: %s\r\nSubject: %s\r\nDate: %s\r\n\r\n%s\r\n' "$ALERT_FROM" "$ALERT_TO" "$subject" "$(date -R)" "$body" > "$msg"
   local from_addr; from_addr="$(echo "$ALERT_FROM" | sed -E 's/.*<([^>]*)>.*/\1/')"
-  printf 'user = "%s:%s"\n' "${ALERT_SMTP_USER:-}" "${ALERT_SMTP_PASSWORD:-}" | curl -sS --config - --ssl-reqd --url "$ALERT_SMTP" --mail-from "$from_addr" --mail-rcpt "$ALERT_TO" -T "$msg" \
+  local url="$ALERT_SMTP" connect=()
+  if [ -n "${ALERT_SMTP_TLS_NAME:-}" ]; then
+    # Connect to the configured address but check the certificate against the name.
+    local hostport="${ALERT_SMTP#*://}"; hostport="${hostport%%/*}"
+    local port="${hostport##*:}"; [ "$port" = "$hostport" ] && port=587
+    url="${ALERT_SMTP%%://*}://$ALERT_SMTP_TLS_NAME:$port"
+    connect=(--connect-to "$ALERT_SMTP_TLS_NAME:$port:${hostport%:*}:$port")
+  fi
+  printf 'user = "%s:%s"\n' "${ALERT_SMTP_USER:-}" "${ALERT_SMTP_PASSWORD:-}" | curl -sS --config - --ssl-reqd "${connect[@]}" --url "$url" --mail-from "$from_addr" --mail-rcpt "$ALERT_TO" -T "$msg" \
     || logger -p user.err -t hitop-alert "could not mail the alert to $ALERT_TO"
   rm -f "$msg"
 }

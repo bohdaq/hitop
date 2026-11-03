@@ -38,6 +38,26 @@ date (UTC), who, what, the commit, the checks run after it.
 - Waiting for the owner: bucket + write-only key + lifecycle rule, age key, uptime checker,
   `status.` DNS, write-freeze time, alert address.
 
+## 2026-11-03 C2 applied to the test server, without backups and uptime (09:24–09:29 UTC)
+
+- Who: agent, owner's go-ahead ("for now we won't do backups, also uptime, you can switch now").
+  Server binary from c11a366 (`--features postgres`); alert script fix ALERT_SMTP_TLS_NAME on top.
+- 1 Binary: `install.sh` backed up `sync.db.bak-20261103-092431`; `/healthz` schema 5; 0 over a limit.
+- 2 Hardening: units sandboxed (exposure 1.4), MemoryMax 1 GiB, CPU 100 %, IO weight 50.
+- 3 Alerts: `/etc/hitop-sync/alert.env` (0600) to bohdaq@gmail.com through the local submission
+  port with the server's noreply account and `ALERT_SMTP_TLS_NAME=mail.rws8.tech` (the certificate
+  name; the first test mail failed on it). One test mail sent; timer every 15 min.
+- 4 Postgres 16, cluster `16/hitop`, socket only, port 5433, limits drop-in; the package's
+  `16/main` stopped and disabled.
+- 5 Cutover: report `/root/cutover-2026-11-03.txt`; write freeze 3 s; 10 rows in 20 tables,
+  counts and content hashes equal; audit chain 1, 0 broken; backups
+  `sync.db.pre-pg-20261103T092813Z`, `env.bak-20261103T092813Z`. `/healthz`
+  `{"database":"postgres","ok":true,"schema":5}`.
+- Checks: hitop-sync, hitop-server, postgresql@16-hitop, disk-alert timer active; rws8.tech,
+  hitop.rws8.tech (`/`, `/cloud/`), lit.rws8.tech, mail.rws8.tech 200; `rws --check` OK (rws untouched).
+- Not done (owner: later): 6 backups, 7 restore drill, 8 uptime checker and status page. Until
+  backups run, the only copies are the SQLite snapshots above; rollback: `rollback-postgres.sh`.
+
 <!-- Next entry (template): record: commit, backup file names (sync.db.bak-<ts>), the row
 counts before and after (users, workspaces, members; orgs with personal_of <> '' = users with
 runner_of = ''), `hitop-sync-server over-limits` output (0 over a limit), curl of /healthz on sync
