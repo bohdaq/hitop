@@ -826,17 +826,17 @@ export class HitopCloud extends LitElement {
           </div>`;
         })}
         <h2>Devices</h2>
-        <p class="hint">Device keys of the organization's members. Removing one (a lost or stolen laptop) takes it off the person's account everywhere; every workspace it held a key for asks its owners for a rotation. The person's other devices keep working.</p>
+        <p class="hint">Device keys of the organization's members. Removing one (a lost or stolen laptop) takes it out of this organization's workspaces only: its copies of their keys are deleted and each of those workspaces asks its owners for a rotation. The device stays on the person's account, with their personal and other organizations' workspaces (they remove it there themselves). Their other devices keep working.</p>
         <table class="portal-table" aria-label="Devices">
           <thead><tr><th>Email</th><th>Device</th><th>Added</th><th>Workspaces here</th><th></th></tr></thead>
           <tbody>${a.devices.map((d) => html`<tr>
             <td>${d.email}</td><td>${d.name}</td><td>${date(d.createdAt)}</td><td>${d.orgWorkspaces}</td>
             <td>${a.actions.removeDevice
               ? html`<lit-material-button variant="text" ?disabled=${Boolean(this.busy)} @click=${() => this.run("device", async () => {
-                  if (!confirm(`Remove the device "${d.name}" of ${d.email}? It is removed from their account everywhere, its copies of workspace keys are deleted, and its workspaces ask for a key rotation. Their other devices keep working.`)) return;
+                  if (!confirm(`Remove the device "${d.name}" of ${d.email}? It is removed from this organization's workspaces: its copies of their keys are deleted and those workspaces ask for a key rotation. Their personal and other organizations' workspaces aren't touched. Their other devices keep working.`)) return;
                   await this.api.call("DELETE", `${base}/devices/${encodeURIComponent(d.keyId)}`);
                   await reload();
-                  this.note = `Removed ${d.name} of ${d.email}.`;
+                  this.note = `Removed ${d.name} of ${d.email} from this organization's workspaces.`;
                 })}>Remove</lit-material-button>`
               : nothing}</td>
           </tr>`)}</tbody>

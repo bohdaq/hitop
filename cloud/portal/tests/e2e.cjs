@@ -12,7 +12,7 @@
 // bought (quantity 4 sent to Stripe, invoiced at once), the member added,
 // payment failed (the banner), a refund (Free limits), expired (Free, nothing removed), a bad
 // signature refused, the billing portal link; C5: Business bought (per seat), the admin console
-// (workspaces, people, devices; transfer ownership, a rotation request, a device removed), single
+// (workspaces, people, devices; transfer ownership, a rotation request, a device removed from the org's workspaces), single
 // sign-on per org (a domain claimed and verified through a fake DNS-over-HTTPS resolver, the
 // provider saved and tested), the audit page (signed export, an anchor, the settings), the SSO
 // button asking for the work address, and a server without a host key saying SSO isn't available.
@@ -454,7 +454,12 @@ async function syncServer(portalOrigin, extraEnv = {}) {
     await app.getByRole("table", { name: "Devices" }).getByRole("row").filter({ hasText: "bob-laptop" }).getByRole("button", { name: "Remove" }).click();
     await idle();
     const after = (await server.api("GET", `/v1/orgs/${globex}/admin`, adaSession)).json;
-    check("a device removed everywhere, after a warning", dialog.includes("removed from their account everywhere") && !after.devices.some((d) => d.name === "bob-laptop") && !(await app.getByRole("table", { name: "Devices" }).innerText()).includes("bob-laptop"), dialog + JSON.stringify(after.devices));
+    const laptop = after.devices.find((d) => d.name === "bob-laptop");
+    check(
+      "a device removed from the org's workspaces only, after a warning",
+      dialog.includes("removed from this organization's workspaces") && dialog.includes("aren't touched") && laptop?.orgWorkspaces === 0,
+      dialog + JSON.stringify(after.devices),
+    );
 
     // Single sign-on: claim globex.test, publish the TXT record, verify; the provider.
     await page.goto(`${origin}/#/orgs/${globex}`);
