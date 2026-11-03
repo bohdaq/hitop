@@ -31,10 +31,13 @@
 //! - **Passwords** (since 0.4): [`derive_password_keys`] turns a password and the account's
 //!   [`PasswordKdf`] (Argon2id) into an auth key for the server and a bundle key that seals the
 //!   same key bundle as the phrase, so a password sign-in on a new device unlocks it.
+//! - **Run reports and shared environment values** (since 0.5): [`seal_run`] seals a run's report
+//!   under the workspace key; [`seal_share`] and [`seal_share_wrap`] share an environment's secret
+//!   values end to end with the devices the sharer picks (module docs of `shared.rs`).
 //!
 //! Byte layouts are in `sync-server/THREAT_MODEL.md`, `vectors/v1.json` (blobs, format 1 wraps),
-//! `vectors/v2.json` (format 2 wraps, key commitments) and `vectors/password.json` (password
-//! keys), which every implementation must pass.
+//! `vectors/v2.json` (format 2 wraps, key commitments), `vectors/password.json` (password
+//! keys) and `vectors/shared.json` (run reports, shares), which every implementation must pass.
 
 use chacha20poly1305::aead::{Aead, Payload};
 use chacha20poly1305::{Key, KeyInit, XChaCha20Poly1305, XNonce};
@@ -47,6 +50,8 @@ use zeroize::{Zeroize, ZeroizeOnDrop};
 mod keyring;
 mod password;
 mod recovery;
+mod shared;
+pub use shared::{open_run, open_share, open_share_wrap, run_associated_data, run_epoch, seal_run, seal_run_with_nonce, seal_share, seal_share_with_nonce, seal_share_wrap, share_associated_data, share_wrap_info, share_wrap_sender, RUN_AAD_LABEL, SHARE_AAD_LABEL, SHARE_WRAP_INFO_LABEL};
 pub use password::{check_new_password, derive_password_keys, normalize_password, PasswordKdf, PasswordKeys, AUTH_KEY_INFO, BUNDLE_KEY_INFO, DEFAULT_ITERATIONS, DEFAULT_MEMORY_KIB, DEFAULT_PARALLELISM, MAX_ITERATIONS, MAX_MEMORY_KIB, MAX_PARALLELISM, MAX_PASSWORD_BYTES, MIN_ITERATIONS, MIN_MEMORY_KIB, MIN_PASSWORD_CHARS, PASSWORD_AD, PASSWORD_ALG, SALT_LEN};
 pub use recovery::{open_key_bundle, open_recovery, recovery_associated_data, seal_key_bundle, seal_key_bundle_with_nonce, seal_recovery, seal_recovery_with_nonce, RecoveryPhrase, PHRASE_WORDS, RECOVERY_AAD_LABEL, RECOVERY_FORMAT, RECOVERY_KEY_LABEL};
 pub use keyring::{accept_wraps, key_commitment, normalize_fingerprint, Keyring, Notice, ReceivedWrap, WorkspaceMemory};
@@ -74,7 +79,7 @@ pub const WRAPPED_KEY_LEN: usize = 32 + 32 + TAG_LEN;
 /// X25519 key length (public and secret).
 pub const KEY_LEN: usize = 32;
 
-type Kem = X25519HkdfSha256;
+pub(crate) type Kem = X25519HkdfSha256;
 
 /// Everything that can go wrong. The variants from [`Error::UntrustedSender`] on are what
 /// [`accept_wraps`] refuses: show them to the person, they are what an attack looks like.
@@ -150,7 +155,7 @@ impl std::fmt::Display for Error {
 
 impl std::error::Error for Error {}
 
-fn random<const N: usize>() -> [u8; N] {
+pub(crate) fn random<const N: usize>() -> [u8; N] {
     let mut bytes = [0u8; N];
     getrandom::fill(&mut bytes).expect("the OS random number generator failed");
     bytes
@@ -387,7 +392,7 @@ pub fn wrap_header(wrapped: &[u8]) -> Result<WrapHeader, Error> {
     split_v2(wrapped).map(|(sender_key_id, head, _)| WrapHeader::Authenticated { sender_key_id: sender_key_id.to_string(), head })
 }
 
-fn split_v2(wrapped: &[u8]) -> Result<(&str, u32, &[u8]), Error> {
+pub(crate) fn split_v2(wrapped: &[u8]) -> Result<(&str, u32, &[u8]), Error> {
     if wrapped.len() < 7 + 1 + WRAPPED_KEY_LEN || wrapped[0] != WRAP_V2_FORMAT {
         return Err(Error::Malformed("wrapped key (unknown format)"));
     }
