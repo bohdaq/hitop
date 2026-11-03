@@ -84,7 +84,12 @@ async function syncServer(extraEnv = {}) {
     child.kill();
     fs.rmSync(dir, { recursive: true, force: true });
   };
-  return { url, code, mails, database, sql, stop, log: () => log };
+  // The operator command (`set-plan`): with HITOP_SYNC_LIMITS=plans, run history needs a paid plan.
+  const setPlan = (org, plan, seats) => {
+    const r = require('child_process').spawnSync(path.resolve(bin), ['set-plan', org, plan, String(seats)], { env: { ...process.env, HITOP_SYNC_DATABASE: `sqlite:${path.join(dir, 'sync.db')}`, HITOP_SYNC_MAIL: 'log' }, encoding: 'utf8' });
+    if (r.status !== 0) throw new Error(`set-plan: ${r.stderr}`);
+  };
+  return { url, code, mails, database, sql, setPlan, stop, log: () => log };
 }
 
 (async () => {
@@ -286,6 +291,10 @@ async function syncServer(extraEnv = {}) {
   // HITOP Cloud C4: run history. A run is uploaded as a runner would (a status row and the report
   // sealed under the workspace key, here by Ada's page); Bob sees the history and opens the report
   // on his device; the server holds no request name or URL of it.
+  if (process.env.HITOP_SYNC_LIMITS === 'plans') {
+    // Free keeps status rows only: give Ada's personal org Team for the sealed report.
+    server.setPlan(`personal-${await store(ada, 'return s.syncClient.account().userId;')}`, 'team', 10);
+  }
   const uploaded = await store(ada, `return (async () => {
     const sc = s.syncClient; const c = s.collections.find((c) => c.name === "Shop API"); const ws = sc.link(c.id).workspace;
     const { epoch, keys } = await sc.workspaceKeys(ws);

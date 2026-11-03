@@ -1054,8 +1054,14 @@ export class SyncClient {
     const { epoch, keys: epochKeys } = await this.workspaceKeys(ws);
     await this.api("POST", `/v1/workspaces/${ws}/members`, { email, role, wraps: await this.wrapsFor(keys, ws, epoch, epochKeys[epoch], epoch) });
     for (const [e, k] of Object.entries(epochKeys)) if (+e !== epoch) await this.api("POST", `/v1/workspaces/${ws}/wraps`, { epoch: +e, wraps: await this.wrapsFor(keys, ws, +e, k, epoch) });
-    // In the same step: the shared environment values they are meant to have.
-    return this.resealShares(ws);
+    // In the same step: the shared environment values they are meant to have (the member is
+    // added either way).
+    try {
+      return await this.resealShares(ws);
+    } catch (e) {
+      this.notices.push({ kind: "shares", message: `Shared environment values not handed to them: ${e.message}` });
+      return 0;
+    }
   }
 
   // Hands the workspace key to members' new devices whose keys are trusted.
@@ -1065,7 +1071,7 @@ export class SyncClient {
     if (!waiting.length || info.role === "viewer") return 0;
     const { epoch, keys } = await this.workspaceKeys(info.workspace);
     for (const [e, k] of Object.entries(keys)) await this.api("POST", `/v1/workspaces/${info.workspace}/wraps`, { epoch: +e, wraps: await this.wrapsFor(waiting, info.workspace, +e, k, epoch) });
-    await this.resealShares(info.workspace);
+    await this.resealShares(info.workspace).catch((e) => this.notices.push({ kind: "shares", message: `Shared environment values not handed to new devices: ${e.message}` }));
     return waiting.length;
   }
 
@@ -1095,7 +1101,10 @@ export class SyncClient {
     }
     // Shared environment values: a new key for whoever is still meant to have them. What the
     // removed person saw stays theirs: the page says to rotate those secrets.
-    const shares = await this.rekeyShares(ws);
+    const shares = await this.rekeyShares(ws).catch((e) => {
+      this.notices.push({ kind: "shares", message: `Shared environment values not re-keyed: ${e.message}` });
+      return {};
+    });
     return { epoch: next, reencrypted: n, ...shares };
   }
 
