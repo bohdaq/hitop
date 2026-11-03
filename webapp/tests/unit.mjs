@@ -221,6 +221,19 @@ assert.throws(() => schemaFromResponse('{"errors": [{"message": "introspection i
   // Authenticated wraps (hitop-sync-crypto 0.2): vectors/v2.json, and accept_wraps as the CLI runs it.
   const v2 = readFileSync(join(here, "../../cli/crates/hitop-sync-crypto/vectors/v2.json"), "utf8");
   assert.ok(sync.checkVectorsV2(v2) >= 10, "every format 2 test vector passes in the WASM build");
+  // Passwords (hitop-sync-crypto 0.4): vectors/password.json, the floor on parameters, bundles.
+  const pw = readFileSync(join(here, "../../cli/crates/hitop-sync-crypto/vectors/password.json"), "utf8");
+  assert.equal(sync.checkPasswordVectors(pw), 3, "every password vector passes in the WASM build");
+  const kdf = sync.passwordKdfNew();
+  assert.deepEqual([kdf.alg, kdf.m, kdf.t, kdf.p], ["argon2id", 65536, 3, 1]);
+  const pk = sync.passwordKeys("correct horse battery staple", kdf);
+  assert.notEqual(pk.authKey, pk.bundleKey);
+  assert.deepEqual(sync.passwordKeys("correct horse battery staple", kdf), pk);
+  assert.throws(() => sync.passwordKeys("correct horse battery staple", { ...kdf, m: 1024 }), /weaker/);
+  assert.throws(() => sync.passwordCheck("short"), /at least 8/);
+  const sealedBundle = sync.bundleSeal(pk.bundleKey, "acct", '{"v":1}');
+  assert.equal(sync.bundleOpen(pk.bundleKey, "acct", sealedBundle), '{"v":1}');
+  assert.throws(() => sync.bundleOpen(pk.authKey, "acct", sealedBundle));
   const owner = sync.keygen();
   const wrapped = sync.sealWrap(owner.secret, "owner-key", "dev-key", dev.publicKey, ws, 1, 1, key);
   assert.deepEqual(sync.wrapHeader(wrapped), { legacy: false, sender: "owner-key", head: 1 });

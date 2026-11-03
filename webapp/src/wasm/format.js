@@ -56,6 +56,15 @@ function api(m) {
       recoveryParse: (words) => m.syncRecoveryParse(String(words ?? "")),
       recoverySeal: (entropy, accountId, text) => m.syncRecoverySeal(entropy, String(accountId), String(text)),
       recoveryOpen: (entropy, accountId, blob) => m.syncRecoveryOpen(entropy, String(accountId), blob),
+      // Passwords (hitop-sync-crypto 0.4): kdf = the server's {alg, m, t, p, salt};
+      // passwordKeys → {authKey, bundleKey} (throws on parameters below hitop's floor);
+      // the bundle key seals the same key bundle as the recovery phrase.
+      passwordKdfNew: () => JSON.parse(m.syncPasswordKdfNew()),
+      passwordCheck: (password) => m.syncPasswordCheck(String(password ?? "")),
+      passwordKeys: (password, kdf) => JSON.parse(m.syncPasswordKeys(String(password ?? ""), JSON.stringify(kdf))),
+      bundleSeal: (bundleKey, accountId, text) => m.syncBundleSeal(bundleKey, String(accountId), String(text)),
+      bundleOpen: (bundleKey, accountId, blob) => m.syncBundleOpen(bundleKey, String(accountId), blob),
+      checkPasswordVectors: (json) => m.syncCheckPasswordVectors(typeof json === "string" ? json : JSON.stringify(json)),
       // hitop-sync-crypto accept_wraps: which keys this device may use. wraps [{ epoch, wrapped }],
       // pinned/listed { keyId: publicKey }, memory = WorkspaceMemory ({} when none) →
       // { ok: true, keys: { epoch: key }, current, notices, newPins, memory, legacy } | { ok: false, error: { kind, message, ... } }.

@@ -126,6 +126,83 @@ pub fn recovery_open(entropy: &str, account_id: &str, blob: &str) -> Result<Stri
     String::from_utf8(plain).map_err(|_| err("recovery data: not text"))
 }
 
+// ---- passwords (hitop-sync-crypto 0.4, THREAT_MODEL.md "Passwords") --------------------------
+
+/// The KDF JSON as the server keeps it: `{alg, m, t, p, salt}` (salt base64url).
+fn kdf_from_json(json: &str) -> Result<crypto::PasswordKdf, JsError> {
+    let v: serde_json::Value = serde_json::from_str(json).map_err(|e| err(format!("password parameters: {e}")))?;
+    if v["alg"] != "argon2id" {
+        return Err(err("password parameters: only argon2id is known"));
+    }
+    let n = |k: &str| v[k].as_u64().and_then(|x| u32::try_from(x).ok()).ok_or_else(|| err(format!("password parameters: {k}")));
+    Ok(crypto::PasswordKdf { memory_kib: n("m")?, iterations: n("t")?, parallelism: n("p")?, salt: unb64("password salt", v["salt"].as_str().unwrap_or(""))? })
+}
+
+fn kdf_to_json(k: &crypto::PasswordKdf) -> serde_json::Value {
+    serde_json::json!({ "alg": "argon2id", "m": k.memory_kib, "t": k.iterations, "p": k.parallelism, "salt": b64(&k.salt) })
+}
+
+/// New password parameters (the defaults, a new salt), as JSON text.
+#[wasm_bindgen(js_name = syncPasswordKdfNew)]
+pub fn password_kdf_new() -> String {
+    kdf_to_json(&crypto::PasswordKdf::generate()).to_string()
+}
+
+/// Throws when a new password is too short or too long (the message says why).
+#[wasm_bindgen(js_name = syncPasswordCheck)]
+pub fn password_check(password: &str) -> Result<(), JsError> {
+    crypto::check_new_password(password).map_err(err)
+}
+
+/// `{authKey, bundleKey}` (base64url) of `password` under the parameters `kdf` (JSON text from
+/// the server); refuses parameters weaker than hitop's floor.
+#[wasm_bindgen(js_name = syncPasswordKeys)]
+pub fn password_keys(password: &str, kdf: &str) -> Result<String, JsError> {
+    let keys = crypto::derive_password_keys(password, &kdf_from_json(kdf)?).map_err(err)?;
+    Ok(serde_json::json!({ "authKey": b64(&keys.auth_key), "bundleKey": b64(&keys.bundle_key) }).to_string())
+}
+
+fn unlock_key(key: &str) -> Result<[u8; 32], JsError> {
+    unb64("bundle key", key)?.try_into().map_err(|_| err("bundle key: 32 bytes"))
+}
+
+/// The key bundle (JSON text) of account `account_id` sealed under a password's bundle key.
+#[wasm_bindgen(js_name = syncBundleSeal)]
+pub fn bundle_seal(bundle_key: &str, account_id: &str, plaintext: &str) -> Result<String, JsError> {
+    Ok(b64(&crypto::seal_key_bundle(&unlock_key(bundle_key)?, account_id, plaintext.as_bytes()).map_err(err)?))
+}
+
+/// Opens a key bundle sealed under a password's bundle key.
+#[wasm_bindgen(js_name = syncBundleOpen)]
+pub fn bundle_open(bundle_key: &str, account_id: &str, blob: &str) -> Result<String, JsError> {
+    let plain = crypto::open_key_bundle(&unlock_key(bundle_key)?, account_id, &unb64("key bundle", blob)?).map_err(err)?;
+    String::from_utf8(plain).map_err(|_| err("key bundle: not text"))
+}
+
+/// Runs `vectors/password.json` through this build; returns how many cases passed.
+pub fn check_password_vectors_json(json: &str) -> anyhow::Result<usize> {
+    let v: serde_json::Value = serde_json::from_str(json)?;
+    let mut n = 0;
+    for c in v["cases"].as_array().ok_or_else(|| anyhow::anyhow!("no cases"))? {
+        let s = |k: &str| c[k].as_str().map(str::to_string).ok_or_else(|| anyhow::anyhow!("{k}"));
+        let u = |k: &str| c[k].as_u64().map(|x| x as u32).ok_or_else(|| anyhow::anyhow!("{k}"));
+        let kdf = crypto::PasswordKdf { memory_kib: u("memoryKib")?, iterations: u("iterations")?, parallelism: u("parallelism")?, salt: unhex(&s("salt")?)? };
+        anyhow::ensure!(kdf.canonical() == s("canonical")?, "canonical of {}", s("name")?);
+        let keys = crypto::derive_password_keys(&s("password")?, &kdf)?;
+        anyhow::ensure!(hex(&keys.auth_key) == s("authKey")?, "authKey of {}", s("name")?);
+        anyhow::ensure!(hex(&keys.bundle_key) == s("bundleKey")?, "bundleKey of {}", s("name")?);
+        let opened = crypto::open_key_bundle(&keys.bundle_key, &s("bundleAccount")?, &unhex(&s("bundle")?)?)?;
+        anyhow::ensure!(opened == s("bundlePlaintext")?.as_bytes(), "bundle of {}", s("name")?);
+        n += 1;
+    }
+    Ok(n)
+}
+
+#[wasm_bindgen(js_name = syncCheckPasswordVectors)]
+pub fn check_password_vectors(json: &str) -> Result<usize, JsError> {
+    check_password_vectors_json(json).map_err(|e| err(format!("{e:#}")))
+}
+
 /// A format 1 (legacy, unauthenticated) wrap, as hitop 1.1 made them. The app never makes one;
 /// the tests use it to play a malicious server.
 #[wasm_bindgen(js_name = syncWrapLegacy)]
@@ -428,5 +505,6 @@ mod tests {
         assert!(n >= 10, "{n}");
         let n = super::check_vectors_v2_json(include_str!("../../hitop-sync-crypto/vectors/v2.json")).unwrap();
         assert!(n >= 10, "{n}");
+        assert_eq!(super::check_password_vectors_json(include_str!("../../hitop-sync-crypto/vectors/password.json")).unwrap(), 3);
     }
 }

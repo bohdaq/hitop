@@ -37,3 +37,9 @@ lto = true
 codegen-units = 1
 panic = "abort"
 strip = true
+
+# Password hashing (hitop-sync-crypto) unoptimized makes the tests slow.
+[profile.dev.package.argon2]
+opt-level = 3
+[profile.dev.package.blake2]
+opt-level = 3
