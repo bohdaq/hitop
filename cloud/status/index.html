@@ -1,0 +1,73 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>HITOP status</title>
+<meta name="description" content="Current status of HITOP Cloud: the sync API, the site and web app, the portal.">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self' 'unsafe-inline'; style-src 'unsafe-inline'; connect-src 'self'; img-src 'self' data:">
+<style>
+  :root { --bg: #fff; --fg: #1b1b1f; --muted: #5d5e67; --line: #e4e1ec; --up: #1b7f3b; --down: #b3261e; --brand: #667eea; }
+  @media (prefers-color-scheme: dark) { :root { --bg: #1b1b1f; --fg: #e4e1e6; --muted: #c7c5d0; --line: #3a3a44; --up: #6dd58c; --down: #ffb4ab; } }
+  body { margin: 0; background: var(--bg); color: var(--fg); font: 16px/1.5 system-ui, -apple-system, "Segoe UI", sans-serif; }
+  main { max-width: 44rem; margin: 0 auto; padding: 2rem 1rem 3rem; }
+  h1 { font-size: 1.5rem; margin: 0 0 .25rem; }
+  h1 span { color: var(--brand); }
+  .summary { font-size: 1.15rem; margin: 1rem 0 1.5rem; padding: .9rem 1rem; border-radius: 12px; border: 1px solid var(--line); }
+  .summary.up { border-color: var(--up); } .summary.down { border-color: var(--down); }
+  .comp { display: flex; flex-wrap: wrap; justify-content: space-between; gap: .25rem 1rem; padding: .75rem 0; border-bottom: 1px solid var(--line); }
+  .dot { display: inline-block; width: .65rem; height: .65rem; border-radius: 50%; margin-right: .5rem; background: var(--up); }
+  .dot.down { background: var(--down); }
+  .bars { display: flex; gap: 1px; width: 100%; height: 1.5rem; margin-top: .35rem; }
+  .bars i { flex: 1; background: var(--up); border-radius: 1px; opacity: .85; } .bars i.down { background: var(--down); }
+  .muted { color: var(--muted); font-size: .9rem; }
+  section { margin-top: 2rem; }
+  article { border-left: 3px solid var(--line); padding-left: .75rem; margin: 1rem 0; }
+</style>
+</head>
+<body>
+<main>
+  <h1><span>HITOP</span> status</h1>
+  <p class="muted">The sync API (sync.hitop.rws8.tech), the site and web app, and the account portal, checked every few minutes from outside their server. HITOP Cloud runs on one shared server: no SLA above 99.5%.</p>
+  <div id="summary" class="summary" role="status">Loading…</div>
+  <div id="components"></div>
+  <section><h2>Incidents</h2><div id="incidents"><p class="muted">None reported.</p></div></section>
+  <p class="muted" id="updated"></p>
+</main>
+<script>
+  const names = { sync: "Sync API", site: "Site and web app", portal: "Account portal" };
+  const when = (t) => new Date(t * 1000).toISOString().replace("T", " ").slice(0, 16) + " UTC";
+  const el = (tag, cls, text) => { const e = document.createElement(tag); if (cls) e.className = cls; if (text != null) e.textContent = text; return e; };
+  async function load() {
+    const s = await (await fetch("status.json", { cache: "no-store" })).json();
+    const down = s.components.filter((c) => !c.ok);
+    const sum = document.getElementById("summary");
+    const stale = Date.now() / 1000 - s.updated > 30 * 60;
+    sum.className = "summary " + (down.length || stale ? "down" : "up");
+    sum.textContent = stale ? "Status checks are late: the last one ran " + when(s.updated) + "." : down.length ? down.map((c) => names[c.name] || c.name).join(", ") + (down.length > 1 ? " are" : " is") + " not answering." : "All systems answering.";
+    const list = document.getElementById("components");
+    list.replaceChildren();
+    for (const c of s.components) {
+      const row = el("div", "comp");
+      const title = el("div");
+      title.append(el("span", "dot" + (c.ok ? "" : " down")), el("b", null, names[c.name] || c.name));
+      row.append(title, el("span", "muted", (c.ok ? "up" : "down (" + (c.code || "no answer") + ")") + " · " + c.uptime + "% of the last " + c.checks + " checks"));
+      const bars = el("div", "bars");
+      for (const h of (s.history[c.name] || []).slice(-96)) { const b = el("i", h.ok ? "" : "down"); b.title = when(h.at) + (h.ok ? " up, " + h.ms + " ms" : " down"); bars.append(b); }
+      row.append(bars);
+      list.append(row);
+    }
+    document.getElementById("updated").textContent = "Last check " + when(s.updated) + ".";
+    try {
+      const inc = (await (await fetch("incidents.json", { cache: "no-store" })).json()).incidents || [];
+      if (inc.length) {
+        const box = document.getElementById("incidents");
+        box.replaceChildren(...inc.slice(0, 20).map((i) => { const a = el("article"); a.append(el("b", null, i.title), el("div", "muted", when(i.started) + (i.resolved ? " to " + when(i.resolved) : " · ongoing")), el("p", null, i.text)); return a; }));
+      }
+    } catch { /* no incidents file */ }
+  }
+  load().catch(() => { document.getElementById("summary").textContent = "Status data isn't available right now."; });
+  setInterval(() => load().catch(() => {}), 60000);
+</script>
+</body>
+</html>
