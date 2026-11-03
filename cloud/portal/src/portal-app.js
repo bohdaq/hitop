@@ -9,6 +9,7 @@
 //                      (HITOP Cloud C4: status rows and alert settings; the sealed reports open in hitop)
 //   #/orgs/<id>/admin  admin console (C5: every workspace, member and device of the org)
 //   #/orgs/<id>/sso    single sign-on and domains (C5)   #/orgs/<id>/audit  audit export, anchors (C5)
+//   #/orgs/<id>/scim   SCIM provisioning (C6: tokens, what each directory group gives)
 import { LitElement, html, nothing } from "lit";
 import { Api, ApiError, DEFAULT_SERVER, changePassword, normalizeServer, passkeySignIn, passwordReset, passwordSignIn, passwordSignUp, registerPasskey, ssoFinish, ssoStart } from "./api.js";
 
@@ -202,11 +203,15 @@ export class HitopCloud extends LitElement {
         ]);
         this.data = { org, members, usage, billing };
         // C5 pages: a refusal (402 on a plan without them) shows with its "See plans" link.
-        const sub = { admin: "admin", sso: "sso", audit: "audit/anchors" }[parts[2]];
+        const sub = { admin: "admin", sso: "sso", audit: "audit/anchors", scim: "scim" }[parts[2]];
         if (sub) {
           const extra = await this.api.get(`/v1/orgs/${encodeURIComponent(id)}/${sub}`).then((v) => ({ v }), (e) => ({ e }));
           this.data = { ...this.data, [parts[2]]: extra.v ?? null };
           if (extra.e) throw extra.e;
+          // The SCIM page offers the org's workspaces for a group's roles (from the admin console).
+          if (parts[2] === "scim") {
+            this.data.adminWorkspaces = (await this.api.get(`/v1/orgs/${encodeURIComponent(id)}/admin`).catch(() => ({ workspaces: [] }))).workspaces.map((w) => w.id);
+          }
         }
       } else if (parts[0] === "runs") {
         this.data = { workspaces: (await this.api.get("/v1/workspaces")).workspaces };
@@ -430,7 +435,7 @@ export class HitopCloud extends LitElement {
     const parts = this.route.replace(/^#\/?/, "").split("/").filter(Boolean);
     let page;
     if (parts[0] === "orgs" && this.data.org) {
-      const sub = { plan: () => this.renderPlan(), admin: () => this.renderAdmin(), sso: () => this.renderSso(), audit: () => this.renderAudit() }[parts[2]];
+      const sub = { plan: () => this.renderPlan(), admin: () => this.renderAdmin(), sso: () => this.renderSso(), audit: () => this.renderAudit(), scim: () => this.renderScim() }[parts[2]];
       page = sub ? sub() : this.renderOrg();
     }
     else if (parts[0] === "tokens" && this.data.tokens) page = this.renderTokens();
@@ -598,7 +603,7 @@ export class HitopCloud extends LitElement {
         <p class="page-lead">Plan <strong>${org.plan}</strong>${org.seats ? html`, ${org.seats} seat(s)` : nothing}. You are ${org.role}. <a href="#/orgs/${org.id}/plan">${this.data.billing?.enabled ? "Plan and billing" : "Plan details"}</a></p>
         ${this.pastDueBanner()}
         ${admin && !org.personal
-          ? html`<p aria-label="Organization pages"><a href="#/orgs/${org.id}/admin">Admin console</a> · <a href="#/orgs/${org.id}/sso">Single sign-on</a> · <a href="#/orgs/${org.id}/audit">Audit</a></p>`
+          ? html`<p aria-label="Organization pages"><a href="#/orgs/${org.id}/admin">Admin console</a> · <a href="#/orgs/${org.id}/sso">Single sign-on</a> · <a href="#/orgs/${org.id}/audit">Audit</a> · <a href="#/orgs/${org.id}/scim">SCIM</a></p>`
           : nothing}
         <h2>Usage</h2>
         ${this.renderUsage(usage)}
@@ -936,6 +941,81 @@ export class HitopCloud extends LitElement {
             : nothing}
         </div>
         <p class="hint">People sign in with <code>hitop sync login --sso --email you@your-domain</code>, or "Sign in with SSO" and their work address in the apps and here.</p>
+        ${this.orgBack(org)}
+      </section>`;
+  }
+
+  // --- HITOP Cloud C6: SCIM provisioning --------------------------------------------------
+
+  renderScim() {
+    const { org, scim } = this.data;
+    const owner = org.role === "owner";
+    const base = `/v1/orgs/${encodeURIComponent(org.id)}/scim`;
+    const reload = () => this.go(this.route);
+    if (!scim) return html`<section aria-label="SCIM"><h1>SCIM provisioning</h1>${this.orgBack(org)}</section>`;
+    const workspaces = this.data.adminWorkspaces || [];
+    const saveGroup = (g, change) => this.run("scim-group", async () => {
+      const body = { orgRole: g.orgRole, workspaces: g.workspaces.map((w) => ({ workspace: w.workspace, role: w.role })), ...change };
+      await this.api.call("PUT", `${base}/groups/${encodeURIComponent(g.id)}`, body);
+      await reload();
+      this.note = `Saved what ${g.displayName} gives; applied to its members.`;
+    });
+    return html`
+      <section aria-label="SCIM">
+        <h1>SCIM provisioning: ${org.name}</h1>
+        <p class="page-lead">Your identity provider (Okta, Entra ID, Keycloak...) adds and removes the organization's members and their groups. A group gives an organization role and workspace roles, set here. SCIM gives access, never keys: a workspace's owner still adds a new person's device (<code>hitop sync members</code>, then <code>hitop sync add</code>), and someone removed is out at once while the owners rotate the key.</p>
+        <h2>Connection</h2>
+        <p class="hint">SCIM base URL <code aria-label="SCIM base URL">${scim.baseUrl}</code>, bearer token below. userName must be the person's email address. ${scim.enabled ? `${scim.activeUsers} active of ${scim.users} provisioned users${scim.pendingWorkspaceAdds ? `, ${scim.pendingWorkspaceAdds} waiting for a workspace owner to add them` : ""}.` : "Off: no token yet."}</p>
+        ${this.newToken
+          ? html`<div class="portal-card" role="status"><p>Copy the token into your identity provider now; it isn't shown again.</p><pre aria-label="New SCIM token">${this.newToken}</pre></div>`
+          : nothing}
+        <table class="portal-table" aria-label="SCIM tokens">
+          <thead><tr><th>Name</th><th>Created</th><th>Last used</th><th></th></tr></thead>
+          <tbody>${scim.tokens.map((t) => html`<tr>
+            <td>${t.name}</td><td>${date(t.createdAt)}</td><td>${t.lastUsedAt ? date(t.lastUsedAt) : "never"}</td>
+            <td>${owner ? html`<lit-material-button variant="text" ?disabled=${Boolean(this.busy)} @click=${() => this.run("scim-revoke", async () => {
+              if (!confirm(`Revoke the SCIM token "${t.name}"? Your identity provider stops provisioning until it has a new one.`)) return;
+              await this.api.call("DELETE", `${base}/tokens/${encodeURIComponent(t.id)}`);
+              await reload();
+              this.note = `Revoked ${t.name}.`;
+            })}>Revoke</lit-material-button>` : nothing}</td>
+          </tr>`)}</tbody>
+        </table>
+        ${owner
+          ? html`<div class="portal-form">
+              <lit-material-text-field id="scim-token-name" variant="outlined" label="Token name (your identity provider)"></lit-material-text-field>
+              <lit-material-button variant="filled" ?disabled=${Boolean(this.busy)} @click=${() => this.run("scim-token", async () => {
+                const t = await this.api.call("POST", `${base}/tokens`, { name: this.field("scim-token-name") });
+                await reload();
+                this.newToken = t.token;
+              })}>Create SCIM token</lit-material-button>
+            </div>`
+          : html`<p class="hint">Only owners create or revoke SCIM tokens.</p>`}
+        <h2>Groups</h2>
+        <p class="hint">Groups appear when your identity provider pushes them. Owners are never set by SCIM; when any group gives an organization role, members without one are members.</p>
+        ${scim.groups.length ? nothing : html`<p class="hint">No groups yet.</p>`}
+        ${scim.groups.map((g) => html`<div class="portal-card" aria-label="Group ${g.displayName}">
+          <h3>${g.displayName} <span class="hint">${g.members} member(s)</span></h3>
+          <div class="portal-form">
+            <select id="scim-org-role-${g.id}" aria-label="Organization role of ${g.displayName}" @change=${(e) => saveGroup(g, { orgRole: e.target.value })}>
+              ${[["", "no organization role"], ["member", "member"], ["admin", "admin"]].map(([v, l]) => html`<option value=${v} ?selected=${v === g.orgRole}>${l}</option>`)}
+            </select>
+          </div>
+          <table class="portal-table" aria-label="Workspaces of ${g.displayName}">
+            <thead><tr><th>Workspace</th><th>Role</th><th></th></tr></thead>
+            <tbody>${g.workspaces.map((w) => html`<tr><td><code>${w.workspace.slice(0, 8)}</code></td><td>${w.role}</td>
+              <td><lit-material-button variant="text" ?disabled=${Boolean(this.busy)} @click=${() => saveGroup(g, { workspaces: g.workspaces.filter((x) => x.workspace !== w.workspace) })}>Remove</lit-material-button></td></tr>`)}</tbody>
+          </table>
+          <div class="portal-form">
+            <select id="scim-ws-${g.id}" aria-label="Workspace for ${g.displayName}">${workspaces.map((w) => html`<option value=${w}>${w.slice(0, 8)}</option>`)}</select>
+            <select id="scim-ws-role-${g.id}" aria-label="Workspace role for ${g.displayName}">${["viewer", "editor"].map((r) => html`<option value=${r}>${r}</option>`)}</select>
+            <lit-material-button variant="outlined" ?disabled=${Boolean(this.busy) || !workspaces.length} @click=${() => {
+              const workspace = this.querySelector(`#scim-ws-${g.id}`).value;
+              const role = this.querySelector(`#scim-ws-role-${g.id}`).value;
+              saveGroup(g, { workspaces: [...g.workspaces.filter((x) => x.workspace !== workspace), { workspace, role }] });
+            }}>Give workspace</lit-material-button>
+          </div>
+        </div>`)}
         ${this.orgBack(org)}
       </section>`;
   }

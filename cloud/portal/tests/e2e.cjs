@@ -505,6 +505,42 @@ async function syncServer(portalOrigin, extraEnv = {}) {
     const settings = (await server.api("GET", `/v1/orgs/${globex}/audit/anchors`, adaSession)).json;
     check("an owner publishes the anchors (opt-in), mail stays on", settings.publicAnchors === true && settings.mailAnchors === true && (await app.innerText()).includes("how many workspaces"), JSON.stringify(settings));
 
+    // HITOP Cloud C6: SCIM. Off until an owner creates a token; the IdP (here: fetch) provisions a
+    // user and a group; the admin sets what the group gives; revoking ends provisioning.
+    await page.goto(`${origin}/#/orgs/${globex}`);
+    await idle();
+    await app.getByRole("link", { name: "SCIM" }).click();
+    await idle();
+    check("SCIM: off until a token exists, base URL shown", (await app.innerText()).includes("Off: no token yet") && (await app.getByLabel("SCIM base URL").innerText()) === `${server.url}/scim/v2`, (await app.innerText()).slice(0, 400) + (await alertText()));
+    await app.getByLabel("Token name (your identity provider)").fill("Okta");
+    await app.getByRole("button", { name: "Create SCIM token" }).click();
+    await idle();
+    const scimToken = (await app.getByLabel("New SCIM token").innerText().catch(() => "")).trim();
+    check("SCIM: an owner creates a token, shown once", scimToken.startsWith("hitop_scim_") && (await app.getByRole("table", { name: "SCIM tokens" }).innerText()).includes("Okta"), scimToken + (await alertText()));
+    const scimDave = await server.api("POST", "/scim/v2/Users", scimToken, { schemas: ["urn:ietf:params:scim:schemas:core:2.0:User"], userName: "dave@example.com", active: true });
+    const qa = await server.api("POST", "/scim/v2/Groups", scimToken, { displayName: "QA", members: [{ value: scimDave.json?.id }] });
+    check("SCIM: the IdP provisions a user (invited: no account yet) and a group", scimDave.status === 201 && qa.status === 201 && (await server.api("GET", `/v1/orgs/${globex}/members`, adaSession)).json.invites.some((i) => i.email === "dave@example.com"), JSON.stringify([scimDave.json, qa.json]));
+    await page.reload();
+    await idle();
+    check("SCIM: the token isn't shown again", !(await app.innerText()).includes(scimToken));
+    await app.getByLabel("Organization role of QA").selectOption("admin");
+    await idle();
+    await app.getByLabel("Workspace for QA").selectOption({ label: wsId.slice(0, 8) });
+    await app.getByLabel("Workspace role for QA").selectOption("viewer");
+    await app.getByLabel("Group QA").getByRole("button", { name: "Give workspace" }).click();
+    await idle();
+    const qaRoles = (await server.api("GET", `/v1/orgs/${globex}/scim`, adaSession)).json.groups.find((g) => g.displayName === "QA");
+    check("SCIM: a group gives an org role and a workspace role", qaRoles?.orgRole === "admin" && qaRoles.workspaces[0]?.workspace === wsId && qaRoles.workspaces[0].role === "viewer" && (await app.getByLabel("Workspaces of QA").innerText()).includes("viewer"), JSON.stringify(qaRoles) + (await alertText()));
+    check("SCIM: the invited address waits for the workspace owner", (await server.api("GET", `/v1/workspaces/${wsId}/invites`, bobSession)).json.invites.some((i) => i.email === "dave@example.com" && i.role === "viewer"));
+    dialog = "";
+    page.once("dialog", (d) => {
+      dialog = d.message();
+      d.accept();
+    });
+    await app.getByRole("table", { name: "SCIM tokens" }).getByRole("row").filter({ hasText: "Okta" }).getByRole("button", { name: "Revoke" }).click();
+    await idle();
+    check("SCIM: revoking a token ends provisioning", dialog.includes("stops provisioning") && (await server.api("GET", "/scim/v2/Users", scimToken)).status === 401, dialog);
+
     // The SSO button now asks for the work address, then starts with that org's provider.
     {
       const ctx = await browser.newContext();
