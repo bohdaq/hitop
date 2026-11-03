@@ -1111,7 +1111,9 @@ Lemon Squeezy store yet.**
   (`tests/common/fill.rs` fills every one).
 - **Deviations**: forced rotation is a request the owners' clients carry out (`hitop sync rotate`,
   manual), since the server holds no key; "remove device org-wide" deletes the device key from the
-  member's account (it can't be in some workspaces and not others); public anchors are served by
+  member's account (it can't be in some workspaces and not others), so it also drops that device's
+  keys of the member's personal and other-org workspaces and asks those to rotate, with the org
+  admin named as the requester (owner question: keep, or limit to org workspaces only); public anchors are served by
   the sync server at `/v1/audit-anchors/...`, the `status.*/audit-anchors/` route waits for the
   `status.` DNS (owner); domain checks need a DoH resolver (a sub-processor, unset on the test
   server); no re-seal command for a new host key (orgs save their secret again); the web app's
@@ -1135,7 +1137,9 @@ Lemon Squeezy store yet.**
   schema 9, `deploy/deploy.sh` for site and portal. Nothing new is required: leave
   `HITOP_SYNC_HOST_KEY` and `HITOP_SYNC_DNS_URL` unset on the test server (per-org SSO off, Q15).
   Daily anchors start for Business orgs (none on the test server). Business is sold once the owner
-  adds its variants.
+  adds its variants. On a self-hosted server (no plans) every team org gets daily anchors and the
+  owners a mail on days the log changed, from the upgrade on (`HITOP_SYNC_AUDIT_ANCHORS=off` stops
+  it); stored anchors aren't purged yet (one small row per org a day).
 
 ### C6 Enterprise: SCIM, self-host support offer, SOC 2 Type 1; region and host on demand
 
