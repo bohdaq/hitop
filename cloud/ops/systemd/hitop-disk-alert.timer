@@ -1,0 +1,10 @@
+[Unit]
+Description=HITOP host checks every 15 minutes (cloud/ops/disk-alert.sh)
+
+[Timer]
+OnBootSec=5min
+OnUnitActiveSec=15min
+Persistent=true
+
+[Install]
+WantedBy=timers.target

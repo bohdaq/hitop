@@ -1,0 +1,52 @@
+[Unit]
+Description=hitop sync off-site encrypted backup (sync-server/deploy/backup.sh)
+Documentation=https://github.com/bohdaq/hitop/blob/main/cloud/RUNBOOK.md
+After=hitop-sync.service network-online.target
+Wants=network-online.target
+ConditionPathExists=/etc/hitop-sync/backup.env
+
+[Service]
+Type=oneshot
+# The sync server's own dynamic user (same User= name, same UID while both run) and state
+# directory: the dump reads the database as its owner, and files it makes stay the service's.
+DynamicUser=yes
+User=hitop-sync
+StateDirectory=hitop-sync
+StateDirectoryMode=0700
+# As hitop-sync.service: SQLite unless the env file names Postgres (after cutover-postgres.sh).
+Environment=HITOP_SYNC_DATABASE=sqlite:/var/lib/hitop-sync/sync.db
+EnvironmentFile=/etc/hitop-sync/env
+EnvironmentFile=/etc/hitop-sync/backup.env
+# /etc/hitop-sync is root only: the age public key(s) come in as a credential.
+LoadCredential=recipients:/etc/hitop-sync/backup-recipients.txt
+Environment=TMPDIR=/var/tmp
+ExecStart=/usr/local/lib/hitop-sync/backup.sh
+# A backup must never starve the services (or the neighbours) it backs up.
+Nice=10
+IOSchedulingClass=idle
+CPUQuota=50%
+CPUWeight=20
+IOWeight=20
+MemoryMax=512M
+TasksMax=64
+TimeoutStartSec=30min
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+PrivateTmp=true
+PrivateDevices=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectKernelLogs=true
+ProtectControlGroups=true
+ProtectClock=true
+ProtectHostname=true
+ProtectProc=invisible
+RestrictNamespaces=true
+RestrictRealtime=true
+RestrictSUIDSGID=true
+LockPersonality=true
+SystemCallArchitectures=native
+CapabilityBoundingSet=
+RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX
+UMask=0077

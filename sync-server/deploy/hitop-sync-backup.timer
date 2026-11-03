@@ -1,0 +1,11 @@
+[Unit]
+Description=hitop sync off-site encrypted backup, hourly (sync-server/deploy/backup.sh)
+
+[Timer]
+# Hourly dumps instead of WAL archiving (spec/CLOUD_SERVICE.md C2): at most an hour of writes lost.
+OnCalendar=*-*-* *:17:00
+RandomizedDelaySec=300
+Persistent=true
+
+[Install]
+WantedBy=timers.target

@@ -1,0 +1,25 @@
+[Unit]
+Description=HITOP host checks: disk space, Postgres size, backup age (cloud/ops/disk-alert.sh)
+Documentation=https://github.com/bohdaq/hitop/blob/main/cloud/RUNBOOK.md
+
+[Service]
+Type=oneshot
+# Root, read-only: it reads sizes and the root-only alert settings, writes only its state.
+ExecStart=/usr/local/lib/hitop-sync/disk-alert.sh
+StateDirectory=hitop-alert
+Environment=STATE_DIR=/var/lib/hitop-alert
+# Exit 1 = something to look at (already logged and mailed); not a failure of the unit.
+SuccessExitStatus=1
+Nice=10
+IOSchedulingClass=idle
+CPUQuota=20%
+MemoryMax=128M
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=read-only
+PrivateTmp=true
+PrivateDevices=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX
