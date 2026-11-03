@@ -3,7 +3,10 @@
 // personal org, create an org, invite a member and an address without an account, usage against
 // the Free limits and the 402 when seats run out, a role change, the plan page, an access token
 // (made, used, revoked), a passkey (added, then signing in with it through a virtual
-// authenticator), sign out. Serves dist/ (npm run build) with a few lines of Node.
+// authenticator), sign out; passwords (C1b): create an account with a password and the mailed
+// code, a wrong password, sign in, change it (the key bundle re-sealed under the new one), forgot
+// and reset (the warning, the bundle gone). Serves dist/ (npm run build) with a few lines of Node.
+//   (cd ../../webapp && npm run wasm)  # the password crypto: the web app's hitop-wasm build
 //   HITOP_SYNC_SERVER_BIN=../../sync-server/target/debug/hitop-sync-server npm test
 const { spawn } = require("child_process");
 const fs = require("fs");
@@ -27,7 +30,7 @@ const freePort = () =>
     });
   });
 
-const TYPES = { ".html": "text/html", ".js": "text/javascript", ".css": "text/css", ".woff2": "font/woff2", ".svg": "image/svg+xml" };
+const TYPES = { ".html": "text/html", ".js": "text/javascript", ".css": "text/css", ".woff2": "font/woff2", ".svg": "image/svg+xml", ".wasm": "application/wasm" };
 
 function serve(dir, port) {
   const server = http.createServer((req, res) => {
@@ -81,7 +84,9 @@ async function syncServer(portalOrigin) {
     }
     await new Promise((r) => setTimeout(r, 100));
   }
-  const code = async (email) => {
+  const mails = (email) => log.split(`mail to ${email}:`).length - 1;
+  const code = async (email, after = 0) => {
+    for (let i = 0; i < 100 && mails(email) <= after; i++) await new Promise((r) => setTimeout(r, 100));
     for (let i = 0; i < 100; i++) {
       const parts = log.split(`mail to ${email}:`);
       if (parts.length > 1) {
@@ -105,7 +110,7 @@ async function syncServer(portalOrigin) {
     child.kill();
     fs.rmSync(dir, { recursive: true, force: true });
   };
-  return { url, code, api, signIn, stop, log: () => log };
+  return { url, code, mails, api, signIn, stop, log: () => log };
 }
 
 (async () => {
@@ -133,6 +138,7 @@ async function syncServer(portalOrigin) {
     const bobSession = await server.signIn("bob@example.com");
 
     await page.goto(`${origin}/`);
+    await app.getByRole("button", { name: "Use a code instead" }).click();
     await app.getByLabel("Sync server").fill(server.url);
     await app.getByLabel("Email").fill("ada@example.com");
     await app.getByRole("button", { name: "Send code" }).click();
@@ -216,13 +222,80 @@ async function syncServer(portalOrigin) {
     check("a passkey is added", (await app.innerText()).includes("1 passkey(s)"), await alertText());
     await app.getByRole("button", { name: "Sign out" }).click();
     await idle();
-    check("signed out", await app.getByRole("button", { name: "Send code" }).isVisible());
+    check("signed out", await app.getByRole("button", { name: "Sign in with a passkey" }).isVisible());
     await app.getByLabel("Sync server").fill(server.url);
     await app.getByLabel("Email").fill("ada@example.com");
     await app.getByRole("button", { name: "Sign in with a passkey" }).click();
     await idle();
     await page.getByRole("heading", { name: "Account" }).waitFor({ timeout: 10000 }).catch(() => {});
     check("signed in with the passkey", /Signed in as\s+ada@example\.com/.test(await app.innerText()), `${await alertText()} | ${(await app.innerText()).slice(0, 300)}`);
+
+    // Passwords. The client crypto (hitop-sync-crypto in WASM) also runs here, as a hitop device
+    // would: it seals a key bundle with the password, which the portal must re-seal on a change.
+    const wasm = await import(path.join(__dirname, "../../../webapp/src/wasm/format.js"));
+    const w = (await wasm.formatFromBytes(fs.readFileSync(path.join(__dirname, "../../../webapp/src/wasm/pkg/hitop_wasm_bg.wasm")))).sync;
+    const keysOf = async (email, password) => w.passwordKeys(password, (await server.api("POST", "/v1/auth/password/params", null, { email })).json.kdf);
+    await app.getByRole("button", { name: "Sign out" }).click();
+    await idle();
+    if (await app.getByRole("button", { name: "Use a password instead" }).count()) await app.getByRole("button", { name: "Use a password instead" }).click();
+    await app.getByLabel("Sync server").fill(server.url);
+    await app.getByLabel("Email").fill("erin@example.com");
+    await app.getByLabel("Password", { exact: true }).fill("erin's first password");
+    let before = server.mails("erin@example.com");
+    await app.getByRole("button", { name: "Create account" }).click();
+    await idle();
+    await app.getByLabel("Code from the confirmation mail").fill(await server.code("erin@example.com", before));
+    await app.getByRole("button", { name: "Confirm" }).click();
+    await idle();
+    check("create an account with a password and the mailed code", /Signed in as\s+erin@example\.com/.test(await app.innerText()), await alertText());
+    const k1 = await keysOf("erin@example.com", "erin's first password");
+    const erin = (await server.api("POST", "/v1/auth/password/login", null, { email: "erin@example.com", authKey: k1.authKey })).json;
+    const sealed = w.bundleSeal(k1.bundleKey, erin.user.id, '{"v":1,"keyId":"device-1"}');
+    check("a hitop device seals its keys with the password", (await server.api("PUT", "/v1/me/recovery?method=password", erin.session, { blob: sealed })).status === 200);
+    await app.getByRole("button", { name: "Sign out" }).click();
+    await idle();
+    const passwordSignIn = async (password) => {
+      await app.getByLabel("Sync server").fill(server.url);
+      await app.getByLabel("Email").fill("erin@example.com");
+      await app.getByLabel("Password", { exact: true }).fill(password);
+      await app.getByRole("button", { name: "Sign in", exact: true }).click();
+      await idle();
+    };
+    await passwordSignIn("not erin's password");
+    check("a wrong password is refused, without saying which part", (await alertText()).includes("email address or the password is wrong"), await alertText());
+    await passwordSignIn("erin's first password");
+    check("sign in with the password", /Signed in as\s+erin@example\.com/.test(await app.innerText()), await alertText());
+    await page.getByRole("navigation", { name: "Portal" }).getByRole("link", { name: "Account" }).click();
+    await idle();
+    await app.getByLabel("Current password").fill("erin's first password");
+    await app.getByLabel("New password", { exact: true }).fill("erin's second password");
+    await app.getByLabel("Repeat the new password").fill("erin's second password");
+    await app.getByRole("button", { name: "Change password" }).click();
+    await idle();
+    check("change the password", (await app.locator('[role="status"]').innerText().catch(() => "")).includes("Password changed"), await alertText());
+    const k2 = await keysOf("erin@example.com", "erin's second password");
+    const s2 = (await server.api("POST", "/v1/auth/password/login", null, { email: "erin@example.com", authKey: k2.authKey })).json.session;
+    const got = await server.api("GET", "/v1/me/recovery?method=password", s2);
+    check("the key bundle is re-sealed under the new password", w.bundleOpen(k2.bundleKey, erin.user.id, got.json.blob) === '{"v":1,"keyId":"device-1"}', JSON.stringify(got.json).slice(0, 80));
+    check("the old password no longer signs in", (await server.api("POST", "/v1/auth/password/login", null, { email: "erin@example.com", authKey: k1.authKey })).status === 401);
+
+    await app.getByRole("button", { name: "Sign out" }).click();
+    await idle();
+    await app.getByRole("button", { name: "Forgot password?" }).click();
+    check("the page warns before a reset", (await app.getByLabel("Reset warning").innerText()).includes("can't unlock your end-to-end encrypted workspaces"));
+    await app.getByLabel("Sync server").fill(server.url);
+    await app.getByLabel("Email").fill("erin@example.com");
+    before = server.mails("erin@example.com");
+    await app.getByRole("button", { name: "Send reset code" }).click();
+    await idle();
+    await app.getByLabel("Code from the reset mail").fill(await server.code("erin@example.com", before));
+    await app.getByLabel("New password", { exact: true }).fill("erin's third password");
+    await app.getByLabel("Repeat the new password").fill("erin's third password");
+    await app.getByRole("button", { name: "Reset password" }).click();
+    await idle();
+    const resetNote = await app.locator('[role="status"]').innerText().catch(() => "");
+    check("a reset signs in and says the key bundle is gone", /Signed in as\s+erin@example\.com/.test(await app.innerText()) && resetNote.includes("is gone"), resetNote + (await alertText()));
+    check("...it is gone on the server", (await server.api("GET", "/v1/me/recovery?method=password", JSON.parse(await page.evaluate(() => localStorage.getItem("hitop_cloud"))).session)).status === 404);
 
     const events = (await server.api("GET", `/v1/me/audit?limit=100`, bobSession)).json.events.map((e) => e.event);
     check("the server's audit log has the sign-ins", events.includes("signin"), events.join());

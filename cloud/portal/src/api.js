@@ -107,21 +107,84 @@ export async function passkeySignIn(api, email) {
   return api.call("POST", "/v1/auth/passkey/login/finish", { challengeId: start.challengeId, credential });
 }
 
-// --- single sign-on: PKCE verifier kept in this tab until the provider sends the browser back ---
+// --- single sign-on, Google, GitHub: PKCE verifier kept in this tab until the provider sends
+// the browser back (`kind` = sso | google | github, the server's /v1/auth/<kind>/...) ---
 
-export async function ssoStart(api, email) {
+export async function ssoStart(api, email, kind = "sso") {
   const verifier = b64url(crypto.getRandomValues(new Uint8Array(32)));
   const challenge = b64url(await crypto.subtle.digest("SHA-256", new TextEncoder().encode(verifier)));
   const returnTo = location.origin + location.pathname;
-  const r = await api.call("POST", "/v1/auth/sso/start", { challenge, returnTo, ...(email ? { email } : {}) });
-  sessionStorage.setItem("hitop_cloud_sso", JSON.stringify({ server: api.server, verifier }));
+  const r = await api.call("POST", `/v1/auth/${kind}/start`, { challenge, returnTo, ...(email && kind === "sso" ? { email } : {}) });
+  sessionStorage.setItem("hitop_cloud_sso", JSON.stringify({ server: api.server, verifier, kind }));
   return r.url;
 }
 
 export async function ssoFinish(code) {
   const saved = JSON.parse(sessionStorage.getItem("hitop_cloud_sso") || "null");
   sessionStorage.removeItem("hitop_cloud_sso");
-  if (!saved) throw new Error("this single sign-on wasn't started in this tab; start again");
+  if (!saved) throw new Error("this sign-in wasn't started in this tab; start again");
   const api = new Api(saved.server);
-  return { server: saved.server, reply: await api.call("POST", "/v1/auth/sso/finish", { code, verifier: saved.verifier }) };
+  return { server: saved.server, reply: await api.call("POST", `/v1/auth/${saved.kind || "sso"}/finish`, { code, verifier: saved.verifier }) };
+}
+
+// --- passwords (sync-server/THREAT_MODEL.md "Passwords"): the web app's hitop-sync-crypto build
+// derives the keys (Argon2id in WASM, its own chunk, loaded on first use). The password never
+// leaves this page; the server gets an auth key, and the portal opens and re-seals the key bundle
+// only to change the password (it has no device key of its own). ---
+
+let wasm = null;
+async function crypto_() {
+  wasm ??= import("../../../webapp/src/wasm/format.js").then((m) => m.loadFormat()).then((f) => f.sync);
+  return wasm;
+}
+
+async function keysFor(api, email, password) {
+  const { kdf } = await api.call("POST", "/v1/auth/password/params", { email });
+  // Refuses parameters weaker than hitop's floor (a server can't weaken them).
+  return (await crypto_()).passwordKeys(password, kdf);
+}
+
+export async function passwordSignIn(api, email, password) {
+  const keys = await keysFor(api, email, password);
+  return api.call("POST", "/v1/auth/password/login", { email, authKey: keys.authKey });
+}
+
+async function newKeys(password) {
+  const w = await crypto_();
+  w.passwordCheck(password);
+  const kdf = w.passwordKdfNew();
+  return { kdf, keys: w.passwordKeys(password, kdf) };
+}
+
+export async function passwordSignUp(api, email, password) {
+  const { kdf, keys } = await newKeys(password);
+  return api.call("POST", "/v1/auth/password/signup", { email, kdf, authKey: keys.authKey });
+}
+
+export async function passwordReset(api, token, password) {
+  const { kdf, keys } = await newKeys(password);
+  return api.call("POST", "/v1/auth/password/reset", { token, kdf, authKey: keys.authKey });
+}
+
+// Sets or changes the password of the signed-in account (`me` = GET /v1/me); the password's key
+// bundle, when there is one, is opened with the current password and sealed under the new one.
+export async function changePassword(api, me, current, next) {
+  const w = await crypto_();
+  const { kdf, keys } = await newKeys(next);
+  const body = { kdf, authKey: keys.authKey };
+  if (me.password?.set) {
+    const cur = await keysFor(api, me.email, current);
+    body.currentAuthKey = cur.authKey;
+    if (me.bundles?.password) {
+      const { blob } = await api.get("/v1/me/recovery?method=password");
+      let text;
+      try {
+        text = w.bundleOpen(cur.bundleKey, me.id, blob);
+      } catch {
+        throw new Error("the current password is wrong (it doesn't open your key bundle)");
+      }
+      body.bundle = w.bundleSeal(keys.bundleKey, me.id, text);
+    }
+  }
+  return api.call("POST", "/v1/me/password", body);
 }
