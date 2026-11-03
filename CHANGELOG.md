@@ -4,6 +4,35 @@ Releases before 1.2 are listed in ROADMAP.md (section 5) and on the GitHub Relea
 
 ## Unreleased
 
+### HITOP Cloud: run history and alerts from your own runners, shared environment values (C4, built, not deployed)
+
+- **Run history**: `hitop run <folder> --sync-report` (as a member, or in CI with
+  `HITOP_SYNC_RUNNER`) and `hitop sync report <report.json>` upload a run to the workspace: a
+  status row (passed or failed, timing, counts, the collection's and environment's names) and the
+  full report sealed end to end with the workspace key. `hitop sync runs [--json] [--id <run>]`
+  lists the history and opens a report on your computer; the Sync page has **Run history**, the
+  portal lists the status rows. `hitop schedule --sync` adds the upload (cron: `--sync-report
+  --sync-secrets`; GitHub: a step after the Action, for hitop after 1.2). HITOP never runs your
+  collections on its machines.
+- **Alerts** when a collection and environment fail, pass again or miss a run: mail to members,
+  a JSON webhook, Slack (`hitop sync alerts`, Run history → Alert settings, the portal; owners).
+  Never a response, body or secret value; failed request names only if the owners allow them.
+  Plans: Free keeps status rows 7 days with mail alerts; sealed reports and webhooks from Pro
+  (30 days); Slack from Team (90 days); Business a year.
+- **Shared environment values** (opt-in, end to end): `hitop sync secrets share --env prod`
+  seals an environment's secret values for the trusted devices of the owners and editors
+  (`--viewers`, `--runner` to add more); `hitop run --sync-secrets` and the app use them under your
+  own values. New members and devices get them in the step that adds them; removing someone
+  re-keys them (and says to rotate what that person saw). Secret values still never go into the
+  files, and never sync unless you share them.
+- hitop-sync-crypto 0.5.0: `seal_run`/`open_run`, `seal_share`/`open_share`,
+  `seal_share_wrap`/`open_share_wrap` (`vectors/shared.json`), also in hitop-wasm.
+- Sync server: migration 8 (`runs`, `alert_settings`, `alert_state`, `alert_deliveries`,
+  `env_shares`, `env_share_wraps`), `/v1/workspaces/:ws/{run-policy,runs,alerts,alert-deliveries,
+  env-shares}`, the hourly retention purge and missed-run check, an alert delivery worker.
+  Settings `HITOP_SYNC_MAX_RUN_BYTES`, `HITOP_SYNC_RUN_RETENTION_DAYS`,
+  `HITOP_SYNC_ALERTS_PER_HOUR`, `HITOP_SYNC_ALERT_WEBHOOKS`.
+
 ### HITOP Cloud: paid plans through Lemon Squeezy (C3, built, not live)
 
 - **Buy Pro or Team in the portal** (Plan page): Pro for one person's account, Team per seat for

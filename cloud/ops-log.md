@@ -105,3 +105,19 @@ date (UTC), who, what, the commit, the checks run after it.
 counts before and after (users, workspaces, members; orgs with personal_of <> '' = users with
 runner_of = ''), `hitop-sync-server over-limits` output (0 over a limit), curl of /healthz on sync
 and on hitop.rws8.tech/cloud/healthz. -->
+
+## 2026-11-03 C4 built, not deployed (run history, alerts, shared environment values)
+
+- Who: agent. What: HITOP Cloud C4 on `main` (spec/CLOUD_SERVICE.md C4 status): run history from
+  the customer's own runners (plaintext status rows and reports sealed with the workspace key),
+  alerts (mail, webhook, Slack; missed runs), opt-in shared environment values sealed for the
+  devices the sharer picks; hitop-sync-crypto 0.5.0; migration 8 (`runs`, `alert_settings`,
+  `alert_state`, `alert_deliveries`, `env_shares`, `env_share_wraps`; tested on SQLite and
+  Postgres). Nothing applied on the VM.
+- Deploy (when told, with or after C3's migration 7): a dump (`hitop-sync-server dump
+  /root/pre-c4-<ts>`), then `install.sh` with the `--features postgres` build (RUNBOOK "Deploy a
+  new sync server version"); `/healthz` must say schema 8; then `deploy/deploy.sh` for the web app
+  and the portal. No new setting needed; optional `HITOP_SYNC_MAX_RUN_BYTES`,
+  `HITOP_SYNC_RUN_RETENTION_DAYS` (plans set retention on HITOP Cloud), `HITOP_SYNC_ALERTS_PER_HOUR`.
+  After it: `hitop-sync-server db-stats` lists the new tables; `over-limits` still 0.
+

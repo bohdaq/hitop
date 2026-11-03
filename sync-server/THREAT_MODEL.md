@@ -55,6 +55,18 @@ contents without clients noticing.
   linked like SSO ones (issuer `https://accounts.google.com` or `https://github.com`, subject).
 - Key bundles (C2, `recovery_blobs`): per account and unlock method (`phrase`, `password`),
   sealed on a client; see "Recovery" and "Passwords".
+- Run history (C4, migration 8, `runs`): per uploaded run a **plaintext status row** (passed or
+  failed, start and upload time, duration, request and failure counts, the collection's and the
+  environment's names as the uploader sent them, failed request names only when the workspace's
+  owners allow it, which account or runner credential uploaded it) and the full report **sealed**
+  under the workspace key; see "Run history and alerts".
+- Alerts (C4, `alert_settings`, `alert_state`, `alert_deliveries`): per workspace the owners'
+  settings (members' addresses, webhook and Slack URLs, whether failed names are allowed, the
+  missed-run interval), each series' last status, and a 30-day log of alerts sent (event, channel
+  kind and position, outcome; never the URL).
+- Shared environment values (C4, `env_shares`, `env_share_wraps`): per shared environment a random
+  share id, a version, the sealed content and one wrap of the share's key per recipient device
+  (with the device's key id and its account); see "Shared environment values".
 
 The server binary does not link any decryption code: the client crate and the AEAD/HPKE crates
 are dev-dependencies only, and `tests/no_crypto_in_server.rs` fails the build's tests if that
@@ -197,6 +209,12 @@ rotation. Old blobs are re-encrypted under the new epoch when a client next writ
 may also re-encrypt everything after a removal.
 
 ### Test vectors
+
+`vectors/shared.json` (hitop-sync-crypto 0.5, HITOP Cloud C4): sealed run reports, shares and
+share key wraps, with the failures every client must refuse (a report moved to another run, a
+file blob with a run's id, a share served as an older version, a share wrap made by another key or
+a workspace key wrap offered as one); hitop-wasm and the web app's unit checks run it too.
+
 
 `cli/crates/hitop-sync-crypto/vectors/v2.json` (1.2) has format 2 wrap vectors (open direction,
 sender and recipient key pairs from DeriveKeyPair, one wrap handed out while the workspace is at a
@@ -530,6 +548,76 @@ HITOP Cloud runs this server for paying customers. What that adds:
   compromise of that host is a compromise of the server in this document: it sees the metadata
   above and can deny service, not read collections. The security page says so, and that no
   external review of the encryption has been done yet.
+
+## Run history and alerts (HITOP Cloud C4)
+
+HITOP never runs a collection on its machines (owner decision Q8): that needs the workspace key,
+which the server is built never to hold. The customer's runners (CI with a runner credential,
+cron as a member device) run it and upload the result (`hitop run --sync-report`, `hitop sync
+report`); only runner credentials, editors and owners may upload, and uploading is the only write
+a runner credential has.
+
+- **Sealed report**: `hitop-sync-crypto` `seal_run(workspace key of the current epoch, workspace
+  id, run id, epoch, report.json)`, XChaCha20-Poly1305 with the blob envelope layout (`0x01 || u32
+  epoch || nonce || ciphertext || tag`) but its own associated data, `"hitop-sync/v1/run" || u16
+  len || workspace id || u16 len || run id || u32 epoch` (`vectors/shared.json`). The server can't
+  read it, can't serve it as a file (another label), move it to another run or workspace, or claim
+  another epoch. The report is the one `--reporter json` writes: secret values are already `••••`.
+  Members open it on their devices (`hitop sync runs --id`, the Sync page); the portal holds no
+  keys and shows status rows only.
+- **Status rows are plaintext by design** (Q10): the server needs them for history and alerts.
+  They carry no URL, header, body or value, but they do carry the collection and environment
+  names, and failed request names when the owners turn that on (off by default). A workspace can
+  turn status rows off ("history only, no alerts"): uploads then carry the sealed report only.
+  The server can lie in a status row (say a failing run passed, or drop alerts); the client that
+  opens the report compares its result with the row and warns when they differ.
+- **Alerts** are sent from status rows only: on a series' status change (passed → failed, failed
+  → passed, a first run that fails) and once per missed interval. Mail goes only to addresses of
+  the workspace's current members (checked when saved and again when sent); webhooks are `https`
+  to hosts whose every address is public (no loopback, private, link-local, CGNAT or documentation
+  ranges; no redirects; 10 s), checked when saved and before each call; at most
+  `HITOP_SYNC_ALERTS_PER_HOUR` (30) alerts a workspace an hour. Webhook and Slack URLs are secrets
+  of the workspace's owners: only owners read or change them, and they're never logged or put in
+  the audit log. A residual risk: DNS can change between the address check and the connection
+  (rebinding); the host check is a guard, not a sandbox.
+- **Retention and limits**: rows past the plan's history (Free 7 days, Pro 30, Team 90, Business
+  365; self-hosted `HITOP_SYNC_RUN_RETENTION_DAYS`, 365) are purged hourly and their bytes freed;
+  sealed reports count towards the workspace's bytes and the org's storage; uploads a day per org
+  are capped (an abuse ceiling); Free keeps status rows only.
+- Runs are rows of their own, not workspace blobs: they never appear in the change feed, so
+  clients that don't know them (1.1, 1.2) sync as before.
+
+## Shared environment values (HITOP Cloud C4)
+
+Secret values never sync unless someone shares them (Q9: opt-in per environment, end to end to
+pinned devices). `hitop sync secrets share --env <env>` (owners and editors, Pro and up on HITOP
+Cloud) seals `{environment, values, viewers, runners, allRunners}` with a fresh random **share
+key** (`seal_share`, XChaCha20-Poly1305, associated data `"hitop-sync/v1/env-share" || u16 len ||
+workspace id || u16 len || share id || u32 version`) and wraps that key for each recipient device
+with HPKE Auth mode made by the sharing device (`seal_share_wrap`: like a format 2 workspace key
+wrap, but with the `info` label `"hitop-sync/v1/env-share-wrap"`, the share id and the version, so
+a share wrap never passes for a workspace key wrap or the other way round). Recipients: the
+trusted (pinned) devices of the workspace's owners and editors, the viewers' only with
+`--viewers`, runner credentials only when named. The CLI names the recipients and asks first.
+
+- A recipient uses a share only when its wrap opens under the **pinned** key of the device that
+  made it (runners: the pins in their credential), so the server can't hand out values of its own.
+  Every write is the next version with a new key (the server refuses anything but current + 1),
+  and clients remember the highest version they opened and refuse an older one (a server rolling
+  a share back to values or recipients from before a removal).
+- New devices: whoever adds a member or hands the workspace key to a new device also wraps every
+  share it can open for the intended devices (only trusted ones); the sharer's next sync does the
+  same for any device still without a copy. Removing a member deletes their devices' share wraps
+  on the server, and the remover's client re-keys every share it can open (new key, new version,
+  wraps for whoever is still meant to have it). **Values the removed person saw stay theirs**: the
+  CLI and the Sync page say to rotate those secrets at their source.
+- The server sees which devices hold a share and when it changes, never an environment name (it
+  is inside the sealed content) or a value. A run merges shared values **under** the person's own
+  (`HITOP_SECRET_*`, `--secret` and the keychain win); the CLI keeps them in memory for the run,
+  the web app in memory for the session; they are masked like any secret.
+- Not covered: a member who could open a share and colludes with the server can re-share the
+  values (they had them); the share key's recipients are only as good as the fingerprints people
+  compared.
 
 ## What a malicious server can still do
 

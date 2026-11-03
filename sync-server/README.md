@@ -79,7 +79,11 @@ docker run -d -p 127.0.0.1:7881:7881 -v hitop-sync:/data --env-file hitop-sync.e
 | `HITOP_SYNC_PORTAL_URL` | `https://cloud.hitop.rws8.tech/` | the account portal limit errors link to |
 | `HITOP_SYNC_RATE_LIMITS` | `on` | `off` turns the request rate limits off (src/ratelimit.rs) |
 | `HITOP_SYNC_RATE_AUTH`, `HITOP_SYNC_RATE_WRITE`, `HITOP_SYNC_RATE_WRITE_IP`, `HITOP_SYNC_RATE_CREATE` | 60, 600, 1200 a minute; 200 an hour | `POST /v1/auth/*` per client IP; writes per session and per IP; creates (workspaces, orgs, tokens, keys, runners, invites, recovery) per session. Over: 429 `{error: "rate_limited", limit, retryAfter}` + `Retry-After`; 0 = no limit |
-| `HITOP_SYNC_MAX_JSON_BYTES` | 1 MiB | the largest body of any request but a blob upload (413) |
+| `HITOP_SYNC_MAX_JSON_BYTES` | 1 MiB | the largest body of any request but a blob upload or a run upload (413) |
+| `HITOP_SYNC_MAX_RUN_BYTES` | 1 MiB | the largest sealed run report (413); run uploads may be this big |
+| `HITOP_SYNC_RUN_RETENTION_DAYS` | 365 | run history kept this long without plans (0 = forever); with `HITOP_SYNC_LIMITS=plans` the plan says (Free 7, Pro 30, Team 90, Business 365) |
+| `HITOP_SYNC_ALERTS_PER_HOUR` | 30 | alerts a workspace may send an hour, on top of one per status change |
+| `HITOP_SYNC_ALERT_WEBHOOKS` | `https` | `insecure-local` also allows `http://127.0.0.1` webhooks (tests only); otherwise webhooks are https to public addresses |
 | `HITOP_SYNC_PG_DUMP` | `pg_dump` | the pg_dump command `dump` runs (may have arguments) |
 
 The mail server's certificate is always verified (Mozilla roots). Run one server process per
@@ -141,6 +145,17 @@ to the account with that address (or one is made). GitHub must report the addres
 account's primary and verified one. Addresses that must use SSO (`HITOP_SYNC_SSO_REQUIRED`)
 can't use either. Signing in with Google or GitHub doesn't unlock end-to-end keys on a new
 device: the password or the recovery phrase does.
+
+### Run history, alerts and shared environment values
+
+Runs your own CI and cron upload (`hitop run --sync-report`, `hitop sync report`) are kept as a
+status row (passed or failed, timing, counts, the collection's and environment's names) plus the
+full report sealed with the workspace key, which this server can't read; alerts (mail to members,
+JSON webhooks, Slack) go out when a series changes status or misses its run (a worker thread
+delivers them every few seconds; the missed-run check is hourly). Shared environment values
+(`hitop sync secrets share`) are sealed for the devices the sharer picks. Nothing here is gated on
+a self-hosted server; set `SMTP_URL` for alert mail. See THREAT_MODEL.md "Run history and alerts"
+and "Shared environment values".
 
 ### Audit log
 
@@ -206,6 +221,11 @@ verifies a wrap (clients do, THREAT_MODEL.md "Authenticated wraps").
 | `GET /v1/workspaces/:ws/invites`; `DELETE .../invites/:id` | open invites, accepted ones with the account's device keys (owner) |
 | `POST /v1/invites/accept {token}` | accept (signed in, with a device key); the owner then adds you with the wrapped key. A code `<token>.<fingerprint>` (hitop 1.2) is accepted too: the server ignores the part after the `.` |
 | `POST /v1/workspaces/:ws/runners {name, publicKey, wrapped}` | a runner credential for scheduled runs (owner): viewer of this workspace only, one-year token |
+| `GET /v1/workspaces/:ws/run-policy` | what an upload carries (any member, runner credentials too): `{statusRows, failedNames, sealedHistory, historyDays, maxRunBytes}` |
+| `POST /v1/workspaces/:ws/runs {id, startedAt, collection, environment, status, durationMs, requests, failed, failedNames, detail}` | a run's status row and its sealed report (runner credential, editor, owner; the one write a runner credential has) → 201 `{id, stored, note?}`; 402 `limit` over the plan's uploads a day |
+| `GET /v1/workspaces/:ws/runs?collection=&environment=&before=&limit=`; `GET .../runs/:id` | the history (members): status rows newest first and each series' last status; one run with its sealed report (`detail`) |
+| `GET`, `PUT /v1/workspaces/:ws/alerts {email, webhooks: [{kind: webhook\|slack, url}], failedNames, statusRows, missedAfterMinutes}`; `GET .../alert-deliveries` | alert settings and the alerts sent (owner); addresses must be members', webhooks https to public hosts; 402 `limit` for a channel the plan lacks |
+| `GET /v1/workspaces/:ws/env-shares`; `PUT .../env-shares/:id {version, sealed, wraps}`; `POST .../env-shares/:id/wraps {version, wraps}`; `DELETE .../env-shares/:id` | shared environment values (sealed; one wrap of the share key per recipient device): list (members; runners see the ones wrapped for them), the next version (editor, owner; Pro and up with plans), wraps for new devices, stop sharing |
 | `GET /v1/workspaces/:ws/changes?since=<seq>` | blobs changed after `seq` |
 | `GET /v1/workspaces/:ws/blobs/:id` | envelope + version, vv, epoch |
 | `PUT /v1/workspaces/:ws/blobs/:id {version, vv, epoch, content \| deleted}` | write version n+1 (owner, editor) |

@@ -536,7 +536,7 @@ server-side row, never a new file in `environments/`.
 | C2 | Harden the current VM: Postgres, limits, backups + drill, recovery key, status page, runbook | **applied** 2026-11-03 except backups, restore drill and uptime (owner: later); the sync server runs on Postgres (`cloud/ops-log.md`) | C0 (bucket, backup key, uptime checker, `status.` DNS), C1 |
 | C1b | Normal sign-in and sign-up: email + password (mailed confirmation, reset, change), Continue with Google / GitHub, the password unlocks the key bundle on a new device | **deployed** to the test server 2026-11-03 (schema 6; Google/GitHub off until the OAuth apps exist) | C1, C2's code; the owner registers the Google and GitHub OAuth apps |
 | C3 | Lemon Squeezy billing, pricing page, prompts, legal and security pages: **paid launch of Pro and Team** | **built**, not deployed (2026-11-03; migration 7; billing off until the owner's store exists; status below) | C1, C2, C0 (store approved, mail service, legal drafts reviewed) |
-| C4 | Run history and alerts from your own runners; shared environment secrets | open | C3 (can start after C1; ships after C3) |
+| C4 | Run history and alerts from your own runners; shared environment secrets | **built**, not deployed (2026-11-03; schema 8; `cloud/ops-log.md`) | C3 (sells it); deploy with or after C3's migration 7 |
 | C5 | Business tier: hosted SSO per org, audit export + anchoring, admin console | open | C3 |
 | C6 | Enterprise: SCIM, self-host support offer, SOC 2 Type 1 readiness; second region and own host on demand | open | C5, owner (contracts, auditor) |
 | C7 | Deferred: hosted monitors (until confidential computing), mock servers, docs publishing, comments | not planned | revisit with the triggers in section 4 and demand evidence |
@@ -960,6 +960,86 @@ Lemon Squeezy store yet.**
 - Needs: C3 to sell it; the server and CLI work can start after C1.
 - Owner handoffs: none new (mail service from C0); release the CLI version that carries
   `--sync-report` and move the Action's `v1` tag as usual.
+
+**Status (2026-11-03): built, not deployed.**
+
+- Commits on `main`: 5f22d1a (hitop-sync-crypto 0.5.0: `seal_run`, `seal_share`,
+  `seal_share_wrap`, `vectors/shared.json`), 3421b7f (server: migration 8, `runs.rs`,
+  `alerts.rs`, `shares.rs`), 0f8afdf (CLI), 15edaee (hitop-wasm), then the web app and portal and
+  the docs (see `git log -- webapp/src/sync.js cloud/portal spec/CLOUD_SERVICE.md`).
+- **Server** (migration 8, SQLite and Postgres, after C3's 7): `runs` (status row + sealed
+  `detail`, its bytes counted in `workspaces.bytes`), `alert_settings`, `alert_state` (each
+  series' last status), `alert_deliveries` (queue and 30-day log), `env_shares`,
+  `env_share_wraps`. Endpoints: `GET .../run-policy` (any member, runners too), `POST .../runs`
+  (runner credentials, editors, owners: the one write a runner has; runners can't read history),
+  `GET .../runs[/:id]`, `GET/PUT .../alerts` and `GET .../alert-deliveries` (owners),
+  `GET .../env-shares`, `PUT .../env-shares/:id` (version = current + 1, editors and owners),
+  `POST .../env-shares/:id/wraps`, `DELETE .../env-shares/:id`. Member removal deletes the
+  removed member's share wraps; workspace delete removes all of it. Background: alert delivery
+  worker every 5 s, retention purge and missed-run check hourly. `migrate-db` and `db-stats`
+  cover the new tables (`Db::tables()`; `tests/common/fill.rs` fills them).
+- **Plans** (`HITOP_SYNC_LIMITS=plans`, `runs::plan_of`; proposal numbers of section 3): run
+  uploads a day per org Free 100 / Pro 1,000 / Team 5,000 / Business 20,000 (402 `runsPerDay`);
+  history Free 7 days (status rows only: the sealed report is dropped with a note) / Pro 30 /
+  Team 90 / Business 365; channels Free mail, Pro + webhook (402 `alertWebhooks`), Team + Slack
+  (402 `alertSlack`); shared values Pro and up (402 `sharedSecrets`). Enterprise may override
+  `runsPerDay` and `historyDays`. Without plans: everything, `HITOP_SYNC_RUN_RETENTION_DAYS`
+  (365). `GET /v1/orgs/:org/limits` has `runs`, `usage` has `runsToday`.
+- **Alerts**: on a series' (collection + environment) status change (passed → failed, failed →
+  passed, a first run that fails) and once per missed interval; mail only to current members'
+  addresses (checked on save and on send), webhooks https to public addresses (no redirects,
+  10 s; `HITOP_SYNC_ALERT_WEBHOOKS=insecure-local` for tests), `HITOP_SYNC_ALERTS_PER_HOUR` (30)
+  a workspace; webhook URLs only for owners, never logged. Webhook JSON: `event, workspace,
+  collection, environment, status, run, startedAt, durationMs, requests, failed, link` and
+  `failedRequests` only when allowed; Slack `{text}`.
+- **Clients**: CLI `hitop run --sync-report` (never changes the exit code; a failed upload is a
+  warning) and `--sync-secrets`; `hitop sync report <report.json>`, `sync runs [--json] [--id]
+  [--limit]` (compares the sealed report with the status row), `sync alerts [--email]
+  [--webhook] [--slack] [--failed-names on|off] [--status-rows on|off] [--missed-after] [--log]`,
+  `sync secrets share --env E [--viewers] [--runner ID] [--runners] [--yes]`, `secrets ls`,
+  `secrets unshare`; shares handed to new devices in `members`, `add`, `trust` and after each
+  push; re-keyed in `remove`; `shares.json` remembers versions (rollback refused). `hitop
+  schedule --sync`: cron line `--sync-report --sync-secrets`; GitHub workflow an upload step after
+  the Action (`hitop sync report` in the image) for `--hitop-version` after 1.2. Web app and
+  desktop Sync page: **Run history** (status rows, open a report on this device, the shared
+  environments' names, owners' **Alert settings**), shared values in memory under the
+  environment's own (`store.setSharedValues`, masked), re-seal on add and on giving keys to new
+  devices, re-key on remove with the "rotate the shared secrets this person could see" note.
+  Portal: **Run history** (`#/runs`, `#/workspaces/<ws>/runs[/<run>]`, the alert links), alert
+  settings and the alerts sent, run uploads today on the usage table.
+- **Deviations**: runs are rows of their own (`runs` table), not `runs/<ts>` blobs: they stay out
+  of the change feed (1.1 and 1.2 clients unaffected), and purging them doesn't touch version
+  vectors; the "runs/ write permission" is the upload endpoint. Shares are rows too (not
+  `env-secrets/<env>` blobs), with their own key wrapped per device rather than per-device
+  sealing of the values (one sealed copy, re-keyed on removal); the environment name is inside
+  the sealed content. The portal shows status rows only (it holds no keys); reports open in the
+  CLI and the Sync page. The web app reads shared values but doesn't share (sharing is
+  `hitop sync secrets share`). The GitHub Action gets no `sync-report` input yet (separate repo,
+  after the CLI release): the generated workflow uploads with `hitop sync report` after it, and
+  CI runs through the Action don't use shared values until the Action passes `--sync-secrets`.
+  Run upload status rows carry the collection name as the runner sends it (plaintext, as section
+  4 says); the pricing FAQ's "run it in your CI" line is C3's page (handoff), the team guide says
+  it.
+- **Tests, as run**: `sync-server` `cargo test --workspace` (new `tests/runs.rs`: a runner's
+  sealed report opened by another member, ciphertext only on disk, runner writes runs and nothing
+  else, upload checks, one alert per change with no bodies or values and names only when allowed,
+  a missed run once, status rows off, the hourly ceiling, a removed member's address skipped,
+  every plan's limits and retention, self-hosted retention; `tests/shares.rs`: versions, wraps per
+  device, viewers, removal, runner visibility, plan gate), `--features postgres` (new
+  `postgres_runs_alerts_and_shares`; `migrate_db` fill covers the new tables);
+  hitop-sync-crypto `vectors/shared.json`; hitop-wasm and `webapp/tests/unit.mjs` run them;
+  `cli/tests/sync.rs` `run_history_from_a_runner_opens_on_another_members_computer` and
+  `shared_secret_values_reach_only_the_devices_they_are_for` (also with
+  `HITOP_SYNC_LIMITS=plans`), `tests/schedule.rs` (upload step, actionlint); `webapp/tests/sync.cjs`
+  (history view, the report opened on the other member's device, alert settings);
+  `cloud/portal` e2e (run history, the alert link, alert settings, run uploads today). CI: see
+  `cloud/ops-log.md`.
+- **Deploy** (not done): a dump, then the usual version deploy (`--features postgres`) after or
+  with C3's; `/healthz` schema 8; `deploy/deploy.sh` for the web app and the portal. No new
+  setting is required (alert mail uses the configured `SMTP_URL`; defaults: 1 MiB reports, 30
+  alerts an hour, https webhooks). The next CLI release carries `--sync-report` and publishes
+  hitop-sync-crypto 0.5.0 first (release-cli.yml); then move the Action's `v1` and add its
+  `sync-report` input.
 
 ### C5 Business: hosted SSO per org, audit export and anchoring, admin console
 

@@ -1,6 +1,6 @@
 ---
 title: "Share a workspace with your team"
-description: "Share a HITOP collection with your team through hitop sync: end-to-end encrypted, with invites, roles, conflict resolution and read-only runner credentials for scheduled runs. Secret values never leave your device."
+description: "Share a HITOP collection with your team through hitop sync: end-to-end encrypted, with invites, roles, conflict resolution and read-only runner credentials for scheduled runs. Secret values never sync unless you share them."
 ---
 
 ## What hitop sync is
@@ -9,7 +9,7 @@ hitop sync keeps a collection in step between people and devices through a hitop
 
 Everything is encrypted on your device before it leaves: each request file, environment and the collection file is sealed with the workspace's key (XChaCha20-Poly1305), and that key is wrapped for each member's devices with HPKE (RFC 9180). The server stores ciphertext, version numbers and wrapped keys. It can see who is in a workspace, how many files there are and when they change; it can't read them.
 
-Secret variable values never sync. Environment files carry only the names of secret variables (`token: {secret: true}`); each person keeps the values in their own keychain (or, in the web app, in their browser).
+Secret variable values never sync unless you share them. Environment files carry only the names of secret variables (`token: {secret: true}`); each person keeps the values in their own keychain (or, in the web app, in their browser). An owner or editor can [share an environment's values](#shared-secret-values) end to end with the devices they pick; they still never go into the files.
 
 The sync server is open source (AGPL), and you can run your own: see the [self-host guide](https://github.com/bohdaq/hitop/tree/main/sync-server). A test server runs at `https://sync.hitop.rws8.tech`. hitop sync is in testing: the encryption design hasn't been externally reviewed yet, so don't put production credentials or customer data in a shared workspace until it has.
 
@@ -144,6 +144,33 @@ The workflow pulls the workspace with the credential, then runs it with the [HIT
 
 **Running on the sync server instead** would mean giving the server a key that decrypts the workspace: while it runs your collection it sees your requests, responses and environment values, which is exactly what end-to-end encryption keeps from it. hitop's test server doesn't offer that. If you run your own server and want it to run your monitors, run the runner credential on that host yourself, as its own service with its own limits, and treat that host as one that can read the workspace.
 
+## Run history and alerts
+
+Your CI or cron runs the collection (HITOP never runs it on its machines: that would need a key the server is built never to hold). Each run can go to the workspace's history:
+
+```bash
+hitop run ./my-api --env staging --sync-report      # as a member, or with HITOP_SYNC_RUNNER
+hitop sync report hitop-reports/report.json -c ./my-api   # a report a run already wrote
+hitop sync runs -c ./my-api                         # the history; --id <run> opens one report here
+```
+
+`hitop schedule --sync` adds it for you (cron: `--sync-report --sync-secrets` on the run; GitHub: a step after the Action that uploads its report.json, with hitop after 1.2). The server gets a **status row** in plain text: passed or failed, the time, how long it took, how many requests ran and failed, the collection's and the environment's names, and the names of failed requests only when the owners allow it. The **full report** (report.json, secret values already ••••) is sealed with the workspace key on the runner: only members' devices open it (`hitop sync runs --id`, or **Run history** on the Sync page). The portal shows the status rows.
+
+**Alerts** come from the status rows: when a collection and environment start failing, pass again, or (with **missed-run** minutes set) don't run. Owners set them with `hitop sync alerts` (or **Run history** → **Alert settings**): mail to members, a JSON webhook (https), a Slack incoming webhook; `--failed-names on` lets them name the failed requests, `--status-rows off` keeps history without status rows or alerts. An alert carries the status and a link, never a response, a body or a secret value. HITOP Cloud plans set how long history is kept and which channels there are (Free: status rows for 7 days and mail; sealed reports and webhooks from Pro; Slack from Team).
+
+## Shared secret values
+
+Off unless you share. An owner or editor shares an environment's secret values end to end:
+
+```bash
+hitop sync secrets share --env prod -c ./my-api       # names who gets them, then asks
+hitop sync secrets share --env prod --runner <id>     # also a runner credential (id: hitop sync members)
+hitop sync secrets ls -c ./my-api                     # names and who has them, never values
+hitop run ./my-api --env prod --sync-secrets          # uses them where you have no value of your own
+```
+
+The values come from your keychain (or `HITOP_SECRET_*`) and are sealed for the trusted devices of the workspace's owners and editors (`--viewers` adds viewers, `--runner` or `--runners` runner credentials); the server can't read them, and a viewer you didn't pick sees the names only. Your own values (keychain, `--secret`, `HITOP_SECRET_*`) always win. Whoever adds a member or trusts a new device here hands them the values in the same step, and the sharer's next sync does it for any device still without a copy. Removing someone re-keys every share your device can open, but **can't take back the values they saw**: rotate those secrets where they come from (the CLI and the Sync page say so).
+
 ## Recovery phrase
 
 A workspace only you are in lives only on your devices. Write down a recovery phrase in case you lose them all and forget your password:
@@ -173,7 +200,11 @@ In the app it is under **Members** → **Show audit log**. Each entry is chained
 | --- | --- |
 | your password | nowhere but your head; the server keeps a slow hash of a key made from it, and your device's keys sealed under another key from it |
 | request files, environments (without secret values), `hitop.yaml`, globals | encrypted on the server; plain on each member's device |
-| secret values | each device's keychain (web app: the browser); never synced |
+| secret values | each device's keychain (web app: the browser); never synced unless shared |
+| shared secret values (opt-in) | sealed on the server for the devices the sharer picked; plain only on those devices |
+| run history: status rows (pass/fail, timing, counts, collection and environment names) | visible to the server; kept for the plan's history |
+| run history: full reports | sealed with the workspace key; open on members' devices |
+| alert settings, webhook URLs | on the server, readable by owners |
 | device secret key | the device (keychain); the web app keeps it in the browser |
 | who is in which workspace, file counts, sizes, times | visible to the server |
 | audit log: who did what, when, truncated IP, user agent (a year on the test server) | on the server, readable by workspace owners |
