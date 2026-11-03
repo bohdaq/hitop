@@ -854,8 +854,8 @@ owner's go-ahead, before this tranche: its deploy is a normal version deploy on 
 **Status (2026-11-03): built and tested with recorded payloads and a fake API; not deployed; no
 Lemon Squeezy store yet.**
 
-- Commits on `main`: 14509b4 (server: `billing.rs`, migration 7, tests), 0dba027 (portal, web app
-  Sync page), 7e42ab4 (site: pricing, home, privacy, security and legal drafts, check script), and
+- Commits on `main`: 14509b4 (server: `billing.rs`, migration 7, tests), 0c0f2a9 (portal, web app
+  Sync page), e30a23a (site: pricing, home, privacy, security and legal drafts, check script), and
   the docs commit after them.
 - **Webhook** `POST /v1/billing/lemonsqueezy`, checked against Lemon Squeezy's documentation
   (2026-11-03: signing, request format, event types, subscription, invoice and order objects):
