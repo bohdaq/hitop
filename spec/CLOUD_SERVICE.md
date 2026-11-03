@@ -1304,7 +1304,7 @@ host) are not built (Q18: EU only; they wait for a paying customer or a section 
   uniqueness, PATCH and PUT, deactivate (`"False"`), reactivate, new userName, delete, owner never
   removed; group → org admin and workspace editor, the accepted invite with device keys, the
   owner's add, role set for an existing member, removal with wraps gone and rotation requested,
-  pre-SCIM member kept, invite removed with the group, account-less address accepted later,
+  pre-SCIM member kept, invite removed with the group, account-less address accepted later, a later write re-applying over an open invite (new role kept),
   deactivation clearing invites; another org's token sees nothing; plans Team/Pro/Free 402,
   Enterprise allowed, revoke on a lapsed plan, seats 402), `tests/support_bundle.rs`, scim/support
   unit tests, `postgres_scim` (CI Postgres 17), `cargo test --workspace` and clippy with all

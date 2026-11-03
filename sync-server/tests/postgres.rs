@@ -482,6 +482,14 @@ fn postgres_scim() {
     assert_eq!(r.status, 200, "{}", r.json);
     let inv = s.call("GET", &format!("/v1/workspaces/{WS}/invites"), Some(&ada.session), None).json;
     assert_eq!(inv["invites"][0]["accepted"]["userId"], bob.user_id.as_str(), "{inv}");
+    // A second write re-applies over the open invite (its UPDATE) and invites an address without an
+    // account (dee): both invites are there.
+    let dee_id = scim("GET", "/Users?filter=userName%20eq%20%22dee%40corp.test%22", None).json["Resources"][0]["id"].as_str().unwrap().to_string();
+    let add = json!({ "schemas": ["urn:ietf:params:scim:api:messages:2.0:PatchOp"], "Operations": [{ "op": "add", "path": "members", "value": [{ "value": dee_id }] }] });
+    assert_eq!(scim("PATCH", &format!("/Groups/{g}"), Some(add)).status, 200);
+    let inv = s.call("GET", &format!("/v1/workspaces/{WS}/invites"), Some(&ada.session), None).json;
+    assert_eq!(inv["invites"].as_array().unwrap().len(), 2, "{inv}");
+    assert!(inv["invites"].as_array().unwrap().iter().any(|i| i["email"] == "bob@corp.test" && i["role"] == "editor" && i["accepted"]["userId"] == bob.user_id.as_str()), "{inv}");
     let wraps = wraps_for(&[(bob.key_id.clone(), bob.keys.public_key().to_vec())], WS, 1, &k);
     assert_eq!(s.call("POST", &format!("/v1/workspaces/{WS}/members"), Some(&ada.session), Some(json!({ "email": "bob@corp.test", "role": "editor", "wraps": wraps }))).status, 201);
     let patch = json!({ "schemas": ["urn:ietf:params:scim:api:messages:2.0:PatchOp"], "Operations": [{ "op": "replace", "path": "active", "value": false }] });

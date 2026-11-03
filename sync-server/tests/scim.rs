@@ -297,6 +297,13 @@ fn groups_give_org_and_workspace_roles() {
     let fay = Device::new(&o.s, "fay@corp.test");
     let inv = o.ws_invites(WS);
     assert_eq!(inv[0]["accepted"]["userId"], fay.user_id.as_str());
+    // Another write re-applies the directory over the open invite: it stays, with the new role.
+    assert_eq!(o.group_roles(&g2, json!({ "workspaces": [{ "workspace": WS, "role": "editor" }] })).status, 200);
+    let inv = o.ws_invites(WS);
+    assert_eq!((inv.len(), inv[0]["role"].clone(), inv[0]["accepted"]["userId"].clone()), (1, json!("editor"), json!(fay.user_id)), "{inv:?}");
+    let r = o.scim("PATCH", &format!("/Users/{fay_id}"), Some(patch(json!([{ "op": "replace", "path": "displayName", "value": "Fay" }]))));
+    assert_eq!(r.status, 200, "{}", r.json);
+    assert_eq!(o.ws_invites(WS).len(), 1);
     // Deactivating Fay removes the invite and her org membership.
     o.scim("PATCH", &format!("/Users/{fay_id}"), Some(patch(json!([{ "op": "replace", "path": "active", "value": false }]))));
     assert!(o.ws_invites(WS).is_empty());
