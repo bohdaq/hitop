@@ -1182,3 +1182,115 @@ fn shared_secret_values_reach_only_the_devices_they_are_for() {
     ada.ok(&["sync", "secrets", "unshare", "--env", "prod", "-c", a.to_str().unwrap()]);
     assert_eq!(dan.run(&["run", df.to_str().unwrap(), "--env", "prod", "--sync-secrets"]).code, 2);
 }
+
+/// The audit row hash (sync-server/src/audit.rs), for a test that rewrites a chain as someone
+/// with the database could.
+fn audit_row_hash(fields: &[&str]) -> String {
+    use sha2::{Digest, Sha256};
+    let mut h = Sha256::new();
+    h.update(b"hitop-sync/v1/audit\0");
+    for f in fields {
+        h.update((f.len() as u32).to_be_bytes());
+        h.update(f.as_bytes());
+    }
+    h.finalize().iter().map(|b| format!("{b:02x}")).collect()
+}
+
+/// HITOP Cloud C5: an organization's signed audit export checked here, against a daily anchor
+/// (the JSON or the saved mail); a log rewritten after the anchor is caught; a changed export or
+/// server key is refused. And an org admin's rotation request: the owner is told, `sync rotate`
+/// clears it.
+#[test]
+fn an_org_audit_export_checks_against_its_anchor_and_a_rewrite_shows() {
+    let Some(server) = server() else { return };
+    let ada = Client::new(&server);
+    let bob = Client::new(&server);
+    ada.login(&server, "ada@example.com");
+    let (ws, a, b) = share_with_bob(&server, &ada, &bob);
+    bob.ok(&["sync", "link", &ws, "-c", b.to_str().unwrap()]);
+    let session = serde_json::from_str::<serde_json::Value>(&std::fs::read_to_string(ada.home.path().join("sync-key.json")).unwrap()).unwrap()["session"].as_str().unwrap().to_string();
+    let http = reqwest::blocking::Client::new();
+    let call = |method: reqwest::Method, path: &str, body: serde_json::Value| -> serde_json::Value {
+        let r = http.request(method, format!("{}{path}", server.url)).bearer_auth(&session).json(&body).send().unwrap();
+        assert!(r.status().is_success(), "{path}: {}", r.status());
+        r.json().unwrap_or(serde_json::Value::Null)
+    };
+    let org = call(reqwest::Method::POST, "/v1/orgs", serde_json::json!({ "name": "Acme" }))["id"].as_str().unwrap().to_string();
+    call(reqwest::Method::POST, &format!("/v1/orgs/{org}/workspaces"), serde_json::json!({ "workspace": ws }));
+
+    // The export, saved and checked; the server's key pinned here.
+    let export = ada.home.path().join("acme.jsonl");
+    let o = ada.run(&["sync", "audit", "--export", "--org", "acme", "--out", export.to_str().unwrap()]);
+    assert_eq!(o.code, 0, "{}{}", o.stdout, o.stderr);
+    assert!(o.stdout.contains("audit export of") && o.stdout.contains("intact") && o.stdout.contains("2 chains"), "{}", o.stdout);
+    assert!(ada.config("audit-keys.json").exists());
+
+    // An anchor of the heads now (the daily one is mailed; this is the same thing on demand),
+    // saved as JSON and as the mail would be saved.
+    let anchor = call(reqwest::Method::POST, &format!("/v1/orgs/{org}/audit/anchors"), serde_json::json!({}));
+    let anchor_file = ada.home.path().join("anchor.json");
+    std::fs::write(&anchor_file, anchor.to_string()).unwrap();
+    let mail_file = ada.home.path().join("anchor.eml");
+    std::fs::write(&mail_file, format!("Subject: HITOP: audit anchor\n\nKeep this mail.\n\n-----BEGIN HITOP AUDIT ANCHOR-----\n{}\n-----END HITOP AUDIT ANCHOR-----\n", serde_json::to_string_pretty(&anchor).unwrap())).unwrap();
+    // The saved export is older than the anchor (exporting is itself an event).
+    let o = ada.run(&["sync", "audit", "--verify", "--file", export.to_str().unwrap(), "--anchor", anchor_file.to_str().unwrap()]);
+    assert_ne!(o.code, 0);
+    assert!(o.stderr.contains("older than the anchor"), "{}", o.stderr);
+    // Online: a fresh export of the anchor's org, against both copies of the anchor.
+    let o = ada.run(&["sync", "audit", "--verify", "--anchor", anchor_file.to_str().unwrap(), "--anchor", mail_file.to_str().unwrap()]);
+    assert_eq!(o.code, 0, "{}{}", o.stdout, o.stderr);
+    assert!(o.stdout.contains("2 anchor(s) matched"), "{}", o.stdout);
+
+    // A changed byte in a saved export is refused.
+    let mut bytes = std::fs::read(&export).unwrap();
+    let i = bytes.windows(9).position(|w| w == b"\"invite_c").unwrap() + 1;
+    bytes[i] = b'X';
+    let tampered = ada.home.path().join("tampered.jsonl");
+    std::fs::write(&tampered, &bytes).unwrap();
+    let o = ada.run(&["sync", "audit", "--verify", "--file", tampered.to_str().unwrap()]);
+    assert_ne!(o.code, 0);
+    assert!(o.stderr.contains("changed after the server signed it"), "{}", o.stderr);
+
+    // Someone with the database rewrites the workspace's chain with fresh hashes and a new head:
+    // the export verifies by itself, but not against the anchor that already left the server.
+    let db = server.db();
+    type AuditRow = (i64, i64, String, String, String, String, String, String, String);
+    let rows: Vec<AuditRow> = {
+        let mut st = db.prepare("SELECT seq, at, event, actor_id, actor_email, target, detail, ip, user_agent FROM audit_log WHERE workspace_id = ?1 ORDER BY seq").unwrap();
+        st.query_map([&ws], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?, r.get(4)?, r.get(5)?, r.get(6)?, r.get(7)?, r.get(8)?))).unwrap().map(Result::unwrap).collect()
+    };
+    let mut prev = "0".repeat(64);
+    for (seq, at, event, actor_id, actor_email, target, detail, ip, ua) in rows {
+        let target = if event == "member_added" { "someone-else".to_string() } else { target };
+        let h = audit_row_hash(&[&prev, &ws, &seq.to_string(), &at.to_string(), &event, &actor_id, &actor_email, &target, &detail, &ip, &ua]);
+        db.execute("UPDATE audit_log SET target = ?1, prev_hash = ?2, hash = ?3 WHERE workspace_id = ?4 AND seq = ?5", rusqlite::params![target, prev, h, ws, seq]).unwrap();
+        db.execute("UPDATE audit_chain SET head_hash = ?1 WHERE workspace_id = ?2 AND head_seq = ?3", rusqlite::params![h, ws, seq]).unwrap();
+        prev = h;
+    }
+    let o = ada.run(&["sync", "audit", "--verify", "--anchor", mail_file.to_str().unwrap()]);
+    assert_ne!(o.code, 0);
+    assert!(o.stderr.contains("the log was rewritten after"), "{}", o.stderr);
+
+    // A server presenting another audit key than the one pinned here is refused.
+    let mut keys: serde_json::Value = serde_json::from_str(&std::fs::read_to_string(ada.config("audit-keys.json")).unwrap()).unwrap();
+    let server_key = keys.as_object().unwrap().keys().next().unwrap().clone();
+    keys[&server_key] = serde_json::json!(["0000000000000000", "AAAA"]);
+    std::fs::write(ada.config("audit-keys.json"), keys.to_string()).unwrap();
+    let o = ada.run(&["sync", "audit", "--export", "--org", &org, "--out", export.to_str().unwrap()]);
+    assert_ne!(o.code, 0);
+    assert!(o.stderr.contains("audit signing key") && o.stderr.contains("changed"), "{}", o.stderr);
+
+    // An org admin asks for a key rotation: the owner is told, `sync rotate` does it, Bob keeps up.
+    call(reqwest::Method::POST, &format!("/v1/orgs/{org}/admin/workspaces/{ws}/rotation"), serde_json::json!({}));
+    let o = ada.run(&["sync", "status", "-c", a.to_str().unwrap()]);
+    assert!(o.stderr.contains("asked to rotate this workspace's key") && o.stderr.contains("hitop sync rotate"), "{}", o.stderr);
+    assert!(!bob.run(&["sync", "status", "-c", b.to_str().unwrap()]).stderr.contains("asked to rotate"), "owners only");
+    assert_ne!(bob.run(&["sync", "rotate", "-c", b.to_str().unwrap()]).code, 0, "owners only");
+    let out = ada.ok(&["sync", "rotate", "-c", a.to_str().unwrap()]);
+    assert!(out.contains("epoch 2"), "{out}");
+    assert!(!ada.run(&["sync", "status", "-c", a.to_str().unwrap()]).stderr.contains("asked to rotate"));
+    write(&a, "requests/after.yaml", &request("After rotation", "https://internal.example.test/after"));
+    ada.ok(&["sync", "push", "-c", a.to_str().unwrap()]);
+    bob.ok(&["sync", "pull", "-c", b.to_str().unwrap()]);
+    assert!(read(&b, "requests/after.yaml").contains("After rotation"));
+}

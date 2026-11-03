@@ -12,6 +12,7 @@ use std::net::TcpListener;
 use std::time::{Duration, Instant};
 
 use anyhow::{bail, Context, Result};
+use colored::Colorize;
 use serde_json::{json, Value};
 use sha2::{Digest, Sha256};
 
@@ -77,6 +78,11 @@ pub fn sign_in(api: &Api, kind: &str, email: Option<&str>, no_browser: bool, int
             let info = api.call("GET", "/v1/auth/sso", None)?;
             if info["enabled"] != true {
                 bail!("this sync server has no single sign-on; sign in with --email");
+            }
+            // Orgs that bring their own provider (HITOP Cloud Business) are found by the address:
+            // without --email the server answers that it needs one.
+            if info["orgSso"] == true && email.is_none() {
+                eprintln!("{} organizations here sign in with their own provider: if yours does, add --email <you@company>", "note:".yellow());
             }
             info["name"].as_str().unwrap_or("SSO").to_string()
         }

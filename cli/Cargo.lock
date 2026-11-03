@@ -1657,6 +1657,7 @@ dependencies = [
  "predicates",
  "prost-reflect",
  "reqwest",
+ "ring",
  "rmcp",
  "roxmltree",
  "rpassword",

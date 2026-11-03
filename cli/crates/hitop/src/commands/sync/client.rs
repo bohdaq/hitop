@@ -63,6 +63,21 @@ impl Api {
         Ok(Reply { status, json })
     }
 
+    /// A GET whose answer isn't JSON (the audit export): the bytes as they came, or the error.
+    pub fn bytes(&self, path: &str) -> Result<Vec<u8>> {
+        let mut req = self.http.get(format!("{}{path}", self.base));
+        if let Some(s) = &self.session {
+            req = req.bearer_auth(s);
+        }
+        let res = req.send().with_context(|| format!("can't reach the sync server {}", self.base))?;
+        let status = res.status().as_u16();
+        let body = res.bytes().context("reading the answer")?.to_vec();
+        if (200..300).contains(&status) {
+            return Ok(body);
+        }
+        Err(api_error(&Reply { status, json: serde_json::from_slice(&body).unwrap_or(Value::Null) }))
+    }
+
     /// A call that must succeed (2xx); anything else is an error with the server's message.
     pub fn call(&self, method: &str, path: &str, body: Option<Value>) -> Result<Value> {
         let r = self.raw(method, path, body)?;

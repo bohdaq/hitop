@@ -235,6 +235,18 @@ pub fn save_audit_heads(heads: &AuditHeads) -> Result<()> {
     write_json(&dir()?.join("audit-heads.json"), heads)
 }
 
+/// `audit-keys.json`: per server, the audit signing key (key id, public key base64url) this
+/// computer saw first in a signed export or anchor (trust on first use; a changed key is refused).
+pub type AuditKeys = BTreeMap<String, (String, String)>;
+
+pub fn load_audit_keys() -> Result<AuditKeys> {
+    read_json(&dir()?.join("audit-keys.json"))
+}
+
+pub fn save_audit_keys(keys: &AuditKeys) -> Result<()> {
+    write_json(&dir()?.join("audit-keys.json"), keys)
+}
+
 /// `shares.json`: per workspace, the newest version this device opened of each shared environment
 /// (share id → version), so a server can't hand out an older version (with older values or
 /// recipients) as the current one.

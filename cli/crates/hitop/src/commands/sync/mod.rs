@@ -157,6 +157,14 @@ pub enum SyncCmd {
         #[command(flatten)]
         folder: FolderArgs,
     },
+    /// Rotate the workspace key (owner): a new key for every member device, then every file
+    /// re-encrypted. For a lost device, or when an org admin asked for it
+    Rotate {
+        #[command(flatten)]
+        trust: TrustArgs,
+        #[command(flatten)]
+        folder: FolderArgs,
+    },
     /// Remove a member (owner): rotates the workspace key and re-encrypts every file
     Remove {
         email: String,
@@ -248,7 +256,9 @@ pub enum SyncCmd {
     #[command(subcommand)]
     Recovery(RecoveryCmd),
     /// The workspace's audit log (owners): sign-ins aside, who added, removed or invited whom,
-    /// role changes, key rotations, runner credentials. --verify checks its hash chain here
+    /// role changes, key rotations, runner credentials. --verify checks its hash chain here.
+    /// An organization's signed export (HITOP Cloud Business): --export --org <org>, checked
+    /// against the daily anchors mailed to its owners with --verify --anchor <file>
     Audit {
         /// Print the events as JSON
         #[arg(long)]
@@ -269,6 +279,22 @@ pub enum SyncCmd {
         /// At most this many events, newest first (0 = all)
         #[arg(long, default_value_t = 50)]
         limit: usize,
+        /// Download the organization's signed audit export (owners and admins) and check it
+        #[arg(long, requires = "org", conflicts_with_all = ["mine", "verify"])]
+        export: bool,
+        /// The organization (name or id) for --export
+        #[arg(long)]
+        org: Option<String>,
+        /// Where --export writes the file (default hitop-audit-<org>-<date>.jsonl here)
+        #[arg(long, requires = "export")]
+        out: Option<PathBuf>,
+        /// With --verify: check this saved export instead of a workspace's log (offline)
+        #[arg(long, requires = "verify")]
+        file: Option<PathBuf>,
+        /// A daily anchor (the JSON, or the saved mail) whose heads the export must contain
+        /// (repeatable; with --verify alone the anchor's organization's export is fetched)
+        #[arg(long = "anchor", value_name = "FILE")]
+        anchor: Vec<PathBuf>,
         #[command(flatten)]
         folder: FolderArgs,
     },
@@ -455,6 +481,7 @@ fn run_cmd(cmd: SyncCmd) -> Result<i32> {
         SyncCmd::Invite { email, role, folder } => invite(&folder.path(), email.as_deref(), &role).map(|_| 0),
         SyncCmd::Accept { code } => accept(&code).map(|_| 0),
         SyncCmd::Add { email, role, trust, folder } => add(&folder.path(), &email, role.as_deref(), &trust).map(|_| 0),
+        SyncCmd::Rotate { trust, folder } => rotate(&folder.path(), &trust).map(|_| 0),
         SyncCmd::Remove { email, trust, folder } => remove(&folder.path(), &email, &trust).map(|_| 0),
         SyncCmd::Role { email, role, folder } => set_role(&folder.path(), &email, &role).map(|_| 0),
         SyncCmd::Trust { fingerprints, folder } => trust_cmd(&folder.path(), &fingerprints).map(|_| 0),
@@ -473,7 +500,27 @@ fn run_cmd(cmd: SyncCmd) -> Result<i32> {
         SyncCmd::Recovery(RecoveryCmd::Use { phrase_file }) => recovery::use_phrase(phrase_file.as_deref()).map(|_| 0),
         SyncCmd::Recovery(RecoveryCmd::Status) => recovery::status().map(|_| 0),
         SyncCmd::Recovery(RecoveryCmd::Remove) => recovery::remove().map(|_| 0),
-        SyncCmd::Audit { json, verify, mine, event, actor, limit, folder } => {
+        SyncCmd::Audit { json, verify, mine, event, actor, limit, export, org, out, file, anchor, folder } => {
+            if export {
+                let s = session()?;
+                let org = org.unwrap_or_default();
+                let id = org_id(&s.api, &org)?;
+                audit::export(&s.api, &s.account.server, &id, &org, out, &anchor)?;
+                return Ok(0);
+            }
+            if verify && (file.is_some() || !anchor.is_empty()) {
+                match file {
+                    Some(f) => audit::verify_org(None, Some(&f), &anchor)?,
+                    None => {
+                        let s = session()?;
+                        audit::verify_org(Some((&s.api, &s.account.server)), None, &anchor)?;
+                    }
+                }
+                return Ok(0);
+            }
+            if !anchor.is_empty() || org.is_some() {
+                bail!("--anchor goes with --verify or --export, --org with --export");
+            }
             let filter = audit::Filter { event, actor, limit };
             if mine {
                 let s = session()?;
@@ -1034,11 +1081,26 @@ fn sync(dir: &Path, push: bool) -> Result<i32> {
         std::fs::create_dir_all(dir)?;
     }
     let (plan, waiting) = sync_folder(&t, dir, push)?;
+    rotation_note(&t);
     Ok(report(&plan, waiting, push))
+}
+
+/// Tells an owner when an org admin asked for the workspace key to be rotated (HITOP Cloud admin
+/// console); quiet on any error, older servers don't send it.
+fn rotation_note(t: &Target) {
+    if t.runner {
+        return;
+    }
+    let Ok(r) = t.api.raw("GET", &format!("/v1/workspaces/{}", t.workspace), None) else { return };
+    if r.json["role"] == "owner" && r.json["rotationRequested"].is_object() {
+        let by = r.json["rotationRequested"]["by"].as_str().unwrap_or("an org admin");
+        eprintln!("{} {by} (an admin of the organization) asked to rotate this workspace's key (a lost device, say): run `hitop sync rotate`", "note:".yellow());
+    }
 }
 
 fn status(dir: &Path) -> Result<i32> {
     let t = target(dir)?;
+    rotation_note(&t);
     let ws = Workspace::open(&t.api, &t.device, &t.workspace)?;
     let state = store::load_state(&t.workspace, dir)?;
     let (changes, _) = ws.changes(state.seq)?;
@@ -1329,6 +1391,29 @@ fn remove(dir: &Path, email: &str, trust: &TrustArgs) -> Result<()> {
             }
             eprintln!("{} {email} could see the shared secret values: rotate those secrets where they come from", "note:".yellow());
         }
+        Err(e) => eprintln!("{} shared environments not re-keyed: {e:#}", "warning:".yellow()),
+    }
+    Ok(())
+}
+
+/// `hitop sync rotate`: a new workspace key for every member device (trusted ones only), every
+/// file re-encrypted, shared environments re-keyed. Clears an org admin's rotation request.
+fn rotate(dir: &Path, trust: &TrustArgs) -> Result<()> {
+    let (s, ws_id, info) = team(dir)?;
+    if info["role"] != "owner" {
+        bail!("only an owner rotates the workspace key");
+    }
+    let keys = member_keys(&info, None)?;
+    check_trust(&keys, trust)?;
+    let next = info["epoch"].as_u64().unwrap_or(0) as u32 + 1;
+    let key = WorkspaceKey::generate();
+    s.api.call("POST", &format!("/v1/workspaces/{ws_id}/rotate"), Some(json!({ "epoch": next, "wraps": wraps_for(&s.device, &keys, &ws_id, next, next, &key)? })))?;
+    let ws = Workspace::open(&s.api, &s.device, &ws_id)?;
+    let n = ws.reencrypt_all(&s.device.key_id)?;
+    println!("New workspace key (epoch {next}); re-encrypted {n} file(s).");
+    match shares::rekey_all(&s.api, &s.device, &ws_id) {
+        Ok((0, 0)) => {}
+        Ok((k, _)) => println!("Re-keyed {k} shared environment(s)."),
         Err(e) => eprintln!("{} shared environments not re-keyed: {e:#}", "warning:".yellow()),
     }
     Ok(())
