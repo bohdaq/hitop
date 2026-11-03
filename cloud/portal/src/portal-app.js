@@ -1,6 +1,6 @@
 // <hitop-cloud>: the HITOP Cloud portal. Sign in (email + password, Google, GitHub, mail code,
 // passkey or single sign-on, all through the sync server), organizations, members and roles, usage against the plan's limits, the plan
-// (buy Pro or Team through Lemon Squeezy, seats, the Team trial, the billing portal), access tokens
+// (buy Pro, Team or Business through Stripe, seats, the Team trial, the billing portal), access tokens
 // and passkeys. Light DOM, hash routes:
 //   #/                 organizations          #/orgs/<id>        an organization
 //   #/orgs/<id>/plan   its plan               #/tokens           access tokens
@@ -54,8 +54,8 @@ const METRICS = [
   ["invitesPerDay", "Invites today", String],
 ];
 
-// The owner's prices (spec/CLOUD_SERVICE.md Q4), shown until Lemon Squeezy's checkout shows the
-// real ones; Lemon Squeezy adds tax and shows the buyer's currency.
+// The owner's prices (spec/CLOUD_SERVICE.md Q4), in US dollars before tax; Stripe's checkout
+// (Managed Payments: Stripe is the merchant of record) adds tax and may show the buyer's currency.
 const PRICES = {
   pro: { annual: "$6 a month, billed yearly", monthly: "$8 a month" },
   team: { annual: "$10 per seat a month, billed yearly", monthly: "$12 per seat a month" },
@@ -85,6 +85,7 @@ const STATUS_NOTES = {
   unpaid: "unpaid: Free limits",
   expired: "ended: Free limits",
   refunded: "refunded: Free limits",
+  incomplete: "waiting for the first payment: Free limits",
 };
 
 const PLAN_NOTES = {
@@ -668,7 +669,7 @@ export class HitopCloud extends LitElement {
   pastDueBanner() {
     const b = this.data.billing;
     if (!b?.pastDue) return nothing;
-    return html`<p class="portal-warning" role="alert" aria-label="Payment failed">The last payment failed. Lemon Squeezy retries it and mails the buyer; update the card in the billing portal. Until the retries run out the plan stays as it is; then Free limits apply (nothing is deleted).</p>`;
+    return html`<p class="portal-warning" role="alert" aria-label="Payment failed">The last payment failed. Stripe retries it and mails the buyer; update the payment method in the billing portal. Until the retries run out the plan stays as it is; then Free limits apply (nothing is deleted).</p>`;
   }
 
   renderPlan() {
@@ -696,10 +697,10 @@ export class HitopCloud extends LitElement {
     const reload = () => this.go(this.route);
     const seatsField = (id, value) => html`<label class="portal-seats">Seats <input id=${id} type="number" min=${Math.max(1, billing.seatsUsed)} max="1000" .value=${String(value)} /></label>`;
     const parts = [];
-    if (billing.testMode) parts.push(html`<p class="hint">Test mode: purchases here are Lemon Squeezy test purchases.</p>`);
+    if (billing.testMode) parts.push(html`<p class="hint">Test mode: purchases here are Stripe test purchases (no real money).</p>`);
     if (billing.subscribed) {
       parts.push(html`<h2>Billing</h2>
-        <p class="hint">Card, receipts, monthly or yearly, cancel: in Lemon Squeezy's billing portal (Lemon Squeezy is the merchant of record and sends the receipts).</p>`);
+        <p class="hint">Payment method, invoices, monthly or yearly, cancel: in Stripe's billing portal. Stripe is the merchant of record (receipts come from Link, "Sold through Link"), so you can also manage the order at link.com.</p>`);
       if (admin) {
         parts.push(html`<div class="portal-form">
           <lit-material-button variant="filled" ?disabled=${Boolean(this.busy)} @click=${() => this.run("billing-portal", async () => {
@@ -735,11 +736,11 @@ export class HitopCloud extends LitElement {
     const NAME = { pro: "Pro", team: "Team", business: "Business" };
     for (const plan of plans) {
       const offers = billing.offers.filter((o) => o.plan === plan);
-      // Business shows once its variants are on sale (C5); Team and Pro always say where they stand.
+      // Business shows once its prices are on sale (C5); Team and Pro always say where they stand.
       if (plan === "business" && !offers.length) continue;
       parts.push(html`<h2>HITOP Cloud ${NAME[plan]}</h2>
         <p class="hint">${TEXT[plan]}
-          Prices: ${["annual", "monthly"].filter((p) => offers.some((o) => o.period === p)).map((p) => PRICES[plan][p]).join(" or ")}, plus tax where it applies. <a href="https://hitop.rws8.tech/pricing.html">Pricing</a></p>`);
+          Prices: ${["annual", "monthly"].filter((p) => offers.some((o) => o.period === p)).map((p) => PRICES[plan][p]).join(" or ")}, plus applicable tax. <a href="https://hitop.rws8.tech/pricing.html">Pricing</a></p>`);
       if (!offers.length) {
         parts.push(html`<p class="hint">${NAME[plan]} isn't on sale on this server yet.</p>`);
       } else if (!billing.checkout) {
@@ -758,7 +759,7 @@ export class HitopCloud extends LitElement {
       }
     }
     if (billing.offers.length && billing.checkout) {
-      parts.push(html`<p class="hint">The checkout is Lemon Squeezy's page (they take the payment; HITOP never sees the card). Refunds: see the <a href="https://hitop.rws8.tech/pricing.html#refunds">pricing page</a>.</p>`);
+      parts.push(html`<p class="hint">The checkout is Stripe's page, "Sold through Link": Stripe is the merchant of record, adds tax where it applies and takes the payment (HITOP never sees the card). Refunds: see the <a href="https://hitop.rws8.tech/pricing.html#refunds">pricing page</a>.</p>`);
     }
     if (billing.trial?.available && org.role === "owner") {
       parts.push(html`<div class="portal-form">

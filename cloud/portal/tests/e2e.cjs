@@ -5,10 +5,11 @@
 // (made, used, revoked), a passkey (added, then signing in with it through a virtual
 // authenticator), sign out; passwords (C1b): create an account with a password and the mailed
 // code, a wrong password, sign in, change it (the key bundle re-sealed under the new one), forgot
-// and reset (the warning, the bundle gone); billing (C3) against a fake Lemon Squeezy API: buy Team
-// with 3 seats (the checkout page, the signed custom data), the signed webhook deliveries Lemon
-// Squeezy would send (fixtures of sync-server/tests/fixtures/lemonsqueezy), a 4th member refused
-// with a "See plans" link, a 4th seat bought (quantity 4 sent to Lemon Squeezy), the member added,
+// and reset (the warning, the bundle gone); billing (C3) against a fake Stripe API (Managed
+// Payments, prices by lookup key): buy Team with 3 seats (the Checkout Session, the signed
+// metadata), the signed webhook events Stripe would send (fixtures of
+// sync-server/tests/fixtures/stripe), a 4th member refused with a "See plans" link, a 4th seat
+// bought (quantity 4 sent to Stripe, invoiced at once), the member added,
 // payment failed (the banner), a refund (Free limits), expired (Free, nothing removed), a bad
 // signature refused, the billing portal link; C5: Business bought (per seat), the admin console
 // (workspaces, people, devices; transfer ownership, a rotation request, a device removed), single
@@ -58,9 +59,12 @@ function serve(dir, port) {
   return new Promise((resolve) => server.listen(port, "127.0.0.1", () => resolve(server)));
 }
 
-// Lemon Squeezy as the server calls it (checkouts, subscription items, subscriptions) plus the two
-// pages a browser is sent to (checkout, billing portal).
-const LS = { secret: "e2e-webhook-secret", key: "e2e-api-key", store: "4242", teamAnnual: "201", teamMonthly: "202", proAnnual: "101", businessAnnual: "301", businessMonthly: "302" };
+// Stripe as the server calls it (prices by lookup key, Checkout Sessions, subscription updates,
+// customer portal sessions; form-encoded) plus the two pages a browser is sent to (checkout,
+// billing portal).
+const ST = { secret: "whsec_e2e_webhook", key: "sk_test_e2e", version: "2026-10-28.endive" };
+const LOOKUP_KEYS = ["pro_monthly", "pro_yearly", "team_monthly", "team_yearly", "business_monthly", "business_yearly"];
+const priceOf = (key) => `price_e2e_${key}`;
 
 // A DNS-over-HTTPS resolver (the JSON API) answering the TXT records the test sets (C5 domains).
 function fakeDns(port) {
@@ -72,53 +76,78 @@ function fakeDns(port) {
   });
   return new Promise((resolve) => server.listen(port, "127.0.0.1", () => resolve({ server, records, url: `http://127.0.0.1:${port}/dns-query` })));
 }
-function fakeLemonSqueezy(port) {
+function fakeStripe(port) {
   const seen = [];
   const server = http.createServer((req, res) => {
     let raw = "";
     req.on("data", (d) => (raw += d));
     req.on("end", () => {
-      const p = new URL(req.url, "http://x").pathname;
-      const body = raw ? JSON.parse(raw) : null;
-      seen.push({ method: req.method, path: p, body, authorized: req.headers.authorization === `Bearer ${LS.key}` });
-      const json = (status, v) => res.writeHead(status, { "Content-Type": "application/vnd.api+json" }).end(JSON.stringify(v));
-      if (p.startsWith("/checkout/") || p.startsWith("/billing")) {
-        res.writeHead(200, { "Content-Type": "text/html" }).end(`<!doctype html><title>Lemon Squeezy (fake)</title><h1>Lemon Squeezy (fake) ${p}</h1>`);
-      } else if (req.headers.authorization !== `Bearer ${LS.key}`) {
-        json(401, { errors: [{ detail: "Unauthenticated." }] });
-      } else if (req.method === "POST" && p === "/v1/checkouts") {
-        json(201, { data: { type: "checkouts", id: "c0ffee", attributes: { url: `http://127.0.0.1:${port}/checkout/c0ffee` } } });
-      } else if (req.method === "PATCH" && p.startsWith("/v1/subscription-items/")) {
-        json(200, { data: { type: "subscription-items", id: p.split("/").pop(), attributes: { quantity: body.data.attributes.quantity, updated_at: "2026-11-03T11:00:00.000000Z" } } });
-      } else if (req.method === "GET" && p.startsWith("/v1/subscriptions/")) {
-        json(200, { data: { type: "subscriptions", id: p.split("/").pop(), attributes: { urls: { customer_portal: `http://127.0.0.1:${port}/billing?signature=fresh` } } } });
+      const u = new URL(req.url, "http://x");
+      const p = u.pathname;
+      const form = new URLSearchParams(req.method === "GET" ? u.search : raw);
+      const authorized = req.headers.authorization === `Bearer ${ST.key}` && req.headers["stripe-version"] === ST.version;
+      seen.push({ method: req.method, path: p, form, authorized });
+      const json = (status, v) => res.writeHead(status, { "Content-Type": "application/json" }).end(JSON.stringify(v));
+      if (p.startsWith("/checkout/") || p.startsWith("/billing/")) {
+        res.writeHead(200, { "Content-Type": "text/html" }).end(`<!doctype html><title>Stripe (fake)</title><h1>Stripe (fake) ${p}: Sold through Link</h1>`);
+      } else if (!authorized) {
+        json(401, { error: { type: "invalid_request_error", message: "Invalid API Key provided" } });
+      } else if (req.method === "GET" && p === "/v1/prices") {
+        const wanted = form.getAll("lookup_keys[]");
+        json(200, { object: "list", data: LOOKUP_KEYS.filter((k) => wanted.includes(k)).map((k) => ({ id: priceOf(k), object: "price", active: true, lookup_key: k, currency: "usd", tax_behavior: "exclusive", recurring: { interval: k.endsWith("yearly") ? "year" : "month" } })) });
+      } else if (req.method === "POST" && p === "/v1/checkout/sessions") {
+        json(200, { id: "cs_test_e2e", object: "checkout.session", url: `http://127.0.0.1:${port}/checkout/cs_test_e2e` });
+      } else if (req.method === "POST" && p.startsWith("/v1/subscriptions/")) {
+        json(200, { id: p.split("/").pop(), object: "subscription", status: "active", items: { data: [{ id: form.get("items[0][id]"), quantity: Number(form.get("items[0][quantity]")) }] } });
+      } else if (req.method === "POST" && p === "/v1/billing_portal/sessions") {
+        json(200, { id: "bps_test", object: "billing_portal.session", url: `http://127.0.0.1:${port}/billing/session_${form.get("customer")}` });
       } else {
-        json(404, { errors: [{ detail: "Not Found" }] });
+        json(404, { error: { type: "invalid_request_error", message: "Unrecognized request URL" } });
       }
     });
   });
   return new Promise((resolve) => server.listen(port, "127.0.0.1", () => resolve({ server, seen, url: `http://127.0.0.1:${port}` })));
 }
 
-const fixture = (name) => JSON.parse(fs.readFileSync(path.join(__dirname, "../../../sync-server/tests/fixtures/lemonsqueezy", `${name}.json`), "utf8"));
-
-function subscriptionEvent(event, id, variant, status, quantity, updated, custom) {
-  const b = fixture("subscription");
-  b.meta.event_name = event;
-  b.meta.custom_data = custom;
-  b.data.id = id;
-  Object.assign(b.data.attributes, { store_id: Number(LS.store), variant_id: Number(variant), order_id: Number(`9${id}`), status, updated_at: updated });
-  Object.assign(b.data.attributes.first_subscription_item, { id: Number(`7${id}`), quantity });
-  if (["cancelled", "expired"].includes(status)) b.data.attributes.ends_at = "2027-11-03T10:00:00.000000Z";
+const fixture = (name) => JSON.parse(fs.readFileSync(path.join(__dirname, "../../../sync-server/tests/fixtures/stripe", `${name}.json`), "utf8"));
+let eventNo = 0;
+// The Stripe event envelope: a fresh evt_ id, the type and `created`.
+function envelope(name, type, created) {
+  const b = fixture(name);
+  Object.assign(b, { id: `evt_e2e_${++eventNo}`, type, created });
   return b;
 }
 
-function invoiceEvent(event, sub, refunded, updated) {
-  const b = fixture("subscription_invoice");
-  b.meta.event_name = event;
-  Object.assign(b.data.attributes, { store_id: Number(LS.store), subscription_id: Number(sub), refunded, status: refunded ? "refunded" : "paid", updated_at: updated });
+// A customer.subscription.* event: `sub` (customer cus_<sub>), the price of lookup key `key`.
+function subscriptionEvent(type, sub, key, status, quantity, created, metadata) {
+  const b = envelope("subscription", type, created);
+  Object.assign(b.data.object, { id: sub, customer: `cus_${sub}`, status, metadata });
+  if (status === "canceled") Object.assign(b.data.object, { ended_at: created, canceled_at: created });
+  const item = b.data.object.items.data[0];
+  Object.assign(item, { id: `si_${sub}`, quantity, subscription: sub });
+  Object.assign(item.price, { id: priceOf(key), lookup_key: key });
   return b;
 }
+
+function invoiceEvent(type, sub, created) {
+  const b = envelope("invoice", type, created);
+  b.data.object.customer = `cus_${sub}`;
+  b.data.object.parent.subscription_details.subscription = sub;
+  b.data.object.status = type === "invoice.payment_failed" ? "open" : "paid";
+  return b;
+}
+
+function refundEvent(sub, created) {
+  const b = envelope("charge", "charge.refunded", created);
+  Object.assign(b.data.object, { customer: `cus_${sub}`, refunded: true, amount_refunded: b.data.object.amount });
+  return b;
+}
+
+// Managed Payments refuses these on a Checkout Session (the owner's Dashboard list).
+const REFUSED = ["automatic_tax", "tax_id_collection", "subscription_data[default_tax_rates]", "payment_method_collection", "payment_method_configuration", "payment_method_options", "payment_method_types", "saved_payment_method_options", "customer_update[name]", "customer_update[address]", "shipping_address_collection", "shipping_options", "subscription_data[application_fee_percent]", "subscription_data[on_behalf_of]", "subscription_data[transfer_data]", "subscription_data[invoice_settings]"];
+const refusedKeys = (form) => [...form.keys()].filter((k) => REFUSED.some((r) => k === r || k.startsWith(`${r}[`)));
+const metadataOf = (form, prefix) => Object.fromEntries([...form.entries()].filter(([k]) => k.startsWith(`${prefix}[`)).map(([k, v]) => [k.slice(prefix.length + 1, -1), v]));
+const T0 = 1793700000;
 
 async function syncServer(portalOrigin, extraEnv = {}) {
   const bin = process.env.HITOP_SYNC_SERVER_BIN;
@@ -194,7 +223,7 @@ async function syncServer(portalOrigin, extraEnv = {}) {
   // localhost, not 127.0.0.1: WebAuthn needs a domain name as the relying party id.
   const origin = `http://localhost:${portalPort}`;
   const portal = await serve(dist, portalPort);
-  const ls = await fakeLemonSqueezy(await freePort());
+  const stripe = await fakeStripe(await freePort());
   const dns = await fakeDns(await freePort());
   const keyDir = fs.mkdtempSync(path.join(os.tmpdir(), "hitop-portal-hostkey-"));
   const hostKey = path.join(keyDir, "host.key");
@@ -202,22 +231,17 @@ async function syncServer(portalOrigin, extraEnv = {}) {
   const server = await syncServer(origin, {
     HITOP_SYNC_HOST_KEY_FILE: hostKey,
     HITOP_SYNC_DNS_URL: dns.url,
-    HITOP_SYNC_LS_VARIANT_BUSINESS_ANNUAL: LS.businessAnnual,
-    HITOP_SYNC_LS_VARIANT_BUSINESS_MONTHLY: LS.businessMonthly,
-    HITOP_SYNC_LS_WEBHOOK_SECRET: LS.secret,
-    HITOP_SYNC_LS_STORE_ID: LS.store,
-    HITOP_SYNC_LS_VARIANT_TEAM_ANNUAL: LS.teamAnnual,
-    HITOP_SYNC_LS_VARIANT_TEAM_MONTHLY: LS.teamMonthly,
-    HITOP_SYNC_LS_VARIANT_PRO_ANNUAL: LS.proAnnual,
-    HITOP_SYNC_LS_API_KEY: LS.key,
-    HITOP_SYNC_LS_API_URL: ls.url,
-    HITOP_SYNC_LS_TEST_MODE: "on",
+    // Only the two secrets: the prices are found by lookup key.
+    HITOP_SYNC_STRIPE_SECRET_KEY: ST.key,
+    HITOP_SYNC_STRIPE_WEBHOOK_SECRET: ST.secret,
+    HITOP_SYNC_STRIPE_API_URL: stripe.url,
   });
-  // A webhook delivery as Lemon Squeezy sends it: the raw bytes, signed.
-  const deliver = async (body, signature) => {
+  // A webhook delivery as Stripe sends it: the raw bytes, Stripe-Signature t=<now>,v1=<HMAC of "t.body">.
+  const deliver = async (body, v1) => {
     const raw = JSON.stringify(body);
-    const sig = signature ?? crypto.createHmac("sha256", LS.secret).update(raw).digest("hex");
-    const r = await fetch(`${server.url}/v1/billing/lemonsqueezy`, { method: "POST", headers: { "Content-Type": "application/json", "X-Event-Name": body.meta.event_name, "X-Signature": sig }, body: raw });
+    const t = Math.floor(Date.now() / 1000);
+    const sig = v1 ?? crypto.createHmac("sha256", ST.secret).update(`${t}.${raw}`).digest("hex");
+    const r = await fetch(`${server.url}/v1/billing/stripe`, { method: "POST", headers: { "Content-Type": "application/json", "Stripe-Signature": `t=${t},v1=${sig}` }, body: raw });
     return { status: r.status, json: await r.json() };
   };
   const browser = await chromium.launch();
@@ -321,14 +345,20 @@ async function syncServer(portalOrigin, extraEnv = {}) {
     // Billing (C3): buy Team with 3 seats.
     await app.getByLabel("Buy Team").getByLabel("Seats").fill("3");
     await app.getByRole("button", { name: "Buy Team, yearly" }).click();
-    await page.waitForURL(`${ls.url}/checkout/**`, { timeout: 10000 });
-    const made = ls.seen.find((r) => r.method === "POST" && r.path === "/v1/checkouts");
-    const custom = made?.body.data.attributes.checkout_data.custom;
-    check("Buy Team opens Lemon Squeezy's checkout for 3 seats of the org", made?.authorized && custom.org_id === orgId && made.body.data.attributes.checkout_data.variant_quantities[0].quantity === 3 && made.body.data.relationships.variant.data.id === LS.teamAnnual, JSON.stringify(made?.body));
-    const bad = await deliver(subscriptionEvent("subscription_created", "1", LS.teamAnnual, "active", 3, "2026-11-03T10:00:00.000000Z", custom), "0".repeat(64));
+    await page.waitForURL(`${stripe.url}/checkout/**`, { timeout: 10000 });
+    const made = stripe.seen.find((r) => r.method === "POST" && r.path === "/v1/checkout/sessions");
+    const custom = made ? metadataOf(made.form, "subscription_data[metadata]") : {};
+    check(
+      "Buy Team opens a Managed Payments Checkout Session for 3 seats of the org",
+      made?.authorized && made.form.get("managed_payments[enabled]") === "true" && made.form.get("mode") === "subscription" && custom.org_id === orgId && made.form.get("client_reference_id") === orgId && made.form.get("line_items[0][quantity]") === "3" && made.form.get("line_items[0][price]") === priceOf("team_yearly"),
+      made && made.form.toString(),
+    );
+    check("...with nothing Managed Payments refuses", made && refusedKeys(made.form).length === 0, made && refusedKeys(made.form).join());
+    const bad = await deliver(subscriptionEvent("customer.subscription.created", "sub_e2e1", "team_yearly", "active", 3, T0, custom), "0".repeat(64));
     check("a webhook with a bad signature is refused", bad.status === 401, JSON.stringify(bad));
-    const created = await deliver(subscriptionEvent("subscription_created", "1", LS.teamAnnual, "active", 3, "2026-11-03T10:00:00.000000Z", custom));
-    const again = await deliver(subscriptionEvent("subscription_created", "1", LS.teamAnnual, "active", 3, "2026-11-03T10:00:00.000000Z", custom));
+    const createdEvent = subscriptionEvent("customer.subscription.created", "sub_e2e1", "team_yearly", "active", 3, T0, custom);
+    const created = await deliver(createdEvent);
+    const again = await deliver(createdEvent);
     check("the signed purchase applies, its replay doesn't", created.json.outcome === "applied" && again.json.outcome === "duplicate", JSON.stringify([created, again]));
     await page.goto(`${origin}/#/orgs/${orgId}/plan`);
     await idle();
@@ -347,27 +377,27 @@ async function syncServer(portalOrigin, extraEnv = {}) {
     await page.getByLabel("Seats").fill("4");
     await app.getByRole("button", { name: "Change seats" }).click();
     await idle();
-    const patch = ls.seen.find((r) => r.method === "PATCH");
-    check("a 4th seat: quantity 4 sent to Lemon Squeezy, charged at once", patch?.path === "/v1/subscription-items/71" && patch.body.data.attributes.quantity === 4 && patch.body.data.attributes.invoice_immediately === true, JSON.stringify(patch?.body));
+    const update = stripe.seen.find((r) => r.method === "POST" && r.path.startsWith("/v1/subscriptions/"));
+    check("a 4th seat: quantity 4 sent to Stripe, invoiced at once", update?.path === "/v1/subscriptions/sub_e2e1" && update.form.get("items[0][id]") === "si_sub_e2e1" && update.form.get("items[0][quantity]") === "4" && update.form.get("proration_behavior") === "always_invoice", update && update.form.toString());
     const dave = await server.api("POST", `/v1/orgs/${orgId}/members`, bobSession, { email: "dave@example.com", role: "member" });
     check("...and the 4th member fits", dave.status === 201, JSON.stringify(dave.json));
-    await deliver(subscriptionEvent("subscription_updated", "1", LS.teamAnnual, "active", 4, "2026-11-03T11:00:01.000000Z", custom));
+    await deliver(subscriptionEvent("customer.subscription.updated", "sub_e2e1", "team_yearly", "active", 4, T0 + 3601, custom));
     // Payment failed: the banner, still Team.
-    await deliver(invoiceEvent("subscription_payment_failed", "1", false, "2027-11-03T10:00:00.000000Z"));
-    await deliver(subscriptionEvent("subscription_updated", "1", LS.teamAnnual, "past_due", 4, "2027-11-03T10:00:01.000000Z", custom));
+    await deliver(invoiceEvent("invoice.payment_failed", "sub_e2e1", T0 + 365 * 86400));
+    await deliver(subscriptionEvent("customer.subscription.updated", "sub_e2e1", "team_yearly", "past_due", 4, T0 + 365 * 86400 + 1, custom));
     await page.reload();
     await idle();
     check("payment failed: the banner, still Team", (await app.getByLabel("Payment failed").count()) === 1 && (await app.innerText()).includes("Plan: team"), await app.innerText());
-    // The billing portal opens Lemon Squeezy's page.
+    // The billing portal opens a Stripe customer portal session for the org's customer.
     await app.getByRole("button", { name: "Manage billing" }).click();
-    await page.waitForURL(`${ls.url}/billing**`, { timeout: 10000 });
-    check("Manage billing opens the Lemon Squeezy customer portal", page.url().includes("signature=fresh"), page.url());
-    // A refund ends the plan; expired is Free too; nothing is removed.
-    const refunded = await deliver(invoiceEvent("subscription_payment_refunded", "1", true, "2027-11-04T10:00:00.000000Z"));
+    await page.waitForURL(`${stripe.url}/billing/**`, { timeout: 10000 });
+    check("Manage billing opens the Stripe customer portal", page.url().endsWith("/billing/session_cus_sub_e2e1"), page.url());
+    // A full refund ends the plan; deleted (ended) is Free too; nothing is removed.
+    const refunded = await deliver(refundEvent("sub_e2e1", T0 + 366 * 86400));
     await page.goto(`${origin}/#/orgs/${orgId}/plan`);
     await idle();
     check("a refund: Free limits", refunded.json.outcome === "applied" && (await alertText()).includes("refunded: Free limits"), await alertText());
-    const expired = await deliver(subscriptionEvent("subscription_expired", "1", LS.teamAnnual, "expired", 4, "2027-11-17T10:00:00.000000Z", custom));
+    const expired = await deliver(subscriptionEvent("customer.subscription.deleted", "sub_e2e1", "team_yearly", "canceled", 4, T0 + 380 * 86400, custom));
     const people = (await server.api("GET", `/v1/orgs/${orgId}/members`, bobSession)).json;
     const reads = await server.api("GET", "/v1/workspaces", bobSession);
     check("expired: Free limits, all 4 people still there, reads work", expired.json.outcome === "applied" && people.members.length + people.invites.length === 4 && reads.status === 200, JSON.stringify(expired.json));
@@ -386,11 +416,11 @@ async function syncServer(portalOrigin, extraEnv = {}) {
     check("the plan page offers Business next to Team", (await app.getByRole("button", { name: "Buy Business, yearly" }).count()) === 1 && (await app.innerText()).includes("$20 per seat a month"), await app.innerText());
     await app.getByLabel("Buy Business").getByLabel("Seats").fill("3");
     await app.getByRole("button", { name: "Buy Business, yearly" }).click();
-    await page.waitForURL(`${ls.url}/checkout/**`, { timeout: 10000 });
-    const bizCheckout = ls.seen.filter((r) => r.method === "POST" && r.path === "/v1/checkouts").pop();
-    const bizCustom = bizCheckout?.body.data.attributes.checkout_data.custom;
-    check("Buy Business: the Business variant, 3 seats, Globex", bizCustom?.org_id === globex && bizCheckout.body.data.relationships.variant.data.id === LS.businessAnnual && bizCheckout.body.data.attributes.checkout_data.variant_quantities[0].quantity === 3, JSON.stringify(bizCheckout?.body));
-    const biz = await deliver(subscriptionEvent("subscription_created", "2", LS.businessAnnual, "active", 3, "2026-11-03T12:00:00.000000Z", bizCustom));
+    await page.waitForURL(`${stripe.url}/checkout/**`, { timeout: 10000 });
+    const bizCheckout = stripe.seen.filter((r) => r.method === "POST" && r.path === "/v1/checkout/sessions").pop();
+    const bizCustom = bizCheckout ? metadataOf(bizCheckout.form, "subscription_data[metadata]") : {};
+    check("Buy Business: the Business price, 3 seats, Globex", bizCustom.org_id === globex && bizCheckout.form.get("line_items[0][price]") === priceOf("business_yearly") && bizCheckout.form.get("line_items[0][quantity]") === "3", bizCheckout && bizCheckout.form.toString());
+    const biz = await deliver(subscriptionEvent("customer.subscription.created", "sub_e2e2", "business_yearly", "active", 3, T0 + 7200, bizCustom));
     check("...the purchase applies: Business", biz.json.outcome === "applied" && (await server.api("GET", `/v1/orgs/${globex}/limits`, adaSession)).json.planInForce === "business", JSON.stringify(biz.json));
     // Ada's workspace moves into Globex; Bob (one device) edits it.
     check("the workspace moves into Globex", (await server.api("POST", `/v1/orgs/${globex}/workspaces`, adaSession, { workspace: wsId })).status === 200);
@@ -628,7 +658,7 @@ async function syncServer(portalOrigin, extraEnv = {}) {
   } finally {
     await browser.close();
     portal.close();
-    ls.server.close();
+    stripe.server.close();
     dns.server.close();
     server.stop();
     fs.rmSync(keyDir, { recursive: true, force: true });
