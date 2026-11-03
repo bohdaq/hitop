@@ -15,14 +15,25 @@ The sync server is open source (AGPL), and you can run your own: see the [self-h
 
 ## Sign in
 
-Sign in by email: the server mails you a code.
+Make an account with your email and a password; the server mails you a code to confirm the address:
 
 ```bash
-hitop sync login --email you@example.com
-# paste the code from the mail when asked
+hitop sync signup --email you@example.com
+# choose a password (8 characters or more), then paste the code from the mail
+hitop sync login --email you@example.com     # later, on any computer: asks for the password
 ```
 
-In the app, open **Sync** in the sidebar, enter the server and your email, choose **Send code**, then paste the code. Each device makes its own key pair; the secret half stays on the device (the OS keychain for the CLI and the desktop app). hitop shows the device's **fingerprint**: eight groups of four hex digits. Your team uses it to check that a key is really yours.
+In the app, open **Sync** in the sidebar, enter your email and a password, and choose **Create account** (or **Sign in**). Your device makes its own key pair; the secret half stays on the device (the OS keychain for the CLI and the desktop app). hitop shows the device's **fingerprint**: eight groups of four hex digits. Your team uses it to check that a key is really yours.
+
+**Your password also unlocks your keys on a new computer.** The password never leaves your device: hitop turns it into two keys, sends the server one (which it keeps only as a slow hash) and seals your device's keys with the other. Sign in with the password on a new computer and it becomes your device again: same key, same fingerprint, your workspaces open with no new trust step for your team. Change it with `hitop sync password set` (or **Password** on the Sync page).
+
+**Forgot it?** `hitop sync password forgot --email you@example.com`, then `hitop sync password reset --code <code>` (or **Forgot password?** in the app) sets a new one and signs you in, but **can't unlock your encrypted workspaces on a new computer**: only the old password could open those keys. Get them back with your [recovery phrase](#recovery-phrase) or from a computer that is still signed in (its next sign-in with the new password seals the keys again; then `hitop sync password unlock`). A computer that already was your device keeps its keys through a reset.
+
+Other ways to sign in:
+
+- **A code by mail**, no password: `hitop sync login --email you@example.com --code` (in the app: **Use a code instead**).
+- **Continue with Google** or **Continue with GitHub**, when the server offers them: `hitop sync login --google` or `--github` (opens a browser; over SSH add `--no-browser` and paste the code). Your Google or GitHub address must be verified; it signs you in to the account with that address. On a new computer it doesn't unlock your keys: `hitop sync password unlock` (or **Unlock with password**) does.
+- **A passkey** in the app, once you added one.
 
 ### Single sign-on
 
@@ -133,6 +144,17 @@ The workflow pulls the workspace with the credential, then runs it with the [HIT
 
 **Running on the sync server instead** would mean giving the server a key that decrypts the workspace: while it runs your collection it sees your requests, responses and environment values, which is exactly what end-to-end encryption keeps from it. hitop's test server doesn't offer that. If you run your own server and want it to run your monitors, run the runner credential on that host yourself, as its own service with its own limits, and treat that host as one that can read the workspace.
 
+## Recovery phrase
+
+A workspace only you are in lives only on your devices. Write down a recovery phrase in case you lose them all and forget your password:
+
+```bash
+hitop sync recovery create     # prints 24 words once: keep them offline
+hitop sync recovery use        # on a new computer, after signing in
+```
+
+On the Sync page it is under **Recovery phrase**. Like the password, the phrase seals your device's keys for the server to keep; the server can't open them.
+
 ## Audit log
 
 The server keeps a log of what happened in each workspace: members added and removed, role changes, invites, key rotations, runner credentials, and the workspace being created or deleted. Owners can read it:
@@ -149,6 +171,7 @@ In the app it is under **Members** → **Show audit log**. Each entry is chained
 
 | | Where |
 | --- | --- |
+| your password | nowhere but your head; the server keeps a slow hash of a key made from it, and your device's keys sealed under another key from it |
 | request files, environments (without secret values), `hitop.yaml`, globals | encrypted on the server; plain on each member's device |
 | secret values | each device's keychain (web app: the browser); never synced |
 | device secret key | the device (keychain); the web app keeps it in the browser |

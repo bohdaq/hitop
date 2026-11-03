@@ -2,6 +2,30 @@
 
 Releases before 1.2 are listed in ROADMAP.md (section 5) and on the GitHub Releases page.
 
+## Unreleased
+
+### hitop sync: normal sign-in and sign-up (HITOP Cloud C1b)
+
+- **Email and password.** `hitop sync signup --email you@example.com` (or **Create account** on
+  the Sync page and in the portal) makes an account with a password, confirmed by a mailed code.
+  `hitop sync login --email ...` now asks for the password (`--password-stdin` for scripts); the
+  mailed code is `--code` (alone it mails one, as `login --email` did before). Forgot it:
+  `hitop sync password forgot` / `reset`; change it: `hitop sync password set`.
+- **The password unlocks your keys on a new computer.** It never leaves the device: hitop derives
+  an auth key the server keeps only as a slow hash, and a second key that seals your device's
+  keys (the same key bundle as the recovery phrase). Sign in with it on a new computer and it
+  becomes your device again, so teammates trust nothing new. A reset by mail can't open the old
+  bundle: hitop says so before and after, and the recovery phrase or another device gets the
+  keys back (`hitop sync password unlock` once a device sealed them again).
+- **Continue with Google / Continue with GitHub** (`hitop sync login --google|--github`, buttons on
+  the Sync page and the portal) where the server offers them; they sign in but don't unlock keys.
+- hitop-sync-crypto 0.4.0: `derive_password_keys`, `PasswordKdf` (Argon2id + HKDF), test vectors
+  in `vectors/password.json`. Additive: released 1.1 and 1.2 clients work unchanged.
+- Sync server: migration 6 (passwords), `/v1/auth/password/*`, `/v1/auth/{google,github}/*`,
+  `GET /v1/auth/methods`, `POST /v1/me/password`. Settings `HITOP_SYNC_PASSWORDS`,
+  `HITOP_SYNC_PASSWORD_PEPPER[_FILE]`, `HITOP_SYNC_GOOGLE_CLIENT_ID/SECRET`,
+  `HITOP_SYNC_GITHUB_CLIENT_ID/SECRET`.
+
 ## 1.2.0 (2026-11-02)
 
 ### Same Content-Type on every surface

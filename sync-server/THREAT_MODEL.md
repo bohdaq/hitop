@@ -1,7 +1,7 @@
 # hitop sync: threat model and encryption design
 
 Status: design and implementation for testing (server T23, clients and teams T24, SSO and audit
-log T25, authenticated key wraps 1.2). **Not externally reviewed.** An external review of this design, of `cli/crates/hitop-sync-crypto` and of
+log T25, authenticated key wraps 1.2, recovery C2, passwords and Google/GitHub sign-in C1b). **Not externally reviewed.** An external review of this design, of `cli/crates/hitop-sync-crypto` and of
 the clients (`hitop_core::sync`, `hitop sync` in the CLI, `webapp/src/sync.js`) is required before
 any public launch.
 
@@ -24,6 +24,7 @@ contents without clients noticing.
 | Sync server (and its operator, host, backups) | availability; storing what it's given; enforcing roles and versions as a courtesy | confidentiality and integrity of contents |
 | Mail server, network | delivering sign-in links | anything else (TLS everywhere) |
 | Identity provider (SSO, when configured) | saying who a person is (verified address, groups) | anything else: it never sees a key or a file |
+| Google, GitHub (when configured, C1b) | saying a person controls a verified address | anything else: they never see a key or a file; signing in with them never unlocks keys |
 
 ## What the server stores
 
@@ -47,6 +48,13 @@ contents without clients noticing.
   per account is named "Personal". Org roles never give access to a workspace: that still needs
   the workspace key wrapped by a member's client. Nothing about workspace contents is added.
 - Personal access tokens: name, scopes, expiry, last use, and the SHA-256 of the token.
+- Passwords (C1b, migration 6): the client's KDF parameters (Argon2id costs and a random salt) and
+  the server's Argon2id hash of the client's **auth key** (never the password, never the bundle
+  key); pending sign-ups and resets as SHA-256 of the mailed code, the address, and (sign-up) the
+  same hash; a random server secret for made-up parameters. Google and GitHub identities are
+  linked like SSO ones (issuer `https://accounts.google.com` or `https://github.com`, subject).
+- Key bundles (C2, `recovery_blobs`): per account and unlock method (`phrase`, `password`),
+  sealed on a client; see "Recovery" and "Passwords".
 
 The server binary does not link any decryption code: the client crate and the AEAD/HPKE crates
 are dev-dependencies only, and `tests/no_crypto_in_server.rs` fails the build's tests if that
@@ -216,6 +224,13 @@ and `@hpke/core` in JavaScript. Every client implementation (the web app in T24)
   `hitop.rws8.tech`, so the web app and the sync server share passkeys.
 - **Sessions**: 32 random bytes as a bearer token (never a cookie, so no CSRF), stored hashed,
   30 days.
+
+- **Passwords** (C1b): see "Passwords". **Google** (OpenID Connect, the same code as SSO: PKCE,
+  JWKS, nonce, `iss` either spelling Google uses) and **GitHub** (OAuth 2: code + PKCE + client
+  secret, then `/user` and `/user/emails`, only the primary *verified* address) end in the same
+  one-time code handoff as SSO (oidc.rs): the code goes to the client's loopback listener or an
+  allowed web origin, and finishing needs the client's verifier. Accounts link by verified
+  address only (as SSO); an address in a "sign in with SSO only" domain is refused.
 
 Sign-in protects *access to the ciphertext and the membership list*, not the contents. Anyone who
 takes over an account (mailbox compromise) can't decrypt anything without a device secret key, but
@@ -409,8 +424,88 @@ English words (the last carries a checksum, so a typo is caught; `hitop_sync_cry
   data) or change it (authenticated encryption); it can withhold or
   delete it (denial of recovery) or serve an old version (the device then knows less than it did:
   rollback of pins and memory to that point, which `accept_wraps` still bounds by the epochs in the
-  old memory). A future password unlock seals the same bundle under a slow-KDF key as a second
-  method; its strength is the password's, which is why the phrase stays the default.
+  old memory). The password (next section) seals the same bundle under a slow-KDF key as a second
+  method; its strength is the password's, which is why the phrase stays recommended.
+
+## Passwords (HITOP Cloud C1b)
+
+One password signs a person in **and** unlocks their keys on a new device, without the server
+being able to do either on its own. The design splits one password-derived master key in two, like
+Bitwarden's and 1Password's account passwords:
+
+```text
+master    = Argon2id(NFC(password), salt, m, t, p, ad = "hitop-sync/v1/password", 32 bytes)
+authKey   = HKDF-SHA256(master, info = "hitop-sync/v1/password/auth")                  -> server
+bundleKey = HKDF-SHA256(master, info = "hitop-sync/v1/password/bundle" || canonical(params))
+```
+
+(`hitop_sync_crypto::derive_password_keys`; vectors in `vectors/password.json`, run by the crate,
+hitop-wasm and the web app's unit tests.) Defaults: m = 64 MiB, t = 3, p = 1, 16-byte random salt
+per password (a new salt at every change or reset).
+
+- **What the server sees and keeps**: the parameters (it hands them to any client that asks for an
+  address) and `authKey` at each sign-in, of which it stores only its own Argon2id hash (19 MiB,
+  t = 2, its own salt; `HITOP_SYNC_PASSWORD_PEPPER` as the Argon2 secret when set, flagged per row
+  so a pepper added later doesn't break older hashes). The comparison is the `argon2` crate's
+  constant-time verify.
+- **Domain separation**: the two keys come from one master through HKDF with different labels, so
+  `authKey` reveals nothing about `bundleKey` short of guessing the password: each guess costs the
+  client's Argon2id (64 MiB). A copy of the database costs an attacker the server's Argon2id **and**
+  the client's per guess, and even a right guess at `authKey` alone (from a stolen hash) gives no
+  bundle key. The parameters are part of `bundleKey`'s info, so a server that reports other
+  parameters than the bundle was sealed with gets a key that opens nothing.
+- **Weakened parameters**: the server does see `authKey`, so a malicious server could hand a client
+  low costs and turn that into a cheap offline oracle for the password. Every client refuses
+  parameters below m = 64 MiB / t = 3 (and above 1 GiB / t = 10 / p = 4, a denial-of-service
+  ceiling) before deriving anything (`PasswordKdf::check`), and the server refuses to store them.
+- **No account enumeration**: `POST /v1/auth/password/params` answers every address; one without a
+  password gets parameters made up from HMAC(server secret, address) (stable between asks). Sign-in
+  answers one `invalid_credentials` for a wrong address, an account without a password and a wrong
+  password, after the same hashing work (a dummy verify on misses). Sign-up and forgot answer 202
+  always; the mail tells the truth (it goes to the address's owner). Residual: the made-up salt
+  changes when an address first gets a password, so someone watching an address over time can see
+  that it did.
+- **Guessing online**: the IP rate limit on `/v1/auth/*` (60 a minute) plus a per-address backoff
+  after 5 wrong passwords (30 s, doubling to 15 minutes; addresses with and without an account
+  alike; in memory). Mails (sign-up, reset) share the 5 per address per hour of sign-in links.
+- **Sign-up** stores nothing usable until the mailed code (15 minutes, single use, SHA-256 stored)
+  confirms the address: the pending row holds the server's hash of `authKey`, not the key. An
+  account made by code, passkey or SSO adds a password the same way, or while signed in (`POST
+  /v1/me/password`).
+- **The key bundle under the password**: the same bundle as the phrase ("Recovery"), sealed with
+  `seal_key_bundle(bundleKey, account id, ...)`, stored as method `password`. The device whose key
+  is in it keeps `bundleKey` and re-seals it when its pins or memory change, but only while the
+  server's bundle still opens with that key and holds that device (otherwise it forgets the key, so
+  a device with an old key never overwrites a newer bundle).
+- **A new device** signs in with the password, fetches the bundle and **becomes the device in it**
+  (the same checks as a recovery: the server must still list that key id with the same public key).
+  No new key is registered and nobody has to trust anything: teammates already pinned that key, and
+  owners' wraps already target it. That is the choice over "register a new key and have the bundle
+  sign it into trust": hitop's trust is per device key (pins, `accept_wraps`), and a new key would
+  need an owner to wrap the workspace keys for it, the step the owner wanted gone. The cost: every
+  device unlocked this way **is** the same device key (as with the phrase), so one of them can't be
+  revoked alone; removing that key removes all of them. A device that already has a key of its own
+  (a second computer signed in by code) keeps it; `hitop sync password unlock` (or "Unlock with
+  password") switches it to the bundle's device.
+- **Change** (`POST /v1/me/password`, current `authKey` required when there is one): the client
+  opens the bundle with the old `bundleKey` and sends it re-sealed under the new one in the same
+  request (atomic); without a bundle the old one is deleted (it could no longer be opened). Other
+  sessions end; a mail tells the person.
+- **Reset by mail** (forgot password) can't recover the bundle: nobody can open it without the old
+  password. The server deletes it, ends every session and says `bundleLost`; every client warns
+  before and after. The keys come back only with the recovery phrase or from a device still signed
+  in (whose next password sign-in seals its bundle again). A device that was the account's already
+  keeps its identity through a reset; a new one gets a new key and doesn't claim the bundle.
+- **Google, GitHub, a mailed code or a passkey alone never unlock keys**: they prove an address,
+  which the server could fake to itself. A device signed in that way asks for the password (or the
+  phrase) to become the account's device.
+- **What a malicious server can do here**: run an offline guess on a hash it keeps or on an
+  `authKey` it sees (costing the client's Argon2id per guess for `bundleKey`; a weak password
+  falls); withhold or delete the bundle; serve an old bundle (the same rollback bound as a recovery);
+  send a reset mail to itself (it controls sessions anyway, but still can't open the bundle).
+  It can't open the bundle without the password, move it to another account, or weaken the KDF.
+- **TOTP second factor**: not in C1b (a follow-up). Passkeys already give a phishing-resistant
+  sign-in; a TOTP step would sit after `password/login` and before the session.
 
 ## What a malicious server can still do
 
@@ -476,7 +571,8 @@ process's own TLS (the front proxy terminates TLS); post-quantum security (X2551
 3. Consider a signed workspace manifest (hidden-blob detection) and per-member signatures.
 4. Done in C2: a recovery story for lost devices (recovery phrase sealing the device's key bundle,
    "Recovery"). The review should check the bundle's binding to the account and the listing check
-   on use.
+   on use. C1b adds the password unlock ("Passwords"): the review should check the auth/bundle key
+   split, the parameter floor in every client, the enumeration answers and the reset path.
 5. The web app's device key in localStorage (a non-extractable WebCrypto key can't be used by the
    Rust HPKE code; an IndexedDB-wrapped key would only move the problem).
 6. Done in T24: key fingerprints and trust-on-first-use pinning in every client.

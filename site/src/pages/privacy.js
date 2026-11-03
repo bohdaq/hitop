@@ -15,7 +15,7 @@ export function render() {
     ${header(meta.path)}
     <main id="main" class="container page-text">
       <h1>Privacy policy</h1>
-      <p class="lead">HITOP does not collect, sell or share personal data, and you never need an account. The one exception is optional: the hitop sync test server keeps an account and a security log if you sign in to it (see below). Last updated 1 November 2026.</p>
+      <p class="lead">HITOP does not collect, sell or share personal data, and you never need an account. The one exception is optional: the hitop sync test server keeps an account and a security log if you sign in to it (see below). Last updated 3 November 2026.</p>
 
       <h2>What stays on your device</h2>
       <p>Everything you enter, including collections, requests, headers, variables, scripts and request history, is stored only on your device:</p>
@@ -53,6 +53,7 @@ export function render() {
       <p>hitop sync is optional and in testing. If you sign in to the test server at <code>sync.hitop.rws8.tech</code> to share collections, it keeps:</p>
       <ul>
         <li>Your email address, your devices' public keys and names, and hashes of your sign-in and session tokens (never the tokens).</li>
+        <li>If you set a password: never the password itself. Your app turns it into two keys on your device; the server gets one of them and keeps only a slow hash of it, plus the settings your app needs to turn the password into keys again. The other key seals your device's keys (a key bundle the server stores but can't open), so the password unlocks your workspaces on a new device. If you sign in with Google or GitHub, the server keeps which Google or GitHub account it was (its id and email address); it never sees your Google or GitHub password and keeps no token from them.</li>
         <li>Your shared workspaces only as ciphertext: files are encrypted on your device before they are sent, and the server can't read them. It sees who is in which workspace, how many files there are, their sizes and when they change.</li>
         <li>An audit log of security events: sign-ins and failed sign-ins, sign-outs, device keys, and in a workspace members added or removed, role changes, invites, key rotations and runner credentials. Each entry holds the time, the account, what it was done to, the first three parts of your IP address (the last part is dropped, IPv6 to its first 48 bits) and your app's user agent. Workspace owners can read their workspace's entries; you can read your own sign-ins. Entries are deleted after a year.</li>
       </ul>

@@ -70,6 +70,10 @@ docker run -d -p 127.0.0.1:7881:7881 -v hitop-sync:/data --env-file hitop-sync.e
 | `HITOP_SYNC_SSO_REQUIRED` | off | `1`: addresses in the allowed domains (all, when none are set) sign in by SSO only: no sign-in mails, no passkey sign-in |
 | `HITOP_SYNC_OIDC_ASSUME_VERIFIED` | off | `1` for providers that send no `email_verified` (Entra ID); needs allowed domains |
 | `HITOP_SYNC_OIDC_SCOPES`, `HITOP_SYNC_OIDC_NAME` | `openid email profile`, `SSO` | scopes; the provider name clients show |
+| `HITOP_SYNC_PASSWORDS` | `on` | `off` turns password sign-in, sign-up and reset off |
+| `HITOP_SYNC_PASSWORD_PEPPER` or `HITOP_SYNC_PASSWORD_PEPPER_FILE` | none | a secret (16+ characters) the server's password hashes are keyed with (Argon2 secret); keep it out of backups; hashes made before it was set keep working |
+| `HITOP_SYNC_GOOGLE_CLIENT_ID`, `HITOP_SYNC_GOOGLE_CLIENT_SECRET` (or `_FILE`) | none (off) | "Continue with Google" (OpenID Connect); redirect URI `<public URL>/v1/auth/google/callback` |
+| `HITOP_SYNC_GITHUB_CLIENT_ID`, `HITOP_SYNC_GITHUB_CLIENT_SECRET` (or `_FILE`) | none (off) | "Continue with GitHub" (OAuth app); callback URL `<public URL>/v1/auth/github/callback` |
 | `HITOP_SYNC_LIMITS` | `off` | `plans`: enforce each organization's plan limits (HITOP Cloud). Off, a self-hosted server has no seats, plans or per-org limits |
 | `HITOP_SYNC_PORTAL_URL` | `https://cloud.hitop.rws8.tech/` | the account portal limit errors link to |
 | `HITOP_SYNC_RATE_LIMITS` | `on` | `off` turns the request rate limits off (src/ratelimit.rs) |
@@ -112,6 +116,30 @@ It doesn't end existing sessions; to lock someone out at once, delete them:
 `sqlite3 <db> "DELETE FROM sessions WHERE user_id = (SELECT id FROM users WHERE email = 'x@corp.example')"`.
 A broken setting (wrong issuer, unreachable provider, refused client) answers 503 and is written to
 the server log and the audit log (`sso_config_error`).
+
+### Passwords, Google and GitHub
+
+People can sign up and sign in with an email address and a password (confirmed by a mailed
+code), and reset a forgotten password by mail; mail codes, passkeys and SSO stay. The password
+never reaches the server: clients send a key derived from it (Argon2id, then HKDF) and the server
+keeps its own Argon2id hash of that key. The same password unlocks the person's end-to-end keys
+on a new device (a second key from it seals their key bundle); a reset by mail can't, and says
+so. Design: [THREAT_MODEL.md](THREAT_MODEL.md) "Passwords". Sign-up and reset need mail
+(`SMTP_URL`).
+
+"Continue with Google" and "Continue with GitHub" are off until their client id and secret are
+set. Register the apps with these redirect URIs (exactly, with your public URL):
+
+| Provider | Where | Redirect / callback URI |
+| --- | --- | --- |
+| Google | Google Cloud console → APIs & Services → Credentials → OAuth client ID, Web application; consent screen with the `openid` and `email` scopes | `<HITOP_SYNC_PUBLIC_URL>/v1/auth/google/callback` |
+| GitHub | Settings → Developer settings → OAuth Apps → New (not a GitHub App) | `<HITOP_SYNC_PUBLIC_URL>/v1/auth/github/callback` |
+
+Any Google or GitHub account with a verified address may sign in; the first time, it is linked
+to the account with that address (or one is made). GitHub must report the address as the
+account's primary and verified one. Addresses that must use SSO (`HITOP_SYNC_SSO_REQUIRED`)
+can't use either. Signing in with Google or GitHub doesn't unlock end-to-end keys on a new
+device: the password or the recovery phrase does.
 
 ### Audit log
 
@@ -184,6 +212,14 @@ verifies a wrap (clients do, THREAT_MODEL.md "Authenticated wraps").
 | `POST /v1/auth/sso/start {challenge, returnTo?, email?}` | `challenge` = base64url(SHA-256(verifier)) → `{url}` to open in a browser |
 | `GET /v1/auth/sso/callback` | the provider's redirect (browser): sends a one-time code to `returnTo` (loopback or an allowed web origin) or shows it |
 | `POST /v1/auth/sso/finish {code, verifier}` | → session |
+| `GET /v1/auth/methods` | what a sign-in page can offer → `{password: {enabled, signup, reset}, emailCode, passkey, sso, google, github}` |
+| `POST /v1/auth/password/params {email}` | the account's password KDF `{kdf: {alg, m, t, p, salt}}` (made up, but stable, for an address without one) |
+| `POST /v1/auth/password/signup {email, kdf, authKey}` | mails a confirmation code (202 for any address) |
+| `POST /v1/auth/password/verify {token}` | the code → session (`created`); makes the account or adds the password |
+| `POST /v1/auth/password/login {email, authKey}` | → session; 401 `invalid_credentials` for any wrong address or password; 429 after repeated failures |
+| `POST /v1/auth/password/forgot {email}`; `POST /v1/auth/password/reset {token, kdf, authKey}` | mails a reset code (202); the code + new password → session and `bundleLost` (the password's key bundle is deleted, other sessions end) |
+| `POST /v1/me/password {currentAuthKey?, kdf, authKey, bundle?}` | set or change (signed-in device; current required when there is one); `bundle` re-sealed under the new password replaces the old one, else it is deleted |
+| `POST /v1/auth/google/start`, `POST /v1/auth/github/start` `{challenge, returnTo?}`; `GET .../callback`; `POST .../finish {code, verifier}` | as SSO, with Google / GitHub |
 | `GET /v1/workspaces/:ws/audit?limit&before&event&actor&since&until` | the audit log, newest first (owner) → `{events, next, head, anchor}` |
 | `GET /v1/workspaces/:ws/audit/verify` | the server's check of the chain (owner) → `{ok, checked, head, problem}` |
 | `GET /v1/me/audit` | your own account events |
@@ -207,7 +243,7 @@ Operator commands: `hitop-sync-server over-limits` lists every org over a limit 
 an org's plan until billing does (C3).
 
 Recovery (C2): `PUT/GET/DELETE /v1/me/recovery[?method=phrase]` keep one opaque key bundle per
-account and unlock method (at most 256 KiB; only `phrase` for now), sealed by the client
+account and unlock method (at most 256 KiB; `phrase`, and `password` for an account with one), sealed by the client
 (`hitop_sync_crypto::seal_recovery`); only a signed-in device's session may use them (not access
 tokens or runner credentials), each step is in the account's audit log, and `GET /v1/me` has
 `recovery: {updatedAt} | null`. `DELETE /v1/me/keys/:id` removes one of your own device keys while
@@ -227,6 +263,11 @@ Migration 4 (HITOP Cloud C1) adds `orgs`, `org_members`, `org_invites`, `workspa
 `entitlements`, `usage_counters` and `api_tokens`: every account gets a personal org on Free that
 owns the workspaces it owns, and each personal org's limits are raised to what it already uses
 (grandfathering), so `over-limits` lists nobody after the upgrade. Nothing changes for clients.
+
+Migration 6 (HITOP Cloud C1b) adds `password_credentials`, `password_tokens` and
+`server_secrets`; nothing changes for existing accounts or older clients. `GET /v1/me` adds
+`password: {set, updatedAt}` and `bundles: {method: {updatedAt}}` (`recovery` still means the
+phrase).
 
 A write must name the next version and a version vector that descends from the stored one, under
 the current epoch; otherwise 409 with the current state (`conflict` or `stale_epoch`): fetch,

@@ -58,6 +58,23 @@ date (UTC), who, what, the commit, the checks run after it.
 - Not done (owner: later): 6 backups, 7 restore drill, 8 uptime checker and status page. Until
   backups run, the only copies are the SQLite snapshots above; rollback: `rollback-postgres.sh`.
 
+## 2026-11-03 C1b built, not deployed (normal sign-in and sign-up)
+
+- Who: agent. What: passwords (sign-up confirmed by a mailed code, sign-in, forgot/reset, change;
+  the password unlocks the key bundle on a new device), "Continue with Google" and "Continue with
+  GitHub", in the server, the CLI, the web app and desktop Sync page and the portal. Migration 6
+  (additive: `password_credentials`, `password_tokens`, `server_secrets`; tested on SQLite and
+  Postgres). Nothing applied on the VM.
+- Deploy (when told): build `--release --locked --features postgres` (the test server runs on
+  Postgres since this morning); a dump first (`hitop-sync-server dump /root/pre-c1b-<ts>`, the
+  backup timer isn't on), then `install.sh` (RUNBOOK "Deploy a new sync server version");
+  `/healthz` must say schema 6; then `deploy/deploy.sh` for the web app and the portal.
+  Password sign-in works with no new setting (mail is already configured). Optional:
+  `HITOP_SYNC_PASSWORD_PEPPER_FILE` (root-only file, 32 random bytes base64). Google/GitHub stay
+  off until the owner registers the apps and their ids and secrets go into `/etc/hitop-sync/env`
+  (`HITOP_SYNC_GOOGLE_CLIENT_ID/SECRET`, `HITOP_SYNC_GITHUB_CLIENT_ID/SECRET`; redirect URIs
+  `https://sync.hitop.rws8.tech/v1/auth/google/callback` and `.../github/callback`).
+
 <!-- Next entry (template): record: commit, backup file names (sync.db.bak-<ts>), the row
 counts before and after (users, workspaces, members; orgs with personal_of <> '' = users with
 runner_of = ''), `hitop-sync-server over-limits` output (0 over a limit), curl of /healthz on sync

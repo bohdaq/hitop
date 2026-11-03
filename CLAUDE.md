@@ -51,7 +51,8 @@ hitop/
 │       │   ├── tests/compat.rs     # format v1 compatibility suite (spec/compat/v1/): read, in-memory read, round trip, canonical write; v1 report shape
 │       │   └── tests/report_html.rs # golden report.html from tests/golden/report/report.json (UPDATE_GOLDEN=1), escaping of every field
 │       ├── hitop-wasm/         # format + model for the web app (wasm-bindgen =0.2.126), own workspace, not published
-│       ├── hitop-sync-crypto/  # MIT client crypto for hitop sync (0.3.0; recovery.rs: BIP-39 RecoveryPhrase (wordlist/bip39-english.txt), seal_recovery / seal_key_bundle): format 2 key wraps = HPKE Auth mode with the sender's pinned X25519 key
+│       ├── hitop-sync-crypto/  # MIT client crypto for hitop sync (0.4.0; recovery.rs: BIP-39 RecoveryPhrase (wordlist/bip39-english.txt), seal_recovery / seal_key_bundle;
+│       │                       # password.rs: derive_password_keys(password, PasswordKdf) = Argon2id → HKDF authKey (server) + bundleKey (seals the bundle), check() floor m>=64MiB t>=3, vectors/password.json): format 2 key wraps = HPKE Auth mode with the sender's pinned X25519 key
 │       │                       # (seal_wrap/open_wrap; format 1 base mode wrap_key/unwrap_key = legacy), keyring.rs accept_wraps (the one key
 │       │                       # acceptance policy: pinned senders, invite fingerprints, strict, key commitments, no rollback; WorkspaceMemory,
 │       │                       # feature `serde`), XChaCha20-Poly1305 blobs; vectors/v1.json (frozen) + v2.json (published before hitop)
@@ -87,7 +88,7 @@ hitop/
 │               ├── commands/openapi.rs # `hitop import openapi <file|url>`, `hitop openapi sync <file|url> <folder> [--dry-run] [--prune]`
 │               ├── commands/ws.rs  # `hitop ws <url|request> [-c]`: stdin or --send/--message, --count, --wait, --timeout, --json
 │               ├── commands/grpc.rs # `hitop grpc <target> <Service/Method> | list [service] | describe <symbol>`, saved requests with -c
-│               ├── commands/sync/ # `hitop sync ...`: mod.rs (commands, TOFU pins), client.rs (API + hitop-sync-crypto), store.rs (account, keychain/HITOP_SYNC_KEY_FILE, links, state, runner credential, audit-heads.json), sso.rs (login --sso: loopback listener or paste), audit.rs (audit, local chain check)
+│               ├── commands/sync/ # `hitop sync ...`: mod.rs (commands, TOFU pins), client.rs (API + hitop-sync-crypto), store.rs (account, keychain/HITOP_SYNC_KEY_FILE, links, state, runner credential, audit-heads.json), sso.rs (login --sso/--google/--github: loopback listener or paste), password.rs (login by password, signup, password set|forgot|reset|unlock, adopt = become the bundle's device), audit.rs (audit, local chain check)
 │               ├── commands/mcp.rs # `hitop mcp [folder]`: MCP server over stdio (rmcp), the twelve tools, masking, path confinement
 │               ├── commands/telemetry.rs # `hitop telemetry on|off|status` and the background ping (feature `telemetry`)
 │               └── output.rs       # Colored output, syntect highlighting
@@ -132,7 +133,7 @@ hitop/
 │   ├── src/views/code-editor-graphql.js # cm6-graphql: GraphQL language, completion, schema lint (own lazy chunk)
 │   ├── src/zip.js              # collection folder ⇄ .zip (fflate)
 │   ├── src/sync.js             # hitop sync client (web + desktop): SyncClient (HTTP, wasm crypto/plan), withSyncFolders ("hitop-sync:<ws>" folder refs in app storage)
-│   ├── src/views/sync-view.js  # the Sync page (both modes): sign in (email or SSO, paste the code), share, join, conflicts, members/invites/trust, runner credential, audit log (owners)
+│   ├── src/views/sync-view.js  # the Sync page (both modes): sign in (password, Create account, Forgot password?, Google/GitHub, a mailed code, SSO, paste the code), Password section, share, join, conflicts, members/invites/trust, runner credential, audit log (owners)
 │   ├── tests/harness.cjs       # e2e in web or Tauri mode (HITOP_MODE=tauri); tests/tauri-mock.cjs mocks invoke in Node
 │   ├── tests/sync.cjs          # two people against a real sync server (HITOP_SYNC_SERVER_BIN), web and Tauri modes; invite code with fingerprint; a malicious server via node:sqlite; audit log; SSO via Keycloak (HITOP_SYNC_TEST_KEYCLOAK)
 │   ├── src/shortcuts.js        # keyboard shortcuts (Mod+Enter, Mod+S, Mod+K, Mod+P, Alt+Shift+N/W/[/], ?): one capture listener in hitop-app.js
@@ -158,7 +159,7 @@ hitop/
 │   └── src/guard.rs            # address/port policy for the proxy (SSRF guard)
 ├── deploy/                     # build.sh, install.sh, systemd unit, front rws routes, README
 ├── sync-server/                # hitop sync (AGPL-3.0-or-later, own LICENSE/deny.toml): rws app, SQLite or Postgres
-│   ├── src/                    # api.rs (routing, CORS), auth.rs (magic link, passkeys), workspaces.rs (members, wraps, rotation), teams.rs (invites, roles, runner accounts), blobs.rs (CAS + version vectors), oidc.rs (SSO: OIDC code + PKCE, JWKS cache), audit.rs (audit log, hash chain, purge), db.rs (migrations 1-5), dbtools.rs (db-stats, migrate-db, dump), ratelimit.rs, recovery.rs (key bundles),
+│   ├── src/                    # api.rs (routing, CORS), auth.rs (magic link, passkeys), workspaces.rs (members, wraps, rotation), teams.rs (invites, roles, runner accounts), blobs.rs (CAS + version vectors), oidc.rs (SSO + Continue with Google: OIDC code + PKCE, JWKS cache, `Sso` per provider kind), github.rs (Continue with GitHub, OAuth 2), password.rs (passwords, backoff), audit.rs (audit log, hash chain, purge), db.rs (migrations 1-6), dbtools.rs (db-stats, migrate-db, dump), ratelimit.rs, recovery.rs (key bundles),
 │   │                           # orgs.rs (organizations, personal orgs, members), limits.rs (plans, entitlements, usage, the one place limits are enforced, grandfather), tokens.rs (personal access tokens)
 │   ├── tests/                  # auth, sync, roles (every role × operation, removed member), teams (invites, runners), plaintext, no_crypto_in_server, postgres, sso (mock IdP, common/idp.rs), keycloak (fixtures/keycloak realm), audit, wraps_v2 (format 2 wraps, upgrade of format 1),
 │   │                           # orgs (org role × operation, other org, tokens), limits (every limit at its boundary per plan), migration (3 → 4 of common/t25.rs, also in postgres), migrate_db, abuse, recovery
@@ -281,7 +282,7 @@ hitop/
   `run`/`requests send` send saved `bodyMode` urlencoded/multipart bodies (`form::outgoing`)
 - Usage ping: hitop-core feature `telemetry` (off by default; the CLI crate's default feature turns it on);
   `hitop telemetry on|off|status`; never sent unless on, at most weekly; `HITOP_TELEMETRY_URL` points tests at a mock
-- Sync: `hitop sync login [--sso [--no-browser]]|logout|whoami|ls|init|link|unlink|status|pull|push|resolve|members|invite|accept|add|remove|role|trust|runner create|audit [--json] [--verify] [--mine]|recovery create|use [--phrase-file F|-]|status|remove`
+- Sync: `hitop sync login --email E [--password-stdin] | --code [CODE] | --sso|--google|--github [--no-browser]`, `signup --email [--code] [--password-stdin]`, `password set|forgot|reset --code|unlock`, `logout|whoami|ls|init|link|unlink|status|pull|push|resolve|members|invite|accept|add|remove|role|trust|runner create|audit [--json] [--verify] [--mine]|recovery create|use [--phrase-file F|-]|status|remove`
   (folders only; `-c <dir>`, default cwd). State in `<config>/hitop/sync/` (account.json, pins.json, keys.json = WorkspaceMemory per workspace, links.json, state/<ws>-<hash>.json);
   session + device secret in the keychain (`sync/<host>`) or `HITOP_SYNC_KEY_FILE` (0600; tests use it with `HITOP_KEYCHAIN=off`);
   `HITOP_SYNC_SERVER` (default https://sync.hitop.rws8.tech; http only for localhost); `HITOP_SYNC_RUNNER=hitop-runner-1.<b64url JSON>` = read-only
@@ -460,12 +461,21 @@ hitop/
   `HITOP_SYNC_LIMITS=plans` (default off = self-hosted, no limits): 402 `{error: limit, limit, plan, org, used, max, upgradeUrl}` on creates, never on reads;
   `HITOP_SYNC_PORTAL_URL`; `hitop-sync-server over-limits` (exit 0 = nobody over) and `set-plan <org> <plan> [seats]`. Plan numbers in `limits::plan_limits`
   (proposal until the owner sets prices). CLI `hitop sync init --org <name|id>`, `sync ls` shows the org
-- HITOP Cloud C2 (built 2026-11-03, NOT applied on the VM; spec/CLOUD_SERVICE.md C2 status, cloud/RUNBOOK.md "Apply C2"): migration 5 `recovery_blobs`
+- HITOP Cloud C2 (applied 2026-11-03 except backups, restore drill and uptime; the test server runs on Postgres; spec/CLOUD_SERVICE.md C2, cloud/ops-log.md): migration 5 `recovery_blobs`
   (user_id, method; `PUT/GET/DELETE /v1/me/recovery[?method=phrase]`, device sessions only; `DELETE /v1/me/keys/:id` for an own key without wraps);
   `hitop-sync-server db-stats [--json] | migrate-db --from --to | dump <dir> | snapshot <file>` (migrate-db/dump/stats read one snapshot: `Db::read_tx`);
   rate limits `HITOP_SYNC_RATE_*` (429 `rate_limited`), `HITOP_SYNC_MAX_JSON_BYTES`; `/healthz` = {ok, version, database, schema}. Tests needing pg_dump:
   `HITOP_SYNC_TEST_PG_DUMP`/`_PG_RESTORE` (docker postgres:17-alpine commands). MinIO images aren't public any more: S3 tests use LocalStack (`SERVICES=s3`).
   The VM build must be `--features postgres` from C2 on
+- HITOP Cloud C1b (built 2026-11-03, not deployed; spec/CLOUD_SERVICE.md C1b, THREAT_MODEL "Passwords"): migration 6 `password_credentials` (kdf JSON, server Argon2id
+  PHC hash of the client's authKey, peppered flag), `password_tokens` (signup/reset/notice, SHA-256 of the mailed code), `server_secrets` (made-up params HMAC key);
+  `/v1/auth/password/{params,signup,verify,login,forgot,reset}`, `POST /v1/me/password {currentAuthKey?, kdf, authKey, bundle?}`, `GET /v1/auth/methods`,
+  `/v1/auth/{google,github}/{start,finish}` + `GET .../callback` (handoff code as SSO; GitHub: primary verified address; issuers `https://accounts.google.com`,
+  `https://github.com` in oidc_identities). `/v1/me` adds `password`, `bundles` (`recovery` = phrase only, for 1.2). Env `HITOP_SYNC_PASSWORDS`, `HITOP_SYNC_PASSWORD_PEPPER[_FILE]`,
+  `HITOP_SYNC_GOOGLE_CLIENT_ID/SECRET[_FILE]` (+ `_ISSUER` test hook), `HITOP_SYNC_GITHUB_CLIENT_ID/SECRET[_FILE]` (+ `_URL`, `_API_URL`). A password sign-in on a new device
+  adopts the bundle's device (no new key, no trust step); only that device keeps `password` (bundleKey) in its secret and re-seals while the server's bundle
+  still opens with it; a reset deletes the bundle (`bundleLost`), and a new device after a reset doesn't claim it. Tests: sync-server tests/password.rs, oauth.rs
+  (common/github.rs mock GitHub, common/pw.rs helpers); argon2 needs `[profile.dev.package.argon2] opt-level = 3` (cli, hitop-wasm, sync-server)
 - Live at https://sync.hitop.rws8.tech (VM, `hitop-sync.service`, 127.0.0.1:7881, env `/etc/hitop-sync/env`, DB `/var/lib/private/hitop-sync/sync.db`); deploy: copy the release binary + `deploy/` and run `deploy/install.sh`
 - `rws --check` on the VM needs `/etc/rws/admin.env` loaded (admin token), or it fails on any config
 

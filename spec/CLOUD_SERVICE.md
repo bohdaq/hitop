@@ -534,6 +534,7 @@ server-side row, never a new file in `environments/`.
 | C0 | Owner decisions and accounts | decisions done; accounts open | owner |
 | C1 | Organizations, plans, entitlements; portal MVP; SOC 2 policies and first access review | **deployed** to the test server 2026-11-02 (2049e95, CI green; `cloud/ops-log.md`); left: the `cloud.` route after the owner's DNS, and the owner's approvals | the 1.2 sync server deployed to the test server first (ROADMAP section 6, "1.2 signed key wraps") so migration 4 and the 1.2 deploy don't collide |
 | C2 | Harden the current VM: Postgres, limits, backups + drill, recovery key, status page, runbook | **applied** 2026-11-03 except backups, restore drill and uptime (owner: later); the sync server runs on Postgres (`cloud/ops-log.md`) | C0 (bucket, backup key, uptime checker, `status.` DNS), C1 |
+| C1b | Normal sign-in and sign-up: email + password (mailed confirmation, reset, change), Continue with Google / GitHub, the password unlocks the key bundle on a new device | **built** 2026-11-03, not deployed (status below) | C1, C2's code; the owner registers the Google and GitHub OAuth apps |
 | C3 | Lemon Squeezy billing, pricing page, prompts, legal and security pages: **paid launch of Pro and Team** | open | C1, C2, C0 (store approved, mail service, legal drafts reviewed) |
 | C4 | Run history and alerts from your own runners; shared environment secrets | open | C3 (can start after C1; ships after C3) |
 | C5 | Business tier: hosted SSO per org, audit export + anchoring, admin console | open | C3 |
@@ -655,6 +656,65 @@ server-side row, never a new file in `environments/`.
 - Left for the owner: DNS `cloud.hitop.rws8.tech` (C0 row); approve the policies; confirm the
   access review (`cloud/evidence/access-reviews/2026-Q4.md`, "owner lists" rows) and the vendor
   list; set real prices later (the limits table is the proposal).
+
+### C1b Normal sign-in and sign-up (owner decision 2026-11-03)
+
+- Goal: HITOP Cloud signs in like any service: email + password with a confirmed address,
+  "Forgot password?", and "Continue with Google" / "Continue with GitHub", in every client (portal,
+  web app Sync page and the desktop build of it, CLI). Mail codes, passkeys and SSO stay. The
+  password also unlocks the person's end-to-end keys on a new device, so no trust step.
+- **Done when**: server unit + integration tests (hash, enumeration, backoff, reset, linking,
+  OAuth mocks, rate limits); crypto vectors for the derivation; `cli/tests/sync.rs` and
+  `webapp/tests/sync.cjs` sign up → password unlock on a second device with no trust step, a reset
+  loses the bundle with a warning; the compat job (released 1.1/1.2 CLIs) stays green.
+
+**Status (2026-11-03): built, not deployed.** (C2 itself was applied the same morning, at the
+owner's go-ahead, before this tranche: its deploy is a normal version deploy on Postgres.)
+
+- Commits on `main`: COMMITS.
+- **Key derivation** (THREAT_MODEL "Passwords"; hitop-sync-crypto 0.4.0 `derive_password_keys`,
+  `vectors/password.json`): `master = Argon2id(NFC(password), salt, m=64 MiB, t=3, p=1, ad
+  "hitop-sync/v1/password")`; `authKey = HKDF(master, "…/auth")` goes to the server, which keeps
+  only its own Argon2id hash of it (19 MiB, t=2, optional pepper as the Argon2 secret);
+  `bundleKey = HKDF(master, "…/bundle" || canonical params)` seals the same key bundle as the
+  recovery phrase (`seal_key_bundle`, method `password`) and never leaves the client. Clients
+  refuse parameters below the floor (a server can't weaken the KDF to make `authKey` an oracle).
+- **Identity on unlock**: a password sign-in on a new device opens the bundle and becomes the
+  device in it (same key id and public key, checked against the server's listing; pins and key
+  memory carried over), registering no key: teammates' pins and owners' wraps already cover it.
+  Trade-off (documented): every device unlocked so is the same key, revocable only together.
+  Only the bundle's own device keeps `bundleKey` and re-seals; it forgets the key when the
+  server's bundle no longer opens with it or holds another device (no stale overwrite).
+- **Server** (migration 6: `password_credentials`, `password_tokens`, `server_secrets`):
+  `/v1/auth/password/{params,signup,verify,login,forgot,reset}`, `POST /v1/me/password`,
+  `GET /v1/auth/methods`, `/v1/auth/{google,github}/{start,callback,finish}`; `GET /v1/me` adds
+  `password` and `bundles` (`recovery` keeps meaning the phrase, for 1.2 clients). No account
+  enumeration (made-up stable params, one 401 with a dummy hash on misses, 202 for sign-up and
+  forgot); a per-address backoff after 5 wrong passwords (30 s doubling to 15 min) on top of the C2
+  IP limit; mails share the per-address hourly cap. A reset deletes the password's bundle, ends
+  every session and answers `bundleLost`; a change re-seals it in the same request.
+- **Google** reuses oidc.rs (code + PKCE, JWKS, nonce; `iss` with or without `https://`); **GitHub**
+  is OAuth 2 (code + PKCE + secret, `/user`, `/user/emails`, primary *verified* address only).
+  Linking by verified address only; SSO-only domains refused; off unless configured.
+- **Clients**: CLI `hitop sync login` asks for the password (`--password-stdin`), `--code [CODE]`,
+  `--sso`, `--google`, `--github` (loopback like SSO); `hitop sync signup`; `hitop sync password
+  set|forgot|reset|unlock`. Sync page (web and desktop): password form, Create account, Forgot
+  password? (warning before and after), Continue with Google/GitHub when offered, Use a code
+  instead, passkey, SSO; Password section (set/change, Unlock with password). Portal: the same
+  sign-in page and a Password section (re-seals the bundle on change; it never makes one).
+- **TOTP**: not built (documented follow-up in THREAT_MODEL "Passwords"); passkeys stay the
+  phishing-resistant option.
+- **Tests, as run**: `sync-server` `cargo test --workspace` (new `tests/password.rs`,
+  `tests/oauth.rs` with mock Google (common/idp.rs) and mock GitHub (common/github.rs)),
+  `--features postgres` (new `postgres_passwords`; `migrate_db` fill has a password account);
+  `hitop-sync-crypto` vectors; hitop-wasm and `webapp/tests/unit.mjs` run them;
+  `cli/tests/sync.rs` `a_password_signs_in_and_unlocks_the_keys_on_a_new_computer`,
+  `google_and_github_need_the_server_to_offer_them`; `webapp/tests/sync.cjs` (web and Tauri) the
+  Carol password flow; `cloud/portal` e2e (32 checks). CI: see `cloud/ops-log.md`.
+- **Deploy** (not done; `cloud/ops-log.md` 2026-11-03 C1b): a dump, then the usual version deploy
+  (`--features postgres`), `/healthz` schema 6, `deploy/deploy.sh` for web app and portal.
+  Optional `HITOP_SYNC_PASSWORD_PEPPER_FILE`. Google/GitHub: env ids and secrets after the owner's
+  registrations (section 11).
 
 ### C2 Harden the current VM
 
@@ -945,6 +1005,7 @@ All questions were answered by the owner on 2026-11-02 (section 0).
 | 2026-11-02 | C1 | Read and approve the policies in `cloud/policies/`; confirm the first access review (`cloud/evidence/access-reviews/2026-Q4.md`: fill the "owner lists" rows, sign) and the vendor list (`cloud/policies/vendors.md`: the VM provider, DNS provider). Then quarterly access reviews. | |
 | 2026-11-02 | C2 | Agree the write-freeze time for the SQLite → Postgres switch; keep the backup key offline. | |
 | 2026-11-03 | C2 | For the built C2 (status in section 9): bucket with a write-only key and a 35-day lifecycle rule; an age key pair (public key to `/etc/hitop-sync/backup-recipients.txt`, private key offline); uptime checker monitors (`cloud/RUNBOOK.md`); the `status.` CNAME; an alert address; then run the first restore drill on your computer and commit its evidence. | |
+| 2026-11-03 | C1b | Register the OAuth apps and place their ids and secrets in `/etc/hitop-sync/env` (or `_FILE`): **Google** (Cloud console → Credentials → OAuth client ID, Web application; consent screen with `openid`, `email`; authorized redirect URI `https://sync.hitop.rws8.tech/v1/auth/google/callback`) → `HITOP_SYNC_GOOGLE_CLIENT_ID/SECRET`; **GitHub** (Settings → Developer settings → OAuth Apps; callback URL `https://sync.hitop.rws8.tech/v1/auth/github/callback`) → `HITOP_SYNC_GITHUB_CLIENT_ID/SECRET`. Optional: a password pepper (`HITOP_SYNC_PASSWORD_PEPPER_FILE`, kept out of backups). | |
 | 2026-11-02 | C3 | Lawyer review of the drafts: ToS, privacy update, DPA, sub-processor list, SLA (99.5%, shared host), refund policy. Approve the security page wording (no external review yet; shared server). Confirm the App Store position (guideline 3.1.3). | |
 | 2026-11-02 | C3 | Switch the Lemon Squeezy store to live, place the live keys, give the paid-launch green light, post the launch yourself (drafts in `launch/`). | |
 | 2026-11-02 | later | External crypto review (Q13: not a launch gate). Scope: ROADMAP section 6 rows T23/T24/T25/1.2; `sync-server/THREAT_MODEL.md`, `cli/crates/hitop-sync-crypto`, `cli/crates/hitop-core/src/sync.rs`, `cli/crates/hitop/src/commands/sync/`, `webapp/src/sync.js`, `sync-server/src/{oidc,audit,workspaces,blobs}.rs`. Rough budget €10–25k. Tell the agent when it starts; the security page links the summary when done. | |
