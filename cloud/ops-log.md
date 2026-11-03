@@ -124,6 +124,21 @@ date (UTC), who, what, the commit, the checks run after it.
   pages); `/`, `/pricing.html`, `/cloud/` 200; rws8.tech, lit.rws8.tech, mail.rws8.tech 200;
   `rws --check` OK.
 
+## 2026-11-03 Stripe billing, C6 and the owner's C5 decisions deployed to the test server (18:00 UTC)
+
+- Who: agent. What: 7025f8d (`--features postgres`; CI 41680016900 green). Dump first:
+  `/root/pre-c6-<ts>` (postgres, 12 rows).
+- `install.sh`: `/healthz` schema 11 (migration 10 SCIM, 11 org-only device exclusion); the owner
+  put the Stripe sandbox secret key and webhook signing secret in `/etc/hitop-sync/env`, so
+  billing is on in test mode: unsigned `POST /v1/billing/stripe` 401. SCIM off until an org
+  owner creates a token; per-org SSO still off (no host key).
+- `deploy/deploy.sh`: site ("Sold through Link", "plus applicable tax"), portal; `/`,
+  `/pricing.html`, `/cloud/`, `/cloud/healthz` 200; rws8.tech, lit.rws8.tech, mail.rws8.tech 200.
+- Not done: the `hitop-cloud` rws route and the `cloud.hitop.rws8.tech` ACME name (DNS A
+  records for `cloud.` and `status.` now point at the VM). The front rws config also serves mail
+  and the other sites, so the owner applies it (deploy/README.md step 2–3, snippet in
+  deploy/rws-routes.toml). `status.` waits for a decision: check.sh is meant to run off the VM.
+
 <!-- Next entry (template): record: commit, backup file names (sync.db.bak-<ts>), the row
 counts before and after (users, workspaces, members; orgs with personal_of <> '' = users with
 runner_of = ''), `hitop-sync-server over-limits` output (0 over a limit), curl of /healthz on sync
