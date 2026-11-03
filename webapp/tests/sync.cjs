@@ -3,7 +3,8 @@
 // (HITOP_SYNC_SERVER_BIN, the sync-server binary; skipped without it unless CI is set). Sign in,
 // share a collection, invite, trust and add, open it on the other side, edit both ways, a
 // conflict resolved both ways (View both, Take theirs, Keep mine), delete, a runner credential,
-// and removing the member; the owner's audit log; Sign in with SSO (against Keycloak when
+// and removing the member; run history (a sealed report opened on the other member's device) and
+// alert settings (HITOP Cloud C4); the owner's audit log; Sign in with SSO (against Keycloak when
 // HITOP_SYNC_TEST_KEYCLOAK is set, see sync-server/tests/keycloak.rs). The server's database never
 // holds a URL or a request name. A malicious server (this test editing its SQLite database) can't
 // make the invitee use a workspace key of its own: an unauthenticated wrap, one forged in the
@@ -280,6 +281,44 @@ async function syncServer(extraEnv = {}) {
     const files = fs.existsSync(path.join(out, 'requests')) ? fs.readdirSync(path.join(out, 'requests')) : [];
     check('the CLI pulls the workspace with the runner credential', r.status === 0 && files.join() === 'get-order.yaml' && fs.existsSync(path.join(out, 'hitop.yaml')), `${r.status} ${r.stderr} ${files}`);
     fs.rmSync(out, { recursive: true, force: true });
+  }
+
+  // HITOP Cloud C4: run history. A run is uploaded as a runner would (a status row and the report
+  // sealed under the workspace key, here by Ada's page); Bob sees the history and opens the report
+  // on his device; the server holds no request name or URL of it.
+  const uploaded = await store(ada, `return (async () => {
+    const sc = s.syncClient; const c = s.collections.find((c) => c.name === "Shop API"); const ws = sc.link(c.id).workspace;
+    const { epoch, keys } = await sc.workspaceKeys(ws);
+    const report = { reportVersion: 1, tool: { name: "hitop", version: "test" }, startedAt: "2026-11-03T10:00:00Z", durationMs: 42, passed: false, bailed: false,
+      summary: { collections: 1, iterations: 1, requests: { total: 1, passed: 0, failed: 1 }, assertions: { total: 0, passed: 0, failed: 0 } },
+      collections: [{ name: "Shop API", environment: null, passed: false, iterations: [{ iteration: 1, startedAt: "2026-11-03T10:00:00Z", durationMs: 42, passed: false,
+        requests: [{ name: "Report-only request 5e1f", method: "GET", url: "https://report-only.e2e-sync.test/x", passed: false, status: 500, durationMs: 40, failure: "status 500", assertions: [] }] }] }] };
+    const detail = s.format.sync.runSeal(keys[epoch], ws, "run-e2e-1", epoch, JSON.stringify(report));
+    return sc.api("POST", "/v1/workspaces/" + ws + "/runs", { id: "run-e2e-1", startedAt: 1793700000, environment: "", status: "failed", durationMs: 42, requests: 1, failed: 1, detail, collection: "Nightly checks" });
+  })();`);
+  check('a run uploads with a sealed report', uploaded?.stored === 'status+report', JSON.stringify(uploaded));
+  await openSync(bob);
+  await S(bob).getByRole('button', { name: 'Run history' }).first().click();
+  await idle(bob);
+  const hist = await S(bob).locator('.sync-history').innerText().catch(() => '');
+  check('the history shows the status row (the collection name the runner sent: status rows are plaintext)', hist.includes('failed') && hist.includes('Nightly checks') && hist.includes('0/1'), hist.slice(0, 300) + (await alertText(bob)));
+  await S(bob).getByRole('button', { name: 'Open report' }).first().click();
+  await idle(bob);
+  const rep = await S(bob).getByLabel('Report of run run-e2e-1').innerText().catch(() => '');
+  check('the report opens on another member\'s device', rep.includes('Report-only request 5e1f') && rep.includes('status 500') && rep.includes('Failed'), rep + (await alertText(bob)));
+  check('the server holds no report plaintext', !server.database().includes(Buffer.from('Report-only request 5e1f')) && !server.database().includes(Buffer.from('report-only.e2e-sync.test')));
+  check('alert settings are for owners', (await S(bob).getByRole('button', { name: 'Alert settings' }).count()) === 0);
+  await S(ada).getByRole('button', { name: 'Run history' }).first().click();
+  await idle(ada);
+  await S(ada).getByRole('button', { name: 'Alert settings' }).click();
+  await idle(ada);
+  await S(ada).getByLabel('Mail to members (comma separated)').fill('ada@example.com');
+  await S(ada).getByRole('button', { name: 'Save alerts' }).click();
+  await idle(ada);
+  check('an owner sets alert mail', (await note(ada)).includes('Alert settings saved'), (await note(ada)) + (await alertText(ada)));
+  if ((await S(ada).locator('.sync-team').count()) === 0) {
+    await S(ada).getByRole('button', { name: 'Members' }).click();
+    await idle(ada);
   }
 
   // Ada removes Bob: new key, files re-encrypted; Bob can't sync any more.

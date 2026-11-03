@@ -951,7 +951,22 @@ export class Store extends EventTarget {
 
   secretValuesFor(collectionId) {
     const own = this.folders.get(collectionId)?.globals ?? this.globals;
-    return [...secretValues(this.activeEnvironment), ...secretValues(own), ...Object.values(this.refValues).filter(Boolean)];
+    return [...secretValues(this.activeEnvironment), ...secretValues(own), ...Object.values(this.sharedFor(collectionId)), ...Object.values(this.refValues).filter(Boolean)];
+  }
+
+  // HITOP Cloud C4: secret values shared end to end in a synced collection's workspace (`hitop
+  // sync secrets share`), by environment name. Memory only, never saved; they fill a secret of the
+  // active environment only where it has no value of its own here.
+  setSharedValues(collectionId, byEnvironment) {
+    this.sharedValues = { ...(this.sharedValues ?? {}), [collectionId]: byEnvironment ?? {} };
+    this.emit();
+  }
+
+  sharedFor(collectionId) {
+    const env = this.activeEnvironment;
+    if (!env) return {};
+    const shared = this.sharedValues?.[collectionId]?.[env.name] ?? {};
+    return Object.fromEntries(secretNames(env).filter((n) => typeof shared[n] === "string" && !(typeof env.variables?.[n] === "string" && env.variables[n] !== "")).map((n) => [n, shared[n]]));
   }
 
   // Resolves the ${secret:...} references a request (not its scripts) and the
@@ -1130,7 +1145,7 @@ export class Store extends EventTarget {
   // The variables a request sees, later ones winning: the globals, its
   // collection's, the active environment's, then what scripts set.
   variables(collectionId, withRefs = true) {
-    const out = { ...this.globalsFor(collectionId), ...collectionService.getCollectionVariables(this.collections, collectionId), ...(this.activeEnvironment?.variables ?? {}) };
+    const out = { ...this.globalsFor(collectionId), ...collectionService.getCollectionVariables(this.collections, collectionId), ...(this.activeEnvironment?.variables ?? {}), ...this.sharedFor(collectionId) };
     for (const [k, v] of Object.entries(this.scriptVariables[collectionId] ?? {})) {
       if (v === null) delete out[k];
       else out[k] = v;

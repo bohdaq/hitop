@@ -225,6 +225,24 @@ assert.throws(() => schemaFromResponse('{"errors": [{"message": "introspection i
   // Passwords (hitop-sync-crypto 0.4): vectors/password.json, the floor on parameters, bundles.
   const pw = readFileSync(join(here, "../../cli/crates/hitop-sync-crypto/vectors/password.json"), "utf8");
   assert.equal(sync.checkPasswordVectors(pw), 3, "every password vector passes in the WASM build");
+  // Run reports and shared environment values (hitop-sync-crypto 0.5, HITOP Cloud C4).
+  const shared = readFileSync(join(here, "../../cli/crates/hitop-sync-crypto/vectors/shared.json"), "utf8");
+  assert.ok(sync.checkSharedVectors(shared) >= 12, "every run report and share vector passes in the WASM build");
+  {
+    const k = sync.newKey();
+    const run = sync.runSeal(k, "w1", "r1", 3, '{"reportVersion":1}');
+    assert.equal(sync.runEpoch(run), 3);
+    assert.equal(sync.runOpen(k, "w1", "r1", run), '{"reportVersion":1}');
+    assert.throws(() => sync.runOpen(k, "w1", "r2", run), "bound to its run");
+    const a = sync.keygen();
+    const b = sync.keygen();
+    const sk = sync.newKey();
+    const sealed = sync.shareSeal(sk, "w1", "s1", 2, '{"v":1}');
+    const w = sync.shareWrap(a.secret, "ka", "kb", b.publicKey, "w1", "s1", 2, sk);
+    assert.equal(sync.shareWrapSender(w), "ka");
+    assert.deepEqual(sync.shareOpen(b.secret, "kb", a.publicKey, "w1", "s1", 2, w, sealed), { key: sk, content: '{"v":1}' });
+    assert.throws(() => sync.shareOpen(b.secret, "kb", b.publicKey, "w1", "s1", 2, w, sealed), "verified against the sender's key");
+  }
   const kdf = sync.passwordKdfNew();
   assert.deepEqual([kdf.alg, kdf.m, kdf.t, kdf.p], ["argon2id", 65536, 3, 1]);
   const pk = sync.passwordKeys("correct horse battery staple", kdf);

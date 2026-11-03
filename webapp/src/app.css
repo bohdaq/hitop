@@ -523,9 +523,10 @@ lit-material-dialog.wide::part(container) { width: min(1100px, calc(100vw - 32px
 .sync-both { display: grid; grid-template-columns: repeat(auto-fit, minmax(16rem, 1fr)); gap: var(--space-200); }
 .sync-side h4 { margin: 0 0 var(--space-050, 4px); font-size: var(--text-sm); }
 .sync-side pre { white-space: pre-wrap; word-break: break-word; }
-.sync-audit { display: block; overflow-x: auto; max-width: 100%; border-collapse: collapse; font-size: var(--text-sm); }
-.sync-audit th, .sync-audit td { padding: var(--space-100) var(--space-200); text-align: left; vertical-align: top; border-bottom: 1px solid var(--md-sys-color-outline-variant); }
-.sync-audit td:first-child { white-space: nowrap; }
+.sync-audit, .sync-runs { display: block; overflow-x: auto; max-width: 100%; border-collapse: collapse; font-size: var(--text-sm); }
+.sync-audit th, .sync-audit td, .sync-runs th, .sync-runs td { padding: var(--space-100) var(--space-200); text-align: left; vertical-align: top; border-bottom: 1px solid var(--md-sys-color-outline-variant); }
+.sync-audit td:first-child, .sync-runs td:first-child { white-space: nowrap; }
+.sync-history, .sync-alerts { display: grid; gap: var(--space-200); }
 .sync-audit td.hint { word-break: break-word; min-width: 12rem; }
 .sync-team { display: grid; gap: var(--space-200); }
 .fingerprint { font-family: var(--font-mono); font-size: var(--text-sm); overflow-wrap: anywhere; }

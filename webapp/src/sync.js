@@ -174,7 +174,7 @@ export class SyncClient {
 
   get data() {
     const d = readJson(STATE_KEY, {});
-    return { pins: d.pins ?? {}, links: d.links ?? {}, states: d.states ?? {}, memory: d.memory ?? {}, recoveryHash: d.recoveryHash ?? null };
+    return { pins: d.pins ?? {}, links: d.links ?? {}, states: d.states ?? {}, memory: d.memory ?? {}, recoveryHash: d.recoveryHash ?? null, shareVersions: d.shareVersions ?? {} };
   }
 
   update(fn) {
@@ -913,7 +913,12 @@ export class SyncClient {
         this.saveState(ws, state);
         if (p.path) result.pushed.push(p.path);
       }
-      if (!again) return result;
+      if (!again) {
+        // HITOP Cloud C4: the shared environment values this device can open, for its runs and
+        // sends (memory only); as a sharer, hand them to devices without a copy.
+        await this.refreshShared(ws, result.collectionId);
+        return result;
+      }
     }
     throw new Error("The workspace kept changing while syncing; try again");
   }
@@ -1049,6 +1054,8 @@ export class SyncClient {
     const { epoch, keys: epochKeys } = await this.workspaceKeys(ws);
     await this.api("POST", `/v1/workspaces/${ws}/members`, { email, role, wraps: await this.wrapsFor(keys, ws, epoch, epochKeys[epoch], epoch) });
     for (const [e, k] of Object.entries(epochKeys)) if (+e !== epoch) await this.api("POST", `/v1/workspaces/${ws}/wraps`, { epoch: +e, wraps: await this.wrapsFor(keys, ws, +e, k, epoch) });
+    // In the same step: the shared environment values they are meant to have.
+    return this.resealShares(ws);
   }
 
   // Hands the workspace key to members' new devices whose keys are trusted.
@@ -1058,6 +1065,7 @@ export class SyncClient {
     if (!waiting.length || info.role === "viewer") return 0;
     const { epoch, keys } = await this.workspaceKeys(info.workspace);
     for (const [e, k] of Object.entries(keys)) await this.api("POST", `/v1/workspaces/${info.workspace}/wraps`, { epoch: +e, wraps: await this.wrapsFor(waiting, info.workspace, +e, k, epoch) });
+    await this.resealShares(info.workspace);
     return waiting.length;
   }
 
@@ -1085,7 +1093,10 @@ export class SyncClient {
       const vv = { ...b.vv, [me]: (b.vv[me] ?? 0) + 1 };
       if (!(await this.put(ws, { path: b.path, blob: b.blob, version: b.version + 1, vv, text: b.text }, next, keys[next]))) n++;
     }
-    return { epoch: next, reencrypted: n };
+    // Shared environment values: a new key for whoever is still meant to have them. What the
+    // removed person saw stays theirs: the page says to rotate those secrets.
+    const shares = await this.rekeyShares(ws);
+    return { epoch: next, reencrypted: n, ...shares };
   }
 
   // The workspace's audit log (owners), newest first, and the server's check of its hash chain.
@@ -1120,5 +1131,149 @@ export class SyncClient {
     const cred = { v: 1, server: this.account().server, workspace: ws, token: r.token, keyId: r.keyId, secret: k.secret, pins };
     const b64 = btoa(String.fromCharCode(...new TextEncoder().encode(JSON.stringify(cred)))).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
     return { credential: `hitop-runner-1.${b64}`, userId: r.userId };
+  }
+
+  // --- HITOP Cloud C4: run history, alerts, shared environment values -------------------
+
+  // Status rows, newest first: { runs, more, series, historyDays, sealedHistory }.
+  async runs(collectionId, { limit = 50 } = {}) {
+    const ws = this.link(collectionId).workspace;
+    return this.api("GET", `/v1/workspaces/${ws}/runs?limit=${limit}`);
+  }
+
+  // One run's sealed report, opened on this device: { row, report, mismatch } (mismatch: the
+  // server's status row says otherwise than the report; the report is what ran).
+  async runReport(collectionId, id) {
+    const ws = this.link(collectionId).workspace;
+    const row = await this.api("GET", `/v1/workspaces/${ws}/runs/${encodeURIComponent(id)}`);
+    if (!row.detail) return { row, report: null, mismatch: false };
+    const w = (await loadFormat()).sync;
+    const { keys } = await this.workspaceKeys(ws);
+    const epoch = w.runEpoch(row.detail);
+    if (!keys[epoch]) throw new Error(`The report is under key epoch ${epoch}, which this device doesn't have`);
+    const report = JSON.parse(w.runOpen(keys[epoch], ws, id, row.detail));
+    const mismatch = row.status !== "sealed" && row.status !== (report.passed ? "passed" : "failed");
+    return { row, report, mismatch };
+  }
+
+  async alertSettings(collectionId) {
+    const ws = this.link(collectionId).workspace;
+    return this.api("GET", `/v1/workspaces/${ws}/alerts`);
+  }
+
+  async saveAlerts(collectionId, settings) {
+    const ws = this.link(collectionId).workspace;
+    return this.api("PUT", `/v1/workspaces/${ws}/alerts`, settings);
+  }
+
+  async alertLog(collectionId) {
+    const ws = this.link(collectionId).workspace;
+    return (await this.api("GET", `/v1/workspaces/${ws}/alert-deliveries`)).deliveries;
+  }
+
+  // The shares of a workspace this device can open: { opened: [{ id, version, content, key,
+  // wrappedFor }], closed: [reason] }. A wrap is used only when the device it names is trusted
+  // here; an older version than one seen before is refused.
+  async openShares(ws) {
+    const r = await this.call("GET", `/v1/workspaces/${ws}/env-shares`, undefined, { allow: [404] });
+    if (r.status === 404) return { opened: [], closed: [] };
+    const w = (await loadFormat()).sync;
+    const a = this.account();
+    const s = await this.secret();
+    const myPublic = w.publicKey(s.secret);
+    const pins = this.data.pins;
+    const seen = this.data.shareVersions[ws] ?? {};
+    const opened = [];
+    const closed = [];
+    for (const sh of r.json.shares ?? []) {
+      const mine = sh.wraps.find((x) => x.keyId === a.keyId);
+      if (!mine) {
+        closed.push(`${sh.id}: not shared with this device`);
+        continue;
+      }
+      const sender = w.shareWrapSender(mine.wrapped);
+      const senderKey = sender === a.keyId ? myPublic : pins[sender];
+      if (!senderKey) {
+        closed.push(`${sh.id}: shared by a device you haven't trusted`);
+        continue;
+      }
+      if (sh.version < (seen[sh.id] ?? 0)) throw new Error(`The server hands out version ${sh.version} of a shared environment this device saw at version ${seen[sh.id]}: refusing an older version`);
+      const o = JSON.parse(w.shareOpen(s.secret, a.keyId, senderKey, ws, sh.id, sh.version, mine.wrapped, sh.sealed));
+      opened.push({ id: sh.id, version: sh.version, content: JSON.parse(o.content), key: o.key, wrappedFor: sh.wraps.map((x) => x.keyId) });
+    }
+    this.update((d) => {
+      d.shareVersions[ws] = { ...(d.shareVersions[ws] ?? {}), ...Object.fromEntries(opened.map((o) => [o.id, o.version])) };
+    });
+    return { opened, closed };
+  }
+
+  // The devices a share is for (its content says: owners and editors, viewers when it says so,
+  // the runner credentials it names), from GET /v1/workspaces/:ws.
+  shareRecipients(info, c) {
+    return info.members
+      .filter((m) => (m.runner ? c.allRunners || (c.runners ?? []).includes(m.userId) : m.role === "owner" || m.role === "editor" || (m.role === "viewer" && c.viewers)))
+      .flatMap((m) => m.keys);
+  }
+
+  async shareWraps(keys, ws, id, version, key) {
+    const w = (await loadFormat()).sync;
+    const s = await this.secret();
+    const me = this.account().keyId;
+    return keys.map((k) => ({ keyId: k.id, wrapped: w.shareWrap(s.secret, me, k.id, k.publicKey, ws, id, version, key) }));
+  }
+
+  // Hands every share this device can open to the trusted devices meant to have it that have no
+  // copy. Returns how many wraps were stored.
+  async resealShares(ws) {
+    const { opened } = await this.openShares(ws);
+    if (!opened.length) return 0;
+    const info = await this.api("GET", `/v1/workspaces/${ws}`);
+    if (info.role === "viewer") return 0;
+    const me = this.account().keyId;
+    let n = 0;
+    for (const o of opened) {
+      const missing = this.shareRecipients(info, o.content).filter((k) => !o.wrappedFor.includes(k.id) && (k.id === me || this.trustOf(k.id, k.publicKey) === "trusted"));
+      if (!missing.length) continue;
+      const r = await this.api("POST", `/v1/workspaces/${ws}/env-shares/${o.id}/wraps`, { version: o.version, wraps: await this.shareWraps(missing, ws, o.id, o.version, o.key) });
+      n += r.stored ?? 0;
+    }
+    return n;
+  }
+
+  // After a removal: a new key (next version) for every share this device can open.
+  async rekeyShares(ws) {
+    const { opened, closed } = await this.openShares(ws);
+    if (!opened.length && !closed.length) return { sharesRekeyed: 0, sharesNotRekeyed: 0 };
+    const info = await this.api("GET", `/v1/workspaces/${ws}`);
+    const w = (await loadFormat()).sync;
+    const me = this.account().keyId;
+    for (const o of opened) {
+      const to = this.shareRecipients(info, o.content).filter((k) => k.id === me || this.trustOf(k.id, k.publicKey) === "trusted");
+      const version = o.version + 1;
+      const key = w.newKey();
+      const sealed = w.shareSeal(key, ws, o.id, version, JSON.stringify(o.content));
+      await this.api("PUT", `/v1/workspaces/${ws}/env-shares/${o.id}`, { version, sealed, wraps: await this.shareWraps(to, ws, o.id, version, key) });
+    }
+    return { sharesRekeyed: opened.length, sharesNotRekeyed: closed.length };
+  }
+
+  // After a sync: the shared values (by environment name) go to the store, in memory, under the
+  // collection's own values; and a sharer hands them to new devices.
+  async refreshShared(ws, collectionId) {
+    try {
+      const { opened } = await this.openShares(ws);
+      const byEnv = Object.fromEntries(opened.map((o) => [o.content.environment, o.content.values ?? {}]));
+      this.store.setSharedValues?.(collectionId, byEnv);
+      if (opened.length) await this.resealShares(ws);
+    } catch (e) {
+      this.notices.push({ kind: "shares", message: `Shared environment values not used: ${e.message}` });
+    }
+  }
+
+  // [{ environment, version, names, recipients }] for the Sync page: names only, never values.
+  async sharedEnvironments(collectionId) {
+    const ws = this.link(collectionId).workspace;
+    const { opened, closed } = await this.openShares(ws);
+    return { shared: opened.map((o) => ({ environment: o.content.environment, version: o.version, names: Object.keys(o.content.values ?? {}), devices: o.wrappedFor.length })), closed: closed.length };
   }
 }

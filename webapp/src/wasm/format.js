@@ -80,6 +80,19 @@ function api(m) {
       checkVectors: (json) => m.syncCheckVectors(typeof json === "string" ? json : JSON.stringify(json)),
       // vectors/v2.json (authenticated wraps, key commitments).
       checkVectorsV2: (json) => m.syncCheckVectorsV2(typeof json === "string" ? json : JSON.stringify(json)),
+      // HITOP Cloud C4 (hitop-sync-crypto 0.5): sealed run reports and shared environment values.
+      runEpoch: (envelope) => m.syncRunEpoch(envelope),
+      runOpen: (key, workspace, runId, envelope) => m.syncRunOpen(key, workspace, String(runId), envelope),
+      runSeal: (key, workspace, runId, epoch, report) => m.syncRunSeal(key, workspace, String(runId), epoch, String(report)),
+      shareWrapSender: (wrapped) => m.syncShareWrapSender(wrapped),
+      // → { key, content } (content = the share's JSON text); throws when it doesn't verify.
+      shareOpen: (secret, keyId, senderPublicKey, workspace, shareId, version, wrapped, sealed) =>
+        JSON.parse(m.syncShareOpen(secret, String(keyId), senderPublicKey, workspace, String(shareId), version, wrapped, sealed)),
+      shareSeal: (key, workspace, shareId, version, content) => m.syncShareSeal(key, workspace, String(shareId), version, String(content)),
+      shareWrap: (secret, senderKeyId, recipientKeyId, recipientPublicKey, workspace, shareId, version, key) =>
+        m.syncShareWrap(secret, String(senderKeyId), String(recipientKeyId), recipientPublicKey, workspace, String(shareId), version, key),
+      // vectors/shared.json; returns how many cases passed.
+      checkSharedVectors: (json) => m.syncCheckSharedVectors(typeof json === "string" ? json : JSON.stringify(json)),
     },
   };
 }

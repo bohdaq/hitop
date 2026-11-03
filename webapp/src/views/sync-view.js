@@ -45,6 +45,7 @@ class HitopSync extends LitElement {
     mode: { state: true },
     methods: { state: true },
     resetSent: { state: true },
+    history: { state: true },
   };
 
   createRenderRoot() {
@@ -253,7 +254,7 @@ class HitopSync extends LitElement {
     const mode = this.mode;
     const pending = this.sync.pending ?? this.sync.pendingSignUp ?? this.sync.pendingReset;
     const head = html`<h2>${mode === "signup" ? "Confirm your address" : mode === "forgot" ? "Reset your password" : "Sign in"}</h2>
-      <p class="page-lead">Share collections with your team through a hitop sync server. Everything is encrypted on this device before it leaves: the server stores only ciphertext. Secret values never sync, only their names.</p>`;
+      <p class="page-lead">Share collections with your team through a hitop sync server. Everything is encrypted on this device before it leaves: the server stores only ciphertext. Secret values never sync, only their names, unless an owner or editor shares an environment's values end to end (hitop sync secrets share).</p>`;
     if (mode === "paste") {
       return html`${head}
         <p class="hint">Sign-in page (open it in a browser if it didn't open): <a href=${this.ssoUrl} target="_blank" rel="noopener noreferrer">open</a></p>
@@ -425,10 +426,12 @@ class HitopSync extends LitElement {
                     <span class="page-actions">
                       <lit-material-button variant="filled" ?disabled=${Boolean(this.busy)} @click=${() => this.syncOne(c)}>${icon("arrows-clockwise")} Sync now</lit-material-button>
                       <lit-material-button variant="outlined" @click=${() => this.openTeam(c)}>Members</lit-material-button>
+                      <lit-material-button variant="outlined" @click=${() => this.openHistory(c)}>Run history</lit-material-button>
                     </span>
                   </div>
                   ${conflicts.length ? html`<ul class="sync-conflicts" aria-label=${`Conflicts in ${c.name}`}>${conflicts.map((k) => this.renderConflict(c, k))}</ul>` : nothing}
                   ${this.selected === c.id && this.team ? this.renderTeam(c) : nothing}
+                  ${this.history?.id === c.id ? this.renderHistory(c, role) : nothing}
                 </li>`;
               })}
             </ul>`
@@ -539,6 +542,7 @@ class HitopSync extends LitElement {
                       if (ok) await this.run("remove", async () => {
                         const r = await this.sync.removeMember(c.id, m.userId);
                         this.note = `Removed ${who}: new key (epoch ${r.epoch}), ${r.reencrypted} file(s) encrypted again.`;
+                        if (r.sharesRekeyed || r.sharesNotRekeyed) this.note += ` Shared environment values: ${r.sharesRekeyed} re-keyed${r.sharesNotRekeyed ? `, ${r.sharesNotRekeyed} not shared with this device (their sharer re-shares them)` : ""}. ${who} could see those values: rotate the shared secrets this person could see where they come from.`;
                         await this.reloadTeam(c);
                       });
                     }}>Remove</lit-material-button>`
@@ -601,7 +605,7 @@ class HitopSync extends LitElement {
 
   renderRuns(c) {
     return html`<h3>Scheduled runs</h3>
-      <p class="page-lead">Run this collection on a schedule from your own CI or cron: a runner credential pulls the workspace read-only (<code>hitop sync pull</code> with <code>HITOP_SYNC_RUNNER</code>), then <code>hitop run</code>. The runner decrypts on your machine, so the server still sees only ciphertext.</p>
+      <p class="page-lead">Run this collection on a schedule from your own CI or cron: a runner credential pulls the workspace read-only (<code>hitop sync pull</code> with <code>HITOP_SYNC_RUNNER</code>), then <code>hitop run --sync-report</code>, which uploads the run to the workspace's history (Run history): a status row and the report sealed end to end. The runner decrypts on your machine, so the server still sees only ciphertext and status rows.</p>
       <p class="hint">Running on the sync server instead would mean handing the server a key that decrypts the workspace: it would then see your requests, responses and environment values while it runs them. hitop doesn't do that unless you set it up yourself (see the guide); prefer a runner you control.</p>
       <lit-material-button variant="outlined" ?disabled=${Boolean(this.busy)} @click=${() => this.run("runner", async () => {
         this.runner = await this.sync.createRunner(c.id, "runner");
@@ -611,6 +615,107 @@ class HitopSync extends LitElement {
         ? html`<p class="hint">Shown once. It decrypts this workspace: put it in your CI's secret store as HITOP_SYNC_RUNNER, nowhere else. Remove the runner under Members to revoke it.</p>
             <pre class="code-preview" aria-label="Runner credential">${this.runner.credential}</pre>`
         : nothing}`;
+  }
+
+  // --- run history and alerts (HITOP Cloud C4) ---------------------------------------------
+
+  async openHistory(c) {
+    if (this.history?.id === c.id) {
+      this.history = null;
+      return;
+    }
+    await this.run("history", async () => {
+      const runs = await this.sync.runs(c.id);
+      const shares = await this.sync.sharedEnvironments(c.id).catch(() => null);
+      this.history = { id: c.id, runs, report: null, alerts: null, shares };
+    });
+  }
+
+  async openReport(c, id) {
+    await this.run("report", async () => {
+      this.history = { ...this.history, report: { id, ...(await this.sync.runReport(c.id, id)) } };
+    });
+  }
+
+  renderReport() {
+    const r = this.history.report;
+    if (!r.report) return html`<p class="hint">Run ${r.id} has a status row only (this plan keeps no sealed reports, or the runner sent none).</p>`;
+    const rep = r.report;
+    return html`<div class="sync-run" aria-label=${`Report of run ${r.id}`}>
+      ${r.mismatch ? html`<p class="sync-note security">${icon("warning-circle")} The server's status row (${r.row.status}) doesn't match the sealed report: the report is what ran.</p>` : nothing}
+      <p><b>${rep.passed ? "Passed" : "Failed"}</b> at ${rep.startedAt}, ${rep.durationMs} ms, ${rep.summary.requests.passed}/${rep.summary.requests.total} requests passed</p>
+      <ul class="sync-list">
+        ${rep.collections.flatMap((col) => col.iterations.flatMap((it) => it.requests.map((q) => html`<li class="sync-row"><span>${q.passed ? "✓" : "✗"} <code>${q.method}</code> ${q.name}</span><span class="hint">${q.status ?? "-"} · ${q.durationMs} ms${q.failure || q.error ? ` · ${q.failure || q.error}` : ""}</span></li>`)))}
+      </ul>
+    </div>`;
+  }
+
+  renderAlerts(c) {
+    const a = this.history.alerts;
+    if (!a) {
+      return html`<lit-material-button variant="outlined" ?disabled=${Boolean(this.busy)} @click=${() => this.run("alerts", async () => {
+        this.history = { ...this.history, alerts: await this.sync.alertSettings(c.id) };
+      })}>Alert settings</lit-material-button>`;
+    }
+    const s = a.settings;
+    const channels = a.plan?.alertChannels ?? ["email"];
+    const hooks = (kind) => s.webhooks.filter((w) => w.kind === kind).map((w) => w.url).join("\n");
+    return html`<div class="sync-alerts" aria-label=${`Alerts of ${c.name}`}>
+      <p class="hint">Alerts say a series (collection and environment) failed, passes again, or missed its run: status and a link, never a response, body or secret value. This plan: ${channels.join(", ")}.</p>
+      <lit-material-text-field id="sync-alert-email" variant="outlined" label="Mail to members (comma separated)" .value=${s.email.join(", ")}></lit-material-text-field>
+      ${channels.includes("webhook") ? html`<lit-material-text-field id="sync-alert-webhook" variant="outlined" label="Webhook URLs (https, one per line)" .value=${hooks("webhook")}></lit-material-text-field>` : nothing}
+      ${channels.includes("slack") ? html`<lit-material-text-field id="sync-alert-slack" variant="outlined" label="Slack incoming webhook URLs (one per line)" .value=${hooks("slack")}></lit-material-text-field>` : nothing}
+      <lit-material-text-field id="sync-alert-missed" variant="outlined" type="number" label="Missed-run alert after minutes (0 = off)" .value=${String(s.missedAfterMinutes ?? 0)}></lit-material-text-field>
+      <label class="sync-check"><input type="checkbox" id="sync-alert-names" .checked=${Boolean(s.failedNames)}> Name failed requests in status rows and alerts</label>
+      <label class="sync-check"><input type="checkbox" id="sync-alert-rows" .checked=${s.statusRows !== false}> Keep status rows (off: history only, no alerts)</label>
+      <lit-material-button variant="filled" ?disabled=${Boolean(this.busy)} @click=${() => this.run("alerts", async () => {
+        const lines = (id) => (this.rawField(id) ?? "").split(/[\n,]/).map((x) => x.trim()).filter(Boolean);
+        const settings = {
+          email: lines("sync-alert-email"),
+          webhooks: [...lines("sync-alert-webhook").map((url) => ({ kind: "webhook", url })), ...lines("sync-alert-slack").map((url) => ({ kind: "slack", url }))],
+          missedAfterMinutes: Number(this.rawField("sync-alert-missed") || 0),
+          failedNames: this.querySelector("#sync-alert-names")?.checked ?? false,
+          statusRows: this.querySelector("#sync-alert-rows")?.checked ?? true,
+        };
+        const r = await this.sync.saveAlerts(c.id, settings);
+        this.history = { ...this.history, alerts: { ...a, settings: r.settings } };
+        this.note = "Alert settings saved.";
+      })}>Save alerts</lit-material-button>
+    </div>`;
+  }
+
+  renderHistory(c, role) {
+    const h = this.history;
+    const when = (t) => new Date(t * 1000).toISOString().replace("T", " ").replace(/:\d\d\.\d+Z$/, " UTC");
+    const runs = h.runs?.runs ?? [];
+    return html`<div class="sync-history" aria-label=${`Run history of ${c.name}`}>
+      <h3>Run history <span class="hint">kept ${h.runs?.historyDays ?? 0} days${h.runs?.sealedHistory === false ? ", status rows only on this plan" : ""}</span></h3>
+      <p class="hint">Runs your CI or cron uploaded (<code>hitop run --sync-report</code>): the server keeps status rows and the sealed report, which opens only on members' devices.</p>
+      ${h.runs?.series?.length
+        ? html`<p aria-label="Last status">${h.runs.series.map((s) => html`<span class=${`chip status-${s.status}`}>${s.collection}${s.environment ? ` (${s.environment})` : ""}: ${s.status}</span> `)}</p>`
+        : nothing}
+      ${runs.length
+        ? html`<table class="sync-runs" aria-label=${`Runs of ${c.name}`}>
+            <thead><tr><th>Time</th><th>Status</th><th>Collection</th><th>Requests</th><th>Duration</th><th></th></tr></thead>
+            <tbody>
+              ${runs.map((r) => html`<tr>
+                <td>${when(r.createdAt)}</td><td><b>${r.status}</b>${r.runner ? html` <span class="hint">runner</span>` : nothing}</td>
+                <td>${r.collection}${r.environment ? ` (${r.environment})` : ""}${r.failedNames?.length ? html`<br><span class="hint">${r.failedNames.join(", ")}</span>` : nothing}</td>
+                <td>${r.status === "sealed" ? "-" : `${r.requests - r.failed}/${r.requests}`}</td><td>${r.status === "sealed" ? "-" : `${r.durationMs} ms`}</td>
+                <td>${r.hasReport ? html`<lit-material-button variant="text" @click=${() => this.openReport(c, r.id)}>Open report</lit-material-button>` : html`<span class="hint">status only</span>`}</td>
+              </tr>`)}
+            </tbody>
+          </table>`
+        : html`<p class="hint">No runs yet.</p>`}
+      ${h.report ? this.renderReport() : nothing}
+      ${h.shares?.shared?.length || h.shares?.closed
+        ? html`<h3>Shared environment values</h3>
+            <p class="hint">Opt-in, end to end: secret values an owner or editor shared (<code>hitop sync secrets share</code>) for the devices they picked. Your runs and sends use them where you have no value of your own; the server can't read them.</p>
+            <ul class="sync-list">${(h.shares.shared ?? []).map((x) => html`<li class="sync-row"><span><b>${x.environment}</b> (version ${x.version}): ${x.names.join(", ")}</span><span class="hint">${x.devices} device(s)</span></li>`)}</ul>
+            ${h.shares.closed ? html`<p class="hint">${h.shares.closed} shared environment(s) not shared with this device.</p>` : nothing}`
+        : nothing}
+      ${role === "owner" ? this.renderAlerts(c) : nothing}
+    </div>`;
   }
 
   renderAudit(c) {
