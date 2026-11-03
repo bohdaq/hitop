@@ -178,6 +178,12 @@ pub struct State {
     pub clock_offset: AtomicI64,
     /// Request rate limits (ratelimit.rs).
     pub limiter: crate::ratelimit::Limiter,
+    /// "Continue with Google" (an OpenID Connect provider, oidc.rs).
+    pub google: crate::oidc::Sso,
+    /// "Continue with GitHub" (github.rs).
+    pub github: crate::github::Github,
+    /// Wrong passwords per address (password.rs).
+    pub password_failures: crate::password::Backoff,
 }
 
 impl State {
@@ -185,7 +191,21 @@ impl State {
         let webauthn = config.webauthn()?;
         let sso = crate::oidc::Sso::new(config.oidc.clone())?;
         let limiter = crate::ratelimit::Limiter::new(config.rate_limits.clone());
-        Ok(State { db, mailer, config, webauthn, ceremonies: Mutex::new(HashMap::new()), sso, clock_offset: AtomicI64::new(0), limiter })
+        let google = crate::oidc::Sso::provider_of("google", config.google.clone(), vec![crate::oidc::GOOGLE_ISSUER_ALT.into()])?;
+        let github = crate::github::Github::new(config.github.clone());
+        Ok(State {
+            db,
+            mailer,
+            config,
+            webauthn,
+            ceremonies: Mutex::new(HashMap::new()),
+            sso,
+            clock_offset: AtomicI64::new(0),
+            limiter,
+            google,
+            github,
+            password_failures: crate::password::Backoff::default(),
+        })
     }
 
     pub fn now(&self) -> i64 {
@@ -218,6 +238,19 @@ impl SyncApp {
             ("GET", "/v1/auth/sso", crate::oidc::info),
             ("POST", "/v1/auth/sso/start", crate::oidc::start),
             ("POST", "/v1/auth/sso/finish", crate::oidc::finish),
+            // HITOP Cloud C1b: what a sign-in page offers; passwords; Google; GitHub.
+            ("GET", "/v1/auth/methods", crate::auth::methods),
+            ("POST", "/v1/auth/password/params", crate::password::params),
+            ("POST", "/v1/auth/password/signup", crate::password::signup),
+            ("POST", "/v1/auth/password/verify", crate::password::verify_signup),
+            ("POST", "/v1/auth/password/login", crate::password::login),
+            ("POST", "/v1/auth/password/forgot", crate::password::forgot),
+            ("POST", "/v1/auth/password/reset", crate::password::reset),
+            ("POST", "/v1/me/password", crate::password::set),
+            ("POST", "/v1/auth/google/start", crate::oidc::google_start),
+            ("POST", "/v1/auth/google/finish", crate::oidc::google_finish),
+            ("POST", "/v1/auth/github/start", crate::github::start),
+            ("POST", "/v1/auth/github/finish", crate::github::finish),
             ("GET", "/v1/me", crate::auth::me),
             ("GET", "/v1/me/audit", crate::audit::mine),
             ("POST", "/v1/me/keys", crate::workspaces::add_device_key),
@@ -343,6 +376,12 @@ impl Application for SyncApp {
         } else if request.method == "GET" && path == "/v1/auth/sso/callback" {
             set_client(self.client_of(request, connection));
             crate::oidc::callback(&self.state, request)
+        } else if request.method == "GET" && path == "/v1/auth/google/callback" {
+            set_client(self.client_of(request, connection));
+            crate::oidc::google_callback(&self.state, request)
+        } else if request.method == "GET" && path == "/v1/auth/github/callback" {
+            set_client(self.client_of(request, connection));
+            crate::github::callback(&self.state, request)
         } else if request.body.len() > self.max_body(&request.method, path) {
             error_response(&ApiError::new(413, "too_large", "request body too large"))
         } else if let Err(r) = self.rate_check(request, connection, path) {

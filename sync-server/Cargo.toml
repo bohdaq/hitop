@@ -33,6 +33,8 @@ lettre = { version = "0.11", default-features = false, features = ["smtp-transpo
 webauthn-rs = "0.6"
 jsonwebtoken = { version = "10.3", default-features = false, features = ["aws_lc_rs"] }
 ureq = { version = "3", default-features = false, features = ["rustls"] }
+# Passwords (password.rs): the server's own Argon2id hash of the clients' auth keys.
+argon2 = { version = "0.5.3", default-features = false, features = ["alloc", "password-hash", "zeroize"] }
 
 [dev-dependencies]
 # Tests act as the clients: they encrypt with the client crate and check the server only ever
@@ -44,3 +46,9 @@ webauthn-authenticator-rs = { version = "0.6", default-features = false, feature
 [profile.release]
 lto = true
 strip = true
+
+# Argon2 unoptimized makes every password test take seconds.
+[profile.dev.package.argon2]
+opt-level = 3
+[profile.dev.package.blake2]
+opt-level = 3

@@ -311,3 +311,26 @@ fn postgres_over_a_unix_socket() {
     assert_eq!(db.kind(), "postgres");
     assert_eq!(db.tx(|tx| tx.query_one("SELECT 1::bigint", &[])).unwrap().unwrap().int(0), 1);
 }
+
+#[test]
+fn postgres_passwords() {
+    let Some(url) = database("passwords") else {
+        eprintln!("HITOP_SYNC_TEST_POSTGRES not set: skipped");
+        return;
+    };
+    let s = Server::with("pg-passwords", |c| c.database = url.clone());
+    let (session, bundle_key) = common::pw::sign_up(&s, "ada@example.com", "a long password");
+    let id = s.call("GET", "/v1/me", Some(&session), None).json["id"].as_str().unwrap().to_string();
+    let bundle = crypto::seal_key_bundle(&bundle_key, &id, b"bundle").unwrap();
+    assert_eq!(s.call("PUT", "/v1/me/recovery?method=password", Some(&session), Some(json!({ "blob": b64(&bundle) }))).status, 200);
+    assert_eq!(common::pw::login(&s, "ada@example.com", "a long password").status, 200);
+    assert_eq!(common::pw::login(&s, "ada@example.com", "the wrong one").status, 401);
+    assert_eq!(common::pw::login(&s, "nobody@example.com", "the wrong one").status, 401);
+    let params = |e: &str| s.call("POST", "/v1/auth/password/params", None, Some(json!({ "email": e }))).json;
+    assert_eq!(params("nobody@example.com"), params("nobody@example.com"));
+    assert_eq!(s.call("POST", "/v1/auth/password/forgot", None, Some(json!({ "email": "ada@example.com" }))).status, 202);
+    let (kdf, keys) = common::pw::new_password("a new password");
+    let r = s.call("POST", "/v1/auth/password/reset", None, Some(json!({ "token": s.mailed_token("ada@example.com"), "kdf": common::pw::kdf_json(&kdf), "authKey": b64(&keys.auth_key) })));
+    assert_eq!((r.status, r.json["bundleLost"].clone()), (200, json!(true)), "{}", r.json);
+    assert_eq!(common::pw::login(&s, "ada@example.com", "a new password").status, 200);
+}

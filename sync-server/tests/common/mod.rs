@@ -17,7 +17,9 @@ use rust_web_server::server::{Address, ConnectionInfo};
 use serde_json::{json, Value};
 
 pub mod fill;
+pub mod github;
 pub mod idp;
+pub mod pw;
 pub mod t25;
 
 pub const ORIGIN: &str = "https://sync.test.example";

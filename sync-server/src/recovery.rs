@@ -18,8 +18,9 @@ use crate::audit::{self, Event};
 use crate::auth::{authenticate, User};
 use crate::db::Tx;
 
-/// The unlock methods a key bundle can be stored for (`?method=`, default `phrase`).
-pub const METHODS: &[&str] = &["phrase"];
+/// The unlock methods a key bundle can be stored for (`?method=`, default `phrase`): the recovery
+/// phrase, and since C1b the password (password.rs; only for an account that has one).
+pub const METHODS: &[&str] = &["phrase", "password"];
 
 fn method(request: &Request) -> Result<String, ApiError> {
     let m = crate::api::query(request).get("method").cloned().unwrap_or_else(|| "phrase".into());
@@ -58,6 +59,9 @@ pub fn put(state: &State, request: &Request, _: &PathParams) -> ApiResult {
     }
     state.db.tx(|tx| {
         let user = device_session(state, tx, request)?;
+        if method == "password" && !crate::password::status_of(tx, &user.id)?["set"].as_bool().unwrap_or(false) {
+            return Err(ApiError::conflict("no_password", "this account has no password to seal a key bundle with: set one first", json!({})));
+        }
         let now = state.now();
         let replaced = tx.query_one("SELECT created_at FROM recovery_blobs WHERE user_id = $1 AND method = $2", &[(&user.id).into(), (&method).into()])?.is_some();
         tx.execute(
@@ -77,7 +81,7 @@ pub fn get(state: &State, request: &Request, _: &PathParams) -> ApiResult {
     state.db.tx(|tx| {
         let user = device_session(state, tx, request)?;
         let Some(row) = tx.query_one("SELECT blob, created_at, updated_at FROM recovery_blobs WHERE user_id = $1 AND method = $2", &[(&user.id).into(), (&method).into()])? else {
-            return Err(ApiError::not_found("this account has no recovery phrase set"));
+            return Err(ApiError::not_found(if method == "password" { "this account has no key bundle sealed with its password" } else { "this account has no recovery phrase set" }));
         };
         audit::record(tx, state, Event::new(audit::ACCOUNT, "recovery_fetched", Some(&user)).target(&user.id).detail(json!({ "method": method })))?;
         Ok((200, json!({ "blob": b64(&row.bytes(0)), "createdAt": row.int(1), "updatedAt": row.int(2) })))

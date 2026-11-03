@@ -12,6 +12,9 @@
 //! | `write`  | the same                                          | client IP       | 1200 a minute  |
 //! | `create` | new workspaces, orgs, tokens, device keys, runners, invites, recovery | session token | 200 an hour |
 //!
+//! Wrong passwords back off per address on top of these (password.rs `Backoff`: after 5, 30 s
+//! doubling to 15 min, for addresses with and without an account alike).
+//!
 //! Reads are never limited here. Over a limit: 429 `{error: "rate_limited", limit, retryAfter}`
 //! and `Retry-After`. Settings: `HITOP_SYNC_RATE_LIMITS=off` turns them all off;
 //! `HITOP_SYNC_RATE_AUTH`, `HITOP_SYNC_RATE_WRITE`, `HITOP_SYNC_RATE_WRITE_IP` (per minute),

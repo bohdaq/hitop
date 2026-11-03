@@ -104,7 +104,7 @@ fn flag(value: Option<String>) -> bool {
 }
 
 /// http:// is accepted only for a provider on this machine (tests, a local Keycloak).
-fn secure_url(u: &str) -> bool {
+pub(crate) fn secure_url(u: &str) -> bool {
     match Url::parse(u) {
         Ok(url) => url.scheme() == "https" || (url.scheme() == "http" && matches!(url.host_str(), Some("localhost" | "127.0.0.1" | "[::1]"))),
         Err(_) => false,
@@ -160,6 +160,34 @@ impl OidcConfig {
     }
 }
 
+/// Google's issuer, and the other spelling its ID tokens may carry in `iss`.
+pub const GOOGLE_ISSUER: &str = "https://accounts.google.com";
+pub const GOOGLE_ISSUER_ALT: &str = "accounts.google.com";
+
+/// "Continue with Google": `HITOP_SYNC_GOOGLE_CLIENT_ID` and `HITOP_SYNC_GOOGLE_CLIENT_SECRET`
+/// (or `_FILE`); `HITOP_SYNC_GOOGLE_ISSUER` points at a test double. Any Google account with a
+/// verified address may sign in (or sign up); linking to an existing account needs Google to
+/// say the address is verified, as for SSO.
+pub fn google_from_env(var: &dyn Fn(&str) -> Option<String>) -> Result<Option<OidcConfig>, String> {
+    let Some((client_id, client_secret)) = crate::config::client_pair(var, "HITOP_SYNC_GOOGLE")? else {
+        return Ok(None);
+    };
+    let c = OidcConfig {
+        issuer: var("HITOP_SYNC_GOOGLE_ISSUER").unwrap_or_else(|| GOOGLE_ISSUER.into()).trim_end_matches('/').to_string(),
+        client_id,
+        client_secret,
+        scopes: "openid email".into(),
+        name: "Google".into(),
+        allowed_domains: vec![],
+        groups_claim: "groups".into(),
+        required_groups: vec![],
+        sso_required: false,
+        assume_verified: false,
+    };
+    c.check()?;
+    Ok(Some(c))
+}
+
 /// Is `email` limited to SSO sign-in (`HITOP_SYNC_SSO_REQUIRED`)?
 pub fn sso_required_for(state: &State, email: &str) -> bool {
     state.config.oidc.as_ref().is_some_and(|c| c.sso_required && c.domain_allowed(email))
@@ -179,54 +207,108 @@ struct Keys {
 }
 
 /// A flow between start and callback.
-struct Flow {
-    expires: i64,
-    nonce: String,
-    pkce_verifier: String,
-    client_challenge: String,
-    return_to: Option<Url>,
+pub(crate) struct Flow {
+    pub(crate) expires: i64,
+    pub(crate) nonce: String,
+    pub(crate) pkce_verifier: String,
+    pub(crate) client_challenge: String,
+    pub(crate) return_to: Option<Url>,
 }
 
 /// A signed-in browser's one-time code, between callback and finish.
-struct Handoff {
+pub(crate) struct Handoff {
     expires: i64,
     user_id: String,
     email: String,
     client_challenge: String,
 }
 
+/// Flows between start and callback, and one-time codes between callback and finish, of one
+/// sign-in provider (SSO, Google, GitHub).
+#[derive(Default)]
+pub(crate) struct Flows {
+    flows: Mutex<HashMap<String, Flow>>,
+    handoffs: Mutex<HashMap<String, Handoff>>,
+}
+
+impl Flows {
+    pub(crate) fn remember_flow(&self, state_token: &str, flow: Flow, now: i64) {
+        let mut flows = self.flows.lock().unwrap_or_else(|e| e.into_inner());
+        flows.retain(|_, f| f.expires > now);
+        if flows.len() >= MAX_FLOWS {
+            if let Some(oldest) = flows.iter().min_by_key(|(_, f)| f.expires).map(|(k, _)| k.clone()) {
+                flows.remove(&oldest);
+            }
+        }
+        flows.insert(token_hash(state_token), flow);
+    }
+
+    pub(crate) fn take_flow(&self, state_token: &str, now: i64) -> Option<Flow> {
+        self.flows.lock().unwrap_or_else(|e| e.into_inner()).remove(&token_hash(state_token)).filter(|f| f.expires > now)
+    }
+
+    fn remember_code(&self, code: &str, h: Handoff, now: i64) {
+        let mut map = self.handoffs.lock().unwrap_or_else(|e| e.into_inner());
+        map.retain(|_, x| x.expires > now);
+        if map.len() >= MAX_FLOWS {
+            if let Some(oldest) = map.iter().min_by_key(|(_, x)| x.expires).map(|(k, _)| k.clone()) {
+                map.remove(&oldest);
+            }
+        }
+        map.insert(token_hash(code), h);
+    }
+
+    fn take_code(&self, code: &str, now: i64) -> Option<Handoff> {
+        self.handoffs.lock().unwrap_or_else(|e| e.into_inner()).remove(&token_hash(code)).filter(|h| h.expires > now)
+    }
+}
+
+/// The HTTP client for identity providers: 10 s, no redirects, statuses as answers.
+pub(crate) fn http_agent() -> ureq::Agent {
+    ureq::Agent::config_builder()
+        .timeout_global(Some(Duration::from_secs(10)))
+        .http_status_as_error(false)
+        .max_redirects(0)
+        .user_agent(concat!("hitop-sync-server/", env!("CARGO_PKG_VERSION")))
+        .build()
+        .into()
+}
+
+/// One OpenID Connect provider: the server's SSO (`kind` "sso") or "Continue with Google"
+/// ("google"). The kind names its routes (`/v1/auth/<kind>/...`) and the sign-in method in the
+/// audit log.
 pub struct Sso {
+    pub kind: &'static str,
     pub config: Option<OidcConfig>,
+    /// Other spellings of the issuer the provider puts in `iss` (Google: `accounts.google.com`).
+    pub extra_issuers: Vec<String>,
     http: ureq::Agent,
     provider: Mutex<Option<Provider>>,
     keys: Mutex<Option<Keys>>,
     last_jwks_fetch: Mutex<i64>,
-    flows: Mutex<HashMap<String, Flow>>,
-    handoffs: Mutex<HashMap<String, Handoff>>,
+    pub(crate) flows: Flows,
     /// How many times the JWKS was fetched (tests check the cache).
     pub jwks_fetches: std::sync::atomic::AtomicU64,
 }
 
 impl Sso {
     pub fn new(config: Option<OidcConfig>) -> Result<Sso, String> {
+        Self::provider_of("sso", config, vec![])
+    }
+
+    pub fn provider_of(kind: &'static str, config: Option<OidcConfig>, extra_issuers: Vec<String>) -> Result<Sso, String> {
         if let Some(c) = &config {
             c.check()?;
         }
-        let http: ureq::Agent = ureq::Agent::config_builder()
-            .timeout_global(Some(Duration::from_secs(10)))
-            .http_status_as_error(false)
-            .max_redirects(0)
-            .user_agent(concat!("hitop-sync-server/", env!("CARGO_PKG_VERSION")))
-            .build()
-            .into();
         Ok(Sso {
+            kind,
             config,
-            http,
+            extra_issuers,
+            http: http_agent(),
             provider: Mutex::new(None),
             keys: Mutex::new(None),
             last_jwks_fetch: Mutex::new(i64::MIN / 2),
-            flows: Mutex::new(HashMap::new()),
-            handoffs: Mutex::new(HashMap::new()),
+            flows: Flows::default(),
             jwks_fetches: std::sync::atomic::AtomicU64::new(0),
         })
     }
@@ -298,36 +380,21 @@ impl Sso {
         let keys = self.keys.lock().unwrap_or_else(|e| e.into_inner());
         keys.as_ref().and_then(lookup).unwrap_or_else(|| Err(format!("no key {} in the provider's JWKS", kid.unwrap_or("(none)"))))
     }
-
-    fn remember_flow(&self, state_token: &str, flow: Flow, now: i64) {
-        let mut flows = self.flows.lock().unwrap_or_else(|e| e.into_inner());
-        flows.retain(|_, f| f.expires > now);
-        if flows.len() >= MAX_FLOWS {
-            if let Some(oldest) = flows.iter().min_by_key(|(_, f)| f.expires).map(|(k, _)| k.clone()) {
-                flows.remove(&oldest);
-            }
-        }
-        flows.insert(token_hash(state_token), flow);
-    }
-
-    fn take_flow(&self, state_token: &str, now: i64) -> Option<Flow> {
-        self.flows.lock().unwrap_or_else(|e| e.into_inner()).remove(&token_hash(state_token)).filter(|f| f.expires > now)
-    }
-
-    fn remember_code(&self, code: &str, h: Handoff, now: i64) {
-        let mut map = self.handoffs.lock().unwrap_or_else(|e| e.into_inner());
-        map.retain(|_, x| x.expires > now);
-        if map.len() >= MAX_FLOWS {
-            if let Some(oldest) = map.iter().min_by_key(|(_, x)| x.expires).map(|(k, _)| k.clone()) {
-                map.remove(&oldest);
-            }
-        }
-        map.insert(token_hash(code), h);
-    }
 }
 
-fn config(state: &State) -> Result<&OidcConfig, ApiError> {
-    state.config.oidc.as_ref().ok_or_else(|| ApiError::new(404, "sso_off", "single sign-on isn't configured on this server"))
+fn config(sso: &Sso) -> Result<&OidcConfig, ApiError> {
+    sso.config.as_ref().ok_or_else(|| match sso.kind {
+        "sso" => ApiError::new(404, "sso_off", "single sign-on isn't configured on this server"),
+        k => ApiError::new(404, "provider_off", format!("sign-in with {} isn't configured on this server", provider_name(k))),
+    })
+}
+
+pub(crate) fn provider_name(kind: &str) -> &'static str {
+    match kind {
+        "google" => "Google",
+        "github" => "GitHub",
+        _ => "single sign-on",
+    }
 }
 
 fn config_error(state: &State, message: String) -> ApiError {
@@ -350,7 +417,7 @@ pub fn info(state: &State, _: &Request, _: &PathParams) -> ApiResult {
 /// Where the browser may be sent with the one-time code: the CLI's loopback listener
 /// (`http://127.0.0.1:<port>/...`, `http://localhost:<port>/...`) or a page of an allowed web
 /// origin (`HITOP_SYNC_ALLOWED_ORIGINS`, the web app).
-fn return_to(state: &State, value: &str) -> Result<Url, ApiError> {
+pub(crate) fn return_to(state: &State, value: &str) -> Result<Url, ApiError> {
     let bad = || ApiError::bad("returnTo must be http://127.0.0.1:<port>/... or a page of an allowed web origin");
     let url = Url::parse(value).map_err(|_| bad())?;
     if url.fragment().is_some() || !url.username().is_empty() || url.password().is_some() {
@@ -384,22 +451,34 @@ struct Start {
 /// `POST /v1/auth/sso/start {challenge, returnTo?, email?}` → `{url, expiresAt}`: open `url` in a
 /// browser.
 pub fn start(state: &State, request: &Request, _: &PathParams) -> ApiResult {
-    let c = config(state)?;
+    start_with(state, &state.sso, request)
+}
+
+/// `POST /v1/auth/google/start`: as [`start`], with Google.
+pub fn google_start(state: &State, request: &Request, _: &PathParams) -> ApiResult {
+    start_with(state, &state.google, request)
+}
+
+/// The start of a browser sign-in: the client's challenge (32 bytes, base64url), where to send the
+/// code, and an address hint.
+pub(crate) fn start_input(state: &State, request: &Request) -> Result<(String, Option<Url>, Option<String>), ApiError> {
     let input: Start = body(request)?;
     let challenge = URL_SAFE_NO_PAD.decode(input.challenge.trim_end_matches('=')).ok().filter(|b| b.len() == 32).ok_or_else(|| ApiError::bad("challenge must be base64url(SHA-256(verifier)), 32 bytes"))?;
     let return_to = input.return_to.as_deref().filter(|s| !s.is_empty()).map(|r| return_to(state, r)).transpose()?;
-    let hint = match input.email.as_deref().map(str::trim).filter(|e| !e.is_empty()) {
-        Some(e) => {
-            let e = normalize_email(e)?;
-            if !c.domain_allowed(&e) {
-                return Err(ApiError::forbidden("this address's domain can't sign in with SSO on this server"));
-            }
-            Some(e)
+    let hint = input.email.as_deref().map(str::trim).filter(|e| !e.is_empty()).map(normalize_email).transpose()?;
+    Ok((URL_SAFE_NO_PAD.encode(challenge), return_to, hint))
+}
+
+fn start_with(state: &State, sso: &Sso, request: &Request) -> ApiResult {
+    let c = config(sso)?;
+    let (client_challenge, return_to, hint) = start_input(state, request)?;
+    if let Some(e) = &hint {
+        if !c.domain_allowed(e) {
+            return Err(ApiError::forbidden("this address's domain can't sign in with SSO on this server"));
         }
-        None => None,
-    };
+    }
     let now = state.now();
-    let provider = state.sso.provider(c, now).map_err(|e| config_error(state, e))?;
+    let provider = sso.provider(c, now).map_err(|e| config_error(state, e))?;
     let state_token = new_token();
     let nonce = new_token();
     let pkce_verifier = new_token();
@@ -409,7 +488,7 @@ pub fn start(state: &State, request: &Request, _: &PathParams) -> ApiResult {
         let mut q = url.query_pairs_mut();
         q.append_pair("response_type", "code")
             .append_pair("client_id", &c.client_id)
-            .append_pair("redirect_uri", &redirect_uri(state))
+            .append_pair("redirect_uri", &redirect_uri_of(state, sso.kind))
             .append_pair("scope", &c.scopes)
             .append_pair("state", &state_token)
             .append_pair("nonce", &nonce)
@@ -419,12 +498,17 @@ pub fn start(state: &State, request: &Request, _: &PathParams) -> ApiResult {
             q.append_pair("login_hint", h);
         }
     }
-    state.sso.remember_flow(&state_token, Flow { expires: now + FLOW_TTL, nonce, pkce_verifier, client_challenge: URL_SAFE_NO_PAD.encode(challenge), return_to }, now);
+    sso.flows.remember_flow(&state_token, Flow { expires: now + FLOW_TTL, nonce, pkce_verifier, client_challenge, return_to }, now);
     Ok((200, json!({ "url": url.to_string(), "expiresAt": now + FLOW_TTL })))
 }
 
 pub fn redirect_uri(state: &State) -> String {
-    state.config.public_url.join("v1/auth/sso/callback").map(|u| u.to_string()).unwrap_or_default()
+    redirect_uri_of(state, "sso")
+}
+
+/// `<public URL>/v1/auth/<kind>/callback`: what each provider must have registered.
+pub fn redirect_uri_of(state: &State, kind: &str) -> String {
+    state.config.public_url.join(&format!("v1/auth/{kind}/callback")).map(|u| u.to_string()).unwrap_or_default()
 }
 
 /// Why an ID token or its user was refused (also the `signin_failed` reason).
@@ -456,15 +540,17 @@ fn claim_bool(v: &Json) -> Option<bool> {
 
 /// Checks an ID token: signature (an asymmetric algorithm, a key from the provider's JWKS),
 /// issuer, audience and `azp`, expiry, issue time and nonce; then the address and the groups.
-fn check_id_token(state: &State, c: &OidcConfig, provider: &Provider, token: &str, nonce: &str) -> Result<Identity, Refused> {
+fn check_id_token(state: &State, sso: &Sso, c: &OidcConfig, provider: &Provider, token: &str, nonce: &str) -> Result<Identity, Refused> {
     let now = state.now();
     let header = jsonwebtoken::decode_header(token).map_err(|e| refused("bad_token", format!("the ID token is malformed: {e}")))?;
     if !ALGORITHMS.contains(&header.alg) {
         return Err(refused("bad_token", format!("the ID token uses {:?}; only asymmetric signatures are accepted", header.alg)));
     }
-    let key = state.sso.key(provider, header.kid.as_deref(), now).map_err(|e| refused("bad_token", e))?;
+    let key = sso.key(provider, header.kid.as_deref(), now).map_err(|e| refused("bad_token", e))?;
     let mut v = Validation::new(header.alg);
-    v.set_issuer(&[&c.issuer]);
+    let mut issuers = vec![c.issuer.as_str()];
+    issuers.extend(sso.extra_issuers.iter().map(String::as_str));
+    v.set_issuer(&issuers);
     v.set_audience(&[&c.client_id]);
     v.set_required_spec_claims(&["iss", "aud", "sub", "exp"]);
     // exp and iat are checked below against the server's clock (which tests can move).
@@ -534,15 +620,23 @@ fn check_id_token(state: &State, c: &OidcConfig, provider: &Provider, token: &st
 pub fn validate_id_token(state: &State, token: &str, nonce: &str) -> Result<Identity, Refused> {
     let c = state.config.oidc.as_ref().ok_or_else(|| refused("sso_off", "single sign-on isn't configured"))?;
     let provider = state.sso.provider(c, state.now()).map_err(|e| refused("provider_unreachable", e))?;
-    check_id_token(state, c, &provider, token, nonce)
+    check_id_token(state, &state.sso, c, &provider, token, nonce)
 }
 
 /// The account for a checked identity: the one linked to (issuer, subject), else the account
 /// with the same (verified) address, which gets linked, else a new account.
 fn account(tx: &mut Tx, state: &State, c: &OidcConfig, id: &Identity) -> Result<User, ApiError> {
+    linked_account(tx, state, &c.issuer, id)
+}
+
+/// The account for an identity checked by a provider with this `issuer` (SSO, Google, GitHub):
+/// the one linked to (issuer, subject); else the account with the same address, which gets
+/// linked (callers make sure the provider verified the address); else a new account.
+pub(crate) fn linked_account(tx: &mut Tx, state: &State, issuer: &str, id: &Identity) -> Result<User, ApiError> {
     let now = state.now();
-    if let Some(r) = tx.query_one("SELECT u.id, u.email FROM oidc_identities i JOIN users u ON u.id = i.user_id WHERE i.issuer = $1 AND i.subject = $2", &[(&c.issuer).into(), (&id.subject).into()])? {
-        tx.execute("UPDATE oidc_identities SET last_used_at = $1, email = $2 WHERE issuer = $3 AND subject = $4", &[now.into(), (&id.email).into(), (&c.issuer).into(), (&id.subject).into()])?;
+    let issuer = issuer.to_string();
+    if let Some(r) = tx.query_one("SELECT u.id, u.email FROM oidc_identities i JOIN users u ON u.id = i.user_id WHERE i.issuer = $1 AND i.subject = $2", &[(&issuer).into(), (&id.subject).into()])? {
+        tx.execute("UPDATE oidc_identities SET last_used_at = $1, email = $2 WHERE issuer = $3 AND subject = $4", &[now.into(), (&id.email).into(), (&issuer).into(), (&id.subject).into()])?;
         return Ok(User { id: r.text(0), email: r.text(1), runner_of: String::new() });
     }
     let user = match tx.query_one("SELECT id, email FROM users WHERE email = $1 AND runner_of = ''", &[(&id.email).into()])? {
@@ -555,9 +649,9 @@ fn account(tx: &mut Tx, state: &State, c: &OidcConfig, id: &Identity) -> Result<
     };
     tx.execute(
         "INSERT INTO oidc_identities (issuer, subject, user_id, email, created_at, last_used_at) VALUES ($1, $2, $3, $4, $5, $5)",
-        &[(&c.issuer).into(), (&id.subject).into(), (&user.id).into(), (&id.email).into(), now.into()],
+        &[(&issuer).into(), (&id.subject).into(), (&user.id).into(), (&id.email).into(), now.into()],
     )?;
-    audit::record(tx, state, Event::new(audit::ACCOUNT, "sso_linked", Some(&user)).target(&user.id).detail(json!({ "issuer": c.issuer, "subject": id.subject })))?;
+    audit::record(tx, state, Event::new(audit::ACCOUNT, "sso_linked", Some(&user)).target(&user.id).detail(json!({ "issuer": issuer, "subject": id.subject })))?;
     Ok(user)
 }
 
@@ -577,7 +671,7 @@ fn page(status: u16, title: &str, body: &str) -> Response {
     r
 }
 
-fn failed_page(message: &str) -> Response {
+pub(crate) fn failed_page(message: &str) -> Response {
     page(400, "SSO sign-in failed", &format!("<p>{}</p><p>Start again in hitop.</p>", escape(message)))
 }
 
@@ -588,50 +682,76 @@ fn redirect(to: &str) -> Response {
     r
 }
 
-fn failed(state: &State, why: Refused) -> Response {
-    audit::record_alone(state, Event::new(audit::ACCOUNT, "signin_failed", None).email(&why.email).detail(json!({ "method": "sso", "reason": why.reason })));
+pub(crate) fn failed(state: &State, method: &str, why: Refused) -> Response {
+    audit::record_alone(state, Event::new(audit::ACCOUNT, "signin_failed", None).email(&why.email).detail(json!({ "method": method, "reason": why.reason })));
     failed_page(&why.message)
 }
 
 /// `GET /v1/auth/sso/callback?code&state` (the browser, from the provider). Answers a page or
 /// a redirect, never JSON.
 pub fn callback(state: &State, request: &Request) -> Response {
-    let Some(c) = state.config.oidc.as_ref() else {
-        return failed_page("single sign-on isn't configured on this server");
+    callback_with(state, &state.sso, request)
+}
+
+/// `GET /v1/auth/google/callback`.
+pub fn google_callback(state: &State, request: &Request) -> Response {
+    callback_with(state, &state.google, request)
+}
+
+fn callback_with(state: &State, sso: &Sso, request: &Request) -> Response {
+    let kind = sso.kind;
+    let Some(c) = sso.config.as_ref() else {
+        return failed_page(&format!("sign-in with {} isn't configured on this server", provider_name(kind)));
     };
     let q = query(request);
     let now = state.now();
-    let Some(flow) = q.get("state").and_then(|s| state.sso.take_flow(s, now)) else {
-        return failed(state, refused("unknown_state", "this sign-in expired or was already used"));
+    let Some(flow) = q.get("state").and_then(|s| sso.flows.take_flow(s, now)) else {
+        return failed(state, kind, refused("unknown_state", "this sign-in expired or was already used"));
     };
     if let Some(error) = q.get("error") {
         let detail = q.get("error_description").map(|d| format!(": {d}")).unwrap_or_default();
-        return failed(state, refused("provider_error", format!("the identity provider said {error}{detail}")));
+        return failed(state, kind, refused("provider_error", format!("the identity provider said {error}{detail}")));
     }
     let Some(code) = q.get("code").filter(|c| !c.is_empty()) else {
-        return failed(state, refused("no_code", "the identity provider sent no code"));
+        return failed(state, kind, refused("no_code", "the identity provider sent no code"));
     };
-    let provider = match state.sso.provider(c, now) {
+    let provider = match sso.provider(c, now) {
         Ok(p) => p,
         Err(e) => {
             config_error(state, e);
             return failed_page("the identity provider is unreachable or misconfigured");
         }
     };
-    let id_token = match exchange(state, c, &provider, code, &flow.pkce_verifier) {
+    let id_token = match exchange(state, sso, c, &provider, code, &flow.pkce_verifier) {
         Ok(t) => t,
-        Err(why) => return failed(state, why),
+        Err(why) => return failed(state, kind, why),
     };
-    let identity = match check_id_token(state, c, &provider, &id_token, &flow.nonce) {
+    let identity = match check_id_token(state, sso, c, &provider, &id_token, &flow.nonce) {
         Ok(i) => i,
-        Err(why) => return failed(state, why),
+        Err(why) => return failed(state, kind, why),
     };
+    // Google (and GitHub) never get around a "sign in with SSO only" domain.
+    if kind != "sso" && sso_required_for(state, &identity.email) {
+        let email = identity.email.clone();
+        return failed(state, kind, Refused { reason: "sso_required", message: format!("{email} signs in with single sign-on on this server"), email });
+    }
     let user = match state.db.tx(|tx| account(tx, state, c, &identity)) {
         Ok(u) => u,
         Err(e) => return failed_page(&e.message),
     };
+    hand_off(state, &sso.flows, kind, &user, flow)
+}
+
+/// After a provider signed the browser in: a one-time code for the client that started, sent
+/// back to it (its loopback listener or an allowed web page) or shown to paste.
+pub(crate) fn hand_off(state: &State, flows: &Flows, kind: &str, user: &User, flow: Flow) -> Response {
+    let now = state.now();
     let handoff = new_token();
-    state.sso.remember_code(&handoff, Handoff { expires: now + CODE_TTL, user_id: user.id, email: user.email.clone(), client_challenge: flow.client_challenge }, now);
+    flows.remember_code(&handoff, Handoff { expires: now + CODE_TTL, user_id: user.id.clone(), email: user.email.clone(), client_challenge: flow.client_challenge }, now);
+    let title = match kind {
+        "sso" => "Signed in with SSO".to_string(),
+        k => format!("Signed in with {}", provider_name(k)),
+    };
     match flow.return_to {
         Some(mut to) if is_loopback(&to) => {
             to.query_pairs_mut().append_pair("sso", &handoff);
@@ -643,7 +763,7 @@ pub fn callback(state: &State, request: &Request) -> Response {
         }
         None => page(
             200,
-            "Signed in with SSO",
+            &title,
             &format!(
                 "<p>Signed in as {}. Paste this code into hitop on the device you started from. It works once, for 5 minutes. Never give it to anyone.</p><code>{}</code>",
                 escape(&user.email),
@@ -654,11 +774,11 @@ pub fn callback(state: &State, request: &Request) -> Response {
 }
 
 /// The token request: client secret (HTTP Basic, RFC 6749 2.3.1) and the PKCE verifier.
-fn exchange(state: &State, c: &OidcConfig, provider: &Provider, code: &str, pkce_verifier: &str) -> Result<String, Refused> {
+fn exchange(state: &State, sso: &Sso, c: &OidcConfig, provider: &Provider, code: &str, pkce_verifier: &str) -> Result<String, Refused> {
     let enc = |s: &str| url::form_urlencoded::byte_serialize(s.as_bytes()).collect::<String>();
     let basic = STANDARD.encode(format!("{}:{}", enc(&c.client_id), enc(&c.client_secret)));
-    let redirect = redirect_uri(state);
-    let result = state.sso.http.post(&provider.token_endpoint).header("Authorization", &format!("Basic {basic}")).header("Accept", "application/json").send_form([
+    let redirect = redirect_uri_of(state, sso.kind);
+    let result = sso.http.post(&provider.token_endpoint).header("Authorization", &format!("Basic {basic}")).header("Accept", "application/json").send_form([
         ("grant_type", "authorization_code"),
         ("code", code),
         ("redirect_uri", redirect.as_str()),
@@ -691,13 +811,23 @@ struct Finish {
 
 /// `POST /v1/auth/sso/finish {code, verifier}` → a session, like the other sign-ins.
 pub fn finish(state: &State, request: &Request, _: &PathParams) -> ApiResult {
-    config(state)?;
+    config(&state.sso)?;
+    finish_with(state, &state.sso.flows, "sso", request)
+}
+
+/// `POST /v1/auth/google/finish {code, verifier}`.
+pub fn google_finish(state: &State, request: &Request, _: &PathParams) -> ApiResult {
+    config(&state.google)?;
+    finish_with(state, &state.google.flows, "google", request)
+}
+
+pub(crate) fn finish_with(state: &State, flows: &Flows, method: &str, request: &Request) -> ApiResult {
     let input: Finish = body(request)?;
     let now = state.now();
-    let handoff = state.sso.handoffs.lock().unwrap_or_else(|e| e.into_inner()).remove(&token_hash(input.code.trim())).filter(|h| h.expires > now);
+    let handoff = flows.take_code(input.code.trim(), now);
     let refuse = |reason: &'static str, email: &str| {
-        audit::record_alone(state, Event::new(audit::ACCOUNT, "signin_failed", None).email(email).detail(json!({ "method": "sso", "reason": reason })));
-        ApiError::new(401, "invalid_code", "this SSO code is invalid, used or expired; sign in again")
+        audit::record_alone(state, Event::new(audit::ACCOUNT, "signin_failed", None).email(email).detail(json!({ "method": method, "reason": reason })));
+        ApiError::new(401, "invalid_code", "this sign-in code is invalid, used or expired; sign in again")
     };
     let Some(h) = handoff else {
         return Err(refuse("unknown_code", ""));
@@ -710,6 +840,6 @@ pub fn finish(state: &State, request: &Request, _: &PathParams) -> ApiResult {
             return Err(ApiError::new(401, "invalid_code", "this account no longer exists"));
         };
         let user = User { id: h.user_id.clone(), email: r.text(0), runner_of: String::new() };
-        new_session(state, tx, &user, "sso")
+        new_session(state, tx, &user, method)
     })
 }

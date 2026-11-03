@@ -1138,6 +1138,7 @@ dependencies = [
 name = "hitop-sync-server"
 version = "0.1.0"
 dependencies = [
+ "argon2",
  "base64 0.22.1",
  "getrandom 0.3.4",
  "hitop-sync-crypto",

@@ -493,6 +493,31 @@ CREATE TABLE recovery_blobs (
   updated_at BIGINT NOT NULL,
   PRIMARY KEY (user_id, method)
 );
+", r"
+CREATE TABLE password_credentials (
+  user_id TEXT PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
+  kdf TEXT NOT NULL,
+  hash TEXT NOT NULL,
+  peppered BIGINT NOT NULL DEFAULT 0,
+  created_at BIGINT NOT NULL,
+  updated_at BIGINT NOT NULL
+);
+CREATE TABLE password_tokens (
+  token_hash TEXT PRIMARY KEY,
+  email TEXT NOT NULL,
+  purpose TEXT NOT NULL,
+  kdf TEXT NOT NULL DEFAULT '',
+  hash TEXT NOT NULL DEFAULT '',
+  peppered BIGINT NOT NULL DEFAULT 0,
+  created_at BIGINT NOT NULL,
+  expires_at BIGINT NOT NULL,
+  used BIGINT NOT NULL DEFAULT 0
+);
+CREATE INDEX password_tokens_email ON password_tokens(email, created_at);
+CREATE TABLE server_secrets (
+  name TEXT PRIMARY KEY,
+  value {BLOB} NOT NULL
+);
 "];
 
 /// Steps in Rust that run in the same transaction as a migration's SQL (index = migration

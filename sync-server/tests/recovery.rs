@@ -47,9 +47,11 @@ fn a_blob_is_kept_per_account_for_signed_in_devices_only() {
 
     // Size: empty and oversized blobs refused.
     assert_eq!(s.call("PUT", "/v1/me/recovery", Some(&ada.session), Some(json!({ "blob": "" }))).status, 413);
-    // Unlock methods: `phrase` (the default) only, until the password one exists.
+    // Unlock methods: `phrase` (the default), and `password` only for an account with one
+    // (tests/password.rs); anything else is refused.
     assert_eq!(s.call("GET", "/v1/me/recovery?method=phrase", Some(&ada.session), None).status, 200);
-    assert_eq!(s.call("PUT", "/v1/me/recovery?method=password", Some(&ada.session), Some(json!({ "blob": b64(&sealed) }))).status, 400);
+    assert_eq!(s.call("PUT", "/v1/me/recovery?method=password", Some(&ada.session), Some(json!({ "blob": b64(&sealed) }))).status, 409);
+    assert_eq!(s.call("PUT", "/v1/me/recovery?method=pin", Some(&ada.session), Some(json!({ "blob": b64(&sealed) }))).status, 400);
     let huge = b64(&vec![1u8; 256 * 1024 + 1]);
     assert_eq!(s.call("PUT", "/v1/me/recovery", Some(&ada.session), Some(json!({ "blob": huge }))).status, 413);
 

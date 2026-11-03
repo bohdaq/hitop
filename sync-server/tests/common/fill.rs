@@ -35,5 +35,11 @@ pub fn fill(s: &Server) -> usize {
     assert_eq!(r.status, 201, "{}", r.json);
     let r = s.call("POST", "/v1/me/tokens", Some(&ada.session), Some(json!({ "name": "ci", "scopes": ["read"] })));
     assert_eq!(r.status, 201, "{}", r.json);
+    // C1b: a password account with its key bundle; made-up parameters (a server secret).
+    let (dee, bundle_key) = super::pw::sign_up(s, "dee@example.com", "dee's long password");
+    let dee_id = s.call("GET", "/v1/me", Some(&dee), None).json["id"].as_str().unwrap().to_string();
+    let bundle = crypto::seal_key_bundle(&bundle_key, &dee_id, b"{\"v\":1}").unwrap();
+    assert_eq!(s.call("PUT", "/v1/me/recovery?method=password", Some(&dee), Some(json!({ "blob": b64(&bundle) }))).status, 200);
+    assert_eq!(s.call("POST", "/v1/auth/password/params", None, Some(json!({ "email": "nobody@example.com" }))).status, 200);
     s.app.state().db.tx(|tx| tx.query_one("SELECT COUNT(*) FROM audit_chain", &[])).unwrap().unwrap().int(0) as usize
 }

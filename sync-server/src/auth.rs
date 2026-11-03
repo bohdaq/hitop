@@ -65,7 +65,8 @@ pub fn normalize_email(email: &str) -> Result<String, ApiError> {
     Ok(email)
 }
 
-/// A new session for `user`, signed in by `method` (`email`, `passkey`, `sso`); audited.
+/// A new session for `user`, signed in by `method` (`email`, `passkey`, `sso`, `password`,
+/// `password_reset`, `google`, `github`); audited.
 pub fn new_session(state: &State, tx: &mut Tx, user: &User, method: &str) -> ApiResult {
     let token = new_token();
     let now = state.now();
@@ -168,6 +169,23 @@ pub fn email_verify(state: &State, request: &Request, _: &PathParams) -> ApiResu
     result
 }
 
+/// `GET /v1/auth/methods`: what a sign-in page can offer on this server.
+pub fn methods(state: &State, _: &Request, _: &PathParams) -> ApiResult {
+    let mail = state.mailer.enabled();
+    let sso = state.config.oidc.as_ref().map(|c| json!({ "name": c.name, "required": c.sso_required, "domains": c.allowed_domains }));
+    Ok((
+        200,
+        json!({
+            "password": { "enabled": state.config.password.enabled, "signup": state.config.password.enabled && mail, "reset": state.config.password.enabled && mail },
+            "emailCode": mail,
+            "passkey": true,
+            "sso": sso,
+            "google": state.config.google.is_some(),
+            "github": state.config.github.is_some(),
+        }),
+    ))
+}
+
 /// `POST /v1/auth/logout`: ends this session.
 pub fn logout(state: &State, request: &Request, _: &PathParams) -> ApiResult {
     let token = bearer(request).ok_or_else(ApiError::unauthorized)?;
@@ -188,6 +206,8 @@ pub fn me(state: &State, request: &Request, _: &PathParams) -> ApiResult {
         let keys = tx.query("SELECT id, name, public_key FROM device_keys WHERE user_id = $1 ORDER BY created_at, id", &[(&user.id).into()])?;
         let passkeys = tx.query("SELECT id, name FROM passkeys WHERE user_id = $1 ORDER BY created_at, id", &[(&user.id).into()])?;
         let recovery = tx.query_one("SELECT updated_at FROM recovery_blobs WHERE user_id = $1 AND method = 'phrase'", &[(&user.id).into()])?;
+        let bundles = tx.query("SELECT method, updated_at FROM recovery_blobs WHERE user_id = $1", &[(&user.id).into()])?;
+        let password = crate::password::status_of(tx, &user.id)?;
         Ok((
             200,
             json!({
@@ -195,8 +215,12 @@ pub fn me(state: &State, request: &Request, _: &PathParams) -> ApiResult {
                 "email": user.email,
                 "keys": keys.iter().map(|r| json!({ "id": r.text(0), "name": r.text(1), "publicKey": b64(&r.bytes(2)) })).collect::<Vec<_>>(),
                 "passkeys": passkeys.iter().map(|r| json!({ "id": r.text(0), "name": r.text(1) })).collect::<Vec<_>>(),
-                // Since C2: when a recovery phrase was last set (null: none).
+                // Since C2: when a recovery phrase was last set (null: none). Only the phrase, as
+                // hitop 1.2 and the 1.2 web app read it.
                 "recovery": recovery.map(|r| json!({ "updatedAt": r.int(0) })),
+                // Since C1b: whether the account has a password, and every key bundle by method.
+                "password": password,
+                "bundles": bundles.iter().map(|r| (r.text(0), json!({ "updatedAt": r.int(1) }))).collect::<serde_json::Map<_, _>>(),
             }),
         ))
     })

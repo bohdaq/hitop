@@ -22,12 +22,19 @@
 //! - Request rate limits: see ratelimit.rs (`HITOP_SYNC_RATE_LIMITS=off`, `HITOP_SYNC_RATE_*`)
 //! - `HITOP_SYNC_MAX_JSON_BYTES`: the largest request body except a blob upload (default 1 MiB)
 //! - SSO (OpenID Connect): see oidc.rs (`HITOP_SYNC_OIDC_*`, `HITOP_SYNC_SSO_REQUIRED`)
+//! - Passwords: see password.rs (`HITOP_SYNC_PASSWORDS=off`, `HITOP_SYNC_PASSWORD_PEPPER[_FILE]`)
+//! - "Continue with Google": `HITOP_SYNC_GOOGLE_CLIENT_ID` and `HITOP_SYNC_GOOGLE_CLIENT_SECRET`
+//!   (or `_FILE`), redirect URI `<public URL>/v1/auth/google/callback`; off when unset (oidc.rs)
+//! - "Continue with GitHub": `HITOP_SYNC_GITHUB_CLIENT_ID` and `HITOP_SYNC_GITHUB_CLIENT_SECRET`
+//!   (or `_FILE`), callback URL `<public URL>/v1/auth/github/callback`; off when unset (github.rs)
 //! - mail: see mail.rs
 
 use url::Url;
 
 use crate::audit::IpPolicy;
+use crate::github::GithubConfig;
 use crate::oidc::OidcConfig;
+use crate::password::PasswordConfig;
 use crate::ratelimit::RateLimits;
 
 #[derive(Clone, Debug)]
@@ -58,6 +65,28 @@ pub struct Config {
     pub rate_limits: RateLimits,
     /// The largest request body of any request but a blob upload.
     pub max_json_bytes: usize,
+    /// Password sign-in (password.rs).
+    pub password: PasswordConfig,
+    /// "Continue with Google" (an OpenID Connect provider); `None` when not configured.
+    pub google: Option<OidcConfig>,
+    /// "Continue with GitHub" (OAuth 2); `None` when not configured.
+    pub github: Option<GithubConfig>,
+}
+
+/// `<PREFIX>_CLIENT_ID` and `<PREFIX>_CLIENT_SECRET` (or `<PREFIX>_CLIENT_SECRET_FILE`): both or
+/// neither.
+pub fn client_pair(var: &dyn Fn(&str) -> Option<String>, prefix: &str) -> Result<Option<(String, String)>, String> {
+    let id = var(&format!("{prefix}_CLIENT_ID"));
+    let secret = match (var(&format!("{prefix}_CLIENT_SECRET")), var(&format!("{prefix}_CLIENT_SECRET_FILE"))) {
+        (Some(s), _) => Some(s),
+        (None, Some(path)) => Some(std::fs::read_to_string(&path).map_err(|e| format!("{prefix}_CLIENT_SECRET_FILE {path}: {e}"))?.trim().to_string()),
+        (None, None) => None,
+    };
+    match (id, secret) {
+        (None, None) => Ok(None),
+        (Some(i), Some(s)) if !s.is_empty() => Ok(Some((i, s))),
+        _ => Err(format!("{prefix}_CLIENT_ID and {prefix}_CLIENT_SECRET (or _FILE) go together")),
+    }
 }
 
 fn list(value: &str) -> Vec<String> {
@@ -88,6 +117,9 @@ impl Config {
             portal_url: "https://cloud.hitop.rws8.tech/".into(),
             rate_limits: RateLimits::defaults(),
             max_json_bytes: 1 << 20,
+            password: PasswordConfig::default(),
+            google: None,
+            github: None,
         }
     }
 
@@ -127,9 +159,15 @@ impl Config {
             Some("plans") => true,
             Some(other) => return Err(format!("HITOP_SYNC_LIMITS must be off or plans, not {other}")),
         };
+        c.password = PasswordConfig::from_env(&var)?;
+        c.google = crate::oidc::google_from_env(&var)?;
+        c.github = GithubConfig::from_env(&var)?;
         match var("HITOP_SYNC_RATE_LIMITS").as_deref() {
             None | Some("on") => {}
-            Some("off") => c.rate_limits = RateLimits::off(),
+            Some("off") => {
+                c.rate_limits = RateLimits::off();
+                c.password.backoff = false;
+            }
             Some(other) => return Err(format!("HITOP_SYNC_RATE_LIMITS must be on or off, not {other}")),
         }
         let per = |name: &str, default: u32| -> Result<u32, String> { number(name, default.into()).and_then(|n| u32::try_from(n).map_err(|_| format!("{name} must be 0 or more"))) };
