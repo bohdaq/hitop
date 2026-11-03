@@ -10,8 +10,8 @@ version vectors and wrapped keys only. Design and limits: [THREAT_MODEL.md](THRE
   **MIT**, like the clients. The server doesn't link it.
 
 Status: HITOP Cloud runs this server at https://sync.hitop.rws8.tech with the hosted plan limits
-(Free today; Pro and Team are sold through Lemon Squeezy once the owner opens the store, spec
-`spec/CLOUD_SERVICE.md` C3). Self-hosting it is free, with every feature and no limits.
+(Free today; Pro, Team and Business are sold through Stripe Managed Payments once the owner's
+Stripe account is set up, spec `spec/CLOUD_SERVICE.md` C3). Self-hosting it is free, with every feature and no limits.
 
 ## Self-hosting
 
@@ -296,27 +296,31 @@ workspace's `org` (`{id, name, personal}`).
 
 Operator commands: `hitop-sync-server over-limits` lists every org over a limit of its plan (exit
 0 when none); `hitop-sync-server set-plan <org> <free|pro|team|business|enterprise> [seats]` sets
-an org's plan by hand (Enterprise contracts; billing sets Pro and Team).
+an org's plan by hand (Enterprise contracts; billing sets Pro, Team and Business).
 
-Billing (HITOP Cloud C3, `src/billing.rs`; off unless `HITOP_SYNC_LS_WEBHOOK_SECRET` is set, so a
-self-hosted server sells nothing):
+Billing (HITOP Cloud C3, `src/billing.rs`: Stripe Managed Payments, Stripe is the merchant of
+record; off unless the Stripe secret key and webhook secret are set, so a self-hosted server sells
+nothing):
 
 | Endpoint | What |
 | --- | --- |
-| `POST /v1/billing/lemonsqueezy` | Lemon Squeezy webhook: `X-Signature` = hex HMAC-SHA256 of the raw body (401 otherwise, before parsing); 200 `{outcome}` for every verified delivery (`applied`, `duplicate`, `stale`, `unmatched`, `ignored`, `wrong_store`, `test_mode_refused`, `unknown_variant`, `superseded`) |
+| `POST /v1/billing/stripe` | Stripe webhook: `Stripe-Signature` `t=…,v1=…` = hex HMAC-SHA256 of `"<t>.<raw body>"`, `t` within 5 minutes (401 otherwise, before parsing); idempotent by event id; 200 `{outcome}` for every verified event (`applied`, `duplicate`, `stale`, `unmatched`, `ignored`, `livemode_mismatch`, `unknown_price`, `superseded`). Events: `checkout.session.completed`, `customer.subscription.created/updated/deleted/paused/resumed`, `invoice.paid`, `invoice.payment_failed`, `charge.refunded` |
 | `GET /v1/orgs/:org/billing` | plan, status, seats bought and used, period end, `pastDue`, what can be bought (`offers`), the trial (member) |
-| `POST /v1/orgs/:org/billing/checkout {plan, period, seats}` | a Lemon Squeezy checkout URL (Pro for a personal org, Team per seat for a team org; admin, a session, not an access token) |
-| `GET /v1/orgs/:org/billing/portal` | a fresh Lemon Squeezy customer portal URL (admin) |
-| `POST /v1/orgs/:org/billing/seats {seats}` | Team seats: more are charged at once, fewer take effect with no credit; never below the seats in use (admin) |
+| `POST /v1/orgs/:org/billing/checkout {plan, period, seats}` | a Stripe Checkout Session URL (`managed_payments[enabled]=true`, subscription mode, seats as quantity; Pro for a personal org, Team or Business per seat for a team org; admin, a session, not an access token) |
+| `GET /v1/orgs/:org/billing/portal` | a fresh Stripe customer portal session URL (admin) |
+| `POST /v1/orgs/:org/billing/seats {seats}` | Team and Business seats (the subscription item's quantity): more are invoiced at once, prorated; fewer take effect with no credit; never below the seats in use (admin) |
 | `POST /v1/orgs/:org/billing/trial` | the 14-day Team trial, once per org, account and company email domain (owner) |
 
-Settings: `HITOP_SYNC_LS_WEBHOOK_SECRET[_FILE]`, `HITOP_SYNC_LS_STORE_ID`,
-`HITOP_SYNC_LS_VARIANT_{PRO,TEAM}_{ANNUAL,MONTHLY}`, `HITOP_SYNC_LS_API_KEY[_FILE]` (checkouts,
-seats, portal links), `HITOP_SYNC_LS_TEST_MODE` (`off`: test-mode events are refused),
-`HITOP_SYNC_LS_API_URL`, `HITOP_SYNC_TRIAL_DAYS` (14; 0 = none). Operator commands:
-`hitop-sync-server billing-events [--unmatched] [--json]` (the latest deliveries: ids and
-outcomes, never bodies) and `billing-link <org> <subscription id>` (ties a subscription bought
-outside the portal's checkout to its org).
+Settings: `HITOP_SYNC_STRIPE_SECRET_KEY[_FILE]` (`sk_…` or a restricted `rk_…`; a test key
+counts only test-mode events, a live key only live ones), `HITOP_SYNC_STRIPE_WEBHOOK_SECRET[_FILE]`
+(`whsec_…`); prices are found by lookup key (`pro_monthly`, `pro_yearly`, `team_monthly`,
+`team_yearly`, `business_monthly`, `business_yearly`), or set one by id with
+`HITOP_SYNC_STRIPE_PRICE_{PRO,TEAM,BUSINESS}_{MONTHLY,ANNUAL}`; `HITOP_SYNC_STRIPE_API_URL`
+(tests), `HITOP_SYNC_TRIAL_DAYS` (14; 0 = none). Every call pins `Stripe-Version:
+2026-10-28.endive`; create the webhook endpoint with the same version. Operator commands:
+`hitop-sync-server billing-events [--unmatched] [--json]` (the latest events: ids and outcomes,
+never bodies) and `billing-link <org> <subscription id>` (ties a subscription bought outside the
+portal's checkout to its org).
 
 Recovery (C2): `PUT/GET/DELETE /v1/me/recovery[?method=phrase]` keep one opaque key bundle per
 account and unlock method (at most 256 KiB; `phrase`, and `password` for an account with one), sealed by the client

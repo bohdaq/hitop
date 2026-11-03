@@ -538,19 +538,26 @@ per password (a new salt at every change or reset).
 
 HITOP Cloud runs this server for paying customers. What that adds:
 
-- **Billing never touches workspace data.** Lemon Squeezy (merchant of record) takes payment; the
-  server learns an org's plan, seats, status and the Lemon Squeezy ids, and keeps the ids and
-  outcomes of webhook deliveries, never their bodies (buyer name, address, card brand). Plans only
-  decide which creates are allowed; no plan state ever deletes, locks or reads a blob, and reads
-  and pulls work on every plan (`limits.rs`).
-- **Webhooks are authenticated before they are read**: hex HMAC-SHA256 of the raw body under the
-  webhook's signing secret, compared in constant time. A replayed delivery (same bytes) is
-  recognised by its hash; an older subscription state is ignored (`updated_at` per subscription).
+- **Billing never touches workspace data.** Stripe takes the payment as merchant of record
+  (Stripe Managed Payments: it collects the buyer's details and handles tax); the server learns an
+  org's plan, seats, status and the Stripe ids (customer, subscription, item, price, checkout
+  session), and keeps the ids and outcomes of webhook events, never their bodies (buyer name,
+  email, address). Plans only decide which creates are allowed; no plan state ever deletes, locks
+  or reads a blob, and reads and pulls work on every plan (`limits.rs`).
+- **Webhooks are authenticated before they are read**: `Stripe-Signature` must carry a `v1` = hex
+  HMAC-SHA256 of `"<t>.<raw body>"` under the endpoint's signing secret (constant-time compare)
+  and a `t` within 5 minutes of the server's clock, so a captured delivery can't be replayed
+  later. A redelivered event is recognised by its event id; an older subscription state is ignored
+  (event `created` per subscription).
 - **A paid event can't be pointed at someone else's org.** The org comes from a subscription id the
-  server already tied to it, or from checkout custom data the server signed (HMAC of org and buyer
-  under a server secret) when an admin of that org started the checkout. Unsigned or mismatched
-  data is recorded as `unmatched` and changes nothing. Events from another store, and test-mode
-  events unless the operator allows them, are ignored.
+  server already tied to it, or from Checkout Session and subscription metadata the server signed
+  (HMAC of org and buyer under a server secret) when an admin of that org started the checkout.
+  Unsigned or mismatched data is recorded as `unmatched` and changes nothing. Events of the other
+  mode than the server's key (a test event on a live key, or the reverse) are ignored.
+- **The Stripe secret key** can create checkouts, change seats, open customer portal sessions and
+  read prices; a restricted key with only those permissions limits what a stolen env file does.
+  Stripe (or Link's support) may refund a purchase on its own as merchant of record; a full refund
+  arrives as `charge.refunded` and ends the plan like the owner's.
 - **Billing actions need a signed-in session** of an org admin (owners for the trial); a personal
   access token can read the plan but never buy, change seats or open the billing portal.
 - **Shared host.** The service runs on one VM shared with other sites (spec section 5). A

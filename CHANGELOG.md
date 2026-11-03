@@ -22,8 +22,8 @@ Releases before 1.2 are listed in ROADMAP.md (section 5) and on the GitHub Relea
   device; transfer a workspace's ownership, ask its owners to rotate the key, remove a lost device
   everywhere. `hitop sync rotate` rotates a workspace's key (owners); status, pull and push say when
   an admin asked for it.
-- **Business plan** ($20 per seat a month yearly, $25 monthly; proposal) sold through Lemon
-  Squeezy once `HITOP_SYNC_LS_VARIANT_BUSINESS_ANNUAL`/`_MONTHLY` are set; drafts of the SLA and a
+- **Business plan** ($20 per seat a month yearly, $25 monthly; proposal) sold through
+  Stripe once its prices exist (lookup keys `business_yearly`/`business_monthly`); drafts of the SLA and a
   support page with the priority support address (not in force yet).
 - Sync server: migration 9 (`org_sso`, `org_domains`, `org_audit_settings`, `audit_anchors`,
   `workspaces.rotation_requested_at|_by`); new settings `HITOP_SYNC_HOST_KEY[_FILE]`,
@@ -58,16 +58,18 @@ Releases before 1.2 are listed in ROADMAP.md (section 5) and on the GitHub Relea
   Settings `HITOP_SYNC_MAX_RUN_BYTES`, `HITOP_SYNC_RUN_RETENTION_DAYS`,
   `HITOP_SYNC_ALERTS_PER_HOUR`, `HITOP_SYNC_ALERT_WEBHOOKS`.
 
-### HITOP Cloud: paid plans through Lemon Squeezy (C3, built, not live)
+### HITOP Cloud: paid plans through Stripe Managed Payments (C3, built, not live)
 
-- **Buy Pro or Team in the portal** (Plan page): Pro for one person's account, Team per seat for
-  an organization, yearly or monthly. The checkout and the receipts are Lemon Squeezy's (merchant
-  of record); HITOP never sees the card. **Manage billing** opens Lemon Squeezy's customer portal
-  (card, receipts, cancel). Team admins change seats on the Plan page: more seats are charged at once
-  (prorated); fewer take effect at once with no credit, and the lower price starts at the next
-  renewal.
+- **Buy Pro, Team or Business in the portal** (Plan page): Pro for one person's account, Team
+  and Business per seat for an organization, yearly or monthly, plus applicable tax. Stripe is the
+  merchant of record (Stripe Managed Payments: the checkout says "Sold through Link"; Stripe
+  handles VAT and sales tax and sends the receipts); HITOP never sees the card. **Manage billing**
+  opens Stripe's customer portal (payment method, invoices, cancel). Admins change seats on the
+  Plan page: more seats are invoiced at once (prorated); fewer take effect at once with no credit,
+  and the lower price starts at the next renewal. (First built for Lemon Squeezy; moved to Stripe
+  on the owner's decision of 2026-11-03 before anything was sold.)
 - **14-day Team trial**, no card, once per organization, account and company email domain.
-- **Nothing is ever deleted by a plan.** A failed payment shows a banner while Lemon Squeezy
+- **Nothing is ever deleted by a plan.** A failed payment shows a banner while Stripe
   retries; when the plan ends (expired, unpaid, paused, refunded or a trial over) Free limits
   apply: new workspaces, people or uploads beyond them are refused, everything stored stays
   readable.
@@ -77,9 +79,10 @@ Releases before 1.2 are listed in ROADMAP.md (section 5) and on the GitHub Relea
   until the store shows the final ones) next to the free apps; the home page and privacy policy
   no longer say there is no sync; the security page and the terms, Cloud privacy notice, DPA, SLA
   and sub-processor list are drafts awaiting review (not linked yet).
-- Sync server: `src/billing.rs`, migration 7 (`billing_events`, `trials`, Lemon Squeezy ids on
-  `entitlements`), `POST /v1/billing/lemonsqueezy` (signed webhooks), `/v1/orgs/:org/billing*`,
-  commands `billing-events` and `billing-link`. Settings `HITOP_SYNC_LS_*` and
+- Sync server: `src/billing.rs`, migration 7 (`billing_events`, `trials`, the provider's ids on
+  `entitlements`), `POST /v1/billing/stripe` (signed webhook events), `/v1/orgs/:org/billing*`,
+  commands `billing-events` and `billing-link`. Settings `HITOP_SYNC_STRIPE_SECRET_KEY`,
+  `HITOP_SYNC_STRIPE_WEBHOOK_SECRET` (prices by lookup key, `HITOP_SYNC_STRIPE_PRICE_*` overrides) and
   `HITOP_SYNC_TRIAL_DAYS`; billing stays off on a self-hosted server.
 
 ### hitop sync: normal sign-in and sign-up (HITOP Cloud C1b)

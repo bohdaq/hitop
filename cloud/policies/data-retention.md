@@ -11,7 +11,7 @@ Status: draft for the owner's approval (C1, 2026-11-02). Review yearly.
 | Audit log | sync database | 365 days (`HITOP_SYNC_AUDIT_RETENTION_DAYS`) | hourly purge; IPs kept truncated (/24, /48) |
 | Request logs of the front proxy | VM | as rws keeps them (no bodies, no tokens) | log rotation |
 | Backups (C2) | off-site bucket, encrypted | 35 days | bucket lifecycle rule |
-| Billing records (C3) | Lemon Squeezy | as the law requires of the merchant of record | Lemon Squeezy |
+| Billing records (C3) | Stripe | as the law requires of the merchant of record | Stripe |
 
 **Deletion on request** (GDPR article 17): within 30 days, including the time for backups that
 still hold the data to expire (35 days at most), recorded in the ops log without the person's data.

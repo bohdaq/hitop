@@ -159,7 +159,7 @@ hitop/
 │   └── src/guard.rs            # address/port policy for the proxy (SSRF guard)
 ├── deploy/                     # build.sh, install.sh, systemd unit, front rws routes, README
 ├── sync-server/                # hitop sync (AGPL-3.0-or-later, own LICENSE/deny.toml): rws app, SQLite or Postgres
-│   ├── src/                    # api.rs (routing, CORS), auth.rs (magic link, passkeys), workspaces.rs (members, wraps, rotation), teams.rs (invites, roles, runner accounts), blobs.rs (CAS + version vectors), oidc.rs (SSO + Continue with Google: OIDC code + PKCE, JWKS cache, `Sso` per provider kind), github.rs (Continue with GitHub, OAuth 2), password.rs (passwords, backoff), audit.rs (audit log, hash chain, purge), db.rs (migrations 1-9), billing.rs (Lemon Squeezy, trials), dbtools.rs (db-stats, migrate-db, dump), ratelimit.rs, recovery.rs (key bundles),
+│   ├── src/                    # api.rs (routing, CORS), auth.rs (magic link, passkeys), workspaces.rs (members, wraps, rotation), teams.rs (invites, roles, runner accounts), blobs.rs (CAS + version vectors), oidc.rs (SSO + Continue with Google: OIDC code + PKCE, JWKS cache, `Sso` per provider kind), github.rs (Continue with GitHub, OAuth 2), password.rs (passwords, backoff), audit.rs (audit log, hash chain, purge), db.rs (migrations 1-9), billing.rs (Stripe Managed Payments, trials), dbtools.rs (db-stats, migrate-db, dump), ratelimit.rs, recovery.rs (key bundles),
 │   │                           # orgs.rs (organizations, personal orgs, members), limits.rs (plans, entitlements, usage, the one place limits are enforced, grandfather), tokens.rs (personal access tokens);
 │   │                           # C5: hostkey.rs (host key, AES-256-GCM for the server's own secrets), orgsso.rs (SSO per org, domain claims by DNS TXT over DoH), anchors.rs (signed audit export, daily anchors), admin.rs (org admin console)
 │   ├── tests/                  # auth, sync, roles (every role × operation, removed member), teams (invites, runners), plaintext, no_crypto_in_server, postgres, sso (mock IdP, common/idp.rs), keycloak (fixtures/keycloak realm), audit, wraps_v2 (format 2 wraps, upgrade of format 1),
@@ -477,11 +477,13 @@ hitop/
   adopts the bundle's device (no new key, no trust step); only that device keeps `password` (bundleKey) in its secret and re-seals while the server's bundle
   still opens with it; a reset deletes the bundle (`bundleLost`), and a new device after a reset doesn't claim it. Tests: sync-server tests/password.rs, oauth.rs
   (common/github.rs mock GitHub, common/pw.rs helpers); argon2 needs `[profile.dev.package.argon2] opt-level = 3` (cli, hitop-wasm, sync-server)
-- HITOP Cloud C3: `billing.rs` (Lemon Squeezy, off unless `HITOP_SYNC_LS_WEBHOOK_SECRET`): `POST /v1/billing/lemonsqueezy` (HMAC X-Signature
-  before parsing, delivery id = sha256 of the body, `updated_at` order per subscription, org from the subscription id or server-signed custom data,
-  bodies never stored), `/v1/orgs/:org/billing[/checkout|/portal|/seats|/trial]`; migration 7 (`entitlements.ls_item_id/ls_order_id/ls_updated_at`,
-  `billing_events`, `trials`); `paused`/`refunded` = Free limits, `billing::expire` ends trials and cancelled periods; tests `tests/billing.rs` with
-  `common/lemonsqueezy.rs` (fake API, signed fixtures in `tests/fixtures/lemonsqueezy/`); `billing-events`, `billing-link` commands.
+- HITOP Cloud C3: `billing.rs` (Stripe Managed Payments, off unless `HITOP_SYNC_STRIPE_SECRET_KEY` + `_WEBHOOK_SECRET`): `POST /v1/billing/stripe`
+  (Stripe-Signature t/v1 HMAC + 5 min tolerance before parsing, idempotent by event id, event `created` order per subscription, livemode vs key mode,
+  org from the subscription id or server-signed metadata, bodies never stored), `/v1/orgs/:org/billing[/checkout|/portal|/seats|/trial]` (Checkout
+  Session `managed_payments[enabled]`, never the params it refuses; prices by lookup key `<plan>_<monthly|yearly>`, `HITOP_SYNC_STRIPE_PRICE_*` overrides;
+  pinned `Stripe-Version` `STRIPE_VERSION`); migration 7 columns `ls_*` hold Stripe ids (no rename); `paused`/`refunded`/`incomplete` = Free limits,
+  `billing::expire` ends trials and cancelled periods; tests `tests/billing.rs` with `common/stripe.rs` (fake API, signed fixtures in `tests/fixtures/stripe/`);
+  `billing-events`, `billing-link` commands.
   Site: `site/src/legal-status.js` DRAFT gates `/security.html` + `/legal/*.html` (content/legal/*.md); `site/scripts/check-pages.mjs` in CI
 - HITOP Cloud C5 (built, not deployed): migration 9 (`org_sso`, `org_domains`, `org_audit_settings`, `audit_anchors`, `workspaces.rotation_requested_at|_by`).
   SSO per org: `/v1/orgs/:org/sso[/test]`, `/v1/orgs/:org/domains[/:d/verify]`; off (404 `org_sso_off`) without `HITOP_SYNC_HOST_KEY[_FILE]` (the test
@@ -490,7 +492,7 @@ hitop/
   writes: never open a db tx in it). Audit: `GET /v1/orgs/:org/audit/export` (JSONL, answered outside the router in api.rs), daily anchors (hourly
   worker, mailed to owners, `HITOP_SYNC_AUDIT_ANCHORS`), `/v1/audit/key`, `/v1/audit-anchors/:org/:day` (public opt-in). Admin: `/v1/orgs/:org/admin`
   (+ owner transfer, rotation request, device removal). `limits::require_plan` gates features (402 `sso`/`auditExport`/`adminConsole`/`adminActions`).
-  Business variants `HITOP_SYNC_LS_VARIANT_BUSINESS_ANNUAL|_MONTHLY`. The server links `ring` (own secrets only; `no_crypto_in_server` bans client crates)
+  Business prices: lookup keys `business_yearly|_monthly`. The server links `ring` (own secrets only; `no_crypto_in_server` bans client crates)
 - Live at https://sync.hitop.rws8.tech (VM, `hitop-sync.service`, 127.0.0.1:7881, env `/etc/hitop-sync/env`, DB `/var/lib/private/hitop-sync/sync.db`); deploy: copy the release binary + `deploy/` and run `deploy/install.sh`
 - `rws --check` on the VM needs `/etc/rws/admin.env` loaded (admin token), or it fails on any config
 

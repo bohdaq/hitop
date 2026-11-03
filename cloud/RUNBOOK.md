@@ -144,38 +144,52 @@ a neighbour is a trigger to move hosts (spec section 5).
   secrets. There is no re-seal command yet: a new key means every org with SSO saves its client
   secret again (portal → Single sign-on). Keep the key out of database backups and a copy offline;
   losing it turns per-org SSO into config errors (503) until secrets are saved again, nothing else.
-- **SMTP password** (`SMTP_URL`), **OIDC client secret**, Lemon Squeezy keys (C3): edit
-  `/etc/hitop-sync/env` (back it up first), `systemctl restart hitop-sync`. Webhook signing
-  secret: set the new one in Lemon Squeezy and the env file within a minute of each other;
-  deliveries in between fail with 401 and Lemon Squeezy retries them (3 times, up to about 2.5
-  minutes), else resend them from the dashboard.
+- **SMTP password** (`SMTP_URL`), **OIDC client secret**, Stripe keys (C3): edit
+  `/etc/hitop-sync/env` (back it up first), `systemctl restart hitop-sync`. Stripe secret key:
+  roll it in the Dashboard (Developers → API keys → Roll key, with an expiry of an hour for the
+  old one), place the new one, restart. Webhook signing secret: Developers → Webhooks → the
+  endpoint → Roll secret (keep the old one valid for a while: Stripe then signs with both and the
+  server accepts either `v1`), place the new one, restart. Stripe retries failed deliveries for
+  up to 3 days.
 - **Revoke sessions**: one person: `DELETE FROM sessions WHERE user_id = '<id>'` (and
   `api_tokens`); everyone: `DELETE FROM sessions` (all clients sign in again; their device keys and
   workspaces stay). Run against the live database (`psql -p 5433 -U postgres hitop_sync` as the
   postgres user, or stop the service for SQLite and use `sqlite3`).
 
-## Billing (Lemon Squeezy, C3)
+## Billing (Stripe Managed Payments, C3)
+
+Stripe is the merchant of record (Managed Payments): it sells to the buyer, handles VAT and sales
+tax, receipts, fraud, disputes and order support ("Sold through Link"; buyers can manage their
+order at link.com too).
 
 - **Settings** (root-only `/etc/hitop-sync/env`, or `_FILE` paths to root-only files):
-  `HITOP_SYNC_LS_WEBHOOK_SECRET` (turns billing on), `HITOP_SYNC_LS_STORE_ID`,
-  `HITOP_SYNC_LS_VARIANT_PRO_ANNUAL`, `..._PRO_MONTHLY`, `..._TEAM_ANNUAL`, `..._TEAM_MONTHLY`,
-  and for Business (C5) `..._BUSINESS_ANNUAL`, `..._BUSINESS_MONTHLY` (Business isn't sold until set),
-  `HITOP_SYNC_LS_API_KEY`, `HITOP_SYNC_LS_TEST_MODE=on` while the store is in test mode. Restart
-  `hitop-sync`; `GET /v1/orgs/<org>/billing` shows `enabled` and `checkout`.
-- **Check a delivery**: Lemon Squeezy dashboard → Settings → Webhooks → the webhook → recent
-  deliveries (resend one there); on the VM `hitop-sync-server billing-events` (load the env file as
-  systemd does, see "Deploy") lists the latest outcomes. `unmatched` = no org: a purchase made
-  outside the portal's checkout; find the org with the buyer, then `hitop-sync-server billing-link
-  <org> <subscription id>` and resend the delivery. `wrong_store` / `unknown_variant` = the env
-  doesn't match the store; `test_mode_refused` = a test purchase with test mode off;
-  `superseded` on a `subscription_created` = a second purchase for an org that already pays:
-  refund it in the dashboard.
-- **Test → live**: in Lemon Squeezy switch the store to live, create the live API key and the live
-  webhook (its own signing secret), copy the live variant ids; replace the five values above and
-  set `HITOP_SYNC_LS_TEST_MODE=off` (or remove it); restart. Test-mode subscriptions stay on their
-  orgs until they expire; end one at once with `set-plan <org> free`.
-- **Refund**: issue it in the Lemon Squeezy dashboard; the refund webhook sets the org to Free
-  limits (`refunded`). A later paid invoice lifts it.
+  `HITOP_SYNC_STRIPE_SECRET_KEY` (a test key `sk_test_…`/`rk_test_…` first; a restricted key
+  needs write on Checkout Sessions, Subscriptions and Customer portal, read on Prices) and
+  `HITOP_SYNC_STRIPE_WEBHOOK_SECRET` (`whsec_…`): both turn billing on. Prices are found by their
+  lookup keys (`pro_monthly`, `pro_yearly`, `team_monthly`, `team_yearly`, `business_monthly`,
+  `business_yearly`; a plan isn't sold until its price exists); `HITOP_SYNC_STRIPE_PRICE_<PLAN>_<MONTHLY|ANNUAL>`
+  pins one by id. Restart `hitop-sync`; `GET /v1/orgs/<org>/billing` shows `enabled`, `testMode`
+  and the `offers` found.
+- **Webhook endpoint**: `https://sync.hitop.rws8.tech/v1/billing/stripe`, API version
+  `2026-10-28.endive` (the server pins it; bodies follow the endpoint's version), events
+  `checkout.session.completed`, `customer.subscription.created`, `.updated`, `.deleted`,
+  `.paused`, `.resumed`, `invoice.paid`, `invoice.payment_failed`, `charge.refunded`.
+- **Check an event**: Dashboard → Developers → Webhooks → the endpoint → event deliveries (resend
+  one there); on the VM `hitop-sync-server billing-events` (load the env file as systemd does, see
+  "Deploy") lists the latest outcomes. `unmatched` = no org: a purchase made outside the portal's
+  checkout (a Payment Link); find the org with the buyer, then `hitop-sync-server billing-link
+  <org> <subscription id>` and resend the event. `unknown_price` = a price that is neither pinned
+  nor carries one of the lookup keys; `livemode_mismatch` = a test event on a live key or the
+  reverse; `superseded` on a `customer.subscription.created` = a second purchase for an org that
+  already pays: refund it and cancel it in the Dashboard.
+- **Sandbox → live**: in the live account create the same products, prices and lookup keys, the
+  live webhook endpoint (its own signing secret) and the customer portal configuration; place the
+  live secret key and webhook secret; restart. Test-mode subscriptions stay on their orgs until
+  they end; end one at once with `set-plan <org> free`.
+- **Refund**: refund in the Dashboard **and** cancel the subscription (a refund alone doesn't end
+  it). A full refund (`charge.refunded`) sets the org to Free limits (`refunded`); a later paid
+  invoice or a resumed subscription lifts it. Stripe/Link support may refund on its own (within 60
+  days, or when you don't answer an escalation within 48 hours): the same event, the same effect.
 - **A customer's plan by hand** (an outage of the webhook, a goodwill extension):
   `hitop-sync-server set-plan <org> <plan> [seats]`; the next webhook event of the subscription
   sets it again.

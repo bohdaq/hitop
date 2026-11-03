@@ -5,8 +5,8 @@ Status: draft for the owner's approval (C1, 2026-11-02). Review yearly.
 ## Systems and who may access them
 
 The list of systems is the one the access review checks (template:
-`../evidence/access-reviews/`): the VM, the sync database, the backup bucket (from C2), Lemon
-Squeezy (from C3), the transactional mail service, DNS, GitHub (repository, Actions secrets,
+`../evidence/access-reviews/`): the VM, the sync database, the backup bucket (from C2),
+Stripe (from C3), the transactional mail service, DNS, GitHub (repository, Actions secrets,
 releases), crates.io, ghcr.io, App Store Connect.
 
 - The **owner** holds every account himself, with a unique password from a password manager and
@@ -14,7 +14,7 @@ releases), crates.io, ghcr.io, App Store Connect.
 - **Agents** get access only through the owner: on the VM through the tunnel described in
   `ROADMAP.md` section 3 (a pod the agent starts and deletes, `ubuntu` user over SSH with the
   owner's key), and to GitHub through the owner's `gh` session on his workstation. Agents have no
-  accounts of their own at Lemon Squeezy, the mail service, DNS, crates.io tokens beyond the CI
+  accounts of their own at Stripe, the mail service, DNS, crates.io tokens beyond the CI
   secret, or App Store Connect.
 - **Customers** reach only the public API and the portal, with their own sessions.
 

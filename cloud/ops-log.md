@@ -157,3 +157,17 @@ and on hitop.rws8.tech/cloud/healthz. -->
   endpoint answers 404 `org_sso_off`). No other setting is required; Business stays unsold until
   `HITOP_SYNC_LS_VARIANT_BUSINESS_*` exist; daily anchors run only for Business orgs (none there).
   After it: `db-stats` lists the four new tables; `over-limits` still 0.
+
+## 2026-11-03 C3 billing moved to Stripe Managed Payments, not deployed
+
+- Who: agent, on the owner's decision of 2026-11-03 (spec/CLOUD_SERVICE.md "Later decisions"):
+  Stripe Managed Payments (Stripe is the merchant of record) replaces Lemon Squeezy, which was
+  deployed with billing off and never sold anything. What: `sync-server/src/billing.rs` on Stripe
+  (Checkout Sessions with `managed_payments[enabled]=true`, `POST /v1/billing/stripe`, prices by
+  lookup key, pinned `Stripe-Version: 2026-10-28.endive`), the Lemon Squeezy route and code
+  removed; no migration (migration 7's `ls_*` columns hold the Stripe ids); portal, site and docs
+  say Stripe. Nothing applied on the VM.
+- Deploy (when told): the usual `install.sh` with the `--features postgres` build; `/healthz` still
+  says the same schema. No `HITOP_SYNC_STRIPE_*` set = billing stays off exactly as today
+  (`/v1/billing/stripe` 404, no trial); the old `HITOP_SYNC_LS_*` lines in `/etc/hitop-sync/env`
+  (if any) are ignored and can go. Billing on: RUNBOOK "Billing (Stripe Managed Payments, C3)".

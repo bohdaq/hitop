@@ -3,7 +3,7 @@
 Plan for a hosted service on top of HITOP, for individual developers, small teams, mid-size
 companies and enterprises. Written 2026-11-02 and aligned the same day with the owner's
 decisions (section 0). It is the work order for tranches C0–C7 (section 9). Every price and tier
-name in this file is a **proposal** until the owner sets it in Lemon Squeezy (ROADMAP section 3:
+name in this file is a **proposal** until the owner sets it in Stripe (ROADMAP section 3:
 agents never set prices, change DNS, App Store or money matters).
 
 This file answers the owner's request of 2026-11-02: "create some nice web service to be used by
@@ -21,8 +21,8 @@ The owner's answers to Q1–Q18 (section 10). The rest of this file follows them
 | --- | --- | --- |
 | Q1 | Name: HITOP Cloud | no |
 | Q2 | Stay under `hitop.rws8.tech` | no |
-| Q3 | Billing: **Lemon Squeezy** (merchant of record) | yes (was Paddle) |
-| Q4 | Prices: Pro $6, Team $10 per seat, Business $20 per seat, Enterprise by quote (annual; monthly costs more); a proposal until set in Lemon Squeezy | no |
+| Q3 | Billing: **Stripe Managed Payments** (Stripe is the merchant of record); since 2026-11-03, see Later decisions | yes (was Paddle, then Lemon Squeezy) |
+| Q4 | Prices: Pro $6, Team $10 per seat, Business $20 per seat, Enterprise by quote (annual; monthly costs more); a proposal until set in Stripe | no |
 | Q5 | Viewers count as seats; 5 free guest viewers per Team org | no |
 | Q6 | AGPL + paid support and indemnity, no dual licence | no |
 | Q7 | Portal and billing code: this repo, `cloud/`, AGPL | no |
@@ -43,6 +43,7 @@ The owner's answers to Q1–Q18 (section 10). The rest of this file follows them
 | Date | Decision | What it changes |
 | --- | --- | --- |
 | 2026-11-03 | Normal sign-in and sign-up before C2 is applied: email + password (sign-up with email verification, password reset) **and** "Continue with Google" / "Continue with GitHub". Mail codes, passkeys and SSO stay. | New tranche C1b (after C2's code, before C2 is applied on the VM). Owner registers the Google and GitHub OAuth apps. |
+| 2026-11-03 | **Billing through Stripe Managed Payments**, replacing Lemon Squeezy (Q3): Stripe is the seller of record and handles VAT and sales tax, receipts, fraud, disputes and order support ("Sold through Link"). The owner set up the Stripe sandbox: products Pro, Team, Business, USD prices, tax-exclusive, tax category "SaaS – business use", flat rate with quantity = seats, lookup keys `pro_monthly`, `pro_yearly`, `team_monthly`, `team_yearly`, `business_monthly`, `business_yearly`. | C3's provider code is replaced (built for Lemon Squeezy, deployed with billing off, nothing sold): Checkout Sessions with `managed_payments[enabled]=true`, webhook `/v1/billing/stripe`, prices by lookup key, the customer portal for changes. Every "Lemon Squeezy" in this file reads Stripe now; the provider-independent parts (entitlements, seats, trial, grace) stay. Status in C3 below. |
 | 2026-11-03 | The password also unlocks the end-to-end keys on a new device (a password-derived key wraps the account's key bundle, like the recovery phrase). | The server stores one more wrapped bundle per account (never the password or keys). A forgotten password loses the keys unless the person has a recovery phrase or another device; reset says so. Google/GitHub sign-in alone doesn't unlock keys. |
 
 ## 1. One page summary
@@ -59,7 +60,7 @@ hosted SSO and audit export for companies, and support and contracts for enterpr
   self-hosted (SSO, audit log, runners, nothing gated), and a limited hosted Free tier.
 - **Paid (proposal):** Pro **$6**/month for one person; Team **$10** per seat/month; Business
   **$20** per seat/month (annual prices; monthly about 25% more); Enterprise by quote
-  (hosted or self-hosted, with support). Sold through Lemon Squeezy as merchant of record.
+  (hosted or self-hosted, with support). Sold through Stripe Managed Payments (Stripe is the merchant of record).
 - **Differentiation we can honestly claim:** the server can't read your collections (E2E); the
   files are YAML in your repo (review = pull request); the same runner in CLI, CI, Action and MCP;
   AGPL self-host with no feature gates; secrets never in files.
@@ -84,10 +85,10 @@ hosted SSO and audit export for companies, and support and contracts for enterpr
 
 | ID | Tranche | Result |
 | --- | --- | --- |
-| C0 | Owner decisions and accounts (parallel to C1) | Lemon Squeezy store, mail service, backup bucket, DNS names, compliance tool picked, legal drafts |
+| C0 | Owner decisions and accounts (parallel to C1) | Stripe account (Managed Payments), mail service, backup bucket, DNS names, compliance tool picked, legal drafts |
 | C1 | Organizations, plans, entitlements; portal MVP; SOC 2 policies | org → plan → limits enforced; portal: sign in, org, members, usage; written policies and access review |
 | C2 | Harden the current VM | Postgres on the VM, systemd resource limits, off-site encrypted backups + restore drill, recovery key, status page, off-host uptime check, runbook |
-| C3 | Lemon Squeezy billing, pricing page, prompts | **paid launch of Pro and Team**; no review gate |
+| C3 | Stripe Managed Payments billing, pricing page, prompts | **paid launch of Pro and Team**; no review gate |
 | C4 | Run history and alerts from your own runners; shared environment secrets | sealed history, status rows, email/webhook/Slack alerts |
 
 ---
@@ -157,8 +158,8 @@ out.
 
 ## 3. Tiers, limits and proposed prices
 
-Prices are per month, billed annually; "monthly" is the month-to-month price. USD list; Lemon
-Squeezy shows local currency and adds tax at checkout. All numbers are **proposals for the owner**.
+Prices are per month, billed annually; "monthly" is the month-to-month price. USD list; Stripe
+shows local currency and adds tax at checkout. All numbers are **proposals for the owner**.
 
 | | Free | Pro | Team | Business | Enterprise |
 | --- | --- | --- | --- | --- | --- |
@@ -178,7 +179,7 @@ Squeezy shows local currency and adds tax at checkout. All numbers are **proposa
 | Audit log | own events | own events | workspace owners | org-wide, export + anchored chain | plus SIEM webhook |
 | Admin console (all workspaces of the org) | no | no | basic | full | full |
 | Data residency | EU | EU | EU | EU (US region later, on demand) | EU, US on demand, or self-hosted |
-| Billing | none | card (Lemon Squeezy) | card (Lemon Squeezy) | card, annual (invoice payment: see section 6) | contract, invoice, PO |
+| Billing | none | card (Stripe) | card (Stripe) | card, annual (invoice payment: see section 6) | contract, invoice, PO |
 | Support | community (GitHub) | email, best effort | email, 2 business days | email, 1 business day | named contact, 4 business hours for Sev-1, shared channel |
 | Availability target | none | none | none | 99.5% (credits) | 99.5% hosted; higher only on a dedicated host or self-hosted |
 | Self-hosted server | free, AGPL, no limits | same | same | same | AGPL + support/indemnity contract |
@@ -235,7 +236,7 @@ Without hosted monitors the prices still hold, one line each:
   teams leaving over it, the owner can lower Team to $8 before touching the plan's no-monitor
   rule.
 
-The owner may prefer round EUR prices (€5/€9/€19) for an EU company; Lemon Squeezy shows the
+The owner may prefer round EUR prices (€5/€9/€19) for an EU company; Stripe shows the
 buyer's currency either way.
 
 ---
@@ -248,10 +249,10 @@ Legend: **have** = in main today; **build** = new code; **owner** = owner handof
 | --- | --- | --- | --- |
 | Hosted sync, E2E workspaces, invites, roles, rotation | Free+ | have | `sync-server/`, clients in CLI, desktop, web; 1.2 signed wraps |
 | Organizations, plans, seats, per-org limits | all | build (C1) | today: users and workspaces only; limits are server-global env (`HITOP_SYNC_MAX_*`, 50 workspaces, 10 runners, 50 invites) |
-| Account portal (sign in, org, members, usage, plan, API tokens) | all | build (C1, C3) | separate small app; shares the sync-server session; billing details live in the Lemon Squeezy customer portal |
+| Account portal (sign in, org, members, usage, plan, API tokens) | all | build (C1, C3) | separate small app; shares the sync-server session; billing details live in the Stripe customer portal |
 | Device recovery key | all | build (C2) | THREAT_MODEL open item 4; a paying customer who loses a laptop must not lose the workspace |
 | Web app device key not in localStorage | all | build (C2, partial) | THREAT_MODEL item 5: at least an explicit warning + recovery key; a WebCrypto non-extractable key can't drive the Rust HPKE code |
-| Billing (checkout, seats, trials, dunning, receipts, tax) | Pro+ | build (C3) + owner | Lemon Squeezy as merchant of record; signed webhooks → entitlements |
+| Billing (checkout, seats, trials, dunning, receipts, tax) | Pro+ | build (C3) + owner | Stripe Managed Payments as merchant of record; signed webhooks → entitlements |
 | Pricing page, in-client upgrade prompts | all | build (C3) | never blocking local use |
 | Runner credentials for your own CI/cron | Free+ | have | `hitop sync runner create`, `hitop schedule --sync` |
 | Run upload from your runners | Free+ (status) / Pro+ (history) | build (C4) | `hitop run --sync-report` (and the Action input `sync-report`): the runner seals report.json v1 (secrets masked) under the workspace key and uploads it with a plaintext status row |
@@ -317,7 +318,7 @@ never takes data hostage). History older than the plan's retention is purged dai
 
 ```
 cloud.hitop.rws8.tech      portal (Lit, prerendered like the site): account, org, members, usage,
-                           plan (links to the Lemon Squeezy checkout and customer portal),
+                           plan (links to the Stripe checkout and customer portal),
                            API tokens, run history dashboards
 sync.hitop.rws8.tech       hitop-sync-server (AGPL): the API every client already uses, plus
                            /v1/orgs/*, entitlements, run status rows, alerts, billing webhooks
@@ -361,7 +362,7 @@ page, the SLA page and the DPA say so. The plan makes the shared host as safe as
 | Status page `status.hitop.rws8.tech` (static, updated by the uptime check and by hand) | incident comms | agent; **owner** adds DNS |
 | Uptime check from **outside** the VM and its provider (a hosted checker) on `/healthz` of sync, portal and site | the VM can't report its own outage | **owner** picks the account; agent configures |
 | Ops runbook `cloud/RUNBOOK.md`: restore, rotate keys, revoke sessions, disk full, neighbour site misbehaving, incident template | one operator; repeatable steps | agent |
-| Secrets in root-only env files: Lemon Squeezy API key and webhook secret, mail service key, OIDC, backup public key | as today | **owner** places keys |
+| Secrets in root-only env files: Stripe secret key and webhook secret, mail service key, OIDC, backup public key | as today | **owner** places keys |
 | A second admin path: the owner's SSH key plus the agent's access as today; both listed in the access review | one access path is a single point of failure | both |
 | Mail through the transactional service the owner picks (Postmark or SES), before the paid launch | deliverability of codes and alerts | **owner** |
 
@@ -379,59 +380,68 @@ Costs to expect (rough): object storage ~€5/month, uptime checker free–€10
 
 ---
 
-## 6. Billing: Lemon Squeezy
+## 6. Billing: Stripe Managed Payments
 
-Lemon Squeezy is the merchant of record (Q3): it sells to the buyer, collects and remits VAT and
-sales tax, and issues receipts in its name. Fees about 5% + $0.50 per transaction plus
-surcharges (international cards, PayPal); checked 2026-11-02 on third-party pages, the owner
-confirms on signing up. We never see card data.
+**Stripe Managed Payments** is the merchant of record (Q3, owner decision 2026-11-03; it replaced
+Lemon Squeezy before anything was sold): Stripe sells to the buyer, calculates, collects and
+remits VAT, sales tax and GST in 80+ countries, handles fraud, disputes and transaction support,
+and sends receipts and invoices; buyers see "Sold through Link" and can manage their order at
+link.com. Fees: Stripe's processing fee plus the Managed Payments fee (the owner confirms them in
+the Dashboard). We never see card data. Docs (checked 2026-11-03):
+<https://docs.stripe.com/payments/managed-payments>.
 
-### Store setup (owner)
+### Account setup (owner)
 
-- The owner creates the Lemon Squeezy store, completes identity and payout details, and submits
-  the store for approval (Lemon Squeezy reviews SaaS stores before live payments).
-- **Products and variants:** one product per tier (Pro, Team, Business), each with an annual and a
-  monthly variant at the section 3 prices. Team and Business variants are **per-seat
-  subscriptions** (quantity = seats). Enterprise is not sold through checkout.
-- The owner creates an API key and a webhook (URL `https://sync.hitop.rws8.tech/v1/billing/lemonsqueezy`,
-  the events below, a signing secret), first in **test mode**, later in live mode, and places the
-  key and secret in a root-only env file on the VM.
+- The owner's Stripe account (business in Poland: a supported location), Managed Payments enabled
+  in Dashboard → Settings → Managed Payments, sandbox first.
+- **Products and prices:** one product per tier (Pro, Team, Business), tax code **SaaS – business
+  use** (`txcd_10103001`, eligible for Managed Payments), each with a monthly and a yearly USD
+  price, **tax-exclusive**, flat rate with quantity = seats (Team and Business; Pro quantity 1),
+  with the lookup keys `pro_monthly`, `pro_yearly`, `team_monthly`, `team_yearly`,
+  `business_monthly`, `business_yearly` (the server finds prices by them). Enterprise is not sold
+  through checkout.
+- A secret (or restricted) key and a webhook endpoint (`https://sync.hitop.rws8.tech/v1/billing/stripe`,
+  API version `2026-10-28.endive`, the events below, its signing secret), placed in a root-only
+  env file on the VM; the customer portal configured (section 11).
 
 ### What the code does (C3)
 
-- **Checkout:** the portal opens the Lemon Squeezy checkout overlay (Lemon.js) for a variant and
-  seat count, or falls back to a checkout link. The checkout carries `custom_data` with the org id,
-  so the webhook knows which org bought.
-- **Customer portal:** the portal's "Billing" button opens the Lemon Squeezy customer portal (the
-  signed URL from the subscription) for card changes, receipts, cancel and plan changes.
-- **Webhooks** (`POST /v1/billing/lemonsqueezy`): the `X-Signature` header is checked as
-  HMAC-SHA256 of the raw body with the signing secret (constant-time compare) before anything is
-  parsed; events are idempotent by event id and ordered by `updated_at`. Events used:
-  `subscription_created`, `subscription_updated`, `subscription_cancelled`, `subscription_resumed`,
-  `subscription_expired`, `subscription_paused`, `subscription_unpaused`,
-  `subscription_payment_success`, `subscription_payment_failed`, `subscription_payment_recovered`,
-  `subscription_payment_refunded`, `order_created`, `order_refunded`. They update one
-  `entitlements` row per org (plan, seats, status, period end, Lemon Squeezy ids). Entitlements
-  are the only thing the rest of the server reads.
-- **Trials:** 14 days of Team for a new org, no card, run by our server (not Lemon Squeezy). After
-  the trial the org drops to Free limits with nothing deleted (reads always work; creates beyond
-  Free are refused with the plan note).
+- **Checkout:** the portal's Buy button asks the server for a Stripe Checkout Session
+  (`mode=subscription`, `managed_payments[enabled]=true`, the price, quantity = seats, the buyer's
+  email, `client_reference_id` = the org id and signed metadata on the session and the
+  subscription) and redirects to its URL. Parameters Managed Payments refuses (tax, payment method,
+  shipping, customer update, invoice settings, Connect) are never sent.
+- **Customer portal:** the portal's "Manage billing" button opens a Stripe customer portal session
+  for the org's customer (payment method, invoices, cancel, switch monthly/yearly).
+- **Webhooks** (`POST /v1/billing/stripe`): `Stripe-Signature` is checked (`v1` = HMAC-SHA256 of
+  `"<t>.<raw body>"` with the signing secret, constant-time compare, `t` within 5 minutes) before
+  anything is parsed; events are idempotent by event id and ordered by event `created` per
+  subscription; an event whose `livemode` differs from the key's mode is ignored. Events used:
+  `checkout.session.completed`, `customer.subscription.created`, `.updated`, `.deleted`,
+  `.paused`, `.resumed`, `invoice.paid`, `invoice.payment_failed`, `charge.refunded`. They update
+  one `entitlements` row per org (plan, seats, status, period end, Stripe ids). Entitlements are
+  the only thing the rest of the server reads.
+- **Trials:** 14 days of Team for a new org, no card, run by our server (not Stripe). After the
+  trial the org drops to Free limits with nothing deleted (reads always work; creates beyond Free
+  are refused with the plan note).
 - **Seat changes:** the portal shows seats used vs bought. Adding a member beyond the bought seats
-  asks the owner to add seats; the server updates the subscription item quantity through the Lemon
-  Squeezy API (prorated, charged at once). Removing members lowers the quantity at the next renewal,
-  never mid-term (simple, predictable).
-- **Dunning:** Lemon Squeezy retries failed payments and mails the buyer. We show a "payment
-  failed" banner while the subscription is `past_due`; when it becomes `unpaid` or `expired` the
-  org drops to Free limits, nothing deleted.
-- **Refunds:** issued by the owner in the Lemon Squeezy dashboard; the refund webhook lowers or
-  ends the entitlement as the refund says. Policy text on the pricing page (owner's call; proposal:
-  full refund within 14 days of the first payment).
-- **Invoices for Business:** Lemon Squeezy issues receipts and tax invoices for card payments. Pay
-  by bank transfer or PO isn't its strength; until a deal needs it, Business annual pays by card and
-  Enterprise is invoiced by the owner's company outside Lemon Squeezy.
-- **Tests:** `sync-server/tests/billing.rs` replays recorded test-mode webhook bodies (every event
-  above, a bad signature, a replay, out-of-order events); entitlements enforcement in
-  `tests/limits.rs`. The whole flow runs in test mode before the owner switches to live.
+  asks the owner to add seats; the server updates the subscription item's quantity through the
+  API (prorated, invoiced at once; a declined card changes nothing). Fewer seats take effect at
+  once with no credit; the lower price starts at the next renewal.
+- **Dunning:** Stripe retries failed payments (Smart Retries, the owner's settings) and mails the
+  buyer. We show a "payment failed" banner while the subscription is `past_due`; when it becomes
+  `unpaid`, `paused` or is cancelled the org drops to Free limits, nothing deleted.
+- **Refunds:** issued by the owner in the Dashboard (with the subscription cancelled), or by
+  Stripe/Link support within 60 days; a full refund (`charge.refunded`) ends the entitlement. Policy
+  text on the pricing page (owner's call; proposal: full refund within 14 days of the first
+  payment).
+- **Invoices for Business:** Stripe issues receipts and invoices for card payments. Invoice or PO
+  payment isn't offered under Managed Payments; until a deal needs it, Business pays by card and
+  Enterprise is invoiced by the owner's company outside Stripe.
+- **Tests:** `sync-server/tests/billing.rs` replays event bodies shaped like Stripe's documented
+  ones (every event above, a bad or old signature, a replay, out-of-order events, a test event on a
+  live key) against a fake Stripe API; entitlements enforcement in `tests/limits.rs`. The whole
+  flow runs in the sandbox before the owner switches to live.
 - **App Store:** subscriptions are sold on the web only; the Mac and iOS apps sign in to an account
   and never show a buy button. The owner checks whether guideline 3.1.3(b) (multiplatform
   services) applies; if it does, the MAS/iOS builds either add IAP for the same plans or hide the
@@ -443,13 +453,13 @@ confirms on signing up. We never see card data.
 
 Everything here is the owner's: agents draft text, the owner signs.
 
-- **Legal entity and bank**: the owner's company (or a new one) as the Lemon Squeezy store owner
+- **Legal entity and bank**: the owner's company (or a new one) as the Stripe account owner
   and payout account.
 - **Terms of Service**: none exist today (`/terms/*.html` is the guides path and must keep
   working). New path `/legal/terms.html`, `/legal/privacy.html` (the current `/privacy.html` stays
   and links there), `/legal/dpa.html`, `/legal/sla.html`, `/legal/subprocessors.html`. Drafts by an
   agent, reviewed by a lawyer before the paid launch.
-- **Privacy**: rewrite the privacy page for accounts, billing (Lemon Squeezy), run uploads (what the
+- **Privacy**: rewrite the privacy page for accounts, billing (Stripe), run uploads (what the
   status row holds), alerts (Slack/webhook recipients), logs, backups, retention, data subject
   rights; the home/pricing copy ("Nothing to sign up for", "Is there a subscription? No") must
   change.
@@ -475,14 +485,14 @@ Everything here is the owner's: agents draft text, the owner signs.
     management, incident response, backup and recovery, vendor management, data retention and
     deletion, acceptable use. Short, true to what one operator actually does.
   - **Access reviews** (C1, then quarterly): a list of every account with access to the VM, the
-    database, the backup bucket, Lemon Squeezy, the mail service, DNS, GitHub and the App Store,
+    database, the backup bucket, Stripe, the mail service, DNS, GitHub and the App Store,
     reviewed and recorded in `cloud/evidence/access-reviews/`.
   - **Change management = git history + CI**: every change lands as a signed-off commit on `main`
     with CI green; deploys are recorded with the commit they ship (`cloud/ops-log.md`). The policy
     says exactly that; no extra tooling.
   - **Backup evidence** (C2): each restore drill's output and date in `cloud/evidence/restore-drills/`.
   - **Vendor list** (`cloud/policies/vendors.md`, C1): hosting provider of the VM, backup
-    object-storage provider, Lemon Squeezy, the transactional mail service, the uptime checker,
+    object-storage provider, Stripe, the transactional mail service, the uptime checker,
     GitHub, DNS provider; what data each sees and its own compliance report.
   - **Incident log** and status page history (C2).
   - The owner picks the **compliance tool** (Vanta, Drata, Secureframe or a spreadsheet) and the
@@ -490,7 +500,7 @@ Everything here is the owner's: agents draft text, the owner signs.
     security page says "SOC 2: groundwork in progress, no report yet".
 - **Trademark**: `TRADEMARK.md` exists; "HITOP Cloud" falls under it. Optional EU trademark
   filing (owner).
-- **Export/sanctions**: Lemon Squeezy screens buyers as merchant of record. Nothing more needed at
+- **Export/sanctions**: Stripe screens buyers as merchant of record. Nothing more needed at
   this scale.
 
 ---
@@ -522,7 +532,7 @@ Everything here is the owner's: agents draft text, the owner signs.
 
 Rules as in ROADMAP sections 1 and 3: agents commit to `main`, run every **Done when** check,
 update this file's status table, record owner items in section 11. Never: set prices in code
-without the owner's figures (prices live in Lemon Squeezy; code reads variant ids), change
+without the owner's figures (prices live in Stripe; code finds them by lookup key), change
 DNS/App Store/money, post publicly, touch the VM beyond what ROADMAP allows and C2 lists, store
 secrets anywhere but root-only env files. Code for the service goes in `cloud/` (portal, policies,
 runbook) and `sync-server/` (orgs, entitlements, billing webhooks, run status, alerts), all AGPL;
@@ -535,26 +545,26 @@ server-side row, never a new file in `environments/`.
 | C1 | Organizations, plans, entitlements; portal MVP; SOC 2 policies and first access review | **deployed** to the test server 2026-11-02 (2049e95, CI green; `cloud/ops-log.md`); left: the `cloud.` route after the owner's DNS, and the owner's approvals | the 1.2 sync server deployed to the test server first (ROADMAP section 6, "1.2 signed key wraps") so migration 4 and the 1.2 deploy don't collide |
 | C2 | Harden the current VM: Postgres, limits, backups + drill, recovery key, status page, runbook | **applied** 2026-11-03 except backups, restore drill and uptime (owner: later); the sync server runs on Postgres (`cloud/ops-log.md`) | C0 (bucket, backup key, uptime checker, `status.` DNS), C1 |
 | C1b | Normal sign-in and sign-up: email + password (mailed confirmation, reset, change), Continue with Google / GitHub, the password unlocks the key bundle on a new device | **deployed** to the test server 2026-11-03 (schema 6; Google/GitHub off until the OAuth apps exist) | C1, C2's code; the owner registers the Google and GitHub OAuth apps |
-| C3 | Lemon Squeezy billing, pricing page, prompts, legal and security pages: **paid launch of Pro and Team** | **deployed** to the test server 2026-11-03 (schema 8, billing off: no `HITOP_SYNC_LS_*` until the owner's store exists; legal pages `DRAFT`; status below) | C1, C2, C0 (store approved, mail service, legal drafts reviewed) |
+| C3 | Stripe Managed Payments billing (first built on Lemon Squeezy), pricing page, prompts, legal and security pages: **paid launch of Pro and Team** | **deployed** to the test server 2026-11-03 on Lemon Squeezy with billing off; **moved to Stripe** 2026-11-03, built, not deployed (billing off until `HITOP_SYNC_STRIPE_*` are set; legal pages `DRAFT`; status below) | C1, C2, C0 (Stripe account with Managed Payments, mail service, legal drafts reviewed) |
 | C4 | Run history and alerts from your own runners; shared environment secrets | **deployed** to the test server 2026-11-03 (schema 8; `cloud/ops-log.md`) | C3 (sells it); deploy with or after C3's migration 7 |
-| C5 | Business tier: hosted SSO per org, audit export + anchoring, admin console | **deployed** to the test server 2026-11-03 (schema 9; per-org SSO off: no host key or DoH resolver, Q15; Business not sold until its variants exist; drafts behind DRAFT; status below) | C3 |
+| C5 | Business tier: hosted SSO per org, audit export + anchoring, admin console | **deployed** to the test server 2026-11-03 (schema 9; per-org SSO off: no host key or DoH resolver, Q15; Business not sold until its prices exist; drafts behind DRAFT; status below) | C3 |
 | C6 | Enterprise: SCIM, self-host support offer, SOC 2 Type 1 readiness; second region and own host on demand | open | C5, owner (contracts, auditor) |
 | C7 | Deferred: hosted monitors (until confidential computing), mock servers, docs publishing, comments | not planned | revisit with the triggers in section 4 and demand evidence |
 
 ### C0 Owner decisions and accounts (parallel with C1)
 
 - Goal: everything only the owner can do, started now so C2 and C3 aren't blocked.
-- Scope (owner): Q1–Q18 answered (done 2026-11-02); legal entity and payout for Lemon Squeezy;
-  Lemon Squeezy store, products and variants, API key and webhook secret (test mode first), store
-  approval; backup bucket at another provider and the age key; DNS `cloud.` and `status.`; uptime
+- Scope (owner): Q1–Q18 answered (done 2026-11-02); legal entity and payout for Stripe;
+  the Stripe account with Managed Payments enabled, products and prices, secret key and webhook
+  secret (sandbox first), Stripe's eligibility review; backup bucket at another provider and the age key; DNS `cloud.` and `status.`; uptime
   checker account; transactional mail service (Postmark or SES); compliance tool and auditor;
   lawyer review of the legal drafts.
 - Scope (agent): draft ToS, privacy update, DPA, sub-processor list, SLA (99.5%, shared host
   stated) and the security page under `site/src/pages/legal/` behind a `draft` flag (not linked
   until the owner approves).
 - **Done when:** the owner has ticked each C0 row in section 11; `curl -sI
-  https://cloud.hitop.rws8.tech/healthz` answers from the VM; a test-mode webhook from Lemon
-  Squeezy reaches the server and passes the signature check.
+  https://cloud.hitop.rws8.tech/healthz` answers from the VM; a sandbox webhook event from
+  Stripe reaches the server and passes the signature check.
 - Owner handoffs: section 11, rows C0.
 
 ### C1 Organizations, plans, entitlements; portal MVP; SOC 2 policies
@@ -564,7 +574,7 @@ server-side row, never a new file in `environments/`.
 - Scope:
   - sync-server migration 4: `orgs` (id, name, plan, region, created, billing ref),
     `org_members` (role owner/admin/member), `workspaces.org_id`, `entitlements` (plan, seats,
-    limits JSON, status, period end, Lemon Squeezy customer/subscription/variant ids), `usage`
+    limits JSON, status, period end, provider customer/subscription/price ids), `usage`
     counters; every account gets a personal org.
   - `GET/POST /v1/orgs`, members CRUD, `POST /v1/orgs/:org/workspaces` (or move a workspace into
     an org, owner only), `GET /v1/orgs/:org/usage`, `GET /v1/orgs/:org/limits`.
@@ -578,7 +588,7 @@ server-side row, never a new file in `environments/`.
     create org, members and roles, usage vs limits, API tokens (personal access tokens for the
     sync API with scopes and expiry, listed and revocable; audit event `token_created/revoked`).
   - Audit events for org changes; `tests/roles.rs` extended with org roles and "other org".
-  - SOC 2: the policies, the vendor list (VM host, backup storage, Lemon Squeezy, mail service,
+  - SOC 2: the policies, the vendor list (VM host, backup storage, Stripe, mail service,
     uptime checker, GitHub, DNS) and the first access review (section 7) in `cloud/policies/` and
     `cloud/evidence/`; `cloud/ops-log.md` started with the C1 deploy.
 - **Done when:** `cd sync-server && cargo test --workspace` (new: `tests/orgs.rs` every org role ×
@@ -826,12 +836,12 @@ owner's go-ahead, before this tranche: its deploy is a normal version deploy on 
   35-day lifecycle rule; an age key pair (public key to the VM, private key offline); the uptime
   checker; DNS `status.`; the write-freeze time; an alert address (`ALERT_TO`).
 
-### C3 Lemon Squeezy billing, pricing page, prompts: paid launch of Pro and Team
+### C3 Stripe Managed Payments billing, pricing page, prompts: paid launch of Pro and Team
 
 - Goal: a person can buy Pro or a team can buy Team, and the limits lift at once. This is the paid
   launch; it does **not** wait for an external review (Q13).
-- Scope: Lemon Squeezy checkout overlay and links in the portal (variant + seat quantity +
-  `custom_data` org id); `POST /v1/billing/lemonsqueezy` with signature verification →
+- Scope: Stripe Checkout Sessions with Managed Payments from the portal (price + seat quantity +
+  signed org metadata); `POST /v1/billing/stripe` with signature verification →
   entitlements; customer portal link; seat changes through the API; the 14-day Team trial; dunning
   banner and downgrade to Free limits; refunds; pricing page and home copy (section 8); Sync page
   limit notes and "Manage plan"; CLI limit line; `/legal/*` pages linked; privacy page updated;
@@ -840,19 +850,20 @@ owner's go-ahead, before this tranche: its deploy is a normal version deploy on 
   changes from "for testing" to the real status; mail through the transactional service.
 - **Done when:** `sync-server/tests/billing.rs` replays every recorded test-mode event (bad
   signature refused before parsing, replay ignored, out-of-order handled) and the entitlements
-  match; an e2e in test mode buys Team with 3 seats, adds a 4th member (quantity 4 in Lemon
-  Squeezy), and a `subscription_payment_failed` then `subscription_expired` replay shows the banner
+  match; an e2e in test mode buys Team with 3 seats, adds a 4th member (quantity 4 in Stripe),
+  and an `invoice.payment_failed` then `customer.subscription.deleted` replay shows the banner
   and drops to Free with no data loss (pull still works); a refund replay ends the entitlement;
   `site` build has no "no subscription" sentence left (`grep -r "Is there a subscription? No"
   site/src` empty); the security page contains the no-review sentence (a site test checks it);
   the owner's switch to live mode and green light are recorded in section 11.
-- Needs: C1, C2, C0 (store approved, live keys, mail service, legal drafts reviewed).
-- Owner handoffs: set the prices in Lemon Squeezy; approve the legal pages and the security page
-  wording; switch the store to live and place the live keys; give the launch green light; post the
-  launch.
+- Needs: C1, C2, C0 (Stripe account with Managed Payments, live keys, mail service, legal drafts
+  reviewed).
+- Owner handoffs: set the prices in Stripe; approve the legal pages and the security page
+  wording; switch to live and place the live keys; give the launch green light; post the launch.
 
-**Status (2026-11-03): built and tested with recorded payloads and a fake API; not deployed; no
-Lemon Squeezy store yet.**
+**Status of the first build (2026-11-03, on Lemon Squeezy; deployed with billing off, never
+sold; superseded by "Moved to Stripe" below, which keeps everything here that isn't about the
+provider: entitlements, statuses, seats, trial, ordering, org matching, clients):**
 
 - Commits on `main`: 14509b4 (server: `billing.rs`, migration 7, tests), 0c0f2a9 (portal, web app
   Sync page), e30a23a (site: pricing, home, privacy, security and legal drafts, check script), and
@@ -921,6 +932,78 @@ Lemon Squeezy store yet.**
   copies `billing_events` and `trials`); clippy; portal e2e (44 checks, 13 new for billing);
   `webapp` unit (plan link); site build + `check-pages.mjs`. **Not yet** (owner): the same flow
   against the real test store, the switch to live, the green light.
+
+**Moved to Stripe Managed Payments (2026-11-03, owner decision; built and tested against a fake
+Stripe API and event bodies shaped like Stripe's documented ones; not deployed).**
+
+- Checked against Stripe's docs on 2026-11-03: Managed Payments (overview, how it works,
+  eligibility, set up, update a Checkout integration), the Checkout Session create API, Billing
+  subscriptions and items, the customer portal, webhook signatures, the API changelog to
+  `2026-10-28.endive`. Every call sends `Stripe-Version: 2026-10-28.endive` (Managed Payments needs
+  `2025-03-31.basil` or later; since basil the period end is on the subscription item and an
+  invoice names its subscription under `parent.subscription_details`).
+- **Checkout** (`POST .../billing/checkout`): `POST /v1/checkout/sessions` form-encoded with
+  `mode=subscription`, `managed_payments[enabled]=true`, `line_items[0][price]`,
+  `line_items[0][quantity]` (seats; 1 for Pro), `customer_email`, `client_reference_id` = org,
+  `metadata[org_id|user_id|sig]` and the same under `subscription_data[metadata]` (the signed
+  custom data of C3, now on the session and the subscription), `success_url`/`cancel_url` = the
+  portal's plan page. Never sent (Managed Payments refuses them; a test checks every request):
+  `automatic_tax`, `tax_id_collection`, `subscription_data[default_tax_rates]`,
+  `payment_method_collection`, `payment_method_configuration`, `payment_method_options`,
+  `payment_method_types`, `saved_payment_method_options`, `customer_update[name|address]`,
+  `shipping_address_collection`, `shipping_options`, `subscription_data[application_fee_percent|
+  on_behalf_of|transfer_data|invoice_settings]`.
+- **Prices**: found by lookup key (`GET /v1/prices?lookup_keys[]=…&active=true`, cached 10
+  minutes; `pro_yearly` = Pro annual and so on), so the env needs only the two secrets;
+  `HITOP_SYNC_STRIPE_PRICE_<PLAN>_<MONTHLY|ANNUAL>` pin one by id. The webhook knows the plan by
+  the price id or the `lookup_key` on the event's price.
+- **Webhook** `POST /v1/billing/stripe` (route `/v1/billing/lemonsqueezy` removed):
+  `Stripe-Signature` `t=…,v1=…` (any `v1` may match: two while a secret rolls), HMAC-SHA256 of
+  `"<t>.<raw body>"`, `t` within 300 s, before parsing (401). Idempotent by event id
+  (`billing_events.id` = `evt_…`); ordering by event `created` per subscription (ties: the later
+  delivery wins; subscription events often arrive before `checkout.session.completed`, so the
+  subscription's own metadata names the org). `livemode` ≠ the key's mode (`sk_live_`/`rk_live_`
+  vs test) = `livemode_mismatch` (replaces `HITOP_SYNC_LS_TEST_MODE` and the store id check).
+  Outcomes `applied`, `duplicate`, `stale`, `unmatched`, `ignored`, `livemode_mismatch`,
+  `unknown_price`, `superseded`.
+- **Events → entitlements**: `customer.subscription.*` set plan, seats (item quantity), status and
+  period end (item `current_period_end`, `cancel_at`, `ended_at`); Stripe statuses map to ours:
+  `active`; `trialing` → `on_trial` (never `trialing`, which is our own trial); `active` with
+  `cancel_at_period_end` or `cancel_at` → `cancelled` (plan until the period ends, then `expire`);
+  `past_due`; `unpaid`; `paused`; `canceled` and `incomplete_expired` → `expired`; `incomplete` →
+  `incomplete` (new: Free limits until the first payment, and no block on a second checkout).
+  `checkout.session.completed` ties the subscription and customer to the org;
+  `invoice.payment_failed` → `past_due`, `invoice.paid` → `active` again; `charge.refunded` in full
+  (matched by customer) → `refunded`, partial → ignored.
+- **Seats**: `POST /v1/subscriptions/:id` with `items[0][id]`, `items[0][quantity]`; more:
+  `proration_behavior=always_invoice` + `payment_behavior=error_if_incomplete` (a declined card is
+  Stripe's 402 → 502 `billing_refused`, nothing changes); fewer: `proration_behavior=none`.
+- **Customer portal**: `POST /v1/billing_portal/sessions` (`customer`, `return_url`), a fresh
+  session each time; 409 `no_subscription` until the org has a Stripe customer.
+- **Settings**: `HITOP_SYNC_STRIPE_SECRET_KEY[_FILE]`, `HITOP_SYNC_STRIPE_WEBHOOK_SECRET[_FILE]`
+  (both or neither; billing off when unset), optional `HITOP_SYNC_STRIPE_PRICE_*`,
+  `HITOP_SYNC_STRIPE_API_URL` (tests). Every `HITOP_SYNC_LS_*` setting is gone (ignored if left in
+  the env file).
+- **Schema**: no migration. Migration 7's columns keep their names and hold Stripe ids
+  (`ls_customer_id` = `cus_…`, `ls_subscription_id` = `sub_…`, `ls_variant_id` = `price_…`,
+  `ls_item_id` = `si_…`, `ls_order_id` = the Checkout Session `cs_…`, `ls_updated_at` = event
+  `created` in microseconds); the deployed server holds no billing data.
+- **Clients**: portal copy says Stripe ("Sold through Link", "plus applicable tax", test mode =
+  Stripe test purchases); the pricing page says "plus applicable tax"; privacy page, legal drafts
+  (privacy, terms, security, sub-processors) and SOC 2 vendor list name Stripe.
+- **Tests**: `tests/billing.rs` (10 tests: every event above, bad/old/rolled signatures, replay,
+  stale and same-second events, forged and other-org metadata, live/test mismatch, Team 3 → 4
+  seats, a declined seat charge, payment failed → deleted with every byte readable, refunds, the
+  trial, roles, Business, prices by lookup key with the Managed Payments refused-parameter check),
+  `postgres_billing`, unit tests (signature construction, statuses, settings); portal e2e against
+  a fake Stripe API (lookup keys, Checkout Session form, seats, portal, refund, deleted).
+- **Deviations**: refunds come from `charge.refunded` (Lemon Squeezy had refund events on the
+  subscription); a refund doesn't cancel the subscription in Stripe (the RUNBOOK says to cancel
+  it too). More seats use `always_invoice`: Managed Payments forbids one-off invoices, and a
+  subscription update's proration invoice should not be one, but the owner's sandbox run must
+  confirm it (fallback: `create_prorations`, charged at the next renewal). `incomplete` is a new
+  Free status. Stripe's own trials aren't used (our server runs the Team trial).
+- **Not yet** (owner): the sandbox run (section 11), live mode, the green light; deploy when told.
 
 ### C4 Run history and alerts from your own runners; shared environment secrets
 
@@ -1098,7 +1181,8 @@ Lemon Squeezy store yet.**
   push tell owners), remove a device from the member's account everywhere (its wraps go, its
   workspaces ask for a rotation). Team has the basic console (list, transfer owner); Business adds
   the rotation request and device removal.
-- **Business plan**: `HITOP_SYNC_LS_VARIANT_BUSINESS_ANNUAL` and `_MONTHLY` (off while unset);
+- **Business plan**: (since the Stripe move) the prices with lookup keys `business_yearly` and
+  `business_monthly`, or `HITOP_SYNC_STRIPE_PRICE_BUSINESS_*` (off while none exists);
   per seat like Team (checkout, seats, webhook quantity). Plans with `HITOP_SYNC_LIMITS=plans`:
   SSO and domains (402 `sso`), export and anchors (402 `auditExport`), the admin actions (402
   `adminActions`) need Business or Enterprise; the console list Team and up (402
@@ -1176,8 +1260,8 @@ All questions were answered by the owner on 2026-11-02 (section 0).
 | --- | --- | --- | --- |
 | Q1 | Service name | A: HITOP Cloud; B: HITOP Teams; C: HITOP Sync | **A** HITOP Cloud |
 | Q2 | Domain | A: stay under `hitop.rws8.tech`; B: buy a product domain now | **A** |
-| Q3 | Billing provider | A: Paddle; B: Lemon Squeezy; C: Stripe Billing + Stripe Tax | **B** Lemon Squeezy (merchant of record) |
-| Q4 | Prices | A: $6 / $10 / $20; B: lower; C: higher | **A**, a proposal until set in Lemon Squeezy |
+| Q3 | Billing provider | A: Paddle; B: Lemon Squeezy; C: Stripe Billing + Stripe Tax; D (2026-11-03): Stripe Managed Payments | **B** Lemon Squeezy (merchant of record), changed to **D** Stripe Managed Payments (merchant of record) on 2026-11-03 |
+| Q4 | Prices | A: $6 / $10 / $20; B: lower; C: higher | **A**, a proposal until set in Stripe |
 | Q5 | Viewers | A: seats, 5 free guest viewers per Team org; B: free; C: all count | **A** |
 | Q6 | Enterprise license model | A: AGPL + support/indemnity; B: dual license + scoped CLA; C: no outside contributions | **A** |
 | Q7 | Code visibility of portal and billing code | A: this repo, `cloud/`, AGPL; B: private repo | **A** |
@@ -1208,12 +1292,18 @@ All questions were answered by the owner on 2026-11-02 (section 0).
   security page says so plainly; the threat model lists residual risks; clients refuse bad keys
   (1.2 signed wraps); tests include a malicious server; the review stays an open owner item, and
   revenue from C3 is the natural budget for it.
-- **Lemon Squeezy approval.** The store may be refused or delayed, or its terms may change (it is
-  owned by Stripe). Mitigation: apply in C0, run everything in test mode meanwhile; entitlements
-  are provider-neutral, so Paddle or Stripe + Stripe Tax can replace it behind the same webhook
-  handler shape.
-- **Lemon Squeezy B2B limits.** Invoice and PO payment are weak. Mitigation: Business pays by
-  card; Enterprise is invoiced by the owner's company outside Lemon Squeezy.
+- **Managed Payments eligibility.** Stripe decides eligibility (business type, region; Poland and
+  the EU are supported) and may stop it for a product it doesn't consider a fully automated
+  digital product, or for a high dispute rate. Mitigation: HITOP Cloud is SaaS with no human
+  service in the plan (support is product support, as Stripe allows); entitlements are
+  provider-neutral, so Stripe Billing + Stripe Tax (the owner then files tax) can replace it behind
+  the same handler.
+- **Managed Payments limits.** Checkout Sessions and Payment Links only (no subscription made
+  through the API, no one-off invoices or invoice items on a subscription), Stripe controls payment
+  methods and the checkout ("Sold through Link", no custom domain), and Stripe/Link support may
+  refund within 60 days on its own. Invoice and PO payment aren't offered. Mitigation: Business
+  pays by card; Enterprise is invoiced by the owner's company outside Stripe; refunds arrive as
+  `charge.refunded` and end the plan like the owner's.
 - **No hosted monitors.** Some teams expect them (Postman has them). Mitigation: CI-based runs
   with history and alerts, clear FAQ, the price lever in section 3, the revisit trigger in
   section 4.
@@ -1233,8 +1323,8 @@ All questions were answered by the owner on 2026-11-02 (section 0).
 | Date | Tranche | What the owner needs to do | Done |
 | --- | --- | --- | --- |
 | 2026-11-02 | plan | Answer Q1–Q18. | yes, 2026-11-02 (section 0) |
-| 2026-11-02 | C0 | Legal entity and payout bank for the Lemon Squeezy store; create the store and submit it for approval. | |
-| 2026-11-02 | C0 | In Lemon Squeezy: products Pro, Team, Business with annual and monthly variants (Team and Business per seat) at your prices; an API key and a webhook to `https://sync.hitop.rws8.tech/v1/billing/lemonsqueezy` with its signing secret, test mode first. Place key and secret in a root-only env file on the VM. | |
+| 2026-11-02 | C0 | Legal entity and payout bank for the Stripe account (until 2026-11-03: the Lemon Squeezy store); Managed Payments enabled and accepted by Stripe's eligibility review. | |
+| 2026-11-02 | C0 | In Stripe: products, prices, secret key and webhook, sandbox first; the steps are in the 2026-11-03 C3 Stripe row below. Place key and secret in a root-only env file on the VM. | |
 | 2026-11-02 | C0 | Pick and create the transactional mail service (Postmark or SES); verify the sending domain; place the key. | |
 | 2026-11-02 | C0 | Create an S3-compatible bucket at another provider or region for backups; generate the age key and keep the private half offline; place the bucket credentials and the public key on the VM. | |
 | 2026-11-02 | C0 | DNS: `cloud.hitop.rws8.tech` and `status.hitop.rws8.tech` → the VM. | |
@@ -1245,12 +1335,13 @@ All questions were answered by the owner on 2026-11-02 (section 0).
 | 2026-11-03 | C2 | For the built C2 (status in section 9): bucket with a write-only key and a 35-day lifecycle rule; an age key pair (public key to `/etc/hitop-sync/backup-recipients.txt`, private key offline); uptime checker monitors (`cloud/RUNBOOK.md`); the `status.` CNAME; an alert address; then run the first restore drill on your computer and commit its evidence. | |
 | 2026-11-03 | C1b | Register the OAuth apps and place their ids and secrets in `/etc/hitop-sync/env` (or `_FILE`): **Google** (Cloud console → Credentials → OAuth client ID, Web application; consent screen with `openid`, `email`; authorized redirect URI `https://sync.hitop.rws8.tech/v1/auth/google/callback`) → `HITOP_SYNC_GOOGLE_CLIENT_ID/SECRET`; **GitHub** (Settings → Developer settings → OAuth Apps; callback URL `https://sync.hitop.rws8.tech/v1/auth/github/callback`) → `HITOP_SYNC_GITHUB_CLIENT_ID/SECRET`. Optional: a password pepper (`HITOP_SYNC_PASSWORD_PEPPER_FILE`, kept out of backups). | |
 | 2026-11-02 | C3 | Lawyer review of the drafts: ToS, privacy update, DPA, sub-processor list, SLA (99.5%, shared host), refund policy. Approve the security page wording (no external review yet; shared server). Confirm the App Store position (guideline 3.1.3). | |
-| 2026-11-02 | C3 | Switch the Lemon Squeezy store to live, place the live keys, give the paid-launch green light, post the launch yourself (drafts in `launch/`). | |
-| 2026-11-03 | C3 | **Lemon Squeezy store (test mode first)**: (1) Products: **HITOP Cloud Pro** (subscription; variants "Yearly" $72/year = $6 a month and "Monthly" $8/month, quantity fixed at 1) and **HITOP Cloud Team** (subscription, **"Charge per unit / quantity" on**, variants "Yearly" $120 per seat per year and "Monthly" $12 per seat per month; let the buyer pick the quantity); Business later (C5). If you set other prices, tell the agent: they are also shown in two places (`cloud/portal/src/portal-app.js` `PRICES`, `site/src/pages/pricing.js` `TIERS`). No Lemon Squeezy free trial on these variants (our server runs the trial). (2) Settings → API: a key → `HITOP_SYNC_LS_API_KEY`. (3) Settings → Webhooks: URL `https://sync.hitop.rws8.tech/v1/billing/lemonsqueezy`, a signing secret (6–40 random characters) → `HITOP_SYNC_LS_WEBHOOK_SECRET`, events: `order_created`, `order_refunded`, `subscription_created`, `subscription_updated`, `subscription_cancelled`, `subscription_resumed`, `subscription_expired`, `subscription_paused`, `subscription_unpaused`, `subscription_payment_success`, `subscription_payment_failed`, `subscription_payment_recovered`, `subscription_payment_refunded`. (4) The store id → `HITOP_SYNC_LS_STORE_ID`; the four variant ids → `HITOP_SYNC_LS_VARIANT_PRO_ANNUAL`, `_PRO_MONTHLY`, `_TEAM_ANNUAL`, `_TEAM_MONTHLY`; `HITOP_SYNC_LS_TEST_MODE=on` while in test mode. Put them in `/etc/hitop-sync/env` (root only; secrets may be `_FILE` paths) or hand them to the agent through that file, never in chat or git. Settings → Customer portal on (cancel, update payment method, switch between the two variants of a product). (5) Then tell the agent: deploy C3 and run the test purchase (Team, 3 seats, then a 4th, a failed payment with Lemon Squeezy's test card, a refund). | |
+| 2026-11-02 | C3 | Switch to live (live products and prices with the same lookup keys, the live webhook endpoint and key, the customer portal configuration), place the live keys, give the paid-launch green light, post the launch yourself (drafts in `launch/`). | |
+| 2026-11-03 | C3 | ~~Lemon Squeezy store~~: replaced by the Stripe row below (owner decision 2026-11-03). | n/a |
+| 2026-11-03 | C3 | **Stripe Managed Payments (sandbox first)**: (1) Account: business details and payout bank (Poland is a supported location); Settings → Managed Payments → enable (Stripe reviews eligibility: SaaS, fully automated, sold directly). (2) Products **HITOP Cloud Pro**, **Team**, **Business**, each with tax code **SaaS – business use** (`txcd_10103001`, marked "Eligible for Managed Payments"), recurring USD prices, **tax-exclusive**, flat rate per unit (quantity = seats; Pro is bought with quantity 1): Pro $8 a month and $72 a year, Team $12 per seat a month and $120 per seat a year, Business $25 per seat a month and $240 per seat a year (the proposals; other prices: tell the agent, they also appear in `cloud/portal/src/portal-app.js` `PRICES` and `site/src/pages/pricing.js` `TIERS`), with the lookup keys `pro_monthly`, `pro_yearly`, `team_monthly`, `team_yearly`, `business_monthly`, `business_yearly`; no Stripe trial on them (our server runs the Team trial). (3) Developers → API keys: the secret key, or a restricted key with write on Checkout Sessions, Subscriptions and Customer portal and read on Prices → `HITOP_SYNC_STRIPE_SECRET_KEY`. (4) Developers → Webhooks → Add endpoint `https://sync.hitop.rws8.tech/v1/billing/stripe`, API version **2026-10-28.endive**, events `checkout.session.completed`, `customer.subscription.created`, `customer.subscription.updated`, `customer.subscription.deleted`, `customer.subscription.paused`, `customer.subscription.resumed`, `invoice.paid`, `invoice.payment_failed`, `charge.refunded`; its signing secret → `HITOP_SYNC_STRIPE_WEBHOOK_SECRET`. (5) Settings → Billing → Customer portal: on; allow updating the payment method and billing address, invoice history, cancelling (at the end of the period), and switching between the monthly and yearly price of the same product only (no switch between products; quantity changes off: seats change in the HITOP portal, never below the seats in use); business name, terms and privacy links. (6) Settings → Billing → Subscriptions and emails: Smart Retries on; when all retries fail, cancel the subscription (the org drops to Free limits; nothing is deleted); failed-payment emails on. (7) Settings → Checkout: terms of service and privacy policy links (the legal drafts once approved). Put (3) and (4) in `/etc/hitop-sync/env` (root only; `_FILE` paths allowed), never in chat or git; prices need no setting (lookup keys). (8) Then tell the agent: deploy and run the sandbox purchase (Team, 3 seats, card 4242 4242 4242 4242; a 4th seat; a failed renewal with 4000 0000 0000 0341; a refund). Sandbox products and lookup keys: set up by the owner 2026-11-03. | partly (sandbox products 2026-11-03) |
 | 2026-11-03 | C3 | **Approve the drafts**: `site/content/legal/*.md` (terms: fill in the governing law; sub-processors: the VM provider and data centre, the mail service, the backup storage, the uptime checker) and the security page wording; the refund policy (proposal on the pricing page: full refund within 14 days of the first payment); the trial (14 days, 5 seats). Approval = set `DRAFT = false` in `site/src/legal-status.js` (or tell the agent). Also: DNS `cloud.hitop.rws8.tech` (the pricing page links the portal there) and the mail service before live. | |
 | 2026-11-02 | later | External crypto review (Q13: not a launch gate). Scope: ROADMAP section 6 rows T23/T24/T25/1.2; `sync-server/THREAT_MODEL.md`, `cli/crates/hitop-sync-crypto`, `cli/crates/hitop-core/src/sync.rs`, `cli/crates/hitop/src/commands/sync/`, `webapp/src/sync.js`, `sync-server/src/{oidc,audit,workspaces,blobs}.rs`. Rough budget €10–25k. Tell the agent when it starts; the security page links the summary when done. | |
 | 2026-11-02 | C6 | Book the SOC 2 Type 1 audit; sign the enterprise contract template; decide the US region and an own host when a customer or a trigger (section 5) asks. | |
 | 2026-11-03 | C5 | **Approve the drafts**: `/legal/sla.html` (99.5%, shared host, credits, priority support line) and `/legal/support.html`; pick the **priority support address** (proposal `business-support@hitop.rws8.tech`: create the mailbox or alias, or tell the agent another) and whether outage answers within 4 hours are promised. Approval = `DRAFT = false` (with the C3 drafts). | |
-| 2026-11-03 | C5 | **Business in Lemon Squeezy** (with the C3 store): product **HITOP Cloud Business**, "Charge per unit / quantity" on, variants "Yearly" $240 per seat per year and "Monthly" $25 per seat per month (the proposal; tell the agent other prices: `cloud/portal/src/portal-app.js` `PRICES`, `site/src/pages/pricing.js` `TIERS`); the variant ids → `HITOP_SYNC_LS_VARIANT_BUSINESS_ANNUAL` and `_BUSINESS_MONTHLY` in `/etc/hitop-sync/env`. Business isn't sold until they are set. | |
+| 2026-11-03 | C5 | **Business in Stripe** (with the C3 Stripe row): product HITOP Cloud Business, per seat, $240 per seat a year and $25 per seat a month (the proposal), lookup keys `business_yearly` and `business_monthly`. Business isn't sold until those prices exist. | sandbox: yes, 2026-11-03 |
 | 2026-11-03 | C5 | **Per-org SSO on the hosted server** (only when you want Business SSO live; Q15 says not on the test server): a host key line `HITOP_SYNC_HOST_KEY=<openssl rand -hex 32>` in `/etc/hitop-sync/env` (keep a copy offline, never in backups) and a DNS-over-HTTPS resolver `HITOP_SYNC_DNS_URL` (e.g. Cloudflare; add it to the sub-processor list); RUNBOOK "Business features (C5)". Until then every per-org SSO endpoint answers 404 `org_sso_off`. | |
 | 2026-11-03 | C5 | Optional: DNS `status.hitop.rws8.tech` (C0 row) also carries public audit anchors once an rws route sends `/audit-anchors/` to the sync server's `/v1/audit-anchors/` (the agent adds the route with your go). | |

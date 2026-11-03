@@ -8,7 +8,7 @@ Policy: [../../policies/access-control.md](../../policies/access-control.md). Co
 | VM | | | | | | |
 | Sync database | | | | | | |
 | Backup bucket | | | | | | |
-| Lemon Squeezy | | | | | | |
+| Stripe | | | | | | |
 | Mail service | | | | | | |
 | DNS | | | | | | |
 | GitHub (collaborators, deploy keys, secrets) | | | | | | |
