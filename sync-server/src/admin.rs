@@ -13,9 +13,12 @@
 //!   rotate its key. The server can't rotate (it holds no key): it sets `rotationRequested` (on
 //!   `GET /v1/workspaces/:ws` and the list), clients of owners say so, and the next rotation
 //!   (`POST .../rotate`, or a removal) clears it.
-//! - `DELETE /v1/orgs/:org/admin/devices/:key` (Business): removes a member's device key from
-//!   their account, everywhere (a lost or stolen laptop): its wrapped keys go with it, every
-//!   workspace it held a key for gets `rotationRequested`. The person's other devices keep working.
+//! - `DELETE /v1/orgs/:org/admin/devices/:key` (Business): takes a member's device (a lost or
+//!   stolen laptop) out of **the org's workspaces only** (owner decision 2026-11-03): its wrapped
+//!   workspace keys and shared-value wraps in the org's workspaces go, and each of those workspaces
+//!   gets `rotationRequested`. The device key itself, and its access to the member's personal and
+//!   other orgs' workspaces, stay untouched: an org admin governs the org, not the person's account.
+//!   The person's other devices keep working.
 //!
 //! Changes need a signed-in session (not an access token) and are recorded on the org's chain and
 //! on each workspace's chain they touch.
@@ -197,16 +200,31 @@ pub fn remove_device(state: &State, request: &Request, params: &PathParams) -> A
         else {
             return Err(ApiError::not_found("no such device key of a member of this organization"));
         };
-        let held: Vec<String> = tx.query("SELECT DISTINCT workspace_id FROM wraps WHERE key_id = $1 ORDER BY workspace_id", &[(&key).into()])?.iter().map(|r| r.text(0)).collect();
-        tx.execute("DELETE FROM env_share_wraps WHERE key_id = $1", &[(&key).into()])?;
-        tx.execute("DELETE FROM wraps WHERE key_id = $1", &[(&key).into()])?;
-        tx.execute("DELETE FROM device_keys WHERE id = $1", &[(&key).into()])?;
+        // Only the org's workspaces: the member's personal and other orgs' workspaces, and the
+        // device key itself, stay as they are. Every org workspace the member is in excludes the
+        // key from now on (else the next rotation would wrap the new key for it again); those
+        // where it held a key also ask for a rotation.
+        let now = state.now();
+        for ws in tx.query("SELECT m.workspace_id FROM members m JOIN workspaces s ON s.id = m.workspace_id WHERE m.user_id = $1 AND s.org_id = $2", &[k.text(0).into(), (&org).into()])? {
+            tx.execute(
+                "INSERT INTO workspace_excluded_keys (workspace_id, key_id, excluded_at, excluded_by) VALUES ($1, $2, $3, $4) ON CONFLICT (workspace_id, key_id) DO NOTHING",
+                &[ws.text(0).into(), (&key).into(), now.into(), (&user.id).into()],
+            )?;
+        }
+        let held: Vec<String> = tx
+            .query("SELECT DISTINCT w.workspace_id FROM wraps w JOIN workspaces s ON s.id = w.workspace_id WHERE w.key_id = $1 AND s.org_id = $2 ORDER BY w.workspace_id", &[(&key).into(), (&org).into()])?
+            .iter()
+            .map(|r| r.text(0))
+            .collect();
+        for ws in &held {
+            tx.execute("DELETE FROM env_share_wraps WHERE key_id = $1 AND workspace_id = $2", &[(&key).into(), ws.into()])?;
+            tx.execute("DELETE FROM wraps WHERE key_id = $1 AND workspace_id = $2", &[(&key).into(), ws.into()])?;
+        }
         for ws in &held {
             request_rotation(tx, state, ws, &user, "device_removed")?;
             audit::record(tx, state, Event::new(ws, "device_removed", Some(&user)).target(&k.text(0)).detail(json!({ "keyId": key, "email": k.text(1), "by": "org_admin" })))?;
         }
         audit::record(tx, state, Event::new(&orgs::chain(&org), "device_removed", Some(&user)).target(&k.text(0)).detail(json!({ "keyId": key, "email": k.text(1), "name": k.text(2), "workspaces": held.len() })))?;
-        audit::record(tx, state, Event::new(audit::ACCOUNT, "device_key_removed", Some(&user)).target(&k.text(0)).detail(json!({ "keyId": key, "by": "org_admin", "org": org })))?;
         Ok((200, json!({ "removed": key, "rotationRequested": held })))
     })
 }

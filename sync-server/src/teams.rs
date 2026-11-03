@@ -121,7 +121,10 @@ pub fn list(state: &State, request: &Request, params: &PathParams) -> ApiResult 
             let accepted = if r.text(5).is_empty() {
                 Json::Null
             } else {
-                let keys = tx.query("SELECT id, name, public_key FROM device_keys WHERE user_id = $1 ORDER BY created_at, id", &[r.text(5).into()])?;
+                let keys = tx.query(
+                    "SELECT id, name, public_key FROM device_keys WHERE user_id = $1 AND id NOT IN (SELECT key_id FROM workspace_excluded_keys WHERE workspace_id = $2) ORDER BY created_at, id",
+                    &[r.text(5).into(), id.into()],
+                )?;
                 json!({ "userId": r.text(5), "email": r.text(6), "keys": keys.iter().map(|k| json!({ "id": k.text(0), "name": k.text(1), "publicKey": b64(&k.bytes(2)) })).collect::<Vec<_>>() })
             };
             out.push(json!({ "id": r.text(0), "email": r.text(1), "role": r.text(2), "createdAt": r.int(3), "expiresAt": r.int(4), "accepted": accepted }));

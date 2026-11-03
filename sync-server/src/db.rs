@@ -302,7 +302,9 @@ impl Tx<'_> {
 /// (shares.rs). 9: HITOP Cloud C5 SSO per org, domains, audit anchors, rotation requests.
 /// 10: HITOP Cloud C6 SCIM provisioning (scim.rs): per-org tokens (hashes), the directory's users
 /// and groups as the IdP sent them, a group's org role and workspace roles, and the workspace
-/// grants SCIM made (so it only ever takes back what it gave).
+/// grants SCIM made (so it only ever takes back what it gave). 11: device keys an org admin took
+/// out of an org workspace (admin.rs `remove_device`): no wrap of that workspace is ever stored or
+/// asked for them again (the key itself and the person's other workspaces stay).
 const MIGRATIONS: &[&str] = &[r"
 CREATE TABLE users (
   id TEXT PRIMARY KEY,
@@ -723,6 +725,15 @@ CREATE TABLE scim_grants (
   PRIMARY KEY (workspace_id, email)
 );
 CREATE INDEX scim_grants_org ON scim_grants(org_id, email);
+", r"
+CREATE TABLE workspace_excluded_keys (
+  workspace_id TEXT NOT NULL REFERENCES workspaces(id) ON DELETE CASCADE,
+  key_id TEXT NOT NULL REFERENCES device_keys(id) ON DELETE CASCADE,
+  excluded_at BIGINT NOT NULL,
+  excluded_by TEXT NOT NULL,
+  PRIMARY KEY (workspace_id, key_id)
+);
+CREATE INDEX workspace_excluded_keys_key ON workspace_excluded_keys(key_id);
 "];
 
 /// Steps in Rust that run in the same transaction as a migration's SQL (index = migration

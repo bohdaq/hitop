@@ -55,7 +55,7 @@ fn checked_wraps(tx: &mut Tx, ws: &str, caller: &User, version: i64, wraps: &[Wr
             return Err(ApiError::bad(format!("the wrap for {} is for version {}, not {version}", w.key_id, wrap_version(&bytes))));
         }
         let owner = tx.query_one(
-            "SELECT k.user_id FROM device_keys k JOIN members m ON m.user_id = k.user_id AND m.workspace_id = $1 WHERE k.id = $2",
+            "SELECT k.user_id FROM device_keys k JOIN members m ON m.user_id = k.user_id AND m.workspace_id = $1 WHERE k.id = $2 AND k.id NOT IN (SELECT key_id FROM workspace_excluded_keys WHERE workspace_id = $1)",
             &[ws.into(), (&w.key_id).into()],
         )?;
         let Some(owner) = owner else {

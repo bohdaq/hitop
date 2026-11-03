@@ -22,7 +22,7 @@ use serde_json::{json, Value as Json};
 use crate::api::{b64, body, query, random_hex, unb64, ApiError, ApiResult, State};
 use crate::audit::{self, Event};
 use crate::auth::{authenticate, User};
-use crate::db::Tx;
+use crate::db::{DbError, Tx};
 
 /// HPKE enc (32) + sealed 32-byte key + tag (16), see hitop-sync-crypto: a whole format 1 wrap,
 /// the end of a format 2 wrap.
@@ -122,11 +122,11 @@ pub struct WrapIn {
 }
 
 /// Checks that `wraps` (from `caller`) holds exactly one well-formed wrapped key for each device
-/// key of `users`.
-pub(crate) fn exact_wraps(tx: &mut Tx, caller: &User, users: &[String], wraps: &[WrapIn]) -> Result<Vec<(String, Vec<u8>)>, ApiError> {
+/// key of `users`, except the keys an org admin took out of workspace `ws` (admin.rs).
+pub(crate) fn exact_wraps(tx: &mut Tx, caller: &User, ws: &str, users: &[String], wraps: &[WrapIn]) -> Result<Vec<(String, Vec<u8>)>, ApiError> {
     let mut expected = BTreeSet::new();
     for user in users {
-        for row in tx.query("SELECT id FROM device_keys WHERE user_id = $1", &[user.into()])? {
+        for row in tx.query("SELECT id FROM device_keys WHERE user_id = $2 AND id NOT IN (SELECT key_id FROM workspace_excluded_keys WHERE workspace_id = $1)", &[ws.into(), user.into()])? {
             expected.insert(row.text(0));
         }
     }
@@ -153,9 +153,15 @@ pub(crate) fn exact_wraps(tx: &mut Tx, caller: &User, users: &[String], wraps: &
 }
 
 /// Stores wraps. An existing wrap stays, except that a format 2 wrap replaces a format 1 wrap (an
-/// owner upgrading the workspace's wraps). Returns how many were stored.
+/// owner upgrading the workspace's wraps). Returns how many were stored. A key an org admin took
+/// out of the workspace is refused, whoever sends it.
 pub(crate) fn insert_wraps(tx: &mut Tx, ws: &str, epoch: i64, wraps: &[(String, Vec<u8>)]) -> Result<u64, ApiError> {
     let mut n = 0;
+    for (key_id, _) in wraps {
+        if excluded(tx, ws, key_id)? {
+            return Err(ApiError::bad(format!("{key_id} was removed from this workspace by an organization admin")));
+        }
+    }
     for (key_id, wrapped) in wraps {
         let sql = if wrapped.len() == WRAPPED_KEY_LEN {
             "INSERT INTO wraps (workspace_id, epoch, key_id, wrapped) VALUES ($1, $2, $3, $4) ON CONFLICT (workspace_id, epoch, key_id) DO NOTHING"
@@ -165,6 +171,11 @@ pub(crate) fn insert_wraps(tx: &mut Tx, ws: &str, epoch: i64, wraps: &[(String, 
         n += tx.execute(sql, &[ws.into(), epoch.into(), key_id.into(), wrapped.clone().into()])?;
     }
     Ok(n)
+}
+
+/// Whether an org admin took device key `key_id` out of workspace `ws` (admin.rs).
+pub(crate) fn excluded(tx: &mut Tx, ws: &str, key_id: &str) -> Result<bool, DbError> {
+    Ok(tx.query_one("SELECT key_id FROM workspace_excluded_keys WHERE workspace_id = $1 AND key_id = $2", &[ws.into(), key_id.into()])?.is_some())
 }
 
 fn member_ids(tx: &mut Tx, ws: &str) -> Result<Vec<String>, ApiError> {
@@ -277,7 +288,7 @@ pub(crate) fn create_with(state: &State, request: &Request, input: NewWorkspace)
         if owned >= state.config.max_workspaces {
             return Err(ApiError::forbidden("this account owns the maximum number of workspaces"));
         }
-        let wraps = exact_wraps(tx, &user, std::slice::from_ref(&user.id), &input.wraps)?;
+        let wraps = exact_wraps(tx, &user, &input.id, std::slice::from_ref(&user.id), &input.wraps)?;
         if wraps.is_empty() {
             return Err(ApiError::bad("register a device key first (POST /v1/me/keys)"));
         }
@@ -307,7 +318,7 @@ pub fn get(state: &State, request: &Request, params: &PathParams) -> ApiResult {
         let mut members = Vec::new();
         for r in rows {
             let keys = tx.query(
-                "SELECT k.id, k.name, k.public_key, (SELECT COUNT(*) FROM wraps x WHERE x.workspace_id = $1 AND x.epoch = $2 AND x.key_id = k.id) FROM device_keys k WHERE k.user_id = $3 ORDER BY k.created_at, k.id",
+                "SELECT k.id, k.name, k.public_key, (SELECT COUNT(*) FROM wraps x WHERE x.workspace_id = $1 AND x.epoch = $2 AND x.key_id = k.id) FROM device_keys k WHERE k.user_id = $3 AND k.id NOT IN (SELECT key_id FROM workspace_excluded_keys WHERE workspace_id = $1) ORDER BY k.created_at, k.id",
                 &[id.into(), ws.epoch.into(), r.text(0).into()],
             )?;
             let mut keys_json = Vec::new();
@@ -441,7 +452,7 @@ pub fn add_member(state: &State, request: &Request, params: &PathParams) -> ApiR
         if tx.query_one("SELECT role FROM members WHERE workspace_id = $1 AND user_id = $2", &[id.into(), (&new_id).into()])?.is_some() {
             return Err(ApiError::conflict("already_member", "already a member", json!({})));
         }
-        let wraps = exact_wraps(tx, &user, std::slice::from_ref(&new_id), &input.wraps)?;
+        let wraps = exact_wraps(tx, &user, id, std::slice::from_ref(&new_id), &input.wraps)?;
         if wraps.is_empty() {
             return Err(ApiError::bad("that account has no device key yet"));
         }
@@ -467,7 +478,7 @@ fn rotate_to(tx: &mut Tx, user: &User, ws: &Workspace, input: &Rotation) -> Resu
         return Err(ApiError::conflict("stale_epoch", format!("the next epoch is {}", ws.epoch + 1), json!({ "epoch": ws.epoch })));
     }
     let members = member_ids(tx, &ws.id)?;
-    let wraps = exact_wraps(tx, user, &members, &input.wraps)?;
+    let wraps = exact_wraps(tx, user, &ws.id, &members, &input.wraps)?;
     insert_wraps(tx, &ws.id, input.epoch, &wraps)?;
     // A rotation asked for by an org admin (admin.rs) is done.
     tx.execute("UPDATE workspaces SET epoch = $1, rotation_requested_at = 0, rotation_requested_by = '' WHERE id = $2", &[input.epoch.into(), (&ws.id).into()])?;

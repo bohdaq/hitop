@@ -266,7 +266,7 @@ fn admins_see_every_workspace_and_device_and_transfer_ownership() {
 }
 
 #[test]
-fn forced_rotation_and_removing_a_lost_device_everywhere() {
+fn forced_rotation_and_removing_a_lost_device_from_the_orgs_workspaces() {
     let t = setup("admin-actions", false);
     let (s, org) = (&t.s, &t.org);
     // Ask Ada's clients to rotate: the flag shows to members until a rotation clears it.
@@ -319,8 +319,12 @@ fn forced_rotation_and_removing_a_lost_device_everywhere() {
         "older clients see the shape they know"
     );
 
-    // Bob's laptop is stolen: Cy removes it. Its wrapped keys go, the workspace asks for a
-    // rotation, and the next rotation no longer needs (or accepts) a wrap for it.
+    // Bob's laptop is stolen: Cy removes it from the org's workspaces. Its wrapped keys there go,
+    // the workspace asks for a rotation, and the next rotation no longer needs (or accepts) a wrap
+    // for it. Bob's own personal workspace, and the device key itself, are not the org's: they
+    // stay untouched (owner decision 2026-11-03).
+    const MINE: &str = "3f0e0d0c0b0a09080706050403020100";
+    create_workspace(s, &t.bob, MINE);
     let second = Device::another(s, "bob@corp.test", &t.bob.session);
     let r = s.call(
         "DELETE",
@@ -329,21 +333,37 @@ fn forced_rotation_and_removing_a_lost_device_everywhere() {
         None,
     );
     assert_eq!(r.status, 200, "{}", r.json);
-    assert_eq!(r.json["rotationRequested"], json!([WS]));
-    let n = s
-        .app
-        .state()
-        .db
-        .tx(|tx| {
-            tx.query_one(
-                "SELECT COUNT(*) FROM wraps WHERE key_id = $1",
-                &[t.bob.key_id.as_str().into()],
-            )
-        })
-        .unwrap()
-        .unwrap()
-        .int(0);
-    assert_eq!(n, 0);
+    assert_eq!(r.json["rotationRequested"], json!([WS]), "only the org's workspace");
+    let count = |sql: &str, ws: &str| {
+        s.app
+            .state()
+            .db
+            .tx(|tx| tx.query_one(sql, &[t.bob.key_id.as_str().into(), ws.into()]))
+            .unwrap()
+            .unwrap()
+            .int(0)
+    };
+    let wraps = "SELECT COUNT(*) FROM wraps WHERE key_id = $1 AND workspace_id = $2";
+    assert_eq!(count(wraps, WS), 0, "gone from the org's workspace");
+    assert_eq!(count(wraps, MINE), 1, "kept in Bob's personal workspace");
+    let device = s.app.state().db.tx(|tx| tx.query_one("SELECT COUNT(*) FROM device_keys WHERE id = $1", &[t.bob.key_id.as_str().into()])).unwrap().unwrap().int(0);
+    assert_eq!(device, 1, "the device key stays on Bob's account");
+    // Nobody can give the removed laptop the org workspace's key again: not Bob, not an owner.
+    let k_now = hitop_sync_crypto::WorkspaceKey::generate();
+    let epoch = s.call("GET", &format!("/v1/workspaces/{WS}"), Some(&t.ada.session), None).json["epoch"].as_u64().unwrap() as u32;
+    let again = wraps_for(&[(t.bob.key_id.clone(), t.bob.keys.public_key().to_vec())], WS, epoch, &k_now);
+    for who in [&t.bob, &t.ada] {
+        let r = s.call("POST", &format!("/v1/workspaces/{WS}/wraps"), Some(&who.session), Some(json!({ "epoch": epoch, "wraps": again })));
+        assert_eq!(r.status, 400, "{}", r.json);
+        assert!(r.json["message"].as_str().unwrap().contains("removed from this workspace by an organization admin"), "{}", r.json);
+    }
+    // The removed laptop still opens Bob's own workspace, with no rotation asked there.
+    let mine = s.call("GET", &format!("/v1/workspaces/{MINE}"), Some(&t.bob.session), None);
+    assert_eq!(mine.status, 200, "{}", mine.json);
+    assert!(mine.json["rotationRequested"].is_null());
+    let listed = s.call("GET", &format!("/v1/orgs/{org}/admin"), Some(&t.cy.session), None).json;
+    let laptop = listed["devices"].as_array().unwrap().iter().find(|d| d["keyId"] == t.bob.key_id.as_str()).cloned().unwrap();
+    assert_eq!(laptop["orgWorkspaces"], 0, "listed, with no org workspace left");
     assert!(!s
         .call(
             "GET",
