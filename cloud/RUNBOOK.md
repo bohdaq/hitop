@@ -162,7 +162,9 @@ a neighbour is a trigger to move hosts (spec section 5).
   systemd does, see "Deploy") lists the latest outcomes. `unmatched` = no org: a purchase made
   outside the portal's checkout; find the org with the buyer, then `hitop-sync-server billing-link
   <org> <subscription id>` and resend the delivery. `wrong_store` / `unknown_variant` = the env
-  doesn't match the store; `test_mode_refused` = a test purchase with test mode off.
+  doesn't match the store; `test_mode_refused` = a test purchase with test mode off;
+  `superseded` on a `subscription_created` = a second purchase for an org that already pays:
+  refund it in the dashboard.
 - **Test → live**: in Lemon Squeezy switch the store to live, create the live API key and the live
   webhook (its own signing secret), copy the live variant ids; replace the five values above and
   set `HITOP_SYNC_LS_TEST_MODE=off` (or remove it); restart. Test-mode subscriptions stay on their

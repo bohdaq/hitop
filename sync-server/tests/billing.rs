@@ -223,6 +223,14 @@ fn pro_refunds_end_the_plan_until_a_new_payment() {
     // The order refunded in full: ended again.
     delivered(&s, &ls::order("order_refunded", "95", true, "2026-12-04T10:00:00.000000Z"), "applied");
     assert_eq!(billing(&s, &ada, &personal)["status"], "refunded");
+    // Bought again after the refund (subscription 6); cancelling the refunded one afterwards (as the
+    // runbook says) can't take the account back.
+    let custom2 = checkout(&s, &mock, &ada, &personal, "pro", "annual", None);
+    delivered(&s, &ls::subscription("subscription_created", "6", ls::PRO_ANNUAL, "active", 1, "2026-12-05T10:00:00.000000Z", custom2), "applied");
+    delivered(&s, &ls::subscription("subscription_cancelled", "5", ls::PRO_MONTHLY, "cancelled", 1, "2026-12-06T10:00:00.000000Z", custom.clone()), "superseded");
+    let b = billing(&s, &ada, &personal);
+    assert_eq!((b["status"].as_str(), b["planInForce"].as_str()), (Some("active"), Some("pro")));
+    assert_eq!(s.app.state().db.tx(|tx| tx.query_one("SELECT ls_subscription_id FROM entitlements WHERE org_id = $1", &[personal.as_str().into()])).unwrap().unwrap().text(0), "6");
     // An order nobody knows.
     delivered(&s, &ls::order("order_refunded", "12345", true, "2026-12-04T10:00:00.000000Z"), "unmatched");
 }
@@ -307,11 +315,16 @@ fn which_org_an_event_is_for() {
     assert!(hitop_sync_server::billing::link(s.app.state(), &theirs, "20").is_err(), "one org per subscription");
     delivered(&s, &ls::subscription("subscription_updated", "20", ls::TEAM_ANNUAL, "active", 5, "2026-11-03T10:00:01.000000Z", json!({})), "applied");
     assert_eq!(limits(&s, &ada, &org)["seats"], 5);
-    // A lapsed other subscription never overrides the live one; a live one takes over.
+    // Another subscription never overrides a running one, lapsed or live (a second purchase shows
+    // as superseded in billing-events for the operator to refund).
     delivered(&s, &ls::subscription("subscription_expired", "25", ls::TEAM_ANNUAL, "expired", 2, "2026-11-04T10:00:00.000000Z", custom.clone()), "superseded");
     assert_eq!(billing(&s, &ada, &org)["status"], "active");
     delivered(&s, &ls::invoice("subscription_payment_failed", "25", false, "2026-11-04T10:00:00.000000Z"), "unmatched");
-    delivered(&s, &ls::subscription("subscription_created", "26", ls::TEAM_ANNUAL, "active", 7, "2026-11-04T10:00:00.000000Z", custom.clone()), "applied");
+    delivered(&s, &ls::subscription("subscription_created", "26", ls::TEAM_ANNUAL, "active", 7, "2026-11-04T10:00:00.000000Z", custom.clone()), "superseded");
+    assert_eq!(limits(&s, &ada, &org)["seats"], 5);
+    // Once the org's own has ended, a live one takes over.
+    delivered(&s, &ls::subscription("subscription_expired", "20", ls::TEAM_ANNUAL, "expired", 5, "2026-11-05T10:00:00.000000Z", json!({})), "applied");
+    delivered(&s, &ls::subscription("subscription_updated", "26", ls::TEAM_ANNUAL, "active", 7, "2026-11-05T11:00:00.000000Z", custom.clone()), "applied");
     assert_eq!(limits(&s, &ada, &org)["seats"], 7);
     // Bodies are never stored: no buyer name or address on disk.
     let disk = s.disk_bytes();

@@ -9,8 +9,9 @@ Releases before 1.2 are listed in ROADMAP.md (section 5) and on the GitHub Relea
 - **Buy Pro or Team in the portal** (Plan page): Pro for one person's account, Team per seat for
   an organization, yearly or monthly. The checkout and the receipts are Lemon Squeezy's (merchant
   of record); HITOP never sees the card. **Manage billing** opens Lemon Squeezy's customer portal
-  (card, receipts, cancel). Team admins change seats there too: more seats are charged at once,
-  fewer start at the next renewal.
+  (card, receipts, cancel). Team admins change seats on the Plan page: more seats are charged at once
+  (prorated); fewer take effect at once with no credit, and the lower price starts at the next
+  renewal.
 - **14-day Team trial**, no card, once per organization, account and company email domain.
 - **Nothing is ever deleted by a plan.** A failed payment shows a banner while Lemon Squeezy
   retries; when the plan ends (expired, unpaid, paused, refunded or a trial over) Free limits

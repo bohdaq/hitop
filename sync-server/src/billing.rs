@@ -41,8 +41,9 @@
 //! `stale`. Invoice events (`subscription_payment_*`) carry an invoice, not the subscription: they
 //! apply only when the invoice is not older than that mark and never move it, except a refund,
 //! which does (so the `subscription_updated` Lemon Squeezy sends with a renewal isn't held back
-//! by the invoice before it). An event for another subscription than the org's: a live one takes
-//! over (a new purchase), a lapsed one is `superseded` and ignored.
+//! by the invoice before it). An event for another subscription than the org's takes over only when
+//! it is live and the org's own is not (a new purchase after a refund or an expiry); otherwise it is
+//! `superseded` and ignored (an old subscription cancelled after a refund can't take the org back).
 //!
 //! **Status → limits** (`limits::Entitlement::plan_in_force`): `active`, `on_trial`, `past_due`
 //! (the portal shows a "payment failed" banner while Lemon Squeezy retries) and `cancelled` (until
@@ -424,9 +425,10 @@ fn subscription_event(state: &State, tx: &mut Tx, c: &BillingConfig, event: &str
     let status = attrs["status"].as_str().unwrap_or_default().to_string();
     let before = row(tx, &org)?;
     if !before.sub.is_empty() && before.sub != sub {
-        // Another subscription: a live one replaces the org's (a new purchase), a lapsed one
-        // never overrides it.
-        if !LIVE.contains(&status.as_str()) {
+        // Another subscription: a live one replaces the org's only while the org's own isn't
+        // running (a new purchase after a refund or expiry); a lapsed one never does, and neither
+        // does a late event of an old subscription once a newer one runs.
+        if !LIVE.contains(&status.as_str()) || LIVE.contains(&before.status.as_str()) {
             out.outcome = "superseded";
             return Ok(out);
         }
