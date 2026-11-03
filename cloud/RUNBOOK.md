@@ -213,6 +213,28 @@ order at link.com too).
   TXT record yourself, then `DELETE FROM org_domains WHERE domain = '<d>' AND org_id = '<old org>'`
   and restart (the server reloads domains at start and after every change through the API).
 
+## Enterprise features (C6): SCIM, support bundles, upgrades, signed images
+
+- **SCIM** needs nothing on the server: an org owner creates a SCIM token in the portal (SCIM
+  page). Check an org's directory: `GET /v1/orgs/<org>/scim` as its admin, or `SELECT COUNT(*)
+  FROM scim_users WHERE org_id = '<org>'`. A customer whose IdP token leaked: they revoke it in the
+  portal (or `DELETE FROM scim_tokens WHERE org_id = '<org>'`, then tell them). SCIM changes are on
+  the org's audit chain (`actor_email` `scim:<token name>`). A removal requests a key rotation:
+  `rotationRequested` on the workspace until an owner runs `hitop sync rotate`.
+- **Support bundle**: `sudo -u root hitop-sync-server support-bundle --out /root/bundle-<ts>.json`
+  with the service's env loaded (`set -a; . /etc/hitop-sync/env; set +a` first), or ask a
+  self-hosting customer for theirs. Read it before it leaves the machine. It has no customer data
+  or secret values by design (`sync-server/tests/support_bundle.rs` checks it).
+- **Upgrade notes**: every release adds its section to `sync-server/UPGRADE_NOTES.md` (schema,
+  settings, how to go back) in the release commit; the deploy entry in `ops-log.md` names the
+  section.
+- **Signed images**: `release-sync-server.yml` pushes `ghcr.io/bohdaq/hitop-sync-server:<version>`
+  on each `cli-v<version>` tag, signed keyless; verify as in `sync-server/README.md` "Docker". The
+  hosted server keeps running the release binary (`install.sh`), not the image.
+- **US region and own host** (Q18, spec section 5): not built; on a paying customer's request,
+  plan it as its own tranche (second host, org pinned at creation, the portal picks the API host per
+  org; `orgs.region` is `eu` for every org today).
+
 ## Uptime and status page
 
 - **Checker** (owner picks; free tiers are enough): any hosted checker outside this provider

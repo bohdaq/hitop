@@ -156,6 +156,43 @@ server's own SSO. On HITOP Cloud (`HITOP_SYNC_LIMITS=plans`) configuring needs B
 Enterprise; signing in never stops when a plan lapses. Without a host key nothing of this is
 reachable (404 `org_sso_off`), and the server's own `HITOP_SYNC_OIDC_*` SSO works as before.
 
+### SCIM provisioning (HITOP Cloud C6)
+
+An organization's identity provider (Okta, Microsoft Entra ID, Keycloak, OneLogin...) can add and
+remove its members over SCIM 2.0 (RFC 7643/7644). Off for every org until an org owner creates a
+SCIM token (portal → SCIM, or `POST /v1/orgs/:org/scim/tokens {"name"}` with a signed-in session;
+shown once, stored hashed; at most 5; `DELETE .../scim/tokens/:id` revokes). In the provider: SCIM
+base URL `<public URL>/scim/v2`, authentication "bearer token" (`hitop_scim_...`). On HITOP Cloud
+(`HITOP_SYNC_LIMITS=plans`) it needs Business or Enterprise; a self-hosted server allows every team
+org.
+
+- **Users** (`/scim/v2/Users`): `userName` must be the person's email address. An address with an
+  account becomes an org member, one without gets an org invite (it joins on first sign-in); each
+  takes a seat (402 when the plan has none left). `active: false` (also the string `"False"`
+  Entra ID sends) or `DELETE` takes the address out of the org and out of the workspaces SCIM gave
+  it; the account and its personal workspaces stay. Filters: `userName`, `externalId`, `id` with
+  `eq`; paging with `startIndex`/`count`; PATCH `add`/`replace`/`remove` with or without a path.
+  Other attributes (title, phone...) are accepted and ignored: the server keeps only userName,
+  externalId, displayName, name parts and active.
+- **Groups** (`/scim/v2/Groups`): members by user id, PATCH `members` add/remove/replace and
+  `members[value eq "<id>"]`. What a group gives is set by an org admin (portal, or `PUT
+  /v1/orgs/:org/scim/groups/:id {"orgRole": ""|"member"|"admin", "workspaces": [{"workspace",
+  "role": "viewer"|"editor"}]}`): an org role (when any group gives one, members without such a
+  group are `member`) and roles in the org's workspaces.
+- **Workspace roles and keys.** The server can't add anyone to a workspace (that takes the workspace
+  key wrapped for the person's devices). A member already in the workspace gets the role at once;
+  anyone else gets an invite that shows as accepted (with their device keys) once they have
+  signed in on a device, and a workspace owner adds them as for any accepted invite (`hitop sync
+  members`, check the fingerprint, `hitop sync add <email>`; hitop 1.1 and 1.2 do this already).
+  When a group stops giving a workspace, SCIM removes only what it gave: the open invite, or the
+  membership it brought (with that person's wrapped keys) plus a key rotation request for the
+  owners (`hitop sync rotate`). People who were in the workspace before stay.
+- Owners are never created, demoted or removed by SCIM (deactivating an org owner answers 409).
+- Discovery: `/scim/v2/ServiceProviderConfig`, `/Schemas`, `/ResourceTypes` (with the token). No
+  bulk, sort, ETags or password changes. Every change is on the org's audit chain with
+  `scim:<token name>` as the actor. `GET /v1/orgs/:org/scim` (admins) lists tokens (never their
+  values), directory size and groups.
+
 ### Passwords, Google and GitHub
 
 People can sign up and sign in with an email address and a password (confirmed by a mailed
@@ -235,6 +272,26 @@ proxy, `HITOP_SYNC_TRUSTED_PROXIES`); proxy limits per IP on top are still a goo
   `deploy/restore-drill.sh`, `deploy/cutover-postgres.sh` / `rollback-postgres.sh`; see
   `../cloud/RUNBOOK.md`. Backups hold only ciphertext, but they do hold account emails and
   membership; protect them like any personal data.
+
+### Support bundle (enterprise self-hosting)
+
+`hitop-sync-server support-bundle [--out <file>] [--log <file> | --unit <unit> | --no-journal]
+[--since-hours <n>]` writes one JSON file (mode 0600, never over an existing file) to send to
+support: server version, schema in the database and of the binary, database kind and version,
+OS; every `HITOP_SYNC_*`, `SMTP_*` and `RWS_CONFIG_*` setting by name with its value only when
+it is on an allowlist of non-secret settings (everything else says `(set)`; database and SMTP
+URLs are cut to scheme, host and port); what is in effect (mail, SSO, billing, host key...); row
+counts per table (no content hashes); health counts (audit chains and broken ones, alert
+deliveries, workspaces asking for a rotation); and the last 200 error lines of the server's log
+(`--log`, or `journalctl -u hitop-sync` for the last 72 hours) with addresses, long ids, tokens,
+IPs and URL queries replaced. It never holds customer data, ids, names or secret values. Read
+it before you send it.
+
+### Upgrades
+
+Each release's database changes, settings and rollback notes are in
+[UPGRADE_NOTES.md](UPGRADE_NOTES.md). A new version migrates the database on start, in one
+transaction per migration; take a dump first (`hitop-sync-server dump <dir>`).
 
 ## API (v1)
 
@@ -368,6 +425,13 @@ C5 endpoints: `GET/PUT/DELETE /v1/orgs/:org/sso`, `POST .../sso/test`, `GET/POST
 /v1/orgs/:org/admin`, `PUT .../admin/workspaces/:ws/owner {userId, keepOwners?}`, `POST
 .../admin/workspaces/:ws/rotation`, `DELETE .../admin/devices/:key`. `GET /v1/auth/sso?email=`
 names the org's provider; `POST /v1/auth/sso/start` takes `org` or finds it from `email`.
+
+HITOP Cloud C6 (migration 10: `scim_tokens`, `scim_users`, `scim_groups`, `scim_group_members`,
+`scim_group_workspaces`, `scim_grants`; nothing changes for older clients: SCIM's workspace
+invites look like any accepted invite): `GET /v1/orgs/:org/scim`, `POST .../scim/tokens`,
+`DELETE .../scim/tokens/:id`, `PUT .../scim/groups/:group`; the SCIM API under `/scim/v2`
+(`ServiceProviderConfig`, `Schemas`, `ResourceTypes`, `Users`, `Groups`; GET, POST, PUT, PATCH,
+DELETE; `application/scim+json`, SCIM error bodies).
 
 A write must name the next version and a version vector that descends from the stored one, under
 the current epoch; otherwise 409 with the current state (`conflict` or `stale_epoch`): fetch,

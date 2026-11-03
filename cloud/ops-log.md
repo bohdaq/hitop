@@ -171,3 +171,19 @@ and on hitop.rws8.tech/cloud/healthz. -->
   says the same schema. No `HITOP_SYNC_STRIPE_*` set = billing stays off exactly as today
   (`/v1/billing/stripe` 404, no trial); the old `HITOP_SYNC_LS_*` lines in `/etc/hitop-sync/env`
   (if any) are ignored and can go. Billing on: RUNBOOK "Billing (Stripe Managed Payments, C3)".
+
+## 2026-11-03 C6 built, not deployed (SCIM, support bundle, signed image, SOC 2 readiness)
+
+- Who: agent. What: HITOP Cloud C6's code parts on `main` (spec/CLOUD_SERVICE.md C6 status):
+  SCIM 2.0 per org (`/scim/v2`, tokens and group roles in the portal's SCIM page), migration 10
+  (`scim_tokens`, `scim_users`, `scim_groups`, `scim_group_members`, `scim_group_workspaces`,
+  `scim_grants`; tested on SQLite and Postgres), `hitop-sync-server support-bundle`,
+  `sync-server/UPGRADE_NOTES.md`, the signed image workflow (`release-sync-server.yml`, runs on
+  the next `cli-v*` tag; no tag pushed), two legal drafts (security questionnaire, enterprise
+  agreement template) behind DRAFT, `cloud/soc2-type1-readiness.md`. The US region and own host
+  are not built (Q18). Nothing applied on the VM.
+- Deploy (when told): a dump (`hitop-sync-server dump /root/pre-c6-<ts>`), then `install.sh`
+  with the `--features postgres` build; `/healthz` must say schema 10; `deploy/deploy.sh` for
+  the site (two more drafts, noindex) and the portal (SCIM page). No new setting. After it:
+  `db-stats` lists the six new tables (0 rows), `over-limits` still 0, and `support-bundle
+  --out /root/bundle-<ts>.json` runs (read it; delete it after).

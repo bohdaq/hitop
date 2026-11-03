@@ -4,6 +4,27 @@ Releases before 1.2 are listed in ROADMAP.md (section 5) and on the GitHub Relea
 
 ## Unreleased
 
+### HITOP Cloud Enterprise: SCIM provisioning, self-host support package, SOC 2 readiness (C6, built, not deployed)
+
+- **SCIM 2.0** (`/scim/v2`): an org's identity provider (Okta, Entra ID, Keycloak...) adds and
+  removes members (userName = email address) and pushes groups; a group gives an org role and
+  roles in the org's workspaces, set by an org admin on the portal's new SCIM page. A bearer token
+  per org, created by an owner in the portal; off until one exists; Business and Enterprise on
+  HITOP Cloud, every team org on a self-hosted server. SCIM gives access, never keys: someone not
+  yet in a workspace shows to its owners as an accepted invite to add (`hitop sync members`, then
+  `hitop sync add`, as in 1.1 and 1.2); removing someone takes out what SCIM gave and asks the
+  owners to rotate. Owners are never changed by SCIM.
+- **`hitop-sync-server support-bundle`**: versions, schema, redacted settings, row counts, health
+  counts and scrubbed error lines in one file to send to support; never customer data or secrets.
+- **Signed image** `ghcr.io/bohdaq/hitop-sync-server:<version>` (SQLite and Postgres) with each
+  release, signed with cosign keyless and an SBOM attestation; the Dockerfile builds from the
+  repository root. **Upgrade notes** per release: `sync-server/UPGRADE_NOTES.md`.
+- Drafts (not in force): security questionnaire answers and the enterprise agreement template
+  (support, upgrade windows, indemnity; AGPL stays the licence). SOC 2 Type 1 control → evidence
+  map with the open owner decisions: `cloud/soc2-type1-readiness.md`.
+- Sync server: migration 10 (`scim_tokens`, `scim_users`, `scim_groups`, `scim_group_members`,
+  `scim_group_workspaces`, `scim_grants`). No new setting. Older clients keep working unchanged.
+
 ### HITOP Cloud Business: SSO per organization, signed audit export and daily anchors, admin console (C5, built, not deployed)
 
 - **Single sign-on per organization**: an org claims its domains (a DNS TXT record

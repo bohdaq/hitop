@@ -548,7 +548,7 @@ server-side row, never a new file in `environments/`.
 | C3 | Stripe Managed Payments billing (first built on Lemon Squeezy), pricing page, prompts, legal and security pages: **paid launch of Pro and Team** | **deployed** to the test server 2026-11-03 on Lemon Squeezy with billing off; **moved to Stripe** 2026-11-03, built, not deployed (billing off until `HITOP_SYNC_STRIPE_*` are set; legal pages `DRAFT`; status below) | C1, C2, C0 (Stripe account with Managed Payments, mail service, legal drafts reviewed) |
 | C4 | Run history and alerts from your own runners; shared environment secrets | **deployed** to the test server 2026-11-03 (schema 8; `cloud/ops-log.md`) | C3 (sells it); deploy with or after C3's migration 7 |
 | C5 | Business tier: hosted SSO per org, audit export + anchoring, admin console | **deployed** to the test server 2026-11-03 (schema 9; per-org SSO off: no host key or DoH resolver, Q15; Business not sold until its prices exist; drafts behind DRAFT; status below) | C3 |
-| C6 | Enterprise: SCIM, self-host support offer, SOC 2 Type 1 readiness; second region and own host on demand | open | C5, owner (contracts, auditor) |
+| C6 | Enterprise: SCIM, self-host support offer, SOC 2 Type 1 readiness; second region and own host on demand | code parts **built, not deployed** 2026-11-03 (SCIM, support bundle, upgrade notes, signed image workflow, questionnaire and contract drafts behind DRAFT, SOC 2 map; US region and own host not built, on demand; status below) | C5, owner (contracts, auditor) |
 | C7 | Deferred: hosted monitors (until confidential computing), mock servers, docs publishing, comments | not planned | revisit with the triggers in section 4 and demand evidence |
 
 ### C0 Owner decisions and accounts (parallel with C1)
@@ -1243,6 +1243,83 @@ Stripe API and event bodies shaped like Stripe's documented ones; not deployed).
 - Needs: C5, owner (contracts, auditor booked).
 - Owner handoffs: book the Type 1 audit; sign the contract template; decide each on-demand item.
 
+**Status (2026-11-03): code parts built, not deployed. The on-demand items (US region, own
+host) are not built (Q18: EU only; they wait for a paying customer or a section 5 trigger).**
+
+- **SCIM 2.0** (`sync-server/src/scim.rs`, `/scim/v2`, RFC 7643/7644): ServiceProviderConfig,
+  Schemas, ResourceTypes, Users and Groups (GET with `eq` filters on userName/externalId/id and
+  displayName, paging; POST; PUT; PATCH add/replace/remove with or without path, capitalized ops
+  and `"False"` as Entra ID sends them, `members[value eq "<id>"]`; DELETE), SCIM error bodies,
+  `application/scim+json`. The router has no PATCH, so api.rs sends `/scim/v2/*` to scim.rs after
+  the body cap and rate limits. **Token per org** (`hitop_scim_` + 32 bytes, SHA-256 stored, at
+  most 5): `POST/DELETE /v1/orgs/:org/scim/tokens[/:id]` (owners, signed-in session), `GET
+  /v1/orgs/:org/scim` (admins: tokens without values, directory size, groups);
+  off until a token exists. Plans: Business and Enterprise (402 `scim`, on every SCIM call and on
+  token creation; revoking always works); self-hosted: every team org.
+- **Mapping**: Users = org members by address (`userName` must be the email address; an account
+  joins, an address without one gets an org invite; seats checked, 402 without half-applying);
+  `active: false`/DELETE takes the address out of the org and out of what SCIM gave in its
+  workspaces (account and sessions stay). Groups carry roles set by org admins (`PUT
+  /v1/orgs/:org/scim/groups/:id {orgRole, workspaces: [{workspace, role}]}`): org role `admin` or
+  `member` (when any group gives one, members without one are `member`), workspace roles `viewer`
+  or `editor`. A member already in the workspace gets the role; anyone else an invite marked
+  accepted with their device keys (filled in when the owner lists invites, once they have a
+  device), which the owner's client adds as any accepted invite (old clients included). Taking a
+  group's workspace away removes only what SCIM gave (`scim_grants`: the invite, or the membership
+  it brought with its wraps, plus a rotation request); members from before SCIM stay. Owners are
+  never created, demoted or removed (409). SCIM invites don't count against the 50 open invites.
+- **Portal**: SCIM page (`#/orgs/<org>/scim`): base URL, create/revoke tokens (shown once), each
+  group's org role and workspace roles.
+- **Support bundle**: `hitop-sync-server support-bundle [--out] [--log | --unit | --no-journal]
+  [--since-hours]` (`support.rs`): versions, schema (database and binary), settings by name with
+  values only on an allowlist (database/SMTP URLs cut to host), what is in effect, row counts (no
+  hashes), health counts, last 200 error lines of `--log` or the journal with addresses, ids,
+  tokens, IPs and URL queries scrubbed; 0600, never overwrites. `tests/support_bundle.rs` fills a
+  self-hosted SQLite instance through the API (`fill.rs`, SCIM included), sets secrets in the
+  environment and a log with addresses and tokens, and checks no address, id, name, token hash or
+  secret of the database or environment is in the file; the image smoke test runs it inside the
+  container.
+- **Upgrade notes** per release: `sync-server/UPGRADE_NOTES.md` (schema 3 → 10 for the next
+  release, 1.2.0, 1.1.0), linked from the README.
+- **Signed image** (none existed): `.github/workflows/release-sync-server.yml` on the existing
+  `cli-v*` tags: `ghcr.io/bohdaq/hitop-sync-server:<version>` (+ `latest` without a suffix),
+  linux/amd64, SQLite and Postgres, provenance, cosign keyless signature by digest, SPDX SBOM
+  attestation, both verified with the workflow identity, `deploy/image-smoke.sh` (/healthz on a
+  fresh volume, support-bundle in the container). The Dockerfile now builds from the repository
+  root (the old sync-server-only context lacked the client crate the Cargo.toml names);
+  `ci.yml` job `sync-server-image` builds and smoke-tests it on every push without pushing.
+- **Drafts behind `DRAFT`**: `/legal/security-questionnaire.html` (answers, with what isn't done:
+  no external review, no certification, backups and uptime waiting on C0/C2 items) and
+  `/legal/enterprise-agreement.html` (template: support with response times, supported versions
+  and upgrade windows, security and DPA, IP indemnity, liability; AGPL stays the licence, Q6).
+- **SOC 2 Type 1 readiness**: `cloud/soc2-type1-readiness.md`, every control → the evidence since
+  C1 (path, in place / built / gap) and twelve owner decisions (S1–S12: scope and date, tool and
+  auditor, approvals, backups and a restore drill, uptime, 2FA, single-operator oversight, records,
+  vendor reports, review timing, pinning Actions, legal drafts).
+- **Migration 10** (SQLite and Postgres): `scim_tokens`, `scim_users`, `scim_groups`,
+  `scim_group_members`, `scim_group_workspaces`, `scim_grants`; `migrate-db`/`db-stats` copy them
+  (`fill.rs` fills each, `tests/migrate_db.rs` lists them).
+- **Done when, as run**: `tests/scim.rs` (discovery and SCIM errors; tokens: owners only, session
+  only, revoke, personal org, other org 404; create, filter `userName eq` with and without a match,
+  uniqueness, PATCH and PUT, deactivate (`"False"`), reactivate, new userName, delete, owner never
+  removed; group → org admin and workspace editor, the accepted invite with device keys, the
+  owner's add, role set for an existing member, removal with wraps gone and rotation requested,
+  pre-SCIM member kept, invite removed with the group, account-less address accepted later,
+  deactivation clearing invites; another org's token sees nothing; plans Team/Pro/Free 402,
+  Enterprise allowed, revoke on a lapsed plan, seats 402), `tests/support_bundle.rs`, scim/support
+  unit tests, `postgres_scim` (CI Postgres 17), `cargo test --workspace` and clippy with all
+  features green; portal e2e + SCIM checks; the image job on CI.
+- **Deviations**: the "compliance tool shows no open control without an owner decision" and "the
+  first questionnaire filled" parts are owner items (the tool isn't picked; the answers page is the
+  questionnaire basis); groups' roles are set in the portal, not taken from IdP attributes;
+  `userName` must be an email address (Okta default; Entra ID users map `userPrincipalName` or
+  `mail` to it); no Bulk, sort, ETags; the image is amd64 only (arm64 under QEMU would take hours
+  for the Rust build); the image is tagged with the release version while the crate stays 0.1.0.
+- **Deploy** (not done): a dump, the usual version deploy (`--features postgres`), `/healthz`
+  schema 10, `deploy/deploy.sh` for site (two new drafts, noindex) and portal (SCIM page). No new
+  setting; SCIM stays off for every org until an owner makes a token (Business only on the hosted
+  server, none there).
+
 ### C7 Deferred, not planned
 
 Hosted monitors (until confidential computing, section 4), mock servers, API docs publishing,
@@ -1341,6 +1418,9 @@ All questions were answered by the owner on 2026-11-02 (section 0).
 | 2026-11-03 | C3 | **Approve the drafts**: `site/content/legal/*.md` (terms: fill in the governing law; sub-processors: the VM provider and data centre, the mail service, the backup storage, the uptime checker) and the security page wording; the refund policy (proposal on the pricing page: full refund within 14 days of the first payment); the trial (14 days, 5 seats). Approval = set `DRAFT = false` in `site/src/legal-status.js` (or tell the agent). Also: DNS `cloud.hitop.rws8.tech` (the pricing page links the portal there) and the mail service before live. | |
 | 2026-11-02 | later | External crypto review (Q13: not a launch gate). Scope: ROADMAP section 6 rows T23/T24/T25/1.2; `sync-server/THREAT_MODEL.md`, `cli/crates/hitop-sync-crypto`, `cli/crates/hitop-core/src/sync.rs`, `cli/crates/hitop/src/commands/sync/`, `webapp/src/sync.js`, `sync-server/src/{oidc,audit,workspaces,blobs}.rs`. Rough budget €10–25k. Tell the agent when it starts; the security page links the summary when done. | |
 | 2026-11-02 | C6 | Book the SOC 2 Type 1 audit; sign the enterprise contract template; decide the US region and an own host when a customer or a trigger (section 5) asks. | |
+| 2026-11-03 | C6 | **SOC 2 Type 1**: work through the owner decisions S1–S12 in `cloud/soc2-type1-readiness.md` (scope and "as of" date, compliance tool and auditor, policy approval and the signed 2026-Q4 access review, backups and the first restore drill, uptime checker, 2FA on every operator account, single-operator oversight and change review, training record / risk register / tabletop, vendor reports, review timing, pinning Actions, legal drafts); load the evidence into the tool; book the audit. | |
+| 2026-11-03 | C6 | **Enterprise drafts**: fill and approve `/legal/enterprise-agreement.html` (legal entity, governing law, fees, response times, supported versions, upgrade windows, liability cap, insurance) and `/legal/security-questionnaire.html` (check each answer; it is the basis for the first customer questionnaire). Approval = `DRAFT = false` with the other drafts. | |
+| 2026-11-03 | C6 | **SCIM and the image**: nothing to set on the server. Decide whether to keep the deactivation rule (out of the org and of what SCIM gave; account and sessions stay) and the `userName` = email rule. The signed image appears with the next `cli-v*` tag (agents don't tag); after it, check `cosign verify` as in `sync-server/README.md`. Decide later whether to build arm64 images. | |
 | 2026-11-03 | C5 | **Approve the drafts**: `/legal/sla.html` (99.5%, shared host, credits, priority support line) and `/legal/support.html`; pick the **priority support address** (proposal `business-support@hitop.rws8.tech`: create the mailbox or alias, or tell the agent another) and whether outage answers within 4 hours are promised. Approval = `DRAFT = false` (with the C3 drafts). | |
 | 2026-11-03 | C5 | **Business in Stripe** (with the C3 Stripe row): product HITOP Cloud Business, per seat, $240 per seat a year and $25 per seat a month (the proposal), lookup keys `business_yearly` and `business_monthly`. Business isn't sold until those prices exist. | sandbox: yes, 2026-11-03 |
 | 2026-11-03 | C5 | **Per-org SSO on the hosted server** (only when you want Business SSO live; Q15 says not on the test server): a host key line `HITOP_SYNC_HOST_KEY=<openssl rand -hex 32>` in `/etc/hitop-sync/env` (keep a copy offline, never in backups) and a DNS-over-HTTPS resolver `HITOP_SYNC_DNS_URL` (e.g. Cloudflare; add it to the sub-processor list); RUNBOOK "Business features (C5)". Until then every per-org SSO endpoint answers 404 `org_sso_off`. | |

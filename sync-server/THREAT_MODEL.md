@@ -70,6 +70,10 @@ contents without clients noticing.
   when verified). Audit (C5, `org_audit_settings`, `audit_anchors`): each org's anchor settings
   and every daily anchor it made (chain ids and heads, signed). Admin (C5): when an org admin
   asked a workspace to rotate its key, and who.
+- SCIM (C6, migration 10, `scim_*`): per org the SCIM tokens' hashes, the directory's users
+  (address, externalId, display and name parts, active) and groups (name, members, the org and
+  workspace roles an admin gave them), and the workspace grants SCIM made; see "SCIM
+  provisioning".
 - Shared environment values (C4, `env_shares`, `env_share_wraps`): per shared environment a random
   share id, a version, the sealed content and one wrap of the share's key per recipient device
   (with the device's key id and its account); see "Shared environment values".
@@ -686,6 +690,41 @@ out of the server and manage every workspace of the org. What that adds:
   server handing it new keys; the device keeps whatever it already decrypted, and the keys of past
   epochs it holds open those epochs' blobs until the owners rotate and rewrite.
 
+## SCIM provisioning (HITOP Cloud C6)
+
+An org's identity provider adds and removes members over SCIM 2.0 (scim.rs). What it adds:
+
+- **A SCIM token per org** (`hitop_scim_` + 32 random bytes, stored as its SHA-256, at most 5 per
+  org, created and revoked only by org owners with a signed-in session, never by an access token).
+  It names its org, so a token can't read or change another org's directory, users or workspaces
+  (`tests/scim.rs`). Whoever holds it can do what the IdP can: add and remove the org's members
+  (within its seats) and change group membership, so it is as sensitive as an org admin's
+  session. It can't make owners, demote or remove them (409), change SSO, billing or the token
+  list, or read anything but the directory it wrote. Every change is on the org's audit chain
+  (and the workspace's) with `scim:<token name>` as the actor.
+- **Access, never keys.** As with org roles, a SCIM group's workspace role can't open a
+  workspace: the server can't wrap the key. For someone not yet in the workspace SCIM opens an
+  invite that shows as accepted with the person's device keys; a workspace owner's client adds
+  them only after its fingerprint check (`hitop sync members`, `hitop sync add`), exactly as for
+  an accepted invite. So a stolen SCIM token, or a malicious IdP, can get a person proposed to
+  the owners, not into the workspace. The invite carries a random token nobody knows, so it can't
+  be accepted by code.
+- **Removal is immediate on the server, not on devices.** Deactivating a user, or taking them out
+  of a group, removes the org membership and every workspace membership SCIM brought, with that
+  person's wrapped keys and shared-value wraps, and sets the workspace's rotation request. Their
+  devices keep what they already decrypted and the keys of past epochs until an owner rotates
+  (`hitop sync rotate`), as for any removal the server makes (C5 admin console). Accounts and
+  sessions stay (the person may have personal workspaces); SSO-required orgs stop them signing in
+  with the org's domain. Memberships that existed before SCIM are never removed by it.
+- **What the server stores** (migration 10): the tokens' hashes, names and last use; per org the
+  directory's users as the IdP sent them (userName = address, externalId, display and name
+  parts, active), groups (name, externalId, members, the org role and workspace roles an admin
+  gave them) and the grants SCIM made (workspace, address, role, kind). Other attributes the IdP
+  sends (title, phone, manager...) are dropped.
+- **Residual**: the IdP (or whoever holds its token) is trusted for who belongs to the org; a
+  directory larger than the plan stops at the seat limit (402) without applying half of a
+  change.
+
 ## What a malicious server can still do
 
 - **See metadata**: account emails, who is in which workspace, number and size of blobs, blob ids
@@ -758,3 +797,6 @@ process's own TLS (the front proxy terminates TLS); post-quantum security (X2551
 7. Done in C5: audit log heads anchored outside the server (daily signed anchors mailed to org
    owners, public opt-in; `hitop sync audit --verify --anchor`; "Organizations"). The review should
    check the export and anchor formats, the CLI's checks, and the per-org SSO domain rule.
+8. C6: SCIM (see "SCIM provisioning"): the review should check that a SCIM token can't reach
+   another org, that SCIM never adds a workspace member itself (invites only, added by an
+   owner's client after its fingerprint check), and what removal leaves on devices.
