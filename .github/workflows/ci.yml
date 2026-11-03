@@ -168,6 +168,25 @@ jobs:
           HITOP_SYNC_TEST_PG_RESTORE: docker run --rm -i --network host -e PGPASSWORD postgres:17-alpine pg_restore
       - run: cargo clippy --locked --workspace --all-targets --all-features -- -D warnings
 
+  sync-server-image:
+    # HITOP Cloud C6: the image release-sync-server.yml signs and pushes on cli-v* tags, built here
+    # without pushing (from the repository root: the server's Cargo.toml names the client crate),
+    # then the same smoke test (/healthz on a fresh volume, support-bundle inside the container).
+    name: Sync server image (build and smoke test, no push)
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: docker/setup-buildx-action@v3
+      - uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: sync-server/Dockerfile
+          load: true
+          tags: hitop-sync-server:ci
+          cache-from: type=gha,scope=sync-server-image
+          cache-to: type=gha,mode=max,scope=sync-server-image
+      - run: sync-server/deploy/image-smoke.sh hitop-sync-server:ci
+
   ops:
     # HITOP Cloud C2 (spec/CLOUD_SERVICE.md): the VM scripts without a VM. Backups to a directory and
     # to an S3 API (LocalStack), restore drills on SQLite and Postgres, cutover to Postgres and back,

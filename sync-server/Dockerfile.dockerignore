@@ -1,0 +1,8 @@
+# Context = the repository root (docker build -f sync-server/Dockerfile .): only what the build uses.
+*
+!cli/crates/hitop-sync-crypto
+!sync-server
+sync-server/target
+cli/crates/hitop-sync-crypto/target
+**/*.db
+**/*.db-*

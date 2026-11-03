@@ -38,10 +38,19 @@ HTTP.
 
 ### Docker
 
+Signed images (SQLite and Postgres, linux/amd64) come with each release tag (`cli-v<version>`):
+`ghcr.io/bohdaq/hitop-sync-server:<version>`. They are signed with cosign keyless (Sigstore) and
+carry an SPDX SBOM attestation; check the signature before you run one:
+
 ```bash
-docker build -t hitop-sync sync-server
-docker run -d -p 127.0.0.1:7881:7881 -v hitop-sync:/data --env-file hitop-sync.env hitop-sync
+cosign verify ghcr.io/bohdaq/hitop-sync-server:<version> \
+  --certificate-identity "https://github.com/bohdaq/hitop/.github/workflows/release-sync-server.yml@refs/tags/cli-v<version>" \
+  --certificate-oidc-issuer https://token.actions.githubusercontent.com
+docker run -d -p 127.0.0.1:7881:7881 -v hitop-sync:/data --env-file hitop-sync.env ghcr.io/bohdaq/hitop-sync-server:<version>
 ```
+
+Or build it yourself from the repository root (the build needs the client crate next to the
+server): `docker build -f sync-server/Dockerfile -t hitop-sync .`
 
 ### Settings (environment)
 
