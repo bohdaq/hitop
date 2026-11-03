@@ -472,6 +472,7 @@ pub fn workspaces(state: &State, request: &Request, params: &PathParams) -> ApiR
 }
 
 fn limits_json(state: &State, tx: &mut Tx, org: &str) -> Result<Json, ApiError> {
+    crate::billing::expire(state, tx, Some(org))?;
     let e = limits::entitlement(tx, org)?;
     let enforced = state.config.plan_limits;
     let limits = if enforced { e.limits().json() } else { limits::Limits { seats: None, guest_viewers: 0, workspaces: None, storage_bytes: None, devices: None, runners: None, invites_per_day: None }.json() };

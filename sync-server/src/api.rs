@@ -79,6 +79,7 @@ fn phrase(status: u16) -> &'static StatusCodeReasonPhrase {
         413 => s.n413_payload_too_large,
         429 => s.n429_too_many_requests,
         503 => s.n503_service_unavailable,
+        502 => s.n502_bad_gateway,
         _ => s.n500_internal_server_error,
     }
 }
@@ -184,6 +185,8 @@ pub struct State {
     pub github: crate::github::Github,
     /// Wrong passwords per address (password.rs).
     pub password_failures: crate::password::Backoff,
+    /// Calls to the Lemon Squeezy API (billing.rs).
+    pub billing_http: ureq::Agent,
 }
 
 impl State {
@@ -205,6 +208,7 @@ impl State {
             google,
             github,
             password_failures: crate::password::Backoff::default(),
+            billing_http: crate::oidc::http_agent(),
         })
     }
 
@@ -291,6 +295,13 @@ impl SyncApp {
             ("POST", "/v1/orgs/:org/workspaces", crate::orgs::workspaces),
             ("GET", "/v1/orgs/:org/usage", crate::orgs::get_usage),
             ("GET", "/v1/orgs/:org/limits", crate::orgs::get_limits),
+            // HITOP Cloud C3: billing (Lemon Squeezy), trials.
+            ("POST", "/v1/billing/lemonsqueezy", crate::billing::webhook),
+            ("GET", "/v1/orgs/:org/billing", crate::billing::get),
+            ("POST", "/v1/orgs/:org/billing/checkout", crate::billing::checkout),
+            ("GET", "/v1/orgs/:org/billing/portal", crate::billing::portal),
+            ("POST", "/v1/orgs/:org/billing/seats", crate::billing::seats),
+            ("POST", "/v1/orgs/:org/billing/trial", crate::billing::start_trial),
             ("GET", "/v1/me/tokens", crate::tokens::list),
             ("POST", "/v1/me/tokens", crate::tokens::create),
             ("DELETE", "/v1/me/tokens/:id", crate::tokens::delete),

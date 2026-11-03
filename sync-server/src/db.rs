@@ -293,7 +293,10 @@ impl Tx<'_> {
 /// personal org (`personal-<user id>`, Free) that owns the workspaces they own; after the SQL,
 /// `limits::grandfather` raises each personal org's limits to its usage (`migrate`), so no
 /// existing account is over a limit. 5: HITOP Cloud C2 key bundles (recovery.rs), one opaque
-/// blob per account and unlock method (`phrase` now; a password later).
+/// blob per account and unlock method (`phrase` now; a password later). 6: HITOP Cloud C1b
+/// passwords (password.rs). 7: HITOP Cloud C3 billing (billing.rs): the Lemon Squeezy ids and
+/// ordering mark on `entitlements`, `billing_events` (ids and outcomes of webhook deliveries,
+/// never their bodies) and `trials`.
 const MIGRATIONS: &[&str] = &[r"
 CREATE TABLE users (
   id TEXT PRIMARY KEY,
@@ -518,6 +521,31 @@ CREATE TABLE server_secrets (
   name TEXT PRIMARY KEY,
   value {BLOB} NOT NULL
 );
+", r"
+ALTER TABLE entitlements ADD COLUMN ls_item_id TEXT NOT NULL DEFAULT '';
+ALTER TABLE entitlements ADD COLUMN ls_order_id TEXT NOT NULL DEFAULT '';
+ALTER TABLE entitlements ADD COLUMN ls_updated_at BIGINT NOT NULL DEFAULT 0;
+CREATE INDEX entitlements_ls_subscription ON entitlements(ls_subscription_id);
+CREATE TABLE billing_events (
+  id TEXT PRIMARY KEY,
+  event_name TEXT NOT NULL,
+  org_id TEXT NOT NULL DEFAULT '',
+  subscription_id TEXT NOT NULL DEFAULT '',
+  resource_updated_at BIGINT NOT NULL DEFAULT 0,
+  test_mode BIGINT NOT NULL DEFAULT 0,
+  outcome TEXT NOT NULL,
+  received_at BIGINT NOT NULL
+);
+CREATE INDEX billing_events_org ON billing_events(org_id, received_at);
+CREATE TABLE trials (
+  org_id TEXT PRIMARY KEY,
+  user_id TEXT NOT NULL,
+  email_domain TEXT NOT NULL,
+  started_at BIGINT NOT NULL,
+  ends_at BIGINT NOT NULL
+);
+CREATE INDEX trials_user ON trials(user_id);
+CREATE INDEX trials_domain ON trials(email_domain);
 "];
 
 /// Steps in Rust that run in the same transaction as a migration's SQL (index = migration

@@ -1,7 +1,7 @@
 //! `hitop-sync-server`: listens where rws's settings say (`RWS_CONFIG_IP`, `RWS_CONFIG_PORT`,
 //! default 127.0.0.1:7881 here) behind a TLS-terminating proxy. Settings: config.rs, mail.rs.
 
-use hitop_sync_server::{audit, dbtools, limits, Config, Db, Mailer, State, SyncApp};
+use hitop_sync_server::{audit, billing, dbtools, limits, Config, Db, Mailer, State, SyncApp};
 use rust_web_server::server::Server;
 
 fn main() {
@@ -76,6 +76,26 @@ fn main() {
         println!("{org}: {plan}, {seats} seat(s)");
         std::process::exit(0);
     }
+    // `hitop-sync-server billing-events [--unmatched] [--json]`: the latest webhook deliveries.
+    if command == Some("billing-events") {
+        let events = billing::list_events(&state, args.iter().any(|a| a == "--unmatched")).unwrap_or_else(|e| fail(e.to_string()));
+        if args.iter().any(|a| a == "--json") {
+            println!("{}", serde_json::Value::from(events));
+        } else {
+            for e in &events {
+                println!("{} {:<32} {:<18} org {} subscription {}{}", e["receivedAt"], e["event"].as_str().unwrap_or(""), e["outcome"].as_str().unwrap_or(""), e["org"].as_str().unwrap_or("-"), e["subscription"].as_str().unwrap_or("-"), if e["testMode"] == true { " (test mode)" } else { "" });
+            }
+            println!("{} deliveries", events.len());
+        }
+        std::process::exit(0);
+    }
+    // `hitop-sync-server billing-link <org> <subscription id>`: an unmatched subscription → org.
+    if command == Some("billing-link") {
+        let [org, sub, ..] = &args[1..] else { fail("usage: hitop-sync-server billing-link <org> <subscription id>".into()) };
+        billing::link(&state, org, sub).unwrap_or_else(|e| fail(e));
+        println!("{org}: subscription {sub} linked; its next webhook event applies");
+        std::process::exit(0);
+    }
     let app = SyncApp::new(state);
     // The audit retention purge: at start, then hourly.
     let purger = app.clone();
@@ -84,6 +104,9 @@ fn main() {
             Ok(0) => {}
             Ok(n) => eprintln!("hitop-sync-server: purged {n} audit rows past retention"),
             Err(e) => eprintln!("hitop-sync-server: audit purge: {e}"),
+        }
+        if let Err(e) = purger.state().db.tx(|tx| billing::expire(purger.state(), tx, None)) {
+            eprintln!("hitop-sync-server: trial and period ends: {e}");
         }
         if let Err(e) = limits::purge(purger.state()) {
             eprintln!("hitop-sync-server: usage purge: {e}");

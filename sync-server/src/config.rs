@@ -27,11 +27,14 @@
 //!   (or `_FILE`), redirect URI `<public URL>/v1/auth/google/callback`; off when unset (oidc.rs)
 //! - "Continue with GitHub": `HITOP_SYNC_GITHUB_CLIENT_ID` and `HITOP_SYNC_GITHUB_CLIENT_SECRET`
 //!   (or `_FILE`), callback URL `<public URL>/v1/auth/github/callback`; off when unset (github.rs)
+//! - Billing (HITOP Cloud): see billing.rs (`HITOP_SYNC_LS_*`, off unless
+//!   `HITOP_SYNC_LS_WEBHOOK_SECRET` is set) and `HITOP_SYNC_TRIAL_DAYS` (14; 0 = no Team trials)
 //! - mail: see mail.rs
 
 use url::Url;
 
 use crate::audit::IpPolicy;
+use crate::billing::BillingConfig;
 use crate::github::GithubConfig;
 use crate::oidc::OidcConfig;
 use crate::password::PasswordConfig;
@@ -71,6 +74,10 @@ pub struct Config {
     pub google: Option<OidcConfig>,
     /// "Continue with GitHub" (OAuth 2); `None` when not configured.
     pub github: Option<GithubConfig>,
+    /// Lemon Squeezy billing (billing.rs); `None` when not configured.
+    pub billing: Option<BillingConfig>,
+    /// Days of the Team trial (0 = none).
+    pub trial_days: i64,
 }
 
 /// `<PREFIX>_CLIENT_ID` and `<PREFIX>_CLIENT_SECRET` (or `<PREFIX>_CLIENT_SECRET_FILE`): both or
@@ -120,6 +127,8 @@ impl Config {
             password: PasswordConfig::default(),
             google: None,
             github: None,
+            billing: None,
+            trial_days: 14,
         }
     }
 
@@ -162,6 +171,8 @@ impl Config {
         c.password = PasswordConfig::from_env(&var)?;
         c.google = crate::oidc::google_from_env(&var)?;
         c.github = GithubConfig::from_env(&var)?;
+        c.billing = BillingConfig::from_env(&var)?;
+        c.trial_days = number("HITOP_SYNC_TRIAL_DAYS", c.trial_days)?;
         match var("HITOP_SYNC_RATE_LIMITS").as_deref() {
             None | Some("on") => {}
             Some("off") => {

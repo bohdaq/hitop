@@ -41,5 +41,16 @@ pub fn fill(s: &Server) -> usize {
     let bundle = crypto::seal_key_bundle(&bundle_key, &dee_id, b"{\"v\":1}").unwrap();
     assert_eq!(s.call("PUT", "/v1/me/recovery?method=password", Some(&dee), Some(json!({ "blob": b64(&bundle) }))).status, 200);
     assert_eq!(s.call("POST", "/v1/auth/password/params", None, Some(json!({ "email": "nobody@example.com" }))).status, 200);
+    // C3: a webhook delivery and a trial. Written as the server writes them (billing needs a
+    // configured store, which this server has not).
+    s.app
+        .state()
+        .db
+        .tx(|tx| {
+            tx.execute("INSERT INTO billing_events (id, event_name, org_id, subscription_id, resource_updated_at, test_mode, outcome, received_at) VALUES ('e1', 'subscription_created', '', '1', 1, 1, 'unmatched', 1)", &[])?;
+            tx.execute("INSERT INTO trials (org_id, user_id, email_domain, started_at, ends_at) VALUES ('o1', 'u1', 'acme.io', 1, 2)", &[])?;
+            tx.execute("UPDATE entitlements SET ls_item_id = '7', ls_order_id = '9', ls_updated_at = 5 WHERE org_id = (SELECT MIN(org_id) FROM entitlements)", &[])
+        })
+        .unwrap();
     s.app.state().db.tx(|tx| tx.query_one("SELECT COUNT(*) FROM audit_chain", &[])).unwrap().unwrap().int(0) as usize
 }

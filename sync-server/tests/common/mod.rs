@@ -19,6 +19,7 @@ use serde_json::{json, Value};
 pub mod fill;
 pub mod github;
 pub mod idp;
+pub mod lemonsqueezy;
 pub mod pw;
 pub mod t25;
 

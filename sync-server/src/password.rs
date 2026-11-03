@@ -230,7 +230,7 @@ fn verify_nothing(state: &State, key: &[u8]) {
 }
 
 /// A secret of this server kept in its database (made on first use).
-fn server_secret(tx: &mut Tx, name: &str) -> Result<Vec<u8>, ApiError> {
+pub(crate) fn server_secret(tx: &mut Tx, name: &str) -> Result<Vec<u8>, ApiError> {
     if let Some(r) = tx.query_one("SELECT value FROM server_secrets WHERE name = $1", &[name.into()])? {
         return Ok(r.bytes(0));
     }

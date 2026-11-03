@@ -334,3 +334,37 @@ fn postgres_passwords() {
     assert_eq!((r.status, r.json["bundleLost"].clone()), (200, json!(true)), "{}", r.json);
     assert_eq!(common::pw::login(&s, "ada@example.com", "a new password").status, 200);
 }
+
+#[test]
+fn postgres_billing() {
+    use common::lemonsqueezy::{self as ls, delivered, MockLs};
+    let Some(url) = database("billing") else {
+        eprintln!("HITOP_SYNC_TEST_POSTGRES not set: skipped");
+        return;
+    };
+    let mock = MockLs::start();
+    let config = mock.config();
+    let s = Server::with("pg-billing", |c| {
+        c.database = url.clone();
+        c.plan_limits = true;
+        c.billing = Some(config);
+    });
+    let ada = Device::new(&s, "ada@acme.io");
+    let r = s.call("POST", "/v1/orgs", Some(&ada.session), Some(json!({ "name": "Acme" })));
+    let org = r.json["id"].as_str().unwrap().to_string();
+    // The trial and its end.
+    assert_eq!(s.call("POST", &format!("/v1/orgs/{org}/billing/trial"), Some(&ada.session), Some(json!({}))).status, 201);
+    s.advance(15 * 86_400);
+    assert_eq!(s.call("GET", &format!("/v1/orgs/{org}/limits"), Some(&ada.session), None).json["planInForce"], "free");
+    // A purchase, a replay, a stale update.
+    assert_eq!(s.call("POST", &format!("/v1/orgs/{org}/billing/checkout"), Some(&ada.session), Some(json!({ "plan": "team", "seats": 3 }))).status, 200);
+    let custom = mock.last("POST").body["data"]["attributes"]["checkout_data"]["custom"].clone();
+    let created = ls::subscription("subscription_created", "1", ls::TEAM_ANNUAL, "active", 3, "2026-11-20T10:00:00.000000Z", custom.clone());
+    delivered(&s, &created, "applied");
+    delivered(&s, &created, "duplicate");
+    delivered(&s, &ls::subscription("subscription_updated", "1", ls::TEAM_ANNUAL, "expired", 3, "2026-11-19T10:00:00.000000Z", custom), "stale");
+    let l = s.call("GET", &format!("/v1/orgs/{org}/limits"), Some(&ada.session), None);
+    assert_eq!((l.json["planInForce"].as_str(), l.json["seats"].as_i64()), (Some("team"), Some(3)));
+    delivered(&s, &ls::invoice("subscription_payment_refunded", "1", true, "2026-11-21T10:00:00.000000Z"), "applied");
+    assert_eq!(s.call("GET", &format!("/v1/orgs/{org}/limits"), Some(&ada.session), None).json["planInForce"], "free");
+}

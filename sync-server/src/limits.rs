@@ -145,9 +145,10 @@ pub struct Entitlement {
 }
 
 impl Entitlement {
-    /// The plan whose limits apply: a lapsed subscription is on Free (nothing deleted).
+    /// The plan whose limits apply: a lapsed, paused or refunded subscription is on Free (nothing
+    /// deleted). An ended trial or cancelled period becomes `expired` (`billing::expire`).
     pub fn plan_in_force(&self) -> &str {
-        if matches!(self.status.as_str(), "expired" | "unpaid") {
+        if matches!(self.status.as_str(), "expired" | "unpaid" | "paused" | "refunded") {
             "free"
         } else {
             &self.plan
@@ -266,6 +267,7 @@ pub fn meter(state: &State, tx: &mut Tx, org: &str, metric: &str, n: i64) -> Res
 }
 
 pub fn usage(state: &State, tx: &mut Tx, org: &str) -> Result<Usage, DbError> {
+    crate::billing::expire(state, tx, Some(org))?;
     let e = entitlement(tx, org)?;
     let p = people(tx, org)?;
     let ws = tx.query_one("SELECT COUNT(*), CAST(COALESCE(SUM(bytes), 0) AS BIGINT) FROM workspaces WHERE org_id = $1", &[org.into()])?;
@@ -352,6 +354,7 @@ fn check(state: &State, tx: &mut Tx, org: &str, metric: Metric, used_after: impl
     if !state.config.plan_limits || org.is_empty() {
         return Ok(());
     }
+    crate::billing::expire(state, tx, Some(org))?;
     let e = entitlement(tx, org)?;
     let limits = e.limits();
     let Some(max) = limits.get(metric) else { return Ok(()) };
@@ -428,6 +431,10 @@ pub fn device_limit(tx: &mut Tx, user_id: &str) -> Result<Option<i64>, DbError> 
 pub fn check_device(state: &State, tx: &mut Tx, user_id: &str) -> Result<(), ApiError> {
     if !state.config.plan_limits {
         return Ok(());
+    }
+    let orgs: Vec<String> = tx.query("SELECT org_id FROM org_members WHERE user_id = $1", &[user_id.into()])?.iter().map(|r| r.text(0)).collect();
+    for org in orgs {
+        crate::billing::expire(state, tx, Some(&org))?;
     }
     let Some(max) = device_limit(tx, user_id)? else { return Ok(()) };
     let have = tx.query_one("SELECT COUNT(*) FROM device_keys WHERE user_id = $1", &[user_id.into()])?.map_or(0, |r| r.int(0));
@@ -511,6 +518,7 @@ pub struct Over {
 /// Every org (and person, for devices) over a limit of its plan right now. After migration 4 this
 /// is empty; later it lists orgs whose plan was lowered (their data stays; creates are refused).
 pub fn over_limits(state: &State, tx: &mut Tx) -> Result<Vec<Over>, DbError> {
+    crate::billing::expire(state, tx, None)?;
     let mut out = Vec::new();
     let orgs: Vec<String> = tx.query("SELECT id FROM orgs ORDER BY id", &[])?.iter().map(|r| r.text(0)).collect();
     for org in orgs {
