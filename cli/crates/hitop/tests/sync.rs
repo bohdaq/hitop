@@ -765,7 +765,7 @@ fn organizations_and_a_refused_create() {
     }
     let (o, dir) = share("p4", &[]);
     assert_eq!(o.code, 2, "{}", o.stdout);
-    for part in ["plan limit", "free plan", "your personal account", "3 shared workspaces", "https://cloud.test.example/#/orgs/personal-", "402 limit"] {
+    for part in ["plan limit", "free plan", "your personal account", "3 shared workspaces", "https://cloud.test.example/orgs/personal-", "402 limit"] {
         assert!(o.stderr.contains(part), "{part} in {}", o.stderr);
     }
     assert_eq!(ada.run(&["sync", "status", "-c", dir.to_str().unwrap()]).code, 2, "not linked");
