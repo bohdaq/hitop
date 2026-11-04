@@ -294,3 +294,11 @@ and on hitop.rws8.tech/cloud/healthz. -->
   non-blocking peek before reuse and skipped when the backend closed them (any method, plain and
   TLS, sync and async forwarders); the pools keep idle connections 25 s. The VM's front rws
   (18.26.0) still has the bug until a release and an upgrade (owner's go-ahead).
+
+## 2026-11-04 Sandbox subscriptions cancelled
+
+- Who: agent, on the owner's go-ahead (Stripe sandbox API). What: `sub_1UY1aI…` (Pro, personal org,
+  refunded) and `sub_1UY1tq…` (Team, testCo, past_due, open test invoice GO9298R9-0004) cancelled
+  at once. Both `customer.subscription.deleted` events delivered (2xx): the orgs end on Free
+  limits, nothing deleted. The sandbox test list (purchase, seats, refund, failed payment, cancel)
+  is done.
