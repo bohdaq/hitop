@@ -8,7 +8,7 @@ description = "Serves hitop.rws8.tech, the web app's request proxy (POST /api/pr
 publish = false
 
 [dependencies]
-rust-web-server = { version = "18.14", default-features = false, features = ["http2", "serde"] }
+rust-web-server = { version = "18.29", default-features = false, features = ["http2", "serde"] }
 reqwest = { version = "0.12", default-features = false, features = ["blocking", "rustls-tls", "gzip", "brotli", "deflate"] }
 tokio = { version = "1", features = ["rt-multi-thread", "macros", "net"] }
 serde = { version = "1", features = ["derive"] }
