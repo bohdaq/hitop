@@ -151,7 +151,7 @@ fn team_with_three_seats_a_fourth_seat_then_payment_failed_and_deleted() {
     assert_eq!((sent.get("line_items[0][price]"), sent.get("line_items[0][quantity]")), (Some(st::TEAM_ANNUAL), Some("3")));
     assert_eq!(sent.get("customer_email"), Some("ada@example.com"));
     assert_eq!(sent.get("success_url"), sent.get("cancel_url"), "back to the plan page either way");
-    assert!(sent.get("success_url").unwrap().ends_with(&format!("#/orgs/{org}/plan")));
+    assert!(sent.get("success_url").unwrap().ends_with(&format!("orgs/{org}/plan")));
     assert_eq!((meta["org_id"].as_str(), meta["user_id"].as_str()), (Some(org.as_str()), Some(ada.user_id.as_str())));
     assert_eq!(meta["sig"].as_str().unwrap().len(), 64);
 
@@ -415,7 +415,7 @@ fn billing_is_for_owners_and_admins_with_a_session() {
     let r = s.call("GET", &format!("/v1/orgs/{org}/billing/portal"), Some(&ada.session), None);
     assert_eq!((r.status, r.json["url"].as_str()), (200, Some("https://billing.stripe.com/p/session/test_cus_30")), "{}", r.json);
     let seen = mock.last("/v1/billing_portal/sessions");
-    assert!(seen.authorized && seen.get("return_url").unwrap().ends_with(&format!("#/orgs/{org}/plan")));
+    assert!(seen.authorized && seen.get("return_url").unwrap().ends_with(&format!("orgs/{org}/plan")));
     // Fewer seats: no credit now, the lower price from the next renewal.
     assert_eq!(s.call("POST", &format!("/v1/orgs/{org}/billing/seats"), Some(&ada.session), Some(json!({ "seats": 5 }))).status, 200);
     let r = s.call("POST", &format!("/v1/orgs/{org}/billing/seats"), Some(&ada.session), Some(json!({ "seats": 3 })));

@@ -886,7 +886,7 @@ pub fn checkout(state: &State, request: &Request, params: &PathParams) -> ApiRes
             return Err(ApiError::bad(format!("the organization uses {used} seat(s): buy at least that many")));
         }
         let sig = custom_sig(tx, &org, &user.id)?;
-        let back = format!("{}#/orgs/{org}/plan", state.config.portal_url);
+        let back = format!("{}orgs/{org}/plan", state.config.portal_url);
         let form = vec![
             ("mode", "subscription".to_string()),
             ("managed_payments[enabled]", "true".to_string()),
@@ -926,7 +926,7 @@ pub fn portal(state: &State, request: &Request, params: &PathParams) -> ApiResul
         }
         Ok(customer)
     })?;
-    let doc = stripe_call(state, c, "POST", "/v1/billing_portal/sessions", &[("customer", customer), ("return_url", format!("{}#/orgs/{org}/plan", state.config.portal_url))])?;
+    let doc = stripe_call(state, c, "POST", "/v1/billing_portal/sessions", &[("customer", customer), ("return_url", format!("{}orgs/{org}/plan", state.config.portal_url))])?;
     let url = doc["url"].as_str().ok_or_else(|| ApiError::new(502, "billing_refused", "Stripe sent no customer portal URL"))?;
     Ok((200, json!({ "url": url })))
 }

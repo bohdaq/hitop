@@ -32,29 +32,48 @@ export function normalizeServer(url) {
 }
 
 export class Api {
-  constructor(server, session = null) {
+  /** `tracker.busy(+1 | -1)` is told about every request in flight (the shell shows it). */
+  constructor(server, session = null, tracker = null) {
     this.server = server;
     this.session = session;
+    this.tracker = tracker;
   }
 
-  async call(method, path, body) {
+  async call(method, path, body, { signal } = {}) {
     const headers = {};
     if (this.session) headers.Authorization = `Bearer ${this.session}`;
     if (body !== undefined) headers["Content-Type"] = "application/json";
-    const r = await fetch(this.server + path, { method, headers, body: body === undefined ? undefined : JSON.stringify(body) });
-    const text = await r.text();
-    let json = null;
+    this.tracker?.busy(1);
     try {
-      json = text ? JSON.parse(text) : null;
-    } catch {
-      json = null;
+      const r = await fetch(this.server + path, { method, headers, body: body === undefined ? undefined : JSON.stringify(body), signal });
+      const text = await r.text();
+      let json = null;
+      try {
+        json = text ? JSON.parse(text) : null;
+      } catch {
+        json = null;
+      }
+      if (!r.ok) throw new ApiError(r.status, json);
+      return json;
+    } finally {
+      this.tracker?.busy(-1);
     }
-    if (!r.ok) throw new ApiError(r.status, json);
-    return json;
   }
 
-  get(path) {
-    return this.call("GET", path);
+  get(path, options) {
+    return this.call("GET", path, undefined, options);
+  }
+
+  /** A response body as a Blob (the signed audit export). */
+  async blob(path) {
+    this.tracker?.busy(1);
+    try {
+      const r = await fetch(this.server + path, { headers: this.session ? { Authorization: `Bearer ${this.session}` } : {} });
+      if (!r.ok) throw new ApiError(r.status, await r.json().catch(() => null));
+      return r.blob();
+    } finally {
+      this.tracker?.busy(-1);
+    }
   }
 }
 

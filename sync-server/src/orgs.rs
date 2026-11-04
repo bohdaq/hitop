@@ -498,7 +498,7 @@ fn limits_json(state: &State, tx: &mut Tx, org: &str) -> Result<Json, ApiError> 
         "grandfathered": e.overrides.get("grandfathered").and_then(Json::as_bool).unwrap_or(false),
         "enforced": enforced,
         "limits": limits,
-        "upgradeUrl": format!("{}#/orgs/{org}/plan", state.config.portal_url),
+        "upgradeUrl": format!("{}orgs/{org}/plan", state.config.portal_url),
         "runs": crate::runs::plan_json(state, tx, org)?,
     }))
 }

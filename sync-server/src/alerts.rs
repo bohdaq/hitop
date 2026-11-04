@@ -318,7 +318,7 @@ fn message(state: &State, tx: &mut Tx, ws: &str, event: &str, collection: &str, 
     } else {
         tx.query_one("SELECT status, started_at, duration_ms, requests, failed FROM runs WHERE workspace_id = $1 AND id = $2", &[ws.into(), run.into()])?
     };
-    let link = if run.is_empty() { format!("{}#/workspaces/{ws}/runs", state.config.portal_url) } else { format!("{}#/workspaces/{ws}/runs/{run}", state.config.portal_url) };
+    let link = if run.is_empty() { format!("{}workspaces/{ws}/runs", state.config.portal_url) } else { format!("{}workspaces/{ws}/runs/{run}", state.config.portal_url) };
     let what = if collection.is_empty() { "a collection".to_string() } else { collection.to_string() };
     let env = if environment.is_empty() { String::new() } else { format!(" ({environment})") };
     let mut body = json!({

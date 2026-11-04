@@ -346,7 +346,7 @@ pub fn refused_named(state: &State, tx: &mut Tx, e: &Entitlement, limit: &str, w
         .map_or((String::new(), false), |r| (r.text(0), !r.text(1).is_empty()));
     let whose = if personal { "your personal account".to_string() } else { format!("the organization {name}") };
     let plan = e.plan_in_force().to_string();
-    let url = format!("{}#/orgs/{}/plan", state.config.portal_url, e.org);
+    let url = format!("{}orgs/{}/plan", state.config.portal_url, e.org);
     ApiError {
         status: 402,
         code: "limit",

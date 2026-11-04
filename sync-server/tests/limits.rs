@@ -41,7 +41,7 @@ fn new_ws(s: &Server, d: &Device, org: Option<&str>, ws: &str) -> (Reply, crypto
 fn refused(r: &Reply, limit: &str, plan: &str, max: i64) {
     assert_eq!(r.status, 402, "{}", r.json);
     assert_eq!((r.json["error"].as_str(), r.json["limit"].as_str(), r.json["plan"].as_str(), r.json["max"].as_i64()), (Some("limit"), Some(limit), Some(plan), Some(max)), "{}", r.json);
-    assert!(r.json["upgradeUrl"].as_str().unwrap().starts_with("https://cloud.hitop.rws8.tech/#/orgs/"));
+    assert!(r.json["upgradeUrl"].as_str().unwrap().starts_with("https://cloud.hitop.rws8.tech/orgs/"));
     let m = r.json["message"].as_str().unwrap();
     assert!(m.contains(&format!("{plan} plan")) && m.contains(&max.to_string()) && m.contains("nothing was changed"), "{m}");
 }

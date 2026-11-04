@@ -178,7 +178,7 @@ hitop/
 ├── spec/run-report.md          # `hitop run --reporter json` report, reportVersion 1, and the JUnit shape (CC BY 4.0)
 ├── brand/                      # logo.svg (master), logo-mono.svg, png/, BRAND.md (name, tagline, colors, asset map), export.sh, check.sh (CI job brand)
 ├── ROADMAP.md                  # agent work order to v1.x: decisions, rules, tranches T0–T26, status
-├── cloud/                      # HITOP Cloud (AGPL, spec/CLOUD_SERVICE.md): portal/ (Lit, served at cloud.hitop.rws8.tech from www/cloud/, npm test = e2e against the sync server),
+├── cloud/                      # HITOP Cloud (AGPL, spec/CLOUD_SERVICE.md): portal/ (Lit + lit-material console: app shell, real paths /orgs/<id>/plan served by hitop-server's spa fallback, sign-in/pricing vendored in vendor/ until npm; served at cloud.hitop.rws8.tech from www/cloud/, npm test = e2e against the sync server + axe + CSP),
 │                               # compat/released-cli.sh (a released hitop against this tree's server, CI job compat), policies/ (SOC 2), evidence/access-reviews/, ops-log.md,
 │                               # RUNBOOK.md, ops/ (systemd drop-ins, disk-alert.sh, install.sh <part>, test/: ops-e2e.sh, cutover-sim.sh, postgres-setup-docker.sh = CI job ops), status/ (static page + check.sh, off-VM)
 ├── launch/                     # launch text drafts for the owner (Show HN, Reddit, TWiR, Product Hunt); never posted by agents

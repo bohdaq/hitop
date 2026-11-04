@@ -262,7 +262,7 @@ pub fn upload(state: &State, request: &Request, params: &PathParams) -> ApiResul
         let detail = if detail.is_empty() || plan.sealed_history {
             detail.clone()
         } else {
-            note = Some(format!("the {} plan keeps status rows only: the sealed report was not stored (run history needs Pro or above, {}#/orgs/{org}/plan)", ent.as_ref().map_or("free", |e| e.plan_in_force()), state.config.portal_url));
+            note = Some(format!("the {} plan keeps status rows only: the sealed report was not stored (run history needs Pro or above, {}orgs/{org}/plan)", ent.as_ref().map_or("free", |e| e.plan_in_force()), state.config.portal_url));
             Vec::new()
         };
         let status = if status_rows { status.clone() } else { None };
