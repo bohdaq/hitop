@@ -15,6 +15,7 @@ This notice adds to the [HITOP privacy policy](/privacy.html), which covers the 
 | --- | --- | --- |
 | Email address, device names and public keys, session token hashes, a password hash if you set one | to run your account (contract) | until you delete the account |
 | Workspace ciphertext, wrapped keys, sizes and change times | to sync (contract); we can't read the content | until you delete the workspace or account |
+| Your personal library, when you are signed in to the app: your own collections, environments and globals as you saved them (the server can read them); their secret values encrypted at rest under a server key | to keep your work in every browser you sign in to (contract) | until you delete them or the account |
 | Organizations, members, roles, plan, seats, trial dates | to run the plan you chose (contract) | while the organization exists |
 | Stripe customer, subscription, price and checkout ids, plan status; ids and outcomes of its webhook events (not their content) | billing (contract, legal duty to keep records) | as long as tax law requires |
 | Security log: sign-ins, member and key changes, IP address cut to its first three parts, user agent | security of the service (legitimate interest) | one year |

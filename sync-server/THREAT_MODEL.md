@@ -10,11 +10,24 @@ any public launch.
 hitop sync keeps a team's collection folders (request files, environments, scripts, saved
 responses) in step across devices. Those files can hold URLs of internal systems, tokens in
 headers, and test data. Secret variable values never sync (they stay in each device's keychain,
-spec section 4), but everything else in a workspace is treated as confidential.
+spec section 4; the personal library, outside this model, is the exception: see below), but everything else in a workspace is treated as confidential.
 
 Goal: **the server operator, anyone who copies the server's database or backups, and anyone on
 the network learn nothing about workspace contents beyond sizes and timing**, and can't change
 contents without clients noticing.
+
+## Outside this model: the personal library (C8)
+
+Since 2026-11-05 (owner decision, spec/CLOUD_SERVICE.md "Personal library") a signed-in person's
+own collections, environments and globals are also stored in a **personal library**
+(`library.rs`, `/v1/library`) that **the server can read**. Nothing in this document protects it:
+the operator, a copy of the database or a backup, and anyone who takes over the server can read
+and change it. It exists so a collection opens in any browser after signing in. Secret values in
+it are sent apart and sealed at rest under the host key (`hostkey.rs`): a database dump or backup
+alone doesn't reveal them, the running server and its operator can. Without a host key the server
+stores none. Workspaces never go through the library, and a collection that is shared leaves it;
+the guarantees below are about workspaces only. The no-client-crypto test still holds: the library
+needs no client crypto on the server.
 
 ## Parties
 

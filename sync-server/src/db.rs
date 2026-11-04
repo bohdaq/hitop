@@ -774,7 +774,9 @@ impl Db {
         let backend: Box<dyn Backend> = if let Some(path) = url.strip_prefix("sqlite:") {
             let conn = if path == ":memory:" { rusqlite::Connection::open_in_memory() } else { rusqlite::Connection::open(path) }
                 .map_err(|e| DbError(format!("{path}: {e}")))?;
-            conn.execute_batch("PRAGMA journal_mode = WAL; PRAGMA foreign_keys = ON; PRAGMA busy_timeout = 5000;")
+            // secure_delete: a deleted or overwritten row (a personal library item, library.rs) is zeroed on disk,
+            // not left in a free page.
+            conn.execute_batch("PRAGMA journal_mode = WAL; PRAGMA foreign_keys = ON; PRAGMA busy_timeout = 5000; PRAGMA secure_delete = ON;")
                 .map_err(|e| DbError(e.to_string()))?;
             Box::new(Sqlite(conn))
         } else if url.starts_with("postgres://") || url.starts_with("postgresql://") {

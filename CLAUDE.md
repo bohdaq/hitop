@@ -133,6 +133,7 @@ hitop/
 │   ├── src/views/code-editor-graphql.js # cm6-graphql: GraphQL language, completion, schema lint (own lazy chunk)
 │   ├── src/zip.js              # collection folder ⇄ .zip (fflate)
 │   ├── src/sync.js             # hitop sync client (web + desktop): SyncClient (HTTP, wasm crypto/plan), withSyncFolders ("hitop-sync:<ws>" folder refs in app storage)
+│   ├── src/library.js          # HITOP Cloud C8 personal library: signed in, collections/environments/globals pulled before the store reads storage and pushed after saves (baseVersion conflicts keep a "(this browser)" copy); localStorage hitop_library; e2e tests/library.cjs
 │   ├── src/views/sync-view.js  # the Sync page (both modes): sign in (password, Create account, Forgot password?, Google/GitHub, a mailed code, SSO, paste the code), Password section, share, join, conflicts, members/invites/trust, runner credential, audit log (owners)
 │   ├── tests/harness.cjs       # e2e in web or Tauri mode (HITOP_MODE=tauri); tests/tauri-mock.cjs mocks invoke in Node
 │   ├── tests/sync.cjs          # two people against a real sync server (HITOP_SYNC_SERVER_BIN), web and Tauri modes; invite code with fingerprint; a malicious server via node:sqlite; audit log; SSO via Keycloak (HITOP_SYNC_TEST_KEYCLOAK)
@@ -493,6 +494,7 @@ hitop/
   worker, mailed to owners, `HITOP_SYNC_AUDIT_ANCHORS`), `/v1/audit/key`, `/v1/audit-anchors/:org/:day` (public opt-in). Admin: `/v1/orgs/:org/admin`
   (+ owner transfer, rotation request, device removal from the org's workspaces only: migration 11 `workspace_excluded_keys`, honoured by exact_wraps/insert_wraps/key lists/shares). `limits::require_plan` gates features (402 `sso`/`auditExport`/`adminConsole`/`adminActions`).
   Business prices: lookup keys `business_yearly|_monthly`. The server links `ring` (own secrets only; `no_crypto_in_server` bans client crates)
+- HITOP Cloud C8 personal library (built 2026-11-05, not deployed): migration 12 `library_items`; `GET /v1/library[?since=]`, `PUT/DELETE /v1/library/:kind/:id` (kind collection | environments | globals, id `all` for the last two; `baseVersion` → 409 `conflict` with `current`; tombstones). **Readable by the server** (owner decision); secret values sealed under the host key (none stored without one); bytes count in the personal org's storage (`limits::stored_bytes`), not a workspace. Tests `tests/library.rs`
 - Live at https://sync.hitop.rws8.tech (VM, `hitop-sync.service`, 127.0.0.1:7881, env `/etc/hitop-sync/env`, DB `/var/lib/private/hitop-sync/sync.db`); deploy: copy the release binary + `deploy/` and run `deploy/install.sh`
 - `rws --check` on the VM needs `/etc/rws/admin.env` loaded (admin token), or it fails on any config
 

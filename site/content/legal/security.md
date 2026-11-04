@@ -1,7 +1,7 @@
 ---
 path: "/security.html"
 title: "Security · HITOP Cloud"
-description: "How HITOP Cloud protects your collections: end to end encryption, what the server sees, where it runs, and what has not been checked yet."
+description: "How HITOP Cloud protects your collections: end to end encryption for shared workspaces, a personal library the server can read, where it runs, and what has not been checked yet."
 ---
 # Security
 
@@ -13,14 +13,19 @@ hitop sync encrypts every file of a shared workspace on your device before it is
 
 Passwords never reach the server: your app derives two keys from the password (Argon2id), sends one, and the server keeps only a slow hash of it. The other key seals your device keys, which the server stores but can't open.
 
+## Your personal library: readable by the server
+
+Signed in to the web or desktop app, your own collections, environments and globals are saved to HITOP Cloud so every browser you sign in to has them. **The server can read your personal library**: it is stored as you saved it, not end to end encrypted. Secret values in environments and globals are the exception: they are sent apart and encrypted at rest (AES-256-GCM under a key kept outside the database and backups), and only your account gets them back. To keep a collection out of the server's reach, share it as a workspace (end to end, above) or keep it in a folder on your disk.
+
 ## What the server does see
 
 - Your email address, your devices' names and public keys, and hashes of your session tokens.
 - Who is in which workspace, how many files it has, their sizes and when they change.
+- Your personal library (above).
 - Organizations, members, plans and seats, and the Stripe ids of a subscription (never card data: Stripe takes the payment).
 - A security log per workspace and account (sign-ins, members, invites, key rotations), with IP addresses cut to their first three parts. It is hash chained, so a changed or removed entry shows.
 
-If someone took over the server, they could refuse service, show you old versions or hide changes, and see the metadata above. They could not read your collections, and your app refuses keys it has not pinned. The full list of what is and isn't protected is in the [threat model](https://github.com/bohdaq/hitop/blob/main/sync-server/THREAT_MODEL.md).
+If someone took over the server, they could refuse service, show you old versions or hide changes, and see the metadata above. They could not read your shared workspaces, and your app refuses keys it has not pinned; they could read your personal library. The full list of what is and isn't protected is in the [threat model](https://github.com/bohdaq/hitop/blob/main/sync-server/THREAT_MODEL.md).
 
 ## Where it runs
 
