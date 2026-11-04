@@ -302,3 +302,13 @@ and on hitop.rws8.tech/cloud/healthz. -->
   at once. Both `customer.subscription.deleted` events delivered (2xx): the orgs end on Free
   limits, nothing deleted. The sandbox test list (purchase, seats, refund, failed payment, cancel)
   is done.
+
+## 2026-11-04 Front rws upgraded to 18.28.1 (the webhook 502 fix)
+
+- Who: owner ran `~/rws-upgrade-18.28.1.sh` (prepared by agent: checksum, version and
+  `--check` before install, old binary kept as `/usr/local/bin/rws.18.27.2`). Checks: rws
+  active, 18.28.1; rws8.tech (after the restart), hitop, sync, cloud, git all 200; sync
+  `/healthz` ok (Postgres, schema 11). The fix on the VM: a GET to the sync server, 35 s idle
+  (over its 30 s keep-alive), then a POST to `/v1/billing/stripe` → 401 from the sync server
+  (bad signature), not 502. Rollback: `sudo install -m 0755 /usr/local/bin/rws.18.27.2
+  /usr/local/bin/rws && sudo systemctl restart rws`.
