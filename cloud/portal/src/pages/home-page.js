@@ -102,13 +102,14 @@ export class HomePage extends LitElement {
     const rate = recent.length ? Math.round((recent.reduce((s, r) => s + r.rate, 0) / recent.length) * 100) : null;
     return html`
       <lit-material-checklist heading="Get started" dismissible storage-key="hitop-cloud-getting-started">
-        <lit-material-checklist-item label="Install hitop, or open the web app" ?done=${workspaces.length > 0}>
-          <p>The CLI shares and runs collections; the web app and the desktop app do the same with a UI.</p>
+        <lit-material-checklist-item label="Open the web app" ?done=${workspaces.length > 0}>
+          <p>Requests, collections and environments run in your browser, nothing to install. The desktop app and the CLI open the same collections.</p>
+          <p><lit-material-button href="https://hitop.rws8.tech/app/" rel="noopener">Open the web app</lit-material-button></p>
+          <p class="hint">Prefer a terminal or CI? <a href="https://hitop.rws8.tech/" rel="noopener">Downloads</a>, or:</p>
           <lit-material-clipboard-copy label="Install command" value="cargo install hitop"></lit-material-clipboard-copy>
-          <p><a href="https://hitop.rws8.tech/app/" rel="noopener">Open the web app</a> · <a href="https://hitop.rws8.tech/" rel="noopener">Downloads</a></p>
         </lit-material-checklist-item>
         <lit-material-checklist-item label="Share a workspace" ?done=${workspaces.length > 0}>
-          <p>In a collection's folder, sign in and share it. It shows up here within seconds.</p>
+          <p>In the web app, open a collection and share it from its Sync page (sign in with this account). It is end-to-end encrypted and shows up here within seconds. From a terminal, in the collection's folder:</p>
           <lit-material-clipboard-copy label="Share command" value="hitop sync login && hitop sync init"></lit-material-clipboard-copy>
         </lit-material-checklist-item>
         <lit-material-checklist-item label="Invite a teammate" ?done=${invited}>
