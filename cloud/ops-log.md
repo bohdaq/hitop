@@ -157,6 +157,16 @@ date (UTC), who, what, the commit, the checks run after it.
 - Rollback: restore both `.bak-20261104T060321Z` files (config, cert/key) and restart rws.
 - `HITOP_SYNC_PORTAL_URL` unchanged (the `/cloud/` path still answers).
 
+## 2026-11-04 Portal sign-in redesign, Google and GitHub sign-in on
+
+- Who: agent (portal), owner (deploy install step, OAuth apps, keys). What: 93fc033 (centered
+  sign-in card, no sync server field; `?server=` for self-hosted), deployed with
+  `deploy/deploy.sh`; cloud.hitop.rws8.tech, hitop.rws8.tech, `/app/`, rws8.tech, lit.rws8.tech 200.
+- The owner made a GitHub OAuth app and a Google client (Auth Platform published, External) with
+  callbacks `https://sync.hitop.rws8.tech/v1/auth/{github,google}/callback`, and put their ids and
+  secrets in `/etc/hitop-sync/env`. `/v1/auth/methods`: github true, google true; both authorize
+  URLs accepted by the providers (302 to their sign-in). The owner signed in with each.
+
 <!-- Next entry (template): record: commit, backup file names (sync.db.bak-<ts>), the row
 counts before and after (users, workspaces, members; orgs with personal_of <> '' = users with
 runner_of = ''), `hitop-sync-server over-limits` output (0 over a limit), curl of /healthz on sync
