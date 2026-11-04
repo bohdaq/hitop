@@ -2,7 +2,7 @@
 
 Plan for a hosted service on top of HITOP, for individual developers, small teams, mid-size
 companies and enterprises. Written 2026-11-02 and aligned the same day with the owner's
-decisions (section 0). It is the work order for tranches C0–C7 (section 9). Every price and tier
+decisions (section 0). It is the work order for tranches C0–C8 (section 9). Every price and tier
 name in this file is a **proposal** until the owner sets it in Stripe (ROADMAP section 3:
 agents never set prices, change DNS, App Store or money matters).
 
@@ -49,6 +49,7 @@ The owner's answers to Q1–Q18 (section 10). The rest of this file follows them
 | 2026-11-03 | **SLA: no response-time promise.** A 99.5% monthly uptime target and best-effort support only. | The 4-hour outage answer and the one-business-day answer are removed from the SLA and support drafts and this file. |
 | 2026-11-03 | **Business price confirmed**: $20 per seat a month billed yearly ($240 per seat a year), $25 per seat month to month (plus applicable tax). | No longer a proposal for Business (site `TIERS`, portal `PRICES`, Stripe prices). |
 | 2026-11-03 | The password also unlocks the end-to-end keys on a new device (a password-derived key wraps the account's key bundle, like the recovery phrase). | The server stores one more wrapped bundle per account (never the password or keys). A forgotten password loses the keys unless the person has a recovery phrase or another device; reset says so. Google/GitHub sign-in alone doesn't unlock keys. |
+| 2026-11-05 | **Cloud-first personal library** (C8): every signed-in user's own collections, environments and globals are stored on the server automatically and appear in every browser they sign in to. **The server can read the library** (owner's choice over end-to-end): shared workspaces stay end-to-end encrypted as before. The library is one per account and **doesn't count as a shared workspace**; its bytes count against the personal org's storage (Free 100 MB). **Secret values are stored too**, encrypted at rest under the host key (AES-256-GCM, hostkey.rs), returned only to their owner; without a host key they stay in the browser. Tabs, history and responses stay on the device. **Git integration comes after the library**, from the server (it can read the files). | New `library_items` table and `/v1/library` API, the web app stores through it when signed in, security/privacy pages and the threat model describe the readable library; terms, DPA and the enterprise agreement need the owner's legal review before deploy. |
 
 ## 1. One page summary
 
@@ -94,6 +95,7 @@ hosted SSO and audit export for companies, and support and contracts for enterpr
 | C2 | Harden the current VM | Postgres on the VM, systemd resource limits, off-site encrypted backups + restore drill, recovery key, status page, off-host uptime check, runbook |
 | C3 | Stripe Managed Payments billing, pricing page, prompts | **paid launch of Pro and Team**; no review gate |
 | C4 | Run history and alerts from your own runners; shared environment secrets | sealed history, status rows, email/webhook/Slack alerts |
+| C8 | Cloud-first personal library, then Git | a signed-in user's collections, environments, globals and secret values on the server, in every browser; then Git sync from the server |
 
 ---
 
@@ -346,6 +348,37 @@ All of it runs on the current VM, `bohdan-prod-donotdelete` (Q11).
 - **Abuse:** sign-in mail limits per address and IP (have), invite limits (have), per-org
   creates, per-session request rate, run upload ceilings, disposable-email block on Free, manual
   review queue for Free orgs that hit limits fast. Report-abuse address on the site.
+
+### Personal library (C8)
+
+A signed-in user's own work lives on the server first: open the web app in any browser, sign in,
+and the same collections, environments and globals are there. Owner decisions 2026-11-05 (table
+above): readable by the server, one library per account outside the workspace count, secret values
+stored encrypted at rest. Shared workspaces (`hitop sync`) are unchanged and stay end to end.
+
+- **Storage.** `library_items (user_id, kind, item_id, version, seq, data, secrets, bytes,
+  updated_at, deleted)`. `kind` is `collection` (one item per collection, the web app's
+  collection JSON), `environments` (one item: the list without secret values, and the active id)
+  or `globals` (one item, without secret values). `secrets` = the item's secret values sealed under
+  the host key (label `library-secrets/<user>/<kind>/<id>`); empty without a host key. Deleted
+  items stay as tombstones so other browsers see the delete.
+- **API.** `GET /v1/library?since=<seq>` → the items changed after `seq` (all without it), the new
+  cursor, and `secretsStored` (a host key is set). `PUT /v1/library/:kind/:id {data, secrets?,
+  baseVersion}` → `{version, seq}`, or 409 `conflict` with the server's item when `baseVersion`
+  isn't the current version (0 = new). `DELETE /v1/library/:kind/:id?baseVersion=` → tombstone.
+  Sessions and access tokens (read scope reads, write scope writes); runner credentials can't.
+  An item is at most 5 MB; a write that grows storage past the plan is a 402 like any other.
+- **Limits.** Library bytes count in the personal org's `storageBytes` with its workspaces; the
+  library is not a workspace.
+- **Web app.** Signed in to hitop sync, the app stores collections, environments and globals in
+  the library: on start it pulls (`since` the last cursor), on every save it pushes what changed
+  (debounced), and it pulls again on focus and every 30 s. A conflict keeps the server's version
+  and saves this browser's as a copy named "(this browser)". The first sign-in uploads the
+  browser's existing collections. A folder or shared-workspace collection is never in the library.
+  Signed out, the app keeps everything in the browser as before.
+- **Next: Git.** Since the server can read the library, a collection can be linked to a GitHub or
+  GitLab repository and pushed and pulled in the hitop folder format (hitop.yaml, requests/,
+  environments/), the same files the CLI and desktop commit.
 
 ### Hosting: hardening the current VM (C2)
 

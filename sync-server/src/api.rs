@@ -347,6 +347,9 @@ impl SyncApp {
             ("GET", "/v1/me/tokens", crate::tokens::list),
             ("POST", "/v1/me/tokens", crate::tokens::create),
             ("DELETE", "/v1/me/tokens/:id", crate::tokens::delete),
+            ("GET", "/v1/library", crate::library::list),
+            ("PUT", "/v1/library/:kind/:id", crate::library::put),
+            ("DELETE", "/v1/library/:kind/:id", crate::library::delete),
             ("GET", "/v1/workspaces/:ws/blobs/:id", crate::blobs::get),
             ("PUT", "/v1/workspaces/:ws/blobs/:id", crate::blobs::put),
         ];
@@ -384,8 +387,12 @@ impl SyncApp {
         let blob = method == "PUT" && path.starts_with("/v1/workspaces/") && path.contains("/blobs/");
         // A run upload carries a sealed report (runs.rs).
         let run = method == "POST" && path.starts_with("/v1/workspaces/") && path.ends_with("/runs");
+        // A personal library item (library.rs): up to 5 MB of JSON.
+        let library = method == "PUT" && path.starts_with("/v1/library/");
         if blob {
             c.max_request_bytes()
+        } else if library {
+            (crate::library::MAX_ITEM_BYTES + 64 * 1024).min(c.max_request_bytes()).max(c.max_json_bytes.min(c.max_request_bytes()))
         } else if run {
             (c.runs.max_run_bytes / 3 * 4 + 64 * 1024).max(c.max_json_bytes.min(c.max_request_bytes()).max(64 * 1024))
         } else {

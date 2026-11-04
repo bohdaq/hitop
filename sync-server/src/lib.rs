@@ -16,6 +16,7 @@ pub mod db;
 pub mod dbtools;
 pub mod github;
 pub mod hostkey;
+pub mod library;
 pub mod limits;
 pub mod mail;
 pub mod oidc;

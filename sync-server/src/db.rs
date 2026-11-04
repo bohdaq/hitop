@@ -734,6 +734,23 @@ CREATE TABLE workspace_excluded_keys (
   PRIMARY KEY (workspace_id, key_id)
 );
 CREATE INDEX workspace_excluded_keys_key ON workspace_excluded_keys(key_id);
+", r"
+CREATE TABLE library_items (
+  user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  org_id TEXT NOT NULL,
+  kind TEXT NOT NULL,
+  item_id TEXT NOT NULL,
+  version BIGINT NOT NULL,
+  seq BIGINT NOT NULL,
+  data TEXT NOT NULL,
+  secrets {BLOB} NOT NULL,
+  bytes BIGINT NOT NULL,
+  updated_at BIGINT NOT NULL,
+  deleted BIGINT NOT NULL,
+  PRIMARY KEY (user_id, kind, item_id)
+);
+CREATE INDEX library_items_seq ON library_items(user_id, seq);
+CREATE INDEX library_items_org ON library_items(org_id);
 "];
 
 /// Steps in Rust that run in the same transaction as a migration's SQL (index = migration

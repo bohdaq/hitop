@@ -283,7 +283,7 @@ pub fn usage(state: &State, tx: &mut Tx, org: &str) -> Result<Usage, DbError> {
         seats: p.seats_used(e.limits().guest_viewers),
         guests: p.guests.len() as i64,
         workspaces: ws.as_ref().map_or(0, |r| r.int(0)),
-        storage_bytes: ws.as_ref().map_or(0, |r| r.int(1)),
+        storage_bytes: stored_bytes(tx, org)?,
         runners,
         devices_max,
         invites_today: counter(tx, org, "invites", today)?,
@@ -390,6 +390,13 @@ fn check(state: &State, tx: &mut Tx, org: &str, metric: Metric, used_after: impl
     Ok(())
 }
 
+/// Bytes stored for `org`: its workspaces, plus the personal library (C8) when `org` is a personal org.
+pub fn stored_bytes(tx: &mut Tx, org: &str) -> Result<i64, DbError> {
+    let ws = tx.query_one("SELECT CAST(COALESCE(SUM(bytes), 0) AS BIGINT) FROM workspaces WHERE org_id = $1", &[org.into()])?.map_or(0, |r| r.int(0));
+    let lib = tx.query_one("SELECT CAST(COALESCE(SUM(bytes), 0) AS BIGINT) FROM library_items WHERE org_id = $1 AND deleted = 0", &[org.into()])?.map_or(0, |r| r.int(0));
+    Ok(ws + lib)
+}
+
 /// One more workspace in `org`.
 pub fn check_workspace(state: &State, tx: &mut Tx, org: &str) -> Result<(), ApiError> {
     check(state, tx, org, Metric::Workspaces, |tx, _| Ok(tx.query_one("SELECT COUNT(*) FROM workspaces WHERE org_id = $1", &[org.into()])?.map_or(0, |r| r.int(0)) + 1))
@@ -401,7 +408,7 @@ pub fn check_storage(state: &State, tx: &mut Tx, org: &str, growth: i64) -> Resu
         return Ok(());
     }
     let r = check(state, tx, org, Metric::StorageBytes, |tx, _| {
-        Ok(tx.query_one("SELECT CAST(COALESCE(SUM(bytes), 0) AS BIGINT) FROM workspaces WHERE org_id = $1", &[org.into()])?.map_or(0, |r| r.int(0)) + growth)
+        Ok(stored_bytes(tx, org)? + growth)
     });
     // `used` in the error is what is stored now.
     r.map_err(|mut e| {
