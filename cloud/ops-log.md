@@ -139,6 +139,24 @@ date (UTC), who, what, the commit, the checks run after it.
   and the other sites, so the owner applies it (deploy/README.md step 2–3, snippet in
   deploy/rws-routes.toml). `status.` waits for a decision: check.sh is meant to run off the VM.
 
+## 2026-11-04 cloud.hitop.rws8.tech served (06:03 UTC)
+
+- Who: agent, with the owner's permission for this one front rws change. What: the `hitop-cloud`
+  route from deploy/rws-routes.toml (before the "Docs moved under /docs/" comment) and
+  `"cloud.hitop.rws8.tech"` appended to `[acme] domains`. Backup
+  `/etc/rws/rws.config.toml.bak-20261104T060321Z`; `rws --check` OK.
+- Certificate: `cert.pem`/`key.pem` moved to `.bak-20261104T060321Z`, rws restarted; the new
+  certificate (notBefore 2026-11-04 05:05 UTC) has 13 names including cloud.hitop.rws8.tech; mail
+  TLS on :465 serves it.
+- hitop-sync: `/etc/hitop-sync/env` backed up (`env.bak-20261104T060321Z`),
+  `https://cloud.hitop.rws8.tech` appended to `HITOP_SYNC_ALLOWED_ORIGINS` and
+  `HITOP_SYNC_RP_ORIGINS`, restarted: `/healthz` schema 11; CORS preflight from that origin 204.
+- Checks: https://cloud.hitop.rws8.tech/ ("HITOP Cloud") and `/healthz` 200; rws8.tech,
+  www.rws8.tech, hitop.rws8.tech, sync.hitop.rws8.tech/healthz, lit.rws8.tech, git.rws8.tech,
+  mta-sts 200; php demo 302 to its login, then 200.
+- Rollback: restore both `.bak-20261104T060321Z` files (config, cert/key) and restart rws.
+- `HITOP_SYNC_PORTAL_URL` unchanged (the `/cloud/` path still answers).
+
 <!-- Next entry (template): record: commit, backup file names (sync.db.bak-<ts>), the row
 counts before and after (users, workspaces, members; orgs with personal_of <> '' = users with
 runner_of = ''), `hitop-sync-server over-limits` output (0 over a limit), curl of /healthz on sync
