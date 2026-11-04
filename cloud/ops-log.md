@@ -257,3 +257,11 @@ and on hitop.rws8.tech/cloud/healthz. -->
   `status = refunded` (Free limits) and keeps `plan = pro` by design, which the portal shows as
   "pro" in the org list and the plan heading. The first-purchase `invoice.paid` events are
   `superseded` (they arrive before the subscription is tied to the org; they change nothing there).
+
+## 2026-11-04 Portal f6090db deployed: plans on Free limits say so
+
+- Who: owner ran the commands, agent prepared them. What: `f6090db` portal build only (the site
+  untouched): `/var/www/hitop/cloud/` backed up to `cloud.bak-<ts>`, then replaced. A paid plan on
+  Free limits (refunded, ended, unpaid, paused, not paid yet) now reads "free (pro refunded)" in
+  the organizations list, the org page and the plan heading; the plan itself is unchanged.
+  Checks: portal e2e 90/90 before the deploy; `https://cloud.hitop.rws8.tech/` 200 from the VM.
