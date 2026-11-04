@@ -986,10 +986,9 @@ pub fn seats(state: &State, request: &Request, params: &PathParams) -> ApiResult
 /// `hitop-sync-server billing-events [--unmatched]`: the latest deliveries (ids and outcomes).
 pub fn list_events(state: &State, unmatched: bool) -> Result<Vec<Json>, DbError> {
     state.db.read_tx(|tx| {
-        let rows = tx.query(
-            "SELECT id, event_name, org_id, subscription_id, outcome, test_mode, received_at FROM billing_events WHERE ($1 = 0 OR outcome = 'unmatched') ORDER BY received_at DESC, id LIMIT 200",
-            &[i64::from(unmatched).into()],
-        )?;
+        // No parameter compared with a literal: Postgres would type it int4 and refuse an i64.
+        let filter = if unmatched { "WHERE outcome = 'unmatched' " } else { "" };
+        let rows = tx.query(&format!("SELECT id, event_name, org_id, subscription_id, outcome, test_mode, received_at FROM billing_events {filter}ORDER BY received_at DESC, id LIMIT 200"), &[])?;
         Ok(rows
             .iter()
             .map(|r| json!({ "id": r.text(0), "event": r.text(1), "org": r.text(2), "subscription": r.text(3), "outcome": r.text(4), "testMode": r.int(5) != 0, "receivedAt": r.int(6) }))

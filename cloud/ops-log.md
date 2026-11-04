@@ -230,3 +230,18 @@ and on hitop.rws8.tech/cloud/healthz. -->
   the site (two more drafts, noindex) and the portal (SCIM page). No new setting. After it:
   `db-stats` lists the six new tables (0 rows), `over-limits` still 0, and `support-bundle
   --out /root/bundle-<ts>.json` runs (read it; delete it after).
+
+## 2026-11-04 Sandbox refund check; `billing-events` fixed on Postgres, not deployed
+
+- Who: agent, with the owner's sandbox purchases (Pro on the personal org, Team on testCo, 1 → 3
+  seats). The owner fully refunded the Pro charge; the portal still says "pro".
+- Stripe (sandbox, read only): Pro and Team are on different customers; the webhook endpoint
+  (`2026-10-28.endive`) is subscribed to all nine events incl. `charge.refunded`; the refund event
+  was delivered with a 2xx (`pending_webhooks: 0`) and nothing for the Pro subscription came after
+  it. So the customer-collision theory doesn't hold. A refund keeps `plan = pro` and sets
+  `status = refunded` (Free limits) by design, so "pro" in the plan heading and org list is
+  expected; the server's outcome is not confirmed yet.
+- Found: `hitop-sync-server billing-events` failed on Postgres ("error serializing parameter 0":
+  `$1 = 0` makes Postgres type `$1` int4, we bind an i64). Fixed in `billing::list_events` (no
+  parameter), `tests/postgres.rs` now runs both forms; the whole workspace and the Postgres suite
+  pass. Deploy: the usual `install.sh` with the `--features postgres` build; no schema change.

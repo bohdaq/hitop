@@ -373,6 +373,11 @@ fn postgres_billing() {
     assert_eq!(s.call("GET", &format!("/v1/orgs/{org}/billing/portal"), Some(&ada.session), None).status, 200);
     delivered(&s, &st::refund(&st::customer_of("sub_1"), true, T0 + 18 * 86_400), "applied");
     assert_eq!(s.call("GET", &format!("/v1/orgs/{org}/limits"), Some(&ada.session), None).json["planInForce"], "free");
+    // `billing-events` (both forms) on Postgres: four deliveries recorded, none unmatched.
+    let all = hitop_sync_server::billing::list_events(s.app.state(), false).unwrap();
+    assert_eq!(all.len(), 4);
+    assert_eq!(all.iter().find(|e| e["event"] == "charge.refunded").unwrap()["outcome"], "applied");
+    assert!(hitop_sync_server::billing::list_events(s.app.state(), true).unwrap().is_empty());
 }
 
 #[test]
