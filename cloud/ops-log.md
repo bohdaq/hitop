@@ -265,3 +265,15 @@ and on hitop.rws8.tech/cloud/healthz. -->
   Free limits (refunded, ended, unpaid, paused, not paid yet) now reads "free (pro refunded)" in
   the organizations list, the org page and the plan heading; the plan itself is unchanged.
   Checks: portal e2e 90/90 before the deploy; `https://cloud.hitop.rws8.tech/` 200 from the VM.
+
+## 2026-11-04 Sandbox failed-payment test (testCo, Team)
+
+- Who: owner set card 4000 0000 0000 0341 in the billing portal; agent made the seat calls through
+  the Stripe API (sandbox) as the portal's seats endpoint does.
+- 3 → 4 seats with `always_invoice` + `error_if_incomplete` (our server's call): `card_declined`,
+  subscription unchanged at 3, no event our webhook handles. Then the same with
+  `allow_incomplete`: subscription `past_due` at 4 seats, invoice GO9298R9-0004 ($14.73) open,
+  Stripe retries it (next ~2026-11-06). `customer.subscription.updated` (past_due) and
+  `invoice.payment_failed` delivered (2xx); the portal shows the "payment failed" banner, plan
+  still Team.
+- Left: cancel the sandbox Pro and Team subscriptions (owner's go-ahead).
