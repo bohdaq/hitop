@@ -311,6 +311,11 @@ const TEXT_OF = `(root) => {
   const pageText = () => page.evaluate(() => window.__text(document.body));
   const alertText = async () => (await page.locator('[role="alert"]').evaluateAll((els) => els.map((el) => window.__text(el)).join(" | ")).catch(() => "")) || "";
   const toast = () => textOf(page.locator("lit-material-snackbar[data-portal-snackbar]"));
+  // A snackbar may come after in-page work (the password key derivation runs between two requests): poll for its words.
+  const toastWait = async (text) => {
+    await page.waitForFunction((t) => (document.querySelector("lit-material-snackbar[data-portal-snackbar]")?.textContent || "").includes(t), text, { timeout: 15000 }).catch(() => {});
+    return toast();
+  };
   const heading = (name) => page.getByRole("heading", { name, exact: true, level: 1 });
   // A lit-material-select: open it and pick an option by its text.
   const pick = async (select, option) => {
@@ -434,7 +439,7 @@ const TEXT_OF = `(root) => {
     await app.getByLabel("Mail to members (comma separated)").fill("ada@example.com");
     await app.getByRole("button", { name: "Save alerts" }).click();
     await idle();
-    check("an owner saves the alert settings", (await toast()).includes("Alert settings saved") && (await server.api("GET", `/v1/workspaces/${wsId}/alerts`, adaSession)).json.settings.email[0] === "ada@example.com", (await toast()) + (await alertText()));
+    check("an owner saves the alert settings", (await toastWait("Alert settings saved")).includes("Alert settings saved") && (await server.api("GET", `/v1/workspaces/${wsId}/alerts`, adaSession)).json.settings.email[0] === "ada@example.com", (await toast()) + (await alertText()));
     await axe("runs");
 
     // Members: an invite dialog; an account joins at once, an address without one is invited.
@@ -443,7 +448,7 @@ const TEXT_OF = `(root) => {
     await app.getByLabel("Email to invite").fill("bob@example.com");
     await app.getByRole("button", { name: "Send invite" }).click();
     await idle();
-    check("an account is added", (await toast()).includes("Added bob@example.com"), (await toast()) + (await alertText()));
+    check("an account is added", (await toastWait("Added bob@example.com")).includes("Added bob@example.com"), (await toast()) + (await alertText()));
     await app.getByRole("button", { name: "Invite", exact: true }).click();
     await app.getByLabel("Email to invite").fill("carol@example.com");
     await app.getByRole("button", { name: "Send invite" }).click();
@@ -485,6 +490,9 @@ const TEXT_OF = `(root) => {
     await page.goto(`${origin}/#/orgs/${orgId}/plan`);
     await idle();
     check("an old #/ link lands on the same page", page.url() === `${origin}/orgs/${orgId}/plan` && (await heading("Plan and billing").count()) === 1, page.url());
+    await page.goto(`${origin}/cloud/orgs/${orgId}/plan`);
+    await idle();
+    check("a /cloud-prefixed path (the old address's redirect) lands on the same page", page.url() === `${origin}/orgs/${orgId}/plan` && (await heading("Plan and billing").count()) === 1, page.url());
     await axe("plan");
     await shoot("plan");
 
@@ -636,7 +644,7 @@ const TEXT_OF = `(root) => {
     await app.getByRole("button", { name: "Save", exact: true }).click();
     await idle();
     const ssoApi = await server.api("GET", `/v1/orgs/${globex}/sso`, adaSession);
-    check("the provider is saved, the secret never comes back", (await toast()).includes("saved") && ssoApi.json.config?.issuer === deadIdp && ssoApi.json.config.hasSecret && !JSON.stringify(ssoApi.json).includes("e2e-client-secret") && !(await pageText()).includes("e2e-client-secret"), JSON.stringify(ssoApi.json) + (await alertText()));
+    check("the provider is saved, the secret never comes back", (await toastWait("saved")).includes("saved") && ssoApi.json.config?.issuer === deadIdp && ssoApi.json.config.hasSecret && !JSON.stringify(ssoApi.json).includes("e2e-client-secret") && !(await pageText()).includes("e2e-client-secret"), JSON.stringify(ssoApi.json) + (await alertText()));
     await app.getByRole("button", { name: "Test", exact: true }).click();
     await idle();
     check("Test reports an unreachable provider", (await alertText()).includes("provider check failed"), await alertText());
@@ -821,7 +829,7 @@ const TEXT_OF = `(root) => {
     await app.getByLabel("Repeat the new password").fill("erin's second password");
     await app.getByRole("button", { name: "Change password" }).click();
     await idle();
-    check("change the password", (await toast()).includes("Password changed"), (await toast()) + (await alertText()));
+    check("change the password", (await toastWait("Password changed")).includes("Password changed"), (await toast()) + (await alertText()));
     const k2 = await keysOf("erin@example.com", "erin's second password");
     const s2 = (await server.api("POST", "/v1/auth/password/login", null, { email: "erin@example.com", authKey: k2.authKey })).json.session;
     const got = await server.api("GET", "/v1/me/recovery?method=password", s2);
@@ -842,7 +850,7 @@ const TEXT_OF = `(root) => {
     await app.getByRole("button", { name: "Reset password" }).click();
     await idle();
     await heading("Home").waitFor({ timeout: 10000 }).catch(() => {});
-    const resetNote = await toast();
+    const resetNote = await toastWait("is gone");
     check("a reset signs in and says the key bundle is gone", (await pageText()).includes("erin@example.com") && resetNote.includes("is gone"), resetNote + (await alertText()));
     check("...it is gone on the server", (await server.api("GET", "/v1/me/recovery?method=password", JSON.parse(await page.evaluate(() => localStorage.getItem("hitop_cloud"))).session)).status === 404);
 
@@ -850,7 +858,7 @@ const TEXT_OF = `(root) => {
     await page.evaluate(() => localStorage.setItem("hitop_cloud", JSON.stringify({ ...JSON.parse(localStorage.getItem("hitop_cloud")), session: "ended-elsewhere" })));
     await go("/tokens");
     await page.getByRole("heading", { name: "Sign in", exact: true }).waitFor({ timeout: 10000 });
-    check("an ended session goes back to sign-in with a word", page.url().startsWith(`${origin}/sign-in`) && (await toast()).includes("session ended"), `${page.url()} ${await toast()}`);
+    check("an ended session goes back to sign-in with a word", page.url().startsWith(`${origin}/sign-in`) && (await toastWait("session ended")).includes("session ended"), `${page.url()} ${await toast()}`);
 
     const events = (await server.api("GET", `/v1/me/audit?limit=100`, bobSession)).json.events.map((e) => e.event);
     check("the server's audit log has the sign-ins", events.includes("signin"), events.join());

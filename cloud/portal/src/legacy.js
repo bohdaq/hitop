@@ -18,5 +18,9 @@ export function legacyHashPath(hash) {
   return "/";
 }
 
+// A redirect from the old address keeps its path (/cloud/orgs/<id>), as does a bookmark of it: the
+// prefix comes off first, then a hash route is mapped.
+const prefixed = /^\/cloud(\/|$)/.test(location.pathname) ? location.pathname.replace(/^\/cloud\/?/, "/") : "";
 const mapped = legacyHashPath(location.hash);
 if (mapped) history.replaceState(null, "", mapped + location.search);
+else if (prefixed) history.replaceState(null, "", prefixed + location.search + location.hash);
