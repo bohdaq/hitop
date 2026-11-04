@@ -112,6 +112,7 @@ export class HitopCloud extends LitElement {
     resetSent: { state: true },
     newToken: { state: true },
     limitHit: { state: true },
+    leaving: { state: true },
   };
 
   constructor() {
@@ -147,6 +148,7 @@ export class HitopCloud extends LitElement {
     super.connectedCallback();
     this.textContent = "";
     window.addEventListener("hashchange", () => this.go(location.hash));
+    window.addEventListener("pageshow", () => (this.leaving = false));
     const sso = /^#sso=(.+)$/.exec(location.hash);
     if (sso) {
       history.replaceState(null, "", location.pathname);
@@ -774,12 +776,17 @@ export class HitopCloud extends LitElement {
         const seatsId = `seats-buy-${plan}`;
         parts.push(html`<div class="portal-form" aria-label="Buy ${NAME[plan]}">
           ${plan !== "pro" ? seatsField(seatsId, Math.max(1, billing.seatsUsed)) : nothing}
-          ${offers.map((o) => html`<lit-material-button variant=${o.period === "annual" ? "filled" : "outlined"} ?disabled=${Boolean(this.busy)} @click=${() => this.run("checkout", async () => {
-            const body = { plan: o.plan, period: o.period };
-            if (plan !== "pro") body.seats = Number(this.querySelector(`#${seatsId}`).value);
-            const { url } = await this.api.call("POST", `${base}/checkout`, body);
-            location.assign(url);
-          })}>Buy ${NAME[o.plan]}, ${o.period === "annual" ? "yearly" : "monthly"}</lit-material-button>`)}
+          ${offers.map((o) => {
+            const key = `${o.plan}-${o.period}`;
+            return html`<lit-material-button variant=${o.period === "annual" ? "filled" : "outlined"} ?disabled=${Boolean(this.busy || this.leaving)} @click=${() => this.run(`checkout-${key}`, async () => {
+              const body = { plan: o.plan, period: o.period };
+              if (plan !== "pro") body.seats = Number(this.querySelector(`#${seatsId}`).value);
+              const { url } = await this.api.call("POST", `${base}/checkout`, body);
+              // Stays disabled while the browser loads Stripe's page: a second click would open a second checkout.
+              this.leaving = key;
+              location.assign(url);
+            })}>${this.busy === `checkout-${key}` || this.leaving === key ? "Opening checkout…" : `Buy ${NAME[o.plan]}, ${o.period === "annual" ? "yearly" : "monthly"}`}</lit-material-button>`;
+          })}
         </div>`);
       }
     }
