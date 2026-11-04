@@ -277,3 +277,16 @@ and on hitop.rws8.tech/cloud/healthz. -->
   `invoice.payment_failed` delivered (2xx); the portal shows the "payment failed" banner, plan
   still Team.
 - Left: cancel the sandbox Pro and Team subscriptions (owner's go-ahead).
+
+## 2026-11-04 Finding: one Stripe webhook got a 502 from the front rws
+
+- `evt_1UY30R…` (`customer.subscription.updated`, the owner's card change, 12:09:31 UTC): the
+  front rws access log has `POST /v1/billing/stripe` → 502 at 12:09:32; the sync server logged
+  nothing (it never got the request). Cause (rws source): the proxy keeps idle upstream
+  connections for 60 s (`rws-proxy` pool `DEFAULT_IDLE_TIMEOUT`) and retries a dead one only for
+  idempotent methods; the backend (the sync server, an rws app) closes idle keep-alive
+  connections after 30 s (`http1_async::READ_TIMEOUT`). A POST on a connection idle 30–60 s gets
+  a 502. Here a portal call at 12:08:53 left the connection; Stripe's POST came 39 s later.
+- Impact: Stripe retries webhooks (this one will be `stale`, harmless); a portal POST (checkout,
+  seats) can also get a 502 in that window, and the request never reached the server (nothing
+  changed; retrying works). Fix belongs in rws; not changed yet.
