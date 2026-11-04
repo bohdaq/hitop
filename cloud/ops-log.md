@@ -290,3 +290,7 @@ and on hitop.rws8.tech/cloud/healthz. -->
 - Impact: Stripe retries webhooks (this one will be `stale`, harmless); a portal POST (checkout,
   seats) can also get a 502 in that window, and the request never reached the server (nothing
   changed; retrying works). Fix belongs in rws; not changed yet.
+- Fix in rws `1cb35dc2` (main, unreleased): pooled upstream connections are checked with a
+  non-blocking peek before reuse and skipped when the backend closed them (any method, plain and
+  TLS, sync and async forwarders); the pools keep idle connections 25 s. The VM's front rws
+  (18.26.0) still has the bug until a release and an upgrade (owner's go-ahead).
