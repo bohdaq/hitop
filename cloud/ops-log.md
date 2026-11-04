@@ -312,3 +312,12 @@ and on hitop.rws8.tech/cloud/healthz. -->
   (over its 30 s keep-alive), then a POST to `/v1/billing/stripe` → 401 from the sync server
   (bad signature), not 502. Rollback: `sudo install -m 0755 /usr/local/bin/rws.18.27.2
   /usr/local/bin/rws && sudo systemctl restart rws`.
+
+## 2026-11-04 lit-material 1.0.0 deployed (site, web app, portal, hitop-server)
+
+- Who: owner ran `~/hitop-deploy/out/run-deploy.sh` (agent built `deploy/build.sh` at b93b759 and
+  staged it). What: `1c81731` (every `@lit-material` package 1.0.0) plus hitop-server from main.
+  Checks: `/`, `/app/`, `/terms/`, `/privacy.html`, `/cloud/`, `/cloud/healthz` and
+  cloud.hitop.rws8.tech 200; proxy ok; rws and hitop-server active; live index files of the site,
+  web app and portal match the build. Before: portal e2e 90/90, site checks, web app unit + all 18
+  e2e suites (Tauri mode). Rollback: `/var/www/hitop.bak-<ts>`, `/usr/local/bin/hitop-server.bak-<ts>`.
