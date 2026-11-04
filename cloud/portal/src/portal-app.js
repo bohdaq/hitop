@@ -89,6 +89,14 @@ const STATUS_NOTES = {
   incomplete: "waiting for the first payment: Free limits",
 };
 
+// Statuses that put a paid plan on Free limits (limits.rs plan_in_force), as one word for a label.
+const OFF_STATUS = { refunded: "refunded", expired: "ended", unpaid: "unpaid", paused: "paused", incomplete: "not paid yet" };
+
+/** The plan in force, naming the bought one when it isn't: "free (pro refunded)". */
+function planLabel(plan, status) {
+  return plan && plan !== "free" && OFF_STATUS[status] ? `free (${plan} ${OFF_STATUS[status]})` : plan;
+}
+
 const PLAN_NOTES = {
   free: "Free: 3 people, 3 shared workspaces, 100 MB, 3 devices per person, 5 runner credentials.",
   pro: "Pro: one person and two guests, 25 workspaces, 2 GB, 10 devices, 10 runner credentials.",
@@ -576,7 +584,7 @@ export class HitopCloud extends LitElement {
           <tbody>
             ${this.data.orgs.map((o) => html`<tr>
               <td><a href="#/orgs/${o.id}">${o.personal ? "Personal" : o.name}</a></td>
-              <td>${o.plan}</td><td>${o.role}</td><td>${o.members}</td><td>${o.workspaces}</td>
+              <td>${planLabel(o.plan, o.status)}</td><td>${o.role}</td><td>${o.members}</td><td>${o.workspaces}</td>
             </tr>`)}
           </tbody>
         </table>
@@ -622,7 +630,7 @@ export class HitopCloud extends LitElement {
     return html`
       <section aria-label="Organization">
         <h1>${org.personal ? "Personal" : org.name}</h1>
-        <p class="page-lead">Plan <strong>${org.plan}</strong>${org.seats ? html`, ${org.seats} seat(s)` : nothing}. You are ${org.role}. <a href="#/orgs/${org.id}/plan">${this.data.billing?.enabled ? "Plan and billing" : "Plan details"}</a></p>
+        <p class="page-lead">Plan <strong>${planLabel(org.plan, org.status)}</strong>${org.seats ? html`, ${org.seats} seat(s)` : nothing}. You are ${org.role}. <a href="#/orgs/${org.id}/plan">${this.data.billing?.enabled ? "Plan and billing" : "Plan details"}</a></p>
         ${this.pastDueBanner()}
         ${admin && !org.personal
           ? html`<p aria-label="Organization pages"><a href="#/orgs/${org.id}/admin">Admin console</a> · <a href="#/orgs/${org.id}/sso">Single sign-on</a> · <a href="#/orgs/${org.id}/audit">Audit</a> · <a href="#/orgs/${org.id}/scim">SCIM</a></p>`
@@ -707,7 +715,7 @@ export class HitopCloud extends LitElement {
     const status = billing ? billing.status : usage.status;
     return html`
       <section aria-label="Plan">
-        <h1>Plan: ${org.plan}</h1>
+        <h1>Plan: ${planLabel(org.plan, status)}</h1>
         <p class="page-lead">${PLAN_NOTES[usage.planInForce] || ""}${usage.grandfathered ? " Your limits were raised to what you used before plans existed." : ""}</p>
         ${this.pastDueBanner()}
         ${usage.planInForce !== usage.plan ? html`<p class="portal-error" role="alert">The ${usage.plan} plan is ${STATUS_NOTES[status] || `${status}: Free limits`}. Nothing was deleted.</p>` : nothing}

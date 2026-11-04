@@ -398,6 +398,13 @@ async function syncServer(portalOrigin, extraEnv = {}) {
     await page.goto(`${origin}/#/orgs/${orgId}/plan`);
     await idle();
     check("a refund: Free limits", refunded.json.outcome === "applied" && (await alertText()).includes("refunded: Free limits"), await alertText());
+    check("...the plan heading says Free, naming the refunded plan", (await app.getByRole("heading", { level: 1 }).innerText()) === "Plan: free (team refunded)", await app.getByRole("heading", { level: 1 }).innerText());
+    await page.goto(`${origin}/#/orgs/${orgId}`);
+    await idle();
+    check("...so does the organization page", (await app.getByRole("region", { name: "Organization" }).locator(".page-lead strong").innerText()) === "free (team refunded)", await app.innerText());
+    await page.goto(`${origin}/#/`);
+    await idle();
+    check("...and the organizations list", (await app.getByRole("region", { name: "Organizations" }).innerText()).includes("free (team refunded)"), await app.innerText());
     const expired = await deliver(subscriptionEvent("customer.subscription.deleted", "sub_e2e1", "team_yearly", "canceled", 4, T0 + 380 * 86400, custom));
     const people = (await server.api("GET", `/v1/orgs/${orgId}/members`, bobSession)).json;
     const reads = await server.api("GET", "/v1/workspaces", bobSession);
