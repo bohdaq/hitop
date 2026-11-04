@@ -245,3 +245,15 @@ and on hitop.rws8.tech/cloud/healthz. -->
   `$1 = 0` makes Postgres type `$1` int4, we bind an i64). Fixed in `billing::list_events` (no
   parameter), `tests/postgres.rs` now runs both forms; the whole workspace and the Postgres suite
   pass. Deploy: the usual `install.sh` with the `--features postgres` build; no schema change.
+
+## 2026-11-04 f3f4038 deployed; the sandbox refund was applied
+
+- Who: owner ran the commands, agent prepared them. What: `f3f4038` (`--features postgres` release
+  build, sha256 163c0408aa707e1b…) via `install.sh`, after `hitop-sync-server dump
+  /root/pre-deploy-<ts>`. Checks: `/healthz` ok, Postgres, schema 11; `/sync.db` 404;
+  `over-limits` on the live database 0.
+- `billing-events` now works on Postgres: 9 deliveries. `charge.refunded` (the Pro refund) is
+  `applied` to `personal-0f3afdf2-…` / `sub_1UY1aI…`. The server was right all along: the org is
+  `status = refunded` (Free limits) and keeps `plan = pro` by design, which the portal shows as
+  "pro" in the org list and the plan heading. The first-purchase `invoice.paid` events are
+  `superseded` (they arrive before the subscription is tied to the org; they change nothing there).
