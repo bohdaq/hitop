@@ -260,9 +260,10 @@ async function syncServer(portalOrigin, extraEnv = {}) {
     // Bob has an account already; Carol has none.
     const bobSession = await server.signIn("bob@example.com");
 
-    await page.goto(`${origin}/`);
+    // No server field: the hosted server, or ?server= (kept with the account, even after sign out).
+    await page.goto(`${origin}/?server=${encodeURIComponent(server.url)}`);
     await app.getByRole("button", { name: "Use a code instead" }).click();
-    await app.getByLabel("Sync server").fill(server.url);
+    check("the sign-in page has no server field", (await app.getByLabel("Sync server").count()) === 0);
     await app.getByLabel("Email").fill("ada@example.com");
     await app.getByRole("button", { name: "Send code" }).click();
     await idle();
@@ -617,7 +618,6 @@ async function syncServer(portalOrigin, extraEnv = {}) {
     await app.getByRole("button", { name: "Sign out" }).click();
     await idle();
     check("signed out", await app.getByRole("button", { name: "Sign in with a passkey" }).isVisible());
-    await app.getByLabel("Sync server").fill(server.url);
     await app.getByLabel("Email").fill("ada@example.com");
     await app.getByRole("button", { name: "Sign in with a passkey" }).click();
     await idle();
@@ -632,7 +632,6 @@ async function syncServer(portalOrigin, extraEnv = {}) {
     await app.getByRole("button", { name: "Sign out" }).click();
     await idle();
     if (await app.getByRole("button", { name: "Use a password instead" }).count()) await app.getByRole("button", { name: "Use a password instead" }).click();
-    await app.getByLabel("Sync server").fill(server.url);
     await app.getByLabel("Email").fill("erin@example.com");
     await app.getByLabel("Password", { exact: true }).fill("erin's first password");
     let before = server.mails("erin@example.com");
@@ -649,7 +648,6 @@ async function syncServer(portalOrigin, extraEnv = {}) {
     await app.getByRole("button", { name: "Sign out" }).click();
     await idle();
     const passwordSignIn = async (password) => {
-      await app.getByLabel("Sync server").fill(server.url);
       await app.getByLabel("Email").fill("erin@example.com");
       await app.getByLabel("Password", { exact: true }).fill(password);
       await app.getByRole("button", { name: "Sign in", exact: true }).click();
@@ -677,7 +675,6 @@ async function syncServer(portalOrigin, extraEnv = {}) {
     await idle();
     await app.getByRole("button", { name: "Forgot password?" }).click();
     check("the page warns before a reset", (await app.getByLabel("Reset warning").innerText()).includes("can't unlock your end-to-end encrypted workspaces"));
-    await app.getByLabel("Sync server").fill(server.url);
     await app.getByLabel("Email").fill("erin@example.com");
     before = server.mails("erin@example.com");
     await app.getByRole("button", { name: "Send reset code" }).click();

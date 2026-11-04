@@ -117,6 +117,12 @@ export class HitopCloud extends LitElement {
   constructor() {
     super();
     this.account = load();
+    // ?server=<url> picks another sync server (self-hosted, tests); the hosted one otherwise.
+    const asked = new URLSearchParams(location.search).get("server");
+    if (asked && asked !== this.account.server) {
+      this.account = { server: asked };
+      save(this.account);
+    }
     this.route = location.hash;
     this.data = {};
     this.busy = "";
@@ -274,13 +280,7 @@ export class HitopCloud extends LitElement {
   render() {
     return html`
       <div aria-busy=${this.busy ? "true" : "false"}>
-        ${this.error
-          ? html`<p class="portal-error" role="alert">${this.error}${this.limitHit?.org
-              ? html` <a class="portal-upgrade" href="#/orgs/${this.limitHit.org}/plan">See plans</a>`
-              : nothing}</p>`
-          : nothing}
-        ${this.note ? html`<p class="portal-note" role="status">${this.note}</p>` : nothing}
-        ${this.signedInNow ? this.renderSignedIn() : this.renderSignIn()}
+        ${this.signedInNow ? html`${this.messages()}${this.renderSignedIn()}` : this.renderSignIn()}
       </div>`;
   }
 
@@ -288,35 +288,47 @@ export class HitopCloud extends LitElement {
 
   renderSignIn() {
     const mode = this.mode;
-    const server = () => normalizeServer(this.field("server"));
-    const fields = html`
-      <lit-material-text-field id="server" variant="outlined" label="Sync server" .value=${this.account.server || DEFAULT_SERVER}></lit-material-text-field>
-      <lit-material-text-field id="email" variant="outlined" label="Email" type="email" .value=${this.account.email || ""}></lit-material-text-field>`;
+    // The hosted server (or the one the page was opened with: ?server=<url>).
+    const server = () => normalizeServer(this.account.server || DEFAULT_SERVER);
+    const email = html`<lit-material-text-field id="email" variant="outlined" label="Email" type="email" autocomplete="email" .value=${this.account.email || ""}></lit-material-text-field>`;
     const remember = (s) => {
       this.account = { server: s, email: this.field("email") };
       save(this.account);
     };
-    const others = html`<div class="portal-form portal-others">
+    const busy = Boolean(this.busy);
+    const card = (title, lead, body) => html`<section aria-label="Sign in" class="auth">
+      <div class="auth-card">
+        <img class="auth-logo" src="https://hitop.rws8.tech/favicon.svg" alt="" width="40" height="40" />
+        <h1>${title}</h1>
+        ${lead ? html`<p class="auth-lead">${lead}</p>` : nothing}
+        ${this.messages()}
+        ${body}
+      </div>
+      <p class="auth-foot">The same account as hitop sync: the app's Sync page or <code>hitop sync login</code>.</p>
+    </section>`;
+    const providers = this.methods?.google || this.methods?.github || this.sso?.enabled
+      ? html`<div class="auth-stack">
+          ${this.methods?.google ? this.providerButton("google", "Continue with Google") : nothing}
+          ${this.methods?.github ? this.providerButton("github", "Continue with GitHub") : nothing}
+          ${this.sso?.enabled ? this.providerButton("sso", `Sign in with ${this.sso.name || "SSO"}`) : nothing}
+        </div>
+        <p class="auth-or"><span>or</span></p>`
+      : nothing;
+    const others = html`<div class="auth-alt">
       ${mode === "code"
         ? html`<lit-material-button variant="text" @click=${() => (this.mode = "password")}>Use a password instead</lit-material-button>`
         : html`<lit-material-button variant="text" @click=${() => (this.mode = "code")}>Use a code instead</lit-material-button>`}
-      <lit-material-button variant="outlined" ?disabled=${Boolean(this.busy)} @click=${() => this.run("passkey", async () => {
+      <lit-material-button variant="text" ?disabled=${busy} @click=${() => this.run("passkey", async () => {
         const s = server();
         const reply = await passkeySignIn(new Api(s), this.field("email"));
         this.signedIn(s, reply);
       })}>Sign in with a passkey</lit-material-button>
-      ${this.methods?.google ? this.providerButton("google", "Continue with Google") : nothing}
-      ${this.methods?.github ? this.providerButton("github", "Continue with GitHub") : nothing}
-      ${this.sso?.enabled ? this.providerButton("sso", `Sign in with ${this.sso.name || "SSO"}`) : nothing}
     </div>`;
-    const lead = html`<p class="page-lead">Use the account you sync with: the same address in hitop (Sync page, or <code>hitop sync login</code>). Your collections stay end-to-end encrypted; this portal only manages organizations, people, usage and tokens.</p>`;
     if (mode === "signup") {
-      return html`<section aria-label="Sign in" class="portal-card">
-        <h1>Confirm your address</h1>
-        <p class="page-lead">We mailed a confirmation code to ${this.account.email}. Paste it (or the whole link) here to finish making your account.</p>
-        <div class="portal-form">
+      return card("Confirm your address", html`We mailed a confirmation code to <strong>${this.account.email}</strong>. Paste it, or the whole link, to finish making your account.`, html`
+        <div class="auth-stack">
           <lit-material-text-field id="signup-code" variant="outlined" label="Code from the confirmation mail"></lit-material-text-field>
-          <lit-material-button variant="filled" ?disabled=${Boolean(this.busy)} @click=${() => this.run("signin", async () => {
+          <lit-material-button variant="filled" ?disabled=${busy} @click=${() => this.run("signin", async () => {
             const s = this.account.server || DEFAULT_SERVER;
             const reply = await new Api(s).call("POST", "/v1/auth/password/verify", { token: this.field("signup-code").split("#").pop() });
             this.mode = "password";
@@ -324,81 +336,83 @@ export class HitopCloud extends LitElement {
             this.note = "Account ready. Sign in with the same password in hitop: your first device seals its keys with it, so the password unlocks them on your next devices.";
           })}>Confirm</lit-material-button>
           <lit-material-button variant="text" @click=${() => (this.mode = "password")}>Back</lit-material-button>
-        </div>
-      </section>`;
+        </div>`);
     }
     if (mode === "forgot") {
-      return html`<section aria-label="Sign in" class="portal-card">
-        <h1>Reset your password</h1>
-        <p class="portal-warning" aria-label="Reset warning">A reset signs you in again, but it can't unlock your end-to-end encrypted workspaces on a new device: your old password sealed their keys, and nobody, the server included, can open them without it. Keep your recovery phrase or a device that is still signed in. Remembered it? Go back and sign in.</p>
-        <div class="portal-form">${fields}
-          <lit-material-button variant="outlined" ?disabled=${Boolean(this.busy)} @click=${() => this.run("forgot", async () => {
+      return card("Reset your password", nothing, html`
+        <p class="portal-warning" aria-label="Reset warning">A reset signs you in again, but it can't unlock your end-to-end encrypted workspaces on a new device: your old password sealed their keys, and nobody, the server included, can open them without it. Keep your recovery phrase or a device that is still signed in.</p>
+        <div class="auth-stack">
+          ${email}
+          <lit-material-button variant=${this.resetSent ? "outlined" : "filled"} ?disabled=${busy} @click=${() => this.run("forgot", async () => {
             const s = server();
             await new Api(s).call("POST", "/v1/auth/password/forgot", { email: this.field("email") });
             remember(s);
             this.resetSent = true;
             this.note = "If the address has an account, a reset code is on its way.";
           })}>Send reset code</lit-material-button>
-        </div>
-        ${this.resetSent
-          ? html`<div class="portal-form">
-              <lit-material-text-field id="reset-code" variant="outlined" label="Code from the reset mail"></lit-material-text-field>
-              <lit-material-text-field id="reset-password" variant="outlined" label="New password" type="password"></lit-material-text-field>
-              <lit-material-text-field id="reset-password2" variant="outlined" label="Repeat the new password" type="password"></lit-material-text-field>
-              <lit-material-button variant="filled" ?disabled=${Boolean(this.busy)} @click=${() => this.run("signin", async () => {
-                const next = this.raw("reset-password");
-                if (next !== this.raw("reset-password2")) throw new Error("The two new passwords differ");
-                const s = this.account.server || DEFAULT_SERVER;
-                const reply = await passwordReset(new Api(s), this.field("reset-code").split("#").pop(), next);
-                this.mode = "password";
-                this.resetSent = false;
-                this.signedIn(s, reply);
-                this.note = reply.bundleLost
-                  ? "Password reset. The key bundle your old password sealed is gone: on a new device, use your recovery phrase or a device that still has your workspaces."
-                  : "Password reset.";
-              })}>Reset password</lit-material-button>
-            </div>`
-          : nothing}
-        <lit-material-button variant="text" @click=${() => (this.mode = "password")}>Back to sign in</lit-material-button>
-      </section>`;
+          ${this.resetSent
+            ? html`
+                <lit-material-text-field id="reset-code" variant="outlined" label="Code from the reset mail"></lit-material-text-field>
+                <lit-material-text-field id="reset-password" variant="outlined" label="New password" type="password" autocomplete="new-password"></lit-material-text-field>
+                <lit-material-text-field id="reset-password2" variant="outlined" label="Repeat the new password" type="password" autocomplete="new-password"></lit-material-text-field>
+                <lit-material-button variant="filled" ?disabled=${busy} @click=${() => this.run("signin", async () => {
+                  const next = this.raw("reset-password");
+                  if (next !== this.raw("reset-password2")) throw new Error("The two new passwords differ");
+                  const s = this.account.server || DEFAULT_SERVER;
+                  const reply = await passwordReset(new Api(s), this.field("reset-code").split("#").pop(), next);
+                  this.mode = "password";
+                  this.resetSent = false;
+                  this.signedIn(s, reply);
+                  this.note = reply.bundleLost
+                    ? "Password reset. The key bundle your old password sealed is gone: on a new device, use your recovery phrase or a device that still has your workspaces."
+                    : "Password reset.";
+                })}>Reset password</lit-material-button>`
+            : nothing}
+          <lit-material-button variant="text" @click=${() => (this.mode = "password")}>Back to sign in</lit-material-button>
+        </div>`);
     }
+    const lead = "Organizations, seats, billing and access tokens for hitop sync. Your collections stay end-to-end encrypted: this page never sees them.";
     if (mode === "code") {
-      return html`<section aria-label="Sign in" class="portal-card">
-        <h1>Sign in to HITOP Cloud</h1>
-        ${lead}
-        <div class="portal-form">${fields}
-          <lit-material-button variant="filled" ?disabled=${Boolean(this.busy)} @click=${() => this.run("code", async () => {
+      return card("Sign in to HITOP Cloud", lead, html`
+        ${providers}
+        <div class="auth-stack">
+          ${email}
+          <lit-material-button variant=${this.awaitingCode ? "outlined" : "filled"} ?disabled=${busy} @click=${() => this.run("code", async () => {
             const s = server();
             await new Api(s).call("POST", "/v1/auth/email", { email: this.field("email") });
             remember(s);
             this.awaitingCode = true;
             this.note = "Check your mail for the sign-in code.";
           })}>Send code</lit-material-button>
+          ${this.awaitingCode
+            ? html`
+                <lit-material-text-field id="code" variant="outlined" label="Code from the mail"></lit-material-text-field>
+                <lit-material-button variant="filled" ?disabled=${busy} @click=${() => this.run("signin", async () => {
+                  // A pasted link works too: the code is after the '#'.
+                  const code = this.field("code").split("#").pop();
+                  const s = this.account.server || DEFAULT_SERVER;
+                  this.signedIn(s, await new Api(s).call("POST", "/v1/auth/email/verify", { token: code }));
+                })}>Sign in</lit-material-button>`
+            : nothing}
         </div>
-        ${this.awaitingCode
-          ? html`<div class="portal-form">
-              <lit-material-text-field id="code" variant="outlined" label="Code from the mail"></lit-material-text-field>
-              <lit-material-button variant="filled" ?disabled=${Boolean(this.busy)} @click=${() => this.run("signin", async () => {
-                // A pasted link works too: the code is after the '#'.
-                const code = this.field("code").split("#").pop();
-                const s = this.account.server || DEFAULT_SERVER;
-                this.signedIn(s, await new Api(s).call("POST", "/v1/auth/email/verify", { token: code }));
-              })}>Sign in</lit-material-button>
-            </div>`
-          : nothing}
-        ${others}
-      </section>`;
+        ${others}`);
     }
-    return html`<section aria-label="Sign in" class="portal-card">
-      <h1>Sign in to HITOP Cloud</h1>
-      ${lead}
-      <div class="portal-form">${fields}
-        <lit-material-text-field id="password" variant="outlined" label="Password" type="password"></lit-material-text-field>
-        <lit-material-button variant="filled" ?disabled=${Boolean(this.busy)} @click=${() => this.run("signin", async () => {
+    return card("Sign in to HITOP Cloud", lead, html`
+      ${providers}
+      <div class="auth-stack">
+        ${email}
+        <lit-material-text-field id="password" variant="outlined" label="Password" type="password" autocomplete="current-password"></lit-material-text-field>
+        <div class="auth-forgot">
+          <lit-material-button variant="text" @click=${() => {
+            this.mode = "forgot";
+            this.resetSent = false;
+          }}>Forgot password?</lit-material-button>
+        </div>
+        <lit-material-button variant="filled" ?disabled=${busy} @click=${() => this.run("signin", async () => {
           const s = server();
           this.signedIn(s, await passwordSignIn(new Api(s), this.field("email"), this.raw("password")));
         })}>Sign in</lit-material-button>
-        <lit-material-button variant="outlined" ?disabled=${Boolean(this.busy)} @click=${() => this.run("signup", async () => {
+        <lit-material-button variant="outlined" ?disabled=${busy} @click=${() => this.run("signup", async () => {
           const s = server();
           await passwordSignUp(new Api(s), this.field("email"), this.raw("password"));
           remember(s);
@@ -406,17 +420,23 @@ export class HitopCloud extends LitElement {
           this.note = "Check your mail for the confirmation code.";
         })}>Create account</lit-material-button>
       </div>
-      <lit-material-button variant="text" @click=${() => {
-        this.mode = "forgot";
-        this.resetSent = false;
-      }}>Forgot password?</lit-material-button>
-      ${others}
-    </section>`;
+      ${others}`);
+  }
+
+  // The error and the status line: inside the sign-in card, above the page once signed in.
+  messages() {
+    return html`
+      ${this.error
+        ? html`<p class="portal-error" role="alert">${this.error}${this.limitHit?.org
+            ? html` <a class="portal-upgrade" href="#/orgs/${this.limitHit.org}/plan">See plans</a>`
+            : nothing}</p>`
+        : nothing}
+      ${this.note ? html`<p class="portal-note" role="status">${this.note}</p>` : nothing}`;
   }
 
   providerButton(kind, label) {
-    return html`<lit-material-button variant="outlined" ?disabled=${Boolean(this.busy)} @click=${() => this.run(kind, async () => {
-      const s = normalizeServer(this.field("server"));
+    return html`<lit-material-button variant="outlined" class="auth-provider" ?disabled=${Boolean(this.busy)} @click=${() => this.run(kind, async () => {
+      const s = normalizeServer(this.account.server || DEFAULT_SERVER);
       // Organizations bring their own SSO (C5): the server finds it from the work address.
       if (kind === "sso" && (this.sso?.orgSso || this.methods?.sso?.orgSso) && !this.field("email")) {
         throw new Error("Enter your work address first: it tells the server which organization's single sign-on to use.");
@@ -445,7 +465,7 @@ export class HitopCloud extends LitElement {
     else if (this.data.orgs) page = this.renderOrgs();
     else page = html`<p>Loading…</p>`;
     return html`
-      <p class="portal-whoami">Signed in as <strong>${this.account.email}</strong> on ${this.account.server}
+      <p class="portal-whoami">Signed in as <strong>${this.account.email}</strong>${this.account.server && this.account.server !== DEFAULT_SERVER ? html` on ${this.account.server}` : nothing}
         <lit-material-button variant="text" @click=${() => this.run("signout", async () => {
           await this.api.call("POST", "/v1/auth/logout").catch(() => {});
           this.account = { server: this.account.server, email: this.account.email };
