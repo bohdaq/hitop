@@ -84,3 +84,12 @@ backends = ["127.0.0.1:7880"]
 
   [route.middleware]
   rate_limit = { max_requests = 120, window_secs = 60 }
+
+  # The portal loads only its own files; it talks to sync servers over https (?server= picks a
+  # self-hosted one) and to a local server in development. 'wasm-unsafe-eval': the password
+  # crypto (hitop-sync-crypto in WebAssembly) compiles under this policy. The portal's e2e suite
+  # (cloud/portal/tests/e2e.cjs) serves the portal with this exact header and fails on a violation.
+  [[route.middleware.rewrite.response]]
+  type  = "header_set"
+  name  = "Content-Security-Policy"
+  value = "default-src 'self'; script-src 'self' 'wasm-unsafe-eval'; style-src 'self'; img-src 'self' data: https://hitop.rws8.tech; font-src 'self'; connect-src 'self' https: http://localhost:* http://127.0.0.1:*; frame-ancestors 'none'; base-uri 'none'; form-action 'self'; object-src 'none'"

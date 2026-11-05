@@ -12,6 +12,9 @@ Environment=RWS_CONFIG_PORT=7880
 Environment=RWS_CONFIG_LOG_FORMAT=off
 # Same as the front rws: a directory without index.html is a 404, not a listing.
 Environment=RWS_CONFIG_DIRECTORY_LISTING=false
+# The HITOP Cloud portal (www/cloud/) routes on real paths: an unknown path under /cloud gets its
+# index.html; the site's own misses stay 404 (rws 18.30 spa_fallback_routes).
+Environment=RWS_CONFIG_SPA_FALLBACK_ROUTES=/cloud=cloud/index.html
 Environment=HITOP_ALLOWED_ORIGINS=https://hitop.rws8.tech,https://hitop.168-119-17-57.sslip.io
 # The host's own public address: the proxy must not call back into the front rws.
 Environment=HITOP_DENY_IPS=168.119.17.57
