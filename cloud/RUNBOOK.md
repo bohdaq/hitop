@@ -58,7 +58,7 @@ Copy both to the VM, unpack in a fresh directory, and as root:
 Build `cargo build --release --locked --features postgres` in `sync-server/` at the commit; copy
 the binary and `sync-server/deploy/` to the VM; `sync-server/deploy/install.sh` (it backs up the
 database, the binary and env, restarts, checks `/healthz` and `over-limits`). On Postgres, take a
-backup first: `systemctl start hitop-sync-backup` (or `hitop-sync-server dump /root/pre-deploy-<ts>`). Give the commands the env file as systemd reads it, never with `. /etc/hitop-sync/env`: the `&` in the Postgres URL ends the line for the shell and the command falls back to an empty SQLite file. E.g. `sudo systemd-run --pipe --wait -p EnvironmentFile=/etc/hitop-sync/env -p WorkingDirectory=/root hitop-sync-server dump /root/pre-deploy-<ts>`.
+backup first: `systemctl start hitop-sync-backup` (or `hitop-sync-server dump /root/pre-deploy-<ts>`). Give the commands the env file as systemd reads it, never with `. /etc/hitop-sync/env`: the `&` in the Postgres URL ends the line for the shell and the command falls back to an empty SQLite file. E.g. `sudo systemd-run --pipe --wait -p EnvironmentFile=/etc/hitop-sync/env -p Environment=HITOP_SYNC_GITHUB_APP_KEY_FILE=/etc/hitop-sync/github-app.pem -p WorkingDirectory=/root hitop-sync-server dump /root/pre-deploy-<ts>` (the App key path lives in the `30-github-app.conf` drop-in, not the env file; without it the server refuses the App settings).
 Site, web app, portal: `deploy/deploy.sh` from the workstation.
 
 ## Roll back a deploy
