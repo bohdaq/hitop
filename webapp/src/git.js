@@ -25,6 +25,44 @@ export const STATE_WORDS = {
 // Short states for the collection page's chip.
 const CHIP_WORDS = { pending: "saving…", conflict: "needs your choice", error: "couldn't sync", disconnected: "disconnected" };
 
+/** hitop-core `format::names::slug`: lower case, letters and digits, other runs one `-`. */
+function fileSlug(name) {
+  let out = "";
+  let dash = false;
+  for (const ch of String(name ?? "").toLowerCase()) {
+    if (/[\p{L}\p{N}]/u.test(ch)) {
+      if (dash && out) out += "-";
+      dash = false;
+      out += ch;
+    } else dash = true;
+    if (out.length >= 80) break;
+  }
+  if (!out) return "request";
+  return /^(con|prn|aux|nul|com[1-9]|lpt[1-9])$/.test(out) ? `${out}-file` : out;
+}
+
+/** hitop-core `assign_files`: each request's file (explicit `file` first, then numbered slugs). */
+export function requestFiles(requests) {
+  const used = new Set((requests ?? []).filter((r) => r.file).map((r) => String(r.file).toLowerCase()));
+  return (requests ?? []).map((r) => {
+    if (r.file) return `${r.file}.yaml`;
+    const base = fileSlug(r.name);
+    let candidate = base;
+    for (let n = 2; used.has(candidate.toLowerCase()); n++) candidate = `${base}-${n}`;
+    used.add(candidate.toLowerCase());
+    return `${candidate}.yaml`;
+  });
+}
+
+/** GitHub's own "new repository" page, filled in (the App can't create one in a personal account). */
+export function newRepoUrl(info, name) {
+  const base = info?.appUrl ? new URL(info.appUrl).origin : "https://github.com";
+  const owner = info?.installations?.[0]?.account;
+  const q = new URLSearchParams({ name, visibility: "private", description: "API collections kept by HITOP" });
+  if (owner) q.set("owner", owner);
+  return `${base}/new?${q}`;
+}
+
 /** `repo/path` (or `repo`) on `branch`. */
 export const linkWhere = (l) => `${l.repo}${l.path ? `/${l.path}` : ""} · ${l.branch}`;
 

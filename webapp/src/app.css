@@ -575,3 +575,4 @@ button.storage-chip:focus-visible { outline: 2px solid var(--md-sys-color-primar
 .git-row .hint, .git-row .sync-note { display: inline-flex; align-items: center; gap: var(--space-50); overflow-wrap: anywhere; }
 .git-indent { margin-inline-start: var(--space-400); }
 .git-panel .sync-conflicts { margin: 0; padding: 0; list-style: none; }
+.git-links { display: flex; flex-wrap: wrap; gap: var(--space-100) var(--space-300); }

@@ -8,7 +8,7 @@
 import { LitElement, html, nothing } from "lit";
 import { confirm } from "@lit-material/confirm";
 import { icon } from "../icons.js";
-import { STATE_WORDS, ago, linkWhere, slug, storageOf } from "../git.js";
+import { STATE_WORDS, ago, linkWhere, newRepoUrl, requestFiles, slug, storageOf } from "../git.js";
 
 class LightElement extends LitElement {
   createRenderRoot() {
@@ -30,10 +30,12 @@ class HitopGitPanel extends LightElement {
     busy: { state: true },
     error: { state: true },
     note: { state: true },
+    creating: { state: true },
   };
 
   constructor() {
     super();
+    this.creating = null;
     this.repo = "";
     this.branch = "";
     this.path = null;
@@ -70,6 +72,32 @@ class HitopGitPanel extends LightElement {
     }
     // Fresh repositories each time (access may have changed on GitHub).
     if (this.git?.connected) this.git.loadRepos();
+    // Back from GitHub's "new repository" tab: the list again, and the new one chosen.
+    this.onFocus = () => this.creating && this.pickNew();
+    addEventListener("focus", this.onFocus);
+  }
+
+  disconnectedCallback() {
+    super.disconnectedCallback();
+    removeEventListener("focus", this.onFocus);
+  }
+
+  async pickNew() {
+    const before = this.creating;
+    await this.git.loadRepos();
+    const fresh = (this.git.repos ?? []).find((r) => !before.has(r.fullName));
+    if (fresh) {
+      this.creating = null;
+      this.repo = fresh.fullName;
+      this.branch = "";
+      this.note = `${fresh.fullName} is chosen.`;
+    }
+  }
+
+  createRepo() {
+    this.creating = new Set((this.git.repos ?? []).map((r) => r.fullName));
+    this.note = "";
+    window.open(newRepoUrl(this.git.info, "hitop-collections"), "_blank", "noopener");
   }
 
   chosenRepo() {
@@ -168,7 +196,7 @@ class HitopGitPanel extends LightElement {
     const r = this.chosenRepo();
     const path = this.path ?? slug(c.name);
     const prefix = path ? `${path}/` : "";
-    const files = [`${prefix}hitop.yaml`, ...(c.requests ?? []).map((q) => `${prefix}requests/${slug(q.name)}.yaml`)];
+    const files = [`${prefix}hitop.yaml`, ...requestFiles(c.requests).map((f) => `${prefix}requests/${f}`)];
     const shown = files.slice(0, 6);
     return html`
       <ol class="git-steps">
@@ -188,9 +216,16 @@ class HitopGitPanel extends LightElement {
                       ${repos.map((x) => html`<lit-material-select-option value=${x.fullName}>${x.fullName}${x.private ? " (private)" : ""}</lit-material-select-option>`)}
                     </lit-material-select>`
                   : html`<span class="hint">${g.repos ? "HITOP can't see any repository yet." : "Loading repositories…"}</span>`}
-                <button type="button" class="link-button" ?disabled=${Boolean(this.busy)} @click=${() => this.run("connect", () => g.connect({ add: true, collection: c.id }))}>
-                  ${repos.length ? "Don't see it? Give HITOP access to more repositories" : "Choose repositories on GitHub"} ${icon("arrow-square-out")}
-                </button>
+                <span class="git-links">
+                  <button type="button" class="link-button" ?disabled=${Boolean(this.busy)} @click=${() => this.run("connect", () => g.connect({ add: true, collection: c.id }))}>
+                    ${repos.length ? "Don't see it? Give HITOP access to more repositories" : "Choose repositories on GitHub"} ${icon("arrow-square-out")}
+                  </button>
+                  <button type="button" class="link-button" @click=${() => this.createRepo()}>Create a new repository ${icon("arrow-square-out")}</button>
+                </span>
+                ${this.creating
+                  ? html`<span class="hint" role="status">Create it on GitHub, then come back to this tab: it is chosen here. If HITOP may see only selected repositories, add the new one with "Give HITOP access" first.
+                      <button type="button" class="link-button" @click=${() => this.pickNew()}>Check again</button></span>`
+                  : nothing}
               </li>
               <li>
                 <span class="git-step-title">Where in the repository</span>
