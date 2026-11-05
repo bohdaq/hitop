@@ -291,6 +291,15 @@ export class Library extends EventTarget {
     }
   }
 
+  /** A collection kept in this browser only (here before the first sign-in) goes to HITOP Cloud now. */
+  async upload(collectionId) {
+    if (!this.state) return;
+    this.state.localOnly = this.state.localOnly.filter((x) => x !== String(collectionId));
+    writeState(this.state);
+    this.setStatus({});
+    await this.flush();
+  }
+
   /** Something here differs from what the library last took. */
   dirty() {
     if (!this.store || !this.state) return false;

@@ -114,10 +114,10 @@ export class HitopCollection extends LightElement {
     const label = w.kind === "github" ? html`${w.label} <span class="hint">· ${w.state}</span>` : w.label;
     const chip = html`${icon(w.icon)}<span>${label}</span>`;
     return html`<p class="storage-line">
-      ${git && (w.kind === "cloud" || w.kind === "github")
+      ${git && (w.kind === "cloud" || w.kind === "github" || w.kind === "browser")
         ? html`<button type="button" class=${`storage-chip ${w.attention ? "attention" : ""}`} aria-label=${`${w.detail}. Open the GitHub settings of ${c.name}`} title=${w.detail}
               @click=${() => this.app.openDialog("git", { collectionId: c.id })}>${chip} ${icon("caret-down")}</button>
-            ${w.kind === "cloud"
+            ${w.kind === "cloud" || w.kind === "browser"
               ? html`<lit-material-button variant="text" @click=${() => this.app.openDialog("git", { collectionId: c.id })}>${icon("github-logo")} Save to GitHub…</lit-material-button>`
               : nothing}`
         : html`<span class="storage-chip static" title=${w.detail}>${chip}</span>`}

@@ -231,7 +231,14 @@ class HitopGitPanel extends LightElement {
     } else if (!g.info.enabled) {
       body = html`<p>Git sync isn't available on this server.</p>`;
     } else if (where.kind === "browser") {
-      body = html`<p>${c.name} is kept in this browser only (it was here before you signed in). Copy it to HITOP Cloud first: duplicate it, then save the copy to GitHub.</p>`;
+      body = html`<p>${c.name} is kept in this browser only (it was here before you signed in). GitHub sync works through HITOP Cloud, so save it there first: it then shows on every device you sign in on.</p>
+        <div class="page-actions">
+          <lit-material-button variant="filled" ?disabled=${Boolean(this.busy)} @click=${() => this.run("upload", async () => {
+            await this.store.library.upload(c.id);
+            this.git.changed();
+            this.note = `${c.name} is saved to HITOP Cloud.`;
+          })}>${icon("cloud")} ${this.busy === "upload" ? "Saving…" : "Save to HITOP Cloud"}</lit-material-button>
+        </div>`;
     } else {
       const l = g.linkOf(c);
       body = l ? this.renderLinked(l) : this.renderForm();

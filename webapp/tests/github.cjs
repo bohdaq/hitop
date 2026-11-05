@@ -236,6 +236,20 @@ const WEBHOOK = 'whsec-e2e';
     await store('return s.library.flush();');
     await settle(page, 2500);
     check('unlinked: the repository keeps its files and gets nothing new', JSON.stringify(gh.files(REPO)) === kept);
+    // Default was here before the first sign-in, so it is kept in this browser only; the dialog
+    // saves it to HITOP Cloud, then offers GitHub.
+    await page.locator('aside .tree-row.collection', { hasText: 'Default' }).click();
+    await settle(page);
+    check('Default is kept in this browser only', (await chip().innerText()).includes('This browser only'), await chip().innerText());
+    await page.locator('hitop-collection').getByRole('button', { name: 'Save to GitHub…' }).click();
+    await D().getByRole('button', { name: 'Save to HITOP Cloud' }).click();
+    await D().getByLabel('Folder').waitFor({ timeout: 15000 }).catch(() => {});
+    check('Save to HITOP Cloud: then the GitHub form', (await D().getByLabel('Folder').count()) === 1, await D().innerText());
+    const up = await store(`return s.library.client.api("GET", "/v1/library").then((r) => r.items.some((i) => i.kind === "collection" && i.data?.name === "Default"));`);
+    check('...and Default is in the library', up === true);
+    await page.locator('#dialog').getByRole('button', { name: 'Close' }).click();
+    await settle(page);
+    check('...and the chip says HITOP Cloud', (await chip().innerText()).includes('HITOP Cloud'), await chip().innerText());
     check('no page errors', errors.length === 0, errors.join(' | '));
   } catch (e) {
     check('the run finished', false, `${e.stack}\n${log.slice(-1500)}`);
