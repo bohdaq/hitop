@@ -535,3 +535,6 @@ lit-material-dialog.wide::part(container) { width: min(1100px, calc(100vw - 32px
 .sync-warnings { list-style: none; margin: 0; padding: 0; display: grid; gap: var(--space-100); }
 .sync-warnings .security { color: var(--md-sys-color-error); font-weight: 600; }
 .sync-untrusted { padding: var(--space-200); border-radius: var(--md-sys-shape-corner-medium); background: var(--md-sys-color-surface-container-low); display: grid; gap: var(--space-100); justify-items: start; }
+/* GitHub conflicts (views/github-view.js): the two versions side by side, stacked on phones. */
+.sync-compare { display: grid; grid-template-columns: repeat(auto-fit, minmax(16rem, 1fr)); gap: var(--space-200); margin: var(--space-100) 0; }
+.sync-compare > div { min-width: 0; }

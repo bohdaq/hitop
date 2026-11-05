@@ -8,6 +8,7 @@ import { icon } from "../icons.js";
 import { DEFAULT_SERVER, KeyError, SyncClient } from "../sync.js";
 import { planLink } from "../plan-link.js";
 import { platform } from "../platform/index.js";
+import "./github-view.js";
 
 const errorText = (e) => (e && e.message) || String(e);
 
@@ -765,7 +766,8 @@ class HitopSync extends LitElement {
         : html`Your collections, environments and globals are saved to HITOP Cloud and open in any browser you sign in to${st.saving ? ": saving…" : when ? `, last saved ${when}` : ""}.
             ${st.secretsStored === false ? " Secret values stay in this browser (this server doesn't store them)." : ""}
             The server can read them. Shared collections below stay end-to-end encrypted.`}
-    </p>${toggle}`;
+    </p>${toggle}
+    ${platform().name === "web" ? html`<hitop-github .store=${this.store} .version=${this.store.version}></hitop-github>` : nothing}`;
   }
 
   render() {

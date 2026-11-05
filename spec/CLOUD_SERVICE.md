@@ -424,6 +424,22 @@ push on every save, merge and ask only on a real clash.
 - **Failures.** The App uninstalled or the repository gone: the link shows "Git disconnected" and
   the library keeps working. GitHub down: commits wait and retry with backoff; the library is never
   blocked by Git.
+- **Built 2026-11-05 (not deployed).** sync-server `gitsync.rs` (migration 13 `git_installations`,
+  `git_links`), web app Sync page → GitHub (`views/github-view.js`). As built: only the collection is
+  synced (`hitop.yaml`, `requests/`); environments and globals stay in the library (their values
+  never go to Git; syncing their names is a later option). A merge is committed on top of GitHub's
+  head (one parent), not as a two-parent merge. API: `GET /v1/git`, `POST /v1/git/github/connect`,
+  `GET /v1/git/github/callback`, `POST /v1/git/github/webhook`, `GET /v1/git/installations/:id/repos`,
+  `GET|PUT|DELETE /v1/library/collection/:id/git`, `POST .../git/sync`, `POST .../git/resolve`.
+  Tests: sync-server `tests/gitsync.rs` (fake GitHub `tests/common/ghapp.rs`), web app
+  `tests/github.cjs` (`tests/fake-github.cjs`).
+- **To go live (owner).** Create the GitHub App "HITOP Cloud" on github.com (Settings → Developer
+  settings → GitHub Apps → New): homepage `https://hitop.rws8.tech`, callback URL and setup URL
+  `https://sync.hitop.rws8.tech/v1/git/github/callback`, "Request user authorization (OAuth) during
+  installation" on, "Redirect on update" on, webhook URL `https://sync.hitop.rws8.tech/v1/git/github/webhook`
+  with a random secret, repository permissions Contents read and write and Metadata read, event
+  Push, "Any account" can install. Then put its id, slug, client id and secret, webhook secret and
+  the downloaded private key file on the VM (`HITOP_SYNC_GITHUB_APP_*`, root-only files).
 - **Open.** Which plans get Git sync (proposal: every plan, private repositories too, since the
   repository is the user's); GitLab and plain Git remotes later through the same link table.
 

@@ -97,6 +97,18 @@ On GitHub:
 
 More in [Run collections in CI](/terms/run-collections-in-ci.html), [Run HITOP in GitHub Actions](/terms/run-hitop-in-github-actions.html) and [Run HITOP in GitLab CI](/terms/run-hitop-in-gitlab-ci.html).
 
+## From the web app, without git on your machine
+
+Signed in to HITOP Cloud in the [web app](/app/), open **Sync**, then **GitHub** → **Connect GitHub**. The HITOP Cloud GitHub App asks only for the repositories you choose. Then **Link to GitHub** on a collection, pick the repository and a folder (`shop`, or empty for the root):
+
+- An empty folder gets the collection as the files above (`hitop.yaml` and `requests/`). A folder that already holds a hitop collection is opened as it is.
+- **Every save is pushed** as a commit (saves within a few seconds go into one), with your name as the author. Other files in the repository are never touched, and secret values and environments are never committed.
+- Commits your team pushes on GitHub come back into the app within seconds.
+- When the same request changed both in the app and on GitHub, the app shows both versions side by side: **Keep mine**, **Take GitHub's** or **Keep both** (yours is added as "… (mine)"). Nothing is pushed until you choose. Changes to different requests, or to different keys of `hitop.yaml`, merge by themselves.
+- **Unlink** stops pushing; the files stay in the repository.
+
+The collection is kept in your HITOP Cloud library, which the server can read. For collections that must stay end-to-end encrypted, use a [shared workspace](/terms/share-a-workspace-with-your-team.html) instead, or the desktop app's Git panel on a folder.
+
 ## Merge conflicts
 
 Two people editing different requests touch different files, so most merges are clean. `hitop.yaml` lists the request order only when it differs from the alphabetical one; if both sides reorder requests, resolve that list like any other YAML.
