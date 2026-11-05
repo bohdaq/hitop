@@ -340,3 +340,11 @@ and on hitop.rws8.tech/cloud/healthz. -->
   (the rebuilt portal needs rws 18.30). `/`, `/app/`, `/install.sh`, `/cloud/` 200. Backup
   `/var/www/hitop.bak-20261105-120224`.
 - Not set: `HITOP_SYNC_HOST_KEY`, so the library stores no secret values yet.
+
+## 2026-11-05 Web app: storage icons and the Save to GitHub dialog (15:57 UTC)
+
+- Who: owner ran `~/hitop-web-b86e005/run-web-deploy.sh` (staged by agent). Site + web app from
+  b86e005 (sidebar storage icons, collection page chip, one Save to GitHub dialog; Git guide
+  updated); also 1cc4a44 earlier (Add repositories opens the App's install page). `/cloud/` left
+  as it was. `/`, `/app/`, `/install.sh`, `/terms/collections-in-git.html`, `/cloud/` 200.
+  Backup `/var/www/hitop.bak-20261105-155736`.
