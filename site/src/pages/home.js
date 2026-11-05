@@ -54,7 +54,7 @@ const RESPONSE = `{
 }`;
 
 const CLI = [
-  { cmd: "cargo install hitop" },
+  { cmd: "curl -fsSL https://hitop.rws8.tech/install.sh | sh" },
   { cmd: "hitop variables set Billing baseUrl https://api.northwind.dev" },
   { out: "✓ Set baseUrl=https://api.northwind.dev" },
   { cmd: "hitop run Billing" },

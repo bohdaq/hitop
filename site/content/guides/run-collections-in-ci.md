@@ -17,7 +17,7 @@ A request passes when it was sent, the status is below 400, and every check in i
 
 ## Install it in the pipeline
 
-Use the static binary from GitHub Releases, `cargo install hitop`, or the Docker image:
+Use the install script (`curl -fsSL https://hitop.rws8.tech/install.sh | sh`, a static binary from GitHub Releases, checked against its SHA-256), `cargo install hitop`, or the Docker image:
 
 ```
 docker run --rm -v "$PWD:/work" -w /work ghcr.io/bohdaq/hitop:1.2.0 run ./my-api --env ci

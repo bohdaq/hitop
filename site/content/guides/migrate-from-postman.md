@@ -7,7 +7,7 @@ description: "Move a Postman collection, its environments and globals to a HITOP
 
 - Your collection exported from Postman as **Collection v2.1** (a `.json` file).
 - Each environment you use, exported from Postman (one `.json` file each), and your globals if the collection uses them.
-- The `hitop` CLI: `cargo install hitop`, a binary from [GitHub Releases](https://github.com/bohdaq/hitop/releases), or the image `ghcr.io/bohdaq/hitop:1.2.0`. The [web app](/app/) imports the same files if you'd rather not install anything.
+- The `hitop` CLI: `curl -fsSL https://hitop.rws8.tech/install.sh | sh`, `cargo install hitop`, a binary from [GitHub Releases](https://github.com/bohdaq/hitop/releases), or the image `ghcr.io/bohdaq/hitop:1.2.0`. The [web app](/app/) imports the same files if you'd rather not install anything.
 
 ## Import into a folder
 

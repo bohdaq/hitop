@@ -35,7 +35,7 @@ export const PLATFORMS = [
     name: "CLI",
     price: "Free",
     note: "Linux, macOS and Windows",
-    points: ["Run whole collections in CI", "Same collections, variables and scripts", "cargo install hitop"],
+    points: ["Run whole collections in CI", "Same collections, variables and scripts", "One line: curl -fsSL https://hitop.rws8.tech/install.sh | sh"],
     action: [CRATE, "See it on crates.io"],
   },
 ];

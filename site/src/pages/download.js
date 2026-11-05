@@ -62,8 +62,9 @@ export function render() {
       </p>
 
       <h2 id="cli">Command line</h2>
-      <p>Install with Cargo, as a prebuilt binary, or run it from the Docker image:</p>
+      <p>Install with one line on Linux and macOS (the release binary, its SHA-256 checked, into <code>~/.local/bin</code>; <code>HITOP_VERSION</code> and <code>HITOP_INSTALL_DIR</code> change it), with Cargo, as a prebuilt binary, or run it from the Docker image:</p>
       <ul>
+        <li><code>curl -fsSL https://hitop.rws8.tech/install.sh | sh</code> (<a href="/install.sh">read the script</a>)</li>
         <li><code>cargo install hitop</code></li>
         <li><code>cargo binstall hitop</code></li>
         <li><code>docker run --rm -v "$PWD:/work" ghcr.io/bohdaq/hitop run ./my-api</code></li>

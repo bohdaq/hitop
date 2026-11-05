@@ -106,7 +106,7 @@ export class HomePage extends LitElement {
           <p>Requests, collections and environments run in your browser, nothing to install. The desktop app and the CLI open the same collections.</p>
           <p><lit-material-button href="https://hitop.rws8.tech/app/" rel="noopener">Open the web app</lit-material-button></p>
           <p class="hint">Prefer a terminal or CI? <a href="https://hitop.rws8.tech/" rel="noopener">Downloads</a>, or:</p>
-          <lit-material-clipboard-copy label="Install command" value="cargo install hitop"></lit-material-clipboard-copy>
+          <lit-material-clipboard-copy label="Install command" value="curl -fsSL https://hitop.rws8.tech/install.sh | sh"></lit-material-clipboard-copy>
         </lit-material-checklist-item>
         <lit-material-checklist-item label="Share a workspace" ?done=${workspaces.length > 0}>
           <p>In the web app, open a collection and share it from its Sync page (sign in with this account). It is end-to-end encrypted and shows up here within seconds. From a terminal, in the collection's folder:</p>

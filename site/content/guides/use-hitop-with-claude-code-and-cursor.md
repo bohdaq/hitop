@@ -13,7 +13,7 @@ hitop mcp ./my-api
 
 The argument is a collection folder (the `hitop.yaml`, `requests/` and `environments/` layout from `hitop init`). Leave it out to serve the collections in hitop's global storage instead, the ones `hitop collections list` shows.
 
-Check that your hitop has it with `hitop mcp --help`; update with `cargo install hitop` or a binary from [GitHub Releases](https://github.com/bohdaq/hitop/releases).
+Check that your hitop has it with `hitop mcp --help`; update with `curl -fsSL https://hitop.rws8.tech/install.sh | sh` (or `cargo install hitop`) or a binary from [GitHub Releases](https://github.com/bohdaq/hitop/releases).
 
 Requests run through the same code as `hitop run`: the same variables, scripts, assertions and cookie jar. The server runs on your machine and sends nothing but your requests (plus the weekly usage ping, if you turned it on).
 

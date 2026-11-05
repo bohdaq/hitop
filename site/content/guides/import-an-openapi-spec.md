@@ -6,7 +6,7 @@ description: "Turn an OpenAPI 3.0 or 3.1 spec into a HITOP collection folder, re
 ## What you need
 
 - The spec as a YAML or JSON file, or its URL. OpenAPI 3.0 and 3.1 are supported. A Swagger 2.0 spec has to be converted first (for example with `swagger2openapi`).
-- The `hitop` CLI: `cargo install hitop`, a binary from [GitHub Releases](https://github.com/bohdaq/hitop/releases), or the image `ghcr.io/bohdaq/hitop`. The [web app](/app/) and the desktop app import specs too.
+- The `hitop` CLI: `curl -fsSL https://hitop.rws8.tech/install.sh | sh`, `cargo install hitop`, a binary from [GitHub Releases](https://github.com/bohdaq/hitop/releases), or the image `ghcr.io/bohdaq/hitop`. The [web app](/app/) and the desktop app import specs too.
 
 ## Import into a folder
 

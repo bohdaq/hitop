@@ -263,6 +263,18 @@ jobs:
       - name: Site checks
         working-directory: site
         run: node scripts/check-pages.mjs
+      # curl -fsSL https://hitop.rws8.tech/install.sh | sh: the newest CLI release and a pinned one,
+      # under sh and dash, into a temporary folder (SHA-256 checked by the script).
+      - name: CLI install script
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: |
+          sh -n site/public-assets/install.sh
+          d=$(mktemp -d)
+          HITOP_INSTALL_DIR="$d/a" sh site/public-assets/install.sh
+          "$d/a/hitop" --version
+          HITOP_VERSION=1.1.0 HITOP_INSTALL_DIR="$d/b" dash site/public-assets/install.sh
+          "$d/b/hitop" --version | grep -q '^hitop 1.1.0'
       # tests/sync.cjs: two people in the app against a real sync server (web and desktop modes).
       - name: Sync server for tests/sync.cjs
         run: |

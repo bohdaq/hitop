@@ -12,7 +12,8 @@ collections open in the [web app](https://hitop.rws8.tech/app/) and the
 ## Install
 
 ```bash
-cargo install hitop
+curl -fsSL https://hitop.rws8.tech/install.sh | sh   # Linux and macOS: the release binary, SHA-256 checked, into ~/.local/bin
+cargo install hitop                                # or build it with Rust
 ```
 
 Or download a pre-built binary from [GitHub Releases](https://github.com/bohdaq/hitop/releases).

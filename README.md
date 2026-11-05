@@ -18,7 +18,7 @@ No account, MIT licensed.
 ## From a Postman export to a green CI run
 
 ```bash
-cargo install hitop        # or a static binary from GitHub Releases, or the Docker image
+curl -fsSL https://hitop.rws8.tech/install.sh | sh   # Linux, macOS; or cargo install hitop, a binary from GitHub Releases, the Docker image
 
 # A Postman collection, its environments and globals, into a folder in your repo
 hitop import shop.postman_collection.json staging.postman_environment.json --to ./shop-api
