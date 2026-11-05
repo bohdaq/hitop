@@ -348,3 +348,5 @@ and on hitop.rws8.tech/cloud/healthz. -->
   updated); also 1cc4a44 earlier (Add repositories opens the App's install page). `/cloud/` left
   as it was. `/`, `/app/`, `/install.sh`, `/terms/collections-in-git.html`, `/cloud/` 200.
   Backup `/var/www/hitop.bak-20261105-155736`.
+- 2026-11-05 later: web app from ec5dfde (owner ran `~/hitop-app-ec5dfde/run-app-deploy.sh`): Save to
+  HITOP Cloud for browser-only collections, Create a new repository, numbered file preview.
