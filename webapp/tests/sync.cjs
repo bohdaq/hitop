@@ -92,10 +92,19 @@ async function syncServer(extraEnv = {}) {
   return { url, code, mails, database, sql, setPlan, stop, log: () => log };
 }
 
+// This suite checks the server never holds a workspace's plaintext: in every browser it opens,
+// the personal library (readable by the server, tests/library.cjs) is switched off, as the Sync
+// page's switch does.
+async function launchOff(options) {
+  const h = await launch(options);
+  await h.ctx.addInitScript(() => localStorage.setItem('hitop_library_off', 'off'));
+  return h;
+}
+
 (async () => {
   const server = await syncServer();
-  const ada = await launch({ results });
-  const bob = await launch({ results });
+  const ada = await launchOff({ results });
+  const bob = await launchOff({ results });
   const errors = [];
   for (const h of [ada, bob]) h.page.on('pageerror', (e) => errors.push(e.message));
   const S = (h) => h.page.locator('hitop-sync');
@@ -406,7 +415,7 @@ async function syncServer(extraEnv = {}) {
   check('create a recovery phrase (24 words, shown once)', phrase.split(' ').length === 24 && (await S(ada).getByLabel('Recovery status').innerText()).includes('Recovery phrase set'), phrase.slice(0, 20) + (await alertText(ada)));
   await S(ada).getByRole('button', { name: 'I wrote it down' }).click();
   check('the phrase is gone from the page', (await S(ada).getByLabel('Your recovery phrase').count()) === 0);
-  const ada2 = await launch({ results });
+  const ada2 = await launchOff({ results });
   ada2.page.on('pageerror', (e) => errors.push(e.message));
   await ada2.page.goto(ada2.url, { waitUntil: 'networkidle' });
   const freshFp = await signIn(ada2, 'ada@example.com');
@@ -437,7 +446,7 @@ async function syncServer(extraEnv = {}) {
   // (no trust step); a wrong password is refused; a password change re-seals them; a reset by
   // mail signs in but loses them (the page warns before and after).
   const fresh = async () => {
-    const h = await launch({ results });
+    const h = await launchOff({ results });
     h.page.on('pageerror', (e) => errors.push(e.message));
     await h.page.goto(h.url, { waitUntil: 'networkidle' });
     await openSync(h);

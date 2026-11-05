@@ -67,6 +67,8 @@ class HitopSync extends LitElement {
 
   connectedCallback() {
     super.connectedCallback();
+    this.onLibrary ??= () => this.requestUpdate();
+    this.store?.library?.addEventListener("change", this.onLibrary);
     this.refresh();
     if (!this.sync.account()) this.loadMethods(DEFAULT_SERVER);
   }
@@ -110,6 +112,8 @@ class HitopSync extends LitElement {
     } finally {
       this.busy = null;
       this.warnings = this.sync.takeNotices();
+      // Signed in or out just now: the personal library links or stops (library.js).
+      this.store?.library?.checkAccount().catch(() => {});
       // Keep the recovery data up to date with this device's trust and key memory.
       if (!String(what).startsWith("recovery") && what !== "signout") {
         await this.sync.refreshRecovery().catch((e) => (this.error ??= `Couldn't update your recovery data: ${errorText(e)}`));
@@ -741,6 +745,29 @@ class HitopSync extends LitElement {
         : nothing}`;
   }
 
+  disconnectedCallback() {
+    super.disconnectedCallback();
+    this.store?.library?.removeEventListener("change", this.onLibrary);
+  }
+
+  // HITOP Cloud's personal library (library.js): where this account's own collections live.
+  renderLibrary() {
+    const lib = this.store?.library;
+    if (!lib) return nothing;
+    const st = lib.status;
+    const toggle = html`<lit-material-switch aria-label="Save my collections to HITOP Cloud" label="Save my collections to HITOP Cloud" ?checked=${st.on}
+      @change=${(e) => lib.setEnabled(e.target.checked).then(() => this.requestUpdate())}></lit-material-switch>`;
+    if (!st.on) return html`<div class="sync-library">${toggle}<p class="hint">Off: your collections stay in this browser only. Shared collections still sync, end to end.</p></div>`;
+    const when = st.savedAt ? new Date(st.savedAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }) : "";
+    return html`<p class="hint" role="status" aria-label="Cloud library">
+      ${st.error
+        ? html`${icon("warning-circle")} ${st.error}`
+        : html`Your collections, environments and globals are saved to HITOP Cloud and open in any browser you sign in to${st.saving ? ": saving…" : when ? `, last saved ${when}` : ""}.
+            ${st.secretsStored === false ? " Secret values stay in this browser (this server doesn't store them)." : ""}
+            The server can read them. Shared collections below stay end-to-end encrypted.`}
+    </p>${toggle}`;
+  }
+
   render() {
     const a = this.sync.account();
     return html`<div class="page sync-page">
@@ -751,6 +778,7 @@ class HitopSync extends LitElement {
               await this.sync.signOut();
               this.remote = null;
             })}>Sign out</lit-material-button></p>
+          ${this.renderLibrary()}
           ${a.server === DEFAULT_SERVER && platform().name !== "tauri"
             ? html`<p class="hint">Plan, organizations, members and usage: <a href="https://cloud.hitop.rws8.tech/" target="_blank" rel="noopener noreferrer">Manage plan on HITOP Cloud</a></p>`
             : nothing}`

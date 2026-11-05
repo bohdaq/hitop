@@ -29,8 +29,19 @@ import { initPlatform } from "./platform/index.js";
 // Storage loads before the app starts (the desktop reads it from Rust).
 const p = await initPlatform();
 // hitop sync (web and desktop): shared collections kept in app storage, and the Sync page.
-const { withSyncFolders } = await import("./sync.js");
+const { withSyncFolders, SyncClient } = await import("./sync.js");
 const { syncPage } = await import("./views/sync-view.js");
 p.folders = withSyncFolders(p.folders);
 p.pages = [...(p.pages ?? []), syncPage];
+// HITOP Cloud's personal library (library.js): signed in, collections, environments and globals
+// are pulled into storage before the store reads it, and pushed after each save.
+const { Library } = await import("./library.js");
+const library = new Library(new SyncClient(null));
+await library.start();
+const adapterStart = p.onStart;
+p.onStart = (app) => {
+  adapterStart?.(app);
+  app.store.library = library;
+  library.attach(app.store);
+};
 await import("./views/hitop-app.js");
