@@ -50,6 +50,7 @@ The owner's answers to Q1–Q18 (section 10). The rest of this file follows them
 | 2026-11-03 | **Business price confirmed**: $20 per seat a month billed yearly ($240 per seat a year), $25 per seat month to month (plus applicable tax). | No longer a proposal for Business (site `TIERS`, portal `PRICES`, Stripe prices). |
 | 2026-11-03 | The password also unlocks the end-to-end keys on a new device (a password-derived key wraps the account's key bundle, like the recovery phrase). | The server stores one more wrapped bundle per account (never the password or keys). A forgotten password loses the keys unless the person has a recovery phrase or another device; reset says so. Google/GitHub sign-in alone doesn't unlock keys. |
 | 2026-11-05 | **Cloud-first personal library** (C8): every signed-in user's own collections, environments and globals are stored on the server automatically and appear in every browser they sign in to. **The server can read the library** (owner's choice over end-to-end): shared workspaces stay end-to-end encrypted as before. The library is one per account and **doesn't count as a shared workspace**; its bytes count against the personal org's storage (Free 100 MB). **Secret values are stored too**, encrypted at rest under the host key (AES-256-GCM, hostkey.rs), returned only to their owner; without a host key they stay in the browser. Tabs, history and responses stay on the device. **Git integration comes after the library**, from the server (it can read the files). | New `library_items` table and `/v1/library` API, the web app stores through it when signed in, security/privacy pages and the threat model describe the readable library; terms, DPA and the enterprise agreement need the owner's legal review before deploy. |
+| 2026-11-05 | **Git sync for the personal library** (C8, after the library): through a **GitHub App** (no personal tokens); **every save is pushed** (saves within 10 s go in one commit); a change on both sides is **merged per file and request, and only a request changed on both sides asks** (keep mine, take GitHub's, keep both), nothing pushed until it is resolved. | `library_git_links`, the GitHub App's settings on the server, a webhook, the Git panel in the web app; open: which plans get it, GitLab later. |
 
 ## 1. One page summary
 
@@ -376,9 +377,55 @@ stored encrypted at rest. Shared workspaces (`hitop sync`) are unchanged and sta
   and saves this browser's as a copy named "(this browser)". The first sign-in uploads the
   browser's existing collections. A folder or shared-workspace collection is never in the library.
   Signed out, the app keeps everything in the browser as before.
-- **Next: Git.** Since the server can read the library, a collection can be linked to a GitHub or
-  GitLab repository and pushed and pulled in the hitop folder format (hitop.yaml, requests/,
-  environments/), the same files the CLI and desktop commit.
+- **Next: Git** (below).
+
+### Git sync (C8, after the library)
+
+A library collection can be linked to a folder in a GitHub repository. The repository then holds
+the collection in the hitop folder format (`hitop.yaml`, `requests/`, `environments/`,
+`globals.yaml`: spec/collection-format.md), the same files the CLI and desktop commit, so a team
+can review changes in pull requests and run them in CI. Owner decisions 2026-11-05: a GitHub App,
+push on every save, merge and ask only on a real clash.
+
+- **GitHub App "HITOP Cloud".** Repository permissions: Contents read and write, Metadata read;
+  events: `push`. A person installs it on the repositories they choose (their account or an
+  organization they admin) from the web app's Git panel; the server keeps the installation id and
+  mints a short-lived installation token for each call. No personal access token, no SSH key.
+  Server settings: `HITOP_SYNC_GITHUB_APP_ID`, `HITOP_SYNC_GITHUB_APP_SLUG`,
+  `HITOP_SYNC_GITHUB_APP_KEY_FILE` (the App's private key, root only, out of backups, like the host
+  key), `HITOP_SYNC_GITHUB_APP_WEBHOOK_SECRET[_FILE]`. Without them Git sync is off (404
+  `git_off`), so a self-hosted server can bring its own App.
+- **Link.** `library_git_links (user_id, collection_id, installation_id, repo, branch, path,
+  commit, tree, state, updated_at)`: one collection to one `repo` + `branch` + folder `path` (the
+  repository root by default). Linking an empty folder writes the collection there; linking a
+  folder that already holds a hitop collection imports it (the repository's version wins once).
+- **Push on every save.** A library `PUT` of a linked collection (or of the environments or
+  globals it uses) is turned into the folder's files by hitop-core's `format` module (in memory,
+  no disk), compared with the last synced tree, and committed through the Git Data API (blobs,
+  tree, commit, ref update) when something changed. Saves within 10 s of each other go into one
+  commit, so typing doesn't make a commit per keystroke. Author: the person's GitHub identity
+  when the App knows it, otherwise their HITOP email; committer: the App. Message: "hitop: <what
+  changed>" (e.g. "hitop: update List orders, add Get order"). Secret values are never committed
+  (the folder format holds secret names only).
+- **Pull.** GitHub's `push` webhook (signature checked, `X-Hub-Signature-256`) and a check when a
+  browser opens the collection fetch the branch's tree. A commit the server didn't make is merged
+  into the library (below) and reaches every browser through `/v1/library` as any other change.
+- **Merge, and ask only on a clash** (owner's choice of the four options). Base = the last synced
+  tree; mine = the library; theirs = the branch. hitop-core's `sync::merge_text` merges file by
+  file and `hitop.yaml`, environments and globals key by key, as `hitop sync` already does. A
+  request changed only on one side takes that side; a request changed on both sides is a
+  **conflict**: the link's `state` becomes `conflict`, nothing is pushed for that collection, and
+  the web app shows each conflicting request with both versions and three choices: **Keep mine**,
+  **Take GitHub's**, **Keep both** (theirs stays, mine is added as "<name> (mine)"). Once every
+  conflict has an answer the merge is committed with both parents, and pushing resumes.
+- **Branch moved under us.** A push refused because the branch moved (non-fast-forward) is a pull
+  first, then the merge above; a force push on GitHub's side is treated as "theirs" against the last
+  synced tree.
+- **Failures.** The App uninstalled or the repository gone: the link shows "Git disconnected" and
+  the library keeps working. GitHub down: commits wait and retry with backoff; the library is never
+  blocked by Git.
+- **Open.** Which plans get Git sync (proposal: every plan, private repositories too, since the
+  repository is the user's); GitLab and plain Git remotes later through the same link table.
 
 ### Hosting: hardening the current VM (C2)
 
