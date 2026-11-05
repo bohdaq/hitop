@@ -127,6 +127,11 @@ impl FakeGithub {
         c
     }
 
+    /// A repository without any commit (just created on GitHub).
+    pub fn empty_repo(&self, name: &str) {
+        self.inner.lock().unwrap().refs.entry(name.to_string()).or_default();
+    }
+
     /// Someone else's commit on `main` of `repo`: `files` set (None deletes).
     pub fn push(&self, repo: &str, files: &[(&str, Option<&str>)]) -> String {
         let mut inner = self.inner.lock().unwrap();
@@ -224,7 +229,30 @@ impl FakeGithub {
                 if !inner.refs.contains_key(&full) {
                     return (404, json!({ "message": "Not Found" }));
                 }
+                // GitHub's Git Data API on a repository without commits.
+                if inner.refs[&full].is_empty() {
+                    return (409, json!({ "message": "Git Repository is empty." }));
+                }
                 git_data(&mut inner, method, &full, rest, &body_json)
+            }
+            // The Contents API: one file, one commit (here only what first_commit uses).
+            ("PUT", ["repos", o, r, "contents", path @ ..]) => {
+                let full = format!("{o}/{r}");
+                let Some(branches) = inner.refs.get(&full).cloned() else {
+                    return (404, json!({ "message": "Not Found" }));
+                };
+                let branch = body_json["branch"].as_str().unwrap_or("main").to_string();
+                let text = STANDARD.decode(body_json["content"].as_str().unwrap_or("")).unwrap_or_default();
+                let id = blob_id(&text);
+                inner.blobs.insert(id.clone(), text);
+                let parent = branches.get(&branch).cloned();
+                let mut tree = parent.as_ref().map(|c| inner.trees[&inner.commits[c].tree].clone()).unwrap_or_default();
+                tree.insert(path.join("/"), id);
+                let tree_id = put_tree(&mut inner, tree);
+                let message = body_json["message"].as_str().unwrap_or("").to_string();
+                let c = put_commit(&mut inner, Commit { tree: tree_id, parents: parent.into_iter().collect(), message, author: json!({ "name": "hitop" }) });
+                inner.refs.get_mut(&full).unwrap().insert(branch, c.clone());
+                (201, json!({ "commit": { "sha": c } }))
             }
             _ => (404, json!({ "message": "Not Found" })),
         }

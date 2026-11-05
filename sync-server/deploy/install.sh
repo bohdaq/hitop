@@ -34,7 +34,8 @@ add HITOP_SYNC_PORTAL_URL "${HITOP_SYNC_PORTAL_URL:-https://cloud.hitop.rws8.tec
 sudo systemctl daemon-reload
 sudo systemctl enable hitop-sync
 sudo systemctl restart hitop-sync
-sleep 1
+# Migrations run before it listens: wait for it (up to a minute) rather than failing at once.
+for _ in $(seq 1 60); do curl -fs -o /dev/null http://127.0.0.1:7881/healthz && break; sleep 1; done
 systemctl is-active hitop-sync
 curl -fsS http://127.0.0.1:7881/healthz; echo
 curl -sS -o /dev/null -w "db not served: %{http_code} (404 expected)\n" http://127.0.0.1:7881/sync.db

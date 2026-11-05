@@ -237,3 +237,23 @@ fn off_without_an_app_and_bad_input() {
     let back = s.call("GET", &format!("/v1/git/github/callback?code=bad&state={st}"), None, None);
     assert_eq!(back.header("location"), Some("https://app.test.example/app/#git=error&reason=github"));
 }
+
+#[test]
+fn an_empty_repository_gets_a_first_commit() {
+    // A repository just created on GitHub has no commit, and the Git Data API answers 409 until
+    // it has one: the server adds a README through the Contents API, then commits the collection.
+    let gh = FakeGithub::start();
+    gh.empty_repo(REPO);
+    let s = server(&gh, "git-empty");
+    let ada = s.sign_in("ada@example.com");
+    connect(&s, &ada);
+    save(&s, &ada, shop(&[("List orders", "https://shop.test/orders")]));
+    let l = link(&s, &ada, "shop");
+    assert_eq!((l.status, l.json["state"].as_str()), (200, Some("ok")), "{}", l.json);
+    let files = gh.files(REPO);
+    assert!(files["README.md"].contains("HITOP"), "{files:?}");
+    assert!(files.contains_key("shop/hitop.yaml") && files.contains_key("shop/requests/list-orders.yaml"), "{:?}", files.keys());
+    let head = gh.head(REPO);
+    assert!(head.message.starts_with("hitop: add"), "{}", head.message);
+    assert_eq!(head.parents.len(), 1, "on top of the README commit");
+}

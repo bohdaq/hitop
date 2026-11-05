@@ -312,11 +312,17 @@ fn repo_url(c: &GitConfig, repo: &str, rest: &str) -> String {
 }
 
 fn branch_head(state: &State, c: &GitConfig, token: &str, repo: &str, branch: &str) -> Result<Head, Fail> {
-    let (status, doc) = gh(state, "GET", &repo_url(c, repo, &format!("git/ref/heads/{branch}")), token, None)?;
+    let (mut status, mut doc) = gh(state, "GET", &repo_url(c, repo, &format!("git/ref/heads/{branch}")), token, None)?;
+    if status == 409 {
+        // An empty repository (just created): the Git Data API needs a first commit, which only the
+        // Contents API can make. A README at the root, then the usual sync.
+        first_commit(state, c, token, repo, branch)?;
+        (status, doc) = gh(state, "GET", &repo_url(c, repo, &format!("git/ref/heads/{branch}")), token, None)?;
+    }
     match status {
         200 => {}
         404 => return Err(gone(format!("the branch {branch} of {repo} is gone, or the App can't see {repo}"))),
-        409 => return Err(gone(format!("{repo} is empty: add a first commit (a README) on GitHub, then sync"))),
+        409 => return Err(gone(format!("{repo} is empty and HITOP couldn't add a first commit: add a README on GitHub, then sync"))),
         _ => return Err(error(format!("GitHub answered {status} for the branch {branch}"))),
     }
     let commit = doc["object"]["sha"].as_str().unwrap_or_default().to_string();
@@ -325,6 +331,19 @@ fn branch_head(state: &State, c: &GitConfig, token: &str, repo: &str, branch: &s
         return Err(error(format!("GitHub answered {status} for commit {commit}")));
     }
     Ok(Head { commit, tree: c_doc["tree"]["sha"].as_str().unwrap_or_default().to_string() })
+}
+
+/// The first commit of an empty repository: `README.md` through the Contents API (the Git Data
+/// API answers 409 until a repository has a commit).
+fn first_commit(state: &State, c: &GitConfig, token: &str, repo: &str, branch: &str) -> Result<(), Fail> {
+    let name = repo.rsplit('/').next().unwrap_or(repo);
+    let text = format!("# {name}\n\nAPI collections kept by [HITOP](https://hitop.rws8.tech): each folder holds a `hitop.yaml` and one file per request in `requests/`.\nRun one with `hitop run <folder>`.\n");
+    let body = json!({ "message": "Start the repository for HITOP collections", "content": STANDARD.encode(text), "branch": branch });
+    let (status, doc) = gh(state, "PUT", &repo_url(c, repo, "contents/README.md"), token, Some(&body))?;
+    match status {
+        200 | 201 => Ok(()),
+        _ => Err(error(format!("GitHub refused the first commit of {repo} ({status}): {}", doc["message"].as_str().unwrap_or("")))),
+    }
 }
 
 /// The collection files under `path` in `tree`; `known` = files already held (by their blob id).
