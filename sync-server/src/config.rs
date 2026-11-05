@@ -94,6 +94,8 @@ pub struct Config {
     pub dns_url: Option<String>,
     /// Daily audit anchors (anchors.rs).
     pub audit_anchors: bool,
+    /// Git sync of the personal library through a GitHub App (gitsync.rs); `None` = off.
+    pub git: Option<crate::gitsync::GitConfig>,
 }
 
 /// `<PREFIX>_CLIENT_ID` and `<PREFIX>_CLIENT_SECRET` (or `<PREFIX>_CLIENT_SECRET_FILE`): both or
@@ -149,6 +151,7 @@ impl Config {
             host_key: None,
             dns_url: None,
             audit_anchors: true,
+            git: None,
         }
     }
 
@@ -191,6 +194,7 @@ impl Config {
         c.password = PasswordConfig::from_env(&var)?;
         c.google = crate::oidc::google_from_env(&var)?;
         c.github = GithubConfig::from_env(&var)?;
+    c.git = crate::gitsync::GitConfig::from_env(&var)?;
         c.billing = BillingConfig::from_env(&var)?;
         c.trial_days = number("HITOP_SYNC_TRIAL_DAYS", c.trial_days)?;
         c.runs = crate::runs::RunsConfig::from_env(&var)?;

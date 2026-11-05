@@ -18,6 +18,7 @@ use serde_json::{json, Value};
 
 pub mod dns;
 pub mod fill;
+pub mod ghapp;
 pub mod github;
 pub mod idp;
 pub mod stripe;

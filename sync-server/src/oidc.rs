@@ -728,7 +728,7 @@ pub(crate) fn failed_page(message: &str) -> Response {
     page(400, "SSO sign-in failed", &format!("<p>{}</p><p>Start again in hitop.</p>", escape(message)))
 }
 
-fn redirect(to: &str) -> Response {
+pub(crate) fn redirect(to: &str) -> Response {
     let mut r = Response::get_response(STATUS_CODE_REASON_PHRASE.n302_found, None, None);
     r.headers.push(Header { name: "Location".into(), value: to.to_string().into() });
     r.headers.push(Header { name: "Referrer-Policy".into(), value: "no-referrer".into() });

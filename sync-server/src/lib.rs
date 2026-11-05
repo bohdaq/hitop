@@ -15,6 +15,7 @@ pub mod config;
 pub mod db;
 pub mod dbtools;
 pub mod github;
+pub mod gitsync;
 pub mod hostkey;
 pub mod library;
 pub mod limits;

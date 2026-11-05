@@ -751,6 +751,34 @@ CREATE TABLE library_items (
 );
 CREATE INDEX library_items_seq ON library_items(user_id, seq);
 CREATE INDEX library_items_org ON library_items(org_id);
+", r"
+CREATE TABLE git_installations (
+  user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  installation_id BIGINT NOT NULL,
+  account TEXT NOT NULL,
+  created_at BIGINT NOT NULL,
+  PRIMARY KEY (user_id, installation_id)
+);
+CREATE TABLE git_links (
+  user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  collection_id TEXT NOT NULL,
+  installation_id BIGINT NOT NULL,
+  repo TEXT NOT NULL,
+  branch TEXT NOT NULL,
+  path TEXT NOT NULL,
+  head TEXT NOT NULL,
+  tree TEXT NOT NULL,
+  base TEXT NOT NULL,
+  state TEXT NOT NULL,
+  conflicts TEXT NOT NULL,
+  message TEXT NOT NULL,
+  due_at BIGINT NOT NULL,
+  synced_at BIGINT NOT NULL,
+  created_at BIGINT NOT NULL,
+  PRIMARY KEY (user_id, collection_id)
+);
+CREATE INDEX git_links_due ON git_links(due_at);
+CREATE INDEX git_links_repo ON git_links(installation_id, repo, branch);
 "];
 
 /// Steps in Rust that run in the same transaction as a migration's SQL (index = migration

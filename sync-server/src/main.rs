@@ -148,6 +148,14 @@ fn main() {
         }
         std::thread::sleep(std::time::Duration::from_secs(5));
     });
+    // Git sync of the personal library (gitsync.rs): due links every 2 s.
+    if app.state().config.git.is_some() {
+        let syncer = app.clone();
+        std::thread::spawn(move || loop {
+            hitop_sync_server::gitsync::run_due(syncer.state());
+            std::thread::sleep(std::time::Duration::from_secs(2));
+        });
+    }
     let runtime = tokio::runtime::Builder::new_multi_thread().enable_all().build().expect("tokio runtime");
     runtime.block_on(async {
         let (listener, pool) = Server::setup().expect("server setup");

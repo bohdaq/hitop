@@ -9,6 +9,8 @@
 #     -e SMTP_URL=smtp://user:pass@mail.example.com:587 hitop-sync
 FROM rust:1.99-bookworm AS build
 WORKDIR /src
+COPY cli/Cargo.toml cli/Cargo.toml
+COPY cli/crates/hitop-core cli/crates/hitop-core
 COPY cli/crates/hitop-sync-crypto cli/crates/hitop-sync-crypto
 COPY sync-server sync-server
 RUN cargo build --release --locked --features postgres --manifest-path sync-server/Cargo.toml --bin hitop-sync-server && mkdir /data

@@ -190,6 +190,8 @@ pub struct State {
     pub billing_http: ureq::Agent,
     /// Single sign-on per organization: verified domains and providers (orgsso.rs).
     pub org_sso: crate::orgsso::OrgSso,
+    /// Git sync of the personal library (gitsync.rs): connect flows, installation tokens.
+    pub git: crate::gitsync::Git,
 }
 
 impl State {
@@ -216,6 +218,7 @@ impl State {
             password_failures: crate::password::Backoff::default(),
             billing_http: crate::oidc::http_agent(),
             org_sso,
+            git: crate::gitsync::Git::default(),
         })
     }
 
@@ -350,6 +353,15 @@ impl SyncApp {
             ("GET", "/v1/library", crate::library::list),
             ("PUT", "/v1/library/:kind/:id", crate::library::put),
             ("DELETE", "/v1/library/:kind/:id", crate::library::delete),
+            ("GET", "/v1/git", crate::gitsync::info),
+            ("POST", "/v1/git/github/connect", crate::gitsync::connect),
+            ("POST", "/v1/git/github/webhook", crate::gitsync::webhook),
+            ("GET", "/v1/git/installations/:id/repos", crate::gitsync::repos),
+            ("GET", "/v1/library/collection/:id/git", crate::gitsync::get),
+            ("PUT", "/v1/library/collection/:id/git", crate::gitsync::link),
+            ("DELETE", "/v1/library/collection/:id/git", crate::gitsync::unlink),
+            ("POST", "/v1/library/collection/:id/git/sync", crate::gitsync::sync_now),
+            ("POST", "/v1/library/collection/:id/git/resolve", crate::gitsync::resolve),
             ("GET", "/v1/workspaces/:ws/blobs/:id", crate::blobs::get),
             ("PUT", "/v1/workspaces/:ws/blobs/:id", crate::blobs::put),
         ];
@@ -443,6 +455,8 @@ impl Application for SyncApp {
         } else if request.method == "GET" && path == "/v1/auth/google/callback" {
             set_client(self.client_of(request, connection));
             crate::oidc::google_callback(&self.state, request)
+        } else if request.method == "GET" && path == "/v1/git/github/callback" {
+            crate::gitsync::callback(&self.state, request)
         } else if request.method == "GET" && path == "/v1/auth/github/callback" {
             set_client(self.client_of(request, connection));
             crate::github::callback(&self.state, request)

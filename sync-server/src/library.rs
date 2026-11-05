@@ -94,7 +94,8 @@ pub fn list(state: &State, request: &Request, _: &PathParams) -> ApiResult {
         };
         let cursor = tx.query_one("SELECT COALESCE(MAX(seq), 0) FROM library_items WHERE user_id = $1", &[(&user.id).into()])?.map_or(0, |r| r.int(0));
         let items: Vec<Json> = rows.iter().map(|r| item_json(state, &user.id, r)).collect();
-        Ok((200, json!({ "items": items, "cursor": cursor, "secretsStored": state.config.host_key.is_some() })))
+        let git = crate::gitsync::states(state, tx, &user.id)?;
+        Ok((200, json!({ "items": items, "cursor": cursor, "secretsStored": state.config.host_key.is_some(), "git": git })))
     })
 }
 
@@ -179,6 +180,7 @@ pub fn put(state: &State, request: &Request, params: &PathParams) -> ApiResult {
                 &[(&user.id).into(), (&org).into(), (&kind).into(), (&id).into(), version.into(), seq.into(), (&data).into(), sealed.as_slice().into(), bytes.into(), now.into()],
             )?;
         }
+        crate::gitsync::touched(state, tx, &user.id, &kind, &id)?;
         Ok((200, json!({ "kind": kind, "id": id, "version": version, "seq": seq, "updatedAt": now, "secretsStored": secrets.is_none() || !sealed.is_empty() })))
     })
 }
@@ -201,8 +203,38 @@ pub fn delete(state: &State, request: &Request, params: &PathParams) -> ApiResul
                     "UPDATE library_items SET version = $1, seq = $2, data = '', secrets = $3, bytes = 0, updated_at = $4, deleted = 1 WHERE user_id = $5 AND kind = $6 AND item_id = $7",
                     &[(version + 1).into(), seq.into(), (&[] as &[u8]).into(), now.into(), (&user.id).into(), (&kind).into(), (&id).into()],
                 )?;
+                crate::gitsync::deleted(tx, &user.id, &kind, &id)?;
                 Ok((200, json!({ "kind": kind, "id": id, "version": version + 1, "seq": seq, "deleted": true })))
             }
         }
     })
+}
+
+/// A collection of `user`'s library: its data and version (None: missing or deleted). Git sync.
+pub(crate) fn collection_item(tx: &mut Tx, user: &str, id: &str) -> Result<Option<(Json, i64)>, ApiError> {
+    let row = tx.query_one("SELECT data, version FROM library_items WHERE user_id = $1 AND kind = 'collection' AND item_id = $2 AND deleted = 0", &[user.into(), id.into()])?;
+    Ok(row.map(|r| (serde_json::from_str(&r.text(0)).unwrap_or(Json::Null), r.int(1))))
+}
+
+/// The server writes a collection item (Git sync brought GitHub's changes): only while it is still at
+/// version `expect` (false otherwise: a save came in first). Not a save: it doesn't make a push due.
+pub(crate) fn store_from_server(state: &State, tx: &mut Tx, user: &str, id: &str, data: &Json, expect: i64) -> Result<bool, ApiError> {
+    let Some((version, before, false)) = current(tx, user, "collection", id)? else { return Ok(false) };
+    if version != expect {
+        return Ok(false);
+    }
+    let text = data.to_string();
+    if text.len() > MAX_ITEM_BYTES {
+        return Err(ApiError::new(413, "too_large", format!("the collection on GitHub is over {} MB", MAX_ITEM_BYTES >> 20)));
+    }
+    let org = crate::orgs::personal_id(user);
+    let sealed_len = tx.query_one("SELECT secrets FROM library_items WHERE user_id = $1 AND kind = 'collection' AND item_id = $2", &[user.into(), id.into()])?.map_or(0, |r| r.bytes(0).len());
+    let bytes = (text.len() + sealed_len) as i64;
+    crate::limits::check_storage(state, tx, &org, bytes - before)?;
+    let seq = next_seq(tx, user)?;
+    tx.execute(
+        "UPDATE library_items SET version = $1, seq = $2, data = $3, bytes = $4, updated_at = $5 WHERE user_id = $6 AND kind = 'collection' AND item_id = $7",
+        &[(version + 1).into(), seq.into(), (&text).into(), bytes.into(), state.now().into(), user.into(), id.into()],
+    )?;
+    Ok(true)
 }
