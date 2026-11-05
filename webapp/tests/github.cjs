@@ -143,6 +143,16 @@ const WEBHOOK = 'whsec-e2e';
     await G().getByText('GitHub is connected').waitFor({ timeout: 15000 }).catch(() => {});
     check('back from GitHub: connected', (await G().innerText()).includes('Connected: ada'), await G().innerText());
 
+    // Add repositories or accounts: the App's install page again (where GitHub lets you pick an
+    // account or configure the repositories), not the authorization screen that bounces straight back.
+    const seen = gh.visits.length;
+    await G().getByRole('button', { name: 'Add repositories or accounts' }).click();
+    await page.waitForURL((u) => u.href.startsWith(h.url) && gh.visits.length > seen, { timeout: 15000 });
+    await page.waitForLoadState('networkidle');
+    check('Add repositories or accounts opens the install page', gh.visits.slice(seen).join() === 'install', gh.visits.join());
+    await openSync();
+    await G().getByText('GitHub is connected').waitFor({ timeout: 15000 }).catch(() => {});
+
     // Link Shop to the folder "shop".
     const row = G().locator('li', { hasText: 'Shop' }).first();
     await row.getByRole('button', { name: 'Link to GitHub' }).click();

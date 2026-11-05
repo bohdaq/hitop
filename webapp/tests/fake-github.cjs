@@ -62,6 +62,7 @@ function fakeGithub({ appId, installation, callback }) {
     return false;
   };
   const token = `ghs_installation_${installation}`;
+  const visits = []; // browser pages opened: 'install' or 'authorize'
   const server = http.createServer((req, res) => {
     let raw = '';
     req.on('data', (d) => (raw += d));
@@ -79,10 +80,12 @@ function fakeGithub({ appId, installation, callback }) {
       })();
       // The App's install page: GitHub installs it and sends the browser to the setup URL.
       if (req.method === 'GET' && segs[0] === 'apps' && segs[2] === 'installations') {
+        visits.push('install');
         const to = `${callback()}?code=good-code&installation_id=${installation}&setup_action=install&state=${encodeURIComponent(u.searchParams.get('state'))}`;
         return res.writeHead(302, { Location: to }).end();
       }
       if (req.method === 'GET' && u.pathname === '/login/oauth/authorize') {
+        visits.push('authorize');
         return res.writeHead(302, { Location: `${callback()}?code=good-code&state=${encodeURIComponent(u.searchParams.get('state'))}` }).end();
       }
       if (req.method === 'POST' && u.pathname === '/login/oauth/access_token') {
@@ -125,7 +128,7 @@ function fakeGithub({ appId, installation, callback }) {
       json(404, { message: 'Not Found' });
     });
   });
-  return { server, repo, files, head, push, refs };
+  return { server, repo, files, head, push, refs, visits };
 }
 
 module.exports = { fakeGithub };

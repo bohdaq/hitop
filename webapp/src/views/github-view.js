@@ -121,11 +121,13 @@ class HitopGithub extends LitElement {
     }
   }
 
-  async connect() {
+  // `add`: "Add repositories or accounts" always opens the App's install page (pick an account,
+  // or Configure an existing installation's repositories). Plain Connect with the App already
+  // installed somewhere goes through GitHub's authorization screen, which only re-reads them.
+  async connect(add = false) {
     await this.run("connect", async () => {
       const r = await this.api("POST", "/v1/git/github/connect", { returnTo: location.origin + location.pathname });
-      // Already installed: GitHub's authorization screen; otherwise the App's install page.
-      location.assign(this.info.installations?.length ? r.authorizeUrl : r.installUrl);
+      location.assign(add || !this.info.installations?.length ? r.installUrl : r.authorizeUrl);
     });
   }
 
@@ -259,7 +261,7 @@ class HitopGithub extends LitElement {
         ? html`<p class="hint">Linked collections are kept in a GitHub repository as hitop files (hitop.yaml and requests/, never secret values). Every save is pushed; your team's commits come back here.</p>
             <div class="sync-form">
               <span class="hint">Connected: <b>${this.info.installations.map((i) => i.account).join(", ")}</b></span>
-              <lit-material-button variant="text" ?disabled=${Boolean(this.busy)} @click=${() => this.connect()}>Add repositories or accounts</lit-material-button>
+              <lit-material-button variant="text" ?disabled=${Boolean(this.busy)} @click=${() => this.connect(true)}>Add repositories or accounts</lit-material-button>
             </div>
             <ul class="sync-list">${this.collections().map((c) => this.renderRow(c))}</ul>`
         : html`<p class="hint">Keep collections in a GitHub repository: review changes in pull requests and run them in CI. The HITOP Cloud App asks only for the repositories you choose.</p>
