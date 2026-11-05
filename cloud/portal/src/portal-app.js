@@ -90,6 +90,24 @@ export class PortalApp extends LitElement {
     footer a {
       color: inherit;
     }
+    /* Brand and organization switcher on one centered row, in one type size (the bar's title
+       slot would otherwise give the switcher its large headline font). */
+    .lead {
+      display: flex;
+      align-items: center;
+      gap: var(--space-100);
+      min-width: 0;
+      font-family: var(--font-sans);
+      font-size: var(--text-base);
+      line-height: var(--leading-base);
+      padding-inline-start: var(--space-75);
+    }
+    .divider {
+      width: 1px;
+      height: 20px;
+      background: var(--md-sys-color-outline-variant);
+      flex: none;
+    }
     .brand {
       display: inline-flex;
       align-items: center;
@@ -107,14 +125,14 @@ export class PortalApp extends LitElement {
       display: inline-flex;
       align-items: center;
       gap: var(--space-50);
-      margin-inline-start: var(--space-100);
-      padding: 6px var(--space-75) 6px var(--space-100);
+      padding: 6px var(--space-75);
       border: 0;
       border-radius: 8px;
       background: none;
       color: inherit;
       font: inherit;
       font-weight: 500;
+      line-height: var(--leading-base);
       cursor: pointer;
       max-width: 40vw;
     }
@@ -168,7 +186,8 @@ export class PortalApp extends LitElement {
       main {
         padding: var(--space-200);
       }
-      .brand span {
+      .brand span,
+      .divider {
         display: none;
       }
     }
@@ -229,10 +248,13 @@ export class PortalApp extends LitElement {
     const initials = (session.email || "?").slice(0, 2).toUpperCase();
     return html`
       <lit-material-top-app-bar>
-        <a class="brand" href="/" aria-label="HITOP Cloud home"><img src="https://hitop.rws8.tech/favicon.svg" alt="" width="24" height="24" /><span>HITOP Cloud</span></a>
-        <button class="org" aria-label="Switch organization" aria-haspopup="true" @click=${(e) => this.renderRoot.querySelector("#org-menu").show(e.currentTarget)}>
-          <span>${org ? orgName(org) : "Organizations"}</span>${expandIcon}
-        </button>
+        <div class="lead">
+          <a class="brand" href="/" aria-label="HITOP Cloud home"><img src="https://hitop.rws8.tech/favicon.svg" alt="" width="24" height="24" /><span>HITOP Cloud</span></a>
+          <span class="divider" aria-hidden="true"></span>
+          <button class="org" aria-label="Switch organization" aria-haspopup="true" @click=${(e) => this.renderRoot.querySelector("#org-menu").show(e.currentTarget)}>
+            <span>${org ? orgName(org) : "Organizations"}</span>${expandIcon}
+          </button>
+        </div>
         <div slot="trailing" class="actions">
           <button class="account" aria-label="Account menu" aria-haspopup="true" @click=${(e) => this.renderRoot.querySelector("#account-menu").show(e.currentTarget)}>
             <lit-material-avatar initials=${initials} alt=""></lit-material-avatar>
