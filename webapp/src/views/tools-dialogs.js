@@ -6,7 +6,7 @@ import { html, nothing } from "lit";
 import { compareResponses, sideBySide } from "../diff.js";
 import { loadFormat } from "../wasm/format.js";
 
-export const WIDE_DIALOGS = ["code", "compare"];
+export const WIDE_DIALOGS = ["code", "compare", "git"];
 
 let languages = null;
 

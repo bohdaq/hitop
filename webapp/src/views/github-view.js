@@ -1,34 +1,31 @@
-// HITOP Cloud Git sync (sync-server gitsync.rs) on the Sync page: connect GitHub through the HITOP
-// Cloud App, link a library collection to a folder of a repository, and see each link's state.
-// Every save is pushed by the server; GitHub's changes come back into the library. A request
-// changed on both sides is shown here with both versions: keep mine, take GitHub's, or keep both.
+// HITOP Cloud Git sync in the web app (state in ../git.js, server sync-server gitsync.rs).
+// - <hitop-git-panel>: the "Save to GitHub" dialog of one collection (opened from its storage
+//   chip on the collection page, or from the Sync page): connect GitHub, pick a repository and a
+//   folder with a preview of the files; once linked, where it lives, its state, Sync now, Unlink,
+//   and a clash shown side by side (keep mine, take GitHub's, keep both).
+// - <hitop-github>: the Sync page's GitHub section: connected accounts, repository access, and
+//   every collection with where it is kept.
 import { LitElement, html, nothing } from "lit";
 import { confirm } from "@lit-material/confirm";
 import { icon } from "../icons.js";
+import { STATE_WORDS, ago, linkWhere, slug, storageOf } from "../git.js";
 
-const slug = (name) =>
-  String(name || "collection")
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, "-")
-    .replace(/^-+|-+$/g, "") || "collection";
+class LightElement extends LitElement {
+  createRenderRoot() {
+    return this;
+  }
+}
 
-const STATE_WORDS = {
-  ok: "In sync with GitHub",
-  pending: "Saving to GitHub…",
-  conflict: "Changed both here and on GitHub",
-  error: "Couldn't sync",
-  disconnected: "Disconnected",
-};
+const openGitDialog = (el, c) => el.closest("hitop-app")?.openDialog("git", { collectionId: c.id });
 
-class HitopGithub extends LitElement {
+class HitopGitPanel extends LightElement {
   static properties = {
     store: { attribute: false },
     version: { attribute: false },
-    info: { state: true },
-    links: { state: true },
-    repos: { state: true },
-    linking: { state: true },
-    details: { state: true },
+    collection: { attribute: false },
+    repo: { state: true },
+    branch: { state: true },
+    path: { state: true },
     choices: { state: true },
     busy: { state: true },
     error: { state: true },
@@ -37,45 +34,17 @@ class HitopGithub extends LitElement {
 
   constructor() {
     super();
-    this.info = null;
-    this.links = {};
-    this.repos = null;
-    this.linking = null;
-    this.details = {};
+    this.repo = "";
+    this.branch = "";
+    this.path = null;
     this.choices = {};
     this.busy = "";
     this.error = "";
     this.note = "";
   }
 
-  createRenderRoot() {
-    return this;
-  }
-
-  get lib() {
-    return this.store?.library;
-  }
-
-  api(method, path, body) {
-    return this.lib.client.api(method, path, body);
-  }
-
-  connectedCallback() {
-    super.connectedCallback();
-    // Back from GitHub: #git=connected or #git=error&reason=...
-    const m = /^#git=([a-z]+)(?:&reason=([a-z_]+))?/.exec(location.hash);
-    if (m) {
-      history.replaceState(null, "", location.pathname + location.search);
-      if (m[1] === "connected") this.note = "GitHub is connected. Link a collection to a repository below.";
-      else this.error = m[2] === "no_installation" ? "The HITOP Cloud App isn't installed on an account you can reach. Install it, then connect again." : "GitHub didn't finish connecting. Try again.";
-    }
-    this.load();
-    this.timer = setInterval(() => document.visibilityState === "visible" && this.loadLinks(), 15_000);
-  }
-
-  disconnectedCallback() {
-    super.disconnectedCallback();
-    clearInterval(this.timer);
+  get git() {
+    return this.store?.git;
   }
 
   async run(what, fn) {
@@ -91,104 +60,63 @@ class HitopGithub extends LitElement {
     }
   }
 
-  async load() {
-    if (!this.lib?.status.on) return;
-    try {
-      this.info = await this.api("GET", "/v1/git");
-    } catch {
-      this.info = null;
-      return;
+  connectedCallback() {
+    super.connectedCallback();
+    const r = this.git?.returned;
+    if (r && String(r.collection) === String(this.collection?.id)) {
+      this.git.returned = null;
+      if (r.ok) this.note = "GitHub is connected.";
+      else this.error = r.reason === "no_installation" ? "The HITOP Cloud App isn't installed on an account you can reach. Install it, then try again." : "GitHub didn't finish connecting. Try again.";
     }
-    if (!this.info.enabled) return;
-    await this.loadLinks();
-    const inst = this.info.installations?.[0];
-    if (inst && !this.repos) {
-      this.repos = (await this.api("GET", `/v1/git/installations/${inst.id}/repos`).catch(() => ({ repositories: [] }))).repositories;
-    }
+    // Fresh repositories each time (access may have changed on GitHub).
+    if (this.git?.connected) this.git.loadRepos();
   }
 
-  async loadLinks() {
-    if (!this.info?.enabled) return;
-    const r = await this.api("GET", "/v1/library").catch(() => null);
-    if (!r) return;
-    this.links = r.git || {};
-    for (const [id, l] of Object.entries(this.links)) {
-      if (l.state === "conflict" && !this.details[id]) this.details = { ...this.details, [id]: await this.api("GET", `/v1/library/collection/${encodeURIComponent(id)}/git`) };
-      if (l.state !== "conflict" && this.details[id]) {
-        const { [id]: _gone, ...rest } = this.details;
-        this.details = rest;
-      }
-    }
+  chosenRepo() {
+    const repos = this.git?.repos ?? [];
+    return repos.find((r) => r.fullName === this.repo) ?? repos[0] ?? null;
   }
 
-  // `add`: "Add repositories or accounts" always opens the App's install page (pick an account,
-  // or Configure an existing installation's repositories). Plain Connect with the App already
-  // installed somewhere goes through GitHub's authorization screen, which only re-reads them.
-  async connect(add = false) {
-    await this.run("connect", async () => {
-      const r = await this.api("POST", "/v1/git/github/connect", { returnTo: location.origin + location.pathname });
-      location.assign(add || !this.info.installations?.length ? r.installUrl : r.authorizeUrl);
+  /** Enter in a field of the dialog (hitop-app's submitDialog). */
+  submit() {
+    if (!this.git?.linkOf(this.collection) && this.git?.connected) this.save();
+  }
+
+  async save() {
+    const c = this.collection;
+    const r = this.chosenRepo();
+    await this.run("link", async () => {
+      if (!r) throw new Error("Choose a repository first.");
+      const l = await this.git.link(c, { repo: r.fullName, path: this.path ?? slug(c.name), branch: this.branch || r.defaultBranch });
+      this.note = l.state === "ok" ? "Saved to GitHub." : l.message;
     });
   }
 
-  collections() {
-    const s = this.store;
-    const localOnly = new Set(this.lib?.state?.localOnly ?? []);
-    return s.collections.filter((c) => !s.folders.has(c.id) && !localOnly.has(String(c.id)));
-  }
-
-  async link(c) {
-    await this.run(`link-${c.id}`, async () => {
-      const repo = this.querySelector(`#gh-repo-${c.id}`)?.value || this.repos?.[0]?.fullName;
-      const path = this.querySelector(`#gh-path-${c.id}`)?.value ?? slug(c.name);
-      if (!repo) throw new Error("Choose a repository first (add one to the HITOP Cloud App on GitHub).");
-      // The server links what the library holds: save this browser's last edits first.
-      await this.lib.flush();
-      const l = await this.api("PUT", `/v1/library/collection/${encodeURIComponent(c.id)}/git`, { installation: this.info.installations[0].id, repo, path });
-      this.linking = null;
-      await this.lib.pull();
-      await this.loadLinks();
-      this.note = l.state === "ok" ? `${c.name} is linked to ${l.repo}${l.path ? `/${l.path}` : ""}. Every save goes to GitHub.` : l.message;
-    });
-  }
-
-  async syncNow(c) {
-    await this.run(`sync-${c.id}`, async () => {
-      await this.lib.flush();
-      const l = await this.api("POST", `/v1/library/collection/${encodeURIComponent(c.id)}/git/sync`);
-      await this.lib.pull();
-      await this.loadLinks();
-      if (l.state !== "ok") this.error = l.message;
-    });
-  }
-
-  async unlink(c) {
-    const ok = await confirm({ headline: `Unlink ${c.name} from GitHub?`, message: "Saves stop going to GitHub. The files stay in the repository.", confirmLabel: "Unlink" });
+  async unlink() {
+    const c = this.collection;
+    const ok = await confirm({ headline: `Stop saving ${c.name} to GitHub?`, message: "Saves stay on HITOP Cloud and stop going to GitHub. The files stay in the repository.", confirmLabel: "Stop saving to GitHub" });
     if (!ok) return;
-    await this.run(`unlink-${c.id}`, async () => {
-      await this.api("DELETE", `/v1/library/collection/${encodeURIComponent(c.id)}/git`);
-      await this.loadLinks();
+    await this.run("unlink", async () => {
+      await this.git.unlink(c);
+      this.note = `${c.name} is saved on HITOP Cloud only.`;
     });
   }
 
-  async resolve(c, conflicts) {
-    const picks = this.choices[c.id] || {};
-    await this.run(`resolve-${c.id}`, async () => {
-      const l = await this.api("POST", `/v1/library/collection/${encodeURIComponent(c.id)}/git/resolve`, { choices: Object.fromEntries(conflicts.map((k) => [k.path, picks[k.path]])) });
-      await this.lib.pull();
-      await this.loadLinks();
+  async resolve(conflicts) {
+    const c = this.collection;
+    const picks = this.choices;
+    await this.run("resolve", async () => {
+      const l = await this.git.resolve(c, Object.fromEntries(conflicts.map((k) => [k.path, picks[k.path]])));
+      this.choices = {};
       this.note = l.state === "ok" ? `${c.name} is in sync with GitHub again.` : l.message;
     });
   }
 
-  pick(c, path, choice) {
-    this.choices = { ...this.choices, [c.id]: { ...(this.choices[c.id] || {}), [path]: choice } };
-  }
-
-  renderConflicts(c) {
-    const conflicts = this.details[c.id]?.conflicts ?? [];
+  renderConflicts() {
+    const c = this.collection;
+    const conflicts = this.git.details[String(c.id)]?.conflicts ?? [];
     if (!conflicts.length) return nothing;
-    const picks = this.choices[c.id] || {};
+    const picks = this.choices;
     const ready = conflicts.every((k) => picks[k.path]);
     return html`<ul class="sync-conflicts" aria-label=${`GitHub conflicts in ${c.name}`}>
         ${conflicts.map(
@@ -203,71 +131,168 @@ class HitopGithub extends LitElement {
                 ["mine", "Keep mine"],
                 ["theirs", "Take GitHub's"],
                 ...(k.path !== "hitop.yaml" && k.mine && k.theirs ? [["both", "Keep both"]] : []),
-              ].map(([v, label]) => html`<lit-material-button variant=${picks[k.path] === v ? "filled" : "outlined"} aria-pressed=${picks[k.path] === v ? "true" : "false"} @click=${() => this.pick(c, k.path, v)}>${label}</lit-material-button>`)}
+              ].map(([v, label]) => html`<lit-material-button variant=${picks[k.path] === v ? "filled" : "outlined"} aria-pressed=${picks[k.path] === v ? "true" : "false"} @click=${() => (this.choices = { ...picks, [k.path]: v })}>${label}</lit-material-button>`)}
             </span>
           </li>`,
         )}
       </ul>
-      <lit-material-button variant="filled" ?disabled=${!ready || Boolean(this.busy)} @click=${() => this.resolve(c, conflicts)}>Apply and sync</lit-material-button>`;
+      <lit-material-button variant="filled" ?disabled=${!ready || Boolean(this.busy)} @click=${() => this.resolve(conflicts)}>Apply and sync</lit-material-button>`;
   }
 
-  renderRow(c) {
-    const l = this.links[String(c.id)];
-    if (l) {
-      const where = `${l.repo}${l.path ? `/${l.path}` : ""} on ${l.branch}`;
-      return html`<li class="sync-item" aria-label=${`GitHub link of ${c.name}`}>
-        <div class="sync-form">
-          <span><b>${c.name}</b> <a href=${l.url} target="_blank" rel="noopener noreferrer">${where}</a></span>
-          <span class="page-actions">
-            <lit-material-button variant="outlined" ?disabled=${Boolean(this.busy)} @click=${() => this.syncNow(c)}>${icon("arrows-clockwise")} Sync now</lit-material-button>
-            <lit-material-button variant="text" ?disabled=${Boolean(this.busy)} @click=${() => this.unlink(c)}>Unlink</lit-material-button>
-          </span>
-        </div>
-        <p class=${l.state === "ok" || l.state === "pending" ? "hint" : "sync-note"} role="status" aria-label=${`GitHub state of ${c.name}`}>
-          ${l.state === "conflict" && l.message
-            ? `${l.message}.`
-            : html`${STATE_WORDS[l.state] ?? l.state}${l.state === "ok" && l.syncedAt ? `, last synced ${new Date(l.syncedAt * 1000).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}` : ""}${l.message ? `: ${l.message}` : "."}`}
-        </p>
-        ${l.state === "conflict" ? this.renderConflicts(c) : nothing}
-      </li>`;
-    }
-    if (this.linking !== c.id) {
-      return html`<li class="sync-item"><div class="sync-form"><span><b>${c.name}</b> <span class="hint">not on GitHub</span></span>
-        <lit-material-button variant="outlined" ?disabled=${Boolean(this.busy)} @click=${() => (this.linking = c.id)}>Link to GitHub</lit-material-button></div></li>`;
-    }
-    return html`<li class="sync-item" aria-label=${`Link ${c.name} to GitHub`}>
-      <div class="sync-form">
-        <lit-material-select id=${`gh-repo-${c.id}`} variant="outlined" label="Repository" .value=${this.repos?.[0]?.fullName ?? ""}>
-          ${(this.repos ?? []).map((r) => html`<lit-material-select-option value=${r.fullName}>${r.fullName}${r.private ? " (private)" : ""}</lit-material-select-option>`)}
-        </lit-material-select>
-        <lit-material-text-field id=${`gh-path-${c.id}`} variant="outlined" label="Folder in the repository" .value=${slug(c.name)} supporting-text="Empty for the repository's root. A folder that already holds a hitop collection wins the first sync."></lit-material-text-field>
-        <span class="page-actions">
-          <lit-material-button variant="filled" ?disabled=${Boolean(this.busy)} @click=${() => this.link(c)}>Link</lit-material-button>
-          <lit-material-button variant="text" @click=${() => (this.linking = null)}>Cancel</lit-material-button>
-        </span>
+  renderLinked(l) {
+    const c = this.collection;
+    const words = STATE_WORDS[l.state] ?? l.state;
+    return html`
+      <div class="git-where" aria-label=${`GitHub link of ${c.name}`}>
+        ${icon("github-logo")}
+        <a href=${l.url} target="_blank" rel="noopener noreferrer">${linkWhere(l)} ${icon("arrow-square-out")}</a>
       </div>
-      ${this.repos?.length ? nothing : html`<p class="hint">The App can't see any repository yet: choose repositories for it on GitHub.</p>`}
-    </li>`;
+      <p class=${l.state === "ok" || l.state === "pending" ? "hint" : "sync-note"} role="status" aria-label=${`GitHub state of ${c.name}`}>
+        ${l.state === "conflict" && l.message ? `${l.message}.` : html`${words}${l.state === "ok" && l.syncedAt ? `, last synced ${ago(l.syncedAt)}` : ""}${l.message ? `: ${l.message}` : "."}`}
+      </p>
+      ${l.state === "conflict" ? this.renderConflicts() : nothing}
+      <div class="page-actions">
+        <lit-material-button variant="outlined" ?disabled=${Boolean(this.busy)} @click=${() => this.run("sync", async () => {
+          const r = await this.git.syncNow(c);
+          if (r.state !== "ok" && r.state !== "conflict") this.error = r.message;
+        })}>${icon("arrows-clockwise")} Sync now</lit-material-button>
+        <lit-material-button variant="text" ?disabled=${Boolean(this.busy)} @click=${() => this.unlink()}>Stop saving to GitHub</lit-material-button>
+      </div>
+      <p class="hint">Every save in HITOP commits to this folder, and commits on GitHub come back within seconds. The rest of the repository is never touched, and secret values stay on HITOP Cloud.</p>`;
+  }
+
+  renderForm() {
+    const c = this.collection;
+    const g = this.git;
+    const repos = g.repos ?? [];
+    const r = this.chosenRepo();
+    const path = this.path ?? slug(c.name);
+    const prefix = path ? `${path}/` : "";
+    const files = [`${prefix}hitop.yaml`, ...(c.requests ?? []).map((q) => `${prefix}requests/${slug(q.name)}.yaml`)];
+    const shown = files.slice(0, 6);
+    return html`
+      <ol class="git-steps">
+        <li>
+          <span class="git-step-title">GitHub</span>
+          ${g.connected
+            ? html`<span>${icon("check-circle")} Connected as <b>${g.info.installations.map((i) => i.account).join(", ")}</b></span>`
+            : html`<span class="hint">HITOP asks GitHub only for the repositories you choose.</span>
+                <lit-material-button variant="filled" ?disabled=${Boolean(this.busy)} @click=${() => this.run("connect", () => g.connect({ collection: c.id }))}>${icon("github-logo")} Connect GitHub</lit-material-button>`}
+        </li>
+        ${g.connected
+          ? html`<li>
+                <span class="git-step-title">Repository</span>
+                ${repos.length
+                  ? html`<lit-material-select id="git-repo" variant="outlined" label="Repository" .value=${r?.fullName ?? ""}
+                      @change=${(e) => ((this.repo = e.target.value), (this.branch = ""))}>
+                      ${repos.map((x) => html`<lit-material-select-option value=${x.fullName}>${x.fullName}${x.private ? " (private)" : ""}</lit-material-select-option>`)}
+                    </lit-material-select>`
+                  : html`<span class="hint">${g.repos ? "HITOP can't see any repository yet." : "Loading repositories…"}</span>`}
+                <button type="button" class="link-button" ?disabled=${Boolean(this.busy)} @click=${() => this.run("connect", () => g.connect({ add: true, collection: c.id }))}>
+                  ${repos.length ? "Don't see it? Give HITOP access to more repositories" : "Choose repositories on GitHub"} ${icon("arrow-square-out")}
+                </button>
+              </li>
+              <li>
+                <span class="git-step-title">Where in the repository</span>
+                <div class="git-fields">
+                  <lit-material-text-field id="git-path" variant="outlined" label="Folder" .value=${path} placeholder="(the repository's root)"
+                    @input=${(e) => (this.path = e.target.value.trim().replace(/^\/+|\/+$/g, ""))}></lit-material-text-field>
+                  <lit-material-text-field id="git-branch" variant="outlined" label="Branch" .value=${this.branch || r?.defaultBranch || "main"}
+                    @input=${(e) => (this.branch = e.target.value.trim())}></lit-material-text-field>
+                </div>
+              </li>`
+          : nothing}
+      </ol>
+      ${g.connected && r
+        ? html`<div class="git-preview git-indent" aria-label="Files HITOP will write">
+            <p>Will write in <b>${r.fullName}</b> on <b>${this.branch || r.defaultBranch}</b>:</p>
+            <ul>${shown.map((f) => html`<li><code>${f}</code></li>`)}${files.length > shown.length ? html`<li class="hint">and ${files.length - shown.length} more request files</li>` : nothing}</ul>
+            <p class="hint">Every save in HITOP commits there, and commits on GitHub come back here. If the folder already holds a hitop collection, that one wins the first sync.</p>
+          </div>
+          <div class="page-actions git-indent">
+            <lit-material-button variant="filled" ?disabled=${Boolean(this.busy)} @click=${() => this.save()}>${icon("github-logo")} ${this.busy === "link" ? "Saving…" : "Save to GitHub"}</lit-material-button>
+          </div>`
+        : nothing}`;
   }
 
   render() {
-    if (!this.info?.enabled || !this.lib?.status.on) return nothing;
-    const connected = this.info.installations?.length > 0;
-    return html`<section aria-label="GitHub">
-      <h2>GitHub</h2>
+    const c = this.collection;
+    const g = this.git;
+    if (!c || !g) return nothing;
+    const where = storageOf(this.store, c);
+    let body;
+    if (where.kind === "folder" || where.kind === "shared") {
+      body = html`<p>${where.detail}. ${where.kind === "folder" ? "Use the Git page of the desktop app, or your own git, for that folder." : "Shared workspaces stay end-to-end encrypted, so HITOP Cloud can't write them to GitHub."}</p>`;
+    } else if (!this.store.library?.status.on) {
+      body = html`<p>Collections reach GitHub through HITOP Cloud. Sign in on the Sync page and turn on "Save my collections to HITOP Cloud" first.</p>
+        <lit-material-button variant="filled" @click=${() => (this.closest("hitop-app")?.closeDialog(), this.store.show("sync"))}>Open the Sync page</lit-material-button>`;
+    } else if (!g.info) {
+      body = html`<p class="hint" role="status">Loading…</p>`;
+    } else if (!g.info.enabled) {
+      body = html`<p>Git sync isn't available on this server.</p>`;
+    } else if (where.kind === "browser") {
+      body = html`<p>${c.name} is kept in this browser only (it was here before you signed in). Copy it to HITOP Cloud first: duplicate it, then save the copy to GitHub.</p>`;
+    } else {
+      const l = g.linkOf(c);
+      body = l ? this.renderLinked(l) : this.renderForm();
+    }
+    return html`<div class="git-panel">
       ${this.error ? html`<lit-material-alert variant="error" role="alert">${this.error}</lit-material-alert>` : nothing}
       ${this.note ? html`<p class="sync-note" role="status">${this.note}</p>` : nothing}
-      ${connected
-        ? html`<p class="hint">Linked collections are kept in a GitHub repository as hitop files (hitop.yaml and requests/, never secret values). Every save is pushed; your team's commits come back here.</p>
-            <div class="sync-form">
-              <span class="hint">Connected: <b>${this.info.installations.map((i) => i.account).join(", ")}</b></span>
-              <lit-material-button variant="text" ?disabled=${Boolean(this.busy)} @click=${() => this.connect(true)}>Add repositories or accounts</lit-material-button>
-            </div>
-            <ul class="sync-list">${this.collections().map((c) => this.renderRow(c))}</ul>`
-        : html`<p class="hint">Keep collections in a GitHub repository: review changes in pull requests and run them in CI. The HITOP Cloud App asks only for the repositories you choose.</p>
-            <lit-material-button variant="filled" ?disabled=${Boolean(this.busy)} @click=${() => this.connect()}>Connect GitHub</lit-material-button>`}
-    </section>`;
+      ${body}
+    </div>`;
   }
 }
 
+class HitopGithub extends LightElement {
+  static properties = { store: { attribute: false }, version: { attribute: false }, busy: { state: true }, error: { state: true } };
+
+  get git() {
+    return this.store?.git;
+  }
+
+  render() {
+    const g = this.git;
+    if (!g?.enabled) return nothing;
+    const s = this.store;
+    const returned = g.returned && g.returned.collection == null ? g.returned : null;
+    const rows = s.collections.map((c) => [c, storageOf(s, c)]).filter(([, w]) => w.kind === "cloud" || w.kind === "github");
+    return html`<section aria-label="GitHub">
+      <h2>GitHub</h2>
+      ${returned ? html`<p class="sync-note" role="status">${returned.ok ? "GitHub is connected." : "GitHub didn't finish connecting. Try again."}</p>` : nothing}
+      ${this.error ? html`<lit-material-alert variant="error" role="alert">${this.error}</lit-material-alert>` : nothing}
+      <p class="hint">Save a collection to a GitHub repository to review changes in pull requests and run it in CI with <code>hitop run</code>. Every save in HITOP commits there; commits on GitHub come back here.</p>
+      <div class="sync-form">
+        ${g.connected
+          ? html`<span>${icon("github-logo")} Connected as <b>${g.info.installations.map((i) => i.account).join(", ")}</b></span>
+              <lit-material-button variant="text" ?disabled=${Boolean(this.busy)} @click=${() => this.go({ add: true })}>Manage repository access ${icon("arrow-square-out")}</lit-material-button>`
+          : html`<lit-material-button variant="filled" ?disabled=${Boolean(this.busy)} @click=${() => this.go({})}>${icon("github-logo")} Connect GitHub</lit-material-button>`}
+      </div>
+      ${rows.length
+        ? html`<ul class="sync-list" aria-label="Collections and GitHub">
+            ${rows.map(
+              ([c, w]) => html`<li class="sync-item git-row">
+                <span><b>${c.name}</b>
+                  <span class=${w.attention ? "sync-note" : "hint"} aria-label=${`Where ${c.name} is saved`}>${icon(w.icon)} ${w.kind === "github" ? `${w.label}, ${w.state}` : "HITOP Cloud only"}</span></span>
+                <lit-material-button variant="outlined" @click=${() => openGitDialog(this, c)}>${w.kind === "github" ? "Details" : "Save to GitHub…"}</lit-material-button>
+              </li>`,
+            )}
+          </ul>`
+        : nothing}
+    </section>`;
+  }
+
+  async go(opts) {
+    this.busy = "connect";
+    this.error = "";
+    try {
+      await this.git.connect(opts);
+    } catch (e) {
+      this.error = e?.message || String(e);
+      this.busy = "";
+    }
+  }
+}
+
+customElements.define("hitop-git-panel", HitopGitPanel);
 customElements.define("hitop-github", HitopGithub);

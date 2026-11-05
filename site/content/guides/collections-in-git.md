@@ -99,13 +99,23 @@ More in [Run collections in CI](/terms/run-collections-in-ci.html), [Run HITOP i
 
 ## From the web app, without git on your machine
 
-Signed in to HITOP Cloud in the [web app](/app/), open **Sync**, then **GitHub** → **Connect GitHub**. The HITOP Cloud GitHub App asks only for the repositories you choose. Then **Link to GitHub** on a collection, pick the repository and a folder (`shop`, or empty for the root):
+Sign in to HITOP Cloud in the [web app](/app/). Each collection then shows where it is kept: an icon in the sidebar (cloud for HITOP Cloud, the GitHub mark for GitHub, a red dot when it needs you) and a chip under its name on the collection page.
+
+On the collection page, choose **Save to GitHub…**. One dialog does the rest:
+
+1. **GitHub**: **Connect GitHub** the first time. The HITOP Cloud GitHub App asks only for the repositories you choose, and GitHub brings you back to the same dialog.
+2. **Repository**: pick one. Not in the list? **Give HITOP access to more repositories** opens GitHub's page for the App, where you choose them.
+3. **Where in the repository**: a folder (`shop`, or empty for the root) and a branch (the repository's default).
+
+The dialog lists the files it will write, then **Save to GitHub**:
 
 - An empty folder gets the collection as the files above (`hitop.yaml` and `requests/`). A folder that already holds a hitop collection is opened as it is.
 - **Every save is pushed** as a commit (saves within a few seconds go into one), with your name as the author. Other files in the repository are never touched, and secret values and environments are never committed.
 - Commits your team pushes on GitHub come back into the app within seconds.
-- When the same request changed both in the app and on GitHub, the app shows both versions side by side: **Keep mine**, **Take GitHub's** or **Keep both** (yours is added as "… (mine)"). Nothing is pushed until you choose. Changes to different requests, or to different keys of `hitop.yaml`, merge by themselves.
-- **Unlink** stops pushing; the files stay in the repository.
+- The chip now reads like `you/api-tests/shop · main · synced 2 min ago`; click it for the link to GitHub, **Sync now** and **Stop saving to GitHub** (the files stay in the repository).
+- When the same request changed both in the app and on GitHub, the chip and the sidebar icon say so, and the dialog shows both versions side by side: **Keep mine**, **Take GitHub's** or **Keep both** (yours is added as "… (mine)"). Nothing is pushed until you choose. Changes to different requests, or to different keys of `hitop.yaml`, merge by themselves.
+
+The Sync page's **GitHub** section lists the connected accounts, **Manage repository access**, and every collection with where it is kept.
 
 The collection is kept in your HITOP Cloud library, which the server can read. For collections that must stay end-to-end encrypted, use a [shared workspace](/terms/share-a-workspace-with-your-team.html) instead, or the desktop app's Git panel on a folder.
 

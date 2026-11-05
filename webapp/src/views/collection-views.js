@@ -11,6 +11,7 @@ import { testList } from "./request-view.js";
 import { methodLabel } from "../store.js";
 import { syncButton } from "./openapi-dialogs.js";
 import { isSyncRef } from "../sync.js";
+import { storageOf } from "../git.js";
 
 class LightElement extends LitElement {
   createRenderRoot() {
@@ -106,6 +107,26 @@ export class HitopCollections extends LightElement {
 export class HitopCollection extends LightElement {
   static properties = { store: { attribute: false }, version: { attribute: false }, app: { attribute: false }, collection: { attribute: false } };
 
+  // Where the collection is kept (git.js storageOf), as a chip that opens the GitHub dialog.
+  storageChip(c) {
+    const w = storageOf(this.store, c);
+    const git = this.store.git?.enabled;
+    const label = w.kind === "github" ? html`${w.label} <span class="hint">· ${w.state}</span>` : w.label;
+    const chip = html`${icon(w.icon)}<span>${label}</span>`;
+    return html`<p class="storage-line">
+      ${git && (w.kind === "cloud" || w.kind === "github")
+        ? html`<button type="button" class=${`storage-chip ${w.attention ? "attention" : ""}`} aria-label=${`${w.detail}. Open the GitHub settings of ${c.name}`} title=${w.detail}
+              @click=${() => this.app.openDialog("git", { collectionId: c.id })}>${chip} ${icon("caret-down")}</button>
+            ${w.kind === "cloud"
+              ? html`<lit-material-button variant="text" @click=${() => this.app.openDialog("git", { collectionId: c.id })}>${icon("github-logo")} Save to GitHub…</lit-material-button>`
+              : nothing}`
+        : html`<span class="storage-chip static" title=${w.detail}>${chip}</span>`}
+      ${platform().folders?.pick
+        ? html`<lit-material-button variant="text" @click=${() => this.store.saveToFolder(c.id)}>${icon("folder-open")} Save to folder</lit-material-button>`
+        : nothing}
+    </p>`;
+  }
+
   render() {
     const s = this.store;
     const c = this.collection;
@@ -130,6 +151,7 @@ export class HitopCollection extends LightElement {
             <lit-material-icon-button aria-label=${folder ? "Close folder" : "Delete collection"} @click=${() => this.app.deleteCollection(c)}>${icon(folder ? "x" : "trash")}</lit-material-icon-button>
           </div>
         </header>
+        ${folder ? nothing : this.storageChip(c)}
         ${folder
           ? html`<p class="folder-status" role="status">
               ${icon("folder-open")}
@@ -141,11 +163,7 @@ export class HitopCollection extends LightElement {
                 : html`<span>Was opened from the folder ${folder.label}. Reconnect to read it again and keep saving there.</span>
                     <lit-material-button variant="text" @click=${() => s.reconnectFolder(c.id)}>Reconnect folder</lit-material-button>`}
             </p>`
-          : platform().folders?.pick
-            ? html`<p class="folder-status">
-                <lit-material-button variant="text" @click=${() => s.saveToFolder(c.id)}>${icon("folder-open")} Save to folder</lit-material-button>
-              </p>`
-            : nothing}
+          : nothing}
         <p class="page-lead">Run sends the requests in this order, passes values saved with <code>setContext</code> to the next one, and stops at the first failure.</p>
         ${mine ? runResults(run.results, run.running) : nothing}
         <section aria-label="Requests">

@@ -43,5 +43,26 @@ p.onStart = (app) => {
   adapterStart?.(app);
   app.store.library = library;
   library.attach(app.store);
+  // Git sync of the library through the HITOP Cloud GitHub App (git.js): web build only, the
+  // desktop has its own Git page for folders and no web origin to come back to from GitHub.
+  if (p.name === "web") startGit(app);
 };
+async function startGit(app) {
+  const { GitState } = await import("./git.js");
+  const git = new GitState(library);
+  app.store.git = git;
+  git.addEventListener("change", () => {
+    // Re-render the views (the store's version) without saving anything.
+    app.store.version = (app.store.version ?? 0) + 1;
+    app.store.dispatchEvent(new Event("change"));
+  });
+  git.start();
+  // Back from GitHub while saving a collection to it: that collection's dialog again.
+  const id = git.returned?.collection;
+  const c = id != null && app.store.collections.find((x) => String(x.id) === id);
+  if (c) {
+    app.store.show("collection", c.id);
+    app.openDialog("git", { collectionId: c.id });
+  }
+}
 await import("./views/hitop-app.js");

@@ -19,6 +19,8 @@ import { requestTree } from "../collection-tree.js";
 import { shortcutList } from "./shortcut-list.js";
 import "./settings-view.js";
 import "./history-view.js";
+import "./github-view.js";
+import { storageOf } from "../git.js";
 
 // Collections folded in the sidebar, by id (its own key: nothing else reads it).
 const COLLAPSED_KEY = "hitop_collapsed_collections";
@@ -261,6 +263,10 @@ export class HitopApp extends LitElement {
     const d = this.dialog;
     // Enter can reach the form twice (the field's own implicit submission and
     // dialogKey); act once per opening.
+    if (d?.kind === "git") {
+      this.querySelector("hitop-git-panel")?.submit();
+      return;
+    }
     if (!d || d.submitted) return;
     if (d.kind === "quick-open") {
       const { results, active } = this.quickDialog(d);
@@ -558,6 +564,16 @@ export class HitopApp extends LitElement {
         </div>`;
         break;
       }
+      case "git": {
+        const c = s.collections.find((x) => x.id === d.collectionId);
+        headline = c && s.git?.linkOf(c) ? `${c.name} on GitHub` : `Save ${c?.name ?? "the collection"} to GitHub`;
+        body = html`<hitop-git-panel .store=${s} .version=${s.version} .collection=${c}></hitop-git-panel>`;
+        footer = html`
+          <div slot="actions" class="dialog-actions">
+            <lit-material-button variant="text" @click=${() => this.closeDialog()}>Close</lit-material-button>
+          </div>`;
+        break;
+      }
       case "shortcuts":
         headline = "Keyboard shortcuts";
         body = html`${shortcutList()}<p class="dialog-note">They're on the Settings page too.</p>`;
@@ -679,6 +695,12 @@ export class HitopApp extends LitElement {
     </lit-material-menu>`;
   }
 
+  // Where the collection is kept (git.js storageOf): its icon in the sidebar, a dot when it needs you.
+  storageIcon(c) {
+    const w = storageOf(this.store, c);
+    return html`<span class="storage-icon" title=${w.detail} aria-hidden="true">${icon(w.icon)}${w.attention ? html`<span class="storage-dot" aria-hidden="true"></span>` : nothing}</span>`;
+  }
+
   renderSidebar() {
     const s = this.store;
     const { kind, collectionId } = s.view;
@@ -707,9 +729,10 @@ export class HitopApp extends LitElement {
                   <div class="collection-line">
                     <button type="button" class="tree-toggle" aria-expanded=${String(open)} aria-label="Requests" title=${`Show or hide the requests in ${c.name}`}
                       ?disabled=${Boolean(filter)} @click=${() => this.toggleCollection(c.id)}>${icon(open ? "caret-down" : "caret-right")}</button>
-                    <button type="button" class="tree-row collection" aria-current=${kind === "collection" && collectionId === c.id ? "page" : "false"} @click=${() => this.go("collection", c.id)}>
-                      ${icon("folder-simple")}<span>${c.name}</span>
+                    <button type="button" class="tree-row collection" aria-current=${kind === "collection" && collectionId === c.id ? "page" : "false"} aria-describedby=${`storage-of-${c.id}`} @click=${() => this.go("collection", c.id)}>
+                      ${this.storageIcon(c)}<span>${c.name}</span>
                     </button>
+                    <span class="visually-hidden" id=${`storage-of-${c.id}`}>${storageOf(s, c).detail}</span>
                   </div>
                   ${open
                     ? html`<ul>

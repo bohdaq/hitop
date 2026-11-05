@@ -538,3 +538,40 @@ lit-material-dialog.wide::part(container) { width: min(1100px, calc(100vw - 32px
 /* GitHub conflicts (views/github-view.js): the two versions side by side, stacked on phones. */
 .sync-compare { display: grid; grid-template-columns: repeat(auto-fit, minmax(16rem, 1fr)); gap: var(--space-200); margin: var(--space-100) 0; }
 .sync-compare > div { min-width: 0; }
+
+/* Where a collection is kept (git.js storageOf): sidebar icon, collection page chip, GitHub dialog. */
+.storage-icon { position: relative; display: inline-flex; flex: none; }
+.storage-dot { position: absolute; top: -2px; right: -3px; width: 7px; height: 7px; border-radius: 50%; background: var(--md-sys-color-error); }
+.storage-line { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-100); margin: 0 0 var(--space-200); }
+.storage-chip { display: inline-flex; align-items: center; gap: var(--space-75); min-height: 32px; max-width: 100%; box-sizing: border-box; padding: 0 var(--space-200);
+  border: 1px solid var(--md-sys-color-outline-variant); border-radius: 999px; background: var(--md-sys-color-surface-container-low);
+  color: var(--md-sys-color-on-surface); font: inherit; font-size: var(--text-sm); }
+.storage-chip > span { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+button.storage-chip { cursor: pointer; }
+button.storage-chip:hover { background: var(--md-sys-color-surface-container-high); }
+button.storage-chip:focus-visible { outline: 2px solid var(--md-sys-color-primary); outline-offset: 2px; }
+.storage-chip.attention { border-color: var(--md-sys-color-error); }
+.git-panel { display: grid; gap: var(--space-200); }
+.git-panel p { margin: 0; }
+.git-steps { display: grid; gap: var(--space-200); margin: 0; padding: 0; list-style: none; counter-reset: step; }
+.git-steps > li { display: grid; gap: var(--space-75); padding-inline-start: var(--space-400); position: relative; counter-increment: step; }
+.git-steps > li::before { content: counter(step); position: absolute; inset-inline-start: 0; top: 0; display: grid; place-items: center; width: 24px; height: 24px;
+  border-radius: 50%; background: var(--md-sys-color-secondary-container); color: var(--md-sys-color-on-secondary-container); font-size: var(--text-sm); font-weight: 600; }
+.git-step-title { font-weight: 600; }
+.git-steps > li > span { display: inline-flex; align-items: center; gap: var(--space-50); flex-wrap: wrap; }
+.git-fields { display: grid; grid-template-columns: 2fr 1fr; gap: var(--space-100); }
+@media (max-width: 520px) { .git-fields { grid-template-columns: 1fr; } }
+.link-button { justify-self: start; display: inline-flex; align-items: center; gap: var(--space-50); padding: 0; border: 0; background: none;
+  color: var(--md-sys-color-primary); font: inherit; font-size: var(--text-sm); text-decoration: underline; cursor: pointer; }
+.link-button:focus-visible { outline: 2px solid var(--md-sys-color-primary); outline-offset: 2px; }
+.git-preview { padding: var(--space-200); border: 1px solid var(--md-sys-color-outline-variant); border-radius: var(--md-sys-shape-corner-medium);
+  background: var(--md-sys-color-surface-container-low); display: grid; gap: var(--space-75); }
+.git-preview ul { margin: 0; padding-inline-start: var(--space-300); }
+.git-where { display: flex; align-items: center; gap: var(--space-75); font-weight: 600; overflow-wrap: anywhere; }
+.git-where a { display: inline-flex; align-items: center; gap: var(--space-50); }
+.git-how { margin: 0; padding-inline-start: var(--space-300); }
+.git-row { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: var(--space-100); }
+.git-row > span { display: grid; gap: 2px; min-width: 0; }
+.git-row .hint, .git-row .sync-note { display: inline-flex; align-items: center; gap: var(--space-50); overflow-wrap: anywhere; }
+.git-indent { margin-inline-start: var(--space-400); }
+.git-panel .sync-conflicts { margin: 0; padding: 0; list-style: none; }

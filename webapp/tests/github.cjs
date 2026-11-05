@@ -18,7 +18,7 @@ const { fakeGithub } = require('./fake-github.cjs');
 const { results, check } = checker();
 const settle = (p, ms = 400) => p.waitForTimeout(ms);
 // Screenshots of the GitHub section (GITHUB_SHOTS=<dir>), for a look at the layout.
-const shot = (page, name) => process.env.GITHUB_SHOTS && page.locator('hitop-github').screenshot({ path: path.join(process.env.GITHUB_SHOTS, `${name}.png`) }).catch(() => {});
+const shot = (page, name) => process.env.GITHUB_SHOTS && page.screenshot({ path: path.join(process.env.GITHUB_SHOTS, `${name}.png`) }).catch(() => {});
 
 if (TAURI) {
   console.log('[github] web mode only: skipped in Tauri mode');
@@ -135,34 +135,53 @@ const WEBHOOK = 'whsec-e2e';
     await shot(page, 'connect');
     check('signed in: the GitHub section offers Connect', true);
 
-    // Connect: the fake install page sends the browser back through the server's callback.
-    await G().getByRole('button', { name: 'Connect GitHub' }).click();
-    await page.waitForURL((u) => u.href.startsWith(h.url), { timeout: 15000 });
-    await page.waitForLoadState('networkidle');
-    await openSync();
-    await G().getByText('GitHub is connected').waitFor({ timeout: 15000 }).catch(() => {});
-    check('back from GitHub: connected', (await G().innerText()).includes('Connected: ada'), await G().innerText());
+    // The collection page says where Shop is kept and offers Save to GitHub.
+    const openShop = async () => {
+      await page.locator('aside').getByRole('button', { name: /^Shop/ }).click();
+      await settle(page);
+    };
+    await openShop();
+    const chip = () => page.locator('hitop-collection .storage-chip');
+    check('the collection page says Shop is on HITOP Cloud', (await chip().innerText()).includes('HITOP Cloud'), await chip().innerText());
+    check('...and so does its sidebar icon', ((await page.locator('aside .tree-row.collection', { hasText: 'Shop' }).locator('.storage-icon').getAttribute('title')) || '').includes('HITOP Cloud'));
+    const D = () => page.locator('hitop-git-panel');
+    await page.locator('hitop-collection').getByRole('button', { name: 'Save to GitHub…' }).click();
+    await D().getByRole('button', { name: 'Connect GitHub' }).waitFor({ timeout: 10000 });
+    await shot(page, 'dialog-connect');
+    check('the dialog starts with Connect GitHub', true);
 
-    // Add repositories or accounts: the App's install page again (where GitHub lets you pick an
-    // account or configure the repositories), not the authorization screen that bounces straight back.
+    // Connect: the fake install page sends the browser back; Shop's dialog opens again.
+    await D().getByRole('button', { name: 'Connect GitHub' }).click();
+    await page.waitForURL((u) => u.href.startsWith(h.url) && gh.visits.length > 0, { timeout: 15000 });
+    await page.waitForLoadState('networkidle');
+    await D().getByText('Connected as').waitFor({ timeout: 15000 }).catch(() => {});
+    await shot(page, 'back');
+    check('back from GitHub: the dialog is open again, connected', (await D().count()) === 1 && /Connected as\s+ada/.test(await D().innerText()), (await D().count()) ? await D().innerText() : 'no dialog');
+
+    // More repositories: the App's install page again (where GitHub lets you pick an account or
+    // configure the repositories), not the authorization screen that bounces straight back.
     const seen = gh.visits.length;
-    await G().getByRole('button', { name: 'Add repositories or accounts' }).click();
+    await D().getByRole('button', { name: /Give HITOP access/ }).click();
     await page.waitForURL((u) => u.href.startsWith(h.url) && gh.visits.length > seen, { timeout: 15000 });
     await page.waitForLoadState('networkidle');
-    check('Add repositories or accounts opens the install page', gh.visits.slice(seen).join() === 'install', gh.visits.join());
-    await openSync();
-    await G().getByText('GitHub is connected').waitFor({ timeout: 15000 }).catch(() => {});
+    check('Give HITOP access opens the install page', gh.visits.slice(seen).join() === 'install', gh.visits.join());
+    await D().getByLabel('Folder').waitFor({ timeout: 15000 });
 
-    // Link Shop to the folder "shop".
-    const row = G().locator('li', { hasText: 'Shop' }).first();
-    await row.getByRole('button', { name: 'Link to GitHub' }).click();
-    await G().getByLabel('Folder in the repository').fill('shop');
-    await G().getByRole('button', { name: 'Link', exact: true }).click();
-    await G().getByLabel('GitHub link of Shop').waitFor({ timeout: 15000 });
+    // Save Shop to the folder "shop", after the preview of the files.
+    await D().getByLabel('Folder').fill('shop');
+    await settle(page, 200);
+    const preview = await D().getByLabel('Files HITOP will write').innerText();
+    check('the dialog previews the files it will write', preview.includes(REPO) && preview.includes('shop/hitop.yaml') && preview.includes('shop/requests/list-orders.yaml'), preview);
+    await shot(page, 'dialog-form');
+    await D().getByRole('button', { name: 'Save to GitHub' }).click();
+    await D().getByLabel('GitHub link of Shop').waitFor({ timeout: 15000 });
     check('linked: the collection is in the repository', shopFiles().some(([p]) => p === 'shop/hitop.yaml') && shopFiles().filter(([p]) => p.startsWith('shop/requests/')).length === 2, JSON.stringify(Object.keys(gh.files(REPO))));
     check('...and the rest of the repository is untouched', gh.files(REPO)['README.md'] === '# APIs\n');
     await shot(page, 'linked');
-    check('...the page says so', (await G().getByLabel('GitHub state of Shop').innerText()).includes('In sync with GitHub'), await G().getByLabel('GitHub state of Shop').innerText());
+    check('...the dialog says so', (await D().getByLabel('GitHub state of Shop').innerText()).includes('In sync with GitHub'), await D().getByLabel('GitHub state of Shop').innerText());
+    await page.locator('#dialog').getByRole('button', { name: 'Close' }).click();
+    await settle(page);
+    check('...and so does the chip', (await chip().innerText()).includes(`${REPO}/shop · main`), await chip().innerText());
 
     // An edit in the app reaches GitHub.
     await store(`const c = s.collections.find((c) => c.name === "Shop"); s.collections = s.collections.map((x) => x.id === c.id ? { ...x, requests: x.requests.map((r) => r.id === 501 ? { ...r, url: "https://shop.e2e-git.test/v2/orders" } : r) } : x); s.emit();`);
@@ -187,24 +206,32 @@ const WEBHOOK = 'whsec-e2e';
     await store('return s.library.flush();');
     await webhook();
     await waitFor('conflict', async () => {
-      await G().evaluate((el) => el.loadLinks());
-      return (await G().getByLabel('GitHub conflicts in Shop').count()) === 1;
+      await store('return s.git.loadLinks();');
+      return (await page.locator('aside .storage-dot').count()) === 1;
     });
-    const conflict = await G().getByLabel('GitHub conflicts in Shop').innerText().catch(() => '');
+    check('a clash puts a dot on the sidebar icon', (await page.locator('aside .storage-dot').count()) === 1);
+    await shot(page, 'clash');
+    await chip().click();
+    await D().getByLabel('GitHub conflicts in Shop').waitFor({ timeout: 10000 }).catch(() => {});
+    const conflict = await D().getByLabel('GitHub conflicts in Shop').innerText().catch(() => '');
     await shot(page, 'conflict');
     check('a request changed on both sides shows both versions', conflict.includes('List orders') && conflict.includes('/v4/orders') && conflict.includes('/v3/orders'), conflict);
-    await G().getByRole('group', { name: 'Keep for List orders' }).getByRole('button', { name: 'Keep both' }).click();
-    await G().getByRole('button', { name: 'Apply and sync' }).click();
-    await G().getByText('in sync with GitHub again').waitFor({ timeout: 15000 }).catch(() => {});
+    await D().getByRole('group', { name: 'Keep for List orders' }).getByRole('button', { name: 'Keep both' }).click();
+    await D().getByRole('button', { name: 'Apply and sync' }).click();
+    await D().getByText('in sync with GitHub again').waitFor({ timeout: 15000 }).catch(() => {});
     const names = await store('return s.collections.find((c) => c.name === "Shop").requests.map((r) => r.name);');
     check('Keep both: both in the app', names.includes('List orders') && names.includes('List orders (mine)'), JSON.stringify(names));
     check('...and both on GitHub', shopFiles().some(([, t]) => t.includes('/v3/orders')) && shopFiles().some(([, t]) => t.includes('/v4/orders') && t.includes('(mine)')), JSON.stringify(shopFiles().map(([p]) => p)));
 
     // Unlink: saves stop going to GitHub, the files stay.
     const kept = JSON.stringify(gh.files(REPO));
-    await G().getByLabel('GitHub link of Shop').getByRole('button', { name: 'Unlink' }).click();
-    await page.locator('lit-material-confirm-dialog').getByRole('button', { name: 'Unlink' }).click();
-    await G().getByLabel('GitHub link of Shop').waitFor({ state: 'detached', timeout: 10000 }).catch(() => {});
+    await D().getByRole('button', { name: 'Stop saving to GitHub' }).click();
+    await page.locator('lit-material-confirm-dialog').getByRole('button', { name: 'Stop saving to GitHub' }).click();
+    await D().getByLabel('GitHub link of Shop').waitFor({ state: 'detached', timeout: 10000 }).catch(() => {});
+    check('unlinked: the dialog offers Save to GitHub again', (await D().getByLabel('Folder').count()) === 1);
+    await page.locator('#dialog').getByRole('button', { name: 'Close' }).click();
+    await settle(page);
+    check('...and the chip says HITOP Cloud', (await chip().innerText()).includes('HITOP Cloud'), await chip().innerText());
     await store('s.addCollection("After"); s.emit();');
     await store('return s.library.flush();');
     await settle(page, 2500);
