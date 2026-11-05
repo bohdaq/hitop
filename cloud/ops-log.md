@@ -321,3 +321,22 @@ and on hitop.rws8.tech/cloud/healthz. -->
   cloud.hitop.rws8.tech 200; proxy ok; rws and hitop-server active; live index files of the site,
   web app and portal match the build. Before: portal e2e 90/90, site checks, web app unit + all 18
   e2e suites (Tauri mode). Rollback: `/var/www/hitop.bak-<ts>`, `/usr/local/bin/hitop-server.bak-<ts>`.
+
+## 2026-11-05 C8 deployed: personal library and Git sync (11:56–12:03 UTC)
+
+- Who: owner ran the scripts the agent staged (`~/hitop-sync-deploy/run-c8-deploy.sh`, then
+  `finish-c8.sh`, which deleted itself: it held the App secrets). Before: `hitop-sync-server dump
+  /root/pre-deploy-c8-<ts>` (Postgres). Sync server built at ff30d84 (`--release --locked
+  --features postgres`, sha256 a4db65571c88b42f…).
+- `/healthz` `{"database":"postgres","ok":true,"schema":13}` (migrations 12 `library_items`, 13
+  `git_installations`/`git_links`); NRestarts 0. install.sh's health check again ran before the
+  server listened and stopped the first script (service fine).
+- GitHub App `hitop-cloud` (id 5626619): `HITOP_SYNC_GITHUB_APP_{ID,SLUG,CLIENT_ID,CLIENT_SECRET,
+  WEBHOOK_SECRET}` in `/etc/hitop-sync/env` (backup `env.bak-20261105-120224`); key
+  `/etc/hitop-sync/github-app.pem` (root 0600) through `LoadCredential` in drop-in
+  `hitop-sync.service.d/30-github-app.conf`. Public webhook answers `bad_signature` unsigned (on).
+  The client and webhook secrets were pasted in chat: rotate them.
+- Site and web app from ff30d84 (Sync page: library switch, GitHub); `/cloud/` left as it was
+  (the rebuilt portal needs rws 18.30). `/`, `/app/`, `/install.sh`, `/cloud/` 200. Backup
+  `/var/www/hitop.bak-20261105-120224`.
+- Not set: `HITOP_SYNC_HOST_KEY`, so the library stores no secret values yet.
