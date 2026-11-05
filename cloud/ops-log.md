@@ -350,3 +350,7 @@ and on hitop.rws8.tech/cloud/healthz. -->
   Backup `/var/www/hitop.bak-20261105-155736`.
 - 2026-11-05 later: web app from ec5dfde (owner ran `~/hitop-app-ec5dfde/run-app-deploy.sh`): Save to
   HITOP Cloud for browser-only collections, Create a new repository, numbered file preview.
+- 2026-11-05 ~18:20 UTC: sync server from 7f1e3ce (owner ran `~/hitop-sync-7f1e3ce/run-sync-deploy.sh`;
+  dump first): an empty GitHub repository gets a README first commit. The first try stopped at the
+  dump (the App key path lives in the drop-in; script and RUNBOOK fixed). `/healthz` schema 13,
+  0 over a limit. ("SMTP_URL is not set" is the over-limits check on a copy, not the service.)
