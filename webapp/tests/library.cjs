@@ -189,8 +189,10 @@ async function syncServer() {
     // Another account in this browser doesn't take the first account's collections along.
     await signIn(one, 'bob@example.com');
     await settle(one.page, 2500);
+    // A sign-in of Bob's own, by code: wait for this mail (not the one the page asked for).
+    const bobMails = server.mails('bob@example.com');
     const bob = await (await fetch(`${server.url}/v1/auth/email`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ email: 'bob@example.com' }) })).status;
-    const bobSession = (await (await fetch(`${server.url}/v1/auth/email/verify`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ token: await server.code('bob@example.com', server.mails('bob@example.com') - 1) }) })).json()).session;
+    const bobSession = (await (await fetch(`${server.url}/v1/auth/email/verify`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ token: await server.code('bob@example.com', bobMails) }) })).json()).session;
     const bobLib = await (await fetch(`${server.url}/v1/library`, { headers: { Authorization: `Bearer ${bobSession}` } })).json();
     check("a second account's library doesn't get the first account's collections", bob === 202 && !bobLib.items.some((i) => i.kind === 'collection'), JSON.stringify(bobLib.items.map((i) => `${i.kind}/${i.data?.name ?? i.id}`)));
 

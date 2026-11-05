@@ -1,8 +1,11 @@
 # Context = the repository root (docker build -f sync-server/Dockerfile .): only what the build uses.
 *
+!cli/Cargo.toml
+!cli/crates/hitop-core
 !cli/crates/hitop-sync-crypto
 !sync-server
 sync-server/target
 cli/crates/hitop-sync-crypto/target
+cli/crates/hitop-core/target
 **/*.db
 **/*.db-*
