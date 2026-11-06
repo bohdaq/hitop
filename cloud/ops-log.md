@@ -387,3 +387,7 @@ and on hitop.rws8.tech/cloud/healthz. -->
   (`server/src/legacy.rs`), answer-first home lede. Checks: `/`, `/app/`, `/guides/`,
   `/privacy.html`, `/cloud/`, `/cloud/healthz` 200, `/terms/` 301 → `/guides/`, proxy ok, rws and
   hitop-server active. Deploying 3270de3 is still to do.
+
+## 2026-11-06 Web app: minimal Account page
+
+- /app/ only from 3270de3 (run-app-deploy.sh, backup /var/www/hitop-app.bak-*); live CSS index-MyZeSlAt.css matches the build. Guides wait for the next site deploy.
