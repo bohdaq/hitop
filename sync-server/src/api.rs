@@ -62,7 +62,7 @@ impl From<DbError> for ApiError {
 
 pub type ApiResult = Result<(u16, Json), ApiError>;
 
-fn phrase(status: u16) -> &'static StatusCodeReasonPhrase {
+pub(crate) fn phrase(status: u16) -> &'static StatusCodeReasonPhrase {
     let s = STATUS_CODE_REASON_PHRASE;
     match status {
         200 => s.n200_ok,
@@ -359,6 +359,9 @@ impl SyncApp {
             ("POST", "/v1/git/github/connect", crate::gitsync::connect),
             ("POST", "/v1/git/github/webhook", crate::gitsync::webhook),
             ("GET", "/v1/git/installations/:id/repos", crate::gitsync::repos),
+            ("GET", "/v1/library/collection/:id/mock", crate::mocks::get),
+            ("PUT", "/v1/library/collection/:id/mock", crate::mocks::put),
+            ("DELETE", "/v1/library/collection/:id/mock", crate::mocks::delete),
             ("GET", "/v1/library/collection/:id/git", crate::gitsync::get),
             ("PUT", "/v1/library/collection/:id/git", crate::gitsync::link),
             ("DELETE", "/v1/library/collection/:id/git", crate::gitsync::unlink),
@@ -445,6 +448,10 @@ impl SyncApp {
 impl Application for SyncApp {
     fn execute(&self, request: &Request, connection: &ConnectionInfo) -> Result<Response, String> {
         let path = request.request_uri.split(['?', '#']).next().unwrap_or("");
+        // Mock servers (mocks.rs): any method, their own CORS, rate limit and content types.
+        if path.starts_with("/mock/") {
+            return Ok(crate::mocks::serve(&self.state, request, path));
+        }
         let mut response = if request.method == "OPTIONS" {
             json_response(204, &Json::Null)
         } else if request.method == "GET" && path == "/signin" {

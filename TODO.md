@@ -33,7 +33,7 @@ Highest value for the effort first.
 | 10 | Team environments | |
 | 11 | Hosted MCP | done: sync server POST /mcp, 6 tools over the library (read; create/update with a write token); running requests from it open (with monitors) |
 | 12 | AI in the app | done: Ask AI (sparkle next to Send): write tests, explain, request from text; own key in Settings, Opus 5.5 default + server-side fallback; secrets masked |
-| 13 | Mock servers | |
+| 13 | Mock servers | done: sync server /mock/<id>/… from saved examples (migration 14), paid plans, 600/min, never HTML; Share → Mock |
 | 14 | Monitors | |
 | 15 | Comments and per-request history | |
 | 16 | gRPC and WebSocket headers bridge | |

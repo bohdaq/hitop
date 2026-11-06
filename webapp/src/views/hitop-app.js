@@ -24,6 +24,7 @@ import { storageOf } from "../git.js";
 import { syncClient } from "./sync-view.js";
 import { orgLabel } from "../orgs.js";
 import { aiDialog, runAi } from "./ai-view.js";
+import "./mock-view.js";
 import { aiSettings } from "../ai.js";
 import { DEFAULT_SERVER } from "../sync.js";
 
@@ -889,13 +890,16 @@ export class HitopApp extends LitElement {
   shareBody(c, tab) {
     const s = this.store;
     const web = platform().name === "web";
-    const tabs = [["people", "People", "users-three"], ...(web && s.git?.enabled ? [["github", "GitHub", "github-logo"]] : []), ["file", "File", "file-zip"]];
+    // A mock needs the collection in the HITOP Cloud library (signed in, not a folder or shared one).
+    const mockable = storageOf(s, c).kind === "cloud" || storageOf(s, c).kind === "github";
+    const tabs = [["people", "People", "users-three"], ...(web && s.git?.enabled ? [["github", "GitHub", "github-logo"]] : []), ...(mockable ? [["mock", "Mock", "play"]] : []), ["file", "File", "file-zip"]];
     const current = tabs.some(([k]) => k === tab) ? tab : "people";
     const pick = (k) => (this.dialog = { ...this.dialog, tab: k });
     const folder = s.folderOf(c.id);
     let panel;
     if (current === "people") panel = html`<hitop-sync .store=${s} .version=${s.version} .app=${this} .collection=${c}></hitop-sync>`;
     else if (current === "github") panel = html`<hitop-git-panel .store=${s} .version=${s.version} .collection=${c}></hitop-git-panel>`;
+    else if (current === "mock") panel = html`<hitop-mock .store=${s} .collection=${c}></hitop-mock>`;
     else {
       panel = html`<div class="share-file">
         <p>A collection as files: one YAML file per request, for your own git and for <code>hitop run</code> in CI.</p>

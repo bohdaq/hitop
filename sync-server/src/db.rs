@@ -779,6 +779,14 @@ CREATE TABLE git_links (
 );
 CREATE INDEX git_links_due ON git_links(due_at);
 CREATE INDEX git_links_repo ON git_links(installation_id, repo, branch);
+", r"
+CREATE TABLE mocks (
+  id TEXT PRIMARY KEY,
+  user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  collection_id TEXT NOT NULL,
+  created_at BIGINT NOT NULL,
+  UNIQUE (user_id, collection_id)
+);
 "];
 
 /// Steps in Rust that run in the same transaction as a migration's SQL (index = migration

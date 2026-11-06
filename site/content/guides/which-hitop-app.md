@@ -26,6 +26,7 @@ All three read and write the same [collection folder](/guides/collections-in-git
 | **HITOP Cloud** | Cloud library, organizations, shared collections, GitHub | Cloud library, organizations, shared collections | `hitop sync` for shared collections |
 | **Postman import** | Yes | Yes | Yes (`hitop import`) |
 | **OpenAPI import and sync** | Yes | Yes | Yes (`hitop openapi`) |
+| **Mock server** (HITOP Cloud, paid plans) | Yes (Share, Mock) | Yes (Share, Mock) | No |
 | **Docs page** (one HTML file) | Yes (Share, File) | Yes (Share, File) | Yes (`hitop docs`) |
 | **CI reports** (JUnit, JSON, HTML) | No | No | Yes (`hitop run`) |
 | **Ask AI** (your own Anthropic key) | Yes: tests, explanations, a request from text | Yes | No |

@@ -254,6 +254,21 @@ async function syncServer() {
     await two.page.locator('#dialog').getByRole('button', { name: /Cancel|Close/ }).first().click();
     await store(two, 's.setCurrentOrg(s.personalOrg);');
 
+    // A mock server from the Share dialog: answers from the saved examples.
+    await store(two, `s.addCollection("Mocked"); const c = s.collections.find((c) => c.name === "Mocked");
+      s.collections = s.collections.map((x) => x.id === c.id ? { ...x, requests: [{ id: 901, name: "Get item", method: "GET", url: "\${base}/items/\${id}", headers: [], body: "",
+        examples: [{ name: "ok", status: 200, headers: { "content-type": "application/json" }, body: '{"id":3}' }] }] } : x);
+      s.show("collection", c.id); s.emit(); s.save();`);
+    await saved(two);
+    await two.page.locator('hitop-collection').getByRole('button', { name: 'Share', exact: true }).click();
+    await two.page.locator('#dialog').getByRole('tab', { name: /Mock/ }).click();
+    await two.page.locator('#dialog').getByRole('button', { name: /Turn on the mock server/ }).click();
+    await two.page.locator('#dialog hitop-mock lit-material-code-block').waitFor({ timeout: 10000 });
+    const mockUrl = (await two.page.locator('#dialog hitop-mock lit-material-code-block').innerText()).trim().split('\n').find((l) => l.includes('/mock/'));
+    const answer = await (await fetch(`${mockUrl.trim()}/items/3`)).json();
+    check('a mock server answers from the saved example', answer.id === 3, `${mockUrl} ${JSON.stringify(answer)}`);
+    await two.page.locator('#dialog .dialog-actions').getByRole('button', { name: 'Close' }).click();
+
     check('no page errors', errors.length === 0, errors.join(' | '));
   } catch (e) {
     check('the run finished', false, `${e.stack}\n${server.log().slice(-1500)}`);
