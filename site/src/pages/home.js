@@ -176,12 +176,31 @@ export function structuredData() {
   return [
     {
       "@context": "https://schema.org",
+      "@type": "Organization",
+      "@id": "https://hitop.rws8.tech/#organization",
+      name: "HITOP",
+      url: "https://hitop.rws8.tech/",
+      logo: "https://hitop.rws8.tech/favicon.png",
+      sameAs: ["https://github.com/bohdaq/hitop", MAC_APP, IOS_APP, "https://rws8.tech/", "https://lit.rws8.tech/"],
+    },
+    {
+      "@context": "https://schema.org",
+      "@type": "WebSite",
+      "@id": "https://hitop.rws8.tech/#website",
+      name: "HITOP",
+      url: "https://hitop.rws8.tech/",
+      inLanguage: "en",
+      publisher: { "@id": "https://hitop.rws8.tech/#organization" },
+    },
+    {
+      "@context": "https://schema.org",
       "@type": "SoftwareApplication",
       name: "HITOP",
       applicationCategory: "DeveloperApplication",
       operatingSystem: "Web, macOS, iOS, Linux, Windows",
       license: "https://opensource.org/licenses/MIT",
       url: "https://hitop.rws8.tech/",
+      author: { "@id": "https://hitop.rws8.tech/#organization" },
       offers: [
         { "@type": "Offer", name: "Web app, extensions and CLI", price: "0", priceCurrency: "USD" },
         { "@type": "Offer", name: "macOS app", price: "4.99", priceCurrency: "USD", url: MAC_APP },

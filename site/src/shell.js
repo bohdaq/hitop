@@ -81,7 +81,7 @@ export function footer() {
 // a cream flash. Storage can throw (private windows), hence the try.
 const THEME_BOOT = `document.documentElement.classList.add("js");try{var t=localStorage.getItem("hitop-theme");if(t)document.documentElement.dataset.theme=t}catch(e){}`;
 
-export function documentHtml({ title, description, path, body, assets, noindex = false, canonical = path, jsonLd = [] }) {
+export function documentHtml({ title, description, path, body, assets, noindex = false, canonical = path, jsonLd = [], ogType = "website", markdown = null, modified = null }) {
   const css = assets.css.map((href) => `<link rel="stylesheet" href="${href}">`).join("");
   return `<!doctype html>
 <html lang="en">
@@ -93,8 +93,12 @@ export function documentHtml({ title, description, path, body, assets, noindex =
 ${noindex ? '<meta name="robots" content="noindex">' : ""}
 <link rel="canonical" href="${ORIGIN}${canonical}">
 <link rel="icon" href="/favicon.svg" type="image/svg+xml">
+<link rel="icon" href="/favicon.ico" sizes="32x32">
+${markdown ? `<link rel="alternate" type="text/markdown" href="${markdown.path}" title="This page as Markdown">` : ""}
 <link rel="apple-touch-icon" href="/apple-touch-icon.png">
-<meta property="og:type" content="website">
+<meta property="og:type" content="${ogType}">
+<meta property="og:site_name" content="HITOP">
+${modified ? `<meta property="article:modified_time" content="${modified}">` : ""}
 <meta property="og:url" content="${ORIGIN}${canonical}">
 <meta property="og:title" content="${title}">
 <meta property="og:description" content="${description}">

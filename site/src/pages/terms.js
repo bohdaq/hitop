@@ -33,7 +33,7 @@ function read(file) {
       toc.push({ id, text });
       return `<h2 id="${id}">${inner}</h2>`;
     });
-  return { file: file.replace(/\.md$/, ".html"), title: meta.title, description: meta.description, body, toc };
+  return { file: file.replace(/\.md$/, ".html"), source: join(SOURCE, file), markdownBody: source.slice(m[0].length).trim(), title: meta.title, description: meta.description, body, toc };
 }
 
 const GUIDES = readdirSync(SOURCE)
@@ -42,7 +42,40 @@ const GUIDES = readdirSync(SOURCE)
   .map(read);
 
 function guidePage(guide) {
-  const meta = { path: `/terms/${guide.file}`, title: `${guide.title} · HITOP`, description: guide.description };
+  const path = `/terms/${guide.file}`;
+  const url = `https://hitop.rws8.tech${path}`;
+  const meta = {
+    path,
+    title: `${guide.title} · HITOP`,
+    description: guide.description,
+    ogType: "article",
+    // A Markdown copy for AI agents (written by prerender.js, linked from llms.txt).
+    markdown: { path: path.replace(/\.html$/, ".md"), text: `# ${guide.title}\n\n> ${guide.description}\n\nSource: ${url}\n\n${guide.markdownBody}\n` },
+    source: guide.source,
+    jsonLd: [
+      {
+        "@context": "https://schema.org",
+        "@type": "TechArticle",
+        headline: guide.title,
+        description: guide.description,
+        url,
+        inLanguage: "en",
+        isPartOf: { "@type": "WebSite", name: "HITOP", url: "https://hitop.rws8.tech/" },
+        author: { "@type": "Organization", name: "HITOP", url: "https://hitop.rws8.tech/" },
+        publisher: { "@type": "Organization", name: "HITOP", url: "https://hitop.rws8.tech/" },
+        about: { "@type": "SoftwareApplication", name: "HITOP", url: "https://hitop.rws8.tech/" },
+      },
+      {
+        "@context": "https://schema.org",
+        "@type": "BreadcrumbList",
+        itemListElement: [
+          { "@type": "ListItem", position: 1, name: "HITOP", item: "https://hitop.rws8.tech/" },
+          { "@type": "ListItem", position: 2, name: "Guides", item: "https://hitop.rws8.tech/terms/" },
+          { "@type": "ListItem", position: 3, name: guide.title, item: url },
+        ],
+      },
+    ],
+  };
   return {
     meta,
     render: () => html`
