@@ -24,14 +24,20 @@ const MAX_DAYS: i64 = 365;
 
 /// The account behind a personal access token, if its scopes allow this request.
 pub fn authenticate_token(state: &State, tx: &mut Tx, request: &Request, token: &str) -> Result<User, ApiError> {
+    authenticate_token_for(state, tx, token, request.method != "GET")
+}
+
+/// The account behind a personal access token that must have the `write` scope when `write` is
+/// set (the hosted MCP endpoint: every call is a POST, so the tool decides).
+pub fn authenticate_token_for(state: &State, tx: &mut Tx, token: &str, write: bool) -> Result<User, ApiError> {
     let now = state.now();
     let row = tx.query_one(
         "SELECT t.id, t.scopes, t.last_used_at, u.id, u.email, u.runner_of FROM api_tokens t JOIN users u ON u.id = t.user_id WHERE t.token_hash = $1 AND t.expires_at > $2",
         &[token_hash(token).into(), now.into()],
     )?;
     let row = row.ok_or_else(ApiError::unauthorized)?;
-    let write = row.text(1).split(' ').any(|s| s == "write");
-    if !write && request.method != "GET" {
+    let can_write = row.text(1).split(' ').any(|s| s == "write");
+    if !can_write && write {
         return Err(ApiError::new(403, "token_scope", "this access token is read-only (scope read)"));
     }
     if row.int(2) < now - 60 {

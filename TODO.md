@@ -31,7 +31,7 @@ Highest value for the effort first.
 | 8 | Published collection docs | done: `hitop docs`, web app Share → File → Download docs page (one HTML page; hosted publishing open) |
 | 9 | OpenAPI lint on import | deferred with API design (owner) |
 | 10 | Team environments | |
-| 11 | Hosted MCP | |
+| 11 | Hosted MCP | done: sync server POST /mcp, 6 tools over the library (read; create/update with a write token); running requests from it open (with monitors) |
 | 12 | AI in the app | done: Ask AI (sparkle next to Send): write tests, explain, request from text; own key in Settings, Opus 5.5 default + server-side fallback; secrets masked |
 | 13 | Mock servers | |
 | 14 | Monitors | |

@@ -18,6 +18,7 @@ pub mod github;
 pub mod gitsync;
 pub mod hostkey;
 pub mod library;
+pub mod mcp;
 pub mod limits;
 pub mod mail;
 pub mod oidc;

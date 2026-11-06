@@ -29,7 +29,7 @@ All three read and write the same [collection folder](/guides/collections-in-git
 | **Docs page** (one HTML file) | Yes (Share, File) | Yes (Share, File) | Yes (`hitop docs`) |
 | **CI reports** (JUnit, JSON, HTML) | No | No | Yes (`hitop run`) |
 | **Ask AI** (your own Anthropic key) | Yes: tests, explanations, a request from text | Yes | No |
-| **MCP for AI assistants** | No | No | Yes (`hitop mcp`) |
+| **MCP for AI assistants** | HITOP Cloud: `sync.hitop.rws8.tech/mcp` ([guide](/guides/hitop-cloud-for-ai-assistants/)) | Same | Yes (`hitop mcp` on a folder) |
 | **Works offline** | No | Yes | Yes |
 
 ## Which one to pick

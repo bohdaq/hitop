@@ -266,6 +266,8 @@ impl SyncApp {
             ("POST", "/v1/auth/github/start", crate::github::start),
             ("POST", "/v1/auth/github/finish", crate::github::finish),
             ("GET", "/v1/me", crate::auth::me),
+            // Hosted MCP: the library for AI assistants (mcp.rs).
+            ("POST", "/mcp", crate::mcp::handle),
             ("GET", "/v1/me/audit", crate::audit::mine),
             ("POST", "/v1/me/keys", crate::workspaces::add_device_key),
             ("DELETE", "/v1/me/keys/:id", crate::recovery::delete_key),
