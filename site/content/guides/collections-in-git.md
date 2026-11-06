@@ -15,7 +15,7 @@ HITOP's collection folder is plain YAML with one file per request, written with 
 hitop init ./api
 ```
 
-or bring one in: `hitop import collection.json env.json --to ./api` (from Postman, see [Migrate from Postman](/terms/migrate-from-postman.html)), or `hitop convert export.json ./api` from a HITOP JSON export.
+or bring one in: `hitop import collection.json env.json --to ./api` (from Postman, see [Migrate from Postman](/guides/migrate-from-postman/)), or `hitop convert export.json ./api` from a HITOP JSON export.
 
 ```
 api/
@@ -95,7 +95,7 @@ On GitHub:
     HITOP_SECRET_STAGING_TOKEN: ${{ secrets.STAGING_TOKEN }}
 ```
 
-More in [Run collections in CI](/terms/run-collections-in-ci.html), [Run HITOP in GitHub Actions](/terms/run-hitop-in-github-actions.html) and [Run HITOP in GitLab CI](/terms/run-hitop-in-gitlab-ci.html).
+More in [Run collections in CI](/guides/run-collections-in-ci/), [Run HITOP in GitHub Actions](/guides/run-hitop-in-github-actions/) and [Run HITOP in GitLab CI](/guides/run-hitop-in-gitlab-ci/).
 
 ## From the web app, without git on your machine
 
@@ -115,7 +115,7 @@ The dialog lists the files it will write, then **Save to GitHub**:
 - The chip now reads like `you/api-tests/shop · main · synced 2 min ago`; click it for the link to GitHub, **Sync now** and **Stop saving to GitHub** (the files stay in the repository).
 - When the same request changed both in the app and on GitHub, the chip and the sidebar icon say so, and the dialog shows both versions side by side: **Keep mine**, **Take GitHub's** or **Keep both** (yours is added as "… (mine)"). Nothing is pushed until you choose. Changes to different requests, or to different keys of `hitop.yaml`, merge by themselves.
 
-The **Account** page (the account menu at the top right, then **Account & devices**) lists the connected GitHub accounts, **Manage repository access**, and every collection with where it is kept.
+The **Account** page (the account menu at the top right, then **Account & devices**) shows the connected GitHub account, with **Manage** to choose which repositories HITOP can reach.
 
 The collection is kept in your HITOP Cloud library, which the server can read. For collections that must stay end-to-end encrypted, use a [shared workspace](/guides/share-a-workspace-with-your-team/) instead, or the desktop app's Git panel on a folder.
 

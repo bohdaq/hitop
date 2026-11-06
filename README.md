@@ -77,7 +77,7 @@ GitLab CI and any other runner: `ghcr.io/bohdaq/hitop:1.2.0` (distroless) or
   GitHub Actions workflow or a crontab line.
 - **MCP server**: `hitop mcp ./my-api` lets Claude Code, Cursor and other MCP clients list, read,
   run, create and update requests and switch environments; secrets are never returned
-  ([guide](https://hitop.rws8.tech/terms/use-hitop-with-claude-code-and-cursor.html)).
+  ([guide](https://hitop.rws8.tech/guides/use-hitop-with-claude-code-and-cursor/)).
 - **Protocols**: HTTP (auth presets for Bearer, Basic and API key, query parameters, JSON, form and
   multipart bodies, a cookie jar per workspace, request history; a JSON, XML, HTML or text body
   without a `Content-Type` gets one from its content, and `api.example.com/users` is sent as
@@ -88,13 +88,13 @@ GitLab CI and any other runner: `ghcr.io/bohdaq/hitop:1.2.0` (distroless) or
   in testing).
 - **OpenAPI**: `hitop import openapi` turns an OpenAPI 3.0 or 3.1 spec into a collection folder;
   `hitop openapi sync` applies a newer spec and keeps your edits
-  ([guide](https://hitop.rws8.tech/terms/import-an-openapi-spec.html)).
+  ([guide](https://hitop.rws8.tech/guides/import-an-openapi-spec/)).
 - **Code snippets and response diff**: `hitop snippet` writes the request as curl, fetch, Python,
   Go, Java or Rust; the web app compares a response with a saved example or an earlier one.
 - **Secret managers**: `${secret:vault:...}`, `${secret:aws:...}`, `${secret:azure:...}` and
   `${secret:op:...}` read HashiCorp Vault or OpenBao, AWS Secrets Manager, Azure Key Vault and
   1Password at run time
-  ([guide](https://hitop.rws8.tech/terms/use-secrets-from-vault-aws-azure-and-1password.html)).
+  ([guide](https://hitop.rws8.tech/guides/use-secrets-from-vault-aws-azure-and-1password/)).
 - **Git panel**: status, diff, commit, pull, push, branches and conflicts for a collection folder,
   in the desktop's new UI (in testing).
 - **Privacy**: no account and no cloud. An anonymous weekly usage ping exists in the CLI and the
@@ -103,17 +103,17 @@ GitLab CI and any other runner: `ghcr.io/bohdaq/hitop:1.2.0` (distroless) or
 
 ## Guides
 
-- [Migrate from Postman](https://hitop.rws8.tech/terms/migrate-from-postman.html)
-- [Use HITOP with Claude Code and Cursor](https://hitop.rws8.tech/terms/use-hitop-with-claude-code-and-cursor.html) (`hitop mcp`)
-- [Collections in git](https://hitop.rws8.tech/terms/collections-in-git.html)
-- [Run collections in CI](https://hitop.rws8.tech/terms/run-collections-in-ci.html),
-  [GitHub Actions](https://hitop.rws8.tech/terms/run-hitop-in-github-actions.html),
-  [GitLab CI](https://hitop.rws8.tech/terms/run-hitop-in-gitlab-ci.html)
+- [Migrate from Postman](https://hitop.rws8.tech/guides/migrate-from-postman/)
+- [Use HITOP with Claude Code and Cursor](https://hitop.rws8.tech/guides/use-hitop-with-claude-code-and-cursor/) (`hitop mcp`)
+- [Collections in git](https://hitop.rws8.tech/guides/collections-in-git/)
+- [Run collections in CI](https://hitop.rws8.tech/guides/run-collections-in-ci/),
+  [GitHub Actions](https://hitop.rws8.tech/guides/run-hitop-in-github-actions/),
+  [GitLab CI](https://hitop.rws8.tech/guides/run-hitop-in-gitlab-ci/)
 - Comparisons, with sources and the date checked:
-  [Postman](https://hitop.rws8.tech/terms/hitop-vs-postman.html),
-  [Bruno](https://hitop.rws8.tech/terms/hitop-vs-bruno.html),
-  [Insomnia](https://hitop.rws8.tech/terms/hitop-vs-insomnia.html),
-  [Yaak](https://hitop.rws8.tech/terms/hitop-vs-yaak.html)
+  [Postman](https://hitop.rws8.tech/guides/hitop-vs-postman/),
+  [Bruno](https://hitop.rws8.tech/guides/hitop-vs-bruno/),
+  [Insomnia](https://hitop.rws8.tech/guides/hitop-vs-insomnia/),
+  [Yaak](https://hitop.rws8.tech/guides/hitop-vs-yaak/)
 - The CLI's full reference: [cli/crates/hitop/README.md](cli/crates/hitop/README.md);
   [variables](VARIABLES_GUIDE.md), [scripting](SCRIPTING_GUIDE.md)
 

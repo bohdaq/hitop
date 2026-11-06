@@ -107,4 +107,4 @@ api-tests:
       junit: hitop-reports/junit.xml
 ```
 
-On ARM runners use `aarch64` in place of `x86_64`. Every `hitop run` flag works the same in GitLab; see [Run collections in CI](/terms/run-collections-in-ci.html) for reports, data files and timeouts.
+On ARM runners use `aarch64` in place of `x86_64`. Every `hitop run` flag works the same in GitLab; see [Run collections in CI](/guides/run-collections-in-ci/) for reports, data files and timeouts.

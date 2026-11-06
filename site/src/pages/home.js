@@ -39,7 +39,7 @@ const FAQ = [
   ["Can I bring my Postman collections?", "Yes. Import Postman v2.1 collections, and export back to Postman v2.1 or HITOP JSON."],
   ["Where is my data stored?", "On your device: browser storage for the web app and extensions, files for the Mac app and CLI, app storage on iOS. Nothing is synced to a server unless you turn on hitop sync, which encrypts it on your device first."],
   ["Does it work offline?", "The Mac app, the iOS app and the CLI work with no internet connection, which is handy for local and air gapped services."],
-  ["Can I run collections in CI?", html`Yes, with the CLI: <code>hitop run ./my-api --env ci --reporter junit</code> runs a collection folder from your repository with its scripts and variables and writes a JUnit report (or JSON, or one HTML page). <code>hitop schedule</code> writes a scheduled workflow for you. On GitHub there is an <a href="/terms/run-hitop-in-github-actions.html">action</a>, and a Docker image for other pipelines.`],
+  ["Can I run collections in CI?", html`Yes, with the CLI: <code>hitop run ./my-api --env ci --reporter junit</code> runs a collection folder from your repository with its scripts and variables and writes a JUnit report (or JSON, or one HTML page). <code>hitop schedule</code> writes a scheduled workflow for you. On GitHub there is an <a href="/guides/run-hitop-in-github-actions/">action</a>, and a Docker image for other pipelines.`],
 ];
 
 const TAGLINE = ["Your requests, keys and responses stay on your device.", "No account, no tracking. Sync only if you want it, encrypted."];
@@ -99,7 +99,7 @@ export function render() {
       <section class="hero container">
         <div class="hero-text">
           <h1 class="hero-heading">Test HTTP APIs <br />without an account <br />or a CORS error</h1>
-          <p class="lead">HITOP is a free, open source API client. Send requests, keep them in collections, script them in JavaScript and run them in order, with everything stored on your device.</p>
+          <p class="lead">HITOP is a free, open-source (MIT) API client: a Postman alternative that needs no account and has no CORS errors. Send HTTP requests, keep them in collections as plain files in git, script them in JavaScript and run them in CI; in the browser, as a CLI, and as native Mac and iPhone apps.</p>
           <div class="install">
             <a class="button-filled" href="/app/">${unsafeHTML(icon("browser"))} Open the web app</a>
             <a class="text-link" href="/pricing.html">Mac, iOS and CLI ${unsafeHTML(icon("arrow-right"))}</a>
@@ -148,7 +148,7 @@ export function render() {
           <p class="section-lead">The CLI is a single Rust binary. It runs collections with their pre and post request scripts, passes values from one request to the next, and writes JUnit and JSON reports for any pipeline.</p>
           <p class="section-lead"><code>hitop mcp</code> lets Claude Code, Cursor and other MCP clients list, run and edit the requests of a collection folder, with secrets masked.</p>
           <a class="text-link" href=${CRATE}>Install from crates.io ${unsafeHTML(icon("arrow-right"))}</a>
-          <a class="text-link" href="/terms/use-hitop-with-claude-code-and-cursor.html">Use HITOP with Claude Code and Cursor ${unsafeHTML(icon("arrow-right"))}</a>
+          <a class="text-link" href="/guides/use-hitop-with-claude-code-and-cursor/">Use HITOP with Claude Code and Cursor ${unsafeHTML(icon("arrow-right"))}</a>
         </div>
         ${terminal()}
       </section>

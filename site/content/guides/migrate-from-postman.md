@@ -86,8 +86,8 @@ Commit the folder, then run it in the pipeline with JUnit and JSON reports:
 hitop run ./shop-api --env Staging --reporter cli,junit,json --out reports
 ```
 
-Exit code 0 means every request passed, 1 a request or check failed, 2 a usage or configuration error. On GitHub use the [hitop action](/terms/run-hitop-in-github-actions.html); on GitLab, the [template](/terms/run-hitop-in-gitlab-ci.html). Each JUnit testcase names its request file (`file="shop-api/requests/auth/log-in.yaml"`), so test report tools can point at it.
+Exit code 0 means every request passed, 1 a request or check failed, 2 a usage or configuration error. On GitHub use the [hitop action](/guides/run-hitop-in-github-actions/); on GitLab, the [template](/guides/run-hitop-in-gitlab-ci/). Each JUnit testcase names its request file (`file="shop-api/requests/auth/log-in.yaml"`), so test report tools can point at it.
 
 ## Keep Postman during the switch
 
-`hitop export` writes Postman v2.1 again, so both tools can run the same collection for a while. Once the folder is in your repository, make changes there and review them as diffs: see [Collections in git](/terms/collections-in-git.html).
+`hitop export` writes Postman v2.1 again, so both tools can run the same collection for a while. Once the folder is in your repository, make changes there and review them as diffs: see [Collections in git](/guides/collections-in-git/).

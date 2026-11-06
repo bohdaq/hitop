@@ -19,7 +19,7 @@ export function render() {
       <span class="not-found-mark">${unsafeHTML(mark({ title: "HITOP" }))}</span>
       <p class="status-pill">404 Not Found</p>
       <h1>That request came back empty</h1>
-      <p class="lead">Nothing lives at this address. The app is at /app/ and the guides are under /terms/.</p>
+      <p class="lead">Nothing lives at this address. The app is at /app/ and the guides are under /guides/.</p>
       <div class="install">
         <a class="button-filled" href="/app/">${unsafeHTML(icon("browser"))} Open the web app</a>
         <a class="text-link" href="/">Back to the home page</a>

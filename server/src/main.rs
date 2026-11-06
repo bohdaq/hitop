@@ -12,6 +12,7 @@
 //! - rws's own settings (`RWS_CONFIG_IP`, `RWS_CONFIG_PORT`, ...) for the listener
 
 mod guard;
+mod legacy;
 mod proxy;
 mod telemetry;
 
@@ -32,6 +33,9 @@ pub fn app(state: State) -> AppWithState<State> {
         .post("/api/proxy", |request, _, _, state| state.proxy.handle(request))
         .post("/api/ping", |request, _, _, state| state.telemetry.ping(request))
         .get("/api/stats", |request, _, _, state| state.telemetry.stats(request))
+        // The guides moved from /terms/<name>.html to /guides/<name>/ (legacy.rs).
+        .get("/terms", |request, _, _, _| legacy::redirect(request))
+        .get("/terms/*rest", |request, _, _, _| legacy::redirect(request))
 }
 
 fn main() {
@@ -42,4 +46,20 @@ fn main() {
         let (listener, pool) = Server::setup().expect("server setup");
         Server::run_tls(listener, pool, app(state)).await;
     });
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use rust_web_server::test_client::TestClient;
+
+    #[test]
+    fn old_guide_urls_redirect() {
+        let client = TestClient::new(app(State { proxy: Proxy::from_env(), telemetry: Telemetry::from_env() }));
+        for (path, location) in [("/terms", "/guides/"), ("/terms/", "/guides/"), ("/terms/postman-alternative.html", "/guides/postman-alternative/")] {
+            let res = client.get(path).send();
+            assert_eq!(res.status(), 301, "{path}");
+            assert_eq!(res.header("Location"), Some(location), "{path}");
+        }
+    }
 }

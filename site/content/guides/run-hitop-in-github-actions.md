@@ -178,4 +178,4 @@ Service containers with a mapped port work the same way.
 
 ## Runners
 
-The action needs Docker, which every GitHub hosted Ubuntu runner has. On macOS or Windows runners, download the hitop binary from [GitHub Releases](https://github.com/bohdaq/hitop/releases) and run `hitop run` yourself; the flags are the same, see [Run collections in CI](/terms/run-collections-in-ci.html).
+The action needs Docker, which every GitHub hosted Ubuntu runner has. On macOS or Windows runners, download the hitop binary from [GitHub Releases](https://github.com/bohdaq/hitop/releases) and run `hitop run` yourself; the flags are the same, see [Run collections in CI](/guides/run-collections-in-ci/).

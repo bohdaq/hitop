@@ -23,7 +23,7 @@ Use the install script (`curl -fsSL https://hitop.rws8.tech/install.sh | sh`, a 
 docker run --rm -v "$PWD:/work" -w /work ghcr.io/bohdaq/hitop:1.2.0 run ./my-api --env ci
 ```
 
-On GitHub, the [HITOP action](/terms/run-hitop-in-github-actions.html) does this in one step and adds a job summary. GitLab needs the image's `-debug` tag, which has a shell: see [Run HITOP in GitLab CI](/terms/run-hitop-in-gitlab-ci.html).
+On GitHub, the [HITOP action](/guides/run-hitop-in-github-actions/) does this in one step and adds a job summary. GitLab needs the image's `-debug` tag, which has a shell: see [Run HITOP in GitLab CI](/guides/run-hitop-in-gitlab-ci/).
 
 ## Exit codes
 
@@ -54,7 +54,7 @@ Secret values never reach a report. Wherever one would appear, in a URL, an erro
 
 ## Run on a schedule
 
-`hitop schedule ./my-api --github --env prod` writes a GitHub Actions workflow that runs the folder every day and on demand (see [Run HITOP in GitHub Actions](/terms/run-hitop-in-github-actions.html)). On your own machine or a server, `hitop schedule ./my-api --cron "*/30 * * * *" --env local` prints a crontab line instead: it keeps every run's reports in a folder of their own and appends the output to a log; add it with `crontab -e`.
+`hitop schedule ./my-api --github --env prod` writes a GitHub Actions workflow that runs the folder every day and on demand (see [Run HITOP in GitHub Actions](/guides/run-hitop-in-github-actions/)). On your own machine or a server, `hitop schedule ./my-api --cron "*/30 * * * *" --env local` prints a crontab line instead: it keeps every run's reports in a folder of their own and appends the output to a log; add it with `crontab -e`.
 
 ## Environments and variables
 

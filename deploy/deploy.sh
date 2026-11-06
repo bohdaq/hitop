@@ -17,11 +17,14 @@ set -euo pipefail
 cd ~/hitop-deploy && ./install.sh
 H=hitop.rws8.tech
 R="--resolve $H:443:127.0.0.1 -m 20"
-for p in / /app/ /terms/ /privacy.html /cloud/ /cloud/healthz; do
+for p in / /app/ /guides/ /privacy.html /cloud/ /cloud/healthz; do
   code=$(curl -s $R -o /dev/null -w '%{http_code}' "https://$H$p")
   echo "$code $p"
   test "$code" = 200
 done
+# The guides moved from /terms/<name>.html to /guides/<name>/ (server/src/legacy.rs).
+curl -s $R -o /dev/null -w '%{http_code} %{redirect_url}\n' "https://$H/terms/migrate-from-postman.html" | grep -q "^301 https://$H/guides/migrate-from-postman/$"
+echo "301 /terms/ -> /guides/"
 curl -fs $R -X POST "https://$H/api/proxy" -H "Origin: https://$H" -d '{"method":"GET","url":"https://example.com/"}' | grep -q '"status":200'
 echo "proxy ok"
 systemctl is-active rws hitop-server

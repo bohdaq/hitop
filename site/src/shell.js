@@ -17,7 +17,7 @@ export const CRATE = "https://crates.io/crates/hitop";
 const NAV = [
   ["/#features", "Features", null],
   ["/pricing.html", "Pricing", "/pricing.html"],
-  ["/terms/", "Guides", "/terms/"],
+  ["/guides/", "Guides", "/guides/"],
   ["/app/", "Web app", "/app/"],
 ];
 
@@ -65,7 +65,7 @@ export function footer() {
         </ul>
         <ul>
           <li><a href="/pricing.html">Pricing</a></li>
-          <li><a href="/terms/">Guides</a></li>
+          <li><a href="/guides/">Guides</a></li>
           <li><a href="/privacy.html">Privacy</a></li>
           ${DRAFT ? "" : LEGAL_LINKS.map(([href, label]) => html`<li><a href=${href}>${label}</a></li>`)}
           <li><a href=${`${GITHUB}/issues`}>Report a problem</a></li>

@@ -97,7 +97,7 @@ hitop export MyAPI -o my-collection.json
 | `hitop openapi sync <file\|url> <dir> [--dry-run] [--prune]` | Update a folder imported from a spec: adds new operations, updates changed ones where you didn't edit them, lists removed ones (deleted only with `--prune`) |
 | `hitop export <collection>` | Export a collection |
 | `hitop telemetry on/off/status` | The anonymous weekly usage ping: off unless you turn it on; `status` shows exactly what would be sent |
-| `hitop mcp [folder]` | MCP server over stdio for Claude Code, Cursor and other MCP clients: list, read, run, create and update requests, switch environments, a bounded WebSocket exchange, OpenAPI import and sync; secrets never returned ([guide](https://hitop.rws8.tech/terms/use-hitop-with-claude-code-and-cursor.html)) |
+| `hitop mcp [folder]` | MCP server over stdio for Claude Code, Cursor and other MCP clients: list, read, run, create and update requests, switch environments, a bounded WebSocket exchange, OpenAPI import and sync; secrets never returned ([guide](https://hitop.rws8.tech/guides/use-hitop-with-claude-code-and-cursor/)) |
 | `hitop sync login/init/link/status/pull/push/resolve` | Share a collection folder with your team, end-to-end encrypted, through a hitop sync server (see "Sync") |
 | `hitop sync members/invite/accept/add/remove/role/trust` | Teams: invites, roles, device key fingerprints; removing someone rotates the key |
 | `hitop sync runner create` | A read-only runner credential for scheduled runs (`HITOP_SYNC_RUNNER`) |
@@ -405,7 +405,7 @@ hitop sync remove ada@example.com -c ./my-api      # new key, every file encrypt
 - Scheduled runs: `hitop sync runner create -c ./my-api | gh secret set HITOP_SYNC_RUNNER`, then
   `hitop schedule ./my-api --github --sync`: the job pulls the workspace read-only, then runs it.
   `--cron ... --sync` pulls as this device before each run.
-- Guide: [Share a workspace with your team](https://hitop.rws8.tech/terms/share-a-workspace-with-your-team.html).
+- Guide: [Share a workspace with your team](https://hitop.rws8.tech/guides/share-a-workspace-with-your-team/).
   Design and limits: [THREAT_MODEL.md](https://github.com/bohdaq/hitop/blob/main/sync-server/THREAT_MODEL.md).
 
 ## Cookies and form bodies

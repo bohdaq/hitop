@@ -151,8 +151,8 @@ hitop/
 ├── extension/                  # Firefox extension source
 ├── chrome-extension/           # Chrome extension source
 ├── site/                       # hitop.rws8.tech: lit-material + Lit SSR, rws8.tech design system
-│   ├── src/pages/              # home, pricing.html, privacy.html, 404, terms/ (guides)
-│   ├── content/guides/*.md     # the /terms/*.html guide articles (Markdown + front matter); hitop-vs-*.md comparisons carry a checked date and sources
+│   ├── src/pages/              # home, pricing.html, privacy.html, 404, guides/
+│   ├── content/guides/*.md     # the /guides/<name>/ guide articles (/terms/*.html 301s there: server/src/legacy.rs) (Markdown + front matter); hitop-vs-*.md comparisons carry a checked date and sources
 │   ├── demo/demo.tape          # vhs tape for the terminal GIF (vhs site/demo/demo.tape from the repo root)
 │   ├── public-assets/          # favicons (renders of brand/logo.svg; favicon.svg = the master), social preview
 │   └── scripts/prerender.js    # npm run build → dist/
@@ -444,7 +444,7 @@ hitop/
 ### Website and proxy
 - Hosting: VM bohdan-prod-donotdelete (168.119.17.57) behind the front rws; see `deploy/README.md`
 - Build all: `./deploy/build.sh`; server tests: `cd server && cargo test`
-- Old URLs must keep working: `/privacy.html` (App Store privacy URL), `/pricing.html`, `/app.html`, `/terms/*.html`
+- Old URLs must keep working: `/privacy.html` (App Store privacy URL), `/pricing.html`, `/app.html`, `/terms/*.html` (301 to `/guides/<name>/` in hitop-server)
 - App Store (listing names until the owner renames them to HITOP, ROADMAP section 6): macOS "HiTop API Client" id6785294166 ($4.99, macOS 12+), iOS "HiTop HTTP Client" id6785326628 ($2.99, iOS 17+)
 
 ### Sync server (`sync-server/`)

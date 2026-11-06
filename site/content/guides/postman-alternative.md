@@ -13,7 +13,7 @@ While Postman is a popular API testing tool, many developers are seeking alterna
 
 ## HITOP vs Postman: feature comparison
 
-A longer comparison with sources is in [HITOP vs Postman](/terms/hitop-vs-postman.html).
+A longer comparison with sources is in [HITOP vs Postman](/guides/hitop-vs-postman/).
 
 | Feature | HITOP | Postman |
 | --- | --- | --- |
@@ -75,7 +75,7 @@ Switching from Postman to HITOP is straightforward:
 2.  Open HITOP and use the Import feature, or run `hitop import <files> --to ./my-api`
 3.  Your collections, requests, and variables are ready to use
 
-The full steps, including secrets and scripts, are in [Migrate from Postman](/terms/migrate-from-postman.html).
+The full steps, including secrets and scripts, are in [Migrate from Postman](/guides/migrate-from-postman/).
 
 > ### Pro tip
 >
