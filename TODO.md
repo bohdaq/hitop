@@ -30,7 +30,7 @@ Highest value for the effort first.
 | 7 | SSE in the web app | done: Accept: text/event-stream streams live (hitop-server POST /api/proxy/stream), Stop, Events tab; desktop live stream open |
 | 8 | Published collection docs | done: `hitop docs`, web app Share → File → Download docs page (one HTML page; hosted publishing open) |
 | 9 | OpenAPI lint on import | deferred with API design (owner) |
-| 10 | Team environments | |
+| 10 | Team environments | done: sync server /v1/orgs/:org/environments (schema 15 org_items), Environments page "Shared with <org>"; secret values stay per device |
 | 11 | Hosted MCP | done: sync server POST /mcp, 6 tools over the library (read; create/update with a write token); running requests from it open (with monitors) |
 | 12 | AI in the app | done: Ask AI (sparkle next to Send): write tests, explain, request from text; own key in Settings, Opus 5.5 default + server-side fallback; secrets masked |
 | 13 | Mock servers | done: sync server /mock/<id>/… from saved examples (migration 14), paid plans, 600/min, never HTML; Share → Mock |

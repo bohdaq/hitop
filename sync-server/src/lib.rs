@@ -34,6 +34,7 @@ pub mod scim;
 pub mod shares;
 pub mod support;
 pub mod teams;
+pub mod teamenvs;
 pub mod tokens;
 pub mod workspaces;
 

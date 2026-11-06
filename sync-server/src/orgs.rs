@@ -274,7 +274,7 @@ pub fn delete(state: &State, request: &Request, params: &PathParams) -> ApiResul
         if n > 0 {
             return Err(ApiError::conflict("org_not_empty", format!("the organization still owns {n} workspace(s): delete them or move them first"), json!({ "workspaces": n })));
         }
-        for table in ["org_invites", "org_members", "usage_counters", "entitlements"] {
+        for table in ["org_invites", "org_members", "usage_counters", "entitlements", "org_items"] {
             tx.execute(&format!("DELETE FROM {table} WHERE org_id = $1"), &[org.into()])?;
         }
         tx.execute("DELETE FROM orgs WHERE id = $1", &[org.into()])?;

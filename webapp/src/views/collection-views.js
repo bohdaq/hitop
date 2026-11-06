@@ -376,7 +376,14 @@ export class HitopEnvironments extends LightElement {
                       <lit-material-icon-button aria-label=${`Rename ${env.name}`} @click=${() => this.app.openDialog("rename-environment", { id: env.id, name: env.name })}>${icon("pencil-simple")}</lit-material-icon-button>
                       <lit-material-icon-button aria-label=${`Delete ${env.name}`} @click=${() => this.app.deleteEnvironment(env)}>${icon("trash")}</lit-material-icon-button>
                     </div>
-                    ${s.currentOrg && !s.folderEnvs.has(env.id)
+                    ${s.teamEnvs?.teamOrg() && !s.folderEnvs.has(env.id)
+                      ? html`<label class="switch-row">
+                          <lit-material-switch aria-label=${`Shared with ${s.currentOrgInfo.name}`} ?checked=${Boolean(env.team)} @change=${(e) => s.teamEnvs.setShared(env.id, e.target.checked)}></lit-material-switch>
+                          <span>Shared with ${s.currentOrgInfo.name}${env.team && env.updatedBy ? html` <span class="hint">· last changed by ${env.updatedBy}</span>` : nothing}</span>
+                        </label>
+                        ${env.team ? html`<p class="hint">Members see its variables; each keeps their own secret values on their device.</p>` : nothing}`
+                      : nothing}
+                    ${s.currentOrg && !s.folderEnvs.has(env.id) && !env.team
                       ? html`<label class="switch-row">
                           <lit-material-switch aria-label="Available in every organization" ?checked=${!env.org} @change=${(e) => s.setEnvironmentAllOrgs(env.id, e.target.checked)}></lit-material-switch>
                           <span>Available in every organization</span>

@@ -317,7 +317,7 @@ export class Library extends EventTarget {
       if (s.folders.has(c.id) || localOnly.has(idOf(c))) continue;
       out[`collection/${idOf(c)}`] = { kind: "collection", id: idOf(c), data: c, secrets: {} };
     }
-    const envs = s.environments.filter((e) => !s.folderEnvs.has(e.id));
+    const envs = s.environments.filter((e) => !s.folderEnvs.has(e.id) && !e.team);
     const active = envs.some((e) => e.id === s.activeEnvironmentId) ? s.activeEnvironmentId : null;
     out["environments/all"] = { kind: "environments", id: "all", ...environmentsItem(envs, active) };
     out["globals/all"] = { kind: "globals", id: "all", ...globalsItem(s.globals) };
@@ -386,7 +386,7 @@ export class Library extends EventTarget {
       if (current && !current.deleted) this.state.known[key] = { version: current.version, hash: hash({ data: theirs, secrets: {} }) };
       else delete this.state.known[key];
     } else {
-      const next = this.applyItems([{ ...current, version: current.version }], { collections: s.collections, environments: s.environments.filter((e) => !s.folderEnvs.has(e.id)), activeEnvironmentId: s.activeEnvironmentId, globals: s.globals });
+      const next = this.applyItems([{ ...current, version: current.version }], { collections: s.collections, environments: s.environments.filter((e) => !s.folderEnvs.has(e.id) && !e.team), activeEnvironmentId: s.activeEnvironmentId, globals: s.globals });
       this.replaceSettings(next);
       s.notify(item.kind === "globals" ? "Globals changed in another browser: showing theirs." : "Environments changed in another browser: showing theirs.");
     }
@@ -396,7 +396,8 @@ export class Library extends EventTarget {
 
   replaceSettings(next) {
     const s = this.store;
-    s.environments = [...next.environments, ...s.environments.filter((e) => s.folderEnvs.has(e.id))];
+    // Folder environments and team environments (teamenvs.js) aren't the library's.
+    s.environments = [...next.environments, ...s.environments.filter((e) => s.folderEnvs.has(e.id) || e.team)];
     s.activeEnvironmentId = next.activeEnvironmentId;
     if (next.globals) s.globals = next.globals;
   }
@@ -411,7 +412,7 @@ export class Library extends EventTarget {
         const fresh = r.items.filter((it) => !(this.state.known[`${it.kind}/${it.id}`]?.version >= it.version));
         if (!fresh.length) return;
         const s = this.store;
-        const next = this.applyItems(fresh, { collections: s.collections, environments: s.environments.filter((e) => !s.folderEnvs.has(e.id)), activeEnvironmentId: s.activeEnvironmentId, globals: s.globals });
+        const next = this.applyItems(fresh, { collections: s.collections, environments: s.environments.filter((e) => !s.folderEnvs.has(e.id) && !e.team), activeEnvironmentId: s.activeEnvironmentId, globals: s.globals });
         s.collections = next.collections;
         this.replaceSettings(next);
         s.emit();

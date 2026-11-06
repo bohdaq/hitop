@@ -394,7 +394,8 @@ fn check(state: &State, tx: &mut Tx, org: &str, metric: Metric, used_after: impl
 pub fn stored_bytes(tx: &mut Tx, org: &str) -> Result<i64, DbError> {
     let ws = tx.query_one("SELECT CAST(COALESCE(SUM(bytes), 0) AS BIGINT) FROM workspaces WHERE org_id = $1", &[org.into()])?.map_or(0, |r| r.int(0));
     let lib = tx.query_one("SELECT CAST(COALESCE(SUM(bytes), 0) AS BIGINT) FROM library_items WHERE org_id = $1 AND deleted = 0", &[org.into()])?.map_or(0, |r| r.int(0));
-    Ok(ws + lib)
+    let team = tx.query_one("SELECT CAST(COALESCE(SUM(bytes), 0) AS BIGINT) FROM org_items WHERE org_id = $1 AND deleted = 0", &[org.into()])?.map_or(0, |r| r.int(0));
+    Ok(ws + lib + team)
 }
 
 /// One more workspace in `org`.

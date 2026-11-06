@@ -787,6 +787,20 @@ CREATE TABLE mocks (
   created_at BIGINT NOT NULL,
   UNIQUE (user_id, collection_id)
 );
+", r"
+CREATE TABLE org_items (
+  org_id TEXT NOT NULL,
+  kind TEXT NOT NULL,
+  item_id TEXT NOT NULL,
+  version BIGINT NOT NULL,
+  data TEXT NOT NULL,
+  bytes BIGINT NOT NULL,
+  created_at BIGINT NOT NULL,
+  updated_by TEXT NOT NULL,
+  updated_at BIGINT NOT NULL,
+  deleted BIGINT NOT NULL,
+  PRIMARY KEY (org_id, kind, item_id)
+);
 "];
 
 /// Steps in Rust that run in the same transaction as a migration's SQL (index = migration

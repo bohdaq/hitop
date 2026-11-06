@@ -55,6 +55,11 @@ p.onStart = (app) => {
     import("./orgs.js").then(({ loadOrgs }) => loadOrgs(app.store, library.client));
   };
   library.addEventListener("change", refreshOrgs);
+  // Team environments of the current team org (teamenvs.js).
+  import("./teamenvs.js").then(({ TeamEnvs }) => {
+    app.store.teamEnvs = new TeamEnvs(app.store, library.client);
+    app.store.teamEnvs.start();
+  });
   app.store.addEventListener("change", refreshOrgs);
   refreshOrgs();
   // Git sync of the library through the HITOP Cloud GitHub App (git.js): web build only, the

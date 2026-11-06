@@ -254,6 +254,21 @@ async function syncServer() {
     await two.page.locator('#dialog').getByRole('button', { name: /Cancel|Close/ }).first().click();
     await store(two, 's.setCurrentOrg(s.personalOrg);');
 
+    // A team environment: shared with Acme without its secret value, which stays in this browser.
+    await store(two, 's.setCurrentOrg(a);', acme);
+    await settle(two.page);
+    await store(two, `s.addEnvironment("Team staging"); s.environments = s.environments.map((e) => e.name === "Team staging" ? { ...e, variables: { base: "https://stg.acme.test", token: "team-secret-77" }, secrets: ["token"] } : e); s.emit();`);
+    await two.page.locator('hitop-app-environments, hitop-environments').first().waitFor({ timeout: 5000 }).catch(() => {});
+    await two.page.getByRole('switch', { name: 'Shared with Acme' }).click();
+    await settle(two.page, 1500);
+    const teamEnvs = await store(two, 'return s.library.client.api("GET", `/v1/orgs/${a}/environments`);', acme);
+    const shared = teamEnvs.environments.find((e) => e.data.name === 'Team staging');
+    check('a team environment is shared with the org, without its secret value', shared?.data.variables.base === 'https://stg.acme.test' && shared.data.variables.token === '' && !JSON.stringify(teamEnvs).includes('team-secret-77'), JSON.stringify(teamEnvs));
+    check('...and keeps the value in this browser', (await store(two, 'return s.environments.find((e) => e.name === "Team staging").variables.token;')) === 'team-secret-77');
+    const personalLib = await store(two, 'return s.library.client.api("GET", "/v1/library");');
+    check("...and isn't in the personal library", !JSON.stringify(personalLib).includes('Team staging'));
+    await store(two, 's.setCurrentOrg(s.personalOrg);');
+
     // A mock server from the Share dialog: answers from the saved examples.
     await store(two, `s.addCollection("Mocked"); const c = s.collections.find((c) => c.name === "Mocked");
       s.collections = s.collections.map((x) => x.id === c.id ? { ...x, requests: [{ id: 901, name: "Get item", method: "GET", url: "\${base}/items/\${id}", headers: [], body: "",
