@@ -70,10 +70,12 @@ export function socketHeaders(view) {
     ></lit-material-text-field>
     ${platform().websocketHeaders
       ? html`<p class="hint">Headers and auth go with the opening handshake.</p>`
-      : html`<p class="hint ws-browser-note" role="note">
-          A browser can't set WebSocket handshake headers, so these headers and Bearer, Basic or header API key auth are not sent from here.
-          The desktop app and <code>hitop ws</code> send them; an API key in the query works in the browser too.
-        </p>`}`;
+      : platform().websocketSendsHeaders?.(t.url || "wss://example.com")
+        ? html`<p class="hint ws-browser-note" role="note">Headers and auth go with the opening handshake through the HITOP WebSocket bridge (a browser can't send them itself), which keeps nothing.</p>`
+        : html`<p class="hint ws-browser-note" role="note">
+            A browser can't set WebSocket handshake headers, so to this address these headers and Bearer, Basic or header API key auth are not sent from here.
+            The desktop app and <code>hitop ws</code> send them; an API key in the query works in the browser too.
+          </p>`}`;
 }
 
 // Messages: the one being typed, and the saved ones with a name each.

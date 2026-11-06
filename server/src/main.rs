@@ -15,6 +15,7 @@ mod guard;
 mod legacy;
 mod proxy;
 mod telemetry;
+mod wsbridge;
 
 use rust_web_server::prelude::*;
 use rust_web_server::state::AppWithState;
@@ -26,12 +27,15 @@ use telemetry::Telemetry;
 pub struct State {
     pub proxy: Proxy,
     pub telemetry: Telemetry,
+    pub ws: wsbridge::Bridge,
 }
 
 pub fn app(state: State) -> AppWithState<State> {
     App::with_state(state)
         .post("/api/proxy", |request, _, _, state| state.proxy.handle(request))
         .post("/api/proxy/stream", |request, _, _, state| state.proxy.stream(request))
+        // WebSocket requests with handshake headers (wsbridge.rs).
+        .get("/api/ws", |request, _, _, state| state.ws.handle(request))
         .post("/api/ping", |request, _, _, state| state.telemetry.ping(request))
         .get("/api/stats", |request, _, _, state| state.telemetry.stats(request))
         // The guides moved from /terms/<name>.html to /guides/<name>/ (legacy.rs).
@@ -41,7 +45,7 @@ pub fn app(state: State) -> AppWithState<State> {
 
 fn main() {
     // The blocking client owns a runtime of its own: build it before tokio's.
-    let state = State { proxy: Proxy::from_env(), telemetry: Telemetry::from_env() };
+    let state = State { proxy: Proxy::from_env(), telemetry: Telemetry::from_env(), ws: wsbridge::Bridge::from_env() };
     let runtime = tokio::runtime::Builder::new_multi_thread().enable_all().build().expect("tokio runtime");
     runtime.block_on(async {
         let (listener, pool) = Server::setup().expect("server setup");
@@ -56,7 +60,7 @@ mod tests {
 
     #[test]
     fn the_stream_endpoint_wants_the_web_apps_origin() {
-        let client = TestClient::new(app(State { proxy: Proxy::from_env(), telemetry: Telemetry::from_env() }));
+        let client = TestClient::new(app(State { proxy: Proxy::from_env(), telemetry: Telemetry::from_env(), ws: wsbridge::Bridge::from_env() }));
         let res = client.post("/api/proxy/stream").body_json(r#"{"method":"GET","url":"https://example.com/"}"#).send();
         assert_eq!(res.status(), 403);
         let res = client.post("/api/proxy/stream").header("Origin", "https://hitop.rws8.tech").body_json(r#"{"method":"GET","url":"http://127.0.0.1/"}"#).send();
@@ -65,7 +69,7 @@ mod tests {
 
     #[test]
     fn old_guide_urls_redirect() {
-        let client = TestClient::new(app(State { proxy: Proxy::from_env(), telemetry: Telemetry::from_env() }));
+        let client = TestClient::new(app(State { proxy: Proxy::from_env(), telemetry: Telemetry::from_env(), ws: wsbridge::Bridge::from_env() }));
         for (path, location) in [("/terms", "/guides/"), ("/terms/", "/guides/"), ("/terms/postman-alternative.html", "/guides/postman-alternative/")] {
             let res = client.get(path).send();
             assert_eq!(res.status(), 301, "{path}");

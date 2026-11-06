@@ -36,7 +36,7 @@ Highest value for the effort first.
 | 13 | Mock servers | done: sync server /mock/<id>/… from saved examples (migration 14), paid plans, 600/min, never HTML; Share → Mock |
 | 14 | Monitors | done: sync server schema 16, runs in a child process (ulimit, 150 s, SSRF guard incl. IP literals/redirects, script loop limits), mail on fail/recover; Share → Monitor. VM: set HITOP_SYNC_DENY_IPS |
 | 15 | Comments and per-request history | history done: schema 17 request_history (last 50 per request, app/github/mcp), request menu → Version history… → Restore. Comments: waiting on a decision (library collections have one owner) |
-| 16 | gRPC and WebSocket headers bridge | |
+| 16 | gRPC and WebSocket headers bridge | WebSocket done: hitop-server GET /api/ws bridge (Origin, checked address, connects to the vetted IP), web app uses it for public hosts with headers; gRPC open |
 | 17 | Plugins, API design editor | deferred (owner) |
 
 ## Quick wins

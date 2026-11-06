@@ -632,7 +632,7 @@ pub async fn ws_connect(
 ) -> Result<WsOpened, String> {
     use hitop_core::websocket::{self, Target};
     use tauri::Manager;
-    let target = Target { url: websocket::ws_url(&args.url).map_err(|e| format!("{e:#}"))?, headers: args.headers, subprotocols: args.protocols };
+    let target = Target { url: websocket::ws_url(&args.url).map_err(|e| format!("{e:#}"))?, headers: args.headers, subprotocols: args.protocols, connect_to: None };
     let timeout = std::time::Duration::from_millis(args.timeout_ms.unwrap_or(30_000));
     let conn = websocket::connect(&target, Some(timeout)).await.map_err(|e| format!("{e:#}"))?;
     let id = state.next.fetch_add(1, std::sync::atomic::Ordering::Relaxed) + 1;

@@ -194,6 +194,61 @@ async function stream(url, options = {}, onText = () => {}) {
   return { status, headers: { get: (k) => lower.get(k.toLowerCase()) ?? null, forEach: (fn) => pairs.forEach(([k, v]) => fn(v, k)), pairs }, text: async () => text, timeMs: Math.round(performance.now() - started), stopped, url };
 }
 
+// WebSocket requests with handshake headers to public hosts go through hitop-server's bridge
+// (GET /api/ws, wsbridge.rs): the page sends {url, headers, protocols} as the first frame, the
+// server connects with them and relays frames. Localhost stays a direct browser connection.
+const BRIDGE_URL = import.meta.env.VITE_HITOP_PROXY ? `${location.protocol === "https:" ? "wss:" : "ws:"}//${location.host}${import.meta.env.VITE_HITOP_PROXY.replace(/\/proxy$/, "/ws")}` : "";
+const httpForm = (url) => String(url).replace(/^ws(s?):\/\//i, "http$1://");
+const sendsHeaders = (url) => Boolean(BRIDGE_URL) && usesProxy(httpForm(url));
+
+function bridgedWebSocket(url, { headers = [], protocols = [] } = {}, h) {
+  let ws;
+  let opened = false;
+  let closed = false;
+  try {
+    ws = new WebSocket(BRIDGE_URL);
+  } catch (e) {
+    queueMicrotask(() => {
+      h.onError(e.message);
+      h.onClose({ code: null, reason: "" });
+    });
+    return { send() {}, close() {} };
+  }
+  ws.binaryType = "arraybuffer";
+  ws.onopen = () => ws.send(JSON.stringify({ url, headers: headers.map((x) => [x.name, x.value]), protocols }));
+  ws.onmessage = (e) => {
+    if (!opened) {
+      let m = null;
+      try {
+        m = JSON.parse(e.data);
+      } catch {
+        // not the bridge's answer
+      }
+      if (m?.type === "open") {
+        opened = true;
+        h.onOpen({ protocol: m.protocol || null });
+      } else if (m?.type === "error") h.onError(m.message);
+      return;
+    }
+    if (typeof e.data === "string") h.onMessage({ text: e.data });
+    else h.onMessage({ bytes: new Uint8Array(e.data) });
+  };
+  ws.onclose = (e) => {
+    if (closed) return;
+    closed = true;
+    if (!opened && !e.reason) h.onError("the HITOP WebSocket bridge couldn't be reached");
+    h.onClose({ code: opened ? e.code : null, reason: opened ? e.reason : "" });
+  };
+  return {
+    send: (text) => opened && ws.send(text),
+    close: () => ws.close(1000),
+  };
+}
+
+function webSocketFor(url, options, h) {
+  return options?.headers?.length && sendsHeaders(url) ? bridgedWebSocket(url, options, h) : browserWebSocket(url, options, h);
+}
+
 // A WebSocket request in the browser: the URL and subprotocols only, since
 // a page can't set handshake headers. Errors carry no detail in browsers,
 // so the message says what usually causes them.
@@ -247,7 +302,8 @@ export function createPlatform() {
     send,
     // The browser's WebSocket: no handshake headers (browsers can't set them).
     websocketHeaders: false,
-    websocket: browserWebSocket,
+    websocket: webSocketFor,
+    websocketSendsHeaders: sendsHeaders,
     // gRPC needs HTTP/2 trailers, which a page can't read: desktop and CLI only.
     grpc: null,
     // Git is the desktop app's (libgit2 in Rust).

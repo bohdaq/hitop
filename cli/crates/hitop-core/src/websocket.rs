@@ -31,6 +31,9 @@ pub struct Target {
     pub headers: Vec<(String, String)>,
     /// Offered in `Sec-WebSocket-Protocol`, in order.
     pub subprotocols: Vec<String>,
+    /// Connect to this address instead of resolving the URL's host (the host is still used for
+    /// TLS and `Host`): hitop-server's bridge connects only to an address it has checked.
+    pub connect_to: Option<std::net::SocketAddr>,
 }
 
 /// `ws://` and `wss://` URLs as given; `http://` and `https://` become
@@ -62,7 +65,7 @@ pub fn target(request: &Request, default_auth: Option<&Auth>, variables: &HashMa
         Some(w) => w.subprotocols.iter().map(|p| fill(p)).filter(|p| !matches!(p, Ok(p) if p.is_empty())).collect::<Result<_>>()?,
         None => vec![],
     };
-    Ok(Target { url, headers, subprotocols })
+    Ok(Target { url, headers, subprotocols, connect_to: None })
 }
 
 /// The text of the saved message named `name`, `${variables}` filled in.
@@ -215,7 +218,16 @@ mod client {
             headers.insert("sec-websocket-protocol", HeaderValue::from_str(&joined).with_context(|| format!("bad subprotocols '{joined}'"))?);
         }
         let connector = target.url.to_ascii_lowercase().starts_with("wss://").then(|| tls().map(Connector::Rustls)).transpose()?;
-        let handshake = tokio_tungstenite::connect_async_tls_with_config(request, None, false, connector);
+        let to = target.connect_to;
+        let handshake = async move {
+            match to {
+                Some(addr) => {
+                    let tcp = tokio::net::TcpStream::connect(addr).await.map_err(tungstenite::Error::Io)?;
+                    tokio_tungstenite::client_async_tls_with_config(request, tcp, None, connector).await
+                }
+                None => tokio_tungstenite::connect_async_tls_with_config(request, None, false, connector).await,
+            }
+        };
         let (stream, response) = match timeout {
             Some(t) => tokio::time::timeout(t, handshake).await.map_err(|_| anyhow!("no WebSocket handshake within {} ms", t.as_millis()))?,
             None => handshake.await,

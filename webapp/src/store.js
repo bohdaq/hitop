@@ -1810,7 +1810,7 @@ export class Store extends EventTarget {
     const p = platform();
     this.wsSet(id, { status: "connecting", protocol: null });
     this.wsLog(id, { kind: "system", text: `Connecting to ${url}${protocols.length ? ` (subprotocols ${protocols.join(", ")})` : ""}` });
-    if (headers.length && !p.websocketHeaders)
+    if (headers.length && !(p.websocketHeaders || p.websocketSendsHeaders?.(url)))
       this.wsLog(id, { kind: "system", text: `Not sent: ${headers.map((h) => h.name).join(", ")}. A browser can't set WebSocket handshake headers (auth included); the desktop app and hitop ws send them. An API key in the query works here.` });
     let opened = false;
     const conn = p.websocket(url, { headers, protocols }, {
