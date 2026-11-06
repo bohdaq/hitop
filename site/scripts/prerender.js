@@ -54,6 +54,8 @@ for (const f of ["favicon.svg", "apple-touch-icon.png", "favicon.png", "favicon-
 }
 
 copyFileSync(join(publicAssets, "favicon.ico"), join(dist, "favicon.ico"));
+// IndexNow key file (Bing, Yandex…): proves ownership when changed pages are announced.
+write("2c32426256ab5e82b6a7fa63c90848c0.txt", "2c32426256ab5e82b6a7fa63c90848c0\n");
 
 // When a guide last changed: its Markdown file's last commit.
 const lastmod = (file) => {
