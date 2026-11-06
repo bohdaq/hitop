@@ -1,6 +1,6 @@
 // Unit checks for features.js (no browser): node tests/unit.mjs
 import assert from "node:assert/strict";
-import { cleanAuth, oauthParseToken, oauthTokenRequest, cookieHeader, exportableEnvironments, exportableGlobals, isPostmanGlobals, maskSecrets, mergeGlobals, normalizeGlobals, parseGlobals, mergeCookies, multipartBody, parseEnvironments, parseQuery, secretNames, secretRefs, secretValues, urlEncodedBody, withQuery, withSecretRefs } from "../src/features.js";
+import { asksForEvents, parseEvents, cleanAuth, oauthParseToken, oauthTokenRequest, cookieHeader, exportableEnvironments, exportableGlobals, isPostmanGlobals, maskSecrets, mergeGlobals, normalizeGlobals, parseGlobals, mergeCookies, multipartBody, parseEnvironments, parseQuery, secretNames, secretRefs, secretValues, urlEncodedBody, withQuery, withSecretRefs } from "../src/features.js";
 
 const now = Date.parse("2026-10-31T12:00:00Z");
 let jar = mergeCookies([], ["sid=abc; Path=/; HttpOnly", "pref=dark; Domain=example.com; Path=/; Max-Age=3600", "evil=1; Domain=other.com", "old=x; Expires=Thu, 01 Jan 2026 00:00:00 GMT"], "https://api.example.com/v1/login", now);
@@ -307,6 +307,15 @@ assert.throws(() => schemaFromResponse('{"errors": [{"message": "introspection i
   for (const bad of [limit("javascript:alert(1)"), limit("http://evil.example/"), limit("not a url"), limit("https://x/", 403), limit("https://x/", 402, "other"), new Error("x"), null]) {
     assert.equal(planLink(bad), null, JSON.stringify(bad?.body));
   }
+}
+
+// Server-Sent Events: blocks split on blank lines, multi-line data joined, comments left out.
+{
+  const { events, rest } = parseEvents(": hello\n\nevent: tick\nid: 7\ndata: a\ndata: b\n\ndata:no-space\r\n\r\ndata: half");
+  assert.deepEqual(events, [{ event: "tick", data: "a\nb", id: "7" }, { event: "message", data: "no-space", id: null }]);
+  assert.equal(rest, "data: half");
+  assert.equal(asksForEvents([{ name: "Accept", value: "text/event-stream" }]), true);
+  assert.equal(asksForEvents([{ name: "Accept", value: "text/event-stream", enabled: false }]), false);
 }
 
 // OAuth 2.0 (same request as hitop-core oauth2.rs).

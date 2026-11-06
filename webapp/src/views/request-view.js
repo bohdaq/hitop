@@ -8,6 +8,7 @@ import xml from "highlight.js/lib/languages/xml";
 import { getStatusText } from "../../../frontend/src/services/httpService.jsx";
 import { usesProxy } from "../../../frontend/src/services/transportService.jsx";
 import { icon } from "../icons.js";
+import { platform } from "../platform/index.js";
 import { AUTH_TYPES, emptyAuth, parseQuery, withQuery } from "../features.js";
 import { BODY_METHODS, METHODS } from "../store.js";
 import "./code-editor.js";
@@ -430,8 +431,24 @@ export class HitopRequest extends LitElement {
       </section>`;
   }
 
+  // Server-Sent Events as they arrive (store.events): newest last, the stream's state on top.
+  renderEvents(live) {
+    return html`<section class="response sse" aria-label="Events">
+      <div class="response-meta">
+        ${live.open ? html`<lit-material-status status="info">Live</lit-material-status>` : html`<span class="hint">Stream ended</span>`}
+        <span>${live.events.length} ${live.events.length === 1 ? "event" : "events"}</span>
+        ${live.open ? html`<lit-material-button variant="outlined" @click=${() => this.store.cancel(this.tab.id)}>${icon("x")} Stop</lit-material-button>` : nothing}
+      </div>
+      <ol class="sse-events" aria-label="Events received">
+        ${live.events.map((e) => html`<li><span class="hint">${new Date(e.at).toLocaleTimeString()}${e.event !== "message" ? html` · <b>${e.event}</b>` : nothing}${e.id ? ` · id ${e.id}` : ""}</span><pre>${e.data}</pre></li>`)}
+      </ol>
+    </section>`;
+  }
+
   renderResponse() {
     const t = this.tab;
+    const live = this.store.events?.get(t.id);
+    if (live && (live.open || t.responseType === "cancelled")) return this.renderEvents(live);
     if (t.loading) {
       return html`<section class="response" aria-label="Response" aria-busy="true">
         <div class="skeleton bar"></div>
@@ -468,7 +485,10 @@ export class HitopRequest extends LitElement {
     const code = highlighted(t.response, t.responseType);
     const tests = t.tests || [];
     const passed = tests.filter((x) => x.pass).length;
-    if (this.responseSection === 2 && !tests.length) this.responseSection = 0;
+    // Tabs: Body, Headers, then Tests and Events when there are some.
+    const testsAt = tests.length ? 2 : -1;
+    const eventsAt = live?.events.length ? (tests.length ? 3 : 2) : -1;
+    if (this.responseSection >= 2 && this.responseSection !== testsAt && this.responseSection !== eventsAt) this.responseSection = 0;
     return html`
       <section class="response" aria-label="Response">
         <div class="response-meta">
@@ -488,11 +508,18 @@ export class HitopRequest extends LitElement {
           <lit-material-tab>Body</lit-material-tab>
           <lit-material-tab>Headers (${headers.length})</lit-material-tab>
           ${tests.length ? html`<lit-material-tab>Tests (${passed}/${tests.length})</lit-material-tab>` : nothing}
+          ${live?.events.length ? html`<lit-material-tab>Events (${live.events.length})</lit-material-tab>` : nothing}
         </lit-material-tabs>
+        ${!live && /text\/event-stream/i.test(t.responseHeaders?.["content-type"] ?? "") && platform().stream
+          ? html`<p class="hint sse-hint">An event stream: add the header <code>Accept: text/event-stream</code> to see its events as they arrive.
+              <lit-material-button variant="text" @click=${() => this.set({ headers: [...(t.headers || []).filter((h) => h.name || h.value), { name: "Accept", value: "text/event-stream" }] })}>Add it</lit-material-button></p>`
+          : nothing}
         ${this.responseSection === 0
           ? t.response
             ? this.renderBodyView(code)
             : html`<p class="hint">No body${t.method === "HEAD" ? ": HEAD responses never have one" : ""}.</p>`
+          : this.responseSection === eventsAt
+            ? this.renderEvents(live)
           : this.responseSection === 1
             ? html`<dl class="response-headers">
                 ${headers.map(([k, v]) => html`<dt>${k}</dt><dd>${v}</dd>`)}

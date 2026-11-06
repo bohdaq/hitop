@@ -19,6 +19,7 @@ All three read and write the same [collection folder](/guides/collections-in-git
 | **GraphQL** (schema completion) | Yes | Yes | Yes |
 | **WebSocket** | Yes, without handshake headers (a browser can't send them) | Yes | Yes (`hitop ws`) |
 | **gRPC** | No | Yes | Yes (`hitop grpc`) |
+| **Server-Sent Events** (live) | Yes (`Accept: text/event-stream`) | No (the whole body at the end) | No |
 | **Collection folders** (YAML) | Open a folder in Chromium browsers; `.zip` everywhere | Yes | Yes |
 | **Git** | Saves a collection to GitHub on every change (HITOP Cloud) | Git panel: status, diff, commit, pull, push, branches | Use git |
 | **Secrets** | Kept in this browser; HITOP Cloud seals them on the server | OS keychain; Vault/OpenBao, AWS, Azure Key Vault and 1Password references | Same as the desktop |

@@ -31,6 +31,7 @@ pub struct State {
 pub fn app(state: State) -> AppWithState<State> {
     App::with_state(state)
         .post("/api/proxy", |request, _, _, state| state.proxy.handle(request))
+        .post("/api/proxy/stream", |request, _, _, state| state.proxy.stream(request))
         .post("/api/ping", |request, _, _, state| state.telemetry.ping(request))
         .get("/api/stats", |request, _, _, state| state.telemetry.stats(request))
         // The guides moved from /terms/<name>.html to /guides/<name>/ (legacy.rs).
@@ -52,6 +53,15 @@ fn main() {
 mod tests {
     use super::*;
     use rust_web_server::test_client::TestClient;
+
+    #[test]
+    fn the_stream_endpoint_wants_the_web_apps_origin() {
+        let client = TestClient::new(app(State { proxy: Proxy::from_env(), telemetry: Telemetry::from_env() }));
+        let res = client.post("/api/proxy/stream").body_json(r#"{"method":"GET","url":"https://example.com/"}"#).send();
+        assert_eq!(res.status(), 403);
+        let res = client.post("/api/proxy/stream").header("Origin", "https://hitop.rws8.tech").body_json(r#"{"method":"GET","url":"http://127.0.0.1/"}"#).send();
+        assert_eq!(res.status(), 403, "a private address is refused as by /api/proxy");
+    }
 
     #[test]
     fn old_guide_urls_redirect() {

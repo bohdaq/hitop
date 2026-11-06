@@ -623,3 +623,9 @@ button.storage-chip:focus-visible { outline: 2px solid var(--md-sys-color-primar
   .account-row .account-value { grid-column: 1 / -1; grid-row: 2; }
 }
 .tree-empty { padding: var(--space-100) var(--space-200); }
+
+/* Server-Sent Events (request-view.js renderEvents) */
+.sse-events { list-style: none; margin: 0; padding: 0; display: grid; gap: var(--space-100); max-height: 60vh; overflow-y: auto; }
+.sse-events li { display: grid; gap: 2px; padding: var(--space-100) var(--space-150, 12px); border-radius: var(--md-sys-shape-corner-small); background: var(--md-sys-color-surface-container-low); }
+.sse-events pre { margin: 0; white-space: pre-wrap; word-break: break-word; font-family: var(--font-mono); font-size: var(--text-sm); }
+.sse-hint { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-100); }

@@ -156,6 +156,44 @@ function send(url, options = {}) {
   });
 }
 
+// Server-Sent Events and other streamed bodies: public hosts through the proxy's stream endpoint
+// (hitop-server POST /api/proxy/stream), the rest straight from the browser. `onText` gets each
+// piece as it arrives; the answer (after the end, or Stop: `stopped`) looks like send()'s.
+const STREAM_URL = import.meta.env.VITE_HITOP_PROXY ? `${import.meta.env.VITE_HITOP_PROXY}/stream` : "";
+async function stream(url, options = {}, onText = () => {}) {
+  const started = performance.now();
+  const { signal } = options;
+  const viaProxy = Boolean(STREAM_URL) && usesProxy(url);
+  const headers = options.headers || {};
+  const res = viaProxy
+    ? await fetch(STREAM_URL, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ method: options.method || "GET", url, headers: Object.entries(headers), body: options.body ?? null }), signal })
+    : await fetch(url, { method: options.method || "GET", headers, body: options.body, signal });
+  if (viaProxy && !res.headers.get("x-hitop-status")) {
+    const why = await res.json().catch(() => ({}));
+    throw new Error(why.error || `the proxy answered ${res.status}`);
+  }
+  const status = viaProxy ? Number(res.headers.get("x-hitop-status")) : res.status;
+  const pairs = viaProxy ? JSON.parse(res.headers.get("x-hitop-headers") || "[]") : [...res.headers];
+  let text = "";
+  let stopped = false;
+  const decoder = new TextDecoder();
+  const reader = res.body.getReader();
+  try {
+    for (;;) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      const piece = decoder.decode(value, { stream: true });
+      text += piece;
+      onText(piece);
+    }
+  } catch (e) {
+    if (!signal?.aborted) throw e;
+    stopped = true;
+  }
+  const lower = new Map(pairs.map(([k, v]) => [k.toLowerCase(), v]));
+  return { status, headers: { get: (k) => lower.get(k.toLowerCase()) ?? null, forEach: (fn) => pairs.forEach(([k, v]) => fn(v, k)), pairs }, text: async () => text, timeMs: Math.round(performance.now() - started), stopped, url };
+}
+
 // A WebSocket request in the browser: the URL and subprotocols only, since
 // a page can't set handshake headers. Errors carry no detail in browsers,
 // so the message says what usually causes them.
@@ -222,6 +260,7 @@ export function createPlatform() {
     cookies: null,
     cookiesNote: "Applies to requests that go through the HITOP proxy. For localhost your browser keeps cookies itself. Cookies stay in this browser.",
     usesProxy,
+    stream,
     scripts: null,
     folders: folders(),
     // Folder environments' secret values: in this browser, by keychain account.

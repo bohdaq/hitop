@@ -95,6 +95,35 @@ export function oauthParseToken(status, text) {
   return { token: json.access_token, lifetime: Number(json.expires_in) || null };
 }
 
+// --- Server-Sent Events -------------------------------------------------------------
+
+/** A request that asks for an event stream (Accept: text/event-stream). */
+export const asksForEvents = (headers) => (headers || []).some((h) => h.enabled !== false && String(h.name).toLowerCase() === "accept" && /text\/event-stream/i.test(h.value || ""));
+
+/**
+ * Splits streamed text into events: `{ events, rest }`, each event `{ event, data, id }` (data
+ * lines joined by newlines; comments and empty blocks left out). `rest`: an unfinished block.
+ */
+export function parseEvents(text) {
+  const blocks = text.split(/\r?\n\r?\n/);
+  const rest = blocks.pop();
+  const events = [];
+  for (const block of blocks) {
+    const ev = { event: "message", data: [], id: null };
+    for (const line of block.split(/\r?\n/)) {
+      if (!line || line.startsWith(":")) continue;
+      const at = line.indexOf(":");
+      const field = at === -1 ? line : line.slice(0, at);
+      const value = at === -1 ? "" : line.slice(at + 1).replace(/^ /, "");
+      if (field === "data") ev.data.push(value);
+      else if (field === "event") ev.event = value || "message";
+      else if (field === "id") ev.id = value;
+    }
+    if (ev.data.length) events.push({ ...ev, data: ev.data.join("\n") });
+  }
+  return { events, rest };
+}
+
 // Adds the auth header (or query parameter) to an already interpolated
 // request. A header the user set by hand with the same name wins.
 export function applyAuth(auth, request, interpolate = (s) => s) {

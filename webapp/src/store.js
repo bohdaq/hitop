@@ -11,6 +11,8 @@ import { interpolateVariables } from "../../frontend/src/services/variableInterp
 import { generateUniqueId } from "../../frontend/src/utils/idGenerator.jsx";
 import {
   applyAuth,
+  asksForEvents,
+  parseEvents,
   oauthParseToken,
   oauthTokenRequest,
   cleanAuth,
@@ -1550,7 +1552,7 @@ export class Store extends EventTarget {
   // localhost cookies itself and hides Set-Cookie from scripts).
   // `signal` stops it (Cancel, the request timeout); the desktop gets the
   // timeout too, so Rust gives up as well.
-  async dispatch(source, collectionId, { signal } = {}) {
+  async dispatch(source, collectionId, { signal, onText } = {}) {
     signal ??= this.timeoutSignal();
     let prepared;
     try {
@@ -1595,7 +1597,7 @@ export class Store extends EventTarget {
     if (body && BODY_METHODS.includes(source.method)) options.body = body;
     let res;
     try {
-      res = await p.send(prepared.url, options);
+      res = onText && p.stream ? await p.stream(prepared.url, options, onText) : await p.send(prepared.url, options);
     } catch (e) {
       if (signal?.aborted) throw signal.reason;
       // fetch says only "Failed to fetch"; for direct requests the usual cause
@@ -1649,12 +1651,31 @@ export class Store extends EventTarget {
       ...SAVED_FIELDS(tab),
     };
     this.tabs = tabService.updateTab(this.tabs, index, { loading: true, response: null, statusCode: null, responseHeaders: null, durationMs: null, tests: null, responseCut: false, responseStored: undefined, jsonError: null });
+    // An event stream (Accept: text/event-stream, web app): its events as they arrive, in memory
+    // (store.events by tab id), until it ends or Stop; no time limit.
+    const streaming = Boolean(platform().stream) && asksForEvents(tab.headers);
+    this.events ??= new Map();
+    let onText;
+    if (streaming) {
+      const live = { events: [], open: true, rest: "" };
+      this.events.set(tab.id, live);
+      onText = (piece) => {
+        const { events, rest } = parseEvents(live.rest + piece);
+        live.rest = rest;
+        if (!events.length) return;
+        const at = Date.now();
+        live.events = [...live.events, ...events.map((e) => ({ ...e, at }))].slice(-1000);
+        this.version = (this.version ?? 0) + 1;
+        this.dispatchEvent(new Event("change"));
+      };
+    } else this.events.delete(tab.id);
     // Cancel (store.cancel) and the request timeout (Settings) abort it.
-    const call = this.startCall(tab.id);
+    const call = this.startCall(tab.id, { timeout: !streaming });
     this.emit();
     const started = performance.now();
     try {
-      const { prepared, res } = await this.dispatch(source, tab.loadedCollectionId, { signal: call.signal });
+      const { prepared, res } = await this.dispatch(source, tab.loadedCollectionId, { signal: call.signal, onText });
+      if (streaming) this.events.get(tab.id).open = false;
       const headers = {};
       res.headers.forEach((v, k) => (headers[k] = v));
       const { data, type, raw, jsonError } = await readResponse(res);
@@ -1709,15 +1730,17 @@ export class Store extends EventTarget {
       }
     } finally {
       call.done();
+      const live = this.events?.get(tab.id);
+      if (live) live.open = false;
     }
     this.emit();
   }
 
   // A request in flight for this tab: { signal, done() }. The signal aborts on
   // Cancel (AbortError) or after the Settings time limit (TimeoutError).
-  startCall(tabId) {
+  startCall(tabId, { timeout = true } = {}) {
     const controller = new AbortController();
-    const ms = this.settings.timeoutMs;
+    const ms = timeout ? this.settings.timeoutMs : 0;
     const timer = ms > 0 ? setTimeout(() => controller.abort(new DOMException(`No response within ${seconds(ms)}`, "TimeoutError")), ms) : null;
     this.inflight.set(tabId, controller);
     return {

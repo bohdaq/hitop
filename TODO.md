@@ -27,7 +27,7 @@ Highest value for the effort first.
 | 4 | First run and empty team org | done: sample collection + Import next to the empty response; empty org says so |
 | 5 | Create org and invite from the switcher | done: "New organization…" in the switcher, "Invite to <org>…" in the account menu (owners, admins) |
 | 6 | OAuth 2 helpers, then SigV4, Digest | OAuth 2.0 client credentials + password done (CLI, web, desktop, Postman import/export); authorization code (PKCE), SigV4, Digest open |
-| 7 | SSE in the web app | |
+| 7 | SSE in the web app | done: Accept: text/event-stream streams live (hitop-server POST /api/proxy/stream), Stop, Events tab; desktop live stream open |
 | 8 | Published collection docs | |
 | 9 | OpenAPI lint on import | deferred with API design (owner) |
 | 10 | Team environments | |
