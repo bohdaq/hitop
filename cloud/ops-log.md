@@ -354,3 +354,19 @@ and on hitop.rws8.tech/cloud/healthz. -->
   dump first): an empty GitHub repository gets a README first commit. The first try stopped at the
   dump (the App key path lives in the drop-in; script and RUNBOOK fixed). `/healthz` schema 13,
   0 over a limit. ("SMTP_URL is not set" is the over-limits check on a copy, not the service.)
+
+## 2026-11-06 Rebuilt portal and a host key (~09:49–10:00 UTC)
+
+- Who: owner ran `~/hitop-portal-2c2b207/run-portal-hostkey.sh`, which stopped at `rws --check`
+  (`/etc/rws/admin.env` is root-only), then `finish-portal-hostkey.sh` (both staged by agent).
+- Portal: `deploy/install.sh` from 2c2b207 (site, web app, lit-material portal, hitop-server on rws
+  18.30 with `RWS_CONFIG_SPA_FALLBACK_ROUTES=/cloud=cloud/index.html`). Front rws: the portal CSP
+  on route `hitop-cloud` (backup `rws.config.toml.bak-portal-20261106T094912Z`; the diff is only
+  that block), `rws --check` OK, rws restarted. Checks: hitop `/`, `/app/`, `/cloud/`,
+  `/cloud/healthz`; cloud.hitop `/`, `/orgs`, `/billing` 200; CSP header present; rws8.tech,
+  lit.rws8.tech 200; mail.rws8.tech `/` 404 as configured (route `mail-other`).
+- Host key: `/etc/hitop-sync/host.key` (root 0600, `openssl rand -hex 32`), passed through
+  `LoadCredential` (drop-in `40-host-key.conf`, `HITOP_SYNC_HOST_KEY_FILE`); hitop-sync restarted,
+  schema 13, NRestarts 0. The library now stores secret values sealed with it. Per-org SSO is
+  technically on but every org is free/pro/team, so `require_plan` still refuses it (Q15 holds in
+  practice). The owner keeps an offline copy of the key.
