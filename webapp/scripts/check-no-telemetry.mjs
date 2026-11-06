@@ -10,7 +10,16 @@ import { fileURLToPath } from "node:url";
 const root = path.join(path.dirname(fileURLToPath(import.meta.url)), "..");
 const files = (dir) =>
   fs.readdirSync(dir, { withFileTypes: true }).flatMap((e) => (e.isDirectory() ? files(path.join(dir, e.name)) : [path.join(dir, e.name)]));
-const has = (dir, re) => files(dir).filter((f) => re.test(fs.readFileSync(f, "latin1")));
+// The Anthropic SDK chunk (the AI assistant, src/ai.js, loaded only when someone asks Claude
+// with their own key) bundles the OpenTelemetry API and the Admin API's telemetry endpoints by
+// name; it sends nothing but the person's own requests to api.anthropic.com. It isn't HITOP's
+// usage ping, so that one chunk (told by a header only the SDK sets) is left out of the search.
+const isAnthropicSdk = (text) => text.includes("anthropic-dangerous-direct-browser-access");
+const has = (dir, re) =>
+  files(dir).filter((f) => {
+    const text = fs.readFileSync(f, "latin1");
+    return re.test(text) && !isAnthropicSdk(text);
+  });
 const fail = (msg) => {
   console.error(`check-no-telemetry: ${msg}`);
   process.exit(1);

@@ -629,3 +629,4 @@ button.storage-chip:focus-visible { outline: 2px solid var(--md-sys-color-primar
 .sse-events li { display: grid; gap: 2px; padding: var(--space-100) var(--space-150, 12px); border-radius: var(--md-sys-shape-corner-small); background: var(--md-sys-color-surface-container-low); }
 .sse-events pre { margin: 0; white-space: pre-wrap; word-break: break-word; font-family: var(--font-mono); font-size: var(--text-sm); }
 .sse-hint { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-100); }
+.ai-answer { white-space: pre-wrap; margin: var(--space-100) 0 0; }

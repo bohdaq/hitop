@@ -28,6 +28,7 @@ All three read and write the same [collection folder](/guides/collections-in-git
 | **OpenAPI import and sync** | Yes | Yes | Yes (`hitop openapi`) |
 | **Docs page** (one HTML file) | Yes (Share, File) | Yes (Share, File) | Yes (`hitop docs`) |
 | **CI reports** (JUnit, JSON, HTML) | No | No | Yes (`hitop run`) |
+| **Ask AI** (your own Anthropic key) | Yes: tests, explanations, a request from text | Yes | No |
 | **MCP for AI assistants** | No | No | Yes (`hitop mcp`) |
 | **Works offline** | No | Yes | Yes |
 

@@ -32,7 +32,7 @@ Highest value for the effort first.
 | 9 | OpenAPI lint on import | deferred with API design (owner) |
 | 10 | Team environments | |
 | 11 | Hosted MCP | |
-| 12 | AI in the app | |
+| 12 | AI in the app | done: Ask AI (sparkle next to Send): write tests, explain, request from text; own key in Settings, Opus 5.5 default + server-side fallback; secrets masked |
 | 13 | Mock servers | |
 | 14 | Monitors | |
 | 15 | Comments and per-request history | |

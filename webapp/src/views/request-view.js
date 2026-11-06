@@ -639,6 +639,9 @@ export class HitopRequest extends LitElement {
         <lit-material-icon-button aria-label="Save request" title=${`Save (${SAVE_KEYS})`} ?disabled=${!t.url} @click=${() => this.app.openDialog("save", this.store.saveTarget())}>
           ${icon("floppy-disk")}
         </lit-material-icon-button>
+        <lit-material-icon-button aria-label="Ask AI" title="Ask AI: write tests, explain a failure, a request from text" @click=${() => this.app.openAi()}>
+          ${icon("sparkle")}
+        </lit-material-icon-button>
         <lit-material-icon-button aria-label="Code" title="Code: curl, fetch, Python, Go, Java, Rust" ?disabled=${!t.url} @click=${() => this.app.openDialog("code", { lang: "curl", showSecrets: false })}>
           ${icon("code")}
         </lit-material-icon-button>

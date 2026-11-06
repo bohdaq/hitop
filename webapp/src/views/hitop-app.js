@@ -23,6 +23,8 @@ import "./github-view.js";
 import { storageOf } from "../git.js";
 import { syncClient } from "./sync-view.js";
 import { orgLabel } from "../orgs.js";
+import { aiDialog, runAi } from "./ai-view.js";
+import { aiSettings } from "../ai.js";
 import { DEFAULT_SERVER } from "../sync.js";
 
 // The HITOP Cloud portal (plan, organizations, billing): web only, never in the desktop build (App
@@ -284,6 +286,7 @@ export class HitopApp extends LitElement {
       if (d.tab === "github") this.querySelector("hitop-git-panel")?.submit();
       return;
     }
+    if (d?.kind === "ai") return;
     if (d?.kind === "join") {
       [...this.querySelectorAll("#dialog hitop-sync lit-material-button")].find((b) => b.textContent.includes("Accept invite"))?.click();
       return;
@@ -596,6 +599,9 @@ export class HitopApp extends LitElement {
       case "compare":
         ({ headline, body, footer } = (d.kind === "code" ? codeDialog : compareDialog)(this, d));
         break;
+      case "ai":
+        ({ headline, body, footer } = aiDialog(this, d));
+        break;
       case "quick-open": {
         headline = "Quick open";
         ({ body } = this.quickDialog(d));
@@ -633,7 +639,7 @@ export class HitopApp extends LitElement {
         break;
     }
     return html`
-      <lit-material-dialog id="dialog" class=${WIDE_DIALOGS.includes(d.kind) || d.kind === "quick-open" ? "wide" : ""} @close=${() => (this.dialog = null)}>
+      <lit-material-dialog id="dialog" class=${WIDE_DIALOGS.includes(d.kind) || d.kind === "quick-open" || d.kind === "ai" ? "wide" : ""} @close=${() => (this.dialog = null)}>
         <span slot="headline">${headline}</span>
         <form id="dialog-form" class="dialog-form" novalidate @submit=${(e) => this.submitDialog(e)} @input=${(e) => this.clearFieldError(e.target)} @keydown=${(e) => this.dialogKey(e)}>${body}</form>
         ${footer}
@@ -675,6 +681,15 @@ export class HitopApp extends LitElement {
       ${s.orgs.map((o) => html`<lit-material-select-option value=${o.id}>${orgLabel(o)}</lit-material-select-option>`)}
       <lit-material-select-option value=${NEW_ORG}>New organization…</lit-material-select-option>
     </lit-material-select>`;
+  }
+
+  // Ask AI: tests when there is a response, an explanation after a failure, else a request from text.
+  openAi(action) {
+    const t = this.store.tab;
+    const failed = t.responseType === "error" || (t.tests || []).some((x) => !x.pass);
+    const pick = action ?? (failed ? "explain" : t.statusCode != null ? "tests" : "generate");
+    this.openDialog("ai", { action: pick });
+    if (pick !== "generate" && aiSettings().key) runAi(this, pick);
   }
 
   // New organization (then it's the current one) or an invite to the current one.

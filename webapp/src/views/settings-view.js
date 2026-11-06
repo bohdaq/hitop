@@ -7,6 +7,7 @@
 import { LitElement, html, nothing } from "lit";
 import { confirm } from "@lit-material/confirm";
 import { COLOR_SCHEME_EVENT, setColorScheme, storedColorScheme } from "@lit-material/color-scheme";
+import { AI_MODELS, aiSettings, saveAiSettings } from "../ai.js";
 import { platform } from "../platform/index.js";
 import { storageUsage } from "../platform/response-store.js";
 import { seconds } from "../settings.js";
@@ -118,6 +119,27 @@ class HitopAppSettings extends LitElement {
     </section>`;
   }
 
+  // Ask AI (ai.js): the person's own Anthropic API key, on this device only.
+  renderAi() {
+    const ai = aiSettings();
+    const save = (changes) => {
+      saveAiSettings({ ...aiSettings(), ...changes });
+      this.requestUpdate();
+    };
+    return html`<section aria-label="AI assistant" class="settings-section">
+      <h2>AI assistant</h2>
+      <p class="hint">Ask Claude to write tests for a response, explain a failure, or make a request from a curl command or a description (the sparkle button next to Send). It uses your own Anthropic API key, kept on this device only; secret values and credential headers are hidden from it.</p>
+      <div class="sync-form">
+        <lit-material-text-field id="ai-key" variant="outlined" type="password" label="Anthropic API key" .value=${ai.key} placeholder="sk-ant-…"
+          @change=${(e) => save({ key: e.target.value.trim() })}></lit-material-text-field>
+        <lit-material-select variant="outlined" label="Model" .value=${ai.model} @change=${(e) => save({ model: e.target.value })}>
+          ${AI_MODELS.map(([id, label]) => html`<lit-material-select-option value=${id}>${label}</lit-material-select-option>`)}
+        </lit-material-select>
+        ${ai.key ? html`<lit-material-button variant="text" @click=${() => save({ key: "" })}>Remove the key</lit-material-button>` : nothing}
+      </div>
+    </section>`;
+  }
+
   render() {
     const s = this.store;
     const desktop = platform().name === "tauri";
@@ -153,6 +175,7 @@ class HitopAppSettings extends LitElement {
           </ul>
         </section>
     ${this.renderPrivacy()}
+    ${this.renderAi()}
     ${this.renderStorage()}
         <section aria-label="Keyboard shortcuts" class="settings-section">
           <h2>Keyboard shortcuts</h2>
