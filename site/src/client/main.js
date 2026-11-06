@@ -10,18 +10,20 @@ import "../landing.css";
 import "../hitop.css";
 
 import "../components.js";
-import { initThemeToggle } from "./theme-toggle.js";
-import { initTabPanels } from "./tab-panels.js";
-import { initMenu } from "./menu.js";
-import { initInstall } from "./install.js";
-import { initTerminal } from "./terminal.js";
-import { initReveal } from "./reveal.js";
+import { initThemeToggle } from "@lit-material/site-kit/client/theme.js";
+import { initMenu } from "@lit-material/site-kit/client/menu.js";
+import { initInstall } from "@lit-material/site-kit/client/install.js";
+import { initTerminal } from "@lit-material/site-kit/client/terminal.js";
+import { initReveal } from "@lit-material/site-kit/client/reveal.js";
+import { initTagline } from "./tagline.js";
 import { initDownloads } from "./downloads.js";
 
-initThemeToggle();
-initTabPanels();
+initThemeToggle({ key: "hitop-theme" });
 initMenu();
 initInstall();
+// Keep the terminal its finished height, so it doesn't shrink while it retypes.
+for (const pre of document.querySelectorAll("[data-terminal]")) pre.style.minHeight = `${pre.offsetHeight}px`;
 initTerminal();
 initReveal();
+initTagline();
 initDownloads();

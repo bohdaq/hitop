@@ -630,3 +630,4 @@ button.storage-chip:focus-visible { outline: 2px solid var(--md-sys-color-primar
 .sse-events pre { margin: 0; white-space: pre-wrap; word-break: break-word; font-family: var(--font-mono); font-size: var(--text-sm); }
 .sse-hint { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-100); }
 .ai-answer { white-space: pre-wrap; margin: var(--space-100) 0 0; }
+.comment-list li { gap: var(--space-50); } .comment-text { margin: 0; white-space: pre-wrap; overflow-wrap: anywhere; } .comments { display: grid; gap: var(--space-150, 12px); }

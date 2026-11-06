@@ -147,7 +147,9 @@ impl BlobText {
 }
 
 /// Whether `path` is a file of a collection folder that sync carries: `hitop.yaml`,
-/// `globals.yaml`, `environments/<name>.yaml` and `requests/<path>.yaml` (or `.yml`), relative,
+/// `globals.yaml`, `environments/<name>.yaml`, `requests/<path>.yaml` (or `.yml`) and, since 1.3,
+/// `comments/<request path>/<id>.yaml` (one comment per file, so two people never conflict; older
+/// clients skip them with a note), relative,
 /// with no hidden, empty or `..` segment. Paths from the server are checked with it before
 /// anything is written, so a member can't write outside the folder.
 pub fn is_synced_path(path: &str) -> bool {
@@ -167,6 +169,10 @@ pub fn is_synced_path(path: &str) -> bool {
     if let Some(rest) = path.strip_prefix("requests/") {
         let stem = rest.trim_end_matches(".yaml").trim_end_matches(".yml");
         return yaml && names::check_rel_path(stem).is_ok();
+    }
+    if let Some(rest) = path.strip_prefix("comments/") {
+        let stem = rest.trim_end_matches(".yaml").trim_end_matches(".yml");
+        return yaml && stem.contains('/') && names::check_rel_path(stem).is_ok();
     }
     false
 }

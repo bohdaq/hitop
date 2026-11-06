@@ -35,7 +35,7 @@ Highest value for the effort first.
 | 12 | AI in the app | done: Ask AI (sparkle next to Send): write tests, explain, request from text; own key in Settings, Opus 5.5 default + server-side fallback; secrets masked |
 | 13 | Mock servers | done: sync server /mock/<id>/… from saved examples (migration 14), paid plans, 600/min, never HTML; Share → Mock |
 | 14 | Monitors | done: sync server schema 16, runs in a child process (ulimit, 150 s, SSRF guard incl. IP literals/redirects, script loop limits), mail on fail/recover; Share → Monitor. VM: set HITOP_SYNC_DENY_IPS |
-| 15 | Comments and per-request history | history done: schema 17 request_history (last 50 per request, app/github/mcp), request menu → Version history… → Restore. Comments: waiting on a decision (library collections have one owner) |
+| 15 | Comments and per-request history | done: history (schema 17, request menu → Version history… → Restore); comments in shared (end to end encrypted) collections: `comments/<request>/<id>.yaml` sync files (hitop-core allowlist), request editor Comments tab |
 | 16 | gRPC and WebSocket headers bridge | done: hitop-server bridges GET /api/ws and POST /api/grpc/{list,describe,call} (Origin, checked address, connect to the vetted IP; gRPC by server reflection, public servers) |
 | 17 | Plugins, API design editor | deferred (owner) |
 

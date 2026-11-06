@@ -9,6 +9,8 @@ import { getStatusText } from "../../../frontend/src/services/httpService.jsx";
 import { usesProxy } from "../../../frontend/src/services/transportService.jsx";
 import { icon } from "../icons.js";
 import { platform } from "../platform/index.js";
+import { syncClient } from "./sync-view.js";
+import { commentsPanel } from "./comments-view.js";
 import { AUTH_TYPES, emptyAuth, parseQuery, withQuery } from "../features.js";
 import { BODY_METHODS, METHODS } from "../store.js";
 import "./code-editor.js";
@@ -402,7 +404,17 @@ export class HitopRequest extends LitElement {
           ? [saved ? `Messages (${saved})` : "Messages"]
           : ["Body", t.preRequestScript?.trim() ? "Script before ●" : "Script before", t.postRequestScript?.trim() ? "Script after ●" : "Script after"]),
     ];
-    if ((socket || grpc) && this.section > BODY) this.section = BODY;
+    // Comments: a saved request of a shared collection (sync.js).
+    const sync = syncClient(this.store);
+    const request = this.store.loadedRequest(t);
+    const shared = Boolean(request && t.loadedCollectionId != null && sync.link(t.loadedCollectionId));
+    const COMMENTS = labels.length;
+    if (shared) {
+      const n = sync.comments(t.loadedCollectionId, request).length;
+      labels.push(n ? `Comments (${n})` : "Comments");
+    }
+    if ((socket || grpc) && this.section > BODY && this.section !== COMMENTS) this.section = BODY;
+    if (!shared && this.section >= COMMENTS) this.section = PARAMS;
     return html`
       <section class="editor" aria-label="Request details">
         <lit-material-tabs aria-label="Request details" .selected=${this.section} @change=${(e) => (this.section = e.target.selected)}>
@@ -433,11 +445,12 @@ export class HitopRequest extends LitElement {
                   Switch the method to POST, PUT or PATCH to send one.
                 </lit-material-empty-state>`
             : nothing}
-          ${this.section === PRE
+          ${this.section === PRE && !socket && !grpc
             ? html`<hitop-code-editor label="Script that runs before the request is sent" language="javascript" .value=${t.preRequestScript || ""} @input=${(e) => this.set({ preRequestScript: e.target.value })}></hitop-code-editor>
                 ${scriptHelp(PRE_HELP)}`
             : nothing}
-          ${this.section === POST
+          ${shared && this.section === COMMENTS ? commentsPanel(this, sync, t.loadedCollectionId, request) : nothing}
+          ${this.section === POST && !socket && !grpc
             ? html`<hitop-code-editor label="Script that runs after the response arrives" language="javascript" .value=${t.postRequestScript || ""} @input=${(e) => this.set({ postRequestScript: e.target.value })}></hitop-code-editor>
                 ${scriptHelp(POST_HELP)}`
             : nothing}

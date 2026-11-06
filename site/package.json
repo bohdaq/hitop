@@ -13,6 +13,7 @@
     "@lit-labs/ssr-client": "1.1.8",
     "@lit-material/alert": "1.0.0",
     "@lit-material/jump-links": "1.0.0",
+    "@lit-material/site-kit": "1.3.0",
     "@lit-material/tabs": "1.0.0",
     "@lit-material/tokens": "1.0.0",
     "lit": "3.3.3"

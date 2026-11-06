@@ -286,6 +286,26 @@ async function launchOff(options) {
   const bobReqs = await requests(bob, 'Shop API');
   check('the other side opens the shared collection', JSON.stringify(bobReqs) === JSON.stringify(await requests(ada, 'Shop API')), JSON.stringify(bobReqs) + (await alertText(bob)));
 
+  // Comments: Ada comments on a request; Bob sees it after a sync; the server sees ciphertext only.
+  const openRequest = async (h, name) => {
+    await closeDialog(h);
+    await h.page.locator('aside .tree-row', { hasText: name }).first().click();
+    await settle(h.page);
+    await h.page.getByRole('tablist', { name: 'Request details' }).getByRole('tab', { name: /Comments/ }).click();
+    await settle(h.page);
+  };
+  await openRequest(ada, 'List orders');
+  await ada.page.locator('.comments').getByLabel('Add a comment').fill('Needs pagination: e2e-comment-91x');
+  await ada.page.locator('.comments').getByRole('button', { name: /Comment/ }).click();
+  await ada.page.locator('.comment-list li').first().waitFor({ timeout: 15000 });
+  await openRequest(bob, 'List orders');
+  await bob.page.locator('.comments').getByRole('button', { name: /Refresh/ }).click();
+  await bob.page.locator('.comment-list li').first().waitFor({ timeout: 15000 });
+  const seen = await bob.page.locator('.comment-list').innerText();
+  check('a comment reaches the other member, with its author', seen.includes('e2e-comment-91x') && seen.includes('ada@example.com'), seen);
+  check("...and the server never sees it", !server.database().includes(Buffer.from('e2e-comment-91x')));
+  check('...and Bob can delete only his own', (await bob.page.locator('.comment-list').getByRole('button', { name: 'Delete' }).count()) === 0);
+
   // Bob edits, Ada pulls.
   await setUrl(bob, 'List orders', 'https://internal.e2e-sync.test/v2/orders');
   await syncNow(bob);

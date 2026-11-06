@@ -1,6 +1,7 @@
 // The document around every prerendered page: head, header, footer.
 // Same structure as rws8.tech's shell, with HITOP's pages and links.
 import { html } from "lit";
+import { themeBootScript } from "@lit-material/site-kit/client/theme.js";
 import { unsafeHTML } from "lit/directives/unsafe-html.js";
 import { mark } from "./brand/mark.js";
 import { icon } from "./icons.js";
@@ -79,7 +80,7 @@ export function footer() {
 
 // Applies a saved theme before first paint, so a dark-mode visitor never sees
 // a cream flash. Storage can throw (private windows), hence the try.
-const THEME_BOOT = `document.documentElement.classList.add("js");try{var t=localStorage.getItem("hitop-theme");if(t)document.documentElement.dataset.theme=t}catch(e){}`;
+const THEME_BOOT = themeBootScript("hitop-theme");
 
 export function documentHtml({ title, description, path, body, assets, noindex = false, canonical = path, jsonLd = [], ogType = "website", markdown = null, modified = null }) {
   const css = assets.css.map((href) => `<link rel="stylesheet" href="${href}">`).join("");

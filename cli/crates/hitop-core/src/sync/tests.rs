@@ -256,10 +256,10 @@ fn the_same_new_path_on_both_sides_converges_on_one_blob() {
 
 #[test]
 fn only_collection_files_sync_and_paths_from_the_server_are_checked() {
-    for ok in ["hitop.yaml", "globals.yaml", "environments/dev.yaml", "requests/a.yaml", "requests/orders/create.yml"] {
+    for ok in ["hitop.yaml", "globals.yaml", "environments/dev.yaml", "requests/a.yaml", "requests/orders/create.yml", "comments/orders/create/1793990000000-ab12.yaml"] {
         assert!(is_synced_path(ok), "{ok}");
     }
-    for bad in ["", "/etc/passwd", "../x.yaml", "requests/../../x.yaml", "requests/.git/x.yaml", "environments/a/b.yaml", "requests/a.txt", "README.md", ".hitop/x", "requests//a.yaml", "requests\\a.yaml", "requests/a\0.yaml"] {
+    for bad in ["", "/etc/passwd", "../x.yaml", "requests/../../x.yaml", "requests/.git/x.yaml", "environments/a/b.yaml", "requests/a.txt", "README.md", ".hitop/x", "requests//a.yaml", "requests\\a.yaml", "requests/a\0.yaml", "comments/x.yaml", "comments/../x/1.yaml", "comments/a/1.txt"] {
         assert!(!is_synced_path(bad), "{bad:?}");
     }
     let mut files = Files::new();

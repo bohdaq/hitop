@@ -26,6 +26,7 @@
 //   hitop_sync_files:<ws>  { path: text } for collections kept in app storage
 import { loadFormat } from "./wasm/format.js";
 import { platform } from "./platform/index.js";
+import { requestFiles } from "./git.js";
 
 export const DEFAULT_SERVER = "https://sync.hitop.rws8.tech";
 const ACCOUNT_KEY = "hitop_sync_account";
@@ -78,7 +79,26 @@ export class SyncError extends Error {
 export const syncFiles = {
   get: (ws) => readJson(FILES_KEY(ws), {}),
   set: (ws, files) => writeJson(FILES_KEY(ws), files),
-  drop: (ws) => localStorage.removeItem(FILES_KEY(ws)),
+  drop: (ws) => {
+    localStorage.removeItem(FILES_KEY(ws));
+    localStorage.removeItem(COMMENTS_KEY(ws));
+  },
+};
+
+// Comments of a shared collection (since 1.3): `comments/<request file>/<id>.yaml`, one per
+// file, end to end encrypted like the rest, kept here apart from the collection's own files (the
+// folder, on disk or not, holds only the collection), and merged into every sync.
+const COMMENTS_KEY = (ws) => `hitop_sync_comments:${ws}`;
+export const isCommentPath = (p) => p.startsWith("comments/");
+export const syncComments = {
+  get: (ws) => readJson(COMMENTS_KEY(ws), {}),
+  set: (ws, files) => writeJson(COMMENTS_KEY(ws), files),
+};
+const splitComments = (files) => {
+  const own = {};
+  const comments = {};
+  for (const [p, t] of Object.entries(files)) (isCommentPath(p) ? comments : own)[p] = t;
+  return { own, comments };
 };
 
 // Folders under "hitop-sync:<ws>" refs next to the platform's own (disk, File System Access).
@@ -817,17 +837,16 @@ export class SyncClient {
 
   async localFiles(collectionId) {
     const l = this.link(collectionId);
-    if (l?.ref && isSyncRef(l.ref)) {
-      await this.store.flushFolder(collectionId);
-      return syncFiles.get(l.workspace);
-    }
     await this.store.flushFolder(collectionId);
-    return (await loadFormat()).toFiles(this.store.folderContent(collectionId));
+    const own = l?.ref && isSyncRef(l.ref) ? syncFiles.get(l.workspace) : (await loadFormat()).toFiles(this.store.folderContent(collectionId));
+    return { ...splitComments(own).own, ...(l ? syncComments.get(l.workspace) : {}) };
   }
 
-  async applyFiles(collectionId, files) {
+  async applyFiles(collectionId, all) {
     const l = this.link(collectionId);
     const entry = this.store.folderOf(collectionId);
+    const { own: files, comments } = splitComments(all);
+    syncComments.set(l.workspace, comments);
     if (l?.ref && isSyncRef(l.ref)) syncFiles.set(l.workspace, files);
     else if (entry) await platform().folders.write(entry.ref, (await loadFormat()).readFiles(files, this.store.collection(collectionId)?.name ?? "Shared"));
     const id = await this.store.reloadFolder(collectionId);
@@ -873,6 +892,64 @@ export class SyncClient {
   }
 
   // Pull and push one shared collection. Returns { pulled, removed, pushed, merged, conflicts }.
+  // --- comments (shared collections) --------------------------------------------------------
+
+  /** The request's path in the folder (`orders/create-order`), as hitop-core names its file. */
+  requestPath(collectionId, request) {
+    if (request?.file) return request.file;
+    const c = this.store.collection(collectionId);
+    const at = c?.requests?.findIndex((r) => r.id === request?.id) ?? -1;
+    return at < 0 ? null : requestFiles(c.requests)[at].replace(/\.yaml$/, "");
+  }
+
+  /** The comments on `request`: [{path, author, at, text, mine}], oldest first. */
+  comments(collectionId, request) {
+    const l = this.link(collectionId);
+    const file = l && this.requestPath(collectionId, request);
+    if (!file) return [];
+    const prefix = `comments/${file}/`;
+    const me = this.account()?.email;
+    return Object.entries(syncComments.get(l.workspace))
+      .filter(([p]) => p.startsWith(prefix) && !p.slice(prefix.length).includes("/"))
+      .map(([path, text]) => {
+        let c = {};
+        try {
+          c = JSON.parse(text);
+        } catch {
+          // a comment written by hand: shown as text
+          c = { text };
+        }
+        return { path, author: String(c.author ?? "?"), at: String(c.at ?? ""), text: String(c.text ?? ""), mine: c.author === me };
+      })
+      .sort((a, b) => a.at.localeCompare(b.at) || a.path.localeCompare(b.path));
+  }
+
+  /** Adds a comment on `request` and syncs: everyone in the workspace sees it, encrypted. */
+  async addComment(collectionId, request, text) {
+    const l = this.link(collectionId);
+    if (!l) throw new Error("Comments are for shared collections");
+    const file = this.requestPath(collectionId, request);
+    if (!file) throw new Error("Save the request first: comments belong to a saved request");
+    const body = String(text).trim();
+    if (!body) return;
+    if (body.length > 10_000) throw new Error("A comment is at most 10,000 characters");
+    const id = `${Date.now()}-${[...crypto.getRandomValues(new Uint8Array(4))].map((b) => b.toString(16).padStart(2, "0")).join("")}`;
+    const all = syncComments.get(l.workspace);
+    // YAML is a superset of JSON: the file is JSON, readable as YAML by every hitop.
+    all[`comments/${file}/${id}.yaml`] = JSON.stringify({ author: this.account().email, at: new Date().toISOString(), request: request.name, text: body }, null, 2) + "\n";
+    syncComments.set(l.workspace, all);
+    return this.syncNow(collectionId);
+  }
+
+  /** Removes a comment of your own and syncs. */
+  async deleteComment(collectionId, path) {
+    const l = this.link(collectionId);
+    const all = syncComments.get(l.workspace);
+    delete all[path];
+    syncComments.set(l.workspace, all);
+    return this.syncNow(collectionId);
+  }
+
   async syncNow(collectionId, { push = true } = {}) {
     const l = this.link(collectionId);
     if (!l) throw new Error("This collection isn't shared");
@@ -895,7 +972,9 @@ export class SyncClient {
       if (Object.keys(plan.write).length || plan.remove.length) {
         const files = { ...local, ...plan.write };
         for (const p of plan.remove) delete files[p];
-        collectionId = await this.applyFiles(collectionId, files);
+        // Only comments changed: the collection itself stays as it is.
+        if ([...Object.keys(plan.write), ...plan.remove].every(isCommentPath)) syncComments.set(ws, splitComments(files).comments);
+        else collectionId = await this.applyFiles(collectionId, files);
       }
       state = plan.state;
       this.saveState(ws, state);
@@ -993,9 +1072,11 @@ export class SyncClient {
     plan.state.seq = seq;
     if (!plan.write["hitop.yaml"]) throw new Error("This workspace has no collection in it yet");
     const ref = `${SYNC_REF}${ws}`;
-    syncFiles.set(ws, plan.write);
+    const { own, comments } = splitComments(plan.write);
+    syncFiles.set(ws, own);
+    syncComments.set(ws, comments);
     this.saveState(ws, plan.state);
-    const folder = (await loadFormat()).readFiles(plan.write, "Shared collection");
+    const folder = (await loadFormat()).readFiles(own, "Shared collection");
     this.update((d) => (d.links[folder.collection.id] = { workspace: ws, ref }));
     const col = await this.store.attachFolder(ref, folder, { remember: false });
     return col.id;

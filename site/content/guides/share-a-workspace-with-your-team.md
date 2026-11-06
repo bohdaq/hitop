@@ -125,6 +125,10 @@ hitop sync resolve requests/get-user.yaml --mine -c ./my-api     # keep mine, th
 
 In the app the conflict appears under the collection with **View both**, **Keep mine** and **Take theirs**.
 
+## Comments
+
+In the web and desktop apps, a request of a shared collection has a **Comments** tab: what members write there is end to end encrypted like the requests, so the server stores only ciphertext. Each comment is its own file, `comments/<request>/<id>.yaml`, so two people commenting at once never conflict; `hitop sync` carries them into the folder too (hitop 1.2 skips them with a note). Viewers read comments; editors and owners write them. You can delete your own.
+
 ## Remove someone
 
 ```bash
