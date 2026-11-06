@@ -391,3 +391,7 @@ and on hitop.rws8.tech/cloud/healthz. -->
 ## 2026-11-06 Web app: minimal Account page
 
 - /app/ only from 3270de3 (run-app-deploy.sh, backup /var/www/hitop-app.bak-*); live CSS index-MyZeSlAt.css matches the build. Guides wait for the next site deploy.
+
+## 2026-11-06 Organizations in the app
+
+- Sync server c8e0a4c (library collections filed under their data.org) and /app/ c8e0a4c (top-bar org switcher, environment next to Send); live CSS index-CVGPA0RH.css matches, healthz ok schema 13.
