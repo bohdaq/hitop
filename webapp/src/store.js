@@ -12,6 +12,8 @@ import { generateUniqueId } from "../../frontend/src/utils/idGenerator.jsx";
 import {
   applyAuth,
   awsV4Headers,
+  digestAnswer,
+  parseDigestChallenge,
   asksForEvents,
   parseEvents,
   oauthParseToken,
@@ -1619,6 +1621,18 @@ export class Store extends EventTarget {
       if (p.name === "web" && !proxied && e instanceof TypeError)
         e.message = "Couldn't reach the server. Requests to localhost and private networks go straight from your browser, so the server must allow CORS from this site; the desktop and mobile apps don't need it.";
       throw e;
+    }
+    // Digest: the server's 401 challenge answered once.
+    const challenge = source.auth?.type === "digest" && res.status === 401 ? parseDigestChallenge(res.headers.get("www-authenticate")) : null;
+    if (challenge) {
+      const vars = this.variables(collectionId);
+      const fill = (t) => interpolateVariables(t || "", vars);
+      const u = new URL(prepared.url);
+      const cnonce = [...crypto.getRandomValues(new Uint8Array(8))].map((b) => b.toString(16).padStart(2, "0")).join("");
+      const value = await digestAnswer(challenge, fill(source.auth.username), fill(source.auth.password), source.method, `${u.pathname}${u.search}`, cnonce);
+      headers.splice(0, headers.length, ...headers.filter((h) => h.name.toLowerCase() !== "authorization"), { name: "Authorization", value });
+      options.headers = headersObject(headers);
+      res = await p.send(prepared.url, options);
     }
     if (Array.isArray(res.cookies)) this.cookies = res.cookies;
     if (jar && this.cookieJarEnabled && res.headers.pairs) {

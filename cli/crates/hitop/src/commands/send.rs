@@ -187,7 +187,12 @@ pub fn run(args: SendArgs) -> Result<()> {
     let (headers_sent, body_sent) = (headers.clone(), String::from_utf8(body.clone()).unwrap_or_default());
     let mut jar = cookies::open(&workspace, args.cookies)?;
     let opts = http::Options { timeout: None, jar: jar.as_mut() };
-    let mut result = http::execute_opts(&method, &pre.url, &headers, body, opts).map_err(|e| anyhow::anyhow!(masker.mask(&format!("{e:#}"))))?;
+    let mut result = http::execute_opts(&method, &pre.url, &headers, body.clone(), opts).map_err(|e| anyhow::anyhow!(masker.mask(&format!("{e:#}"))))?;
+    // Digest: the server's 401 challenge answered once.
+    let fill = |s: &str| hitop_core::interpolation::interpolate(s, &variables);
+    if let Some(h2) = hitop_core::digest_auth::retry_headers(auth.as_ref(), &fill, result.status, &result.headers, &method, &pre.url, &headers).map_err(|e| anyhow::anyhow!(masker.mask(&format!("{e:#}"))))? {
+        result = http::execute_opts(&method, &pre.url, &h2, body, http::Options { timeout: None, jar: jar.as_mut() }).map_err(|e| anyhow::anyhow!(masker.mask(&format!("{e:#}"))))?;
+    }
     cookies::save(&workspace, jar.as_ref())?;
 
     let sent = hitop_core::scripting::SentRequest { url: pre.url.clone(), method: method.clone(), headers: headers_sent, body: body_sent };

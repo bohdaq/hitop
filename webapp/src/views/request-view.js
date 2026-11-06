@@ -344,6 +344,9 @@ export class HitopRequest extends LitElement {
                 <lit-material-select-option value="body">In the request body</lit-material-select-option>
               </lit-material-select>`
           : nothing}
+        ${a.type === "digest"
+          ? html`${field("Username", "username")} ${field("Password", "password", { type: "password", help: "HITOP answers the server's Digest challenge (MD5 or SHA-256): the request goes out twice." })}`
+          : nothing}
         ${a.type === "awsv4"
           ? html`${field("Access key", "accessKey")} ${field("Secret key", "secretKey", { type: "password", help: "Use ${variables}: keep the value in a secret environment variable." })}
               ${field("Region", "region", { help: "us-east-1, eu-west-1, …" })} ${field("Service", "service", { help: "execute-api, s3, lambda, …" })}

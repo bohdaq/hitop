@@ -64,6 +64,7 @@ fn auth_text(auth: Option<&Auth>) -> Option<String> {
         Auth::Basic { username, password } => format!("Basic, user {}, password {}", shown(username), shown(password)),
         Auth::ApiKey { key, value, location } => format!("API key {key} in the {}: {}", if matches!(location, crate::model::ApiKeyLocation::Query) { "query" } else { "headers" }, shown(value)),
         Auth::OAuth2(o) => format!("OAuth 2.0 ({}), token from {}", if o.grant == "password" { "password grant" } else { "client credentials" }, o.token_url),
+        Auth::Digest { username, password } => format!("Digest, user {}, password {}", shown(username), shown(password)),
         Auth::AwsV4(a) => format!("AWS Signature v4, {} in {}, access key {}", a.service, a.region, shown(&a.access_key)),
     })
 }

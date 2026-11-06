@@ -80,6 +80,7 @@ pub fn to_postman(auth: Option<&Auth>) -> Option<Value> {
                 ("scope", &o.scope), ("username", &o.username), ("password", &o.password), ("client_authentication", client), ("addTokenTo", "header"),
             ]) }))
         }
+        Auth::Digest { username, password } => Some(json!({ "type": "digest", "digest": kv(&[("username", username), ("password", password)]) })),
         Auth::AwsV4(a) => Some(json!({ "type": "awsv4", "awsv4": kv(&[
             ("accessKey", &a.access_key), ("secretKey", &a.secret_key), ("sessionToken", &a.session_token), ("region", &a.region), ("service", &a.service),
         ]) })),
@@ -106,6 +107,7 @@ pub fn from_postman(auth: &Value) -> Option<Auth> {
             value: get("value"),
             location: if get("in") == "query" { ApiKeyLocation::Query } else { ApiKeyLocation::Header },
         }),
+        "digest" => Some(Auth::Digest { username: get("username"), password: get("password") }),
         "awsv4" => Some(Auth::AwsV4(Box::new(AwsV4 {
             access_key: get("accessKey"),
             secret_key: get("secretKey"),

@@ -45,6 +45,7 @@ export const AUTH_TYPES = [
   ["apikey", "API key"],
   ["oauth2", "OAuth 2.0"],
   ["awsv4", "AWS Signature"],
+  ["digest", "Digest auth"],
 ];
 
 export const emptyAuth = () => ({ type: "none", token: "", username: "", password: "", key: "X-API-Key", value: "", in: "header", grant: "client_credentials", tokenUrl: "", clientId: "", clientSecret: "", scope: "", clientAuth: "" });
@@ -56,6 +57,7 @@ export function cleanAuth(auth) {
   if (auth.type === "bearer") return { type: "bearer", token: auth.token || "" };
   if (auth.type === "basic") return { type: "basic", username: auth.username || "", password: auth.password || "" };
   if (auth.type === "apikey") return { type: "apikey", key: auth.key || "", value: auth.value || "", in: auth.in === "query" ? "query" : "header" };
+  if (auth.type === "digest") return { type: "digest", username: auth.username || "", password: auth.password || "" };
   if (auth.type === "awsv4") {
     const out = { type: "awsv4", accessKey: auth.accessKey || "", secretKey: auth.secretKey || "", region: auth.region || "", service: auth.service || "" };
     if (auth.sessionToken) out.sessionToken = auth.sessionToken;
@@ -186,6 +188,69 @@ export async function awsV4Headers(aws, method, url, headers, body, now = new Da
   k = await hmacRaw(k, "aws4_request");
   const signature = hexOf(await hmacRaw(k, toSign));
   return { headers: [...kept, ...added, { name: "Authorization", value: `AWS4-HMAC-SHA256 Credential=${aws.accessKey}/${scope}, SignedHeaders=${signedNames}, Signature=${signature}` }] };
+}
+
+// --- HTTP Digest (hitop-core digest_auth.rs) -------------------------------------------------
+
+/** MD5 (RFC 1321) of a UTF-8 string, lower-case hex. */
+export function md5Hex(text) {
+  const S = [7, 12, 17, 22, 7, 12, 17, 22, 7, 12, 17, 22, 7, 12, 17, 22, 5, 9, 14, 20, 5, 9, 14, 20, 5, 9, 14, 20, 5, 9, 14, 20, 4, 11, 16, 23, 4, 11, 16, 23, 4, 11, 16, 23, 4, 11, 16, 23, 6, 10, 15, 21, 6, 10, 15, 21, 6, 10, 15, 21, 6, 10, 15, 21];
+  const K = Array.from({ length: 64 }, (_, i) => Math.floor(Math.abs(Math.sin(i + 1)) * 2 ** 32) >>> 0);
+  const data = new TextEncoder().encode(text);
+  const len = (((data.length + 8) >> 6) + 1) << 6;
+  const msg = new Uint8Array(len);
+  msg.set(data);
+  msg[data.length] = 0x80;
+  const view = new DataView(msg.buffer);
+  view.setUint32(len - 8, (data.length * 8) >>> 0, true);
+  view.setUint32(len - 4, Math.floor(data.length / 2 ** 29), true);
+  let [a0, b0, c0, d0] = [0x67452301, 0xefcdab89, 0x98badcfe, 0x10325476];
+  for (let off = 0; off < len; off += 64) {
+    let [a, b, c, d] = [a0, b0, c0, d0];
+    for (let i = 0; i < 64; i++) {
+      let f, g;
+      if (i < 16) [f, g] = [(b & c) | (~b & d), i];
+      else if (i < 32) [f, g] = [(d & b) | (~d & c), (5 * i + 1) % 16];
+      else if (i < 48) [f, g] = [b ^ c ^ d, (3 * i + 5) % 16];
+      else [f, g] = [c ^ (b | ~d), (7 * i) % 16];
+      f = (f + a + K[i] + view.getUint32(off + g * 4, true)) >>> 0;
+      a = d;
+      d = c;
+      c = b;
+      b = (b + ((f << S[i]) | (f >>> (32 - S[i])))) >>> 0;
+    }
+    [a0, b0, c0, d0] = [(a0 + a) >>> 0, (b0 + b) >>> 0, (c0 + c) >>> 0, (d0 + d) >>> 0];
+  }
+  return [a0, b0, c0, d0].map((v) => [0, 8, 16, 24].map((s) => ((v >>> s) & 0xff).toString(16).padStart(2, "0")).join("")).join("");
+}
+
+/** A `Digest` challenge's parameters (names lower case), or null. */
+export function parseDigestChallenge(header) {
+  const m = /digest\s+(.*)$/i.exec(String(header || ""));
+  if (!m) return null;
+  const out = {};
+  const re = /([a-z0-9_-]+)\s*=\s*(?:"([^"]*)"|([^,\s]*))/gi;
+  for (let x; (x = re.exec(m[1])); ) out[x[1].toLowerCase()] = x[2] ?? x[3];
+  return out;
+}
+
+/** The `Authorization` header answering `c` (as hitop-core `digest_auth::answer`). */
+export async function digestAnswer(c, username, password, method, uri, cnonce) {
+  if (!c.nonce) throw new Error("the Digest challenge has no nonce");
+  const algorithm = c.algorithm || "MD5";
+  const upper = algorithm.toUpperCase();
+  const h = async (t) => (upper.startsWith("SHA-256") ? sha256(t) : upper.startsWith("MD5") ? md5Hex(t) : Promise.reject(new Error(`Digest algorithm ${algorithm} isn't supported (MD5, SHA-256)`)));
+  const qop = c.qop ? c.qop.split(",").map((x) => x.trim().toLowerCase()).includes("auth") : false;
+  if (c.qop && !qop) throw new Error("the server wants Digest qop auth-int, which isn't supported");
+  let ha1 = await h(`${username}:${c.realm ?? ""}:${password}`);
+  if (upper.endsWith("-SESS")) ha1 = await h(`${ha1}:${c.nonce}:${cnonce}`);
+  const ha2 = await h(`${method.toUpperCase()}:${uri}`);
+  const nc = "00000001";
+  const response = qop ? await h(`${ha1}:${c.nonce}:${nc}:${cnonce}:auth:${ha2}`) : await h(`${ha1}:${c.nonce}:${ha2}`);
+  let out = `Digest username="${username}", realm="${c.realm ?? ""}", nonce="${c.nonce}", uri="${uri}", algorithm=${algorithm}, response="${response}"`;
+  if (qop) out += `, qop=auth, nc=${nc}, cnonce="${cnonce}"`;
+  if (c.opaque != null) out += `, opaque="${c.opaque}"`;
+  return out;
 }
 
 // Adds the auth header (or query parameter) to an already interpolated

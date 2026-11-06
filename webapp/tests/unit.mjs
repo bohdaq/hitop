@@ -1,6 +1,6 @@
 // Unit checks for features.js (no browser): node tests/unit.mjs
 import assert from "node:assert/strict";
-import { awsV4Headers, asksForEvents, parseEvents, cleanAuth, oauthParseToken, oauthTokenRequest, cookieHeader, exportableEnvironments, exportableGlobals, isPostmanGlobals, maskSecrets, mergeGlobals, normalizeGlobals, parseGlobals, mergeCookies, multipartBody, parseEnvironments, parseQuery, secretNames, secretRefs, secretValues, urlEncodedBody, withQuery, withSecretRefs } from "../src/features.js";
+import { md5Hex, parseDigestChallenge, digestAnswer, awsV4Headers, asksForEvents, parseEvents, cleanAuth, oauthParseToken, oauthTokenRequest, cookieHeader, exportableEnvironments, exportableGlobals, isPostmanGlobals, maskSecrets, mergeGlobals, normalizeGlobals, parseGlobals, mergeCookies, multipartBody, parseEnvironments, parseQuery, secretNames, secretRefs, secretValues, urlEncodedBody, withQuery, withSecretRefs } from "../src/features.js";
 
 const now = Date.parse("2026-10-31T12:00:00Z");
 let jar = mergeCookies([], ["sid=abc; Path=/; HttpOnly", "pref=dark; Domain=example.com; Path=/; Max-Age=3600", "evil=1; Domain=other.com", "old=x; Expires=Thu, 01 Jan 2026 00:00:00 GMT"], "https://api.example.com/v1/login", now);
@@ -316,6 +316,17 @@ assert.throws(() => schemaFromResponse('{"errors": [{"message": "introspection i
   assert.equal(rest, "data: half");
   assert.equal(asksForEvents([{ name: "Accept", value: "text/event-stream" }]), true);
   assert.equal(asksForEvents([{ name: "Accept", value: "text/event-stream", enabled: false }]), false);
+}
+
+// Digest: MD5 vectors and RFC 2617's example (as hitop-core digest_auth.rs).
+{
+  assert.equal(md5Hex(""), "d41d8cd98f00b204e9800998ecf8427e");
+  assert.equal(md5Hex("abc"), "900150983cd24fb0d6963f7d28e17f72");
+  assert.equal(md5Hex("a".repeat(1000)), "cabe45dcc9ae5b66ba86600cca6b8ba8");
+  const c = parseDigestChallenge('Digest realm="testrealm@host.com", qop="auth,auth-int", nonce="dcd98b7102dd2f0e8b11d0f600bfb0c093", opaque="5ccc069c403ebaf9f0171e9517f40e41"');
+  const a = await digestAnswer(c, "Mufasa", "Circle Of Life", "GET", "/dir/index.html", "0a4f113b");
+  assert.ok(a.includes('response="6629fae49393a05397450978507c4ef1"') && a.includes("qop=auth, nc=00000001"), a);
+  assert.equal(parseDigestChallenge('Basic realm="x"'), null);
 }
 
 // AWS Signature v4: the same signature as hitop-core aws_sigv4.rs (the_web_app_signs_the_same).

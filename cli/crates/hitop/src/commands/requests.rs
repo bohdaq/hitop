@@ -299,7 +299,12 @@ pub fn run(cmd: RequestsCmd) -> Result<()> {
             let workspace = source.workspace();
             let mut jar = super::cookies::open(&workspace, cookies)?;
             let opts = http::Options { timeout: None, jar: jar.as_mut() };
-            let mut result = http::execute_opts(&req.method, &pre.url, &headers, body, opts).map_err(masked)?;
+            let mut result = http::execute_opts(&req.method, &pre.url, &headers, body.clone(), opts).map_err(masked)?;
+            // Digest: the server's 401 challenge answered once.
+            let fill = |s: &str| hitop_core::interpolation::interpolate(s, &vars);
+            if let Some(h2) = hitop_core::digest_auth::retry_headers(req.auth.as_ref().or(col.auth.as_ref()), &fill, result.status, &result.headers, &req.method, &pre.url, &headers).map_err(masked)? {
+                result = http::execute_opts(&req.method, &pre.url, &h2, body, http::Options { timeout: None, jar: jar.as_mut() }).map_err(masked)?;
+            }
             super::cookies::save(&workspace, jar.as_ref())?;
 
             let mut post = run_post_request_script_with(
@@ -365,6 +370,7 @@ fn describe_auth(auth: &Auth) -> String {
         Auth::ApiKey { key, location, .. } => format!("API key {key} in the {}", if *location == hitop_core::model::ApiKeyLocation::Query { "query" } else { "headers" }),
         Auth::OAuth2(o) => format!("OAuth 2.0 ({}) from {}", if o.grant == "password" { "password" } else { "client credentials" }, o.token_url),
         Auth::AwsV4(a) => format!("AWS Signature v4 ({} in {})", a.service, a.region),
+        Auth::Digest { username, .. } => format!("Digest, user {username}"),
     }
 }
 

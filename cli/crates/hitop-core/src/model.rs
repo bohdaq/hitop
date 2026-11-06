@@ -442,6 +442,13 @@ pub enum Auth {
     /// `Authorization: Bearer` (oauth2.rs). The token lives in memory for its lifetime.
     #[serde(rename = "oauth2")]
     OAuth2(Box<OAuth2>),
+    /// HTTP Digest: answered after the server's `401` challenge (digest_auth.rs).
+    Digest {
+        #[serde(default)]
+        username: String,
+        #[serde(default)]
+        password: String,
+    },
     /// AWS Signature Version 4: the request signed as sent (aws_sigv4.rs).
     #[serde(rename = "awsv4")]
     AwsV4(Box<AwsV4>),

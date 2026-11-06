@@ -75,6 +75,18 @@ const settle = (p, ms = 400) => p.waitForTimeout(ms);
     check('AWS Signature v4 signs the request', /^AWS4-HMAC-SHA256 Credential=AKIDEXAMPLE\/\d{8}\/eu-west-1\/execute-api\/aws4_request, SignedHeaders=host;x-amz-content-sha256;x-amz-date, Signature=[0-9a-f]{64}$/.test(auth) && !JSON.stringify(sent).includes('secret-e2e'), auth || JSON.stringify(sent));
   }
 
+  // Digest: the 401 challenge answered once (httpbin, through the proxy on the web).
+  await p.evaluate(() => {
+    const s = document.querySelector('hitop-app').store;
+    s.show('request');
+    s.updateTab({ method: 'GET', url: 'https://httpbin.org/digest-auth/auth/ada/sesame', auth: { type: 'digest', username: 'ada', password: 'sesame' } });
+  });
+  await settle(p);
+  await p.getByRole('button', { name: 'Send' }).click();
+  await p.locator('.status-chip').first().waitFor({ timeout: 30000 });
+  const digest = await p.evaluate(() => { const t = document.querySelector('hitop-app').store.tab; return { status: t.statusCode, body: String(t.response) }; });
+  check('Digest auth answers the challenge', digest.status === 200 && digest.body.includes('"authenticated": true'), JSON.stringify(digest).slice(0, 200));
+
   check('no page errors', errors.length === 0, errors.join(' | '));
   await h.finish();
 })().catch((e) => {

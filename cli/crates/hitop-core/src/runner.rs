@@ -185,7 +185,16 @@ pub fn run_collection_jar(
                     // AWS Signature v4 signs the request as it goes out.
                     crate::aws_sigv4::sign_if_aws(request.auth.as_ref().or(collection.auth.as_ref()), &|s| crate::interpolation::interpolate(s, &variables), &request.method, &pre.url, &mut h, &b)?;
                     sent_parts = (h.clone(), b.clone());
-                    http::execute_opts(&request.method, &pre.url, &h, b, http::Options { timeout: options.timeout, jar: jar.as_deref_mut() })
+                    let first = http::execute_opts(&request.method, &pre.url, &h, b.clone(), http::Options { timeout: options.timeout, jar: jar.as_deref_mut() })?;
+                    // Digest: the server's 401 challenge answered once.
+                    let fill = |s: &str| crate::interpolation::interpolate(s, &variables);
+                    match crate::digest_auth::retry_headers(request.auth.as_ref().or(collection.auth.as_ref()), &fill, first.status, &first.headers, &request.method, &pre.url, &h)? {
+                        Some(h2) => {
+                            sent_parts = (h2.clone(), b.clone());
+                            http::execute_opts(&request.method, &pre.url, &h2, b, http::Options { timeout: options.timeout, jar: jar.as_deref_mut() })
+                        }
+                        None => Ok(first),
+                    }
                 });
                 let (headers, body) = sent_parts;
                 let mut tests = vec![];

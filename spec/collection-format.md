@@ -406,6 +406,14 @@ auth:
 it, with every header it has and `host`; hitop adds `X-Amz-Date`, `X-Amz-Content-Sha256`,
 `X-Amz-Security-Token` (with a session token) and `Authorization`.
 
+```yaml
+auth: {type: digest, username: ada, password: ${password}}
+```
+
+`digest` (HTTP Digest, RFC 7616 and 2617): the request goes out without credentials; on a `401`
+with a `Digest` challenge it is sent once more with the answer (MD5, MD5-sess or SHA-256; `qop`
+`auth` or none).
+
 ## 5. Environment files: `environments/*.yaml`
 
 ```yaml

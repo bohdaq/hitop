@@ -473,3 +473,25 @@ fn awsv4_signs_each_request_as_sent() {
     hitop(&home, tmp.path()).args(["run", "./api", "--env", "ci", "--secret", "token=wJalrXUtnFEMI"]).assert().code(0);
     api.assert_hits(1);
 }
+
+#[test]
+fn digest_answers_the_challenge_once() {
+    let server = MockServer::start();
+    let challenge = server.mock(|when, then| {
+        when.method(GET).path("/orders").header_missing("authorization");
+        then.status(401).header("WWW-Authenticate", r#"Digest realm="shop", qop="auth", nonce="n0nce42", opaque="op1""#);
+    });
+    let answered = server.mock(|when, then| {
+        when.method(GET).path("/orders").header_matches("^authorization$", r#"^Digest username="ada", realm="shop", nonce="n0nce42", uri="/orders", algorithm=MD5, response="[0-9a-f]{32}", qop=auth, nc=00000001, cnonce="[0-9a-f]{16}", opaque="op1"$"#);
+        then.status(200).body("yes");
+    });
+    let (home, tmp) = (TempDir::new().unwrap(), TempDir::new().unwrap());
+    let dir = folder(&tmp, &server.base_url());
+    fs::write(dir.join("hitop.yaml"), "format: 1\nname: Run API\nauth:\n  type: digest\n  username: ada\n  password: ${token}\norder:\n- ok\n").unwrap();
+    fs::write(dir.join("requests/ok.yaml"), "name: Ok\nurl: ${base}/orders\nscripts:\n  post: assert.status(200);\n").unwrap();
+    fs::remove_file(dir.join("requests/check.yaml")).unwrap();
+    fs::remove_file(dir.join("requests/who.yaml")).unwrap();
+    hitop(&home, tmp.path()).args(["run", "./api", "--env", "ci", "--secret", "token=Circle"]).assert().code(0);
+    challenge.assert_hits(1);
+    answered.assert_hits(1);
+}
