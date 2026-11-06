@@ -134,7 +134,7 @@ hitop/
 │   ├── src/zip.js              # collection folder ⇄ .zip (fflate)
 │   ├── src/sync.js             # hitop sync client (web + desktop): SyncClient (HTTP, wasm crypto/plan), withSyncFolders ("hitop-sync:<ws>" folder refs in app storage)
 │   ├── src/library.js          # HITOP Cloud C8 personal library: signed in, collections/environments/globals pulled before the store reads storage and pushed after saves (baseVersion conflicts keep a "(this browser)" copy); localStorage hitop_library; e2e tests/library.cjs
-│   ├── src/views/sync-view.js  # the Sync page (both modes): sign in (password, Create account, Forgot password?, Google/GitHub, a mailed code, SSO, paste the code), Password section, share, join, conflicts, members/invites/trust, runner credential, audit log (owners)
+│   ├── src/views/sync-view.js  # <hitop-sync>: the Account page (kind "sync", not in the sidebar: top bar Sign in / avatar menu → Account & devices): sign in (email → Continue → password; Email me a code instead; Google/GitHub; More options = server + SSO), library status, shared collections (Sync now, conflicts, Share…), Invites (accept, Open here), GitHub, password, recovery, This device; with `.collection` = the Share dialog's People tab (Share with people, members/invites/trust, Advanced: run history, runner, audit)
 │   ├── tests/harness.cjs       # e2e in web or Tauri mode (HITOP_MODE=tauri); tests/tauri-mock.cjs mocks invoke in Node
 │   ├── tests/sync.cjs          # two people against a real sync server (HITOP_SYNC_SERVER_BIN), web and Tauri modes; invite code with fingerprint; a malicious server via node:sqlite; audit log; SSO via Keycloak (HITOP_SYNC_TEST_KEYCLOAK)
 │   ├── src/shortcuts.js        # keyboard shortcuts (Mod+Enter, Mod+S, Mod+K, Mod+P, Alt+Shift+N/W/[/], ?): one capture listener in hitop-app.js
@@ -409,7 +409,8 @@ hitop/
   e2e `tests/git.cjs`: the mock's `git` runs `cli/target/debug/examples/git-json` (build: `cargo build -p hitop-git --example
   git-json --no-default-features` in `cli/`, or `HITOP_GIT_JSON`) on temp repos with a bare remote
 - Secrets: environment `secrets` names, masked editor; `features.js` `exportableEnvironments()`/`maskSecrets()` for exports and run history
-- Sync (both modes): `src/sync.js` + the Sync page (`views/sync-view.js`, added to `platform().pages` in main.js, which also wraps
+- Account and sharing (2026-11-06 simplification): top bar `accountButton()` (signed out: Sign in; signed in: avatar + badge = `needs()`: GitHub clashes, shared-collection conflicts, folder/library errors) and `#account-menu` (Account & devices, Plan & billing ↗ web only, Sign out) in hitop-app.js; Share dialog (`openShare(c, tab)`, dialog kind `share`, tabs people|github (web)|file); the library switch is in Settings → Privacy (same aria-label). e2e helpers open the Account page via the top bar and the Share dialog via the collection page
+- Sync (both modes): `src/sync.js` + the Account page (`views/sync-view.js`, added to `platform().pages` in main.js with `sidebar: false`, which also wraps
   `platform().folders` with `withSyncFolders`). A shared collection is a folder collection: on disk (desktop/FS Access) or in app storage under
   ref `hitop-sync:<ws>` (`hitop_sync_files:<ws>` = files map). localStorage `hitop_sync_account`, `hitop_sync` {pins, links, states, memory}; session +
   device secret through `platform().folderSecrets` (desktop keychain `hitop-sync/<host>`, web localStorage). HTTP: web `fetch` straight to the

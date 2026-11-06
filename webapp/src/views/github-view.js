@@ -1,9 +1,9 @@
 // HITOP Cloud Git sync in the web app (state in ../git.js, server sync-server gitsync.rs).
 // - <hitop-git-panel>: the "Save to GitHub" dialog of one collection (opened from its storage
-//   chip on the collection page, or from the Sync page): connect GitHub, pick a repository and a
+//   chip on the collection page, or from the Account page): connect GitHub, pick a repository and a
 //   folder with a preview of the files; once linked, where it lives, its state, Sync now, Unlink,
 //   and a clash shown side by side (keep mine, take GitHub's, keep both).
-// - <hitop-github>: the Sync page's GitHub section: connected accounts, repository access, and
+// - <hitop-github>: the Account page's GitHub section: connected accounts, repository access, and
 //   every collection with where it is kept.
 import { LitElement, html, nothing } from "lit";
 import { confirm } from "@lit-material/confirm";
@@ -16,7 +16,7 @@ class LightElement extends LitElement {
   }
 }
 
-const openGitDialog = (el, c) => el.closest("hitop-app")?.openDialog("git", { collectionId: c.id });
+const openGitDialog = (el, c) => el.closest("hitop-app")?.openShare(c, "github");
 
 class HitopGitPanel extends LightElement {
   static properties = {
@@ -259,7 +259,7 @@ class HitopGitPanel extends LightElement {
     if (where.kind === "folder" || where.kind === "shared") {
       body = html`<p>${where.detail}. ${where.kind === "folder" ? "Use the Git page of the desktop app, or your own git, for that folder." : "Shared workspaces stay end-to-end encrypted, so HITOP Cloud can't write them to GitHub."}</p>`;
     } else if (!this.store.library?.status.on) {
-      body = html`<p>Collections reach GitHub through HITOP Cloud. Sign in on the Sync page and turn on "Save my collections to HITOP Cloud" first.</p>
+      body = html`<p>Collections reach GitHub through HITOP Cloud. Sign in (top right) and keep "Save my collections to HITOP Cloud" on (Settings, Privacy) first.</p>
         <lit-material-button variant="filled" @click=${() => (this.closest("hitop-app")?.closeDialog(), this.store.show("sync"))}>Open the Sync page</lit-material-button>`;
     } else if (!g.info) {
       body = html`<p class="hint" role="status">Loading…</p>`;

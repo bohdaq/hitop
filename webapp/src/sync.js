@@ -1279,7 +1279,7 @@ export class SyncClient {
     }
   }
 
-  // [{ environment, version, names, recipients }] for the Sync page: names only, never values.
+  // [{ environment, version, names, recipients }] for the Account page and Share dialog: names only, never values.
   async sharedEnvironments(collectionId) {
     const ws = this.link(collectionId).workspace;
     const { opened, closed } = await this.openShares(ws);

@@ -28,7 +28,7 @@ import { initPlatform } from "./platform/index.js";
 
 // Storage loads before the app starts (the desktop reads it from Rust).
 const p = await initPlatform();
-// hitop sync (web and desktop): shared collections kept in app storage, and the Sync page.
+// hitop sync (web and desktop): shared collections kept in app storage, and the Account page (top bar).
 const { withSyncFolders, SyncClient } = await import("./sync.js");
 const { syncPage } = await import("./views/sync-view.js");
 p.folders = withSyncFolders(p.folders);
@@ -43,6 +43,8 @@ p.onStart = (app) => {
   adapterStart?.(app);
   app.store.library = library;
   library.attach(app.store);
+  // The top bar's account menu says where collections are saved.
+  library.addEventListener("change", () => app.requestUpdate());
   // Git sync of the library through the HITOP Cloud GitHub App (git.js): web build only, the
   // desktop has its own Git page for folders and no web origin to come back to from GitHub.
   if (p.name === "web") startGit(app);
@@ -62,7 +64,7 @@ async function startGit(app) {
   const c = id != null && app.store.collections.find((x) => String(x.id) === id);
   if (c) {
     app.store.show("collection", c.id);
-    app.openDialog("git", { collectionId: c.id });
+    app.openShare(c, "github");
   }
 }
 await import("./views/hitop-app.js");

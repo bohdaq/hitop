@@ -107,7 +107,9 @@ async function launchOff(options) {
   const bob = await launchOff({ results });
   const errors = [];
   for (const h of [ada, bob]) h.page.on('pageerror', (e) => errors.push(e.message));
-  const S = (h) => h.page.locator('hitop-sync');
+  // The Account page's <hitop-sync>, or the Share dialog's People tab when that is open (it comes
+  // later in the page).
+  const S = (h) => h.page.locator('hitop-sync').last();
   const note = (h) => S(h).locator('.sync-note').innerText().catch(() => '');
   const alertText = (h) => S(h).locator('lit-material-alert').innerText().catch(() => '');
   const idle = async (h) => {
@@ -117,9 +119,42 @@ async function launchOff(options) {
   const store = (h, fn, arg) => h.page.evaluate(([f, a]) => new Function('s', 'a', f)(document.querySelector('hitop-app').store, a), [fn, arg]);
   const requests = (h, name) => store(h, 'const c = s.collections.find((c) => c.name === a); return c ? c.requests.map((r) => ({ name: r.name, url: r.url })) : null;', name);
   const setUrl = (h, name, url) => store(h, 'const c = s.collections.find((c) => c.name === "Shop API"); const r = c.requests.find((r) => r.name === a[0]); s.collections = s.collections.map((x) => x.id === c.id ? { ...x, requests: x.requests.map((y) => y.id === r.id ? { ...y, url: a[1] } : y) } : x); s.emit(); s.save();', [name, url]);
+  const closeDialog = async (h) => {
+    const close = h.page.locator('#dialog .dialog-actions').getByRole('button', { name: 'Close' });
+    if ((await close.count()) && (await close.isVisible())) {
+      await close.click();
+      await settle(h.page);
+    }
+  };
+  // The Account page: the top bar's Sign in, or the account menu's Account & devices.
   const openSync = async (h) => {
-    await h.page.locator('aside').getByRole('button', { name: 'Sync', exact: true }).click();
+    await closeDialog(h);
+    const signin = h.page.locator('header.topbar').getByRole('button', { name: 'Sign in', exact: true });
+    if (await signin.count()) await signin.click();
+    else {
+      await h.page.locator('header.topbar .account-button').click();
+      await h.page.locator('#account-menu').getByText('Account & devices').click();
+    }
     await settle(h.page);
+  };
+  // A collection's Share dialog, on the People tab.
+  const openShare = async (h, name) => {
+    await closeDialog(h);
+    await h.page.locator('aside .tree-row.collection', { hasText: name }).click();
+    await settle(h.page);
+    await h.page.locator('hitop-collection').getByRole('button', { name: 'Share', exact: true }).click();
+    await h.page.locator('#dialog hitop-sync').waitFor({ timeout: 10000 });
+    await idle(h);
+  };
+  const advanced = async (h) => {
+    const d = S(h).locator('details.sync-advanced');
+    if (!(await d.evaluate((e) => e.open))) await d.locator('summary').click();
+    await idle(h);
+  };
+  // Sign-in's More options: the sync server (here the test's) and SSO.
+  const more = async (h) => {
+    const d = S(h).locator('details.sync-more');
+    if (!(await d.evaluate((e) => e.open))) await d.locator('summary').click();
   };
   const syncNow = async (h) => {
     await S(h).getByRole('button', { name: /Sync now/ }).first().click();
@@ -127,9 +162,10 @@ async function launchOff(options) {
   };
   const signIn = async (h, email) => {
     await openSync(h);
-    if (await S(h).getByRole('button', { name: 'Use a code instead' }).count()) await S(h).getByRole('button', { name: 'Use a code instead' }).click();
+    await more(h);
     await S(h).getByLabel('Sync server').fill(server.url);
     await S(h).getByLabel('Email').fill(email);
+    await S(h).getByRole('button', { name: 'Email me a code instead' }).click();
     await S(h).getByRole('button', { name: 'Send code' }).click();
     await idle(h);
     await S(h).getByLabel('Code from the mail').fill(await server.code(email, '/signin#'));
@@ -156,16 +192,18 @@ async function launchOff(options) {
   check('sign in by mailed code shows the device fingerprint', /^[0-9a-f]{4}( [0-9a-f]{4}){7}$/.test(adaFp) && adaFp !== bobFp, `${adaFp} / ${bobFp}`);
   if (TAURI) check('[tauri] the device key is in the keychain, not in localStorage', [...ada.mock.keychain.keys()].some((k) => k.startsWith('hitop-sync/')) && !(await ada.page.evaluate(() => Object.values(localStorage).join('').includes('"secret"'))), JSON.stringify([...ada.mock.keychain.keys()]));
 
-  // Ada shares it.
-  const shopId = await store(ada, 'return String(s.collections.find((c) => c.name === "Shop API").id);');
-  await S(ada).locator('#sync-share').evaluate((el, v) => (el.value = v), shopId);
-  await S(ada).getByRole('button', { name: 'Share', exact: true }).click();
+  // The top bar shows who is signed in.
+  check('the top bar shows the account', (await ada.page.locator('header.topbar .account-button').getAttribute('aria-label')).includes('ada@example.com'));
+  check('...and no Sync page in the sidebar', (await ada.page.locator('aside').getByRole('button', { name: 'Sync', exact: true }).count()) === 0);
+
+  // Ada shares it: the collection's Share dialog, People.
+  await openShare(ada, 'Shop API');
+  check('the People tab explains sharing first', (await S(ada).innerText()).includes('end-to-end encrypted'), await S(ada).innerText());
+  await S(ada).getByRole('button', { name: /Share with people/ }).click();
   await idle(ada);
   check('share a collection', (await note(ada)).includes('Shared Shop API'), (await note(ada)) + (await alertText(ada)));
 
   // Invite Bob by mail; Bob accepts.
-  await S(ada).getByRole('button', { name: 'Members' }).click();
-  await idle(ada);
   await S(ada).getByLabel('Email (leave empty for a link)').fill('bob@example.com');
   await S(ada).getByRole('button', { name: 'Invite', exact: true }).click();
   await idle(ada);
@@ -180,10 +218,7 @@ async function launchOff(options) {
   check('accept the invite', (await note(bob)).includes('Invite accepted (editor)') && (await note(bob)).includes(adaFp), (await note(bob)) + (await alertText(bob)));
 
   // Ada sees Bob's fingerprint, trusts it after comparing, and adds him.
-  await S(ada).getByRole('button', { name: 'Members' }).click(); // close
-  await idle(ada);
-  await S(ada).getByRole('button', { name: 'Members' }).click(); // and open again: the accepted invite
-  await idle(ada);
+  await openShare(ada, 'Shop API'); // open again: the accepted invite
   const shownFp = (await S(ada).locator('.sync-invite .fingerprint').first().innerText()).trim();
   check("the accepted invite shows Bob's fingerprint", shownFp === bobFp, `${shownFp} vs ${bobFp}`);
   check('adding is off until the key is trusted', await S(ada).getByRole('button', { name: 'Add bob@example.com' }).evaluate((b) => b.disabled));
@@ -280,9 +315,9 @@ async function launchOff(options) {
   check('a shared collection survives a reload', (await requests(ada, 'Shop API'))?.length === 1 && (await S(ada).getByRole('button', { name: /Sync now/ }).count()) === 1);
 
   // A runner credential for scheduled runs, and the trade-off is on the page.
-  await S(ada).getByRole('button', { name: 'Members' }).click();
-  await idle(ada);
-  const runs = await S(ada).locator('.sync-team').innerText();
+  await openShare(ada, 'Shop API');
+  await advanced(ada);
+  const runs = await S(ada).locator('.sync-advanced').innerText();
   check('the page explains runner vs server-side runs', runs.includes('Scheduled runs') && runs.includes('server still sees only ciphertext') && runs.includes('handing the server a key'), runs.slice(0, 200));
   await S(ada).getByRole('button', { name: 'Create runner credential' }).click();
   await idle(ada);
@@ -315,9 +350,9 @@ async function launchOff(options) {
     return sc.api("POST", "/v1/workspaces/" + ws + "/runs", { id: "run-e2e-1", startedAt: 1793700000, environment: "", status: "failed", durationMs: 42, requests: 1, failed: 1, detail, collection: "Nightly checks" });
   })();`);
   check('a run uploads with a sealed report', uploaded?.stored === 'status+report', JSON.stringify(uploaded));
-  await openSync(bob);
-  await S(bob).getByRole('button', { name: 'Run history' }).first().click();
-  await idle(bob);
+  await openShare(bob, 'Shop API');
+  await advanced(bob);
+  await S(bob).locator('.sync-history').waitFor({ timeout: 10000 }).catch(() => {});
   const hist = await S(bob).locator('.sync-history').innerText().catch(() => '');
   check('the history shows the status row (the collection name the runner sent: status rows are plaintext)', hist.includes('failed') && hist.includes('Nightly checks') && hist.includes('0/1'), hist.slice(0, 300) + (await alertText(bob)));
   await S(bob).getByRole('button', { name: 'Open report' }).first().click();
@@ -326,18 +361,13 @@ async function launchOff(options) {
   check('the report opens on another member\'s device', rep.includes('Report-only request 5e1f') && rep.includes('status 500') && rep.includes('Failed'), rep + (await alertText(bob)));
   check('the server holds no report plaintext', !server.database().includes(Buffer.from('Report-only request 5e1f')) && !server.database().includes(Buffer.from('report-only.e2e-sync.test')));
   check('alert settings are for owners', (await S(bob).getByRole('button', { name: 'Alert settings' }).count()) === 0);
-  await S(ada).getByRole('button', { name: 'Run history' }).first().click();
-  await idle(ada);
+  await S(ada).locator('.sync-history').waitFor({ timeout: 10000 }).catch(() => {});
   await S(ada).getByRole('button', { name: 'Alert settings' }).click();
   await idle(ada);
   await S(ada).getByLabel('Mail to members (comma separated)').fill('ada@example.com');
   await S(ada).getByRole('button', { name: 'Save alerts' }).click();
   await idle(ada);
   check('an owner sets alert mail', (await note(ada)).includes('Alert settings saved'), (await note(ada)) + (await alertText(ada)));
-  if ((await S(ada).locator('.sync-team').count()) === 0) {
-    await S(ada).getByRole('button', { name: 'Members' }).click();
-    await idle(ada);
-  }
 
   // Ada removes Bob: new key, files re-encrypted; Bob can't sync any more.
   const bobRow = S(ada).locator('.sync-member', { hasText: 'bob@example.com' });
@@ -364,8 +394,11 @@ async function launchOff(options) {
   check('a deleted shared collection stays deleted', (await requests(bob, 'Shop API')) === null && (await S(bob).getByRole('button', { name: /Sync now/ }).count()) === 0 && (await bob.page.evaluate(() => Object.keys(localStorage).filter((k) => k.startsWith('hitop_sync_files:')).length)) === 0, JSON.stringify(await requests(bob, 'Shop API')));
 
   // Sign in with SSO: this server has none.
+  await openSync(bob);
   await S(bob).getByRole('button', { name: 'Sign out' }).click();
   await idle(bob);
+  check('signed out: the top bar offers Sign in', (await bob.page.locator('header.topbar').getByRole('button', { name: 'Sign in', exact: true }).count()) === 1);
+  await more(bob);
   await S(bob).getByLabel('Sync server').fill(server.url);
   await S(bob).getByRole('button', { name: 'Sign in with SSO' }).click();
   await idle(bob);
@@ -450,12 +483,20 @@ async function launchOff(options) {
     h.page.on('pageerror', (e) => errors.push(e.message));
     await h.page.goto(h.url, { waitUntil: 'networkidle' });
     await openSync(h);
+    await more(h);
     await S(h).getByLabel('Sync server').fill(server.url);
     return h;
   };
   const fp = (h) => S(h).getByLabel('Your fingerprint').innerText().then((t) => t.trim()).catch(() => '');
+  // Email, Continue, then the password.
+  const emailFirst = async (h, email) => {
+    await S(h).getByLabel('Email').fill(email);
+    const next = S(h).getByRole('button', { name: 'Continue', exact: true });
+    if (await next.count()) await next.click();
+    await settle(h.page, 150);
+  };
   const passwordSignIn = async (h, password) => {
-    await S(h).getByLabel('Email').fill('carol@example.com');
+    await emailFirst(h, 'carol@example.com');
     await S(h).getByLabel('Password', { exact: true }).fill(password);
     await S(h).getByRole('button', { name: 'Sign in', exact: true }).click();
     await idle(h);
@@ -464,7 +505,7 @@ async function launchOff(options) {
   await store(carol, `s.addCollection("Carol API"); const c = s.collections.find((c) => c.name === "Carol API");
     s.collections = s.collections.filter((x) => x.id === c.id).map((x) => x.id === c.id ? { ...x, requests: [{ id: 301, name: "Ping", method: "GET", url: "https://carol.e2e-sync.test/ping", headers: [], body: "" }] } : x);
     s.emit(); s.save();`);
-  await S(carol).getByLabel('Email').fill('carol@example.com');
+  await emailFirst(carol, 'carol@example.com');
   await S(carol).getByLabel('Password', { exact: true }).fill('short');
   await S(carol).getByRole('button', { name: 'Create account' }).click();
   await idle(carol);
@@ -478,7 +519,10 @@ async function launchOff(options) {
   await idle(carol);
   const carolFp = await fp(carol);
   check('sign up with a password and the mailed code', carolFp.length > 30 && (await S(carol).getByLabel('Password status').innerText()).includes('has a password'), (await alertText(carol)) + (await note(carol)));
-  await S(carol).getByRole('button', { name: 'Share', exact: true }).click();
+  await openShare(carol, 'Carol API');
+  await S(carol).getByRole('button', { name: /Share with people/ }).click();
+  await idle(carol);
+  await openSync(carol);
   await idle(carol);
   const bundles = () => server.sql().prepare("SELECT COUNT(*) AS n FROM recovery_blobs b JOIN users u ON u.id = b.user_id WHERE u.email = 'carol@example.com' AND b.method = 'password'").get().n;
   check("the device's keys are sealed with the password on the server", Number(bundles()) === 1 && (await S(carol).getByLabel('Password status').innerText()).includes("this device's keys"), String(bundles()));
@@ -511,10 +555,9 @@ async function launchOff(options) {
 
   // Forgot the password: a reset on a new device signs in but can't unlock the workspace.
   const carol4 = await fresh();
+  await emailFirst(carol4, 'carol@example.com');
   await S(carol4).getByRole('button', { name: 'Forgot password?' }).click();
   check('the page warns before a reset', (await S(carol4).getByLabel('Reset warning').innerText()).includes("can't unlock your end-to-end encrypted workspaces"));
-  await S(carol4).getByLabel('Sync server').fill(server.url);
-  await S(carol4).getByLabel('Email').fill('carol@example.com');
   const beforeReset = server.mails('carol@example.com');
   await S(carol4).getByRole('button', { name: 'Send reset code' }).click();
   await idle(carol4);

@@ -110,7 +110,18 @@ const WEBHOOK = 'whsec-e2e';
   const G = () => page.locator('hitop-github');
   const store = (fn, arg) => page.evaluate(([f, a]) => new Function('s', 'a', f)(document.querySelector('hitop-app').store, a), [fn, arg]);
   const openSync = async () => {
-    await page.locator('aside').getByRole('button', { name: 'Sync', exact: true }).click();
+    const signin = page.locator('header.topbar').getByRole('button', { name: 'Sign in', exact: true });
+    if (await signin.count()) await signin.click();
+    else {
+      await page.locator('header.topbar .account-button').click();
+      await page.locator('#account-menu').getByText('Account & devices').click();
+    }
+    await settle(page);
+  };
+  // A collection's Share dialog, on the GitHub tab.
+  const shareGithub = async () => {
+    await page.locator('hitop-collection').getByRole('button', { name: 'Share', exact: true }).click();
+    await page.locator('#dialog').getByRole('tab', { name: /GitHub/ }).click();
     await settle(page);
   };
   const shopFiles = () => Object.entries(gh.files(REPO)).filter(([p]) => p.startsWith('shop/'));
@@ -122,9 +133,10 @@ const WEBHOOK = 'whsec-e2e';
         { id: 502, name: "Get order", method: "GET", url: "https://shop.e2e-git.test/orders/1", headers: [], body: "" } ] } : x);
       s.emit(); s.save();`);
     await openSync();
-    await S().getByRole('button', { name: 'Use a code instead' }).click().catch(() => {});
+    await S().locator('details.sync-more summary').click();
     await S().getByLabel('Sync server').fill(syncUrl);
     await S().getByLabel('Email').fill('ada@example.com');
+    await S().getByRole('button', { name: 'Email me a code instead' }).click();
     const before = mails('ada@example.com');
     await S().getByRole('button', { name: 'Send code' }).click();
     await settle(page);
@@ -145,7 +157,7 @@ const WEBHOOK = 'whsec-e2e';
     check('the collection page says Shop is on HITOP Cloud', (await chip().innerText()).includes('HITOP Cloud'), await chip().innerText());
     check('...and so does its sidebar icon', ((await page.locator('aside .tree-row.collection', { hasText: 'Shop' }).locator('.storage-icon').getAttribute('title')) || '').includes('HITOP Cloud'));
     const D = () => page.locator('hitop-git-panel');
-    await page.locator('hitop-collection').getByRole('button', { name: 'Save to GitHub…' }).click();
+    await shareGithub();
     await D().getByRole('button', { name: 'Connect GitHub' }).waitFor({ timeout: 10000 });
     await shot(page, 'dialog-connect');
     check('the dialog starts with Connect GitHub', true);
@@ -243,7 +255,7 @@ const WEBHOOK = 'whsec-e2e';
     await page.locator('aside .tree-row.collection', { hasText: 'Default' }).click();
     await settle(page);
     check('Default is kept in this browser only', (await chip().innerText()).includes('This browser only'), await chip().innerText());
-    await page.locator('hitop-collection').getByRole('button', { name: 'Save to GitHub…' }).click();
+    await shareGithub();
     await D().getByRole('button', { name: 'Save to HITOP Cloud' }).click();
     await D().getByLabel('Folder').waitFor({ timeout: 15000 }).catch(() => {});
     check('Save to HITOP Cloud: then the GitHub form', (await D().getByLabel('Folder').count()) === 1, await D().innerText());

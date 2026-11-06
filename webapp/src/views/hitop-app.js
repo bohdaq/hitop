@@ -21,6 +21,12 @@ import "./settings-view.js";
 import "./history-view.js";
 import "./github-view.js";
 import { storageOf } from "../git.js";
+import { syncClient } from "./sync-view.js";
+import { DEFAULT_SERVER } from "../sync.js";
+
+// The HITOP Cloud portal (plan, organizations, billing): web only, never in the desktop build (App
+// Store: no purchase links).
+const PORTAL_URL = "https://cloud.hitop.rws8.tech/";
 
 // Collections folded in the sidebar, by id (its own key: nothing else reads it).
 const COLLAPSED_KEY = "hitop_collapsed_collections";
@@ -263,8 +269,9 @@ export class HitopApp extends LitElement {
     const d = this.dialog;
     // Enter can reach the form twice (the field's own implicit submission and
     // dialogKey); act once per opening.
-    if (d?.kind === "git") {
-      this.querySelector("hitop-git-panel")?.submit();
+    if (d?.kind === "share") {
+      // Enter in a field: only the GitHub tab's form has one thing to do.
+      if (d.tab === "github") this.querySelector("hitop-git-panel")?.submit();
       return;
     }
     if (!d || d.submitted) return;
@@ -564,10 +571,10 @@ export class HitopApp extends LitElement {
         </div>`;
         break;
       }
-      case "git": {
+      case "share": {
         const c = s.collections.find((x) => x.id === d.collectionId);
-        headline = c && s.git?.linkOf(c) ? `${c.name} on GitHub` : `Save ${c?.name ?? "the collection"} to GitHub`;
-        body = html`<hitop-git-panel .store=${s} .version=${s.version} .collection=${c}></hitop-git-panel>`;
+        headline = `Share ${c?.name ?? "the collection"}`;
+        body = c ? this.shareBody(c, d.tab) : nothing;
         footer = html`
           <div slot="actions" class="dialog-actions">
             <lit-material-button variant="text" @click=${() => this.closeDialog()}>Close</lit-material-button>
@@ -695,6 +702,108 @@ export class HitopApp extends LitElement {
     </lit-material-menu>`;
   }
 
+  // --- account and sharing --------------------------------------------------------------
+
+  account() {
+    return syncClient(this.store).account();
+  }
+
+  // What needs the person's attention: a clash with GitHub, a shared collection's conflicts, a
+  // folder that can't be saved, HITOP Cloud refusing a save. Each with the place to fix it.
+  needs() {
+    const s = this.store;
+    const out = [];
+    const lib = s.library;
+    if (lib?.status.on && lib.status.error) out.push({ text: lib.status.error, run: () => this.go("sync") });
+    const sync = syncClient(s);
+    for (const c of s.collections) {
+      const w = storageOf(s, c);
+      const link = sync.link(c.id);
+      const conflicts = link ? Object.keys(sync.state(link.workspace)?.conflicts ?? {}).length : 0;
+      if (conflicts) out.push({ text: `${c.name}: ${conflicts === 1 ? "a change" : `${conflicts} changes`} made by someone else too`, run: () => this.go("sync") });
+      else if (w.attention) out.push({ text: `${c.name}: ${w.kind === "github" ? w.state : w.detail}`, run: () => this.openShare(c, this.tabFor(w)) });
+    }
+    return out;
+  }
+
+  tabFor(w) {
+    return w.kind === "github" ? "github" : w.kind === "folder" ? "file" : "people";
+  }
+
+  /** The Share dialog of `c` on `tab` (people, github, file). */
+  openShare(c, tab) {
+    const web = platform().name === "web";
+    const t = tab ?? this.tabFor(storageOf(this.store, c));
+    this.openDialog("share", { collectionId: c.id, tab: t === "github" && !web ? "people" : t });
+  }
+
+  accountButton() {
+    const a = this.account();
+    if (!a) {
+      return html`<lit-material-button variant="filled" class="account-signin" @click=${() => this.go("sync")}>Sign in</lit-material-button>`;
+    }
+    const n = this.needs().length;
+    const label = `Account, ${a.email}${n ? `, ${n} ${n === 1 ? "thing needs" : "things need"} you` : ""}`;
+    return html`<button type="button" class="account-button" aria-label=${label} title=${label} aria-haspopup="menu"
+        @click=${(e) => showMenuFor(e, this.querySelector("#account-menu"))}>
+        <span class="account-avatar" aria-hidden="true">${(a.email || "?").charAt(0).toUpperCase()}</span>
+        ${n ? html`<span class="account-badge" aria-hidden="true">${n}</span>` : nothing}
+      </button>`;
+  }
+
+  renderAccountMenu() {
+    const a = this.account();
+    if (!a) return nothing;
+    const lib = this.store.library;
+    const st = lib?.status;
+    const where = !st?.on ? "Collections stay on this device" : st.error ? "Couldn't save to HITOP Cloud" : st.saving ? "Saving to HITOP Cloud…" : "Collections saved to HITOP Cloud";
+    const needs = this.needs();
+    const web = platform().name === "web" && a.server === DEFAULT_SERVER;
+    return html`<lit-material-menu id="account-menu" aria-label="Account">
+      <div class="account-head" role="presentation"><b>${a.email}</b><span class="hint">${st?.on && !st.error ? icon("check-circle") : nothing} ${where}</span></div>
+      ${needs.map((x) => html`<lit-material-list-item interactive class="account-need" @click=${() => x.run()}>${icon("warning-circle")} ${x.text}</lit-material-list-item>`)}
+      <lit-material-list-item interactive @click=${() => this.go("sync")}>${icon("user-circle")} Account & devices</lit-material-list-item>
+      ${web ? html`<lit-material-list-item interactive @click=${() => window.open(PORTAL_URL, "_blank", "noopener")}>${icon("arrow-square-out")} Plan & billing</lit-material-list-item>` : nothing}
+      <lit-material-list-item interactive @click=${() => this.signOut()}>Sign out</lit-material-list-item>
+    </lit-material-menu>`;
+  }
+
+  async signOut() {
+    await syncClient(this.store).signOut();
+    await this.store.library?.checkAccount().catch(() => {});
+    this.requestUpdate();
+    this.store.show(this.store.view.kind === "sync" ? "collections" : this.store.view.kind, this.store.view.collectionId);
+  }
+
+  // The Share dialog's tabs: People (end to end encrypted, sync-view.js), GitHub (web, through
+  // HITOP Cloud, github-view.js), File (a folder or a .zip).
+  shareBody(c, tab) {
+    const s = this.store;
+    const web = platform().name === "web";
+    const tabs = [["people", "People", "users-three"], ...(web && s.git?.enabled ? [["github", "GitHub", "github-logo"]] : []), ["file", "File", "file-zip"]];
+    const current = tabs.some(([k]) => k === tab) ? tab : "people";
+    const pick = (k) => (this.dialog = { ...this.dialog, tab: k });
+    const folder = s.folderOf(c.id);
+    let panel;
+    if (current === "people") panel = html`<hitop-sync .store=${s} .version=${s.version} .app=${this} .collection=${c}></hitop-sync>`;
+    else if (current === "github") panel = html`<hitop-git-panel .store=${s} .version=${s.version} .collection=${c}></hitop-git-panel>`;
+    else {
+      panel = html`<div class="share-file">
+        <p>A collection as files: one YAML file per request, for your own git and for <code>hitop run</code> in CI.</p>
+        ${folder
+          ? html`<p>${icon("folder-open")} ${folder.connected ? `Saved to the folder ${folder.label} as you edit.` : `Opened from the folder ${folder.label}.`}</p>`
+          : platform().folders?.pick
+            ? html`<lit-material-button variant="outlined" @click=${() => (this.closeDialog(), s.saveToFolder(c.id))}>${icon("folder-open")} Save to a folder…</lit-material-button>`
+            : nothing}
+        <lit-material-button variant="outlined" @click=${() => s.exportZip(c.id)}>${icon("file-zip")} Download as .zip</lit-material-button>
+      </div>`;
+    }
+    return html`<div class="share-tabs" role="tablist" aria-label="Share with">
+        ${tabs.map(([k, label, ic]) => html`<button type="button" role="tab" id=${`share-tab-${k}`} aria-selected=${String(k === current)} aria-controls="share-panel" class="share-tab" @click=${() => pick(k)}>${icon(ic)} ${label}</button>`)}
+      </div>
+      <div id="share-panel" role="tabpanel" aria-labelledby=${`share-tab-${current}`}>${panel}</div>`;
+  }
+
   // Where the collection is kept (git.js storageOf): its icon in the sidebar, a dot when it needs you.
   storageIcon(c) {
     const w = storageOf(this.store, c);
@@ -759,7 +868,7 @@ export class HitopApp extends LitElement {
           <button type="button" class="tree-row" aria-current=${kind === "cookies" ? "page" : "false"} @click=${() => this.go("cookies")}>${icon("cookie")}<span>Cookies</span></button>
           <button type="button" class="tree-row" aria-current=${kind === "history" ? "page" : "false"} @click=${() => this.go("history")}>${icon("clock-counter-clockwise")}<span>History</span></button>
           <button type="button" class="tree-row" @click=${() => this.openDialog("export")}>${icon("file-arrow-down")}<span>Export</span></button>
-          <button type="button" class="tree-row" @click=${() => this.openDialog("import")}>${icon("file-arrow-up")}<span>Import</span></button>          ${(platform().pages ?? []).map(
+          <button type="button" class="tree-row" @click=${() => this.openDialog("import")}>${icon("file-arrow-up")}<span>Import</span></button>          ${(platform().pages ?? []).filter((page) => page.sidebar !== false).map(
             (page) => html`<button type="button" class="tree-row" aria-current=${kind === page.kind ? "page" : "false"} @click=${() => this.go(page.kind)}>${icon(page.icon)}<span>${page.label}</span></button>`,
           )}
           <button type="button" class="tree-row" aria-current=${kind === "settings" ? "page" : "false"} @click=${() => this.go("settings")}>${icon("gear-six")}<span>Settings</span></button>
@@ -868,13 +977,14 @@ export class HitopApp extends LitElement {
           : html`<a class="brand" href="/" aria-label="HITOP website">${unsafeSVG(mark())}<span>HITOP</span></a>`}
         <span class="topbar-spacer"></span>
         ${this.tools("in-topbar")}
+        ${this.accountButton()}
       </header>
       <div class="layout">
         ${this.renderSidebar()}
         <div class="scrim" ?hidden=${!this.navOpen} @click=${() => (this.navOpen = false)}></div>
         <main id="main" class="main">${this.renderMain()}</main>
       </div>
-      ${this.renderDialog()} ${this.renderRequestMenu()}
+      ${this.renderDialog()} ${this.renderRequestMenu()} ${this.renderAccountMenu()}
       <lit-material-snackbar id="toast" closable></lit-material-snackbar>`;
   }
 }

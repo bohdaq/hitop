@@ -107,23 +107,14 @@ export class HitopCollections extends LightElement {
 export class HitopCollection extends LightElement {
   static properties = { store: { attribute: false }, version: { attribute: false }, app: { attribute: false }, collection: { attribute: false } };
 
-  // Where the collection is kept (git.js storageOf), as a chip that opens the GitHub dialog.
+  // Where the collection is kept (git.js storageOf), as a chip that opens its Share dialog on
+  // the matching tab (GitHub for a linked one, File for a folder, People otherwise).
   storageChip(c) {
     const w = storageOf(this.store, c);
-    const git = this.store.git?.enabled;
     const label = w.kind === "github" ? html`${w.label} <span class="hint">· ${w.state}</span>` : w.label;
-    const chip = html`${icon(w.icon)}<span>${label}</span>`;
     return html`<p class="storage-line">
-      ${git && (w.kind === "cloud" || w.kind === "github" || w.kind === "browser")
-        ? html`<button type="button" class=${`storage-chip ${w.attention ? "attention" : ""}`} aria-label=${`${w.detail}. Open the GitHub settings of ${c.name}`} title=${w.detail}
-              @click=${() => this.app.openDialog("git", { collectionId: c.id })}>${chip} ${icon("caret-down")}</button>
-            ${w.kind === "cloud" || w.kind === "browser"
-              ? html`<lit-material-button variant="text" @click=${() => this.app.openDialog("git", { collectionId: c.id })}>${icon("github-logo")} Save to GitHub…</lit-material-button>`
-              : nothing}`
-        : html`<span class="storage-chip static" title=${w.detail}>${chip}</span>`}
-      ${platform().folders?.pick
-        ? html`<lit-material-button variant="text" @click=${() => this.store.saveToFolder(c.id)}>${icon("folder-open")} Save to folder</lit-material-button>`
-        : nothing}
+      <button type="button" class=${`storage-chip ${w.attention ? "attention" : ""}`} aria-label=${`${w.detail}. Sharing and storage of ${c.name}`} title=${w.detail}
+        @click=${() => this.app.openShare(c)}>${icon(w.icon)}<span>${label}</span> ${icon("caret-down")}</button>
     </p>`;
   }
 
@@ -144,6 +135,7 @@ export class HitopCollection extends LightElement {
               ${icon("play")} ${mine && run.running ? "Running" : "Run collection"}
             </lit-material-button>
             <lit-material-button variant="outlined" @click=${() => this.app.go("variables", c.id)}>${icon("sliders-horizontal")} Variables</lit-material-button>
+            <lit-material-button variant="outlined" @click=${() => this.app.openShare(c, "people")}>${icon("users-three")} Share</lit-material-button>
             ${syncButton(this.app, c)}
             <lit-material-icon-button aria-label="Rename collection" @click=${() => this.app.openDialog("rename-collection", { id: c.id, name: c.name })}>${icon("pencil-simple")}</lit-material-icon-button>
             <lit-material-icon-button aria-label="Duplicate collection" @click=${() => s.duplicateCollection(c.id)}>${icon("copy")}</lit-material-icon-button>
@@ -151,7 +143,7 @@ export class HitopCollection extends LightElement {
             <lit-material-icon-button aria-label=${folder ? "Close folder" : "Delete collection"} @click=${() => this.app.deleteCollection(c)}>${icon(folder ? "x" : "trash")}</lit-material-icon-button>
           </div>
         </header>
-        ${folder ? nothing : this.storageChip(c)}
+        ${folder && !isSyncRef(folder.ref) ? nothing : this.storageChip(c)}
         ${folder
           ? html`<p class="folder-status" role="status">
               ${icon("folder-open")}

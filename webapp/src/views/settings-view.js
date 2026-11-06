@@ -96,6 +96,28 @@ class HitopAppSettings extends LitElement {
     </section>`;
   }
 
+  // HITOP Cloud's personal library (library.js): signed in, collections are saved there unless
+  // this is off (they then stay in this browser or on this computer).
+  renderPrivacy() {
+    const lib = this.store.library;
+    if (!lib) return nothing;
+    const signedIn = Boolean(lib.client.account());
+    const on = lib.status.on;
+    return html`<section aria-label="Privacy" class="settings-section">
+      <h2>Privacy</h2>
+      ${signedIn
+        ? html`<label class="switch-row">
+              <lit-material-switch aria-label="Save my collections to HITOP Cloud" ?checked=${on}
+                @change=${(e) => lib.setEnabled(e.target.checked).then(() => this.requestUpdate())}></lit-material-switch>
+              <span>Save my collections to HITOP Cloud</span>
+            </label>
+            <p class="hint sync-library">${on
+              ? "Your collections, environments and globals open on every device you sign in on. HITOP Cloud can read them; collections you share with people stay end-to-end encrypted."
+              : "Off: your collections stay in this browser only. Shared collections still sync, end-to-end encrypted."}</p>`
+        : html`<p class="hint">Sign in (top right) to save your collections to HITOP Cloud. Until then they stay on this device.</p>`}
+    </section>`;
+  }
+
   render() {
     const s = this.store;
     const desktop = platform().name === "tauri";
@@ -130,7 +152,8 @@ class HitopAppSettings extends LitElement {
             <li>Redirects are followed. TLS certificates are always checked: there is no switch to turn that off.</li>
           </ul>
         </section>
-        ${this.renderStorage()}
+    ${this.renderPrivacy()}
+    ${this.renderStorage()}
         <section aria-label="Keyboard shortcuts" class="settings-section">
           <h2>Keyboard shortcuts</h2>
           ${shortcutList()}

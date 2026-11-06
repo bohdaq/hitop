@@ -1,7 +1,10 @@
-// The Sync page (web and desktop): sign in to a hitop sync server, share a collection with a
-// team end to end encrypted, sync it, resolve conflicts, manage members and invites, make
-// runner credentials for scheduled runs, and a recovery phrase for a lost device. Logic in
-// src/sync.js.
+// <hitop-sync>, two uses (web and desktop; logic in src/sync.js):
+// - the Account page (kind "sync", opened from the top bar's account menu): sign in (email,
+//   then a password or a mailed code; Google, GitHub; More options: the server, SSO), where your
+//   collections are kept, shared collections (Sync now, conflicts, Share…), invites to accept,
+//   GitHub, password, recovery phrase and this device;
+// - with `.collection`: the People tab of a collection's Share dialog: share it end to end
+//   encrypted, members and invites, and under Advanced its run history, CI runner and audit log.
 import { LitElement, html, nothing } from "lit";
 import { confirm } from "@lit-material/confirm";
 import { icon } from "../icons.js";
@@ -47,6 +50,10 @@ class HitopSync extends LitElement {
     methods: { state: true },
     resetSent: { state: true },
     history: { state: true },
+    collection: { attribute: false },
+    continued: { state: true },
+    server: { state: true },
+    email: { state: true },
   };
 
   createRenderRoot() {
@@ -60,6 +67,10 @@ class HitopSync extends LitElement {
     // Sign-in: "password" (default), "code" (a mailed code), "signup" (waiting for the
     // confirmation code), "forgot" (reset by mail), "paste" (a code from SSO, Google or GitHub).
     this.mode = "password";
+    // The first step asks only the address; Continue shows the password (kept while editing).
+    this.continued = false;
+    this.server = DEFAULT_SERVER;
+    this.email = "";
   }
 
   get sync() {
@@ -70,14 +81,26 @@ class HitopSync extends LitElement {
     super.connectedCallback();
     this.onLibrary ??= () => this.requestUpdate();
     this.store?.library?.addEventListener("change", this.onLibrary);
-    this.refresh();
+    this.refresh().then(() => this.loadTeam());
     if (!this.sync.account()) this.loadMethods(DEFAULT_SERVER);
+  }
+
+  // In a Share dialog: the collection's members, shown at once.
+  async loadTeam() {
+    const c = this.collection;
+    if (!c || !this.sync.account() || !this.sync.link(c.id)) return;
+    try {
+      this.selected = c.id;
+      this.team = await this.sync.members(c.id);
+    } catch (e) {
+      this.error = errorText(e);
+    }
   }
 
   // Which buttons the server's sign-in offers (Google, GitHub); quietly nothing when unknown.
   async loadMethods(server) {
     const m = await this.sync.authMethods(server).catch(() => null);
-    if (this.field("sync-server") === server || server === DEFAULT_SERVER) this.methods = m;
+    if (this.server === server || server === DEFAULT_SERVER) this.methods = m;
   }
 
   async refresh() {
@@ -113,8 +136,10 @@ class HitopSync extends LitElement {
     } finally {
       this.busy = null;
       this.warnings = this.sync.takeNotices();
-      // Signed in or out just now: the personal library links or stops (library.js).
+      // Signed in or out just now: the personal library links or stops (library.js), and the top
+      // bar's account menu changes.
       this.store?.library?.checkAccount().catch(() => {});
+      this.closest("hitop-app")?.requestUpdate();
       // Keep the recovery data up to date with this device's trust and key memory.
       if (!String(what).startsWith("recovery") && what !== "signout") {
         await this.sync.refreshRecovery().catch((e) => (this.error ??= `Couldn't update your recovery data: ${errorText(e)}`));
@@ -230,7 +255,7 @@ class HitopSync extends LitElement {
   }
 
   async browserSignIn(kind) {
-    const server = this.field("sync-server");
+    const server = (this.server || DEFAULT_SERVER);
     this.ssoUrl = kind === "sso" ? await this.sync.startSso(server, this.field("sync-email")) : await this.sync.startOAuth(server, kind);
     this.ssoKind = kind;
     this.mode = "paste";
@@ -245,21 +270,62 @@ class HitopSync extends LitElement {
 
   renderAlternatives() {
     const m = this.methods;
-    return html`<div class="page-actions sync-alternatives">
-      ${this.mode === "code"
-        ? html`<lit-material-button variant="text" @click=${() => (this.mode = "password")}>Use a password instead</lit-material-button>`
-        : html`<lit-material-button variant="text" @click=${() => (this.mode = "code")}>Use a code instead</lit-material-button>`}
-      <lit-material-button variant="outlined" ?disabled=${Boolean(this.busy)} @click=${() => this.run("sso", () => this.browserSignIn("sso"))}>Sign in with SSO</lit-material-button>
-      ${m?.google ? html`<lit-material-button variant="outlined" ?disabled=${Boolean(this.busy)} @click=${() => this.run("google", () => this.browserSignIn("google"))}>Continue with Google</lit-material-button>` : nothing}
-      ${m?.github ? html`<lit-material-button variant="outlined" ?disabled=${Boolean(this.busy)} @click=${() => this.run("github", () => this.browserSignIn("github"))}>Continue with GitHub</lit-material-button>` : nothing}
-    </div>`;
+    return html`
+      <div class="page-actions sync-alternatives">
+        ${this.mode === "code"
+          ? html`<lit-material-button variant="text" @click=${() => ((this.mode = "password"), (this.awaitingCode = false))}>Use a password instead</lit-material-button>`
+          : html`<lit-material-button variant="text" @click=${() => (this.mode = "code")}>Email me a code instead</lit-material-button>`}
+      </div>
+      ${m?.google || m?.github
+        ? html`<div class="sync-or" role="presentation"><span>or</span></div>
+            <div class="page-actions sync-alternatives">
+              ${m?.google ? html`<lit-material-button variant="outlined" ?disabled=${Boolean(this.busy)} @click=${() => this.run("google", () => this.browserSignIn("google"))}>Continue with Google</lit-material-button>` : nothing}
+              ${m?.github ? html`<lit-material-button variant="outlined" ?disabled=${Boolean(this.busy)} @click=${() => this.run("github", () => this.browserSignIn("github"))}>Continue with GitHub</lit-material-button>` : nothing}
+            </div>`
+        : nothing}
+      ${this.renderMore()}`;
+  }
+
+  // The rare parts of signing in: another sync server (self-hosted), and single sign-on.
+  renderMore() {
+    return html`<details class="sync-more">
+      <summary>More options</summary>
+      <div class="sync-form">
+        ${this.serverField()}
+        <lit-material-button variant="outlined" ?disabled=${Boolean(this.busy)} @click=${() => this.run("sso", () => this.browserSignIn("sso"))}>Sign in with SSO</lit-material-button>
+      </div>
+      <p class="hint">HITOP Cloud is the default server. Use your company's address for a self-hosted one.</p>
+    </details>`;
+  }
+
+  serverField() {
+    return html`<lit-material-text-field id="sync-server" variant="outlined" label="Sync server" .value=${this.server}
+      @input=${(e) => (this.server = String(e.target.value ?? "").trim())}
+      @change=${(e) => this.loadMethods(String(e.target.value ?? "").trim())}></lit-material-text-field>`;
+  }
+
+  emailField() {
+    return html`<lit-material-text-field id="sync-email" variant="outlined" label="Email" type="email" autocomplete="email" .value=${this.email}
+      @input=${(e) => (this.email = String(e.target.value ?? "").trim())}
+      @keydown=${(e) => e.key === "Enter" && this.mode === "password" && !this.continued && this.next()}></lit-material-text-field>`;
+  }
+
+  // Continue: the address is there, so the password field opens.
+  next() {
+    this.error = null;
+    if (!this.field("sync-email")) {
+      this.error = "Enter your email address";
+      return;
+    }
+    this.continued = true;
+    this.updateComplete.then(() => this.querySelector("#sync-password")?.focus());
   }
 
   renderSignInForms() {
     const mode = this.mode;
     const pending = this.sync.pending ?? this.sync.pendingSignUp ?? this.sync.pendingReset;
-    const head = html`<h2>${mode === "signup" ? "Confirm your address" : mode === "forgot" ? "Reset your password" : "Sign in"}</h2>
-      <p class="page-lead">Share collections with your team through a hitop sync server. Everything is encrypted on this device before it leaves: the server stores only ciphertext. Secret values never sync, only their names, unless an owner or editor shares an environment's values end to end (hitop sync secrets share).</p>`;
+    const head = html`<h2>${mode === "signup" ? "Confirm your address" : mode === "forgot" ? "Reset your password" : "Sign in to HITOP"}</h2>
+      ${mode === "signup" || mode === "forgot" ? nothing : html`<p class="page-lead">Your collections, saved and on every device you sign in on. Share them with your team, keep them in GitHub. New here? The same steps create your account.</p>`}`;
     if (mode === "paste") {
       return html`${head}
         <p class="hint">Sign-in page (open it in a browser if it didn't open): <a href=${this.ssoUrl} target="_blank" rel="noopener noreferrer">open</a></p>
@@ -281,9 +347,8 @@ class HitopSync extends LitElement {
           }}>Cancel</lit-material-button>
         </div>`;
     }
-    const fields = html`<lit-material-text-field id="sync-server" variant="outlined" label="Sync server" .value=${pending?.server ?? DEFAULT_SERVER}
-        @change=${(e) => this.loadMethods(String(e.target.value ?? "").trim())}></lit-material-text-field>
-      <lit-material-text-field id="sync-email" variant="outlined" label="Email" type="email" .value=${pending?.email ?? ""}></lit-material-text-field>`;
+    if (pending?.email && !this.email) this.email = pending.email;
+    const fields = this.emailField();
     if (mode === "signup") {
       return html`${head}
         <p class="hint">We mailed a confirmation code to ${this.sync.pendingSignUp?.email ?? "you"}. Paste it (or the whole link) here to finish.</p>
@@ -305,7 +370,7 @@ class HitopSync extends LitElement {
         <div class="sync-form">${fields}
           <lit-material-button variant="outlined" ?disabled=${Boolean(this.busy)}
             @click=${() => this.run("forgot", async () => {
-              await this.sync.forgotPassword(this.field("sync-server"), this.field("sync-email"));
+              await this.sync.forgotPassword((this.server || DEFAULT_SERVER), this.field("sync-email"));
               this.resetSent = true;
               this.note = "If the address has an account, a reset code is on its way.";
             })}>Send reset code</lit-material-button>
@@ -329,14 +394,15 @@ class HitopSync extends LitElement {
                 })}>Reset password</lit-material-button>
             </div>`
           : nothing}
-        <lit-material-button variant="text" @click=${() => (this.mode = "password")}>Back to sign in</lit-material-button>`;
+        <lit-material-button variant="text" @click=${() => (this.mode = "password")}>Back to sign in</lit-material-button>
+        ${this.renderMore()}`;
     }
     if (mode === "code") {
       return html`${head}
         <div class="sync-form">${fields}
           <lit-material-button variant="filled" ?disabled=${Boolean(this.busy)}
             @click=${() => this.run("code", async () => {
-              await this.sync.startSignIn(this.field("sync-server"), this.field("sync-email"));
+              await this.sync.startSignIn((this.server || DEFAULT_SERVER), this.field("sync-email"));
               this.awaitingCode = true;
               this.note = "Check your mail for the sign-in code.";
             })}>Send code</lit-material-button>
@@ -354,27 +420,36 @@ class HitopSync extends LitElement {
           : nothing}
         ${this.renderAlternatives()}`;
     }
+    if (!this.continued) {
+      return html`${head}
+        <div class="sync-form">${fields}
+          <lit-material-button variant="filled" @click=${() => this.next()}>Continue</lit-material-button>
+        </div>
+        ${this.renderAlternatives()}`;
+    }
     return html`${head}
       <div class="sync-form">${fields}
-        <lit-material-text-field id="sync-password" variant="outlined" label="Password" type="password"></lit-material-text-field>
-        <lit-material-button variant="filled" ?disabled=${Boolean(this.busy)}
+        <lit-material-text-field id="sync-password" variant="outlined" label="Password" type="password" autocomplete="current-password"
+          @keydown=${(e) => e.key === "Enter" && this.querySelector("#sync-signin")?.click()}></lit-material-text-field>
+        <lit-material-button id="sync-signin" variant="filled" ?disabled=${Boolean(this.busy)}
           @click=${() => this.run("signin", async () => {
-            const r = await this.sync.passwordSignIn(this.field("sync-server"), this.field("sync-email"), this.rawField("sync-password"));
+            const r = await this.sync.passwordSignIn((this.server || DEFAULT_SERVER), this.field("sync-email"), this.rawField("sync-password"));
             this.signedInNote(r);
             await this.refresh();
           })}>Sign in</lit-material-button>
-        <lit-material-button variant="outlined" ?disabled=${Boolean(this.busy)}
-          @click=${() => this.run("signup", async () => {
-            await this.sync.signUp(this.field("sync-server"), this.field("sync-email"), this.rawField("sync-password"));
-            this.mode = "signup";
-            this.note = "Check your mail for the confirmation code.";
-          })}>Create account</lit-material-button>
       </div>
       <div class="page-actions">
         <lit-material-button variant="text" @click=${() => {
           this.mode = "forgot";
           this.resetSent = false;
         }}>Forgot password?</lit-material-button>
+        <span class="hint">No account yet?</span>
+        <lit-material-button variant="outlined" ?disabled=${Boolean(this.busy)}
+          @click=${() => this.run("signup", async () => {
+            await this.sync.signUp((this.server || DEFAULT_SERVER), this.field("sync-email"), this.rawField("sync-password"));
+            this.mode = "signup";
+            this.note = "Check your mail for the confirmation code.";
+          })}>Create account</lit-material-button>
       </div>
       ${this.renderAlternatives()}`;
   }
@@ -412,14 +487,15 @@ class HitopSync extends LitElement {
     </li>`;
   }
 
+  // The Account page: shared collections (Sync now, their conflicts, Share… for members and the
+  // rest), and invites to accept.
   renderShared() {
     const shared = this.shared();
-    const unshared = this.store.collections.filter((c) => !this.sync.link(c.id));
     const linked = new Set(shared.map((c) => this.sync.link(c.id).workspace));
     const joinable = (this.remote ?? []).filter((w) => !linked.has(w.id));
     return html`
       <section aria-label="Shared collections">
-        <h2>Shared collections</h2>
+        <h2>Shared with your team</h2>
         ${shared.length
           ? html`<ul class="sync-list">
               ${shared.map((c) => {
@@ -427,48 +503,33 @@ class HitopSync extends LitElement {
                 const role = (this.remote ?? []).find((w) => w.id === this.sync.link(c.id).workspace)?.role;
                 return html`<li class="sync-item">
                   <div class="sync-form">
-                    <span><b>${c.name}</b> <span class="hint">${role ?? ""}</span></span>
+                    <span><b>${c.name}</b> <span class="hint">${role ? `you are ${role}` : ""}</span></span>
                     <span class="page-actions">
                       <lit-material-button variant="filled" ?disabled=${Boolean(this.busy)} @click=${() => this.syncOne(c)}>${icon("arrows-clockwise")} Sync now</lit-material-button>
-                      <lit-material-button variant="outlined" @click=${() => this.openTeam(c)}>Members</lit-material-button>
-                      <lit-material-button variant="outlined" @click=${() => this.openHistory(c)}>Run history</lit-material-button>
+                      <lit-material-button variant="outlined" @click=${() => this.closest("hitop-app")?.openShare(c, "people")}>Share…</lit-material-button>
                     </span>
                   </div>
                   ${conflicts.length ? html`<ul class="sync-conflicts" aria-label=${`Conflicts in ${c.name}`}>${conflicts.map((k) => this.renderConflict(c, k))}</ul>` : nothing}
-                  ${this.selected === c.id && this.team ? this.renderTeam(c) : nothing}
-                  ${this.history?.id === c.id ? this.renderHistory(c, role) : nothing}
                 </li>`;
               })}
             </ul>`
-          : html`<p class="hint">Nothing shared yet.</p>`}
-        ${unshared.length
-          ? html`<div class="sync-form">
-              <lit-material-select id="sync-share" variant="outlined" label="Collection to share">
-                ${unshared.map((c) => html`<lit-material-select-option value=${String(c.id)}>${c.name}</lit-material-select-option>`)}
-              </lit-material-select>
-              <lit-material-button variant="filled" ?disabled=${Boolean(this.busy)} @click=${() => this.run("share", async () => {
-                const id = this.querySelector("#sync-share").value || String(unshared[0].id);
-                const c = unshared.find((x) => String(x.id) === id) ?? unshared[0];
-                await this.sync.share(c.id);
-                this.note = `Shared ${c.name}. Invite your team under Members.`;
-                await this.refresh();
-              })}>Share</lit-material-button>
-            </div>`
-          : nothing}
+          : html`<p class="hint">Nothing shared yet. To share a collection, open it and choose Share.</p>`}
       </section>
       <section aria-label="Join">
-        <h2>Join a workspace</h2>
+        <h2>Invites</h2>
+        <p class="hint">Someone shared a collection with you? Paste the invite code they sent.</p>
         <div class="sync-form">
           <lit-material-text-field id="sync-invite-code" variant="outlined" label="Invite code"></lit-material-text-field>
           <lit-material-button variant="outlined" ?disabled=${Boolean(this.busy)} @click=${() => this.run("accept", async () => {
             const r = await this.sync.accept(this.field("sync-invite-code"));
             this.note = r.inviter
-              ? `Invite accepted (${r.role}). Tell the owner your fingerprint ${this.fingerprint}; once they add you, the workspace shows up below. Its key will be accepted from the inviter's device, fingerprint ${r.inviter}.`
-              : `Invite accepted (${r.role}). Tell the owner your fingerprint ${this.fingerprint}; once they add you, the workspace shows up below. This code doesn't name the inviter's key: you'll be asked to compare the fingerprint of the device that sends the key.`;
+              ? `Invite accepted (${r.role}). Tell the owner your fingerprint ${this.fingerprint}; once they add you, the collection shows up below. Its key will be accepted from the inviter's device, fingerprint ${r.inviter}.`
+              : `Invite accepted (${r.role}). Tell the owner your fingerprint ${this.fingerprint}; once they add you, the collection shows up below. This code doesn't name the inviter's key: you'll be asked to compare the fingerprint of the device that sends the key.`;
           })}>Accept invite</lit-material-button>
         </div>
         ${joinable.length
-          ? html`<ul class="sync-list">${joinable.map((w) => html`<li class="sync-row"><span>Workspace <code>${w.id.slice(0, 8)}</code> <span class="hint">${w.role}</span></span>
+          ? html`<p class="hint">Ready to open on this device:</p>
+              <ul class="sync-list">${joinable.map((w) => html`<li class="sync-row"><span>Shared collection <code>${w.id.slice(0, 8)}</code> <span class="hint">${w.role}</span></span>
               <lit-material-button variant="outlined" ?disabled=${Boolean(this.busy)} @click=${() => this.run("join", async () => {
                 const id = await this.sync.join(w.id);
                 this.note = `Opened ${this.store.collection(id)?.name ?? "the shared collection"}.`;
@@ -478,21 +539,47 @@ class HitopSync extends LitElement {
       </section>`;
   }
 
-  // --- team -------------------------------------------------------------------------
-
-  async openTeam(c) {
-    if (this.selected === c.id) {
-      this.selected = null;
-      return;
+  // The People tab of a collection's Share dialog.
+  renderPeople() {
+    const c = this.collection;
+    if (!this.sync.account()) {
+      return html`<p>Sign in to share ${c.name} with people.</p>
+        <lit-material-button variant="filled" @click=${() => {
+          const app = this.closest("hitop-app");
+          app?.closeDialog();
+          app?.go("sync");
+        }}>Sign in</lit-material-button>`;
     }
-    await this.run("team", async () => {
-      this.selected = c.id;
-      this.team = await this.sync.members(c.id);
-      this.invite = null;
-      this.runner = null;
-      this.audit = null;
-    });
+    const link = this.sync.link(c.id);
+    if (!link) {
+      const git = this.store.git?.linkOf?.(c);
+      return html`<p>Invite people to work on ${c.name} with you. It becomes a shared collection: <b>end-to-end encrypted</b>, so only its members can read it, not even HITOP Cloud.</p>
+        ${git
+          ? html`<p class="sync-note">${c.name} is saved to GitHub. Stop saving it to GitHub first (GitHub tab): a shared collection stays encrypted, and GitHub would need it readable.</p>`
+          : html`<lit-material-button variant="filled" ?disabled=${Boolean(this.busy)} @click=${() => this.run("share", async () => {
+              await this.sync.share(c.id);
+              this.note = `Shared ${c.name}. Invite people below.`;
+              await this.refresh();
+              await this.loadTeam();
+            })}>${icon("users-three")} Share with people</lit-material-button>`}`;
+    }
+    const conflicts = this.conflicts[c.id] ?? [];
+    const role = (this.remote ?? []).find((w) => w.id === link.workspace)?.role ?? this.team?.role;
+    return html`
+      <div class="sync-form">
+        <span>${icon("users-three")} Shared, end-to-end encrypted${role ? html` <span class="hint">· you are ${role}</span>` : nothing}</span>
+        <lit-material-button variant="outlined" ?disabled=${Boolean(this.busy)} @click=${() => this.syncOne(c)}>${icon("arrows-clockwise")} Sync now</lit-material-button>
+      </div>
+      ${conflicts.length ? html`<ul class="sync-conflicts" aria-label=${`Conflicts in ${c.name}`}>${conflicts.map((k) => this.renderConflict(c, k))}</ul>` : nothing}
+      ${this.team ? this.renderTeam(c) : html`<p class="hint" aria-busy="true">Loading members…</p>`}
+      <details class="sync-advanced" @toggle=${(e) => e.target.open && !this.history && role && this.openHistory(c)}>
+        <summary>Advanced: run history, CI runner, audit log</summary>
+        ${this.history?.id === c.id ? this.renderHistory(c, role) : nothing}
+        ${this.team?.role === "owner" ? html`${this.renderRuns(c)}${this.renderAudit(c)}` : nothing}
+      </details>`;
   }
+
+  // --- team -------------------------------------------------------------------------
 
   async reloadTeam(c) {
     this.team = await this.sync.members(c.id);
@@ -524,7 +611,7 @@ class HitopSync extends LitElement {
     const owner = t.role === "owner";
     const waiting = t.members.some((m) => m.keys.some((k) => !k.hasKey && k.trust === "trusted"));
     return html`<div class="sync-team" aria-label=${`Members of ${c.name}`}>
-      <h3>Members <span class="hint">key epoch ${t.epoch}, you are ${t.role}</span></h3>
+      <h3>People</h3>
       <ul class="sync-list">
         ${t.members.map((m) => {
           const who = m.runner ? "Runner credential" : m.email;
@@ -566,8 +653,6 @@ class HitopSync extends LitElement {
           })}>Give the key to new devices</lit-material-button>`
         : nothing}
       ${owner ? this.renderInvites(c) : nothing}
-      ${owner ? this.renderRuns(c) : nothing}
-      ${owner ? this.renderAudit(c) : nothing}
     </div>`;
   }
 
@@ -617,7 +702,7 @@ class HitopSync extends LitElement {
         await this.reloadTeam(c);
       })}>Create runner credential</lit-material-button>
       ${this.runner
-        ? html`<p class="hint">Shown once. It decrypts this workspace: put it in your CI's secret store as HITOP_SYNC_RUNNER, nowhere else. Remove the runner under Members to revoke it.</p>
+        ? html`<p class="hint">Shown once. It decrypts this workspace: put it in your CI's secret store as HITOP_SYNC_RUNNER, nowhere else. Remove the runner under People to revoke it.</p>
             <pre class="code-preview" aria-label="Runner credential">${this.runner.credential}</pre>`
         : nothing}`;
   }
@@ -751,41 +836,24 @@ class HitopSync extends LitElement {
     this.store?.library?.removeEventListener("change", this.onLibrary);
   }
 
-  // HITOP Cloud's personal library (library.js): where this account's own collections live.
+  // HITOP Cloud's personal library (library.js): where this account's own collections live. The
+  // switch is on the Settings page (Privacy).
   renderLibrary() {
     const lib = this.store?.library;
     if (!lib) return nothing;
     const st = lib.status;
-    const toggle = html`<lit-material-switch aria-label="Save my collections to HITOP Cloud" label="Save my collections to HITOP Cloud" ?checked=${st.on}
-      @change=${(e) => lib.setEnabled(e.target.checked).then(() => this.requestUpdate())}></lit-material-switch>`;
-    if (!st.on) return html`<div class="sync-library">${toggle}<p class="hint">Off: your collections stay in this browser only. Shared collections still sync, end to end.</p></div>`;
+    if (!st.on) return html`<p class="hint sync-library">Saving to HITOP Cloud is off: your collections stay in this browser. Turn it on in Settings, under Privacy.</p>`;
     const when = st.savedAt ? new Date(st.savedAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }) : "";
     return html`<p class="hint" role="status" aria-label="Cloud library">
       ${st.error
         ? html`${icon("warning-circle")} ${st.error}`
-        : html`Your collections, environments and globals are saved to HITOP Cloud and open in any browser you sign in to${st.saving ? ": saving…" : when ? `, last saved ${when}` : ""}.
-            ${st.secretsStored === false ? " Secret values stay in this browser (this server doesn't store them)." : ""}
-            The server can read them. Shared collections below stay end-to-end encrypted.`}
-    </p>${toggle}
-    ${platform().name === "web" ? html`<hitop-github .store=${this.store} .version=${this.store.version}></hitop-github>` : nothing}`;
+        : html`${icon("check-circle")} Your collections, environments and globals are saved to HITOP Cloud and open on any device you sign in on${st.saving ? ": saving…" : when ? `, last saved ${when}` : ""}.
+            ${st.secretsStored === false ? " Secret values stay on this device (this server doesn't store them)." : ""}`}
+    </p>`;
   }
 
-  render() {
-    const a = this.sync.account();
-    return html`<div class="page sync-page">
-      <header class="page-header"><h1>Sync</h1></header>
-      ${a
-        ? html`<p class="page-lead">Signed in to ${a.server} as <b>${a.email}</b>. This device: ${a.deviceName}, fingerprint <code class="fingerprint" aria-label="Your fingerprint">${this.fingerprint ?? ""}</code>
-            <lit-material-button variant="text" @click=${() => this.run("signout", async () => {
-              await this.sync.signOut();
-              this.remote = null;
-            })}>Sign out</lit-material-button></p>
-          ${this.renderLibrary()}
-          ${a.server === DEFAULT_SERVER && platform().name !== "tauri"
-            ? html`<p class="hint">Plan, organizations, members and usage: <a href="https://cloud.hitop.rws8.tech/" target="_blank" rel="noopener noreferrer">Manage plan on HITOP Cloud</a></p>`
-            : nothing}`
-        : nothing}
-      ${this.error ? html`<lit-material-alert variant="error" role="alert">${this.error}</lit-material-alert>` : nothing}
+  renderMessages() {
+    return html`${this.error ? html`<lit-material-alert variant="error" role="alert">${this.error}</lit-material-alert>` : nothing}
       ${this.limitUrl && platform().name !== "tauri"
         ? html`<p class="hint" aria-label="Plan limit">A plan with more room: <a href=${this.limitUrl} target="_blank" rel="noopener noreferrer">Manage plan</a></p>`
         : nothing}
@@ -794,14 +862,48 @@ class HitopSync extends LitElement {
         ? html`<ul class="sync-warnings" aria-label="Key warnings">${this.warnings.map((w) => html`<li class=${w.kind === "senderKeyChanged" ? "sync-note security" : "hint"}>${icon("warning-circle")} ${w.message}</li>`)}</ul>`
         : nothing}
       ${this.note ? html`<p class="sync-note" role="status">${this.note}</p>` : nothing}
-      ${this.busy ? html`<p class="hint" aria-busy="true">Working…</p>` : nothing}
-      ${a ? this.renderShared() : this.renderSignIn()}
-      ${a ? this.renderPassword() : nothing}
-      ${a ? this.renderRecovery() : nothing}
+      ${this.busy ? html`<p class="hint" aria-busy="true">Working…</p>` : nothing}`;
+  }
+
+  render() {
+    if (this.collection) return html`<div class="sync-people">${this.renderMessages()}${this.renderPeople()}</div>`;
+    const a = this.sync.account();
+    if (!a) {
+      return html`<div class="page sync-page sync-signin">${this.renderMessages()}${this.renderSignIn()}</div>`;
+    }
+    const web = platform().name !== "tauri";
+    return html`<div class="page sync-page">
+      <header class="page-header"><h1>Account</h1>
+        <div class="page-actions">
+          <lit-material-button variant="outlined" @click=${() => this.run("signout", async () => {
+            await this.sync.signOut();
+            this.remote = null;
+            // The next sign-in starts at the first step again.
+            this.continued = false;
+            this.mode = "password";
+            this.awaitingCode = false;
+          })}>Sign out</lit-material-button>
+        </div>
+      </header>
+      <p class="page-lead">Signed in as <b>${a.email}</b>${a.server !== DEFAULT_SERVER ? html` on ${a.server}` : nothing}.</p>
+      ${this.renderLibrary()}
+      ${a.server === DEFAULT_SERVER && web
+        ? html`<p class="hint">Plan, organizations and billing: <a href="https://cloud.hitop.rws8.tech/" target="_blank" rel="noopener noreferrer">HITOP Cloud ${icon("arrow-square-out")}</a></p>`
+        : nothing}
+      ${this.renderMessages()}
+      ${this.renderShared()}
+      ${platform().name === "web" ? html`<hitop-github .store=${this.store} .version=${this.store.version}></hitop-github>` : nothing}
+      ${this.renderPassword()}
+      ${this.renderRecovery()}
+      <section aria-label="This device" class="sync-device">
+        <h2>This device</h2>
+        <p class="hint">${a.deviceName}. Its fingerprint, to compare with people you share with: <code class="fingerprint" aria-label="Your fingerprint">${this.fingerprint ?? ""}</code></p>
+      </section>
     </div>`;
   }
 }
 
 customElements.define("hitop-sync", HitopSync);
 
-export const syncPage = { kind: "sync", label: "Sync", icon: "arrows-clockwise", render: (store, app) => html`<hitop-sync .store=${store} .version=${store.version} .app=${app}></hitop-sync>` };
+// Not in the sidebar: the top bar's account menu opens it.
+export const syncPage = { kind: "sync", label: "Account", icon: "user-circle", sidebar: false, render: (store, app) => html`<hitop-sync .store=${store} .version=${store.version} .app=${app}></hitop-sync>` };

@@ -19,7 +19,7 @@ import { platform } from "./platform/index.js";
 import { normalizeGlobals, secretNames } from "./features.js";
 
 const STATE_KEY = "hitop_library";
-// "off": this browser doesn't save to the library (the Sync page's switch); anything else: on.
+// "off": this browser doesn't save to the library (the switch in Settings, Privacy); anything else: on.
 const OFF_KEY = "hitop_library_off";
 export const libraryOff = () => {
   try {
@@ -111,7 +111,7 @@ export class Library extends EventTarget {
     return Boolean(this.client.account()) && !libraryOff();
   }
 
-  /** The Sync page's switch: off keeps this browser's collections here only (shared workspaces still sync). */
+  /** The switch in Settings (Privacy): off keeps this browser's collections here only (shared workspaces still sync). */
   async setEnabled(on) {
     try {
       if (on) localStorage.removeItem(OFF_KEY);
@@ -256,7 +256,7 @@ export class Library extends EventTarget {
     addEventListener("focus", () => this.pull());
     document.addEventListener("visibilitychange", () => document.visibilityState === "visible" && this.pull());
     setInterval(() => document.visibilityState !== "hidden" && this.checkAccount().then(() => this.pull()), PULL_EVERY);
-    // A sign-in on the Sync page (or a sign-out) while the app runs: the page changes the store.
+    // A sign-in on the Account page (or a sign-out) while the app runs: the page changes the store.
     store.addEventListener("change", () => this.checkAccount());
     if (this.signedIn) this.schedulePush(0);
   }

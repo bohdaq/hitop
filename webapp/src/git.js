@@ -1,5 +1,5 @@
 // HITOP Cloud Git sync, client side (sync-server gitsync.rs): one shared state for the sidebar
-// icons, the collection page's storage chip, the "Save to GitHub" dialog and the Sync page.
+// icons, the collection page's storage chip, the Share dialog's GitHub tab and the Account page.
 // The server pushes every library save of a linked collection and pulls GitHub's commits back;
 // this only links, reads states, and answers conflicts. `store.git` (main.js) is the instance.
 
@@ -252,7 +252,7 @@ export function storageOf(store, c) {
       kind: "browser",
       icon: web ? "browser" : "desktop",
       label: web ? "This browser only" : "This computer only",
-      detail: `${web ? "Kept in this browser only" : "Kept on this computer only"}${lib?.status.on ? "" : ". Sign in on the Sync page to save it to HITOP Cloud"}`,
+      detail: `${web ? "Kept in this browser only" : "Kept on this computer only"}${lib?.status.on ? "" : ". Sign in (top right) to save it to HITOP Cloud"}`,
       attention: false,
     };
   }

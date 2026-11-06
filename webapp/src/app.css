@@ -576,3 +576,30 @@ button.storage-chip:focus-visible { outline: 2px solid var(--md-sys-color-primar
 .git-indent { margin-inline-start: var(--space-400); }
 .git-panel .sync-conflicts { margin: 0; padding: 0; list-style: none; }
 .git-links { display: flex; flex-wrap: wrap; gap: var(--space-100) var(--space-300); }
+
+/* Account (top bar) and the Share dialog. */
+.account-signin { flex: none; margin-inline-start: var(--space-75); }
+.account-button { position: relative; flex: none; display: grid; place-items: center; width: 40px; height: 40px; margin-inline-start: var(--space-50);
+  padding: 0; border: 0; border-radius: 50%; background: none; cursor: pointer; }
+.account-button:hover .account-avatar { filter: brightness(1.1); }
+.account-button:focus-visible { outline: 2px solid var(--md-sys-color-primary); outline-offset: 2px; }
+.account-avatar { display: grid; place-items: center; width: 32px; height: 32px; border-radius: 50%;
+  background: var(--md-sys-color-primary-container); color: var(--md-sys-color-on-primary-container); font-weight: 600; }
+.account-badge { position: absolute; top: 0; right: 0; min-width: 16px; height: 16px; padding: 0 4px; box-sizing: border-box; border-radius: 8px;
+  background: var(--md-sys-color-error); color: var(--md-sys-color-on-error); font-size: 11px; line-height: 16px; font-weight: 600; }
+.account-head { display: grid; gap: 2px; padding: var(--space-100) var(--space-200); border-bottom: 1px solid var(--md-sys-color-outline-variant); max-width: 320px; overflow-wrap: anywhere; }
+.account-head .hint { display: inline-flex; align-items: center; gap: var(--space-50); }
+.account-need { color: var(--md-sys-color-error); }
+.share-tabs { display: flex; gap: var(--space-50); margin-bottom: var(--space-200); border-bottom: 1px solid var(--md-sys-color-outline-variant); }
+.share-tab { display: inline-flex; align-items: center; gap: var(--space-75); padding: var(--space-100) var(--space-200); border: 0; border-bottom: 2px solid transparent;
+  background: none; color: var(--md-sys-color-on-surface-variant); font: inherit; font-weight: 600; cursor: pointer; }
+.share-tab[aria-selected="true"] { color: var(--md-sys-color-primary); border-bottom-color: var(--md-sys-color-primary); }
+.share-tab:focus-visible { outline: 2px solid var(--md-sys-color-primary); outline-offset: -2px; }
+.share-file, .sync-people { display: grid; gap: var(--space-200); justify-items: start; }
+.sync-people > *, .share-file > * { max-width: 100%; }
+.sync-advanced { width: 100%; }
+.sync-advanced > summary, .sync-more > summary { cursor: pointer; font-weight: 600; padding: var(--space-75) 0; }
+.sync-more { margin-top: var(--space-200); }
+.sync-or { display: flex; align-items: center; gap: var(--space-100); color: var(--md-sys-color-on-surface-variant); margin: var(--space-100) 0; max-width: 420px; }
+.sync-or::before, .sync-or::after { content: ""; flex: 1; border-top: 1px solid var(--md-sys-color-outline-variant); }
+.sync-signin { max-width: 640px; }

@@ -5,7 +5,7 @@ description: "Share a HITOP collection with your team through hitop sync: end-to
 
 ## What hitop sync is
 
-hitop sync keeps a collection in step between people and devices through a hitop sync server. It works in the CLI (`hitop sync`), the desktop app and the web app (the Sync page), and they all share the same workspaces.
+hitop sync keeps a collection in step between people and devices through a hitop sync server. It works in the CLI (`hitop sync`), the desktop app and the web app (the Account page), and they all share the same workspaces.
 
 Everything is encrypted on your device before it leaves: each request file, environment and the collection file is sealed with the workspace's key (XChaCha20-Poly1305), and that key is wrapped for each member's devices with HPKE (RFC 9180). The server stores ciphertext, version numbers and wrapped keys. It can see who is in a workspace, how many files there are and when they change; it can't read them.
 
@@ -23,9 +23,9 @@ hitop sync signup --email you@example.com
 hitop sync login --email you@example.com     # later, on any computer: asks for the password
 ```
 
-In the app, open **Sync** in the sidebar, enter your email and a password, and choose **Create account** (or **Sign in**). Your device makes its own key pair; the secret half stays on the device (the OS keychain for the CLI and the desktop app). hitop shows the device's **fingerprint**: eight groups of four hex digits. Your team uses it to check that a key is really yours.
+In the app, choose **Sign in** at the top right, enter your email, **Continue**, then a password, and choose **Create account** (or **Sign in**). Your device makes its own key pair; the secret half stays on the device (the OS keychain for the CLI and the desktop app). hitop shows the device's **fingerprint**: eight groups of four hex digits. Your team uses it to check that a key is really yours.
 
-**Your password also unlocks your keys on a new computer.** The password never leaves your device: hitop turns it into two keys, sends the server one (which it keeps only as a slow hash) and seals your device's keys with the other. Sign in with the password on a new computer and it becomes your device again: same key, same fingerprint, your workspaces open with no new trust step for your team. Change it with `hitop sync password set` (or **Password** on the Sync page).
+**Your password also unlocks your keys on a new computer.** The password never leaves your device: hitop turns it into two keys, sends the server one (which it keeps only as a slow hash) and seals your device's keys with the other. Sign in with the password on a new computer and it becomes your device again: same key, same fingerprint, your workspaces open with no new trust step for your team. Change it with `hitop sync password set` (or **Password** on the Account page).
 
 **Forgot it?** `hitop sync password forgot --email you@example.com`, then `hitop sync password reset --code <code>` (or **Forgot password?** in the app) sets a new one and signs you in, but **can't unlock your encrypted workspaces on a new computer**: only the old password could open those keys. Get them back with your [recovery phrase](#recovery-phrase) or from a computer that is still signed in (its next sign-in with the new password seals the keys again; then `hitop sync password unlock`). A computer that already was your device keeps its keys through a reset.
 
@@ -56,7 +56,7 @@ From a collection folder:
 hitop sync init -c ./my-api
 ```
 
-In the app, pick the collection under **Share a collection** on the Sync page and choose **Share**. hitop makes a new workspace, encrypts every file and pushes it. You are its owner.
+In the app, open the collection, choose **Share**, and on the **People** tab **Share with people**. hitop makes a new workspace, encrypts every file and pushes it. You are its owner.
 
 ## Invite your team
 
@@ -65,11 +65,11 @@ hitop sync invite ada@example.com --role editor -c ./my-api   # mailed
 hitop sync invite --role viewer -c ./my-api                    # a link to share yourself
 ```
 
-In the app: **Members**, then the email and role, then **Invite**.
+In the app: the collection's **Share** dialog, **People** tab: the email and role, then **Invite**.
 
 The invite code hitop shows you ends with your device's key fingerprint (`<code>.<fingerprint>`, also in the link). Send that code or link yourself, in a chat or a message you trust: with it, the other person's hitop accepts the workspace key only from your device. The code in a mailed invite has no fingerprint, because the sync server writes that mail; it works, but then their hitop asks them to compare your fingerprint before it uses the key.
 
-The person signs in, then accepts the invite (`hitop sync accept <code>`, or **Accept invite** on the Sync page). Accepting doesn't give them access yet: only a member's device can hand over the workspace key, and the server could lie about whose key is whose.
+The person signs in, then accepts the invite (`hitop sync accept <code>`, or **Accept invite** under **Invites** on the Account page: the account menu at the top right, then **Account & devices**). Accepting doesn't give them access yet: only a member's device can hand over the workspace key, and the server could lie about whose key is whose.
 
 So the owner checks the fingerprint:
 
@@ -80,11 +80,11 @@ hitop sync add ada@example.com --trust 'ab12 cd34 …' -c ./my-api
 
 Compare the fingerprint with the person directly: in person, on a call, or in a chat you already trust. In the app, the accepted invite shows the fingerprint and a **Trust…** button; **Add** stays off until the key is trusted. Once you trust a key, hitop remembers it; if the server ever presents a different key for the same device, hitop refuses to share the workspace key with it.
 
-The new member then opens the workspace: `hitop sync link <workspace> -c ./my-api`, or **Open here** on the Sync page.
+The new member then opens the workspace: `hitop sync link <workspace> -c ./my-api`, or **Open here** on the Account page.
 
 ## Fingerprints and warnings
 
-Every device has a key, and its **fingerprint** (eight groups of four hex digits) is what people compare. Yours: `hitop sync whoami`, or the top of the Sync page. Everyone's: `hitop sync members`, or **Members**.
+Every device has a key, and its **fingerprint** (eight groups of four hex digits) is what people compare. Yours: `hitop sync whoami`, or the top of the Account page. Everyone's: `hitop sync members`, or **Members**.
 
 hitop checks both directions. It hands the workspace key only to devices you trusted, and it takes a workspace key only from a device you trusted (or the one your invite code named). So a sync server can't slip its own key to a new member, or to anyone at the next key change, and read what they write. When hitop refuses a key, it says why:
 
@@ -156,7 +156,7 @@ hitop sync report hitop-reports/report.json -c ./my-api   # a report a run alrea
 hitop sync runs -c ./my-api                         # the history; --id <run> opens one report here
 ```
 
-`hitop schedule --sync` adds it for you (cron: `--sync-report --sync-secrets` on the run; GitHub: a step after the Action that uploads its report.json, with hitop after 1.2). The server gets a **status row** in plain text: passed or failed, the time, how long it took, how many requests ran and failed, the collection's and the environment's names, and the names of failed requests only when the owners allow it. The **full report** (report.json, secret values already ••••) is sealed with the workspace key on the runner: only members' devices open it (`hitop sync runs --id`, or **Run history** on the Sync page). The portal shows the status rows.
+`hitop schedule --sync` adds it for you (cron: `--sync-report --sync-secrets` on the run; GitHub: a step after the Action that uploads its report.json, with hitop after 1.2). The server gets a **status row** in plain text: passed or failed, the time, how long it took, how many requests ran and failed, the collection's and the environment's names, and the names of failed requests only when the owners allow it. The **full report** (report.json, secret values already ••••) is sealed with the workspace key on the runner: only members' devices open it (`hitop sync runs --id`, or **Run history** on the Account page). The portal shows the status rows.
 
 **Alerts** come from the status rows: when a collection and environment start failing, pass again, or (with **missed-run** minutes set) don't run. Owners set them with `hitop sync alerts` (or **Run history** → **Alert settings**): mail to members, a JSON webhook (https), a Slack incoming webhook; `--failed-names on` lets them name the failed requests, `--status-rows off` keeps history without status rows or alerts. An alert carries the status and a link, never a response, a body or a secret value. HITOP Cloud plans set how long history is kept and which channels there are (Free: status rows for 7 days and mail; sealed reports and webhooks from Pro; Slack from Team).
 
@@ -171,7 +171,7 @@ hitop sync secrets ls -c ./my-api                     # names and who has them, 
 hitop run ./my-api --env prod --sync-secrets          # uses them where you have no value of your own
 ```
 
-The values come from your keychain (or `HITOP_SECRET_*`) and are sealed for the trusted devices of the workspace's owners and editors (`--viewers` adds viewers, `--runner` or `--runners` runner credentials); the server can't read them, and a viewer you didn't pick sees the names only. Your own values (keychain, `--secret`, `HITOP_SECRET_*`) always win. Whoever adds a member or trusts a new device here hands them the values in the same step, and the sharer's next sync does it for any device still without a copy. Removing someone re-keys every share your device can open, but **can't take back the values they saw**: rotate those secrets where they come from (the CLI and the Sync page say so).
+The values come from your keychain (or `HITOP_SECRET_*`) and are sealed for the trusted devices of the workspace's owners and editors (`--viewers` adds viewers, `--runner` or `--runners` runner credentials); the server can't read them, and a viewer you didn't pick sees the names only. Your own values (keychain, `--secret`, `HITOP_SECRET_*`) always win. Whoever adds a member or trusts a new device here hands them the values in the same step, and the sharer's next sync does it for any device still without a copy. Removing someone re-keys every share your device can open, but **can't take back the values they saw**: rotate those secrets where they come from (the CLI and the Account page say so).
 
 ## Recovery phrase
 
@@ -182,7 +182,7 @@ hitop sync recovery create     # prints 24 words once: keep them offline
 hitop sync recovery use        # on a new computer, after signing in
 ```
 
-On the Sync page it is under **Recovery phrase**. Like the password, the phrase seals your device's keys for the server to keep; the server can't open them.
+On the Account page it is under **Recovery phrase**. Like the password, the phrase seals your device's keys for the server to keep; the server can't open them.
 
 ## Audit log
 
@@ -194,7 +194,7 @@ hitop sync audit --verify -c ./my-api   # checks the log's hash chain on your co
 hitop sync audit --mine                 # your own sign-ins and failed sign-ins
 ```
 
-In the app it is under **Members** → **Show audit log**. Each entry is chained to the one before it with a hash, so an edited or deleted entry shows up in `--verify`; your computer also remembers the last entry it checked, so a log rewritten from there on is caught next time. Entries hold who did what and when, the first three parts of the IP address (the last part is dropped) and the app's user agent, never file contents or keys. The test server keeps them for a year.
+In the app it is in the collection's **Share** dialog, **People** tab, under **Advanced** → **Show audit log**. Each entry is chained to the one before it with a hash, so an edited or deleted entry shows up in `--verify`; your computer also remembers the last entry it checked, so a log rewritten from there on is caught next time. Entries hold who did what and when, the first three parts of the IP address (the last part is dropped) and the app's user agent, never file contents or keys. The test server keeps them for a year.
 
 On HITOP Cloud Business the server also mails the organization's owners a signed **anchor** of the log's latest entries once a day, and owners and admins can download the whole organization's log, signed:
 

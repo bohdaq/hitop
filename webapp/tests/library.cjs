@@ -84,7 +84,17 @@ async function syncServer() {
   const two = await launch({ results });
   const errors = [];
   for (const h of [one, two]) h.page.on('pageerror', (e) => errors.push(e.message));
-  const S = (h) => h.page.locator('hitop-sync');
+  const S = (h) => h.page.locator('hitop-sync').last();
+  // The Account page: the top bar's Sign in, or the account menu's Account & devices.
+  const openAccount = async (h) => {
+    const signin = h.page.locator('header.topbar').getByRole('button', { name: 'Sign in', exact: true });
+    if (await signin.count()) await signin.click();
+    else {
+      await h.page.locator('header.topbar .account-button').click();
+      await h.page.locator('#account-menu').getByText('Account & devices').click();
+    }
+    await settle(h.page);
+  };
   const alertText = (h) => S(h).locator('lit-material-alert').innerText().catch(() => '');
   const idle = async (h) => {
     await h.page.waitForFunction(() => !document.querySelector('hitop-sync [aria-busy="true"]'), null, { timeout: 30000 });
@@ -97,11 +107,11 @@ async function syncServer() {
   // Another browser's changes: what the focus event does.
   const pull = (h) => store(h, 'return s.library.pull();').then(() => settle(h.page));
   const signIn = async (h, email) => {
-    await h.page.locator('aside').getByRole('button', { name: 'Sync', exact: true }).click();
-    await settle(h.page);
-    if (await S(h).getByRole('button', { name: 'Use a code instead' }).count()) await S(h).getByRole('button', { name: 'Use a code instead' }).click();
+    await openAccount(h);
+    if (!(await S(h).locator('details.sync-more').evaluate((e) => e.open))) await S(h).locator('details.sync-more summary').click();
     await S(h).getByLabel('Sync server').fill(server.url);
     await S(h).getByLabel('Email').fill(email);
+    await S(h).getByRole('button', { name: 'Email me a code instead' }).click();
     const before = server.mails(email);
     await S(h).getByRole('button', { name: 'Send code' }).click();
     await idle(h);
@@ -113,6 +123,7 @@ async function syncServer() {
     });
   };
   const signOut = async (h) => {
+    await openAccount(h);
     await S(h).getByRole('button', { name: 'Sign out' }).click();
     await idle(h);
   };
@@ -127,7 +138,7 @@ async function syncServer() {
       s.emit(); s.save();`, SECRET);
     await signIn(one, 'ada@example.com');
     await saved(one);
-    check('the Sync page says the library is on', (await S(one).getByLabel('Cloud library').innerText()).includes('saved to HITOP Cloud'), await S(one).getByLabel('Cloud library').innerText());
+    check('the Account page says the library is on', (await S(one).getByLabel('Cloud library').innerText()).includes('saved to HITOP Cloud'), await S(one).getByLabel('Cloud library').innerText());
     check('the secret value is not in the server database in the clear', !server.database().includes(Buffer.from(SECRET)));
     check('the collection is in the server database (the library is readable)', server.database().includes(Buffer.from('shop.e2e-library.test/orders')));
 
@@ -170,17 +181,19 @@ async function syncServer() {
     await pull(one);
     check('...and the copy reaches the first browser too', (await names(one)).includes('Shop API v2 (this browser)'), JSON.stringify(await names(one)));
 
-    // The switch on the Sync page: off, this browser's changes stay here.
-    await two.page.locator('aside').getByRole('button', { name: 'Sync', exact: true }).click();
+    // The switch in Settings, under Privacy: off, this browser's changes stay here.
+    const T = (h) => h.page.locator('hitop-app-settings');
+    await two.page.locator('aside').getByRole('button', { name: 'Settings', exact: true }).click();
     await settle(two.page);
-    await S(two).getByRole('switch', { name: 'Save my collections to HITOP Cloud' }).click();
+    await T(two).getByRole('switch', { name: 'Save my collections to HITOP Cloud' }).click();
     await settle(two.page);
     await store(two, 's.addCollection("Only here"); s.emit();');
     await settle(two.page, 2000);
     await pull(one);
-    check('switched off: a new collection stays in its browser', !(await names(one)).includes('Only here') && (await S(two).locator('.sync-library').innerText()).includes('stay in this browser only'), JSON.stringify(await names(one)));
-    await S(two).getByRole('switch', { name: 'Save my collections to HITOP Cloud' }).click();
+    check('switched off: a new collection stays in its browser', !(await names(one)).includes('Only here') && (await T(two).locator('.sync-library').innerText()).includes('stay in this browser only'), JSON.stringify(await names(one)));
+    await T(two).getByRole('switch', { name: 'Save my collections to HITOP Cloud' }).click();
     await settle(two.page);
+    await openAccount(two);
     check('switched on again: the library shows as on', (await S(two).getByLabel('Cloud library').count()) === 1);
 
     // Signing out keeps everything in this browser and stops saving to the cloud.

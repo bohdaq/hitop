@@ -101,7 +101,7 @@ More in [Run collections in CI](/terms/run-collections-in-ci.html), [Run HITOP i
 
 Sign in to HITOP Cloud in the [web app](/app/). Each collection then shows where it is kept: an icon in the sidebar (cloud for HITOP Cloud, the GitHub mark for GitHub, a red dot when it needs you) and a chip under its name on the collection page.
 
-On the collection page, choose **Save to GitHub…**. One dialog does the rest:
+On the collection page, choose **Share**, then the **GitHub** tab (or click the chip under the collection's name). One dialog does the rest:
 
 1. **GitHub**: **Connect GitHub** the first time. The HITOP Cloud GitHub App asks only for the repositories you choose, and GitHub brings you back to the same dialog.
 2. **Repository**: pick one. Not in the list? **Give HITOP access to more repositories** opens GitHub's page for the App, where you choose them.
@@ -115,7 +115,7 @@ The dialog lists the files it will write, then **Save to GitHub**:
 - The chip now reads like `you/api-tests/shop · main · synced 2 min ago`; click it for the link to GitHub, **Sync now** and **Stop saving to GitHub** (the files stay in the repository).
 - When the same request changed both in the app and on GitHub, the chip and the sidebar icon say so, and the dialog shows both versions side by side: **Keep mine**, **Take GitHub's** or **Keep both** (yours is added as "… (mine)"). Nothing is pushed until you choose. Changes to different requests, or to different keys of `hitop.yaml`, merge by themselves.
 
-The Sync page's **GitHub** section lists the connected accounts, **Manage repository access**, and every collection with where it is kept.
+The **Account** page (the account menu at the top right, then **Account & devices**) lists the connected GitHub accounts, **Manage repository access**, and every collection with where it is kept.
 
 The collection is kept in your HITOP Cloud library, which the server can read. For collections that must stay end-to-end encrypted, use a [shared workspace](/terms/share-a-workspace-with-your-team.html) instead, or the desktop app's Git panel on a folder.
 
