@@ -11,6 +11,7 @@ import { interpolateVariables } from "../../frontend/src/services/variableInterp
 import { generateUniqueId } from "../../frontend/src/utils/idGenerator.jsx";
 import {
   applyAuth,
+  awsV4Headers,
   asksForEvents,
   parseEvents,
   oauthParseToken,
@@ -1583,6 +1584,19 @@ export class Store extends EventTarget {
       // hitop-core's rules (spec/vectors/send.json), as the CLI, MCP and HitopKit send it.
       const type = (await loadFormat()).rawContentType(body);
       if (type) headers.push({ name: "Content-Type", value: type });
+    }
+    // AWS Signature v4 signs the request as it goes out (headers and body final).
+    if (source.auth?.type === "awsv4") {
+      const vars = this.variables(collectionId);
+      const fill = (t) => interpolateVariables(t || "", vars);
+      const aws = { accessKey: fill(source.auth.accessKey), secretKey: fill(source.auth.secretKey), sessionToken: fill(source.auth.sessionToken), region: fill(source.auth.region), service: fill(source.auth.service) };
+      if (!aws.accessKey || !aws.secretKey || !aws.region || !aws.service) {
+        const e = new Error("AWS Signature: give the access key, secret key, region and service");
+        e.stage = "prepare";
+        throw e;
+      }
+      const signed = await awsV4Headers(aws, source.method, prepared.url, headers, BODY_METHODS.includes(source.method) ? body : "");
+      headers.splice(0, headers.length, ...signed.headers);
     }
     const p = platform();
     const proxied = p.usesProxy(prepared.url);

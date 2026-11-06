@@ -388,6 +388,7 @@ fn auth_strings(a: &Auth) -> Vec<String> {
         Auth::Basic { username, password } => vec![username.clone(), password.clone()],
         Auth::ApiKey { key, value, .. } => vec![key.clone(), value.clone()],
         Auth::OAuth2(o) => vec![o.token_url.clone(), o.client_id.clone(), o.client_secret.clone(), o.scope.clone(), o.username.clone(), o.password.clone()],
+        Auth::AwsV4(a) => vec![a.access_key.clone(), a.secret_key.clone(), a.session_token.clone(), a.region.clone(), a.service.clone()],
     }
 }
 

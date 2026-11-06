@@ -456,3 +456,20 @@ fn oauth2_client_credentials_fetches_one_token_for_the_run() {
     fs::write(d2.join("hitop.yaml"), fs::read_to_string(dir.join("hitop.yaml")).unwrap()).unwrap();
     hitop(&home, dir2.path()).args(["run", "./api", "--env", "ci", "--secret", "token=tok-123"]).assert().code(1).stdout(contains("invalid_client"));
 }
+
+#[test]
+fn awsv4_signs_each_request_as_sent() {
+    let server = MockServer::start();
+    let api = server.mock(|when, then| {
+        when.method(GET).path("/orders").header_exists("x-amz-date").header_exists("x-amz-content-sha256").header_matches("^authorization$", r"^AWS4-HMAC-SHA256 Credential=AKIDEXAMPLE/\d{8}/eu-west-1/execute-api/aws4_request, SignedHeaders=host;x-amz-content-sha256;x-amz-date, Signature=[0-9a-f]{64}$");
+        then.status(200).body("yes");
+    });
+    let (home, tmp) = (TempDir::new().unwrap(), TempDir::new().unwrap());
+    let dir = folder(&tmp, &server.base_url());
+    fs::write(dir.join("hitop.yaml"), "format: 1\nname: Run API\nauth:\n  type: awsv4\n  accessKey: AKIDEXAMPLE\n  secretKey: ${token}\n  region: eu-west-1\n  service: execute-api\norder:\n- ok\n").unwrap();
+    fs::write(dir.join("requests/ok.yaml"), "name: Ok\nurl: ${base}/orders\n").unwrap();
+    fs::remove_file(dir.join("requests/check.yaml")).unwrap();
+    fs::remove_file(dir.join("requests/who.yaml")).unwrap();
+    hitop(&home, tmp.path()).args(["run", "./api", "--env", "ci", "--secret", "token=wJalrXUtnFEMI"]).assert().code(0);
+    api.assert_hits(1);
+}

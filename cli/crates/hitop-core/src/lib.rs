@@ -1,4 +1,5 @@
 pub mod auth;
+pub mod aws_sigv4;
 pub mod cookies;
 pub mod docs;
 pub mod export;

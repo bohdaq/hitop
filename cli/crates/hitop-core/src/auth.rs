@@ -2,7 +2,7 @@
 use base64::Engine;
 use serde_json::{json, Value};
 
-use crate::model::{ApiKeyLocation, Auth, OAuth2};
+use crate::model::{ApiKeyLocation, Auth, AwsV4, OAuth2};
 use crate::params::{parse_query, with_query};
 
 /// Adds the auth header (or query parameter) to an already interpolated
@@ -80,6 +80,9 @@ pub fn to_postman(auth: Option<&Auth>) -> Option<Value> {
                 ("scope", &o.scope), ("username", &o.username), ("password", &o.password), ("client_authentication", client), ("addTokenTo", "header"),
             ]) }))
         }
+        Auth::AwsV4(a) => Some(json!({ "type": "awsv4", "awsv4": kv(&[
+            ("accessKey", &a.access_key), ("secretKey", &a.secret_key), ("sessionToken", &a.session_token), ("region", &a.region), ("service", &a.service),
+        ]) })),
     }
 }
 
@@ -103,6 +106,13 @@ pub fn from_postman(auth: &Value) -> Option<Auth> {
             value: get("value"),
             location: if get("in") == "query" { ApiKeyLocation::Query } else { ApiKeyLocation::Header },
         }),
+        "awsv4" => Some(Auth::AwsV4(Box::new(AwsV4 {
+            access_key: get("accessKey"),
+            secret_key: get("secretKey"),
+            session_token: get("sessionToken"),
+            region: get("region"),
+            service: get("service"),
+        }))),
         // The grants that need no browser; authorization code and implicit stay reported.
         "oauth2" => {
             let grant = match get("grant_type").as_str() {

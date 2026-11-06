@@ -183,6 +183,7 @@ pub fn run(args: SendArgs) -> Result<()> {
         // A raw body says what it is, as in every other hitop.
         hitop_core::sending::add_content_type(&method, &mut headers, &pre.body);
     }
+    hitop_core::aws_sigv4::sign_if_aws(auth.as_ref(), &|s| hitop_core::interpolation::interpolate(s, &variables), &method, &pre.url, &mut headers, &body).map_err(|e| anyhow::anyhow!(masker.mask(&format!("{e:#}"))))?;
     let (headers_sent, body_sent) = (headers.clone(), String::from_utf8(body.clone()).unwrap_or_default());
     let mut jar = cookies::open(&workspace, args.cookies)?;
     let opts = http::Options { timeout: None, jar: jar.as_mut() };

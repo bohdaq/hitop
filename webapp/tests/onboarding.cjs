@@ -59,6 +59,22 @@ const settle = (p, ms = 400) => p.waitForTimeout(ms);
   check('...an environment by a variable name', (await quick('tenantslug')).includes('qa'), await quick('tenantslug'));
   check('...and a URL from history', (await quick('only-here')).includes('history.e2e.test'), await quick('only-here'));
 
+  // AWS Signature v4: the request goes out signed (web: as the proxy receives it).
+  if (!TAURI) {
+    await p.evaluate(() => {
+      const s = document.querySelector('hitop-app').store;
+      s.show('request');
+      s.updateTab({ method: 'GET', url: 'https://api.e2e-aws.test/orders?b=2&a=1', auth: { type: 'awsv4', accessKey: 'AKIDEXAMPLE', secretKey: 'secret-e2e', region: 'eu-west-1', service: 'execute-api' } });
+    });
+    await settle(p);
+    const before = h.sent.length;
+    await p.getByRole('button', { name: 'Send' }).click();
+    await settle(p, 1500);
+    const sent = h.sent.slice(before).find((x) => x.url.includes('e2e-aws.test'));
+    const auth = sent?.headers.find(([k]) => k.toLowerCase() === 'authorization')?.[1] ?? '';
+    check('AWS Signature v4 signs the request', /^AWS4-HMAC-SHA256 Credential=AKIDEXAMPLE\/\d{8}\/eu-west-1\/execute-api\/aws4_request, SignedHeaders=host;x-amz-content-sha256;x-amz-date, Signature=[0-9a-f]{64}$/.test(auth) && !JSON.stringify(sent).includes('secret-e2e'), auth || JSON.stringify(sent));
+  }
+
   check('no page errors', errors.length === 0, errors.join(' | '));
   await h.finish();
 })().catch((e) => {

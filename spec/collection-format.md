@@ -392,6 +392,20 @@ auth:
 to `tokenUrl` and sends the `access_token` as `Authorization: Bearer`. The token is kept in memory
 for its `expires_in` (less 30 seconds), shared by the requests of a run, and never written.
 
+```yaml
+auth:
+  type: awsv4
+  accessKey: ${awsAccessKey}
+  secretKey: ${awsSecretKey}
+  sessionToken: ${awsSessionToken}   # optional
+  region: eu-west-1
+  service: execute-api
+```
+
+`awsv4` (AWS Signature Version 4): the request is signed as it is sent, after the script before
+it, with every header it has and `host`; hitop adds `X-Amz-Date`, `X-Amz-Content-Sha256`,
+`X-Amz-Security-Token` (with a session token) and `Authorization`.
+
 ## 5. Environment files: `environments/*.yaml`
 
 ```yaml

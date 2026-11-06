@@ -383,6 +383,7 @@ fn auth_label(a: &Auth) -> &'static str {
         Auth::ApiKey { location: ApiKeyLocation::Header, .. } => "apikey header",
         Auth::ApiKey { location: ApiKeyLocation::Query, .. } => "apikey query",
         Auth::OAuth2(_) => "oauth2",
+        Auth::AwsV4(_) => "awsv4",
     }
 }
 

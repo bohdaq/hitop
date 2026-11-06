@@ -344,6 +344,12 @@ export class HitopRequest extends LitElement {
                 <lit-material-select-option value="body">In the request body</lit-material-select-option>
               </lit-material-select>`
           : nothing}
+        ${a.type === "awsv4"
+          ? html`${field("Access key", "accessKey")} ${field("Secret key", "secretKey", { type: "password", help: "Use ${variables}: keep the value in a secret environment variable." })}
+              ${field("Region", "region", { help: "us-east-1, eu-west-1, …" })} ${field("Service", "service", { help: "execute-api, s3, lambda, …" })}
+              ${field("Session token (optional)", "sessionToken", { type: "password" })}
+              <p class="hint">The request is signed as it is sent, after the script before it runs.</p>`
+          : nothing}
         ${a.type === "none" ? html`<p class="hint">Pick a type to add credentials. A header you set by hand with the same name wins.</p>` : nothing}
       </div>`;
   }

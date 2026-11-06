@@ -293,7 +293,8 @@ pub fn run(cmd: RequestsCmd) -> Result<()> {
             let pre = prepare_in(&draft, &scopes, &context).map_err(masked)?;
             scopes.apply(&pre.variables, &pre.globals);
             let vars = scopes.merged();
-            let (headers, body) = hitop_core::form::outgoing(&req, &pre.headers, &pre.body, &vars).map_err(masked)?;
+            let (mut headers, body) = hitop_core::form::outgoing(&req, &pre.headers, &pre.body, &vars).map_err(masked)?;
+            hitop_core::aws_sigv4::sign_if_aws(req.auth.as_ref().or(col.auth.as_ref()), &|s| hitop_core::interpolation::interpolate(s, &vars), &req.method, &pre.url, &mut headers, &body).map_err(masked)?;
             let (sent_headers, sent_body) = (headers.clone(), String::from_utf8(body.clone()).unwrap_or_default());
             let workspace = source.workspace();
             let mut jar = super::cookies::open(&workspace, cookies)?;
@@ -363,6 +364,7 @@ fn describe_auth(auth: &Auth) -> String {
         Auth::Basic { username, .. } => format!("Basic, user {username}"),
         Auth::ApiKey { key, location, .. } => format!("API key {key} in the {}", if *location == hitop_core::model::ApiKeyLocation::Query { "query" } else { "headers" }),
         Auth::OAuth2(o) => format!("OAuth 2.0 ({}) from {}", if o.grant == "password" { "password" } else { "client credentials" }, o.token_url),
+        Auth::AwsV4(a) => format!("AWS Signature v4 ({} in {})", a.service, a.region),
     }
 }
 

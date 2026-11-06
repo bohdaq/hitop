@@ -1,6 +1,6 @@
 // Unit checks for features.js (no browser): node tests/unit.mjs
 import assert from "node:assert/strict";
-import { asksForEvents, parseEvents, cleanAuth, oauthParseToken, oauthTokenRequest, cookieHeader, exportableEnvironments, exportableGlobals, isPostmanGlobals, maskSecrets, mergeGlobals, normalizeGlobals, parseGlobals, mergeCookies, multipartBody, parseEnvironments, parseQuery, secretNames, secretRefs, secretValues, urlEncodedBody, withQuery, withSecretRefs } from "../src/features.js";
+import { awsV4Headers, asksForEvents, parseEvents, cleanAuth, oauthParseToken, oauthTokenRequest, cookieHeader, exportableEnvironments, exportableGlobals, isPostmanGlobals, maskSecrets, mergeGlobals, normalizeGlobals, parseGlobals, mergeCookies, multipartBody, parseEnvironments, parseQuery, secretNames, secretRefs, secretValues, urlEncodedBody, withQuery, withSecretRefs } from "../src/features.js";
 
 const now = Date.parse("2026-10-31T12:00:00Z");
 let jar = mergeCookies([], ["sid=abc; Path=/; HttpOnly", "pref=dark; Domain=example.com; Path=/; Max-Age=3600", "evil=1; Domain=other.com", "old=x; Expires=Thu, 01 Jan 2026 00:00:00 GMT"], "https://api.example.com/v1/login", now);
@@ -316,6 +316,12 @@ assert.throws(() => schemaFromResponse('{"errors": [{"message": "introspection i
   assert.equal(rest, "data: half");
   assert.equal(asksForEvents([{ name: "Accept", value: "text/event-stream" }]), true);
   assert.equal(asksForEvents([{ name: "Accept", value: "text/event-stream", enabled: false }]), false);
+}
+
+// AWS Signature v4: the same signature as hitop-core aws_sigv4.rs (the_web_app_signs_the_same).
+{
+  const r = await awsV4Headers({ accessKey: "AKIDEXAMPLE", secretKey: "wJalrXUtnFEMI/K7MDENG+bPxRfiCYEXAMPLEKEY", region: "us-east-1", service: "service" }, "POST", "https://example.amazonaws.com/a b/?Param2=value2&Param1=value%201", [{ name: "Content-Type", value: "application/json" }], '{"x":1}', new Date(1440938160000));
+  assert.ok(r.headers.find((h) => h.name === "Authorization").value.endsWith("Signature=c7bcd27431aa0a1bc6ad750fffadf2bd3e7e5192ad433b09b8acf535e743c825"));
 }
 
 // OAuth 2.0 (same request as hitop-core oauth2.rs).

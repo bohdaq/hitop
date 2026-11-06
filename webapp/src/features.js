@@ -44,6 +44,7 @@ export const AUTH_TYPES = [
   ["basic", "Basic auth"],
   ["apikey", "API key"],
   ["oauth2", "OAuth 2.0"],
+  ["awsv4", "AWS Signature"],
 ];
 
 export const emptyAuth = () => ({ type: "none", token: "", username: "", password: "", key: "X-API-Key", value: "", in: "header", grant: "client_credentials", tokenUrl: "", clientId: "", clientSecret: "", scope: "", clientAuth: "" });
@@ -55,6 +56,11 @@ export function cleanAuth(auth) {
   if (auth.type === "bearer") return { type: "bearer", token: auth.token || "" };
   if (auth.type === "basic") return { type: "basic", username: auth.username || "", password: auth.password || "" };
   if (auth.type === "apikey") return { type: "apikey", key: auth.key || "", value: auth.value || "", in: auth.in === "query" ? "query" : "header" };
+  if (auth.type === "awsv4") {
+    const out = { type: "awsv4", accessKey: auth.accessKey || "", secretKey: auth.secretKey || "", region: auth.region || "", service: auth.service || "" };
+    if (auth.sessionToken) out.sessionToken = auth.sessionToken;
+    return out;
+  }
   if (auth.type === "oauth2") {
     const out = { type: "oauth2", grant: auth.grant === "password" ? "password" : "client_credentials", tokenUrl: auth.tokenUrl || "", clientId: auth.clientId || "" };
     for (const k of ["clientSecret", "scope", ...(out.grant === "password" ? ["username", "password"] : [])]) if (auth[k]) out[k] = auth[k];
@@ -122,6 +128,64 @@ export function parseEvents(text) {
     if (ev.data.length) events.push({ ...ev, data: ev.data.join("\n") });
   }
   return { events, rest };
+}
+
+// --- AWS Signature v4 (hitop-core aws_sigv4.rs) ----------------------------------------------
+
+const hexOf = (buf) => [...new Uint8Array(buf)].map((b) => b.toString(16).padStart(2, "0")).join("");
+const utf8 = (s) => new TextEncoder().encode(s);
+const sha256 = async (data) => hexOf(await crypto.subtle.digest("SHA-256", typeof data === "string" ? utf8(data) : data));
+async function hmacRaw(key, text) {
+  const k = await crypto.subtle.importKey("raw", typeof key === "string" ? utf8(key) : key, { name: "HMAC", hash: "SHA-256" }, false, ["sign"]);
+  return crypto.subtle.sign("HMAC", k, utf8(text));
+}
+const awsEncode = (s) => [...utf8(s)].map((b) => (/[A-Za-z0-9\-_.~]/.test(String.fromCharCode(b)) ? String.fromCharCode(b) : `%${b.toString(16).toUpperCase().padStart(2, "0")}`)).join("");
+const safeDecode = (s, plusSpace) => {
+  try {
+    return decodeURIComponent(plusSpace ? s.replace(/\+/g, " ") : s);
+  } catch {
+    return s;
+  }
+};
+
+/** `YYYYMMDDTHHMMSSZ`. */
+export const amzDate = (d) => d.toISOString().replace(/[-:]/g, "").replace(/\.\d{3}/, "");
+
+/**
+ * The headers to add for AWS Signature v4: `X-Amz-Date`, `X-Amz-Content-Sha256`, maybe
+ * `X-Amz-Security-Token`, and `Authorization`. Every given header and `host` are signed, as the CLI
+ * signs. `body`: a string or bytes.
+ */
+export async function awsV4Headers(aws, method, url, headers, body, now = new Date()) {
+  const u = new URL(url);
+  const path = u.pathname.split("/").map((seg) => awsEncode(safeDecode(seg, false))).join("/") || "/";
+  const pairs = (u.search ? u.search.slice(1).split("&") : []).filter(Boolean).map((kv) => {
+    const at = kv.indexOf("=");
+    const [k, v] = at < 0 ? [kv, ""] : [kv.slice(0, at), kv.slice(at + 1)];
+    return [awsEncode(safeDecode(k, true)), awsEncode(safeDecode(v, true))];
+  });
+  pairs.sort((a, b) => (a[0] < b[0] ? -1 : a[0] > b[0] ? 1 : a[1] < b[1] ? -1 : a[1] > b[1] ? 1 : 0));
+  const query = pairs.map(([k, v]) => `${k}=${v}`).join("&");
+  const date = amzDate(now);
+  const payload = await sha256(body ?? "");
+  const drop = new Set(["authorization", "x-amz-date", "x-amz-content-sha256", "x-amz-security-token", "host"]);
+  const added = [{ name: "X-Amz-Date", value: date }, { name: "X-Amz-Content-Sha256", value: payload }, ...(aws.sessionToken ? [{ name: "X-Amz-Security-Token", value: aws.sessionToken }] : [])];
+  const kept = headers.filter((h) => h.name && !drop.has(h.name.toLowerCase()));
+  const signed = [...kept, ...added].map((h) => [h.name.toLowerCase(), String(h.value).split(/\s+/).filter(Boolean).join(" ")]);
+  signed.push(["host", u.host]);
+  signed.sort((a, b) => (a[0] < b[0] ? -1 : a[0] > b[0] ? 1 : a[1] < b[1] ? -1 : a[1] > b[1] ? 1 : 0));
+  const canonicalHeaders = signed.map(([k, v]) => `${k}:${v}\n`).join("");
+  const signedNames = signed.map(([k]) => k).join(";");
+  const canonical = `${method.toUpperCase()}\n${path}\n${query}\n${canonicalHeaders}\n${signedNames}\n${payload}`;
+  const day = date.slice(0, 8);
+  const scope = `${day}/${aws.region}/${aws.service}/aws4_request`;
+  const toSign = `AWS4-HMAC-SHA256\n${date}\n${scope}\n${await sha256(canonical)}`;
+  let k = await hmacRaw(`AWS4${aws.secretKey}`, day);
+  k = await hmacRaw(k, aws.region);
+  k = await hmacRaw(k, aws.service);
+  k = await hmacRaw(k, "aws4_request");
+  const signature = hexOf(await hmacRaw(k, toSign));
+  return { headers: [...kept, ...added, { name: "Authorization", value: `AWS4-HMAC-SHA256 Credential=${aws.accessKey}/${scope}, SignedHeaders=${signedNames}, Signature=${signature}` }] };
 }
 
 // Adds the auth header (or query parameter) to an already interpolated

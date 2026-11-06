@@ -442,6 +442,25 @@ pub enum Auth {
     /// `Authorization: Bearer` (oauth2.rs). The token lives in memory for its lifetime.
     #[serde(rename = "oauth2")]
     OAuth2(Box<OAuth2>),
+    /// AWS Signature Version 4: the request signed as sent (aws_sigv4.rs).
+    #[serde(rename = "awsv4")]
+    AwsV4(Box<AwsV4>),
+}
+
+/// AWS credentials, region and service for SigV4; values may contain `${variables}`.
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AwsV4 {
+    #[serde(default)]
+    pub access_key: String,
+    #[serde(default)]
+    pub secret_key: String,
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub session_token: String,
+    #[serde(default)]
+    pub region: String,
+    #[serde(default)]
+    pub service: String,
 }
 
 /// An OAuth 2.0 token request (RFC 6749 §4.3, §4.4); values may contain `${variables}`.

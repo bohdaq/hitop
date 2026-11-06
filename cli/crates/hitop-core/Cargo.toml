@@ -52,7 +52,7 @@ default = ["keychain", "native", "websocket", "grpc", "secret-managers"]
 # HTTP (reqwest), scripts (boa), the runner and the JSON storage in the
 # config directory. Off for wasm32 (hitop-wasm: the format module and the
 # model in the web app).
-native = ["dep:reqwest", "dep:boa_engine", "dep:dirs"]
+native = ["dep:reqwest", "dep:boa_engine", "dep:dirs", "dep:ring"]
 # WebSocket connections (src/websocket.rs's client): the CLI's `hitop ws` and the desktop.
 websocket = ["native", "dep:tokio", "dep:tokio-tungstenite", "dep:futures-util", "dep:rustls", "dep:webpki-roots"]
 # gRPC calls (src/grpc.rs's client): the CLI's `hitop grpc` and the desktop.

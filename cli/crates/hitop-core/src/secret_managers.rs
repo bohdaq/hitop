@@ -32,6 +32,7 @@
 //! reference, never a value. `HITOP_SECRET_MANAGERS=off` turns it all off
 //! ([`enabled`]); `HITOP_SECRET_MANAGER_TIMEOUT` (seconds) sets the time limit
 //! of each call (default 15 s for HTTP, 60 s for `op`, `az` and `aws`).
+use crate::aws_sigv4::{amz_date, sigv4, SigV4};
 use std::collections::{BTreeSet, HashMap};
 use std::io::Read;
 use std::path::PathBuf;
@@ -759,67 +760,6 @@ fn ini_section(text: &str, profile: &str, config: bool) -> Option<HashMap<String
     found.then_some(out)
 }
 
-/// `YYYYMMDDTHHMMSSZ` in UTC.
-fn amz_date(t: SystemTime) -> String {
-    let secs = t.duration_since(SystemTime::UNIX_EPOCH).map(|d| d.as_secs()).unwrap_or_default() as i64;
-    let (days, rem) = (secs.div_euclid(86_400), secs.rem_euclid(86_400));
-    // Howard Hinnant's civil_from_days.
-    let z = days + 719_468;
-    let era = z.div_euclid(146_097);
-    let doe = z - era * 146_097;
-    let yoe = (doe - doe / 1460 + doe / 36_524 - doe / 146_096) / 365;
-    let doy = doe - (365 * yoe + yoe / 4 - yoe / 100);
-    let mp = (5 * doy + 2) / 153;
-    let day = doy - (153 * mp + 2) / 5 + 1;
-    let month = if mp < 10 { mp + 3 } else { mp - 9 };
-    let year = yoe + era * 400 + i64::from(month <= 2);
-    format!("{year:04}{month:02}{day:02}T{:02}{:02}{:02}Z", rem / 3600, rem % 3600 / 60, rem % 60)
-}
-
-/// What [`sigv4`] signs. `headers` are lower-case names, all of them signed.
-struct SigV4<'a> {
-    method: &'a str,
-    path: &'a str,
-    query: &'a str,
-    headers: &'a [(String, String)],
-    body: &'a [u8],
-    access_key: &'a str,
-    secret_key: &'a str,
-    region: &'a str,
-    service: &'a str,
-    amz_date: &'a str,
-}
-
-fn hex(bytes: &[u8]) -> String {
-    bytes.iter().map(|b| format!("{b:02x}")).collect()
-}
-
-fn sha256_hex(data: &[u8]) -> String {
-    hex(ring::digest::digest(&ring::digest::SHA256, data).as_ref())
-}
-
-fn hmac(key: &[u8], data: &str) -> Vec<u8> {
-    ring::hmac::sign(&ring::hmac::Key::new(ring::hmac::HMAC_SHA256, key), data.as_bytes()).as_ref().to_vec()
-}
-
-/// The `Authorization` header of AWS Signature Version 4.
-fn sigv4(s: &SigV4) -> String {
-    let mut headers: Vec<(String, String)> = s.headers.iter().map(|(k, v)| (k.to_ascii_lowercase(), v.split_whitespace().collect::<Vec<_>>().join(" "))).collect();
-    headers.sort();
-    let canonical_headers: String = headers.iter().map(|(k, v)| format!("{k}:{v}\n")).collect();
-    let signed: Vec<&str> = headers.iter().map(|(k, _)| k.as_str()).collect();
-    let signed = signed.join(";");
-    let canonical = format!("{}\n{}\n{}\n{canonical_headers}\n{signed}\n{}", s.method, s.path, s.query, sha256_hex(s.body));
-    let date = &s.amz_date[..8];
-    let scope = format!("{date}/{}/{}/aws4_request", s.region, s.service);
-    let to_sign = format!("AWS4-HMAC-SHA256\n{}\n{scope}\n{}", s.amz_date, sha256_hex(canonical.as_bytes()));
-    let k = hmac(format!("AWS4{}", s.secret_key).as_bytes(), date);
-    let k = hmac(&k, s.region);
-    let k = hmac(&k, s.service);
-    let k = hmac(&k, "aws4_request");
-    let signature = hex(&hmac(&k, &to_sign));
-    format!("AWS4-HMAC-SHA256 Credential={}/{scope}, SignedHeaders={signed}, Signature={signature}", s.access_key)
-}
 
 #[cfg(test)]
 mod tests {

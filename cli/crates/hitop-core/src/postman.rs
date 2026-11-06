@@ -328,6 +328,13 @@ impl Importer<'_> {
                 o.password = c(&o.password, self);
                 Auth::OAuth2(Box::new(o))
             }
+            Auth::AwsV4(a) => {
+                let mut a = *a;
+                for f in [&mut a.access_key, &mut a.secret_key, &mut a.session_token, &mut a.region, &mut a.service] {
+                    *f = self.convert(f, location);
+                }
+                Auth::AwsV4(Box::new(a))
+            }
             Auth::None => Auth::None,
         }
     }

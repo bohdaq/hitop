@@ -181,7 +181,9 @@ pub fn run_collection_jar(
                 // Variables a script sets (pm.environment.set, ...) last for the run.
                 scopes.apply(&pre.variables, &pre.globals);
                 let variables = scopes.merged();
-                let result = form::outgoing(request, &pre.headers, &pre.body, &variables).and_then(|(h, b)| {
+                let result = form::outgoing(request, &pre.headers, &pre.body, &variables).and_then(|(mut h, b)| {
+                    // AWS Signature v4 signs the request as it goes out.
+                    crate::aws_sigv4::sign_if_aws(request.auth.as_ref().or(collection.auth.as_ref()), &|s| crate::interpolation::interpolate(s, &variables), &request.method, &pre.url, &mut h, &b)?;
                     sent_parts = (h.clone(), b.clone());
                     http::execute_opts(&request.method, &pre.url, &h, b, http::Options { timeout: options.timeout, jar: jar.as_deref_mut() })
                 });
