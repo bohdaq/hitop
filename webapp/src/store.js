@@ -58,6 +58,8 @@ const withoutSecretValues = (e) => ({ ...e, variables: Object.fromEntries(Object
 
 const COOKIES_KEY = "hitop_cookies";
 const COOKIE_JAR_KEY = "hitop_cookie_jar";
+// The org picked in the top bar (store.currentOrg), when signed in to HITOP Cloud.
+const ORG_KEY = "hitop_org";
 
 function loadCookies() {
   try {
@@ -363,6 +365,14 @@ export class Store extends EventTarget {
     this.keptBodies = new Map();
     this.responsesRestored = this.restoreResponses();
     this.ready = this.restoreFolders();
+    // HITOP Cloud organizations (signed in, main.js loadOrgs): the top bar's switcher. A collection
+    // is in one org (`org`, else the personal org; browser-only and folder collections are always
+    // personal, shared ones are in their workspace's org); the app shows the current org's only.
+    // An environment is in one org (`org`) or every org (no `org`). Signed out: no orgs, no filter.
+    this.orgs = [];
+    this.personalOrg = null;
+    this.currentOrg = null;
+    this.workspaceOrgs = new Map();
   }
 
   // --- plumbing -----------------------------------------------------------
@@ -528,9 +538,9 @@ export class Store extends EventTarget {
   }
 
   defaultCollection() {
-    let col = this.collections.find((c) => c.name === "Default");
+    let col = this.visibleCollections.find((c) => c.name === "Default");
     if (!col) {
-      col = collectionService.createCollection("Default");
+      col = this.inOrg(collectionService.createCollection("Default"));
       this.collections = [...this.collections, col];
     }
     return col;
@@ -771,11 +781,116 @@ export class Store extends EventTarget {
     this.emit();
   }
 
+  // --- organizations ----------------------------------------------------------
+
+  /** Signed in: the account's orgs (`GET /v1/orgs`) and its shared workspaces' orgs. */
+  setOrgs(orgs, workspaceOrgs = new Map()) {
+    this.orgs = orgs ?? [];
+    this.personalOrg = this.orgs.find((o) => o.personal)?.id ?? this.orgs[0]?.id ?? null;
+    this.workspaceOrgs = workspaceOrgs;
+    let saved = null;
+    try {
+      saved = localStorage.getItem(ORG_KEY);
+    } catch {
+      // storage blocked: the personal org
+    }
+    this.currentOrg = this.orgs.some((o) => o.id === saved) ? saved : this.personalOrg;
+    this.leaveHidden();
+    this.emit();
+  }
+
+  clearOrgs() {
+    if (!this.orgs.length && !this.currentOrg) return;
+    this.orgs = [];
+    this.personalOrg = null;
+    this.currentOrg = null;
+    this.workspaceOrgs = new Map();
+    this.emit();
+  }
+
+  setCurrentOrg(id) {
+    if (!this.orgs.some((o) => o.id === id)) return;
+    this.currentOrg = id;
+    try {
+      localStorage.setItem(ORG_KEY, id);
+    } catch {
+      // storage blocked: for this page only
+    }
+    this.leaveHidden();
+    this.emit();
+  }
+
+  get currentOrgInfo() {
+    return this.orgs.find((o) => o.id === this.currentOrg) ?? null;
+  }
+
+  // A collection page of another org: back to the collections list.
+  leaveHidden() {
+    const id = this.view.collectionId;
+    if (id != null && this.currentOrg) {
+      const c = this.collection(id);
+      if (c && !this.inCurrentOrg(c)) this.view = { kind: "collections", collectionId: null };
+    }
+  }
+
+  /** The org `c` is in (null signed out). */
+  orgOf(c) {
+    if (!this.personalOrg) return null;
+    // An org that isn't one of mine (a collection someone shared from their own org): personal.
+    const mine = (org) => (org && this.orgs.some((o) => o.id === org) ? org : this.personalOrg);
+    const folder = this.folders.get(c.id);
+    if (folder) {
+      const ref = String(folder.ref ?? "");
+      return ref.startsWith("hitop-sync:") ? mine(this.workspaceOrgs.get(this.syncClient?.link?.(c.id)?.workspace)) : this.personalOrg;
+    }
+    const lib = this.library;
+    if (!lib?.status?.on || (lib.state?.localOnly ?? []).includes(String(c.id))) return this.personalOrg;
+    return mine(c.org);
+  }
+
+  inCurrentOrg(c) {
+    return !this.currentOrg || this.orgOf(c) === this.currentOrg;
+  }
+
+  /** The collections the app shows: the current org's (all of them signed out). */
+  get visibleCollections() {
+    return this.currentOrg ? this.collections.filter((c) => this.inCurrentOrg(c)) : this.collections;
+  }
+
+  envInCurrentOrg(e) {
+    if (!this.currentOrg) return true;
+    const f = this.folderEnvs.get(e.id);
+    if (f) {
+      const c = this.collection(f.collectionId);
+      return !c || this.inCurrentOrg(c);
+    }
+    return !e.org || e.org === this.currentOrg;
+  }
+
+  get visibleEnvironments() {
+    return this.environments.filter((e) => this.envInCurrentOrg(e));
+  }
+
+  // A new collection goes into the current org (the personal org needs no tag).
+  inOrg(col) {
+    return this.currentOrg && this.currentOrg !== this.personalOrg ? { ...col, org: this.currentOrg } : col;
+  }
+
+  /** An environment for every org (true) or the current org only. */
+  setEnvironmentAllOrgs(id, all) {
+    this.environments = this.environments.map((e) => {
+      if (e.id !== id) return e;
+      const { org: _org, ...rest } = e;
+      return all || !this.currentOrg ? rest : { ...rest, org: this.currentOrg };
+    });
+    this.emit();
+  }
+
   // --- collections ----------------------------------------------------------
 
   addCollection(name) {
     if (!name.trim()) return;
-    this.collections = [...this.collections, collectionService.createCollection(name.trim())];
+    this.collections = [...this.collections, this.inOrg(collectionService.createCollection(name.trim()))];
     this.emit();
   }
 
@@ -798,9 +913,13 @@ export class Store extends EventTarget {
     this.emit();
   }
 
+  // `from` and `to` are places in the shown list (visibleCollections).
   reorderCollections(from, to) {
     if (from === to) return;
-    this.collections = collectionService.reorderCollections(this.collections, from, to);
+    const shown = this.visibleCollections;
+    const at = (i) => this.collections.indexOf(shown[i]);
+    if (at(from) < 0 || at(to) < 0) return;
+    this.collections = collectionService.reorderCollections(this.collections, at(from), at(to));
     this.emit();
   }
 
@@ -835,7 +954,7 @@ export class Store extends EventTarget {
     if (platform().name === "tauri") imported = imported.map((c) => ({ ...c, id: numericId(c.id), requests: (c.requests || []).map((r) => ({ ...r, id: numericId(r.id) })) }));
     if (!replace) {
       const { added, renamed } = addCollections(this.collections, imported, generateUniqueId);
-      this.collections = [...this.collections, ...added];
+      this.collections = [...this.collections, ...added.map((c) => this.inOrg(c))];
       const first = added.find((c) => c.requests?.length);
       if (first) this.openRequest(first.requests[0], first.id);
       else this.show("collections");
@@ -876,7 +995,7 @@ export class Store extends EventTarget {
   async importOpenapi({ text = "", url = "" } = {}) {
     if (url) text = await this.fetchSpec(url);
     const out = (await loadFormat()).importOpenapi(text, { source: url || null, inlineAuth: true });
-    const col = out.collection;
+    const col = this.inOrg(out.collection);
     if (this.collection(col.id)) col.id = generateUniqueId();
     this.collections = [...this.collections, col];
     this.view = { kind: "collection", collectionId: col.id };
@@ -1099,7 +1218,9 @@ export class Store extends EventTarget {
   // --- environments -----------------------------------------------------------
 
   get activeEnvironment() {
-    return this.environments.find((e) => e.id === this.activeEnvironmentId) ?? null;
+    const env = this.environments.find((e) => e.id === this.activeEnvironmentId) ?? null;
+    // Another org's environment isn't used here.
+    return env && this.envInCurrentOrg(env) ? env : null;
   }
 
   // The globals a collection sees: a folder's own globals.yaml when it has
@@ -1164,9 +1285,10 @@ export class Store extends EventTarget {
 
   addEnvironment(name) {
     if (!name.trim()) return;
-    const env = { id: crypto.randomUUID(), name: name.trim(), variables: {} };
+    // In the current org only, until it's made available in every org.
+    const env = { id: crypto.randomUUID(), name: name.trim(), variables: {}, ...(this.currentOrg ? { org: this.currentOrg } : {}) };
     this.environments = [...this.environments, env];
-    if (!this.activeEnvironmentId) this.activeEnvironmentId = env.id;
+    if (!this.activeEnvironment) this.activeEnvironmentId = env.id;
     this.view = { kind: "environments", collectionId: null, environmentId: env.id };
     this.emit();
   }
@@ -2176,7 +2298,7 @@ export class Store extends EventTarget {
       this.notify(`Couldn't import ${file.name}: ${errorText(e)}`);
       return null;
     }
-    const col = folder.collection;
+    const col = this.inOrg(folder.collection);
     if (this.collection(col.id)) col.id = generateUniqueId();
     this.collections = [...this.collections, col];
     const names = new Set(this.environments.map((e) => e.name));
@@ -2200,7 +2322,7 @@ export class Store extends EventTarget {
     let assertionsFailed = 0;
     this.run = { collectionId: null, results: [], running: true, completed: 0, summary: null };
     this.emit();
-    for (const col of this.collections) {
+    for (const col of this.visibleCollections) {
       if (!col.requests?.length) continue;
       ran++;
       planned += col.requests.length;

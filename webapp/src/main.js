@@ -45,6 +45,18 @@ p.onStart = (app) => {
   library.attach(app.store);
   // The top bar's account menu says where collections are saved.
   library.addEventListener("change", () => app.requestUpdate());
+  // The top bar's organization switcher: loaded on sign-in, cleared on sign-out.
+  let orgAccount;
+  const refreshOrgs = () => {
+    const a = library.client.account();
+    const key = a ? `${a.server} ${a.userId}` : "";
+    if (key === orgAccount) return;
+    orgAccount = key;
+    import("./orgs.js").then(({ loadOrgs }) => loadOrgs(app.store, library.client));
+  };
+  library.addEventListener("change", refreshOrgs);
+  app.store.addEventListener("change", refreshOrgs);
+  refreshOrgs();
   // Git sync of the library through the HITOP Cloud GitHub App (git.js): web build only, the
   // desktop has its own Git page for folders and no web origin to come back to from GitHub.
   if (p.name === "web") startGit(app);

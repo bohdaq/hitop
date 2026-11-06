@@ -209,6 +209,34 @@ async function syncServer() {
     const bobLib = await (await fetch(`${server.url}/v1/library`, { headers: { Authorization: `Bearer ${bobSession}` } })).json();
     check("a second account's library doesn't get the first account's collections", bob === 202 && !bobLib.items.some((i) => i.kind === 'collection'), JSON.stringify(bobLib.items.map((i) => `${i.kind}/${i.data?.name ?? i.id}`)));
 
+    // Organizations: the top bar's switcher. Ada makes a team org; after a reload the app lists it.
+    const org = (h) => h.page.locator('header.topbar .org-select');
+    const acme = (await store(two, 'return s.library.client.api("POST", "/v1/orgs", { name: "Acme" });')).id;
+    await two.page.reload({ waitUntil: 'networkidle' });
+    await two.page.waitForFunction(() => document.querySelector('hitop-app').store.orgs.length === 2, null, { timeout: 15000 });
+    const orgOptions = await org(two).locator('lit-material-select-option').allInnerTexts();
+    check('the top bar lists Personal and the team org with their plans', orgOptions.map((t) => t.trim()).join('|') === 'Personal · Free|Acme · Free', orgOptions.join('|'));
+    const personalNames = await store(two, 'return s.visibleCollections.map((c) => c.name).sort();');
+    await store(two, 's.setCurrentOrg(a);', acme);
+    await settle(two.page);
+    check('an empty team org shows no collections', (await two.page.locator('aside .tree-row.collection').count()) === 0 && (await store(two, 'return s.visibleCollections.length;')) === 0);
+    await store(two, 's.addCollection("Acme API"); s.addEnvironment("acme-dev");');
+    await saved(two);
+    const aside = async () => (await two.page.locator('aside .tree-row.collection').allInnerTexts()).map((t) => t.trim());
+    check('a collection made in the team org shows there', (await aside()).some((t) => t.includes('Acme API')), JSON.stringify(await aside()));
+    const item = (await (await store(two, 'return s.library.client.api("GET", "/v1/library");')).items).find((i) => i.data?.name === 'Acme API');
+    check('...and is filed under the team org on the server', item?.data?.org === acme, JSON.stringify(item?.data));
+    check('the plan link opens the team org\'s plan page', (await two.page.evaluate(() => document.querySelector('hitop-app').planUrl())).endsWith(`/orgs/${acme}/plan`));
+    await org(two).click();
+    await two.page.getByRole('option', { name: /^Personal/ }).click();
+    await settle(two.page);
+    check('switching back to Personal: its collections, not the team one', JSON.stringify(await store(two, 'return s.visibleCollections.map((c) => c.name).sort();')) === JSON.stringify(personalNames) && !(await aside()).some((t) => t.includes('Acme API')), JSON.stringify(await aside()));
+    const envNames = () => store(two, 'return s.visibleEnvironments.map((e) => e.name);');
+    check("the team org's environment isn't offered in Personal", !(await envNames()).includes('acme-dev') && (await envNames()).includes('prod'), JSON.stringify(await envNames()));
+    await store(two, 'const e = s.environments.find((e) => e.name === "acme-dev"); s.setEnvironmentAllOrgs(e.id, true);');
+    check('made available in every organization, it is', (await envNames()).includes('acme-dev'), JSON.stringify(await envNames()));
+    await store(two, 's.setCurrentOrg(s.personalOrg);');
+
     check('no page errors', errors.length === 0, errors.join(' | '));
   } catch (e) {
     check('the run finished', false, `${e.stack}\n${server.log().slice(-1500)}`);

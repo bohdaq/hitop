@@ -15,8 +15,10 @@
 //! otherwise) and the account's `seq`, so `GET /v1/library?since=<seq>` returns only what changed.
 //! A delete keeps a tombstone (`deleted: true`) for the other browsers.
 //!
-//! Bytes (data + sealed secrets) count against the personal org's `storageBytes` (limits.rs
-//! `stored_bytes`); the library is never a workspace. Runner credentials can't use it.
+//! Bytes (data + sealed secrets) count against the item's org's `storageBytes` (limits.rs
+//! `stored_bytes`): a collection whose data names an `org` the person belongs to is filed there
+//! (the app's org switcher), anything else under the personal org. The library is never a
+//! workspace. Runner credentials can't use it.
 
 use rust_web_server::request::Request;
 use rust_web_server::router::PathParams;
@@ -141,7 +143,15 @@ pub fn put(state: &State, request: &Request, params: &PathParams) -> ApiResult {
     }
     state.db.tx(|tx| {
         let user = person(state, tx, request)?;
-        let org = crate::orgs::ensure_personal(state, tx, &user)?;
+        let personal = crate::orgs::ensure_personal(state, tx, &user)?;
+        // A collection names its org in its data (the app's org switcher); 404 if not a member.
+        let org = match input.data.get("org").and_then(Json::as_str).map(str::trim).filter(|o| !o.is_empty()) {
+            Some(o) if kind == "collection" && o != personal => crate::orgs::org_membership(tx, o, &user)?.id,
+            _ => personal,
+        };
+        let old_org = tx
+            .query_one("SELECT org_id FROM library_items WHERE user_id = $1 AND kind = $2 AND item_id = $3", &[(&user.id).into(), (&kind).into(), (&id).into()])?
+            .map(|r| r.text(0));
         let now_item = current(tx, &user.id, &kind, &id)?;
         let seen = match now_item {
             Some((version, _, false)) => version,
@@ -161,8 +171,9 @@ pub fn put(state: &State, request: &Request, params: &PathParams) -> ApiResult {
             _ => Vec::new(),
         };
         let bytes = (data.len() + sealed.len()) as i64;
+        // Moved to another org: all of it is new there.
         let before = match now_item {
-            Some((_, b, false)) => b,
+            Some((_, b, false)) if old_org.as_deref() == Some(org.as_str()) => b,
             _ => 0,
         };
         crate::limits::check_storage(state, tx, &org, bytes - before)?;
@@ -227,7 +238,11 @@ pub(crate) fn store_from_server(state: &State, tx: &mut Tx, user: &str, id: &str
     if text.len() > MAX_ITEM_BYTES {
         return Err(ApiError::new(413, "too_large", format!("the collection on GitHub is over {} MB", MAX_ITEM_BYTES >> 20)));
     }
-    let org = crate::orgs::personal_id(user);
+    let org = tx
+        .query_one("SELECT org_id FROM library_items WHERE user_id = $1 AND kind = 'collection' AND item_id = $2", &[user.into(), id.into()])?
+        .map(|r| r.text(0))
+        .filter(|o| !o.is_empty())
+        .unwrap_or_else(|| crate::orgs::personal_id(user));
     let sealed_len = tx.query_one("SELECT secrets FROM library_items WHERE user_id = $1 AND kind = 'collection' AND item_id = $2", &[user.into(), id.into()])?.map_or(0, |r| r.bytes(0).len());
     let bytes = (text.len() + sealed_len) as i64;
     crate::limits::check_storage(state, tx, &org, bytes - before)?;

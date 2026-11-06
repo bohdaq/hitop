@@ -585,6 +585,7 @@ export class HitopRequest extends LitElement {
           @input=${(e) => this.set({ url: e.target.value })}
           @keydown=${(e) => e.key === "Enter" && this.send(e)}
         ></lit-material-text-field>
+        ${this.app.envSelect()}
         ${t.loading
           ? html`<lit-material-button class="cancel-send" variant="outlined" type="button" title="Stop waiting for the response" @click=${() => this.store.cancel(t.id)}>
               ${icon("x")} Cancel

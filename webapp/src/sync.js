@@ -962,7 +962,11 @@ export class SyncClient {
     this.checkTrusted(me.keys, "your other devices");
     const ws = w.randomId();
     const key = w.newKey();
-    await this.api("POST", "/v1/workspaces", { id: ws, wraps: await this.wrapsFor(me.keys, ws, 1, key) });
+    // In the collection's organization (the top bar's switcher), when signed in to HITOP Cloud.
+    const c = this.store?.collection?.(collectionId);
+    const org = c && this.store.orgOf?.(c);
+    await this.api("POST", "/v1/workspaces", { id: ws, wraps: await this.wrapsFor(me.keys, ws, 1, key), ...(org ? { org } : {}) });
+    if (org) this.store.workspaceOrgs?.set(ws, org);
     // Made here: only authenticated keys from now on.
     this.saveMemory(ws, { strict: true });
     const entry = this.store.folderOf(collectionId);

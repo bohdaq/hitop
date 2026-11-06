@@ -22,6 +22,7 @@ import "./history-view.js";
 import "./github-view.js";
 import { storageOf } from "../git.js";
 import { syncClient } from "./sync-view.js";
+import { orgLabel } from "../orgs.js";
 import { DEFAULT_SERVER } from "../sync.js";
 
 // The HITOP Cloud portal (plan, organizations, billing): web only, never in the desktop build (App
@@ -156,7 +157,7 @@ export class HitopApp extends LitElement {
 
   quickResults(d = this.dialog) {
     const s = this.store;
-    return rankItems(quickOpenItems({ collections: s.collections, tabs: s.tabs, methodLabel }), d?.query ?? "", 50);
+    return rankItems(quickOpenItems({ collections: s.visibleCollections, tabs: s.tabs, methodLabel }), d?.query ?? "", 50);
   }
 
   quickPick(item) {
@@ -485,7 +486,7 @@ export class HitopApp extends LitElement {
         body = html`
           <lit-material-text-field id="name" variant="outlined" label="Request name" .value=${d.name} required autofocus></lit-material-text-field>
           <lit-material-select id="collection" variant="outlined" label="Collection" .value=${String(d.collectionId ?? "")} required>
-            ${s.collections.map((c) => html`<lit-material-select-option value=${String(c.id)}>${c.name}</lit-material-select-option>`)}
+            ${s.visibleCollections.map((c) => html`<lit-material-select-option value=${String(c.id)}>${c.name}</lit-material-select-option>`)}
           </lit-material-select>`;
         footer = actions("Save");
         break;
@@ -621,21 +622,38 @@ export class HitopApp extends LitElement {
 
   // --- sidebar ------------------------------------------------------------------
 
-  // The environment picker: in the top bar, and in the drawer on phones.
+  // The environment picker, next to Send (request-view.js): the current org's environments.
   envSelect() {
     const s = this.store;
-    return html`<lit-material-select class="env-select" variant="outlined" label="Environment" .value=${s.activeEnvironmentId ?? "none"}
+    const env = s.activeEnvironment;
+    return html`<lit-material-select class="env-select" variant="outlined" label="Environment" .value=${env?.id ?? "none"}
       @change=${(e) => s.setActiveEnvironment(e.target.value === "none" ? null : e.target.value)}>
       <lit-material-select-option value="none">No environment</lit-material-select-option>
-      ${s.environments.map((env) => html`<lit-material-select-option value=${env.id}>${s.environmentLabel(env)}</lit-material-select-option>`)}
+      ${s.visibleEnvironments.map((x) => html`<lit-material-select-option value=${x.id}>${s.environmentLabel(x)}</lit-material-select-option>`)}
     </lit-material-select>`;
   }
 
-  // Environment picker, a link to its page and the theme: the top bar's
+  // The organization switcher (signed in to HITOP Cloud): the top bar, and the drawer on phones.
+  orgSelect() {
+    const s = this.store;
+    if (!s.orgs.length) return nothing;
+    return html`<lit-material-select class="org-select" variant="outlined" label="Organization" .value=${s.currentOrg ?? ""}
+      @change=${(e) => s.setCurrentOrg(e.target.value)}>
+      ${s.orgs.map((o) => html`<lit-material-select-option value=${o.id}>${orgLabel(o)}</lit-material-select-option>`)}
+    </lit-material-select>`;
+  }
+
+  /** The current org's plan page on the portal. */
+  planUrl() {
+    const org = this.store.currentOrg;
+    return org ? `${PORTAL_URL}orgs/${encodeURIComponent(org)}/plan` : PORTAL_URL;
+  }
+
+  // Organization picker, environments, shortcuts and the theme: the top bar's
   // right end, or the top of the drawer on phones (one shows at a time).
   tools(where) {
     return html`<div class=${`app-tools ${where}`}>
-      ${this.envSelect()}
+      ${this.orgSelect()}
       <lit-material-icon-button aria-label="Manage environments" title="Manage environments" @click=${() => this.go("environments")}>${icon("sliders-horizontal")}</lit-material-icon-button>
       <lit-material-icon-button aria-label="Keyboard shortcuts" title="Keyboard shortcuts (?)" @click=${() => this.openDialog("shortcuts")}>${icon("keyboard")}</lit-material-icon-button>
       <lit-material-color-scheme-toggle storage-key="hitop-theme" cycle>
@@ -776,7 +794,7 @@ export class HitopApp extends LitElement {
       ${needs.map((x) => html`<lit-material-list-item interactive class="account-need" @click=${() => x.run()}>${icon("warning-circle")} ${x.text}</lit-material-list-item>`)}
       <lit-material-list-item interactive @click=${() => this.go("sync")}>${icon("user-circle")} Account & devices</lit-material-list-item>
       <lit-material-list-item interactive @click=${() => this.openDialog("join")}>${icon("users-three")} Join with invite code…</lit-material-list-item>
-      ${web ? html`<lit-material-list-item interactive @click=${() => window.open(PORTAL_URL, "_blank", "noopener")}>${icon("arrow-square-out")} Plan & billing</lit-material-list-item>` : nothing}
+      ${web ? html`<lit-material-list-item interactive @click=${() => window.open(this.planUrl(), "_blank", "noopener")}>${icon("arrow-square-out")} Plan & billing</lit-material-list-item>` : nothing}
       <lit-material-list-item interactive @click=${() => this.signOut()}>${icon("sign-out")} Sign out</lit-material-list-item>
     </lit-material-menu>`;
   }
@@ -842,7 +860,7 @@ export class HitopApp extends LitElement {
             ${icon("folders")}<span>Collections</span>
           </button>
           <ul>
-            ${s.collections.map((c) => {
+            ${s.visibleCollections.map((c) => {
               const requests = (c.requests || []).filter(matches);
               if (filter && !requests.length) return nothing;
               const open = Boolean(filter) || !this.collapsed.includes(String(c.id));

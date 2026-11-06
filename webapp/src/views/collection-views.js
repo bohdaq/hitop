@@ -56,8 +56,9 @@ export class HitopCollections extends LightElement {
         <header class="page-header">
           <h1>Collections</h1>
           <div class="page-actions">
-            <lit-material-button variant="outlined" ?disabled=${!s.collections.length || run.running} @click=${() => s.runAll()}>
-              ${icon("play")} ${run.running ? `Running ${run.completed + 1} of ${s.collections.filter((c) => c.requests?.length).length}` : "Run all"}
+            ${this.app.envSelect()}
+            <lit-material-button variant="outlined" ?disabled=${!s.visibleCollections.length || run.running} @click=${() => s.runAll()}>
+              ${icon("play")} ${run.running ? `Running ${run.completed + 1} of ${s.visibleCollections.filter((c) => c.requests?.length).length}` : "Run all"}
             </lit-material-button>
             ${platform().folders?.pick
               ? html`<lit-material-button variant="outlined" @click=${() => s.openFolder()}>${icon("folder-open")} Open folder</lit-material-button>`
@@ -81,10 +82,10 @@ export class HitopCollections extends LightElement {
               ${summary.successCount} succeeded, ${summary.failedCount} failed${summary.assertions ? `; ${summary.assertions - summary.assertionsFailed} of ${summary.assertions} tests passed` : ""}, in ${summary.duration} ms.
             </lit-material-alert>`
           : nothing}
-        ${s.collections.length
+        ${s.visibleCollections.length
           ? html`<lit-material-sortable class="cards" layout="grid" role="list" label="Collections" @sort=${(e) => s.reorderCollections(e.detail.from, e.detail.to)}>
               ${repeat(
-                s.collections,
+                s.visibleCollections,
                 (c) => c.id,
                 (c) => html`
                   <div class="card" role="listitem" data-sort-id=${c.id} data-sort-label=${c.name}>
@@ -131,6 +132,7 @@ export class HitopCollection extends LightElement {
         <header class="page-header">
           <h1>${c.name}</h1>
           <div class="page-actions">
+            ${this.app.envSelect()}
             <lit-material-button variant="filled" ?disabled=${!n || run.running} @click=${() => s.runCollection(c.id)}>
               ${icon("play")} ${mine && run.running ? "Running" : "Run collection"}
             </lit-material-button>
@@ -325,8 +327,9 @@ export class HitopEnvironments extends LightElement {
 
   render() {
     const s = this.store;
-    const selectedId = s.view.environmentId ?? s.activeEnvironmentId ?? s.environments[0]?.id;
-    const env = s.environments.find((e) => e.id === selectedId);
+    const envs = s.visibleEnvironments;
+    const selectedId = [s.view.environmentId, s.activeEnvironmentId].find((id) => id && envs.some((e) => e.id === id)) ?? envs[0]?.id;
+    const env = envs.find((e) => e.id === selectedId);
     if (env) {
       // As with collection variables: new rows only when changed elsewhere.
       const names = secretNames(env);
@@ -345,15 +348,15 @@ export class HitopEnvironments extends LightElement {
           <h1>Environments</h1>
           <div class="page-actions">
             <lit-material-button variant="outlined" @click=${() => this.app.openDialog("import-environments")}>${icon("file-arrow-up")} Import</lit-material-button>
-            <lit-material-button variant="outlined" ?disabled=${!s.environments.length} @click=${() => this.app.download("hitop-environments.json", s.exportEnvironments())}>${icon("file-arrow-down")} Export</lit-material-button>
+            <lit-material-button variant="outlined" ?disabled=${!envs.length} @click=${() => this.app.download("hitop-environments.json", s.exportEnvironments())}>${icon("file-arrow-down")} Export</lit-material-button>
             <lit-material-button variant="filled" @click=${() => this.app.openDialog("add-environment")}>${icon("plus")} New environment</lit-material-button>
           </div>
         </header>
-        <p class="page-lead">An environment is a set of variables such as Dev, Staging or Prod. The active one, picked in the sidebar, overrides collection variables with the same name in every request.</p>
-        ${s.environments.length
+        <p class="page-lead">An environment is a set of variables such as Dev, Staging or Prod. The active one, picked next to Send, overrides collection variables with the same name in every request.</p>
+        ${envs.length
           ? html`
               <div class="env-tabs">
-                ${s.environments.map(
+                ${envs.map(
                   (e) => html`<button type="button" class=${`env-chip ${e.id === selectedId ? "selected" : ""}`} aria-current=${e.id === selectedId ? "true" : "false"}
                     @click=${() => s.show("environments", null, e.id)}>
                     ${s.environmentLabel(e)}${e.id === s.activeEnvironmentId ? html` <span class="active-tag">active</span>` : nothing}
@@ -369,6 +372,12 @@ export class HitopEnvironments extends LightElement {
                       <lit-material-icon-button aria-label=${`Rename ${env.name}`} @click=${() => this.app.openDialog("rename-environment", { id: env.id, name: env.name })}>${icon("pencil-simple")}</lit-material-icon-button>
                       <lit-material-icon-button aria-label=${`Delete ${env.name}`} @click=${() => this.app.deleteEnvironment(env)}>${icon("trash")}</lit-material-icon-button>
                     </div>
+                    ${s.currentOrg && !s.folderEnvs.has(env.id)
+                      ? html`<label class="switch-row">
+                          <lit-material-switch aria-label="Available in every organization" ?checked=${!env.org} @change=${(e) => s.setEnvironmentAllOrgs(env.id, e.target.checked)}></lit-material-switch>
+                          <span>Available in every organization</span>
+                        </label>`
+                      : nothing}
                     <lit-material-key-value-editor
                       key-label="Name"
                       value-label="Value"
@@ -398,7 +407,7 @@ export class HitopEnvironments extends LightElement {
                     </section>`
                 : nothing}`
           : html`<lit-material-empty-state headline="No environments yet">
-              Create Dev, Staging and Prod with the same variable names and different values, then switch between them in the sidebar.
+              Create Dev, Staging and Prod with the same variable names and different values, then switch between them next to Send.
               <lit-material-button slot="actions" variant="filled" @click=${() => this.app.openDialog("add-environment")}>New environment</lit-material-button>
             </lit-material-empty-state>`}
         ${this.renderGlobals()}

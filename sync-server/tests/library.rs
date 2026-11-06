@@ -161,3 +161,26 @@ fn bad_requests_tokens_and_runners() {
     let rt = runner.json["token"].as_str().unwrap();
     assert_eq!(s.call("GET", "/v1/library", Some(rt), None).status, 403);
 }
+
+#[test]
+fn a_collection_naming_an_org_is_filed_and_counted_there() {
+    let s = Server::new("library-orgs");
+    let ada = s.sign_in("ada@example.com");
+    let bob = s.sign_in("bob@example.com");
+    let personal = s.call("GET", "/v1/orgs", Some(&ada), None).json["orgs"][0]["id"].as_str().unwrap().to_string();
+    let team = s.call("POST", "/v1/orgs", Some(&ada), Some(json!({ "name": "Acme" }))).json["id"].as_str().unwrap().to_string();
+    let bytes = |org: &str| s.call("GET", &format!("/v1/orgs/{org}/usage"), Some(&ada), None).json["usage"]["storageBytes"].as_i64().unwrap();
+    let blob = "x".repeat(10_000);
+    // In the team org: counted there, not in the personal org; the org stays in the data.
+    let r = put(&s, &ada, "collection", "1", json!({ "id": 1, "name": "Team API", "org": team, "blob": blob }), None, 0);
+    assert_eq!(r.status, 200, "{}", r.json);
+    assert!(bytes(&team) >= 10_000 && bytes(&personal) < 10_000, "team {} personal {}", bytes(&team), bytes(&personal));
+    assert_eq!(list(&s, &ada, None)["items"][0]["data"]["org"], json!(team));
+    // Moved back to personal: the bytes move with it.
+    assert_eq!(put(&s, &ada, "collection", "1", json!({ "id": 1, "name": "Team API", "org": personal, "blob": blob }), None, 1).status, 200);
+    assert!(bytes(&team) < 10_000 && bytes(&personal) >= 10_000);
+    // An org the person isn't in is refused (404), and nothing is stored.
+    let r = put(&s, &bob, "collection", "9", json!({ "id": 9, "name": "Sneaky", "org": team }), None, 0);
+    assert_eq!(r.status, 404, "{}", r.json);
+    assert_eq!(list(&s, &bob, None)["items"], json!([]));
+}

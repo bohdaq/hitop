@@ -11,6 +11,7 @@ import { confirm } from "@lit-material/confirm";
 import { icon } from "../icons.js";
 import { DEFAULT_SERVER, KeyError, SyncClient } from "../sync.js";
 import { planLink } from "../plan-link.js";
+import { orgLabel } from "../orgs.js";
 import { platform } from "../platform/index.js";
 import "./github-view.js";
 
@@ -870,8 +871,8 @@ class HitopSync extends LitElement {
         ${a.server === DEFAULT_SERVER && web
           ? html`<div class="account-row" aria-label="Plan">
               <span class="account-key">${icon("cloud")} Plan & billing</span>
-              <span class="account-value"></span>
-              <lit-material-button variant="text" href="https://cloud.hitop.rws8.tech/" target="_blank">HITOP Cloud ${icon("arrow-square-out")}</lit-material-button>
+              <span class="account-value">${this.store.currentOrgInfo ? orgLabel(this.store.currentOrgInfo) : ""}</span>
+              <lit-material-button variant="text" href=${this.app?.planUrl?.() ?? "https://cloud.hitop.rws8.tech/"} target="_blank">Manage ${icon("arrow-square-out")}</lit-material-button>
             </div>`
           : nothing}
       </div>
