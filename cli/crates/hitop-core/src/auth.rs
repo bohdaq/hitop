@@ -2,7 +2,7 @@
 use base64::Engine;
 use serde_json::{json, Value};
 
-use crate::model::{ApiKeyLocation, Auth};
+use crate::model::{ApiKeyLocation, Auth, OAuth2};
 use crate::params::{parse_query, with_query};
 
 /// Adds the auth header (or query parameter) to an already interpolated
@@ -72,6 +72,14 @@ pub fn to_postman(auth: Option<&Auth>) -> Option<Value> {
             let at = if *location == ApiKeyLocation::Query { "query" } else { "header" };
             Some(json!({ "type": "apikey", "apikey": kv(&[("key", key), ("value", value), ("in", at)]) }))
         }
+        Auth::OAuth2(o) => {
+            let grant = if o.grant == "password" { "password_credentials" } else { "client_credentials" };
+            let client = if o.client_auth == "body" { "body" } else { "header" };
+            Some(json!({ "type": "oauth2", "oauth2": kv(&[
+                ("grant_type", grant), ("accessTokenUrl", &o.token_url), ("clientId", &o.client_id), ("clientSecret", &o.client_secret),
+                ("scope", &o.scope), ("username", &o.username), ("password", &o.password), ("client_authentication", client), ("addTokenTo", "header"),
+            ]) }))
+        }
     }
 }
 
@@ -95,6 +103,24 @@ pub fn from_postman(auth: &Value) -> Option<Auth> {
             value: get("value"),
             location: if get("in") == "query" { ApiKeyLocation::Query } else { ApiKeyLocation::Header },
         }),
+        // The grants that need no browser; authorization code and implicit stay reported.
+        "oauth2" => {
+            let grant = match get("grant_type").as_str() {
+                "client_credentials" => "client_credentials",
+                "password_credentials" => "password",
+                _ => return None,
+            };
+            Some(Auth::OAuth2(Box::new(OAuth2 {
+                grant: grant.into(),
+                token_url: get("accessTokenUrl"),
+                client_id: get("clientId"),
+                client_secret: get("clientSecret"),
+                scope: get("scope"),
+                username: get("username"),
+                password: get("password"),
+                client_auth: if get("client_authentication") == "body" { "body".into() } else { String::new() },
+            })))
+        }
         _ => None,
     }
 }

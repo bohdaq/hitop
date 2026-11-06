@@ -285,7 +285,11 @@ pub fn run(cmd: RequestsCmd) -> Result<()> {
                 .map(|m| m.iter().map(|(k, v)| (k.clone(), v.clone())).collect())
                 .unwrap_or_default();
 
-            let draft = Draft::of(&req, col.auth.as_ref());
+            let mut draft = Draft::of(&req, col.auth.as_ref());
+            let oauth = hitop_core::oauth2::fetch_once(draft.auth, &scopes.merged(), None).map_err(masked)?;
+            if let Some(a) = &oauth {
+                draft.auth = Some(a);
+            }
             let pre = prepare_in(&draft, &scopes, &context).map_err(masked)?;
             scopes.apply(&pre.variables, &pre.globals);
             let vars = scopes.merged();
@@ -358,6 +362,7 @@ fn describe_auth(auth: &Auth) -> String {
         Auth::Bearer { .. } => "Bearer token".into(),
         Auth::Basic { username, .. } => format!("Basic, user {username}"),
         Auth::ApiKey { key, location, .. } => format!("API key {key} in the {}", if *location == hitop_core::model::ApiKeyLocation::Query { "query" } else { "headers" }),
+        Auth::OAuth2(o) => format!("OAuth 2.0 ({}) from {}", if o.grant == "password" { "password" } else { "client credentials" }, o.token_url),
     }
 }
 

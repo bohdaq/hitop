@@ -43,9 +43,10 @@ export const AUTH_TYPES = [
   ["bearer", "Bearer token"],
   ["basic", "Basic auth"],
   ["apikey", "API key"],
+  ["oauth2", "OAuth 2.0"],
 ];
 
-export const emptyAuth = () => ({ type: "none", token: "", username: "", password: "", key: "X-API-Key", value: "", in: "header" });
+export const emptyAuth = () => ({ type: "none", token: "", username: "", password: "", key: "X-API-Key", value: "", in: "header", grant: "client_credentials", tokenUrl: "", clientId: "", clientSecret: "", scope: "", clientAuth: "" });
 
 // Only the fields the chosen type uses, for saving and exporting: switching
 // from Basic to a token shouldn't leave the old password stored.
@@ -54,10 +55,45 @@ export function cleanAuth(auth) {
   if (auth.type === "bearer") return { type: "bearer", token: auth.token || "" };
   if (auth.type === "basic") return { type: "basic", username: auth.username || "", password: auth.password || "" };
   if (auth.type === "apikey") return { type: "apikey", key: auth.key || "", value: auth.value || "", in: auth.in === "query" ? "query" : "header" };
+  if (auth.type === "oauth2") {
+    const out = { type: "oauth2", grant: auth.grant === "password" ? "password" : "client_credentials", tokenUrl: auth.tokenUrl || "", clientId: auth.clientId || "" };
+    for (const k of ["clientSecret", "scope", ...(out.grant === "password" ? ["username", "password"] : [])]) if (auth[k]) out[k] = auth[k];
+    if (auth.clientAuth === "body") out.clientAuth = "body";
+    return out;
+  }
   return undefined;
 }
 
 const base64 = (text) => btoa(String.fromCharCode(...new TextEncoder().encode(text)));
+
+// OAuth 2.0 (hitop-core oauth2.rs): the token request for the client credentials or password
+// grant: { url, headers, body, key } with values filled in by `fill`.
+const form = (pairs) => pairs.filter(([, v]) => v).map(([k, v]) => `${encodeURIComponent(k)}=${encodeURIComponent(v)}`).join("&");
+export function oauthTokenRequest(auth, fill = (s) => s) {
+  const url = fill(auth.tokenUrl || "").trim();
+  if (!url) throw new Error("OAuth 2.0: the token URL is empty");
+  const grant = auth.grant === "password" ? "password" : "client_credentials";
+  const [clientId, secret, scope] = [fill(auth.clientId || ""), fill(auth.clientSecret || ""), fill(auth.scope || "")];
+  const user = grant === "password" ? fill(auth.username || "") : "";
+  const pairs = [["grant_type", grant], ...(grant === "password" ? [["username", user], ["password", fill(auth.password || "")]] : []), ["scope", scope]];
+  const headers = { "Content-Type": "application/x-www-form-urlencoded", Accept: "application/json" };
+  if (auth.clientAuth === "body") pairs.push(["client_id", clientId], ["client_secret", secret]);
+  else headers.Authorization = `Basic ${base64(`${encodeURIComponent(clientId)}:${encodeURIComponent(secret)}`)}`;
+  return { url, headers, body: form(pairs), key: `${url}\n${clientId}\n${scope}\n${user}` };
+}
+
+/** The access token and its lifetime (seconds) from the token endpoint's answer. */
+export function oauthParseToken(status, text) {
+  let json = null;
+  try {
+    json = JSON.parse(text);
+  } catch {
+    // not JSON
+  }
+  if (status < 200 || status >= 300) throw new Error(`OAuth 2.0: the token endpoint answered ${status}: ${json?.error_description || json?.error || "no reason given"}`);
+  if (!json?.access_token) throw new Error("OAuth 2.0: the token endpoint's answer has no access_token");
+  return { token: json.access_token, lifetime: Number(json.expires_in) || null };
+}
 
 // Adds the auth header (or query parameter) to an already interpolated
 // request. A header the user set by hand with the same name wins.

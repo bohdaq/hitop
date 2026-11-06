@@ -438,6 +438,38 @@ pub enum Auth {
         #[serde(default, rename = "in")]
         location: ApiKeyLocation,
     },
+    /// OAuth 2.0: a token from `token_url` (client credentials, or the password grant), sent as
+    /// `Authorization: Bearer` (oauth2.rs). The token lives in memory for its lifetime.
+    #[serde(rename = "oauth2")]
+    OAuth2(Box<OAuth2>),
+}
+
+/// An OAuth 2.0 token request (RFC 6749 §4.3, §4.4); values may contain `${variables}`.
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct OAuth2 {
+    /// `client_credentials` (default) or `password`.
+    #[serde(default = "client_credentials")]
+    pub grant: String,
+    #[serde(default)]
+    pub token_url: String,
+    #[serde(default)]
+    pub client_id: String,
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub client_secret: String,
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub scope: String,
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub username: String,
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub password: String,
+    /// Where the client id and secret go: `basic` (an Authorization header, default) or `body`.
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub client_auth: String,
+}
+
+fn client_credentials() -> String {
+    "client_credentials".into()
 }
 
 #[derive(Debug, Clone, Copy, Default, PartialEq, Serialize, Deserialize)]

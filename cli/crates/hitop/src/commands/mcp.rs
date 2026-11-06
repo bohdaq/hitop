@@ -377,7 +377,7 @@ fn timestamp_id() -> u64 {
 
 fn parse_auth(v: Value) -> Result<Auth> {
     serde_json::from_value(v).context(
-        "auth: {\"type\":\"none\"}, {\"type\":\"bearer\",\"token\":\"${token}\"}, {\"type\":\"basic\",\"username\":\"...\",\"password\":\"${password}\"} or {\"type\":\"apikey\",\"key\":\"X-Api-Key\",\"value\":\"${key}\",\"in\":\"header\"|\"query\"}",
+        "auth: {\"type\":\"none\"}, {\"type\":\"bearer\",\"token\":\"${token}\"}, {\"type\":\"basic\",\"username\":\"...\",\"password\":\"${password}\"}, {\"type\":\"apikey\",\"key\":\"X-Api-Key\",\"value\":\"${key}\",\"in\":\"header\"|\"query\"} or {\"type\":\"oauth2\",\"grant\":\"client_credentials\"|\"password\",\"tokenUrl\":\"...\",\"clientId\":\"...\",\"clientSecret\":\"${secret}\",\"scope\":\"...\"}",
     )
 }
 
@@ -387,6 +387,7 @@ fn auth_strings(a: &Auth) -> Vec<String> {
         Auth::Bearer { token } => vec![token.clone()],
         Auth::Basic { username, password } => vec![username.clone(), password.clone()],
         Auth::ApiKey { key, value, .. } => vec![key.clone(), value.clone()],
+        Auth::OAuth2(o) => vec![o.token_url.clone(), o.client_id.clone(), o.client_secret.clone(), o.scope.clone(), o.username.clone(), o.password.clone()],
     }
 }
 

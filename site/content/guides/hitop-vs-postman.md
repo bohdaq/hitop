@@ -30,7 +30,7 @@ If your team uses Postman's monitors, mock servers or published documentation, H
 
 ## What moves over from Postman
 
-`hitop import` reads Postman v2.1 collection exports (folders, collection and request auth, pre-request and test scripts), environment exports and globals exports, and writes a collection folder. Secret environment values go to the OS keychain, not into the files. The import ends with a report of what needs a look: script lines that call something HITOP doesn't run, such as `pm.sendRequest`, `postman.setNextRequest`, `require()` or CryptoJS, and auth types it doesn't support, such as OAuth 2.0.
+`hitop import` reads Postman v2.1 collection exports (folders, collection and request auth, pre-request and test scripts), environment exports and globals exports, and writes a collection folder. Secret environment values go to the OS keychain, not into the files. The import ends with a report of what needs a look: script lines that call something HITOP doesn't run, such as `pm.sendRequest`, `postman.setNextRequest`, `require()` or CryptoJS, and auth types it doesn't support, such as OAuth 2.0 with the authorization code grant (client credentials and password come over).
 
 See [Migrate from Postman](/guides/migrate-from-postman/) for the steps.
 

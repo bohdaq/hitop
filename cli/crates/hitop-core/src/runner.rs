@@ -135,6 +135,7 @@ pub fn run_collection_jar(
     let mut scopes = Scopes { globals, upper };
     let masker = secrets.masker_with(&options.global_secrets);
     let mut results = Vec::new();
+    let mut tokens = crate::oauth2::Tokens::default();
 
     for request in &collection.requests {
         // WebSocket and gRPC requests are made on demand (`hitop ws`,
@@ -143,9 +144,29 @@ pub fn run_collection_jar(
             continue;
         }
         let started = Instant::now();
+        // OAuth 2.0: a token (from the cache, or the token endpoint now) in place of the preset.
+        let oauth = {
+            let vars = scopes.merged();
+            let now = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map_or(0, |d| d.as_secs());
+            tokens.resolve(request.auth.as_ref().or(collection.auth.as_ref()), &|s| crate::interpolation::interpolate(s, &vars), now, &mut |r| {
+                let res = http::execute_opts("POST", &r.url, &r.headers, r.body.clone().into_bytes(), http::Options { timeout: options.timeout, jar: None })?;
+                Ok((res.status, res.body))
+            })
+        };
+        let (oauth_auth, oauth_error) = match oauth {
+            Ok(a) => (a, None),
+            Err(e) => (None, Some(e)),
+        };
         // A request's own auth (even `none`) wins over the collection's.
-        let draft = Draft::of(request, collection.auth.as_ref());
-        let step = match prepare_in(&draft, &scopes, &context) {
+        let mut draft = Draft::of(request, collection.auth.as_ref());
+        if let Some(a) = &oauth_auth {
+            draft.auth = Some(a);
+        }
+        let prepared = match oauth_error {
+            Some(e) => Err(e),
+            None => prepare_in(&draft, &scopes, &context),
+        };
+        let step = match prepared {
             Err(e) => RunStepResult {
                 request_name: request.name.clone(),
                 method: request.method.clone(),

@@ -329,6 +329,20 @@ export class HitopRequest extends LitElement {
                 <lit-material-select-option value="query">Query parameter</lit-material-select-option>
               </lit-material-select>`
           : nothing}
+        ${a.type === "oauth2"
+          ? html`<lit-material-select variant="outlined" label="Grant" .value=${a.grant === "password" ? "password" : "client_credentials"} @change=${(e) => this.setAuth({ grant: e.target.value })}>
+                <lit-material-select-option value="client_credentials">Client credentials</lit-material-select-option>
+                <lit-material-select-option value="password">Password</lit-material-select-option>
+              </lit-material-select>
+              ${field("Token URL", "tokenUrl", { help: "HITOP gets a token here before the request and sends it as Authorization: Bearer. It stays in memory until it expires." })}
+              ${field("Client ID", "clientId")} ${field("Client secret", "clientSecret", { type: "password", help: "Use ${variables}: keep the value in a secret environment variable." })}
+              ${field("Scope", "scope")}
+              ${a.grant === "password" ? html`${field("Username", "username")} ${field("Password", "password", { type: "password" })}` : nothing}
+              <lit-material-select variant="outlined" label="Send the client ID and secret" .value=${a.clientAuth === "body" ? "body" : ""} @change=${(e) => this.setAuth({ clientAuth: e.target.value })}>
+                <lit-material-select-option value="">As Basic auth header</lit-material-select-option>
+                <lit-material-select-option value="body">In the request body</lit-material-select-option>
+              </lit-material-select>`
+          : nothing}
         ${a.type === "none" ? html`<p class="hint">Pick a type to add credentials. A header you set by hand with the same name wins.</p>` : nothing}
       </div>`;
   }

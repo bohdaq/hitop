@@ -419,3 +419,40 @@ fn timeout_fails_a_slow_request() {
     assert!(r["error"].as_str().unwrap().contains("timed out"), "{r}");
     assert_eq!(r["status"], Value::Null);
 }
+
+#[test]
+fn oauth2_client_credentials_fetches_one_token_for_the_run() {
+    let server = MockServer::start();
+    let token = server.mock(|when, then| {
+        when.method(POST).path("/token").header("content-type", "application/x-www-form-urlencoded").body("grant_type=client_credentials&scope=orders");
+        then.status(200).json_body(serde_json::json!({ "access_token": "oauth-tok-9", "token_type": "Bearer", "expires_in": 3600 }));
+    });
+    let api = server.mock(|when, then| {
+        when.method(GET).header("authorization", "Bearer oauth-tok-9");
+        then.status(200).body("yes");
+    });
+    let (home, tmp) = (TempDir::new().unwrap(), TempDir::new().unwrap());
+    let dir = folder(&tmp, &server.base_url());
+    let manifest = fs::read_to_string(dir.join("hitop.yaml")).unwrap().replace(
+        "auth:\n  type: bearer\n  token: ${token}\n",
+        "auth:\n  type: oauth2\n  grant: client_credentials\n  tokenUrl: ${base}/token\n  clientId: app\n  clientSecret: ${token}\n  scope: orders\n",
+    );
+    fs::write(dir.join("hitop.yaml"), manifest).unwrap();
+    hitop(&home, tmp.path())
+        .args(["run", "./api", "--env", "ci", "--secret", "token=tok-123"])
+        .assert()
+        .code(0)
+        .stdout(contains("3/3 requests succeeded"));
+    token.assert_hits(1);
+    api.assert_hits(3);
+    // A refused client: the run says why, and nothing is sent.
+    let refused = MockServer::start();
+    refused.mock(|when, then| {
+        when.method(POST).path("/token");
+        then.status(401).json_body(serde_json::json!({ "error": "invalid_client" }));
+    });
+    let dir2 = TempDir::new().unwrap();
+    let d2 = folder(&dir2, &refused.base_url());
+    fs::write(d2.join("hitop.yaml"), fs::read_to_string(dir.join("hitop.yaml")).unwrap()).unwrap();
+    hitop(&home, dir2.path()).args(["run", "./api", "--env", "ci", "--secret", "token=tok-123"]).assert().code(1).stdout(contains("invalid_client"));
+}

@@ -11,6 +11,8 @@ import { interpolateVariables } from "../../frontend/src/services/variableInterp
 import { generateUniqueId } from "../../frontend/src/utils/idGenerator.jsx";
 import {
   applyAuth,
+  oauthParseToken,
+  oauthTokenRequest,
   cleanAuth,
   cookieHeader,
   emptyAuth,
@@ -1518,13 +1520,27 @@ export class Store extends EventTarget {
     } else {
       body = source.body ? interpolate(source.body) : source.body;
     }
-    const authed = applyAuth(source.auth, { url, headers, body }, interpolate);
+    const auth = source.auth?.type === "oauth2" ? await this.oauthBearer(source.auth, interpolate) : source.auth;
+    const authed = applyAuth(auth, { url, headers, body }, interpolate);
     const out = await this.runPreScript(source.preRequestScript, collectionId, source.method, authed.url, authed.headers, authed.body);
     if (!postman) return out;
     const after = this.variables(collectionId);
     const strict = (text) => (text ? interpolateVariables(text, after) : text);
     const sentBody = gql && out.body === authed.body ? graphqlBody(strict) : strict(out.body);
     return { url: strict(out.url), headers: out.headers.map((h) => ({ ...h, name: strict(h.name), value: strict(h.value) })), body: sentBody };
+  }
+
+  // OAuth 2.0: a Bearer preset with a token kept in memory until 30 s before it runs out.
+  async oauthBearer(auth, fill) {
+    const req = oauthTokenRequest(auth, fill);
+    this.oauthTokens ??= new Map();
+    const now = Date.now() / 1000;
+    const have = this.oauthTokens.get(req.key);
+    if (have && (have.until == null || now < have.until)) return { type: "bearer", token: have.token };
+    const res = await platform().send(req.url, { method: "POST", headers: req.headers, body: req.body });
+    const { token, lifetime } = oauthParseToken(res.status, await res.text());
+    this.oauthTokens.set(req.key, { token, until: lifetime ? now + Math.max(0, lifetime - 30) : null });
+    return { type: "bearer", token };
   }
 
   // --- sending ----------------------------------------------------------------

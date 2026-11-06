@@ -58,6 +58,8 @@ The import ends with a list of things to check, each with its place in the colle
   Admin (auth): oauth2 auth
 ```
 
+OAuth 2.0 with the client credentials or password grant comes over as HITOP's `oauth2` auth; the authorization code and implicit grants are listed as above.
+
 Scripts run with a `pm.*` layer: `pm.test`, `pm.expect` (chai style), `pm.response` (`code`, `json()`, `text()`, `headers`, `responseTime`, `to.have.status`), `pm.request`, `pm.environment`, `pm.collectionVariables`, `pm.globals`, `pm.variables`, and the older `tests[...]` and `postman.setEnvironmentVariable` forms. Not supported yet: `pm.sendRequest`, `postman.setNextRequest`, `require()` and bundled libraries such as CryptoJS, lodash or cheerio, and OAuth 2.0 auth. Rewrite those lines, or move the step into a request of its own.
 
 ## Run it

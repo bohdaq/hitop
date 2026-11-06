@@ -378,7 +378,19 @@ auth: {type: none}
 auth: {type: bearer, token: ${token}}
 auth: {type: basic, username: shop, password: ${password}}
 auth: {type: apikey, key: X-API-Key, value: ${apiKey}, in: header}   # or in: query
+auth:
+  type: oauth2
+  grant: client_credentials        # or password (then username and password)
+  tokenUrl: https://id.example.com/oauth/token
+  clientId: shop-ci
+  clientSecret: ${clientSecret}
+  scope: orders:read               # optional
+  clientAuth: body                 # optional: the client id and secret in the form body, not Basic
 ```
+
+`oauth2` (OAuth 2.0, RFC 6749 §4.3 and §4.4): before the request, hitop POSTs the token request
+to `tokenUrl` and sends the `access_token` as `Authorization: Bearer`. The token is kept in memory
+for its `expires_in` (less 30 seconds), shared by the requests of a run, and never written.
 
 ## 5. Environment files: `environments/*.yaml`
 

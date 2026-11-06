@@ -317,6 +317,17 @@ impl Importer<'_> {
             Auth::Bearer { token } => Auth::Bearer { token: self.convert(&token, location) },
             Auth::Basic { username, password } => Auth::Basic { username: self.convert(&username, location), password: self.convert(&password, location) },
             Auth::ApiKey { key, value, location: at } => Auth::ApiKey { key: self.convert(&key, location), value: self.convert(&value, location), location: at },
+            Auth::OAuth2(o) => {
+                let c = |s: &String, me: &mut Self| me.convert(s, location);
+                let mut o = *o;
+                o.token_url = c(&o.token_url, self);
+                o.client_id = c(&o.client_id, self);
+                o.client_secret = c(&o.client_secret, self);
+                o.scope = c(&o.scope, self);
+                o.username = c(&o.username, self);
+                o.password = c(&o.password, self);
+                Auth::OAuth2(Box::new(o))
+            }
             Auth::None => Auth::None,
         }
     }

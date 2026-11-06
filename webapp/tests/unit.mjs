@@ -1,6 +1,6 @@
 // Unit checks for features.js (no browser): node tests/unit.mjs
 import assert from "node:assert/strict";
-import { cookieHeader, exportableEnvironments, exportableGlobals, isPostmanGlobals, maskSecrets, mergeGlobals, normalizeGlobals, parseGlobals, mergeCookies, multipartBody, parseEnvironments, parseQuery, secretNames, secretRefs, secretValues, urlEncodedBody, withQuery, withSecretRefs } from "../src/features.js";
+import { cleanAuth, oauthParseToken, oauthTokenRequest, cookieHeader, exportableEnvironments, exportableGlobals, isPostmanGlobals, maskSecrets, mergeGlobals, normalizeGlobals, parseGlobals, mergeCookies, multipartBody, parseEnvironments, parseQuery, secretNames, secretRefs, secretValues, urlEncodedBody, withQuery, withSecretRefs } from "../src/features.js";
 
 const now = Date.parse("2026-10-31T12:00:00Z");
 let jar = mergeCookies([], ["sid=abc; Path=/; HttpOnly", "pref=dark; Domain=example.com; Path=/; Max-Age=3600", "evil=1; Domain=other.com", "old=x; Expires=Thu, 01 Jan 2026 00:00:00 GMT"], "https://api.example.com/v1/login", now);
@@ -307,6 +307,21 @@ assert.throws(() => schemaFromResponse('{"errors": [{"message": "introspection i
   for (const bad of [limit("javascript:alert(1)"), limit("http://evil.example/"), limit("not a url"), limit("https://x/", 403), limit("https://x/", 402, "other"), new Error("x"), null]) {
     assert.equal(planLink(bad), null, JSON.stringify(bad?.body));
   }
+}
+
+// OAuth 2.0 (same request as hitop-core oauth2.rs).
+{
+  const cc = { type: "oauth2", grant: "client_credentials", tokenUrl: "https://id.test/token", clientId: "app", clientSecret: "${secret}", scope: "read write" };
+  const r = oauthTokenRequest(cc, (t) => t.replace("${secret}", "s3 cret"));
+  assert.equal(r.body, "grant_type=client_credentials&scope=read%20write");
+  assert.equal(r.headers.Authorization, `Basic ${Buffer.from("app:s3%20cret").toString("base64")}`);
+  const pw = oauthTokenRequest({ ...cc, grant: "password", username: "ada", password: "p&w", clientAuth: "body", scope: "" }, (t) => t.replace("${secret}", "s3 cret"));
+  assert.equal(pw.body, "grant_type=password&username=ada&password=p%26w&client_id=app&client_secret=s3%20cret");
+  assert.equal(pw.headers.Authorization, undefined);
+  assert.deepEqual(oauthParseToken(200, '{"access_token":"t1","expires_in":3600}'), { token: "t1", lifetime: 3600 });
+  assert.throws(() => oauthParseToken(401, '{"error":"invalid_client"}'), /invalid_client/);
+  assert.throws(() => oauthTokenRequest({ ...cc, tokenUrl: "" }), /token URL/);
+  assert.deepEqual(cleanAuth({ ...cc, username: "x", token: "y" }), { type: "oauth2", grant: "client_credentials", tokenUrl: "https://id.test/token", clientId: "app", clientSecret: "${secret}", scope: "read write" }, "only the grant's own fields are kept");
 }
 
 console.log("unit checks passed");

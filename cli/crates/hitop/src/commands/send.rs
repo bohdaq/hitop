@@ -161,6 +161,11 @@ pub fn run(args: SendArgs) -> Result<()> {
     secret::add_refs(&mut secrets, &refs, &args.secrets)?;
     secret::fill_refs(&secrets, &mut scopes);
     let masker = secrets.masker_with(&global_secrets);
+    let oauth = hitop_core::oauth2::fetch_once(draft.auth, &scopes.merged(), None).map_err(|e| anyhow::anyhow!(masker.mask(&format!("{e:#}"))))?;
+    let mut draft = draft;
+    if let Some(a) = &oauth {
+        draft.auth = Some(a);
+    }
     let pre = prepare_in(&draft, &scopes, &context).map_err(|e| anyhow::anyhow!(masker.mask(&format!("{e:#}"))))?;
     context.extend(pre.context_updates.clone());
     scopes.apply(&pre.variables, &pre.globals);

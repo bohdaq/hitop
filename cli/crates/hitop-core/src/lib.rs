@@ -9,6 +9,7 @@ pub mod http;
 pub mod interpolation;
 pub mod model;
 pub mod openapi;
+pub mod oauth2;
 pub mod params;
 pub mod postman;
 pub mod prepare;
