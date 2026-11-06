@@ -443,8 +443,8 @@ fn oauth2_client_credentials_fetches_one_token_for_the_run() {
         .assert()
         .code(0)
         .stdout(contains("3/3 requests succeeded"));
-    token.assert_hits(1);
-    api.assert_hits(3);
+    token.assert_calls(1);
+    api.assert_calls(3);
     // A refused client: the run says why, and nothing is sent.
     let refused = MockServer::start();
     refused.mock(|when, then| {
@@ -471,7 +471,7 @@ fn awsv4_signs_each_request_as_sent() {
     fs::remove_file(dir.join("requests/check.yaml")).unwrap();
     fs::remove_file(dir.join("requests/who.yaml")).unwrap();
     hitop(&home, tmp.path()).args(["run", "./api", "--env", "ci", "--secret", "token=wJalrXUtnFEMI"]).assert().code(0);
-    api.assert_hits(1);
+    api.assert_calls(1);
 }
 
 #[test]
@@ -492,8 +492,8 @@ fn digest_answers_the_challenge_once() {
     fs::remove_file(dir.join("requests/check.yaml")).unwrap();
     fs::remove_file(dir.join("requests/who.yaml")).unwrap();
     hitop(&home, tmp.path()).args(["run", "./api", "--env", "ci", "--secret", "token=Circle"]).assert().code(0);
-    challenge.assert_hits(1);
-    answered.assert_hits(1);
+    challenge.assert_calls(1);
+    answered.assert_calls(1);
 }
 
 #[test]
@@ -515,8 +515,8 @@ fn oauth2_authorization_code_with_pkce_signs_in_once() {
     let dir = folder(&tmp, &server.base_url());
     fs::write(dir.join("hitop.yaml"), "format: 1\nname: Run API\nvariables:\n  user: nobody\nauth:\n  type: oauth2\n  grant: authorization_code\n  authUrl: ${base}/authorize\n  tokenUrl: ${base}/token\n  clientId: app\n  scope: orders\norder:\n- ok\n- check\n- who\n").unwrap();
     hitop(&home, tmp.path()).env("HITOP_OAUTH_OPENER", &opener).args(["run", "./api", "--env", "ci", "--secret", "token=x"]).assert().code(0);
-    token.assert_hits(1);
-    api.assert_hits(3);
+    token.assert_calls(1);
+    api.assert_calls(3);
     // Without a person at the terminal (no opener, stderr not a terminal), it says so.
     hitop(&home, tmp.path()).args(["run", "./api", "--env", "ci", "--secret", "token=x"]).assert().code(1).stdout(contains("needs a person to sign in"));
 }

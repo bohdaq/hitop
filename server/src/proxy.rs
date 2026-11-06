@@ -162,28 +162,28 @@ impl Proxy {
     }
 
     /// The checks both endpoints make: no loop, an allowed Origin, a request that parses.
-    fn accept(&self, request: &Request) -> Result<ProxyRequest, Response> {
+    fn accept(&self, request: &Request) -> Result<ProxyRequest, Box<Response>> {
         let s = STATUS_CODE_REASON_PHRASE;
         if request.header(LOOP_HEADER).is_some() {
-            return Err(error(s.n508_loop_detected, "the proxy can't call itself"));
+            return Err(Box::new(error(s.n508_loop_detected, "the proxy can't call itself")));
         }
         // Browsers always send Origin on POST: this keeps other sites' pages
         // from using the proxy. (curl can fake it; the rate limit covers that.)
         let origin = request.header("origin").map(|h| h.value.to_string()).unwrap_or_default();
         if !self.origins.contains(&origin) {
-            return Err(error(s.n403_forbidden, "requests must come from the HITOP web app"));
+            return Err(Box::new(error(s.n403_forbidden, "requests must come from the HITOP web app")));
         }
         if request.body.len() > MAX_REQUEST_BODY + 1024 {
-            return Err(error(s.n413_payload_too_large, "the request is over 10 MB"));
+            return Err(Box::new(error(s.n413_payload_too_large, "the request is over 10 MB")));
         }
-        serde_json::from_slice(&request.body).map_err(|e| error(s.n400_bad_request, &format!("invalid request JSON: {e}")))
+        serde_json::from_slice(&request.body).map_err(|e| Box::new(error(s.n400_bad_request, &format!("invalid request JSON: {e}"))))
     }
 
     pub fn handle(&self, request: &Request) -> Response {
         let s = STATUS_CODE_REASON_PHRASE;
         let req = match self.accept(request) {
             Ok(r) => r,
-            Err(response) => return response,
+            Err(response) => return *response,
         };
         if self.in_flight.fetch_add(1, Ordering::SeqCst) >= MAX_IN_FLIGHT {
             self.in_flight.fetch_sub(1, Ordering::SeqCst);
@@ -202,7 +202,7 @@ impl Proxy {
         let s = STATUS_CODE_REASON_PHRASE;
         let req = match self.accept(request) {
             Ok(r) => r,
-            Err(response) => return response,
+            Err(response) => return *response,
         };
         if self.streams.fetch_add(1, Ordering::SeqCst) >= MAX_STREAMS {
             self.streams.fetch_sub(1, Ordering::SeqCst);

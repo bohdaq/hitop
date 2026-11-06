@@ -57,7 +57,7 @@ impl Bridge {
     /// `GET /api/ws`: the upgrade, for the web app's Origin only.
     pub fn handle(&self, request: &rust_web_server::request::Request) -> rust_web_server::response::Response {
         let origin = request.header("origin").map(|h| h.value.to_string()).unwrap_or_default();
-        if !self.origins.iter().any(|o| *o == origin) {
+        if !self.origins.contains(&origin) {
             return rust_web_server::response::Response::text(rust_web_server::response::STATUS_CODE_REASON_PHRASE.n403_forbidden, "connections must come from the HITOP web app");
         }
         let bridge = self.clone();
@@ -179,6 +179,7 @@ mod tests {
 
     /// An upstream WebSocket server on 127.0.0.1 that echoes, after a first message naming the
     /// `x-client` header its handshake had.
+    #[allow(clippy::result_large_err)]
     fn echo() -> (SocketAddr, Arc<Mutex<Option<String>>>) {
         let seen = Arc::new(Mutex::new(None));
         let std_listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();

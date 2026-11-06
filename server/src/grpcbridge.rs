@@ -99,38 +99,38 @@ impl GrpcBridge {
     }
 
     /// The request's arguments and a target that connects only to a checked address.
-    fn accept(&self, request: &Request) -> Result<(Args, Target), Response> {
+    fn accept(&self, request: &Request) -> Result<(Args, Target), Box<Response>> {
         let s = STATUS_CODE_REASON_PHRASE;
         let origin = request.header("origin").map(|h| h.value.to_string()).unwrap_or_default();
-        if !self.origins.iter().any(|o| *o == origin) {
-            return Err(error(s.n403_forbidden, "requests must come from the HITOP web app"));
+        if !self.origins.contains(&origin) {
+            return Err(Box::new(error(s.n403_forbidden, "requests must come from the HITOP web app")));
         }
         if request.body.len() > 1024 * 1024 {
-            return Err(error(s.n413_payload_too_large, "the request is over 1 MB"));
+            return Err(Box::new(error(s.n413_payload_too_large, "the request is over 1 MB")));
         }
-        let args: Args = serde_json::from_slice(&request.body).map_err(|e| error(s.n400_bad_request, &format!("invalid request JSON: {e}")))?;
-        let (uri, tls) = grpc::endpoint(&args.address, args.plaintext).map_err(|e| error(s.n400_bad_request, &format!("{e:#}")))?;
-        let u = url::Url::parse(&uri).map_err(|e| error(s.n400_bad_request, &format!("invalid address: {e}")))?;
-        let host = u.host_str().ok_or_else(|| error(s.n400_bad_request, "the address has no host"))?.to_string();
+        let args: Args = serde_json::from_slice(&request.body).map_err(|e| Box::new(error(s.n400_bad_request, &format!("invalid request JSON: {e}"))))?;
+        let (uri, tls) = grpc::endpoint(&args.address, args.plaintext).map_err(|e| Box::new(error(s.n400_bad_request, &format!("{e:#}"))))?;
+        let u = url::Url::parse(&uri).map_err(|e| Box::new(error(s.n400_bad_request, &format!("invalid address: {e}"))))?;
+        let host = u.host_str().ok_or_else(|| Box::new(error(s.n400_bad_request, "the address has no host")))?.to_string();
         let port = u.port().unwrap_or(if tls { 443 } else { 80 });
-        let addr = crate::guard::checked_addr(&host, port, &self.deny, self.allow_private).map_err(|e| error(s.n403_forbidden, &e))?;
+        let addr = crate::guard::checked_addr(&host, port, &self.deny, self.allow_private).map_err(|e| Box::new(error(s.n403_forbidden, &e)))?;
         let metadata = args.metadata.iter().filter(|(k, _)| !k.trim().is_empty()).cloned().collect();
         let target = Target { address: args.address.clone(), plaintext: args.plaintext, metadata, service: args.service.clone(), method: args.method.clone(), message: args.message.clone(), connect_to: Some(addr), ..Default::default() };
         Ok((args, target))
     }
 
-    fn runtime() -> Result<tokio::runtime::Runtime, Response> {
-        tokio::runtime::Builder::new_current_thread().enable_all().build().map_err(|e| error(STATUS_CODE_REASON_PHRASE.n500_internal_server_error, &e.to_string()))
+    fn runtime() -> Result<tokio::runtime::Runtime, Box<Response>> {
+        tokio::runtime::Builder::new_current_thread().enable_all().build().map_err(|e| Box::new(error(STATUS_CODE_REASON_PHRASE.n500_internal_server_error, &e.to_string())))
     }
 
     pub fn list(&self, request: &Request) -> Response {
         let (_, target) = match self.accept(request) {
             Ok(x) => x,
-            Err(r) => return r,
+            Err(r) => return *r,
         };
         let rt = match Self::runtime() {
             Ok(r) => r,
-            Err(r) => return r,
+            Err(r) => return *r,
         };
         let out = rt.block_on(async {
             let channel = grpc::connect(&target, Some(CONNECT_FOR)).await?;
@@ -145,11 +145,11 @@ impl GrpcBridge {
     pub fn describe(&self, request: &Request) -> Response {
         let (args, target) = match self.accept(request) {
             Ok(x) => x,
-            Err(r) => return r,
+            Err(r) => return *r,
         };
         let rt = match Self::runtime() {
             Ok(r) => r,
-            Err(r) => return r,
+            Err(r) => return *r,
         };
         let out = rt.block_on(async {
             let channel = grpc::connect(&target, Some(CONNECT_FOR)).await?;
@@ -171,7 +171,7 @@ impl GrpcBridge {
         let s = STATUS_CODE_REASON_PHRASE;
         let (args, target) = match self.accept(request) {
             Ok(x) => x,
-            Err(r) => return r,
+            Err(r) => return *r,
         };
         if self.calls.fetch_add(1, Ordering::SeqCst) >= MAX_CALLS {
             self.calls.fetch_sub(1, Ordering::SeqCst);
@@ -180,7 +180,7 @@ impl GrpcBridge {
         let slot = Slot(self.calls.clone());
         let rt = match Self::runtime() {
             Ok(r) => r,
-            Err(r) => return r,
+            Err(r) => return *r,
         };
         let max = args.max_time_ms.map(Duration::from_millis).unwrap_or(CALL_FOR).min(CALL_FOR);
         // Problems before sending (no server, no such method, bad JSON) are errors; the rest streams.

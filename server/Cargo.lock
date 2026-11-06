@@ -1348,6 +1348,7 @@ dependencies = [
  "protox",
  "regex",
  "reqwest",
+ "ring",
  "rustls",
  "serde",
  "serde_json",

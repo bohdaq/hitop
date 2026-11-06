@@ -72,9 +72,12 @@ pub fn parse_challenge(header: &str) -> Option<Vec<(String, String)>> {
     Some(out)
 }
 
+/// SHA-256 as lower-case hex (ring natively, none in the web build).
+pub type Sha256Hex<'a> = &'a dyn Fn(&[u8]) -> String;
+
 /// The `Authorization` header answering `challenge` for `method` and `uri` (path and query).
 /// `hash`: how to hash for SHA-256 (None: only MD5 works). `cnonce`: random per answer.
-pub fn answer(challenge: &[(String, String)], username: &str, password: &str, method: &str, uri: &str, cnonce: &str, sha256: Option<&dyn Fn(&[u8]) -> String>) -> Result<String, String> {
+pub fn answer(challenge: &[(String, String)], username: &str, password: &str, method: &str, uri: &str, cnonce: &str, sha256: Option<Sha256Hex>) -> Result<String, String> {
     let get = |k: &str| challenge.iter().find(|(n, _)| n == k).map(|(_, v)| v.as_str());
     let realm = get("realm").unwrap_or("");
     let nonce = get("nonce").ok_or("the Digest challenge has no nonce")?;

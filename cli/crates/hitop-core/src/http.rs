@@ -10,11 +10,14 @@ use crate::model::RequestResult;
 
 static CLIENT: std::sync::OnceLock<Client> = std::sync::OnceLock::new();
 
-static URL_CHECK: std::sync::OnceLock<fn(&str) -> std::result::Result<(), String>> = std::sync::OnceLock::new();
+/// A check every URL passes before it is sent.
+pub type UrlCheck = fn(&str) -> std::result::Result<(), String>;
+
+static URL_CHECK: std::sync::OnceLock<UrlCheck> = std::sync::OnceLock::new();
 
 /// Every request's URL goes through `check` before it is sent (the sync server's monitors refuse
 /// private addresses, which a client's DNS resolver never sees when the URL has an IP literal).
-pub fn install_url_check(check: fn(&str) -> std::result::Result<(), String>) -> bool {
+pub fn install_url_check(check: UrlCheck) -> bool {
     URL_CHECK.set(check).is_ok()
 }
 
