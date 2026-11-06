@@ -74,7 +74,8 @@ const { results, check } = checker();
     const hist = await h.stored.history();
     check('[tauri] history kept in the Rust shape, with the old entry', hist.some((x) => x.url.endsWith('/todos/1') && x.status_code === 200) && hist.some((x) => x.url === 'https://example.com/' && typeof x.timestamp === 'number' && x.headers), JSON.stringify(hist.map((x) => x.url)));
     const envs = await h.stored.environments();
-    const options = await p.locator('.request-line .env-select lit-material-select-option').allInnerTexts();
+    // The picker (next to Send) offers what the store holds.
+    const options = await p.evaluate(() => { const s = document.querySelector('hitop-app').store; return s.visibleEnvironments.map((e) => s.environmentLabel(e)); });
     check('[tauri] old desktop environments load, secret values stay in the keychain', options.includes('Prod') && envs.list[0]?.secrets?.[0] === 'token' && !JSON.stringify(envs).includes('tok-1') && h.mock.keychain.get('global/Prod/token') === 'tok-1', `${options} ${JSON.stringify(envs)}`);
   }
 
