@@ -495,3 +495,28 @@ fn digest_answers_the_challenge_once() {
     challenge.assert_hits(1);
     answered.assert_hits(1);
 }
+
+#[test]
+fn oauth2_authorization_code_with_pkce_signs_in_once() {
+    let server = MockServer::start();
+    let token = server.mock(|when, then| {
+        when.method(POST).path("/token").body_includes("grant_type=authorization_code").body_includes("code=c0de").body_includes("code_verifier=").body_includes("client_id=app");
+        then.status(200).json_body(serde_json::json!({ "access_token": "user-tok-7", "expires_in": 3600 }));
+    });
+    let api = server.mock(|when, then| {
+        when.method(GET).header("authorization", "Bearer user-tok-7");
+        then.status(200).body("yes");
+    });
+    let (home, tmp) = (TempDir::new().unwrap(), TempDir::new().unwrap());
+    // Plays the browser: checks the sign-in URL asks for PKCE, then follows the redirect with a code.
+    let opener = tmp.path().join("opener.sh");
+    fs::write(&opener, "#!/bin/sh\npython3 - \"$1\" <<'EOF'\nimport sys, urllib.parse as u, urllib.request as r\nq = u.parse_qs(u.urlparse(sys.argv[1]).query)\nassert q['code_challenge_method'] == ['S256'] and q['response_type'] == ['code'] and q['client_id'] == ['app']\nr.urlopen(q['redirect_uri'][0] + '?code=c0de&state=' + u.quote(q['state'][0])).read()\nEOF\n").unwrap();
+    std::process::Command::new("chmod").arg("+x").arg(&opener).status().unwrap();
+    let dir = folder(&tmp, &server.base_url());
+    fs::write(dir.join("hitop.yaml"), "format: 1\nname: Run API\nvariables:\n  user: nobody\nauth:\n  type: oauth2\n  grant: authorization_code\n  authUrl: ${base}/authorize\n  tokenUrl: ${base}/token\n  clientId: app\n  scope: orders\norder:\n- ok\n- check\n- who\n").unwrap();
+    hitop(&home, tmp.path()).env("HITOP_OAUTH_OPENER", &opener).args(["run", "./api", "--env", "ci", "--secret", "token=x"]).assert().code(0);
+    token.assert_hits(1);
+    api.assert_hits(3);
+    // Without a person at the terminal (no opener, stderr not a terminal), it says so.
+    hitop(&home, tmp.path()).args(["run", "./api", "--env", "ci", "--secret", "token=x"]).assert().code(1).stdout(contains("needs a person to sign in"));
+}

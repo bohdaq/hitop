@@ -64,7 +64,12 @@ export function cleanAuth(auth) {
     return out;
   }
   if (auth.type === "oauth2") {
-    const out = { type: "oauth2", grant: auth.grant === "password" ? "password" : "client_credentials", tokenUrl: auth.tokenUrl || "", clientId: auth.clientId || "" };
+    const grant = ["password", "authorization_code"].includes(auth.grant) ? auth.grant : "client_credentials";
+    const out = { type: "oauth2", grant, tokenUrl: auth.tokenUrl || "", clientId: auth.clientId || "" };
+    if (grant === "authorization_code") {
+      out.authUrl = auth.authUrl || "";
+      if (auth.redirectUri) out.redirectUri = auth.redirectUri;
+    }
     for (const k of ["clientSecret", "scope", ...(out.grant === "password" ? ["username", "password"] : [])]) if (auth[k]) out[k] = auth[k];
     if (auth.clientAuth === "body") out.clientAuth = "body";
     return out;
@@ -88,6 +93,36 @@ export function oauthTokenRequest(auth, fill = (s) => s) {
   if (auth.clientAuth === "body") pairs.push(["client_id", clientId], ["client_secret", secret]);
   else headers.Authorization = `Basic ${base64(`${encodeURIComponent(clientId)}:${encodeURIComponent(secret)}`)}`;
   return { url, headers, body: form(pairs), key: `${url}\n${clientId}\n${scope}\n${user}` };
+}
+
+/** The authorization code grant's sign-in page (PKCE S256), as hitop-core `authorize_url`. */
+export function oauthAuthorizeUrl(auth, fill, redirectUri, challenge, state) {
+  const base = fill(auth.authUrl || "").trim();
+  if (!base) throw new Error("OAuth 2.0: the authorization URL is empty");
+  const q = form([["response_type", "code"], ["client_id", fill(auth.clientId || "")], ["redirect_uri", redirectUri], ["scope", fill(auth.scope || "")], ["state", state], ["code_challenge", challenge], ["code_challenge_method", "S256"]]);
+  return `${base}${base.includes("?") ? "&" : "?"}${q}`;
+}
+
+/** The token request trading the code (with the PKCE verifier), as hitop-core `code_request`. */
+export function oauthCodeRequest(auth, fill, code, verifier, redirectUri) {
+  const url = fill(auth.tokenUrl || "").trim();
+  if (!url) throw new Error("OAuth 2.0: the token URL is empty");
+  const [clientId, secret] = [fill(auth.clientId || ""), fill(auth.clientSecret || "")];
+  const pairs = [["grant_type", "authorization_code"], ["code", code], ["redirect_uri", redirectUri], ["code_verifier", verifier], ["client_id", clientId]];
+  const headers = { "Content-Type": "application/x-www-form-urlencoded", Accept: "application/json" };
+  if (secret) {
+    if (auth.clientAuth === "body") pairs.push(["client_secret", secret]);
+    else headers.Authorization = `Basic ${base64(`${encodeURIComponent(clientId)}:${encodeURIComponent(secret)}`)}`;
+  }
+  return { url, headers, body: form(pairs) };
+}
+
+/** A PKCE verifier and its S256 challenge. */
+export async function pkcePair() {
+  const b64 = (bytes) => btoa(String.fromCharCode(...new Uint8Array(bytes))).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
+  const verifier = b64(crypto.getRandomValues(new Uint8Array(32)));
+  const challenge = b64(await crypto.subtle.digest("SHA-256", new TextEncoder().encode(verifier)));
+  return { verifier, challenge };
 }
 
 /** The access token and its lifetime (seconds) from the token endpoint's answer. */

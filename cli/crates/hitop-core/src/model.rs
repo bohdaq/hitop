@@ -474,7 +474,8 @@ pub struct AwsV4 {
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct OAuth2 {
-    /// `client_credentials` (default) or `password`.
+    /// `client_credentials` (default), `password` or `authorization_code` (PKCE; a person signs in
+    /// in a browser).
     #[serde(default = "client_credentials")]
     pub grant: String,
     #[serde(default)]
@@ -492,6 +493,13 @@ pub struct OAuth2 {
     /// Where the client id and secret go: `basic` (an Authorization header, default) or `body`.
     #[serde(default, skip_serializing_if = "String::is_empty")]
     pub client_auth: String,
+    /// `authorization_code`: the provider's sign-in page.
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub auth_url: String,
+    /// `authorization_code`: where the provider sends the browser back (default: the CLI's
+    /// loopback address, the web app's callback page).
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub redirect_uri: String,
 }
 
 fn client_credentials() -> String {

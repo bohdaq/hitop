@@ -73,11 +73,15 @@ pub fn to_postman(auth: Option<&Auth>) -> Option<Value> {
             Some(json!({ "type": "apikey", "apikey": kv(&[("key", key), ("value", value), ("in", at)]) }))
         }
         Auth::OAuth2(o) => {
-            let grant = if o.grant == "password" { "password_credentials" } else { "client_credentials" };
+            let grant = match o.grant.as_str() {
+                "password" => "password_credentials",
+                "authorization_code" => "authorization_code_with_pkce",
+                _ => "client_credentials",
+            };
             let client = if o.client_auth == "body" { "body" } else { "header" };
             Some(json!({ "type": "oauth2", "oauth2": kv(&[
                 ("grant_type", grant), ("accessTokenUrl", &o.token_url), ("clientId", &o.client_id), ("clientSecret", &o.client_secret),
-                ("scope", &o.scope), ("username", &o.username), ("password", &o.password), ("client_authentication", client), ("addTokenTo", "header"),
+                ("scope", &o.scope), ("username", &o.username), ("password", &o.password), ("client_authentication", client), ("addTokenTo", "header"), ("authUrl", &o.auth_url), ("redirect_uri", &o.redirect_uri),
             ]) }))
         }
         Auth::Digest { username, password } => Some(json!({ "type": "digest", "digest": kv(&[("username", username), ("password", password)]) })),
@@ -115,11 +119,12 @@ pub fn from_postman(auth: &Value) -> Option<Auth> {
             region: get("region"),
             service: get("service"),
         }))),
-        // The grants that need no browser; authorization code and implicit stay reported.
+        // Client credentials, password and authorization code (always with PKCE here); implicit stays reported.
         "oauth2" => {
             let grant = match get("grant_type").as_str() {
                 "client_credentials" => "client_credentials",
                 "password_credentials" => "password",
+                "authorization_code" | "authorization_code_with_pkce" => "authorization_code",
                 _ => return None,
             };
             Some(Auth::OAuth2(Box::new(OAuth2 {
@@ -131,6 +136,8 @@ pub fn from_postman(auth: &Value) -> Option<Auth> {
                 username: get("username"),
                 password: get("password"),
                 client_auth: if get("client_authentication") == "body" { "body".into() } else { String::new() },
+                auth_url: get("authUrl"),
+                redirect_uri: get("redirect_uri"),
             })))
         }
         _ => None,

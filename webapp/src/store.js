@@ -16,8 +16,11 @@ import {
   parseDigestChallenge,
   asksForEvents,
   parseEvents,
+  oauthAuthorizeUrl,
+  oauthCodeRequest,
   oauthParseToken,
   oauthTokenRequest,
+  pkcePair,
   cleanAuth,
   cookieHeader,
   emptyAuth,
@@ -1537,6 +1540,7 @@ export class Store extends EventTarget {
 
   // OAuth 2.0: a Bearer preset with a token kept in memory until 30 s before it runs out.
   async oauthBearer(auth, fill) {
+    if (auth.grant === "authorization_code") return this.oauthSignIn(auth, fill);
     const req = oauthTokenRequest(auth, fill);
     this.oauthTokens ??= new Map();
     const now = Date.now() / 1000;
@@ -1546,6 +1550,64 @@ export class Store extends EventTarget {
     const { token, lifetime } = oauthParseToken(res.status, await res.text());
     this.oauthTokens.set(req.key, { token, until: lifetime ? now + Math.max(0, lifetime - 30) : null });
     return { type: "bearer", token };
+  }
+
+  // OAuth 2.0 authorization code with PKCE (web app): the provider's sign-in page in a popup,
+  // the code back through /app/oauth-callback.html (postMessage, this origin), traded through the
+  // proxy. The token is kept in memory (a refresh token renews it); a page reload signs in again.
+  async oauthSignIn(auth, fill) {
+    if (platform().name === "tauri") throw new Error("OAuth 2.0 authorization code: use the web app or the CLI (hitop send, hitop run in a terminal); the desktop app can't receive the provider's redirect yet");
+    this.oauthTokens ??= new Map();
+    const key = `code\n${fill(auth.authUrl || "")}\n${fill(auth.clientId || "")}\n${fill(auth.scope || "")}`;
+    const now = Date.now() / 1000;
+    const have = this.oauthTokens.get(key);
+    if (have && (have.until == null || now < have.until)) return { type: "bearer", token: have.token };
+    const exchange = async (body, headers, url) => {
+      const res = await platform().send(url, { method: "POST", headers, body });
+      const text = await res.text();
+      const { token, lifetime } = oauthParseToken(res.status, text);
+      let refresh = null;
+      try {
+        refresh = JSON.parse(text).refresh_token ?? null;
+      } catch {
+        // no refresh token
+      }
+      this.oauthTokens.set(key, { token, refresh: refresh ?? have?.refresh ?? null, until: lifetime ? now + Math.max(0, lifetime - 30) : null });
+      return { type: "bearer", token };
+    };
+    // Expired: the refresh token first.
+    if (have?.refresh) {
+      try {
+        const base = oauthCodeRequest(auth, fill, "", "", "");
+        const body = new URLSearchParams({ grant_type: "refresh_token", refresh_token: have.refresh, client_id: fill(auth.clientId || "") }).toString();
+        return await exchange(body, base.headers, base.url);
+      } catch {
+        // sign in again below
+      }
+    }
+    const redirect = fill(auth.redirectUri || "") || `${location.origin}${import.meta.env.BASE_URL}oauth-callback.html`;
+    const { verifier, challenge } = await pkcePair();
+    const state = [...crypto.getRandomValues(new Uint8Array(16))].map((b) => b.toString(16).padStart(2, "0")).join("");
+    const popup = window.open(oauthAuthorizeUrl(auth, fill, redirect, challenge, state), "hitop-oauth", "popup,width=520,height=720");
+    if (!popup) throw new Error("OAuth 2.0: allow pop-ups for HITOP to sign in, then send again");
+    const code = await new Promise((resolve, reject) => {
+      const done = (fn, v) => {
+        removeEventListener("message", on);
+        clearInterval(watch);
+        fn(v);
+      };
+      const on = (e) => {
+        if (e.origin !== location.origin || !e.data?.hitopOAuth) return;
+        const m = e.data.hitopOAuth;
+        if (m.error) done(reject, new Error(`OAuth 2.0: the sign-in was refused: ${m.error}`));
+        else if (m.state !== state) done(reject, new Error("OAuth 2.0: the sign-in answered for another request"));
+        else done(resolve, m.code);
+      };
+      addEventListener("message", on);
+      const watch = setInterval(() => popup.closed && done(reject, new Error("OAuth 2.0: the sign-in window was closed")), 500);
+    });
+    const req = oauthCodeRequest(auth, fill, code, verifier, redirect);
+    return exchange(req.body, req.headers, req.url);
   }
 
   // --- sending ----------------------------------------------------------------

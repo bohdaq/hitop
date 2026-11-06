@@ -135,7 +135,7 @@ pub fn run_collection_jar(
     let mut scopes = Scopes { globals, upper };
     let masker = secrets.masker_with(&options.global_secrets);
     let mut results = Vec::new();
-    let mut tokens = crate::oauth2::Tokens::default();
+    let mut tokens = crate::oauth2::Tokens::interactive(options.timeout);
 
     for request in &collection.requests {
         // WebSocket and gRPC requests are made on demand (`hitop ws`,

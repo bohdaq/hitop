@@ -331,10 +331,15 @@ export class HitopRequest extends LitElement {
               </lit-material-select>`
           : nothing}
         ${a.type === "oauth2"
-          ? html`<lit-material-select variant="outlined" label="Grant" .value=${a.grant === "password" ? "password" : "client_credentials"} @change=${(e) => this.setAuth({ grant: e.target.value })}>
+          ? html`<lit-material-select variant="outlined" label="Grant" .value=${["password", "authorization_code"].includes(a.grant) ? a.grant : "client_credentials"} @change=${(e) => this.setAuth({ grant: e.target.value })}>
                 <lit-material-select-option value="client_credentials">Client credentials</lit-material-select-option>
                 <lit-material-select-option value="password">Password</lit-material-select-option>
+                <lit-material-select-option value="authorization_code">Authorization code (PKCE)</lit-material-select-option>
               </lit-material-select>
+              ${a.grant === "authorization_code"
+                ? html`${field("Authorization URL", "authUrl", { help: "The provider's sign-in page: HITOP opens it in a pop-up when it needs a token." })}
+                    ${field("Redirect URL (optional)", "redirectUri", { help: `Register this with the provider: ${location.origin}${import.meta.env.BASE_URL}oauth-callback.html (the CLI uses http://127.0.0.1:<port>/callback).` })}`
+                : nothing}
               ${field("Token URL", "tokenUrl", { help: "HITOP gets a token here before the request and sends it as Authorization: Bearer. It stays in memory until it expires." })}
               ${field("Client ID", "clientId")} ${field("Client secret", "clientSecret", { type: "password", help: "Use ${variables}: keep the value in a secret environment variable." })}
               ${field("Scope", "scope")}

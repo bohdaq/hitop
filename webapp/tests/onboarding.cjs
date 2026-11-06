@@ -87,6 +87,45 @@ const settle = (p, ms = 400) => p.waitForTimeout(ms);
   const digest = await p.evaluate(() => { const t = document.querySelector('hitop-app').store.tab; return { status: t.statusCode, body: String(t.response) }; });
   check('Digest auth answers the challenge', digest.status === 200 && digest.body.includes('"authenticated": true'), JSON.stringify(digest).slice(0, 200));
 
+  // OAuth 2.0 authorization code with PKCE (web): the sign-in pop-up, the callback page, the token
+  // trade and the API call through the proxy (all mocked here); a second send needs no sign-in.
+  if (!TAURI) {
+    let signIns = 0;
+    let trade = null;
+    await h.ctx.route('https://idp.e2e-oauth.test/authorize**', (route) => {
+      signIns += 1;
+      const q = new URL(route.request().url()).searchParams;
+      const ok = q.get('code_challenge_method') === 'S256' && q.get('code_challenge') && q.get('client_id') === 'web-app';
+      route.fulfill({ status: 302, headers: { Location: `${q.get('redirect_uri')}?code=${ok ? 'w3b-code' : 'bad'}&state=${q.get('state')}` } });
+    });
+    await p.route('**/api/proxy', async (route) => {
+      const req = JSON.parse(route.request().postData() || '{}');
+      if (req.url === 'https://idp.e2e-oauth.test/token') {
+        trade = req.body;
+        return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ status: 200, statusText: 'OK', headers: [['content-type', 'application/json']], body: JSON.stringify({ access_token: 'web-user-tok', expires_in: 3600 }), bodyEncoding: 'utf8', truncated: false, timeMs: 1, url: req.url }) });
+      }
+      if (req.url === 'https://api.e2e-oauth.test/me') {
+        const auth = (req.headers || []).find(([k]) => k.toLowerCase() === 'authorization')?.[1];
+        return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ status: auth === 'Bearer web-user-tok' ? 200 : 401, statusText: 'OK', headers: [['content-type', 'application/json']], body: '{"me":"ada"}', bodyEncoding: 'utf8', truncated: false, timeMs: 1, url: req.url }) });
+      }
+      return route.continue();
+    });
+    await p.evaluate(() => {
+      const s = document.querySelector('hitop-app').store;
+      s.show('request');
+      s.updateTab({ method: 'GET', url: 'https://api.e2e-oauth.test/me', auth: { type: 'oauth2', grant: 'authorization_code', authUrl: 'https://idp.e2e-oauth.test/authorize', tokenUrl: 'https://idp.e2e-oauth.test/token', clientId: 'web-app', scope: 'profile' } });
+    });
+    await settle(p);
+    const status = () => p.evaluate(() => document.querySelector('hitop-app').store.tab.statusCode);
+    await p.getByRole('button', { name: 'Send' }).click();
+    await p.waitForFunction(() => document.querySelector('hitop-app').store.tab.statusCode != null, null, { timeout: 20000 });
+    check('authorization code: signed in in a pop-up, the code traded with the PKCE verifier, the API answered', (await status()) === 200 && signIns === 1 && /grant_type=authorization_code&code=w3b-code&redirect_uri=.*oauth-callback\.html&code_verifier=[A-Za-z0-9_-]{43}&client_id=web-app/.test(trade || ''), `${await status()} ${signIns} ${trade}`);
+    await p.getByRole('button', { name: 'Send' }).click();
+    await settle(p, 1000);
+    check('...and the token is reused: no second sign-in', signIns === 1 && (await status()) === 200);
+    await p.unroute('**/api/proxy');
+  }
+
   check('no page errors', errors.length === 0, errors.join(' | '));
   await h.finish();
 })().catch((e) => {

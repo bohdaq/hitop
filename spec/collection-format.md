@@ -392,6 +392,12 @@ auth:
 to `tokenUrl` and sends the `access_token` as `Authorization: Bearer`. The token is kept in memory
 for its `expires_in` (less 30 seconds), shared by the requests of a run, and never written.
 
+`grant: authorization_code` adds `authUrl` (the provider's sign-in page) and an optional
+`redirectUri`: a person signs in in a browser (PKCE, S256) and the code is traded at `tokenUrl`.
+The CLI listens on `http://127.0.0.1:<port>/callback` (the port of `redirectUri` when it is a
+loopback address) and only with a person at the terminal; the web app opens a pop-up and comes
+back through `/app/oauth-callback.html`.
+
 ```yaml
 auth:
   type: awsv4

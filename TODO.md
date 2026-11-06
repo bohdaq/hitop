@@ -26,7 +26,7 @@ Highest value for the effort first.
 | 3 | Search across collections, environments, history | done: quick open (Mod+P) once something is typed |
 | 4 | First run and empty team org | done: sample collection + Import next to the empty response; empty org says so |
 | 5 | Create org and invite from the switcher | done: "New organization…" in the switcher, "Invite to <org>…" in the account menu (owners, admins) |
-| 6 | OAuth 2 helpers, then SigV4, Digest | OAuth 2.0 client credentials + password, AWS Signature v4, Digest done (CLI, web, desktop, Postman import/export; JS and Rust agree on test vectors); OAuth authorization code (PKCE) open |
+| 6 | OAuth 2 helpers, then SigV4, Digest | done: OAuth 2.0 client credentials, password and authorization code with PKCE (CLI loopback in a terminal, web pop-up; desktop: not yet), AWS Signature v4, Digest (CLI, web, desktop, Postman import/export; JS and Rust agree on test vectors) |
 | 7 | SSE in the web app | done: Accept: text/event-stream streams live (hitop-server POST /api/proxy/stream), Stop, Events tab; desktop live stream open |
 | 8 | Published collection docs | done: `hitop docs`, web app Share → File → Download docs page (one HTML page; hosted publishing open) |
 | 9 | OpenAPI lint on import | deferred with API design (owner) |
