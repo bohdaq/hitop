@@ -290,6 +290,17 @@ async function syncServer() {
     check('a monitor turns on with the account address for alerts', mon.everyMinutes === 60 && mon.emails[0] === 'ada@example.com', JSON.stringify(mon));
     await two.page.locator('#dialog .dialog-actions').getByRole('button', { name: 'Close' }).click();
 
+    // A request's version history: change its URL, then Restore the first version.
+    await store(two, 'const c = s.collections.find((c) => c.name === "Mocked"); s.collections = s.collections.map((x) => x.id === c.id ? { ...x, requests: x.requests.map((r) => ({ ...r, url: r.url + "?v=2" })) } : x); s.emit();');
+    await saved(two);
+    await two.page.locator('aside .tree-row', { hasText: 'Get item' }).click({ button: 'right' });
+    await two.page.locator('#request-menu').getByText('Version history…').click();
+    await two.page.locator('#dialog').getByRole('button', { name: 'Restore' }).first().waitFor({ timeout: 10000 });
+    check('the history lists both versions of the request', (await two.page.locator('#dialog [aria-label="Versions"] li').count()) === 2, await two.page.locator('#dialog').innerText());
+    await two.page.locator('#dialog').getByRole('button', { name: 'Restore' }).first().click();
+    await settle(two.page);
+    check('Restore puts the earlier version back', (await store(two, 'return s.collections.find((c) => c.name === "Mocked").requests[0].url;')) === '${base}/items/${id}');
+
     check('no page errors', errors.length === 0, errors.join(' | '));
   } catch (e) {
     check('the run finished', false, `${e.stack}\n${server.log().slice(-1500)}`);

@@ -826,6 +826,18 @@ CREATE TABLE monitor_runs (
   failures TEXT NOT NULL,
   PRIMARY KEY (monitor_id, at)
 );
+", r"
+CREATE TABLE request_history (
+  user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  collection_id TEXT NOT NULL,
+  request_id TEXT NOT NULL,
+  version BIGINT NOT NULL,
+  at BIGINT NOT NULL,
+  source TEXT NOT NULL,
+  deleted BIGINT NOT NULL,
+  data TEXT NOT NULL,
+  PRIMARY KEY (user_id, collection_id, request_id, version)
+);
 "];
 
 /// Steps in Rust that run in the same transaction as a migration's SQL (index = migration

@@ -184,3 +184,23 @@ fn a_collection_naming_an_org_is_filed_and_counted_there() {
     assert_eq!(r.status, 404, "{}", r.json);
     assert_eq!(list(&s, &bob, None)["items"], json!([]));
 }
+
+#[test]
+fn each_request_keeps_its_history() {
+    let s = Server::new("library-history");
+    let ada = s.sign_in("ada@example.com");
+    let req = |url: &str| json!({ "id": 11, "name": "List orders", "method": "GET", "url": url });
+    let other = json!({ "id": 12, "name": "Health", "method": "GET", "url": "/health" });
+    assert_eq!(put(&s, &ada, "collection", "1", json!({ "id": 1, "name": "Shop", "requests": [req("/v1/orders"), other] }), None, 0).status, 200);
+    assert_eq!(put(&s, &ada, "collection", "1", json!({ "id": 1, "name": "Shop", "requests": [req("/v2/orders"), other] }), None, 1).status, 200);
+    assert_eq!(put(&s, &ada, "collection", "1", json!({ "id": 1, "name": "Shop renamed", "requests": [req("/v2/orders")] }), None, 2).status, 200);
+    let h = |rid: &str| s.call("GET", &format!("/v1/library/collection/1/history?request={rid}"), Some(&ada), None).json["history"].clone();
+    let orders = h("11");
+    let urls: Vec<&str> = orders.as_array().unwrap().iter().map(|e| e["request"]["url"].as_str().unwrap()).collect();
+    assert_eq!(urls, ["/v2/orders", "/v1/orders"], "a change makes an entry, a save that leaves it alone doesn't: {orders}");
+    assert_eq!(orders[0]["source"], "app");
+    let health = h("12");
+    assert_eq!((health[0]["deleted"].as_bool(), health.as_array().unwrap().len()), (Some(true), 2), "a removed request leaves a tombstone: {health}");
+    let bob = s.sign_in("bob@example.com");
+    assert_eq!(s.call("GET", "/v1/library/collection/1/history?request=11", Some(&bob), None).json["history"], json!([]), "only the owner's");
+}

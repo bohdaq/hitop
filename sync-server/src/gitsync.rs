@@ -698,7 +698,7 @@ fn sync_inner(state: &State, c: &GitConfig, user_id: &str, collection_id: &str, 
             let canonical = if merged != mine {
                 let name = data["name"].as_str().unwrap_or("Collection").to_string();
                 let json = collection_json(&merged, &name, collection_id)?;
-                let stored = state.db.tx(|tx| crate::library::store_from_server(state, tx, user_id, collection_id, &json, version)).map_err(|e| error(e.message))?;
+                let stored = state.db.tx(|tx| crate::library::store_from_server(state, tx, user_id, collection_id, &json, version, "github")).map_err(|e| error(e.message))?;
                 if !stored {
                     // A save arrived while we merged: start again with it.
                     return Err(Fail { state: "pending", message: "saving…".into() });

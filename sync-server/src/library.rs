@@ -178,6 +178,10 @@ pub fn put(state: &State, request: &Request, params: &PathParams) -> ApiResult {
         };
         crate::limits::check_storage(state, tx, &org, bytes - before)?;
         let version = now_item.map_or(0, |(v, _, _)| v) + 1;
+        if kind == "collection" {
+            let old = collection_item(tx, &user.id, &id)?.map(|(d, _)| d).unwrap_or(Json::Null);
+            record_history(state, tx, &user.id, &id, &old, &input.data, version, "app")?;
+        }
         let seq = next_seq(tx, &user.id)?;
         let now = state.now();
         if now_item.is_some() {
@@ -221,6 +225,64 @@ pub fn delete(state: &State, request: &Request, params: &PathParams) -> ApiResul
     })
 }
 
+/// Requests kept per request in the history (the newest).
+const HISTORY_PER_REQUEST: i64 = 50;
+
+fn request_key(r: &Json) -> Option<String> {
+    match &r["id"] {
+        Json::Number(n) => Some(n.to_string()),
+        Json::String(s) if !s.is_empty() => Some(s.clone()),
+        _ => None,
+    }
+}
+
+/// Per-request history (`GET .../history`): a snapshot of every request this save added or changed,
+/// and a tombstone for each it removed. `source`: app, github or mcp.
+#[allow(clippy::too_many_arguments)]
+fn record_history(state: &State, tx: &mut Tx, user: &str, collection: &str, old: &Json, new: &Json, version: i64, source: &str) -> Result<(), ApiError> {
+    let index = |d: &Json| -> std::collections::HashMap<String, Json> { d["requests"].as_array().into_iter().flatten().filter_map(|r| Some((request_key(r)?, r.clone()))).collect() };
+    let (before, after) = (index(old), index(new));
+    let now = state.now();
+    let write = |tx: &mut Tx, rid: &str, deleted: bool, data: &Json| -> Result<(), ApiError> {
+        tx.execute(
+            "INSERT INTO request_history (user_id, collection_id, request_id, version, at, source, deleted, data) VALUES ($1, $2, $3, $4, $5, $6, $7, $8)",
+            &[user.into(), collection.into(), rid.into(), version.into(), now.into(), source.into(), i64::from(deleted).into(), data.to_string().into()],
+        )?;
+        tx.execute(
+            "DELETE FROM request_history WHERE user_id = $1 AND collection_id = $2 AND request_id = $3 AND version <= (SELECT version FROM request_history WHERE user_id = $1 AND collection_id = $2 AND request_id = $3 ORDER BY version DESC LIMIT 1 OFFSET $4)",
+            &[user.into(), collection.into(), rid.into(), HISTORY_PER_REQUEST.into()],
+        )?;
+        Ok(())
+    };
+    for (rid, r) in &after {
+        if before.get(rid) != Some(r) {
+            write(tx, rid, false, r)?;
+        }
+    }
+    for (rid, r) in &before {
+        if !after.contains_key(rid) {
+            write(tx, rid, true, r)?;
+        }
+    }
+    Ok(())
+}
+
+/// `GET /v1/library/collection/:id/history?request=<request id>` → `{history: [{version, at,
+/// source, deleted, request}]}`, newest first (the last 50 per request).
+pub fn history(state: &State, request: &Request, params: &PathParams) -> ApiResult {
+    let id = params.get("id").unwrap_or_default().to_string();
+    let rid = query(request).get("request").cloned().ok_or_else(|| ApiError::bad("request=<request id>"))?;
+    state.db.tx(|tx| {
+        let user = person(state, tx, request)?;
+        let rows = tx.query(
+            "SELECT version, at, source, deleted, data FROM request_history WHERE user_id = $1 AND collection_id = $2 AND request_id = $3 ORDER BY version DESC",
+            &[(&user.id).into(), (&id).into(), (&rid).into()],
+        )?;
+        let out: Vec<Json> = rows.iter().map(|r| json!({ "version": r.int(0), "at": r.int(1), "source": r.text(2), "deleted": r.int(3) != 0, "request": serde_json::from_str::<Json>(&r.text(4)).unwrap_or(Json::Null) })).collect();
+        Ok((200, json!({ "history": out })))
+    })
+}
+
 /// An item of `user`'s library with its secret values opened (`{}` without a host key or none).
 /// Monitors (monitors.rs) run with them.
 pub(crate) fn item_with_secrets(state: &State, tx: &mut Tx, user: &str, kind: &str, id: &str) -> Result<Option<(Json, Json)>, ApiError> {
@@ -244,7 +306,7 @@ pub(crate) fn collection_item(tx: &mut Tx, user: &str, id: &str) -> Result<Optio
 
 /// The server writes a collection item (Git sync brought GitHub's changes): only while it is still at
 /// version `expect` (false otherwise: a save came in first). Not a save: it doesn't make a push due.
-pub(crate) fn store_from_server(state: &State, tx: &mut Tx, user: &str, id: &str, data: &Json, expect: i64) -> Result<bool, ApiError> {
+pub(crate) fn store_from_server(state: &State, tx: &mut Tx, user: &str, id: &str, data: &Json, expect: i64, source: &str) -> Result<bool, ApiError> {
     let Some((version, before, false)) = current(tx, user, "collection", id)? else { return Ok(false) };
     if version != expect {
         return Ok(false);
@@ -261,6 +323,8 @@ pub(crate) fn store_from_server(state: &State, tx: &mut Tx, user: &str, id: &str
     let sealed_len = tx.query_one("SELECT secrets FROM library_items WHERE user_id = $1 AND kind = 'collection' AND item_id = $2", &[user.into(), id.into()])?.map_or(0, |r| r.bytes(0).len());
     let bytes = (text.len() + sealed_len) as i64;
     crate::limits::check_storage(state, tx, &org, bytes - before)?;
+    let old = collection_item(tx, user, id)?.map(|(d, _)| d).unwrap_or(Json::Null);
+    record_history(state, tx, user, id, &old, data, version + 1, source)?;
     let seq = next_seq(tx, user)?;
     tx.execute(
         "UPDATE library_items SET version = $1, seq = $2, data = $3, bytes = $4, updated_at = $5 WHERE user_id = $6 AND kind = 'collection' AND item_id = $7",

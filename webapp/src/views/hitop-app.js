@@ -26,6 +26,7 @@ import { orgLabel } from "../orgs.js";
 import { aiDialog, runAi } from "./ai-view.js";
 import "./mock-view.js";
 import "./monitor-view.js";
+import { historyDialog, loadRequestHistory } from "./history-dialog.js";
 import { aiSettings } from "../ai.js";
 import { DEFAULT_SERVER } from "../sync.js";
 
@@ -288,7 +289,7 @@ export class HitopApp extends LitElement {
       if (d.tab === "github") this.querySelector("hitop-git-panel")?.submit();
       return;
     }
-    if (d?.kind === "ai") return;
+    if (d?.kind === "ai" || d?.kind === "request-history") return;
     if (d?.kind === "join") {
       [...this.querySelectorAll("#dialog hitop-sync lit-material-button")].find((b) => b.textContent.includes("Accept invite"))?.click();
       return;
@@ -604,6 +605,9 @@ export class HitopApp extends LitElement {
       case "ai":
         ({ headline, body, footer } = aiDialog(this, d));
         break;
+      case "request-history":
+        ({ headline, body, footer } = historyDialog(this, d));
+        break;
       case "quick-open": {
         headline = "Quick open";
         ({ body } = this.quickDialog(d));
@@ -804,6 +808,13 @@ export class HitopApp extends LitElement {
       <lit-material-list-item interactive @click=${() => ((this.navOpen = false), s.openRequest(m().request, m().collectionId))}>Open</lit-material-list-item>
       <lit-material-list-item interactive @click=${() => this.openDialog("rename-request", { ...m(), name: m().request.name })}>Rename</lit-material-list-item>
       <lit-material-list-item interactive @click=${() => s.duplicateRequest(m().collectionId, m().request.id)}>Duplicate</lit-material-list-item>
+      ${this.menuRequest && ["cloud", "github"].includes(storageOf(s, s.collection(m().collectionId) ?? { id: m().collectionId }).kind)
+        ? html`<lit-material-list-item interactive @click=${() => {
+            const d = { ...m(), history: null };
+            this.openDialog("request-history", d);
+            loadRequestHistory(this, d);
+          }}>Version history…</lit-material-list-item>`
+        : nothing}
       <lit-material-list-item interactive @click=${() => this.deleteRequest(m().request, m().collectionId)}>Delete</lit-material-list-item>
     </lit-material-menu>`;
   }

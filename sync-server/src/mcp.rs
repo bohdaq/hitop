@@ -187,7 +187,7 @@ fn method_of(m: Option<&str>) -> Result<String, String> {
 /// Saves `data` as the collection's next version, as an app save would (the apps pull it; a
 /// collection saved to GitHub is pushed).
 fn save(state: &State, tx: &mut Tx, user: &str, id: &str, data: &Json, version: i64) -> Result<(), String> {
-    if !crate::library::store_from_server(state, tx, user, id, data, version).map_err(|e| e.message)? {
+    if !crate::library::store_from_server(state, tx, user, id, data, version, "mcp").map_err(|e| e.message)? {
         return Err("the collection changed meanwhile: try again".into());
     }
     crate::gitsync::touched(state, tx, user, "collection", id).map_err(|e| e.to_string())

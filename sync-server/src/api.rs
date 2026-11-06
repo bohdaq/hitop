@@ -362,6 +362,7 @@ impl SyncApp {
             ("POST", "/v1/git/github/connect", crate::gitsync::connect),
             ("POST", "/v1/git/github/webhook", crate::gitsync::webhook),
             ("GET", "/v1/git/installations/:id/repos", crate::gitsync::repos),
+            ("GET", "/v1/library/collection/:id/history", crate::library::history),
             ("GET", "/v1/library/collection/:id/monitor", crate::monitors::get),
             ("PUT", "/v1/library/collection/:id/monitor", crate::monitors::put),
             ("DELETE", "/v1/library/collection/:id/monitor", crate::monitors::delete),
