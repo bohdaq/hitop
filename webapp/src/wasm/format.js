@@ -30,6 +30,8 @@ function api(m) {
     // (throws "… isn't a URL" for anything else).
     rawContentType: (body) => m.rawContentType(typeof body === "string" ? body : "") ?? null,
     withScheme: (url) => m.withScheme(String(url ?? "")),
+    // A collection's documentation page (one self-contained HTML text, hitop-core docs.rs).
+    collectionDocs: (collection) => m.collectionDocs(JSON.stringify(collection)),
     // { request, variables, secrets } + "curl" | "fetch" | "python" | "go" | "java" | "rust" → { code, placeholders }.
     snippet: (input, lang) => call(m.snippet, input, lang),
     // [{ id, label }] in menu order.

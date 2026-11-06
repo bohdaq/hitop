@@ -1,6 +1,7 @@
 pub mod collections;
 pub mod cookies;
 pub mod data;
+pub mod docs;
 pub mod env;
 pub mod flags;
 pub mod folder;

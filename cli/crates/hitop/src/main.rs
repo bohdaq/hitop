@@ -61,6 +61,8 @@ enum Cmd {
     Openapi(commands::openapi::OpenapiCmd),
     /// Export a collection to a file
     Export(commands::import_export::ExportArgs),
+    /// Write a collection's documentation as one HTML page (variables, requests, examples; no credentials)
+    Docs(commands::docs::DocsArgs),
     /// The anonymous weekly usage ping: off unless you turn it on
     #[cfg(feature = "telemetry")]
     #[command(subcommand)]
@@ -160,6 +162,7 @@ fn dispatch(command: Cmd) -> i32 {
         Cmd::Import(args) => commands::import_export::run_import(args),
         Cmd::Openapi(cmd) => commands::openapi::run(cmd),
         Cmd::Export(args) => commands::import_export::run_export(args),
+        Cmd::Docs(args) => commands::docs::run(args),
         Cmd::Mcp(args) => commands::mcp::run(args),
         #[cfg(feature = "telemetry")]
         Cmd::Telemetry(cmd) => commands::telemetry::run(cmd),

@@ -890,6 +890,8 @@ export class HitopApp extends LitElement {
             ? html`<lit-material-button variant="outlined" @click=${() => (this.closeDialog(), s.saveToFolder(c.id))}>${icon("folder-open")} Save to a folder…</lit-material-button>`
             : nothing}
         <lit-material-button variant="outlined" @click=${() => s.exportZip(c.id)}>${icon("file-zip")} Download as .zip</lit-material-button>
+        <p>A documentation page: one HTML file with every request, its headers, body and saved examples (credentials that aren't <code>\${variables}</code> are hidden). Publish it anywhere.</p>
+        <lit-material-button variant="outlined" @click=${() => s.exportDocs(c.id)}>${icon("file-arrow-down")} Download docs page</lit-material-button>
       </div>`;
     }
     return html`<div class="share-tabs" role="tablist" aria-label="Share with">

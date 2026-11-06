@@ -222,3 +222,13 @@ fn send_and_export_take_a_folder() {
         .success()
         .stdout(contains("Create order"));
 }
+
+#[test]
+fn docs_writes_one_html_page_of_the_folder() {
+    let (home, tmp) = (TempDir::new().unwrap(), TempDir::new().unwrap());
+    let dir = sample_in(&tmp, "https://api.example.test");
+    hitop(&home, tmp.path()).args(["docs", dir.to_str().unwrap(), "-o", "api.html"]).assert().success().stdout(contains("Wrote api.html"));
+    let page = fs::read_to_string(tmp.path().join("api.html")).unwrap();
+    assert!(page.starts_with("<!DOCTYPE html>") && page.contains("Content-Security-Policy") && !page.contains("<script"), "{}", &page[..200]);
+    hitop(&home, tmp.path()).args(["docs", dir.to_str().unwrap(), "-o", "-"]).assert().success().stdout(contains("API documentation"));
+}

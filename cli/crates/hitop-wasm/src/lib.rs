@@ -81,6 +81,13 @@ pub fn read_files(files_json: &str, name: &str) -> Result<String, JsError> {
     read_files_json(files_json, name).map_err(chain)
 }
 
+/// A collection's documentation page (hitop-core docs.rs) from its JSON.
+#[wasm_bindgen(js_name = collectionDocs)]
+pub fn collection_docs(collection_json: &str) -> Result<String, JsError> {
+    let c: hitop_core::model::Collection = serde_json::from_str(collection_json).map_err(|e| JsError::new(&e.to_string()))?;
+    Ok(hitop_core::docs::to_html(&c))
+}
+
 /// The files of `{collection, environments}` as `{path: text}` JSON.
 #[wasm_bindgen(js_name = toFiles)]
 pub fn to_files(folder_json: &str) -> Result<String, JsError> {

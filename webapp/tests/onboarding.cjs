@@ -26,6 +26,16 @@ const settle = (p, ms = 400) => p.waitForTimeout(ms);
     const run = await p.locator('.run-list').innerText();
     check('the sample runs with its tests passing, a value passed on', (await p.locator('.run-list .status-chip.ok').count()) === 3 && !run.includes('Failed'), run.replace(/\n/g, ' | ').slice(0, 400));
   }
+  // Its docs page: Share, File, Download docs page.
+  if (!TAURI) {
+    await p.locator('hitop-collection').getByRole('button', { name: 'Share', exact: true }).click();
+    await p.locator('#dialog').getByRole('tab', { name: /File/ }).click();
+    const [download] = await Promise.all([p.waitForEvent('download'), p.locator('#dialog').getByRole('button', { name: /Download docs page/ }).click()]);
+    const page = require('fs').readFileSync(await download.path(), 'utf8');
+    check('the docs page lists the requests and the variables, no script', download.suggestedFilename() === 'sample-jsonplaceholder-docs.html' && page.includes('Get the first post') && page.includes('${baseUrl}') && !page.includes('<script'), download.suggestedFilename());
+    await p.locator('#dialog .dialog-actions').getByRole('button', { name: 'Close' }).click();
+    await settle(p);
+  }
   check('...and the offer is gone once there is something of your own', (await p.evaluate(() => document.querySelector('hitop-app').store.isFresh)) === false);
 
   // Quick open: a collection, an environment by its variable name, a URL from history.

@@ -2345,6 +2345,19 @@ export class Store extends EventTarget {
 
   // A collection as a .zip of its folder. A folder collection takes its own
   // environments; any other takes the app's. Secret values are never in it.
+  // The collection's documentation as one HTML page (as `hitop docs`): saved or downloaded.
+  async exportDocs(collectionId) {
+    const col = this.collection(collectionId);
+    if (!col) return;
+    try {
+      const page = (await loadFormat()).collectionDocs(col);
+      const name = `${(col.name || "collection").toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "") || "collection"}-docs.html`;
+      if (await platform().saveFile(name, page, "text/html")) this.notify(`Saved ${name}: open it in a browser or publish it anywhere`);
+    } catch (e) {
+      this.notify(`Couldn't make the docs page of ${col.name}: ${errorText(e)}`);
+    }
+  }
+
   async exportZip(collectionId) {
     const col = this.collection(collectionId);
     if (!col) return;

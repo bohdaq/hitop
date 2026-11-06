@@ -1,5 +1,6 @@
 pub mod auth;
 pub mod cookies;
+pub mod docs;
 pub mod export;
 pub mod form;
 pub mod format;
