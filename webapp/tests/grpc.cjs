@@ -1,6 +1,6 @@
-// gRPC requests. Web mode: a browser can't make gRPC calls, so the page says
-// "gRPC is available in the desktop app and CLI", Send is off, and the
-// request is still edited, saved in the model hitop-core reads and reopened.
+// gRPC requests. Web mode: calls go through hitop-server's gRPC bridge (server reflection, public
+// servers only): Send is on, the page says so, and a server on localhost is refused with that
+// reason; the request is still edited, saved in the model hitop-core reads and reopened.
 // Tauri mode (the desktop build, mocked Rust side in tauri-mock.cjs): load
 // the schema by reflection, service and method pickers, a message template,
 // unary and server-streaming calls with metadata and auth filled in, an
@@ -56,8 +56,7 @@ const FIXTURES = path.join(__dirname, '../../cli/crates/hitop-core/tests/fixture
   if (TAURI) {
     check('[tauri] Send is on and there is no desktop-only note', !(await send.isDisabled()) && !line.includes('available in the desktop app'), line.slice(0, 300));
   } else {
-    check('[web] the page says gRPC is for the desktop app and CLI', line.includes('gRPC is available in the desktop app and CLI') && line.includes('hitop grpc'), line.slice(0, 400));
-    check('[web] Send and Load schema are off', (await send.isDisabled()) && (await p.getByRole('button', { name: 'Load schema' }).isDisabled()));
+    check('[web] Send is on, through the gRPC bridge', !(await send.isDisabled()) && !line.includes('available in the desktop app'), line.slice(0, 300));
   }
 
   await p.getByLabel('Server').fill('${grpcHost}');
@@ -152,13 +151,12 @@ const FIXTURES = path.join(__dirname, '../../cli/crates/hitop-core/tests/fixture
     await p.getByLabel('RPC method').fill('SayHello');
     await setMessage('{"name": "${who}"}');
     await section('Schema');
-    await pick('Schema from', '.proto files');
-    await p.getByLabel('.proto files').fill(path.join(FIXTURES, 'greeter.proto'));
-    await p.getByLabel('.proto files').press('Tab');
-    await p.getByLabel('Import paths').fill(path.join(FIXTURES, 'include'));
-    await p.getByLabel('Import paths').press('Tab');
+    check('[web] the Schema section says reflection through the bridge', (await p.locator('.grpc-bridge-note').innerText()).includes('reflection'));
     await section('Message');
-    check('[web] the log says where calls can be made', (await p.locator('.grpc-log-panel lit-material-empty-state').getAttribute('headline')) === 'gRPC is available in the desktop app and CLI');
+    await p.getByRole('button', { name: 'Load schema' }).click();
+    await p.locator('.grpc-schema-error').waitFor({ timeout: 15000 });
+    const why = await p.locator('.grpc-schema-error').innerText();
+    check('[web] a server on localhost is refused by the bridge, with the reason', why.includes('private or reserved'), why);
   }
 
   // Saved in the model hitop-core reads (both modes).
@@ -168,7 +166,10 @@ const FIXTURES = path.join(__dirname, '../../cli/crates/hitop-core/tests/fixture
   await p.locator('#dialog').getByRole('button', { name: 'Save' }).click();
   await settle(p);
   const r = await h.stored.collections().then((cols) => cols.flatMap((c) => c.requests).find((x) => x.name === 'Hello'));
-  const want = { service: 'hitop.test.Greeter', method: 'SayHello', message: '{"name": "${who}"}', protos: [path.join(FIXTURES, 'greeter.proto')], importPaths: [path.join(FIXTURES, 'include')], plaintext: true };
+  // Web: server reflection, so no .proto files.
+  const want = TAURI
+    ? { service: 'hitop.test.Greeter', method: 'SayHello', message: '{"name": "${who}"}', protos: [path.join(FIXTURES, 'greeter.proto')], importPaths: [path.join(FIXTURES, 'include')], plaintext: true }
+    : { service: 'hitop.test.Greeter', method: 'SayHello', message: '{"name": "${who}"}', plaintext: true };
   check('saved: kind grpc, the grpc section, metadata as headers, auth', r?.kind === 'grpc' && JSON.stringify(r.grpc) === JSON.stringify(want) && r.url === '${grpcHost}' && r.headers.some((x) => x.name === 'x-tenant' && x.value === 't-${who}') && r.auth?.type === 'bearer', JSON.stringify(r));
   const listed = await p.locator('aside').innerText();
   check('the sidebar lists it as GRPC', /GRPC\s*Hello/.test(listed), listed.slice(0, 300));

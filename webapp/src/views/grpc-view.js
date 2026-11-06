@@ -109,6 +109,13 @@ export function grpcSchema(view) {
   // A tab-only choice until files are typed: the saved request knows only `protos`.
   const files = t.grpcUseProtos ?? (t.grpcProtos || []).length > 0;
   const folder = t.loadedCollectionId != null ? store.folderOf(t.loadedCollectionId) : null;
+  if (platform().grpc?.reflectionOnly) {
+    return html`<p class="hint grpc-bridge-note" role="note">The web app reads the schema from the server's reflection service (grpc.reflection v1 or v1alpha) and calls through the HITOP gRPC bridge, which keeps nothing: public servers only. For .proto files or a server on localhost, use the desktop app or <code>hitop grpc</code>.</p>
+      <label class="switch-row">
+        <lit-material-switch aria-label="Plaintext (no TLS)" ?checked=${!!t.grpcPlaintext} @change=${(e) => view.set({ grpcPlaintext: e.target.checked })}></lit-material-switch>
+        <span>Plaintext: HTTP/2 without TLS for a host:port server (http:// addresses always are)</span>
+      </label>`;
+  }
   return html`
     <lit-material-select class="grpc-source" variant="outlined" label="Schema from" .value=${files ? "protos" : "reflection"}
       @change=${(e) => view.set(e.target.value === "protos" ? { grpcUseProtos: true } : { grpcUseProtos: false, grpcProtos: [], grpcImportPaths: [] })}>

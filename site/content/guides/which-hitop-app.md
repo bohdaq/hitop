@@ -18,7 +18,7 @@ All three read and write the same [collection folder](/guides/collections-in-git
 | **HTTP** | Yes (public hosts through the proxy) | Yes, straight from your computer | Yes |
 | **GraphQL** (schema completion) | Yes | Yes | Yes |
 | **WebSocket** | Yes; handshake headers to public hosts go through the HITOP WebSocket bridge | Yes | Yes (`hitop ws`) |
-| **gRPC** | No | Yes | Yes (`hitop grpc`) |
+| **gRPC** | Yes, public servers with server reflection (through the HITOP gRPC bridge) | Yes | Yes (`hitop grpc`) |
 | **Server-Sent Events** (live) | Yes (`Accept: text/event-stream`) | No (the whole body at the end) | No |
 | **Collection folders** (YAML) | Open a folder in Chromium browsers; `.zip` everywhere | Yes | Yes |
 | **Git** | Saves a collection to GitHub on every change (HITOP Cloud) | Git panel: status, diff, commit, pull, push, branches | Use git |

@@ -44,6 +44,9 @@ pub struct Target {
     pub protos: Vec<PathBuf>,
     /// Where imports are looked up, besides each file's own directory.
     pub import_paths: Vec<PathBuf>,
+    /// Connect to this address instead of resolving the host (which is still used for TLS and
+    /// `:authority`): hitop-server's gRPC bridge connects only to an address it has checked.
+    pub connect_to: Option<std::net::SocketAddr>,
 }
 
 /// The URI tonic connects to and whether it uses TLS: `http://` is
@@ -98,6 +101,7 @@ pub fn target(request: &Request, default_auth: Option<&Auth>, variables: &HashMa
         method: fill(&g.method)?,
         message: fill(&g.message)?,
         protos: g.protos.iter().map(path).collect::<Result<_>>()?,
+        connect_to: None,
         import_paths: g.import_paths.iter().map(path).collect::<Result<_>>()?,
     })
 }
@@ -223,9 +227,18 @@ mod client {
     /// within `timeout`. TLS uses the webpki roots, as reqwest does.
     pub async fn connect(target: &Target, timeout: Option<Duration>) -> Result<Channel> {
         let (uri, tls) = endpoint(&target.address, target.plaintext)?;
-        let mut ep = Endpoint::from_shared(uri.clone()).with_context(|| format!("bad gRPC address '{}'", target.address))?;
+        let parsed: tonic::codegen::http::Uri = uri.parse().with_context(|| format!("bad gRPC address '{}'", target.address))?;
+        let host = parsed.host().unwrap_or_default().trim_matches(['[', ']']).to_string();
+        let dial = match target.connect_to {
+            Some(addr) => format!("{}://{addr}", if tls { "https" } else { "http" }),
+            None => uri.clone(),
+        };
+        let mut ep = Endpoint::from_shared(dial).with_context(|| format!("bad gRPC address '{}'", target.address))?;
+        if target.connect_to.is_some() {
+            ep = ep.origin(parsed.clone());
+        }
         if tls {
-            ep = ep.tls_config(ClientTlsConfig::new().with_webpki_roots()).context("TLS setup")?;
+            ep = ep.tls_config(ClientTlsConfig::new().with_webpki_roots().domain_name(host)).context("TLS setup")?;
         }
         if let Some(t) = timeout {
             ep = ep.connect_timeout(t);

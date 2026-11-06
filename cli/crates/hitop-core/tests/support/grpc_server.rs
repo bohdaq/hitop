@@ -17,9 +17,12 @@ use tonic::metadata::MetadataValue;
 use tonic::server::NamedService;
 use tonic::{Request, Response, Status};
 
-/// tests/fixtures/grpc in hitop-core (greeter.proto, include/common.proto).
+/// tests/fixtures/grpc in hitop-core (greeter.proto, include/common.proto). Also included by hitop-server.
 pub fn fixtures() -> PathBuf {
-    PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../hitop-core/tests/fixtures/grpc")
+    // From a crate in cli/crates (hitop-core, hitop) or from hitop-server (server/).
+    let here = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+    let sibling = here.join("../hitop-core/tests/fixtures/grpc");
+    if sibling.exists() { sibling } else { here.join("../cli/crates/hitop-core/tests/fixtures/grpc") }
 }
 
 /// The schema the server serves.

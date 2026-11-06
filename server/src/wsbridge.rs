@@ -7,7 +7,7 @@
 //! are; either side's close ends both. At most `MAX_BRIDGES` at once, each for `BRIDGE_FOR`.
 //! Nothing is logged.
 
-use std::net::{IpAddr, SocketAddr, ToSocketAddrs};
+use std::net::{IpAddr, SocketAddr};
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Arc;
 use std::time::Duration;
@@ -17,7 +17,6 @@ use rust_web_server::websocket::{Message, WebSocketConnection};
 use serde::Deserialize;
 use serde_json::json;
 
-use crate::guard::{ip_allowed, port_allowed};
 
 pub const MAX_BRIDGES: usize = 16;
 pub const BRIDGE_FOR: Duration = Duration::from_secs(10 * 60);
@@ -73,16 +72,8 @@ impl Bridge {
             return Err("put credentials in a header, not the URL".into());
         }
         let port = u.port_or_known_default().unwrap_or(0);
-        if !self.allow_private && !port_allowed(port) {
-            return Err(format!("port {port} is blocked"));
-        }
-        let host = u.host_str().ok_or("the URL has no host")?.trim_matches(['[', ']']).to_string();
-        let addrs: Vec<SocketAddr> = (host.as_str(), port).to_socket_addrs().map_err(|e| format!("couldn't resolve {host}: {e}"))?.collect();
-        let addr = addrs.iter().find(|a| self.allow_private || ip_allowed(a.ip(), &self.deny)).copied();
-        match addr {
-            Some(a) if self.allow_private || addrs.iter().all(|a| ip_allowed(a.ip(), &self.deny)) => Ok((ws, a)),
-            _ => Err(format!("{host} is a private or reserved address")),
-        }
+        let host = u.host_str().ok_or("the URL has no host")?.to_string();
+        Ok((ws, crate::guard::checked_addr(&host, port, &self.deny, self.allow_private)?))
     }
 
     /// Runs one bridged connection to its end.

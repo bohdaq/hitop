@@ -245,6 +245,60 @@ function bridgedWebSocket(url, { headers = [], protocols = [] } = {}, h) {
   };
 }
 
+// gRPC through hitop-server's bridge (POST /api/grpc/{list,describe,call}, grpcbridge.rs): public
+// servers with server reflection only; the call streams one JSON event per line.
+const GRPC_BASE = import.meta.env.VITE_HITOP_PROXY ? import.meta.env.VITE_HITOP_PROXY.replace(/\/proxy$/, "/grpc") : "";
+async function grpcPost(path, body, signal) {
+  const r = await fetch(`${GRPC_BASE}/${path}`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body), signal });
+  if (!r.ok) {
+    const e = await r.json().catch(() => ({}));
+    throw new Error(e.error || `the gRPC bridge answered ${r.status}`);
+  }
+  return r;
+}
+const bridgeGrpc = GRPC_BASE
+  ? {
+      reflectionOnly: true,
+      list: async (server) => (await grpcPost("list", server)).json(),
+      describe: async (server, symbol) => (await grpcPost("describe", { ...server, symbol })).json(),
+      call(args, h) {
+        const ctl = new AbortController();
+        let cancelled = false;
+        (async () => {
+          try {
+            const r = await grpcPost("call", args, ctl.signal);
+            const reader = r.body.getReader();
+            const dec = new TextDecoder();
+            let buf = "";
+            for (;;) {
+              const { done, value } = await reader.read();
+              if (done) break;
+              buf += dec.decode(value, { stream: true });
+              let at;
+              while ((at = buf.indexOf("\n")) >= 0) {
+                const line = buf.slice(0, at);
+                buf = buf.slice(at + 1);
+                if (!line.trim() || cancelled) continue;
+                const e = JSON.parse(line);
+                if (e.type === "headers") h.onHeaders(e.metadata || []);
+                else if (e.type === "message") h.onMessage(e.data);
+                else if (e.type === "status") h.onStatus(e);
+              }
+            }
+          } catch (e) {
+            if (!cancelled) h.onError(e.message || String(e));
+          }
+        })();
+        return {
+          cancel: () => {
+            cancelled = true;
+            ctl.abort();
+          },
+        };
+      },
+    }
+  : null;
+
 function webSocketFor(url, options, h) {
   return options?.headers?.length && sendsHeaders(url) ? bridgedWebSocket(url, options, h) : browserWebSocket(url, options, h);
 }
@@ -305,7 +359,7 @@ export function createPlatform() {
     websocket: webSocketFor,
     websocketSendsHeaders: sendsHeaders,
     // gRPC needs HTTP/2 trailers, which a page can't read: desktop and CLI only.
-    grpc: null,
+    grpc: bridgeGrpc,
     // Git is the desktop app's (libgit2 in Rust).
     git: null,
     // ${secret:...} references (Vault, AWS, Azure, 1Password): desktop and CLI only.

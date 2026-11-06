@@ -123,3 +123,21 @@ mod tests {
         assert!(!port_allowed(25) && !port_allowed(587) && !port_allowed(22) && !port_allowed(0));
     }
 }
+
+/// The address to connect to for `host:port`: resolved here, every address public (unless
+/// `allow_private`, tests only), so a bridge connects to one it has checked and DNS can't point it
+/// elsewhere afterwards. Used by the WebSocket and gRPC bridges.
+pub fn checked_addr(host: &str, port: u16, deny: &[IpAddr], allow_private: bool) -> Result<SocketAddr, String> {
+    use std::net::ToSocketAddrs;
+    if !allow_private && !port_allowed(port) {
+        return Err(format!("port {port} is blocked"));
+    }
+    let host = host.trim_matches(['[', ']']);
+    let addrs: Vec<SocketAddr> = (host, port).to_socket_addrs().map_err(|e| format!("couldn't resolve {host}: {e}"))?.collect();
+    match addrs.first() {
+        Some(a) if allow_private || addrs.iter().all(|a| ip_allowed(a.ip(), deny)) => Ok(*a),
+        Some(_) => Err(format!("{host} is a private or reserved address")),
+        None => Err(format!("couldn't resolve {host}")),
+    }
+}
+
