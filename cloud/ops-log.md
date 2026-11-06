@@ -370,3 +370,11 @@ and on hitop.rws8.tech/cloud/healthz. -->
   schema 13, NRestarts 0. The library now stores secret values sealed with it. Per-org SSO is
   technically on but every org is free/pro/team, so `require_plan` still refuses it (Q15 holds in
   practice). The owner keeps an offline copy of the key.
+
+## 2026-11-06 Web app: simpler account and sharing (11:19 UTC)
+
+- Who: owner ran `~/hitop-web-4c2ba1f/run-web-deploy.sh` (staged by agent). Site + web app from
+  4c2ba1f: top-bar account menu with a needs-you badge, one-step sign-in, a Share dialog per
+  collection (People / GitHub / File), Account page instead of Sync, the cloud switch in Settings →
+  Privacy; guides updated. `/cloud/` left as it is. `/`, `/app/`, both guides, `/cloud/` 200.
+  Backup `/var/www/hitop.bak-20261106-111952`. Before: every web and Tauri-mode e2e suite green.
