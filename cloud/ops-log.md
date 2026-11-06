@@ -395,3 +395,7 @@ and on hitop.rws8.tech/cloud/healthz. -->
 ## 2026-11-06 Organizations in the app
 
 - Sync server c8e0a4c (library collections filed under their data.org) and /app/ c8e0a4c (top-bar org switcher, environment next to Send); live CSS index-CVGPA0RH.css matches, healthz ok schema 13.
+
+## 2026-11-06 Gaps tranche 1 deployed
+
+- Sync server f4ad518 (hosted MCP POST /mcp, mock servers /mock/, schema 14); site + web app + hitop-server via deploy/deploy.sh (Ask AI, org create/invite, SSE /api/proxy/stream, docs page, OAuth 2.0, quick open, sample collection, which-hitop-app guide). Verified live: healthz schema 14, /mcp 401 without token, hitop-app chunk has Ask AI.
