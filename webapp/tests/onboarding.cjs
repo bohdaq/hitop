@@ -1,0 +1,58 @@
+// First run and search: a fresh app offers a sample collection and Postman import next to the
+// empty response; the sample runs (web: through the proxy to JSONPlaceholder) with its tests and
+// a value passed from one request to the next; quick open (Mod+P) finds collections,
+// environments by a variable name and history.
+//   BASE=http://localhost:7879 node tests/onboarding.cjs   (HITOP_MODE=tauri for the desktop build)
+const { launch, checker, TAURI } = require('./harness.cjs');
+const { results, check } = checker();
+const settle = (p, ms = 400) => p.waitForTimeout(ms);
+
+(async () => {
+  const h = await launch({ results });
+  const p = h.page;
+  const errors = [];
+  p.on('pageerror', (e) => errors.push(e.message));
+  await p.goto(h.url, { waitUntil: 'networkidle' });
+  await settle(p);
+
+  const sample = p.getByRole('button', { name: 'Try a sample collection' });
+  check('a fresh app offers a sample and Postman import', (await sample.isVisible()) && (await p.getByRole('button', { name: 'Import from Postman' }).isVisible()));
+  await sample.click();
+  await settle(p);
+  check('the sample opens as a collection', (await p.locator('h1').innerText()).includes('Sample: JSONPlaceholder'));
+  if (!TAURI) {
+    await p.getByRole('button', { name: /Run collection/ }).click();
+    await p.locator('.run h2', { hasText: 'Last run' }).waitFor({ timeout: 30000 });
+    const run = await p.locator('.run-list').innerText();
+    check('the sample runs with its tests passing, a value passed on', (await p.locator('.run-list .status-chip.ok').count()) === 3 && !run.includes('Failed'), run.replace(/\n/g, ' | ').slice(0, 400));
+  }
+  check('...and the offer is gone once there is something of your own', (await p.evaluate(() => document.querySelector('hitop-app').store.isFresh)) === false);
+
+  // Quick open: a collection, an environment by its variable name, a URL from history.
+  await p.evaluate(() => {
+    const s = document.querySelector('hitop-app').store;
+    s.environments = [...s.environments, { id: 'env-qa', name: 'qa', variables: { tenantSlug: 'acme' } }];
+    s.history = [...s.history, { id: 'h1', method: 'GET', url: 'https://history.e2e.test/only-here', statusCode: 204, timestamp: Date.now() }];
+    s.emit();
+  });
+  const quick = async (text) => {
+    await p.keyboard.press(process.platform === 'darwin' ? 'Meta+p' : 'Control+p');
+    await p.locator('#quick-input').waitFor();
+    await p.locator('#quick-input').fill(text);
+    await settle(p, 200);
+    const first = (await p.locator('#quick-list [role="option"]').first().innerText().catch(() => '')).replace(/\n/g, ' ');
+    await p.keyboard.press('Escape');
+    await settle(p, 200);
+    return first;
+  };
+  check('quick open finds a collection', (await quick('sample json')).includes('Sample: JSONPlaceholder'), await quick('sample json'));
+  check('...an environment by a variable name', (await quick('tenantslug')).includes('qa'), await quick('tenantslug'));
+  check('...and a URL from history', (await quick('only-here')).includes('history.e2e.test'), await quick('only-here'));
+
+  check('no page errors', errors.length === 0, errors.join(' | '));
+  await h.finish();
+})().catch((e) => {
+  console.log(results.join('\n'));
+  console.error(e);
+  process.exit(1);
+});

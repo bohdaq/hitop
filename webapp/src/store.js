@@ -894,6 +894,38 @@ export class Store extends EventTarget {
     this.emit();
   }
 
+  // A first collection to try: JSONPlaceholder (public, through the proxy on the web), with a
+  // variable, a script that passes a value on, and tests.
+  addSampleCollection() {
+    const req = (name, method, url, extra = {}) => collectionService.createRequest(name, { url, method, headers: [{ name: "", value: "" }], body: "", preRequestScript: "", postRequestScript: "", ...extra });
+    const col = this.inOrg({
+      ...collectionService.createCollection("Sample: JSONPlaceholder"),
+      variables: { baseUrl: "https://jsonplaceholder.typicode.com" },
+      requests: [
+        req("List posts", "GET", "${baseUrl}/posts?_limit=3", {
+          postRequestScript: 'pm.test("status is 200", () => pm.response.to.have.status(200));\npm.test("three posts", () => pm.expect(pm.response.json().length).to.eql(3));\n// The next request reads it as ${postId}.\npm.collectionVariables.set("postId", pm.response.json()[0].id);',
+        }),
+        req("Get the first post", "GET", "${baseUrl}/posts/${postId}", {
+          postRequestScript: 'pm.test("same post", () => pm.expect(pm.response.json().id).to.eql(Number(pm.collectionVariables.get("postId"))));',
+        }),
+        req("Create a post", "POST", "${baseUrl}/posts", {
+          headers: [{ name: "Content-Type", value: "application/json" }],
+          body: '{\n  "title": "Hello from HITOP",\n  "body": "A sample post",\n  "userId": 1\n}',
+          postRequestScript: 'pm.test("created", () => pm.response.to.have.status(201));',
+        }),
+      ],
+    });
+    this.collections = [...this.collections, col];
+    this.view = { kind: "collection", collectionId: col.id };
+    this.emit();
+    return col;
+  }
+
+  // Nothing of one's own yet: no request with a URL in any shown collection, no history.
+  get isFresh() {
+    return !this.history.length && this.visibleCollections.every((c) => (c.requests || []).every((r) => !r.url));
+  }
+
   renameCollection(id, name) {
     if (!name.trim()) return;
     this.collections = collectionService.renameCollection(this.collections, id, name.trim());

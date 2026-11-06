@@ -97,9 +97,13 @@ export class HitopCollections extends LightElement {
               )}
             </lit-material-sortable>
             <p class="hint">Drag a card by its handle, or focus the handle and press Space, to change the order "Run all" uses.</p>`
-          : html`<lit-material-empty-state headline="No collections yet">
-              Group related requests in a collection to run them together and share variables.
+          : html`<lit-material-empty-state headline=${s.currentOrgInfo && !s.currentOrgInfo.personal ? `No collections in ${s.currentOrgInfo.name} yet` : "No collections yet"}>
+              ${s.currentOrgInfo && !s.currentOrgInfo.personal
+                ? "Collections you make or import here belong to this organization and count against its plan. Your own are under Personal in the top bar."
+                : "Group related requests in a collection to run them together and share variables."}
               <lit-material-button slot="actions" variant="filled" @click=${() => this.app.openDialog("add-collection")}>New collection</lit-material-button>
+              <lit-material-button slot="actions" variant="outlined" @click=${() => this.app.openDialog("import")}>Import from Postman or OpenAPI</lit-material-button>
+              <lit-material-button slot="actions" variant="text" @click=${() => s.addSampleCollection()}>Try a sample</lit-material-button>
             </lit-material-empty-state>`}
       </div>`;
   }

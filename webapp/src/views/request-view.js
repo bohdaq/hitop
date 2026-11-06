@@ -436,6 +436,10 @@ export class HitopRequest extends LitElement {
           ${usesProxy(t.url || "https://example.com")
             ? "Requests to public APIs go through the HITOP proxy, so CORS doesn't block them. Requests to localhost go straight from your browser."
             : "The response, its headers and timing appear here."}
+          ${this.store.isFresh
+            ? html`<lit-material-button slot="actions" variant="outlined" @click=${() => this.store.addSampleCollection()}>Try a sample collection</lit-material-button>
+                <lit-material-button slot="actions" variant="text" @click=${() => this.app.openDialog("import")}>Import from Postman</lit-material-button>`
+            : nothing}
         </lit-material-empty-state>
       </section>`;
     }

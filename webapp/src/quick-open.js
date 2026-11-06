@@ -38,9 +38,12 @@ export function fuzzyMatch(query, text) {
   return best;
 }
 
-// What quick open can pick from: [{ key, kind: "request" | "tab", title,
-// detail, method, url, collectionId?, request?, tabIndex?, open }].
-export function quickOpenItems({ collections, tabs, methodLabel }) {
+// What quick open can pick from: [{ key, kind: "request" | "tab" | "collection" |
+// "environment" | "history", title, detail, method, url, collectionId?, request?,
+// tabIndex?, environmentId?, entry?, open }]. Collections, environments (with their
+// variable names) and history (newest first, each method and URL once) come after
+// the requests.
+export function quickOpenItems({ collections, tabs, methodLabel, environments = [], history = [] }) {
   const items = [];
   tabs.forEach((t, i) => {
     if (t.loadedRequestId != null && collections.some((c) => c.id === t.loadedCollectionId && (c.requests || []).some((r) => r.id === t.loadedRequestId))) return;
@@ -53,6 +56,23 @@ export function quickOpenItems({ collections, tabs, methodLabel }) {
       const open = tabs.some((t) => t.loadedRequestId === r.id && t.loadedCollectionId === c.id);
       items.push({ key: `req:${c.id}:${r.id}`, kind: "request", title: r.name || "Untitled", detail: folder ? `${c.name} › ${folder}` : c.name, method: methodLabel(r), url: r.url || "", collectionId: c.id, request: r, open });
     }
+  }
+  if (environments.length || history.length) {
+    for (const c of collections) {
+      const n = (c.requests || []).length;
+      items.push({ key: `col:${c.id}`, kind: "collection", title: c.name, detail: `Collection, ${n} ${n === 1 ? "request" : "requests"}`, method: "COL", url: "", collectionId: c.id, open: false });
+    }
+  }
+  for (const e of environments) {
+    const names = Object.keys(e.variables || {});
+    items.push({ key: `env:${e.id}`, kind: "environment", title: e.label ?? e.name, detail: names.length ? `Environment: ${names.join(", ")}` : "Environment", method: "ENV", url: "", environmentId: e.id, open: false });
+  }
+  const seen = new Set();
+  for (const h of [...history].reverse()) {
+    const k = `${h.method} ${h.url}`;
+    if (!h.url || seen.has(k) || seen.size >= 30) continue;
+    seen.add(k);
+    items.push({ key: `hist:${k}`, kind: "history", title: h.url, detail: `History${h.statusCode ? `, ${h.statusCode}` : ""}`, method: h.method || "GET", url: "", entry: h, open: false });
   }
   return items;
 }

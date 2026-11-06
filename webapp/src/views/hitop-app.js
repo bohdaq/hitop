@@ -157,7 +157,11 @@ export class HitopApp extends LitElement {
 
   quickResults(d = this.dialog) {
     const s = this.store;
-    return rankItems(quickOpenItems({ collections: s.visibleCollections, tabs: s.tabs, methodLabel }), d?.query ?? "", 50);
+    // Collections, environments and history only once something is typed.
+    const q = String(d?.query ?? "").trim();
+    const environments = q ? s.visibleEnvironments.map((e) => ({ ...e, label: s.environmentLabel(e) })) : [];
+    const history = q ? s.history : [];
+    return rankItems(quickOpenItems({ collections: s.visibleCollections, tabs: s.tabs, methodLabel, environments, history }), d?.query ?? "", 50);
   }
 
   quickPick(item) {
@@ -165,6 +169,9 @@ export class HitopApp extends LitElement {
     const s = this.store;
     this.closeDialog();
     if (item.kind === "tab") s.selectTab(item.tabIndex);
+    else if (item.kind === "collection") this.go("collection", item.collectionId);
+    else if (item.kind === "environment") s.show("environments", null, item.environmentId);
+    else if (item.kind === "history") s.openHistoryItem(item.entry);
     else s.openRequest(item.request, item.collectionId);
   }
 
@@ -188,7 +195,7 @@ export class HitopApp extends LitElement {
     };
     const body = html`
       <input id="quick-input" class="quick-input" type="text" autofocus autocomplete="off" spellcheck="false"
-        placeholder="Find a request by name, collection or URL" aria-label="Find a request"
+        placeholder="Find a request, collection, environment or URL from history" aria-label="Find a request"
         role="combobox" aria-expanded="true" aria-controls="quick-list" aria-autocomplete="list"
         aria-activedescendant=${results.length ? `quick-opt-${active}` : ""}
         .value=${d.query ?? ""} @input=${(e) => (this.dialog = { ...this.dialog, query: e.target.value, active: 0 })} @keydown=${(e) => this.quickKey(e)} />
@@ -860,6 +867,9 @@ export class HitopApp extends LitElement {
             ${icon("folders")}<span>Collections</span>
           </button>
           <ul>
+            ${!s.visibleCollections.length && s.currentOrgInfo && !s.currentOrgInfo.personal
+              ? html`<li class="tree-empty hint">No collections in ${s.currentOrgInfo.name} yet.</li>`
+              : nothing}
             ${s.visibleCollections.map((c) => {
               const requests = (c.requests || []).filter(matches);
               if (filter && !requests.length) return nothing;

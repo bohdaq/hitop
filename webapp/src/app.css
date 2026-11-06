@@ -622,3 +622,4 @@ button.storage-chip:focus-visible { outline: 2px solid var(--md-sys-color-primar
   .account-row { grid-template-columns: 1fr auto; }
   .account-row .account-value { grid-column: 1 / -1; grid-row: 2; }
 }
+.tree-empty { padding: var(--space-100) var(--space-200); }

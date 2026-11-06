@@ -102,5 +102,11 @@ assert.equal(rankItems(items, "health")[0].kind, "tab");
 assert.ok(rankItems(items, "token").some((i) => i.title === "Login"), "the URL is searched too");
 assert.equal(rankItems(items, "qqq").length, 0);
 assert.equal(rankItems(items, "o", 2).length, 2, "limit");
+// Collections, environments (by variable name) and history (newest first, once each) after the requests.
+const more = quickOpenItems({ collections, tabs: [], methodLabel, environments: [{ id: "e1", name: "staging", variables: { base: "x", token: "" } }], history: [{ method: "GET", url: "https://a.test/x", statusCode: 200 }, { method: "GET", url: "https://b.test/y" }, { method: "GET", url: "https://a.test/x", statusCode: 500 }] });
+assert.deepEqual(more.filter((i) => i.kind !== "request").map((i) => i.key), ["col:1", "col:2", "env:e1", "hist:GET https://a.test/x", "hist:GET https://b.test/y"]);
+assert.equal(more.find((i) => i.kind === "history").detail, "History, 500", "the newest entry of a URL");
+assert.equal(rankItems(more, "token")[0].kind, "environment", "an environment is found by a variable name");
+assert.equal(rankItems(more, "auth")[0].key, "col:2");
 
 console.log("unit-ux: all checks passed");

@@ -23,8 +23,8 @@ Highest value for the effort first.
 |---|------|--------|
 | 1 | Comparison pages (HITOP column) | done: HITOP Cloud in price, account, storage, Git rows |
 | 2 | Feature matrix (web, desktop, CLI) | done: guide which-hitop-app |
-| 3 | Search across collections, environments, history | |
-| 4 | First run and empty team org | |
+| 3 | Search across collections, environments, history | done: quick open (Mod+P) once something is typed |
+| 4 | First run and empty team org | done: sample collection + Import next to the empty response; empty org says so |
 | 5 | Create org and invite from the switcher | |
 | 6 | OAuth 2 helpers, then SigV4, Digest | |
 | 7 | SSE in the web app | |
