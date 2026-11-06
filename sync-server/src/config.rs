@@ -96,6 +96,14 @@ pub struct Config {
     pub audit_anchors: bool,
     /// Git sync of the personal library through a GitHub App (gitsync.rs); `None` = off.
     pub git: Option<crate::gitsync::GitConfig>,
+    /// Monitors (monitors.rs): the binary run as `<bin> monitor-run` for each run
+    /// (`HITOP_SYNC_MONITOR_BIN`, default this executable; `None` = monitors off).
+    pub monitor_bin: Option<std::path::PathBuf>,
+    /// Addresses monitors may never reach besides the private ranges (`HITOP_SYNC_DENY_IPS`: the
+    /// host's own public IP).
+    pub deny_ips: Vec<String>,
+    /// Tests only (`HITOP_SYNC_MONITOR_ALLOW_PRIVATE=1`): monitors may reach private addresses.
+    pub monitor_allow_private: bool,
 }
 
 /// `<PREFIX>_CLIENT_ID` and `<PREFIX>_CLIENT_SECRET` (or `<PREFIX>_CLIENT_SECRET_FILE`): both or
@@ -152,6 +160,9 @@ impl Config {
             dns_url: None,
             audit_anchors: true,
             git: None,
+            monitor_bin: None,
+            deny_ips: Vec::new(),
+            monitor_allow_private: false,
         }
     }
 
@@ -199,6 +210,13 @@ impl Config {
         c.trial_days = number("HITOP_SYNC_TRIAL_DAYS", c.trial_days)?;
         c.runs = crate::runs::RunsConfig::from_env(&var)?;
         c.host_key = crate::hostkey::HostKey::from_env(&var)?;
+        c.monitor_bin = match var("HITOP_SYNC_MONITOR_BIN") {
+            Some(p) if p == "off" => None,
+            Some(p) => Some(p.into()),
+            None => std::env::current_exe().ok(),
+        };
+        c.deny_ips = var("HITOP_SYNC_DENY_IPS").map(|v| list(&v)).unwrap_or_default();
+        c.monitor_allow_private = var("HITOP_SYNC_MONITOR_ALLOW_PRIVATE").as_deref() == Some("1");
         if let Some(u) = var("HITOP_SYNC_DNS_URL").filter(|u| u != "off") {
             if !crate::oidc::secure_url(&u) {
                 return Err(format!("HITOP_SYNC_DNS_URL must be an https:// URL (http:// only on localhost): {u}"));

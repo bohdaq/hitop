@@ -34,7 +34,7 @@ Highest value for the effort first.
 | 11 | Hosted MCP | done: sync server POST /mcp, 6 tools over the library (read; create/update with a write token); running requests from it open (with monitors) |
 | 12 | AI in the app | done: Ask AI (sparkle next to Send): write tests, explain, request from text; own key in Settings, Opus 5.5 default + server-side fallback; secrets masked |
 | 13 | Mock servers | done: sync server /mock/<id>/… from saved examples (migration 14), paid plans, 600/min, never HTML; Share → Mock |
-| 14 | Monitors | |
+| 14 | Monitors | done: sync server schema 16, runs in a child process (ulimit, 150 s, SSRF guard incl. IP literals/redirects, script loop limits), mail on fail/recover; Share → Monitor. VM: set HITOP_SYNC_DENY_IPS |
 | 15 | Comments and per-request history | |
 | 16 | gRPC and WebSocket headers bridge | |
 | 17 | Plugins, API design editor | deferred (owner) |

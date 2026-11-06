@@ -41,12 +41,17 @@ fn collection_id(params: &PathParams) -> Result<String, ApiError> {
 
 /// Mocks need a paid plan when the server enforces plans.
 fn plan_allows(state: &State, tx: &mut Tx, org: &str) -> Result<(), ApiError> {
+    plan_allows_feature(state, tx, org, "mock servers")
+}
+
+/// A paid-plan feature (mock servers, monitors): refused on Free when the server enforces plans.
+pub(crate) fn plan_allows_feature(state: &State, tx: &mut Tx, org: &str, feature: &str) -> Result<(), ApiError> {
     if !state.config.plan_limits {
         return Ok(());
     }
     let e = crate::limits::entitlement(tx, org)?;
     if e.plan == "free" {
-        return Err(ApiError::new(402, "limit", "mock servers come with the Pro, Team, Business and Enterprise plans"));
+        return Err(ApiError::new(402, "limit", format!("{feature} come with the Pro, Team, Business and Enterprise plans")));
     }
     Ok(())
 }

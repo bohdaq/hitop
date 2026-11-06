@@ -801,6 +801,31 @@ CREATE TABLE org_items (
   deleted BIGINT NOT NULL,
   PRIMARY KEY (org_id, kind, item_id)
 );
+", r"
+CREATE TABLE monitors (
+  id TEXT PRIMARY KEY,
+  user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  collection_id TEXT NOT NULL,
+  environment TEXT NOT NULL,
+  every_minutes BIGINT NOT NULL,
+  emails TEXT NOT NULL,
+  next_at BIGINT NOT NULL,
+  last_status TEXT NOT NULL,
+  last_run_at BIGINT NOT NULL,
+  created_at BIGINT NOT NULL,
+  UNIQUE (user_id, collection_id)
+);
+CREATE INDEX monitors_due ON monitors(next_at);
+CREATE TABLE monitor_runs (
+  monitor_id TEXT NOT NULL REFERENCES monitors(id) ON DELETE CASCADE,
+  at BIGINT NOT NULL,
+  passed BIGINT NOT NULL,
+  requests BIGINT NOT NULL,
+  failed BIGINT NOT NULL,
+  duration_ms BIGINT NOT NULL,
+  failures TEXT NOT NULL,
+  PRIMARY KEY (monitor_id, at)
+);
 "];
 
 /// Steps in Rust that run in the same transaction as a migration's SQL (index = migration

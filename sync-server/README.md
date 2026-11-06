@@ -228,6 +228,23 @@ delivers them every few seconds; the missed-run check is hourly). Shared environ
 a self-hosted server; set `SMTP_URL` for alert mail. See THREAT_MODEL.md "Run history and alerts"
 and "Shared environment values".
 
+### Monitors, mock servers, team environments and hosted MCP
+
+On personal-library collections (which the server can read; shared workspaces stay end to end
+encrypted and out of reach):
+
+- **Monitors** run a collection on a schedule (`/v1/library/collection/:id/monitor`, every 5 minutes
+  to every day) and mail when it starts failing and when it passes again. Each run is a child
+  process (`hitop-sync-server monitor-run`, under `ulimit -v`, killed after 150 s) whose HTTP client
+  refuses private and reserved addresses, also for IP literals and redirects; add the host's own
+  public address with `HITOP_SYNC_DENY_IPS=<ip>[,<ip>]`. `HITOP_SYNC_MONITOR_BIN=off` turns monitors
+  off (default: this executable).
+- **Mock servers** answer at `/mock/<id>/…` from the requests' saved examples (never HTML).
+- **Team environments**: `/v1/orgs/:org/environments`, shared by an org's members without secret values.
+- **Hosted MCP**: `POST /mcp` with a personal access token, for AI assistants.
+
+Monitors and mock servers need a paid plan when `HITOP_SYNC_LIMITS=plans`.
+
 ### Audit log
 
 The server records security events (sign-ins and failures, SSO, keys, members, roles, invites,

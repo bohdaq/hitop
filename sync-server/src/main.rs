@@ -5,6 +5,10 @@ use hitop_sync_server::{alerts, audit, billing, dbtools, limits, runs, Config, D
 use rust_web_server::server::Server;
 
 fn main() {
+    // A monitor's run (monitors.rs): a child process with nothing of the server's.
+    if std::env::args().nth(1).as_deref() == Some("monitor-run") {
+        std::process::exit(hitop_sync_server::monitors::child_main());
+    }
     // Defaults for the listener unless the environment sets them.
     for (name, value) in [("RWS_CONFIG_IP", "127.0.0.1"), ("RWS_CONFIG_PORT", "7881")] {
         if std::env::var_os(name).is_none() {
@@ -154,6 +158,14 @@ fn main() {
         std::thread::spawn(move || loop {
             hitop_sync_server::gitsync::run_due(syncer.state());
             std::thread::sleep(std::time::Duration::from_secs(2));
+        });
+    }
+    // Monitors (monitors.rs): due ones every 15 s, each in a child process.
+    if app.state().config.monitor_bin.is_some() {
+        let monitor = app.clone();
+        std::thread::spawn(move || loop {
+            hitop_sync_server::monitors::run_due(monitor.state());
+            std::thread::sleep(std::time::Duration::from_secs(15));
         });
     }
     let runtime = tokio::runtime::Builder::new_multi_thread().enable_all().build().expect("tokio runtime");

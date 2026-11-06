@@ -10,6 +10,27 @@ use crate::model::RequestResult;
 
 static CLIENT: std::sync::OnceLock<Client> = std::sync::OnceLock::new();
 
+static URL_CHECK: std::sync::OnceLock<fn(&str) -> std::result::Result<(), String>> = std::sync::OnceLock::new();
+
+/// Every request's URL goes through `check` before it is sent (the sync server's monitors refuse
+/// private addresses, which a client's DNS resolver never sees when the URL has an IP literal).
+pub fn install_url_check(check: fn(&str) -> std::result::Result<(), String>) -> bool {
+    URL_CHECK.set(check).is_ok()
+}
+
+fn check_url(url: &str) -> Result<()> {
+    match URL_CHECK.get() {
+        Some(check) => check(url).map_err(|e| anyhow::anyhow!(e)),
+        None => Ok(()),
+    }
+}
+
+/// Uses `c` for every request from now on instead of the default client (the sync server's
+/// monitors install one that refuses private addresses). False when a client is already in use.
+pub fn install_client(c: Client) -> bool {
+    CLIENT.set(c).is_ok()
+}
+
 fn client() -> &'static Client {
     CLIENT.get_or_init(|| {
         Client::builder()
@@ -91,6 +112,7 @@ pub fn execute_opts(method: &str, url: &str, headers: &[(String, String)], body:
     let method = reqwest::Method::from_bytes(method.to_uppercase().as_bytes())
         .unwrap_or(reqwest::Method::GET);
 
+    check_url(url)?;
     let mut req = client().request(method, url).headers(header_map);
     if let Some(t) = opts.timeout {
         req = req.timeout(t);
@@ -164,6 +186,7 @@ pub fn send_with(method: &str, url: &str, headers: &[(String, String)], body: Ve
         header_map.insert(reqwest::header::COOKIE, HeaderValue::from_str(&cookie).map_err(|_| anyhow::anyhow!("invalid cookie in the jar"))?);
     }
     let method = reqwest::Method::from_bytes(method.to_uppercase().as_bytes()).map_err(|_| anyhow::anyhow!("invalid method {method:?}"))?;
+    check_url(url)?;
     let mut req = client().request(method, url).headers(header_map);
     if let Some(t) = opts.timeout {
         req = req.timeout(t);

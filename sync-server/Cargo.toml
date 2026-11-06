@@ -41,7 +41,11 @@ argon2 = { version = "0.5.3", default-features = false, features = ["alloc", "pa
 ring = "0.17.14"
 # HITOP Cloud C8 Git sync (gitsync.rs): the collection folder format (hitop.yaml, requests/) and the
 # key-by-key YAML merge, without default features: no HTTP, scripts or crypto (MIT, cli workspace).
-hitop-core = { path = "../cli/crates/hitop-core", default-features = false }
+# With `native` (since the monitors, monitors.rs): the runner, scripts (boa) and HTTP (reqwest), used
+# only by the `monitor-run` child process, never by the server's own request handling.
+hitop-core = { path = "../cli/crates/hitop-core", default-features = false, features = ["native"] }
+# The monitors' HTTP client: hitop-core's reqwest, with a resolver that refuses private addresses.
+reqwest = { version = "0.12", default-features = false, features = ["blocking", "rustls-tls"] }
 yaml_serde = "0.10.7"
 
 [dev-dependencies]

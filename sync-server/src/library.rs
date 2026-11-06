@@ -221,6 +221,21 @@ pub fn delete(state: &State, request: &Request, params: &PathParams) -> ApiResul
     })
 }
 
+/// An item of `user`'s library with its secret values opened (`{}` without a host key or none).
+/// Monitors (monitors.rs) run with them.
+pub(crate) fn item_with_secrets(state: &State, tx: &mut Tx, user: &str, kind: &str, id: &str) -> Result<Option<(Json, Json)>, ApiError> {
+    let row = tx.query_one("SELECT data, secrets FROM library_items WHERE user_id = $1 AND kind = $2 AND item_id = $3 AND deleted = 0", &[user.into(), kind.into(), id.into()])?;
+    Ok(row.map(|r| {
+        let data = serde_json::from_str(&r.text(0)).unwrap_or(Json::Null);
+        let sealed = r.bytes(1);
+        let secrets = match (&state.config.host_key, sealed.is_empty()) {
+            (Some(key), false) => key.open(&label(user, kind, id), &sealed).ok().and_then(|p| serde_json::from_slice(&p).ok()).unwrap_or(Json::Null),
+            _ => Json::Null,
+        };
+        (data, secrets)
+    }))
+}
+
 /// A collection of `user`'s library: its data and version (None: missing or deleted). Git sync.
 pub(crate) fn collection_item(tx: &mut Tx, user: &str, id: &str) -> Result<Option<(Json, i64)>, ApiError> {
     let row = tx.query_one("SELECT data, version FROM library_items WHERE user_id = $1 AND kind = 'collection' AND item_id = $2 AND deleted = 0", &[user.into(), id.into()])?;

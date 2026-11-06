@@ -282,6 +282,12 @@ async function syncServer() {
     const mockUrl = (await two.page.locator('#dialog hitop-mock lit-material-code-block').innerText()).trim().split('\n').find((l) => l.includes('/mock/'));
     const answer = await (await fetch(`${mockUrl.trim()}/items/3`)).json();
     check('a mock server answers from the saved example', answer.id === 3, `${mockUrl} ${JSON.stringify(answer)}`);
+    // A monitor from the same dialog: turned on with the default alert address, then Run now.
+    await two.page.locator('#dialog').getByRole('tab', { name: /Monitor/ }).click();
+    await two.page.locator('#dialog').getByRole('button', { name: /Turn on the monitor/ }).click();
+    await two.page.locator('#dialog').getByRole('button', { name: 'Run now' }).waitFor({ timeout: 10000 });
+    const mon = await store(two, 'const c = s.collections.find((c) => c.name === "Mocked"); return s.library.client.api("GET", `/v1/library/collection/${c.id}/monitor`);');
+    check('a monitor turns on with the account address for alerts', mon.everyMinutes === 60 && mon.emails[0] === 'ada@example.com', JSON.stringify(mon));
     await two.page.locator('#dialog .dialog-actions').getByRole('button', { name: 'Close' }).click();
 
     check('no page errors', errors.length === 0, errors.join(' | '));

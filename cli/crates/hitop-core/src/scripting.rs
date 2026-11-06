@@ -4,6 +4,29 @@ use anyhow::{anyhow, Result};
 use boa_engine::{Context, Source};
 use serde_json::Value;
 
+static LOOP_LIMIT: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+static RECURSION_LIMIT: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
+
+/// Limits for every script from now on (0: none, the default): loop iterations and call depth.
+/// The sync server's monitors run other people's scripts with them.
+pub fn set_limits(loop_iterations: u64, recursion: usize) {
+    LOOP_LIMIT.store(loop_iterations, std::sync::atomic::Ordering::Relaxed);
+    RECURSION_LIMIT.store(recursion, std::sync::atomic::Ordering::Relaxed);
+}
+
+fn new_engine() -> Context {
+    let mut engine = Context::default();
+    let loops = LOOP_LIMIT.load(std::sync::atomic::Ordering::Relaxed);
+    if loops > 0 {
+        engine.runtime_limits_mut().set_loop_iteration_limit(loops);
+    }
+    let depth = RECURSION_LIMIT.load(std::sync::atomic::Ordering::Relaxed);
+    if depth > 0 {
+        engine.runtime_limits_mut().set_recursion_limit(depth);
+    }
+    engine
+}
+
 /// Inputs the pre-request script can mutate.
 #[derive(Debug, Clone, Default)]
 pub struct PreRequestCtx {
@@ -119,7 +142,7 @@ pub fn unsupported_calls(script: &str) -> Vec<UnsupportedCall> {
     if script.trim().is_empty() {
         return vec![];
     }
-    let mut engine = Context::default();
+    let mut engine = new_engine();
     let Ok(source) = serde_json::to_string(script) else { return vec![] };
     let js = format!("{PM_SHIM}\nJSON.stringify(__hitopPmUnsupported({source}))");
     engine
@@ -142,7 +165,7 @@ pub fn run_pre_request_script(script: &str, ctx: PreRequestCtx) -> Result<PreReq
         });
     }
 
-    let mut engine = Context::default();
+    let mut engine = new_engine();
 
     let variables_json = serde_json::to_string(&ctx.variables)?;
     let globals_json = serde_json::to_string(&ctx.globals)?;
@@ -276,7 +299,7 @@ pub fn run_post_request_script_with(script: &str, ctx: &PostRequestCtx) -> Resul
         });
     }
 
-    let mut engine = Context::default();
+    let mut engine = new_engine();
 
     let parsed_response: Value = serde_json::from_str(response_body).unwrap_or(Value::Null);
     let response_json = serde_json::to_string(&parsed_response)?;

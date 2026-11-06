@@ -20,6 +20,8 @@ pub mod hostkey;
 pub mod library;
 pub mod mcp;
 pub mod mocks;
+pub mod monitor_guard;
+pub mod monitors;
 pub mod limits;
 pub mod mail;
 pub mod oidc;
