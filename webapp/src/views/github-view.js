@@ -16,8 +16,6 @@ class LightElement extends LitElement {
   }
 }
 
-const openGitDialog = (el, c) => el.closest("hitop-app")?.openShare(c, "github");
-
 class HitopGitPanel extends LightElement {
   static properties = {
     store: { attribute: false },
@@ -296,32 +294,17 @@ class HitopGithub extends LightElement {
   render() {
     const g = this.git;
     if (!g?.enabled) return nothing;
-    const s = this.store;
     const returned = g.returned && g.returned.collection == null ? g.returned : null;
-    const rows = s.collections.map((c) => [c, storageOf(s, c)]).filter(([, w]) => w.kind === "cloud" || w.kind === "github");
-    return html`<section aria-label="GitHub">
-      <h2>GitHub</h2>
-      ${returned ? html`<p class="sync-note" role="status">${returned.ok ? "GitHub is connected." : "GitHub didn't finish connecting. Try again."}</p>` : nothing}
-      ${this.error ? html`<lit-material-alert variant="error" role="alert">${this.error}</lit-material-alert>` : nothing}
-      <p class="hint">Save a collection to a GitHub repository to review changes in pull requests and run it in CI with <code>hitop run</code>. Every save in HITOP commits there; commits on GitHub come back here.</p>
-      <div class="sync-form">
-        ${g.connected
-          ? html`<span>${icon("github-logo")} Connected as <b>${g.info.installations.map((i) => i.account).join(", ")}</b></span>
-              <lit-material-button variant="text" ?disabled=${Boolean(this.busy)} @click=${() => this.go({ add: true })}>Manage repository access ${icon("arrow-square-out")}</lit-material-button>`
-          : html`<lit-material-button variant="filled" ?disabled=${Boolean(this.busy)} @click=${() => this.go({})}>${icon("github-logo")} Connect GitHub</lit-material-button>`}
-      </div>
-      ${rows.length
-        ? html`<ul class="sync-list" aria-label="Collections and GitHub">
-            ${rows.map(
-              ([c, w]) => html`<li class="sync-item git-row">
-                <span><b>${c.name}</b>
-                  <span class=${w.attention ? "sync-note" : "hint"} aria-label=${`Where ${c.name} is saved`}>${icon(w.icon)} ${w.kind === "github" ? `${w.label}, ${w.state}` : "HITOP Cloud only"}</span></span>
-                <lit-material-button variant="outlined" @click=${() => openGitDialog(this, c)}>${w.kind === "github" ? "Details" : "Save to GitHub…"}</lit-material-button>
-              </li>`,
-            )}
-          </ul>`
-        : nothing}
-    </section>`;
+    // One row of the Account page; each collection's own link is in its Share dialog.
+    return html`<div class="account-row" aria-label="GitHub">
+      <span class="account-key">${icon("github-logo")} GitHub</span>
+      <span class="account-value">${g.connected ? g.info.installations.map((i) => i.account).join(", ") : html`<span class="hint">Not connected</span>`}</span>
+      ${g.connected
+        ? html`<lit-material-button variant="text" ?disabled=${Boolean(this.busy)} @click=${() => this.go({ add: true })}>Manage ${icon("arrow-square-out")}</lit-material-button>`
+        : html`<lit-material-button variant="text" ?disabled=${Boolean(this.busy)} @click=${() => this.go({})}>Connect GitHub</lit-material-button>`}
+      ${returned && !returned.ok ? html`<p class="sync-note account-full" role="status">GitHub didn't finish connecting. Try again.</p>` : nothing}
+      ${this.error ? html`<lit-material-alert class="account-full" variant="error" role="alert">${this.error}</lit-material-alert>` : nothing}
+    </div>`;
   }
 
   async go(opts) {

@@ -156,7 +156,17 @@ async function launchOff(options) {
     const d = S(h).locator('details.sync-more');
     if (!(await d.evaluate((e) => e.open))) await d.locator('summary').click();
   };
-  const syncNow = async (h) => {
+  // Password & recovery on the Account page (collapsed).
+  const security = async (h) => {
+    const d = S(h).locator('details.account-security');
+    if (!(await d.evaluate((e) => e.open))) await d.locator('summary').click();
+    await settle(h.page, 100);
+  };
+  // Text of a field that may sit in the collapsed Password & recovery.
+  const text = (loc) => loc.evaluate((e) => e.textContent.trim()).catch(() => '');
+  // Sync now in the collection's Share dialog (People).
+  const syncNow = async (h, name = 'Shop API') => {
+    if (!(await h.page.locator('#share-panel hitop-sync').count())) await openShare(h, name);
     await S(h).getByRole('button', { name: /Sync now/ }).first().click();
     await idle(h);
   };
@@ -174,7 +184,7 @@ async function launchOff(options) {
     await h.page.waitForFunction(() => document.querySelector('hitop-sync [aria-label="Your fingerprint"]')?.textContent.trim().length > 30, null, { timeout: 15000 }).catch(async (e) => {
       throw new Error(`sign-in as ${email} didn't finish: ${await alertText(h)} ${await note(h)} ${errors.join(' | ')}`);
     });
-    return (await S(h).getByLabel('Your fingerprint').innerText()).trim();
+    return text(S(h).getByLabel('Your fingerprint'));
   };
 
   for (const h of [ada, bob]) await h.page.goto(h.url, { waitUntil: 'networkidle' });
@@ -212,6 +222,11 @@ async function launchOff(options) {
   const mailed = await server.code('bob@example.com', 'hitop sync accept');
   const inviteCode = (await S(ada).getByLabel('Invite code with your fingerprint').innerText()).trim();
   check("the invite code carries the owner's fingerprint", inviteCode === `${mailed}.${adaFp.replace(/ /g, '')}`, `${inviteCode} vs ${mailed}`);
+  // Bob: the account menu's Join with invite code.
+  await closeDialog(bob);
+  await bob.page.locator('header.topbar .account-button').click();
+  await bob.page.locator('#account-menu').getByText('Join with invite code').click();
+  await bob.page.locator('#dialog hitop-sync').waitFor({ timeout: 10000 });
   await S(bob).getByLabel('Invite code').fill(inviteCode);
   await S(bob).getByRole('button', { name: 'Accept invite' }).click();
   await idle(bob);
@@ -312,6 +327,7 @@ async function launchOff(options) {
   await ada.page.reload({ waitUntil: 'networkidle' });
   await openSync(ada);
   await idle(ada);
+  await openShare(ada, 'Shop API');
   check('a shared collection survives a reload', (await requests(ada, 'Shop API'))?.length === 1 && (await S(ada).getByRole('button', { name: /Sync now/ }).count()) === 1);
 
   // A runner credential for scheduled runs, and the trade-off is on the page.
@@ -391,7 +407,7 @@ async function launchOff(options) {
   await bob.page.reload({ waitUntil: 'networkidle' });
   await openSync(bob);
   await settle(bob.page);
-  check('a deleted shared collection stays deleted', (await requests(bob, 'Shop API')) === null && (await S(bob).getByRole('button', { name: /Sync now/ }).count()) === 0 && (await bob.page.evaluate(() => Object.keys(localStorage).filter((k) => k.startsWith('hitop_sync_files:')).length)) === 0, JSON.stringify(await requests(bob, 'Shop API')));
+  check('a deleted shared collection stays deleted', (await requests(bob, 'Shop API')) === null && (await S(bob).getByRole('button', { name: 'Open here' }).count()) === 0 && (await bob.page.evaluate(() => Object.keys(localStorage).filter((k) => k.startsWith('hitop_sync_files:')).length)) === 0, JSON.stringify(await requests(bob, 'Shop API')));
 
   // Sign in with SSO: this server has none.
   await openSync(bob);
@@ -431,7 +447,7 @@ async function launchOff(options) {
     await S(bob).getByLabel('Code shown after signing in').fill(ssoCode);
     await S(bob).getByRole('button', { name: 'Sign in', exact: true }).click();
     await idle(bob);
-    check('Sign in with SSO', (await S(bob).locator('.page-lead').first().innerText()).includes('alice@corp.test'), (await alertText(bob)) + (await S(bob).locator('.page-lead').first().innerText()));
+    check('Sign in with SSO', (await S(bob).locator('.account-lead').first().innerText()).includes('alice@corp.test'), (await alertText(bob)) + (await S(bob).locator('.account-lead').first().innerText()));
     sso.stop();
   } else {
     console.log('[sync] HITOP_SYNC_TEST_KEYCLOAK not set: the SSO sign-in with Keycloak is skipped');
@@ -441,7 +457,8 @@ async function launchOff(options) {
   // and recovers with it: the same device (fingerprint), reading the workspace. A wrong or short
   // phrase recovers nothing.
   await openSync(ada);
-  check('the page warns that the device key lives in this browser', TAURI || (await S(ada).getByLabel('Recovery phrase').innerText()).includes("browser's storage"));
+  await security(ada);
+  check('the page says the device key lives only in this browser', TAURI || (await S(ada).getByLabel('Recovery status').innerText()).includes('only in this browser'), await S(ada).getByLabel('Recovery status').innerText());
   await S(ada).getByRole('button', { name: 'Create recovery phrase' }).click();
   await idle(ada);
   const phrase = (await S(ada).getByLabel('Your recovery phrase').innerText()).trim();
@@ -453,6 +470,7 @@ async function launchOff(options) {
   await ada2.page.goto(ada2.url, { waitUntil: 'networkidle' });
   const freshFp = await signIn(ada2, 'ada@example.com');
   check('a new device signs in with a new key', freshFp !== adaFp);
+  await security(ada2);
   const recover = async (words) => {
     if ((await S(ada2).getByLabel('Recovery phrase (24 words)').count()) === 0) await S(ada2).getByRole('button', { name: 'Recover a lost device' }).click();
     await S(ada2).getByLabel('Recovery phrase (24 words)').fill(words);
@@ -461,11 +479,11 @@ async function launchOff(options) {
   };
   const other = (await (await import('../src/wasm/format.js')).formatFromBytes(fs.readFileSync(path.join(__dirname, '../src/wasm/pkg/hitop_wasm_bg.wasm')))).sync.recoveryNew().words;
   await recover(other);
-  check('a wrong recovery phrase recovers nothing', (await alertText(ada2)).includes("doesn't open") && (await S(ada2).getByLabel('Your fingerprint').innerText()).trim() === freshFp, await alertText(ada2));
+  check('a wrong recovery phrase recovers nothing', (await alertText(ada2)).includes("doesn't open") && (await text(S(ada2).getByLabel('Your fingerprint'))) === freshFp, await alertText(ada2));
   await recover(phrase.split(' ').slice(0, 23).join(' '));
   check('a short phrase is refused', (await alertText(ada2)).includes('24 words'), await alertText(ada2));
   await recover(phrase.toUpperCase());
-  check('the right phrase brings the lost device back', (await note(ada2)).includes('Recovered the device') && (await S(ada2).getByLabel('Your fingerprint').innerText()).trim() === adaFp, (await note(ada2)) + (await alertText(ada2)));
+  check('the right phrase brings the lost device back', (await note(ada2)).includes('Recovered the device') && (await text(S(ada2).getByLabel('Your fingerprint'))) === adaFp, (await note(ada2)) + (await alertText(ada2)));
   const adaKeys = server.sql().prepare("SELECT COUNT(*) AS n FROM device_keys k JOIN users u ON u.id = k.user_id WHERE u.email = 'ada@example.com'").get().n;
   check("the new sign-in's key is gone from the account", Number(adaKeys) === 1, String(adaKeys));
   await S(ada2).getByRole('button', { name: 'Open here' }).first().click();
@@ -487,7 +505,7 @@ async function launchOff(options) {
     await S(h).getByLabel('Sync server').fill(server.url);
     return h;
   };
-  const fp = (h) => S(h).getByLabel('Your fingerprint').innerText().then((t) => t.trim()).catch(() => '');
+  const fp = (h) => text(S(h).getByLabel('Your fingerprint'));
   // Email, Continue, then the password.
   const emailFirst = async (h, email) => {
     await S(h).getByLabel('Email').fill(email);
@@ -518,14 +536,14 @@ async function launchOff(options) {
   await S(carol).getByRole('button', { name: 'Confirm' }).click();
   await idle(carol);
   const carolFp = await fp(carol);
-  check('sign up with a password and the mailed code', carolFp.length > 30 && (await S(carol).getByLabel('Password status').innerText()).includes('has a password'), (await alertText(carol)) + (await note(carol)));
+  check('sign up with a password and the mailed code', carolFp.length > 30 && (await text(S(carol).getByLabel('Password status'))).includes('has a password'), (await alertText(carol)) + (await note(carol)));
   await openShare(carol, 'Carol API');
   await S(carol).getByRole('button', { name: /Share with people/ }).click();
   await idle(carol);
   await openSync(carol);
   await idle(carol);
   const bundles = () => server.sql().prepare("SELECT COUNT(*) AS n FROM recovery_blobs b JOIN users u ON u.id = b.user_id WHERE u.email = 'carol@example.com' AND b.method = 'password'").get().n;
-  check("the device's keys are sealed with the password on the server", Number(bundles()) === 1 && (await S(carol).getByLabel('Password status').innerText()).includes("this device's keys"), String(bundles()));
+  check("the device's keys are sealed with the password on the server", Number(bundles()) === 1 && (await text(S(carol).getByLabel('Password status'))).includes("this device's keys"), String(bundles()));
 
   const carol2 = await fresh();
   await passwordSignIn(carol2, 'not the password at all');
@@ -537,6 +555,7 @@ async function launchOff(options) {
   check('...and opens the workspace with no trust step', JSON.stringify(await requests(carol2, 'Carol API')) === JSON.stringify(await requests(carol, 'Carol API')) && !(await S(carol2).locator('.sync-untrusted').count()), JSON.stringify(await requests(carol2, 'Carol API')) + (await alertText(carol2)) + (await note(carol2)) + JSON.stringify(await store(carol2, 'return s.collections.map((c) => c.name)')));
 
   // A password change on the first device re-seals the keys; the new password unlocks them.
+  await security(carol);
   await S(carol).getByLabel('Current password').fill('carol correct horse');
   await S(carol).getByLabel('New password', { exact: true }).fill('carol new battery staple');
   await S(carol).getByLabel('Repeat the new password').fill('carol new battery staple');

@@ -274,6 +274,10 @@ export class HitopApp extends LitElement {
       if (d.tab === "github") this.querySelector("hitop-git-panel")?.submit();
       return;
     }
+    if (d?.kind === "join") {
+      [...this.querySelectorAll("#dialog hitop-sync lit-material-button")].find((b) => b.textContent.includes("Accept invite"))?.click();
+      return;
+    }
     if (!d || d.submitted) return;
     if (d.kind === "quick-open") {
       const { results, active } = this.quickDialog(d);
@@ -581,6 +585,14 @@ export class HitopApp extends LitElement {
           </div>`;
         break;
       }
+      case "join":
+        headline = "Join a shared collection";
+        body = html`<p>Paste the invite code someone sent you.</p><hitop-sync .store=${s} .version=${s.version} .app=${this} .join=${true}></hitop-sync>`;
+        footer = html`
+          <div slot="actions" class="dialog-actions">
+            <lit-material-button variant="text" @click=${() => this.closeDialog()}>Close</lit-material-button>
+          </div>`;
+        break;
       case "shortcuts":
         headline = "Keyboard shortcuts";
         body = html`${shortcutList()}<p class="dialog-note">They're on the Settings page too.</p>`;
@@ -720,7 +732,7 @@ export class HitopApp extends LitElement {
       const w = storageOf(s, c);
       const link = sync.link(c.id);
       const conflicts = link ? Object.keys(sync.state(link.workspace)?.conflicts ?? {}).length : 0;
-      if (conflicts) out.push({ text: `${c.name}: ${conflicts === 1 ? "a change" : `${conflicts} changes`} made by someone else too`, run: () => this.go("sync") });
+      if (conflicts) out.push({ text: `${c.name}: ${conflicts === 1 ? "a change" : `${conflicts} changes`} made by someone else too`, run: () => this.openShare(c, "people") });
       else if (w.attention) out.push({ text: `${c.name}: ${w.kind === "github" ? w.state : w.detail}`, run: () => this.openShare(c, this.tabFor(w)) });
     }
     return out;
@@ -763,6 +775,7 @@ export class HitopApp extends LitElement {
       <div class="account-head" role="presentation"><b>${a.email}</b><span class="hint">${st?.on && !st.error ? icon("check-circle") : nothing} ${where}</span></div>
       ${needs.map((x) => html`<lit-material-list-item interactive class="account-need" @click=${() => x.run()}>${icon("warning-circle")} ${x.text}</lit-material-list-item>`)}
       <lit-material-list-item interactive @click=${() => this.go("sync")}>${icon("user-circle")} Account & devices</lit-material-list-item>
+      <lit-material-list-item interactive @click=${() => this.openDialog("join")}>${icon("users-three")} Join with invite code…</lit-material-list-item>
       ${web ? html`<lit-material-list-item interactive @click=${() => window.open(PORTAL_URL, "_blank", "noopener")}>${icon("arrow-square-out")} Plan & billing</lit-material-list-item>` : nothing}
       <lit-material-list-item interactive @click=${() => this.signOut()}>Sign out</lit-material-list-item>
     </lit-material-menu>`;

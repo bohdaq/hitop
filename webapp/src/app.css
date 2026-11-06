@@ -603,3 +603,21 @@ button.storage-chip:focus-visible { outline: 2px solid var(--md-sys-color-primar
 .sync-or { display: flex; align-items: center; gap: var(--space-100); color: var(--md-sys-color-on-surface-variant); margin: var(--space-100) 0; max-width: 420px; }
 .sync-or::before, .sync-or::after { content: ""; flex: 1; border-top: 1px solid var(--md-sys-color-outline-variant); }
 .sync-signin { max-width: 640px; }
+
+/* Account page (sync-view.js): the address, a few rows, Password & recovery collapsed. */
+.account-page { max-width: 720px; }
+.account-lead { margin: 0; display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-100) var(--space-200); overflow-wrap: anywhere; }
+.account-lead [role="status"], .account-lead .sync-library { display: inline-flex; align-items: center; gap: var(--space-50); }
+.account-rows { display: grid; border-top: 1px solid var(--md-sys-color-outline-variant); }
+.account-row { display: grid; grid-template-columns: minmax(8rem, 12rem) 1fr auto; align-items: center; gap: var(--space-100) var(--space-200); padding: var(--space-100) 0; border-bottom: 1px solid var(--md-sys-color-outline-variant); min-width: 0; }
+.account-key { display: inline-flex; align-items: center; gap: var(--space-100); font-weight: 600; }
+.account-value { min-width: 0; overflow-wrap: anywhere; }
+.account-full { grid-column: 1 / -1; }
+.account-security > summary { cursor: pointer; font-weight: 600; padding: var(--space-150, 12px) 0; display: flex; align-items: center; gap: var(--space-100); }
+.account-security > section { margin: var(--space-100) 0 var(--space-400, 32px); gap: var(--space-150, 12px); }
+.account-security h3 { margin: 0; font-size: var(--text-md, 1rem); }
+.sync-join { display: grid; gap: var(--space-200); }
+@media (max-width: 600px) {
+  .account-row { grid-template-columns: 1fr auto; }
+  .account-row .account-value { grid-column: 1 / -1; grid-row: 2; }
+}

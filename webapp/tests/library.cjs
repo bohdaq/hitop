@@ -138,7 +138,7 @@ async function syncServer() {
       s.emit(); s.save();`, SECRET);
     await signIn(one, 'ada@example.com');
     await saved(one);
-    check('the Account page says the library is on', (await S(one).getByLabel('Cloud library').innerText()).includes('saved to HITOP Cloud'), await S(one).getByLabel('Cloud library').innerText());
+    check('the Account page says the library is on', (await S(one).getByLabel('Cloud library').innerText()).includes('Saved to HITOP Cloud'), await S(one).getByLabel('Cloud library').innerText());
     check('the secret value is not in the server database in the clear', !server.database().includes(Buffer.from(SECRET)));
     check('the collection is in the server database (the library is readable)', server.database().includes(Buffer.from('shop.e2e-library.test/orders')));
 

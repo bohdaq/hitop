@@ -69,7 +69,7 @@ In the app: the collection's **Share** dialog, **People** tab: the email and rol
 
 The invite code hitop shows you ends with your device's key fingerprint (`<code>.<fingerprint>`, also in the link). Send that code or link yourself, in a chat or a message you trust: with it, the other person's hitop accepts the workspace key only from your device. The code in a mailed invite has no fingerprint, because the sync server writes that mail; it works, but then their hitop asks them to compare your fingerprint before it uses the key.
 
-The person signs in, then accepts the invite (`hitop sync accept <code>`, or **Accept invite** under **Invites** on the Account page: the account menu at the top right, then **Account & devices**). Accepting doesn't give them access yet: only a member's device can hand over the workspace key, and the server could lie about whose key is whose.
+The person signs in, then accepts the invite (`hitop sync accept <code>`, or the account menu at the top right, then **Join with invite code…** and **Accept invite**). Accepting doesn't give them access yet: only a member's device can hand over the workspace key, and the server could lie about whose key is whose.
 
 So the owner checks the fingerprint:
 
@@ -80,11 +80,11 @@ hitop sync add ada@example.com --trust 'ab12 cd34 …' -c ./my-api
 
 Compare the fingerprint with the person directly: in person, on a call, or in a chat you already trust. In the app, the accepted invite shows the fingerprint and a **Trust…** button; **Add** stays off until the key is trusted. Once you trust a key, hitop remembers it; if the server ever presents a different key for the same device, hitop refuses to share the workspace key with it.
 
-The new member then opens the workspace: `hitop sync link <workspace> -c ./my-api`, or **Open here** on the Account page.
+The new member then opens the workspace: `hitop sync link <workspace> -c ./my-api`, or **Open here** on the Account page (the account menu, then **Account & devices**), where a collection shared with you waits until you open it.
 
 ## Fingerprints and warnings
 
-Every device has a key, and its **fingerprint** (eight groups of four hex digits) is what people compare. Yours: `hitop sync whoami`, or the top of the Account page. Everyone's: `hitop sync members`, or **Members**.
+Every device has a key, and its **fingerprint** (eight groups of four hex digits) is what people compare. Yours: `hitop sync whoami`, or **Password & recovery** on the Account page. Everyone's: `hitop sync members`, or **Members**.
 
 hitop checks both directions. It hands the workspace key only to devices you trusted, and it takes a workspace key only from a device you trusted (or the one your invite code named). So a sync server can't slip its own key to a new member, or to anyone at the next key change, and read what they write. When hitop refuses a key, it says why:
 
@@ -182,7 +182,7 @@ hitop sync recovery create     # prints 24 words once: keep them offline
 hitop sync recovery use        # on a new computer, after signing in
 ```
 
-On the Account page it is under **Recovery phrase**. Like the password, the phrase seals your device's keys for the server to keep; the server can't open them.
+On the Account page it is under **Password & recovery**. Like the password, the phrase seals your device's keys for the server to keep; the server can't open them.
 
 ## Audit log
 

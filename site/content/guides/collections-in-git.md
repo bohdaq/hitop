@@ -117,7 +117,7 @@ The dialog lists the files it will write, then **Save to GitHub**:
 
 The **Account** page (the account menu at the top right, then **Account & devices**) lists the connected GitHub accounts, **Manage repository access**, and every collection with where it is kept.
 
-The collection is kept in your HITOP Cloud library, which the server can read. For collections that must stay end-to-end encrypted, use a [shared workspace](/terms/share-a-workspace-with-your-team.html) instead, or the desktop app's Git panel on a folder.
+The collection is kept in your HITOP Cloud library, which the server can read. For collections that must stay end-to-end encrypted, use a [shared workspace](/guides/share-a-workspace-with-your-team/) instead, or the desktop app's Git panel on a folder.
 
 ## Merge conflicts
 
