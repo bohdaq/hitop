@@ -777,7 +777,7 @@ export class HitopApp extends LitElement {
       <lit-material-list-item interactive @click=${() => this.go("sync")}>${icon("user-circle")} Account & devices</lit-material-list-item>
       <lit-material-list-item interactive @click=${() => this.openDialog("join")}>${icon("users-three")} Join with invite code…</lit-material-list-item>
       ${web ? html`<lit-material-list-item interactive @click=${() => window.open(PORTAL_URL, "_blank", "noopener")}>${icon("arrow-square-out")} Plan & billing</lit-material-list-item>` : nothing}
-      <lit-material-list-item interactive @click=${() => this.signOut()}>Sign out</lit-material-list-item>
+      <lit-material-list-item interactive @click=${() => this.signOut()}>${icon("sign-out")} Sign out</lit-material-list-item>
     </lit-material-menu>`;
   }
 
