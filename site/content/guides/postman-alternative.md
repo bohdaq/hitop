@@ -1,6 +1,6 @@
 ---
 title: "Postman alternative"
-description: "Looking for a Postman alternative? HITOP is an open source API testing tool built around privacy. It needs no account, and its Mac, iOS and CLI apps work offline."
+description: "Looking for a Postman alternative? HITOP is an open source API testing tool built around privacy. It needs no account, its Mac, iOS and CLI apps work offline, and cloud sync is optional."
 ---
 
 ## Why look for a Postman alternative?
@@ -9,7 +9,7 @@ While Postman is a popular API testing tool, many developers are seeking alterna
 
 > ### Key difference: privacy first
 >
-> HITOP stores all your data locally on your device. No cloud sync, no account, no data collection. Your API endpoints, authentication tokens and test data stay on your machine. The web app sends requests to public APIs through the HITOP request proxy, which keeps nothing; the Mac and iOS apps, the CLI and the extensions send them straight from your device.
+> By default HITOP stores your data on your device: no account, no data collection. Cloud sync is optional: sign in to HITOP Cloud to have your collections on every device, save them to GitHub or share them end to end encrypted. Your API endpoints, authentication tokens and test data stay on your machine. The web app sends requests to public APIs through the HITOP request proxy, which keeps nothing; the Mac and iOS apps, the CLI and the extensions send them straight from your device.
 
 ## HITOP vs Postman: feature comparison
 
@@ -17,12 +17,12 @@ A longer comparison with sources is in [HITOP vs Postman](/guides/hitop-vs-postm
 
 | Feature | HITOP | Postman |
 | --- | --- | --- |
-| **Account required** | No | The free plan starts with a sign up |
-| **Data storage** | On your device | Cloud sync |
+| **Account required** | No (only for the optional HITOP Cloud) | The free plan starts with a sign up |
+| **Data storage** | On your device; optional HITOP Cloud | Cloud sync |
 | **Works offline** | Mac, iOS and CLI apps | Partial |
 | **Installation** | Web app (no install), extensions, Mac, iOS, CLI | Desktop or web app with an account |
 | **License** | MIT (web, extensions, CLI) | Proprietary |
-| **Cost** | Free (web, extensions, CLI); Mac $4.99, iOS $2.99 once | Free for 1 user, Solo $9 per month, Team $19 per user per month (billed annually), Enterprise by quote (checked 2026-11-01) |
+| **Cost** | Free (web, extensions, CLI); Mac $4.99, iOS $2.99 once; HITOP Cloud free for 3 people, Pro $6 a month, Team $10 per seat | Free for 1 user, Solo $9 per month, Team $19 per user per month (billed annually), Enterprise by quote (checked 2026-11-01) |
 | **Collections** | Yes | Yes |
 | **Variables** | Yes | Yes |
 | **Scripts before and after** | Yes | Yes |
@@ -36,7 +36,7 @@ Start testing APIs immediately without creating an account, verifying email, or 
 
 ### 2. Complete privacy control
 
-All your collections, requests, and variables are stored on your device. Nothing is synced to a cloud. For internal or sensitive APIs, use the Mac app, the CLI or an extension, which send requests straight from your machine.
+Your collections, requests, and variables are stored on your device. Nothing goes to a cloud unless you sign in to HITOP Cloud, and collections you share there are end to end encrypted. For internal or sensitive APIs, use the Mac app, the CLI or an extension, which send requests straight from your machine.
 
 ### 3. Works offline
 
@@ -63,7 +63,7 @@ The web app works on any operating system with a modern browser: Windows, macOS,
 -   **Request body:** JSON, form data, and raw body support
 -   **Response viewer:** Syntax highlighting for JSON, XML, HTML
 -   **Collection runner:** Execute multiple requests sequentially
--   **Import and export:** Share collections with your team
+-   **Sharing:** End to end encrypted shared collections with roles, or import and export
 -   **Script before and Script after:** JavaScript automation before the request and after the response
 -   **Request history:** Track all your API calls
 
@@ -84,7 +84,7 @@ The full steps, including secrets and scripts, are in [Migrate from Postman](/gu
 ## Who should use HITOP?
 
 -   **Developers who care about privacy:** Keep your API data on your device
--   **Enterprise teams:** Test internal APIs without cloud sync concerns
+-   **Enterprise teams:** Test internal APIs without cloud sync, or with end to end encrypted sharing
 -   **Freelancers:** No subscription or account management
 -   **Students:** Learn API testing without barriers
 -   **Open source contributors:** Support and improve the tool

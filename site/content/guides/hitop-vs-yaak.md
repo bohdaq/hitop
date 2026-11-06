@@ -13,10 +13,10 @@ Yaak is a fast desktop API client by the author of Insomnia, with REST, GraphQL,
 
 | | HITOP | Yaak |
 | --- | --- | --- |
-| **Price** | Free: CLI, web app, desktop builds on GitHub, also at work. Mac App Store app $4.99 and iOS $2.99, paid once | Free for personal use; at work Individual $79 per year or $399 once, Business $149 per user per year |
+| **Price** | Free: CLI, web app, desktop builds on GitHub, also at work. Mac App Store app $4.99 and iOS $2.99, paid once; [HITOP Cloud](/pricing.html) (optional): free for 3 people, Pro $6 a month, Team $10 per seat a month (billed yearly) | Free for personal use; at work Individual $79 per year or $399 once, Business $149 per user per year |
 | **License** | MIT, binaries included | Source MIT; licensing applies to the prebuilt binaries |
-| **Account** | None | None for the trial; a purchased license is tied to a Yaak account |
-| **Files for Git** | The collection folder is the source: `hitop.yaml`, one YAML file per request, `environments/` | Directory sync mirrors a workspace to YAML files, one per resource (`yaak.<id>.yaml`), with Git actions in the app; environments are left out unless marked sharable |
+| **Account** | None for the apps and the CLI; HITOP Cloud is a sign-in (email, Google or GitHub) | None for the trial; a purchased license is tied to a Yaak account |
+| **Files for Git** | The collection folder is the source: `hitop.yaml`, one YAML file per request, `environments/`. With HITOP Cloud, the web app saves a collection to a GitHub repository on every change | Directory sync mirrors a workspace to YAML files, one per resource (`yaak.<id>.yaml`), with Git actions in the app; environments are left out unless marked sharable |
 | **CLI** | `hitop`: runs collections for CI with reports and exit codes | `@yaakapp/cli` on npm (written in Rust): manages workspaces, folders, environments and requests, sends workspaces and folders (`--parallel`, `--fail-fast`) |
 | **CI reports** | JUnit XML, a versioned JSON report and a self-contained HTML page; GitHub Action, GitLab template, `hitop schedule` for scheduled runs | Not described in the CLI docs |
 | **Postman import** | Collections, environments and globals; `pm.*` scripts through a compatibility layer, unsupported calls listed by line. Also OpenAPI 3.0 and 3.1 import and sync | A Postman migration guide; imports Postman, Insomnia, OpenAPI, Swagger and curl |

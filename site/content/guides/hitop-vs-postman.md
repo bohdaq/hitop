@@ -5,9 +5,9 @@ description: "How HITOP and Postman compare on price, accounts, storage, the com
 
 ## In short
 
-Postman is a full API platform: a desktop and web client, cloud workspaces, monitors, mock servers, documentation, AI features and team administration. HITOP is a smaller tool: an HTTP client and collection runner whose collections are plain YAML files in your repository, with a single binary that runs them in CI. It needs no account.
+Postman is a full API platform: a desktop and web client, cloud workspaces, monitors, mock servers, documentation, AI features and team administration. HITOP is a smaller tool: an HTTP client and collection runner whose collections are plain YAML files in your repository, with a single binary that runs them in CI. It needs no account; HITOP Cloud, if you sign in, adds a cloud library, saving to a GitHub repository and end to end encrypted shared collections with roles.
 
-If your team uses Postman's cloud features (shared workspaces, monitors, published documentation, role based access), HITOP doesn't replace them. If you mostly write requests, script checks and run collections in a pipeline, HITOP covers that and reads your Postman exports.
+If your team uses Postman's monitors, mock servers or published documentation, HITOP doesn't replace them yet. If you mostly write requests, script checks and run collections in a pipeline, HITOP covers that and reads your Postman exports.
 
 **Checked on 2026-11-01** against the pages listed under [Sources](#sources). Prices and plans change; follow the links for the current ones.
 
@@ -15,10 +15,10 @@ If your team uses Postman's cloud features (shared workspaces, monitors, publish
 
 | | HITOP | Postman |
 | --- | --- | --- |
-| **Price** | Free: CLI, web app, desktop builds on GitHub. Mac App Store app $4.99 and iOS $2.99, paid once | Free plan for 1 user; Solo $9 per month; Team $19 per user per month (both billed annually); Enterprise by quote |
-| **Account** | None | The free plan starts at a sign up page; the Postman CLI can also set up a local project without an account |
+| **Price** | Free: CLI, web app, desktop builds on GitHub. Mac App Store app $4.99 and iOS $2.99, paid once; [HITOP Cloud](/pricing.html) (optional): free for 3 people, Pro $6 a month, Team $10 per seat a month (billed yearly) | Free plan for 1 user; Solo $9 per month; Team $19 per user per month (both billed annually); Enterprise by quote |
+| **Account** | None for the apps and the CLI; HITOP Cloud is a sign-in (email, Google or GitHub) | The free plan starts at a sign up page; the Postman CLI can also set up a local project without an account |
 | **License** | MIT (CLI, core library, desktop, web app) | Postman's own terms; Newman, the older runner, is Apache-2.0 |
-| **Where collections live** | A folder of YAML files, one file per request, or local app storage | Postman Cloud workspaces; Native Git keeps collections, environments and specs as files under `postman/` in a local Git repository and syncs to Postman Cloud |
+| **Where collections live** | A folder of YAML files, one file per request, or local app storage. Signed in to HITOP Cloud: your cloud library on every device, a GitHub repository saved on every change, or an end to end encrypted shared collection | Postman Cloud workspaces; Native Git keeps collections, environments and specs as files under `postman/` in a local Git repository and syncs to Postman Cloud |
 | **Command line runner** | `hitop`: one Rust binary (crates.io, static Linux builds, Docker image) | Postman CLI (`npm install -g postman-cli` or an install script); Newman (`npm install -g newman`) |
 | **CI reports** | JUnit XML, a versioned JSON report and a self-contained HTML page; exit codes 0, 1 and 2; `hitop schedule` writes a scheduled GitHub Actions workflow or a crontab line | Newman: `cli`, `json` and `junit` reporters built in, HTML as a separate package; on the Postman pricing page, test result exports are not in the free plan |
 | **CI integrations** | GitHub Action `bohdaq/hitop-action`, GitLab CI template, Docker image `ghcr.io/bohdaq/hitop` | Postman CLI and Newman in any pipeline |
@@ -44,7 +44,7 @@ See [Migrate from Postman](/guides/migrate-from-postman/) for the steps.
 
 - You want collections reviewed in pull requests next to the code they test.
 - You want one binary in CI with JUnit output and no login step.
-- You don't want an account, or your requests and tokens must stay on your machine.
+- You don't want an account, or your requests and tokens must stay on your machine (HITOP Cloud is optional; shared collections are end to end encrypted).
 
 ## Sources
 

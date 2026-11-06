@@ -9,7 +9,7 @@ Privacy is critical when testing APIs, especially for internal services or sensi
 
 ## Privacy features
 
--   Collections and history stored on your device, with no cloud sync
+-   Collections and history stored on your device; cloud sync only if you sign in to HITOP Cloud (shared collections end to end encrypted)
 -   No account required, so no personal data collected
 -   Good for testing internal or private APIs with the Mac app, CLI or an extension
 -   Mac app, iOS app and CLI work offline for complete isolation

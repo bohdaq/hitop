@@ -3,6 +3,42 @@
 Compared with Postman, Insomnia, Bruno and Yaak (site/content/guides/hitop-vs-*.md), 2026-11-06.
 Highest value for the effort first.
 
+## Decisions (owner, 2026-11-06)
+
+- Monitors: HITOP Cloud runs library collections on a schedule, paid plans; shared (end to end
+  encrypted) collections keep running from the owner's CI with a runner credential.
+- Mock servers: on the sync server at `/mock/<random id>/…`, paid plans, rate limited, never HTML.
+- AI in the app: the person's own Anthropic key in Settings, kept on the device; secret values masked
+  before anything is sent.
+- Hosted MCP: the portal's access tokens (`/v1/me/tokens`), every plan.
+- Team environments: yes, server-readable like the library; secret values stay on each device.
+- Plugins and the API design editor: deferred.
+- Comments and per-request history: HITOP Cloud (library) collections only for now.
+- gRPC in the web app and WebSocket handshake headers: a bridge on hitop-server, same origin check
+  and rate limits as the HTTP proxy.
+
+## Order and status
+
+| # | Item | Status |
+|---|------|--------|
+| 1 | Comparison pages (HITOP column) | done: HITOP Cloud in price, account, storage, Git rows |
+| 2 | Feature matrix (web, desktop, CLI) | done: guide which-hitop-app |
+| 3 | Search across collections, environments, history | |
+| 4 | First run and empty team org | |
+| 5 | Create org and invite from the switcher | |
+| 6 | OAuth 2 helpers, then SigV4, Digest | |
+| 7 | SSE in the web app | |
+| 8 | Published collection docs | |
+| 9 | OpenAPI lint on import | deferred with API design (owner) |
+| 10 | Team environments | |
+| 11 | Hosted MCP | |
+| 12 | AI in the app | |
+| 13 | Mock servers | |
+| 14 | Monitors | |
+| 15 | Comments and per-request history | |
+| 16 | gRPC and WebSocket headers bridge | |
+| 17 | Plugins, API design editor | deferred (owner) |
+
 ## Quick wins
 
 - [ ] Update the comparison pages (hitop-vs-postman, -insomnia, -bruno, -yaak, postman-alternative):
