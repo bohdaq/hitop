@@ -378,3 +378,12 @@ and on hitop.rws8.tech/cloud/healthz. -->
   collection (People / GitHub / File), Account page instead of Sync, the cloud switch in Settings →
   Privacy; guides updated. `/cloud/` left as it is. `/`, `/app/`, both guides, `/cloud/` 200.
   Backup `/var/www/hitop.bak-20261106-111952`. Before: every web and Tauri-mode e2e suite green.
+
+## 2026-11-06 Guides move to /guides/ (~13:05 UTC)
+
+- Who: agent ran `deploy/deploy.sh` (owner's go-ahead) from a clean tree = 06f4cf5 + 9dfc5c0
+  cherry-picked, so the uncommitted webapp work and 3270de3 (minimal Account page, not yet
+  deployed) stayed out. Guides at `/guides/<name>/`, hitop-server 301s `/terms/<name>.html`
+  (`server/src/legacy.rs`), answer-first home lede. Checks: `/`, `/app/`, `/guides/`,
+  `/privacy.html`, `/cloud/`, `/cloud/healthz` 200, `/terms/` 301 → `/guides/`, proxy ok, rws and
+  hitop-server active. Deploying 3270de3 is still to do.
