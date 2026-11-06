@@ -25,7 +25,7 @@ Highest value for the effort first.
 | 2 | Feature matrix (web, desktop, CLI) | done: guide which-hitop-app |
 | 3 | Search across collections, environments, history | done: quick open (Mod+P) once something is typed |
 | 4 | First run and empty team org | done: sample collection + Import next to the empty response; empty org says so |
-| 5 | Create org and invite from the switcher | |
+| 5 | Create org and invite from the switcher | done: "New organization…" in the switcher, "Invite to <org>…" in the account menu (owners, admins) |
 | 6 | OAuth 2 helpers, then SigV4, Digest | |
 | 7 | SSE in the web app | |
 | 8 | Published collection docs | |

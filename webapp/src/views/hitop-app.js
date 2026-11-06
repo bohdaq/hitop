@@ -28,6 +28,8 @@ import { DEFAULT_SERVER } from "../sync.js";
 // The HITOP Cloud portal (plan, organizations, billing): web only, never in the desktop build (App
 // Store: no purchase links).
 const PORTAL_URL = "https://cloud.hitop.rws8.tech/";
+// The org switcher's last option: opens the New organization dialog.
+const NEW_ORG = "__new_org";
 
 // Collections folded in the sidebar, by id (its own key: nothing else reads it).
 const COLLAPSED_KEY = "hitop_collapsed_collections";
@@ -298,6 +300,10 @@ export class HitopApp extends LitElement {
       submitOpenapi(this, d);
       return;
     }
+    if (d.kind === "new-org" || d.kind === "org-invite") {
+      this.submitOrg(d);
+      return;
+    }
     if (d.kind === "add-collection") s.addCollection(this.field("name"));
     if (d.kind === "add-environment") s.addEnvironment(this.field("name"));
     if (d.kind === "rename-environment") s.renameEnvironment(d.id, this.field("name"));
@@ -454,6 +460,22 @@ export class HitopApp extends LitElement {
     let body = nothing;
     let footer = nothing;
     switch (d.kind) {
+      case "new-org":
+        headline = "New organization";
+        body = html`<p>For a team: its collections, members and plan are its own. You own it; invite people next.</p>
+          <lit-material-text-field id="name" variant="outlined" label="Organization name" required autofocus ?error=${Boolean(d.error)} error-text=${d.error ?? ""}></lit-material-text-field>`;
+        footer = actions("Create");
+        break;
+      case "org-invite":
+        headline = `Invite to ${s.currentOrgInfo?.name ?? "the organization"}`;
+        body = html`<p>They get a mail; once they sign in with that address they are a member${d.added?.length ? html`. Invited so far: ${d.added.join(", ")}` : ""}.</p>
+          <lit-material-text-field id="email" variant="outlined" type="email" label="Email" required autofocus ?error=${Boolean(d.error)} error-text=${d.error ?? ""}></lit-material-text-field>
+          <lit-material-select id="role" variant="outlined" label="Role" .value=${"member"}>
+            <lit-material-select-option value="member">Member</lit-material-select-option>
+            <lit-material-select-option value="admin">Admin: manages members and the plan</lit-material-select-option>
+          </lit-material-select>`;
+        footer = actions("Invite");
+        break;
       case "add-collection":
         headline = "New collection";
         body = html`<lit-material-text-field id="name" variant="outlined" label="Collection name" required autofocus></lit-material-text-field>`;
@@ -645,9 +667,39 @@ export class HitopApp extends LitElement {
     const s = this.store;
     if (!s.orgs.length) return nothing;
     return html`<lit-material-select class="org-select" variant="outlined" label="Organization" .value=${s.currentOrg ?? ""}
-      @change=${(e) => s.setCurrentOrg(e.target.value)}>
+      @change=${(e) => {
+        if (e.target.value !== NEW_ORG) return s.setCurrentOrg(e.target.value);
+        e.target.value = s.currentOrg;
+        this.openDialog("new-org");
+      }}>
       ${s.orgs.map((o) => html`<lit-material-select-option value=${o.id}>${orgLabel(o)}</lit-material-select-option>`)}
+      <lit-material-select-option value=${NEW_ORG}>New organization…</lit-material-select-option>
     </lit-material-select>`;
+  }
+
+  // New organization (then it's the current one) or an invite to the current one.
+  async submitOrg(d) {
+    const s = this.store;
+    const client = s.library?.client ?? syncClient(s);
+    try {
+      if (d.kind === "new-org") {
+        const org = await client.api("POST", "/v1/orgs", { name: this.field("name") });
+        const { loadOrgs } = await import("../orgs.js");
+        await loadOrgs(s, client);
+        s.setCurrentOrg(org.id);
+        this.closeDialog();
+        this.toast(`${org.name} created. Invite people from the account menu.`);
+      } else {
+        const email = this.field("email");
+        await client.api("POST", `/v1/orgs/${encodeURIComponent(s.currentOrg)}/members`, { email, role: this.querySelector("#dialog #role")?.value || "member" });
+        this.dialog = { ...d, submitted: false, error: null, added: [...(d.added ?? []), email] };
+        await this.updateComplete;
+        const f = this.querySelector("#dialog #email");
+        if (f) f.value = "";
+      }
+    } catch (err) {
+      this.dialog = { ...d, submitted: false, error: err?.message || String(err) };
+    }
   }
 
   /** The current org's plan page on the portal. */
@@ -795,12 +847,16 @@ export class HitopApp extends LitElement {
     const st = lib?.status;
     const where = !st?.on ? "Collections stay on this device" : st.error ? "Couldn't save to HITOP Cloud" : st.saving ? "Saving to HITOP Cloud…" : "Collections saved to HITOP Cloud";
     const needs = this.needs();
+    const org = this.store.currentOrgInfo;
     const web = platform().name === "web" && a.server === DEFAULT_SERVER;
     return html`<lit-material-menu id="account-menu" aria-label="Account">
       <div class="account-head" role="presentation"><b>${a.email}</b><span class="hint">${st?.on && !st.error ? icon("check-circle") : nothing} ${where}</span></div>
       ${needs.map((x) => html`<lit-material-list-item interactive class="account-need" @click=${() => x.run()}>${icon("warning-circle")} ${x.text}</lit-material-list-item>`)}
       <lit-material-list-item interactive @click=${() => this.go("sync")}>${icon("user-circle")} Account & devices</lit-material-list-item>
       <lit-material-list-item interactive @click=${() => this.openDialog("join")}>${icon("users-three")} Join with invite code…</lit-material-list-item>
+      ${org && !org.personal && ["owner", "admin"].includes(org.role)
+        ? html`<lit-material-list-item interactive @click=${() => this.openDialog("org-invite")}>${icon("plus")} Invite to ${org.name}…</lit-material-list-item>`
+        : nothing}
       ${web ? html`<lit-material-list-item interactive @click=${() => window.open(this.planUrl(), "_blank", "noopener")}>${icon("arrow-square-out")} Plan & billing</lit-material-list-item>` : nothing}
       <lit-material-list-item interactive @click=${() => this.signOut()}>${icon("sign-out")} Sign out</lit-material-list-item>
     </lit-material-menu>`;

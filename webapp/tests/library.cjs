@@ -215,7 +215,7 @@ async function syncServer() {
     await two.page.reload({ waitUntil: 'networkidle' });
     await two.page.waitForFunction(() => document.querySelector('hitop-app').store.orgs.length === 2, null, { timeout: 15000 });
     const orgOptions = await org(two).locator('lit-material-select-option').allInnerTexts();
-    check('the top bar lists Personal and the team org with their plans', orgOptions.map((t) => t.trim()).join('|') === 'Personal · Free|Acme · Free', orgOptions.join('|'));
+    check('the top bar lists Personal and the team org with their plans', orgOptions.map((t) => t.trim()).join('|') === 'Personal · Free|Acme · Free|New organization…', orgOptions.join('|'));
     const personalNames = await store(two, 'return s.visibleCollections.map((c) => c.name).sort();');
     await store(two, 's.setCurrentOrg(a);', acme);
     await settle(two.page);
@@ -235,6 +235,23 @@ async function syncServer() {
     check("the team org's environment isn't offered in Personal", !(await envNames()).includes('acme-dev') && (await envNames()).includes('prod'), JSON.stringify(await envNames()));
     await store(two, 'const e = s.environments.find((e) => e.name === "acme-dev"); s.setEnvironmentAllOrgs(e.id, true);');
     check('made available in every organization, it is', (await envNames()).includes('acme-dev'), JSON.stringify(await envNames()));
+    // A new organization from the switcher, then an invite from the account menu.
+    await org(two).click();
+    await two.page.getByRole('option', { name: 'New organization…' }).click();
+    await two.page.locator('#dialog #name').waitFor();
+    await two.page.locator('#dialog').getByLabel('Organization name').fill('Beta Team');
+    await two.page.locator('#dialog').getByRole('button', { name: 'Create' }).click();
+    await two.page.waitForFunction(() => document.querySelector('hitop-app').store.currentOrgInfo?.name === 'Beta Team', null, { timeout: 10000 });
+    check('New organization… creates it and switches to it', (await org(two).locator('lit-material-select-option').allInnerTexts()).some((t) => t.includes('Beta Team')));
+    await two.page.locator('header.topbar .account-button').click();
+    await two.page.locator('#account-menu').getByText('Invite to Beta Team').click();
+    await two.page.locator('#dialog').getByLabel('Email').fill('carol@example.com');
+    await two.page.locator('#dialog').getByRole('button', { name: 'Invite' }).click();
+    await settle(two.page, 800);
+    const beta = await store(two, 'return s.currentOrg;');
+    const members = await store(two, 'return s.library.client.api("GET", `/v1/orgs/${a}/members`);', beta);
+    check('Invite to … invites by mail', (await two.page.locator('#dialog').innerText()).includes('carol@example.com') && JSON.stringify(members.invites ?? []).includes('carol@example.com'), JSON.stringify(members));
+    await two.page.locator('#dialog').getByRole('button', { name: /Cancel|Close/ }).first().click();
     await store(two, 's.setCurrentOrg(s.personalOrg);');
 
     check('no page errors', errors.length === 0, errors.join(' | '));
