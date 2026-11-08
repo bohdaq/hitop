@@ -73,7 +73,7 @@ export function footer() {
           <li><a href=${GITHUB}>GitHub</a></li>
           <li><a href=${`${GITHUB}/blob/main/LICENSE`}>MIT license</a></li>
         </ul>
-        <p>© 2026 Bohdan Tsap. Served by <a href="https://rws8.tech/">rws</a>.</p>
+        <p>© 2026 <a href="https://bohdantsap.com/" rel="author">Bohdan Tsap</a>. Served by <a href="https://rws8.tech/">rws</a>.</p>
       </div>
     </footer>`;
 }
