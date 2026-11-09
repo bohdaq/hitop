@@ -185,6 +185,8 @@ Two tracks run at once.
 | B1 hitop-core timing phases | done: `timing.rs` (timed resolver + connector layer on the default client), `Timings {dnsMs, connectMs, waitMs, downloadMs, totalMs, reused}` on `http::Response` and `RequestResult`. Connect = TCP + TLS (reqwest can't split them). Not yet in report.json, proxy or desktop (B2) | 963451b |
 | B2 timings everywhere | done: report.json request `timings` (optional key, `spec/run-report.md` "Timings"; HitopKit's CLI cross-check ignores it until HitopKit measures with URLSessionTaskMetrics), hitop-server proxy answer `timings` (its guard resolver wrapped by `TimedResolver::wrapping`), desktop `send_request` → `timings`, both web adapters pass it through (`res.timings`). Not deployed | 5c50f4b |
 
+| A0 webapp on lit-material 1.6.0 | done: every `@lit-material/*` 1.0.0 → 1.6.0; added command-palette, timing-waterfall, method-tag, navigation, split-panel, tooltip, popover (kbd and status-bar still 0.0.0-init on npm at the time: not used). test:unit, both builds, check-no-telemetry, Tauri e2e 385 PASS | (this commit) |
+
 Known gaps: TCP vs TLS not split; concurrent requests to the same host or IP literals may swap
 connect times (totals exact); clients installed with `http::install_client` (sync-server monitors)
 report no timings. B2 must check HitopKit's `CLICompatibilityTests` before report.json gets
