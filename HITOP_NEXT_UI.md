@@ -183,7 +183,7 @@ Two tracks run at once.
 | --- | --- | --- |
 | A1 tokens + dark default | done: graphite dark roles + `--hitop-method-*`, `--hitop-pass/fail/warn/info`, `--hitop-phase-*` in `site/src/theme.css` (site dark mode changes on its next deploy); app dark when nothing saved, "Match the system" kept under `hitop-theme-system` (`webapp/src/theme.js`). Not deployed | e3b9a1e |
 | B1 hitop-core timing phases | done: `timing.rs` (timed resolver + connector layer on the default client), `Timings {dnsMs, connectMs, waitMs, downloadMs, totalMs, reused}` on `http::Response` and `RequestResult`. Connect = TCP + TLS (reqwest can't split them). Not yet in report.json, proxy or desktop (B2) | 963451b |
-| B2 timings everywhere | done: report.json request `timings` (optional key, `spec/run-report.md` "Timings"; HitopKit's CLI cross-check ignores it until HitopKit measures with URLSessionTaskMetrics), hitop-server proxy answer `timings` (its guard resolver wrapped by `TimedResolver::wrapping`), desktop `send_request` → `timings`, both web adapters pass it through (`res.timings`). Not deployed | (this commit) |
+| B2 timings everywhere | done: report.json request `timings` (optional key, `spec/run-report.md` "Timings"; HitopKit's CLI cross-check ignores it until HitopKit measures with URLSessionTaskMetrics), hitop-server proxy answer `timings` (its guard resolver wrapped by `TimedResolver::wrapping`), desktop `send_request` → `timings`, both web adapters pass it through (`res.timings`). Not deployed | 5c50f4b |
 
 Known gaps: TCP vs TLS not split; concurrent requests to the same host or IP literals may swap
 connect times (totals exact); clients installed with `http::install_client` (sync-server monitors)
