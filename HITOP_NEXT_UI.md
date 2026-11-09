@@ -182,7 +182,7 @@ Two tracks run at once.
 | Step | Status | Commit |
 | --- | --- | --- |
 | A1 tokens + dark default | done: graphite dark roles + `--hitop-method-*`, `--hitop-pass/fail/warn/info`, `--hitop-phase-*` in `site/src/theme.css` (site dark mode changes on its next deploy); app dark when nothing saved, "Match the system" kept under `hitop-theme-system` (`webapp/src/theme.js`). Not deployed | e3b9a1e |
-| B1 hitop-core timing phases | done: `timing.rs` (timed resolver + connector layer on the default client), `Timings {dnsMs, connectMs, waitMs, downloadMs, totalMs, reused}` on `http::Response` and `RequestResult`. Connect = TCP + TLS (reqwest can't split them). Not yet in report.json, proxy or desktop (B2) | (this commit) |
+| B1 hitop-core timing phases | done: `timing.rs` (timed resolver + connector layer on the default client), `Timings {dnsMs, connectMs, waitMs, downloadMs, totalMs, reused}` on `http::Response` and `RequestResult`. Connect = TCP + TLS (reqwest can't split them). Not yet in report.json, proxy or desktop (B2) | 963451b |
 
 Known gaps: TCP vs TLS not split; concurrent requests to the same host or IP literals may swap
 connect times (totals exact); clients installed with `http::install_client` (sync-server monitors)
