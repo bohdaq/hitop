@@ -264,10 +264,12 @@ mod client {
             let emit = |e: Event| {
                 let _ = events_tx.send(e);
             };
-            let mut closing = false;
+            // Closing = Some(deadline): set once when our close goes out, so frames
+            // that keep arriving can't push the wait for the server's answer back.
+            let mut closing: Option<tokio::time::Instant> = None;
             loop {
                 tokio::select! {
-                    cmd = inbox.recv(), if !closing => match cmd {
+                    cmd = inbox.recv(), if closing.is_none() => match cmd {
                         Some(Command::Send(data)) => {
                             let msg = match data {
                                 Data::Text(t) => Message::text(t),
@@ -280,7 +282,7 @@ mod client {
                         }
                         // Close asked for, or every sender dropped.
                         Some(Command::Close) | None => {
-                            closing = true;
+                            closing = Some(tokio::time::Instant::now() + CLOSE_WAIT);
                             let frame = CloseFrame { code: CloseCode::Normal, reason: "".into() };
                             if sink.send(Message::Close(Some(frame))).await.is_err() {
                                 emit(Event::Closed { code: Some(1000), reason: String::new() });
@@ -308,7 +310,7 @@ mod client {
                             return;
                         }
                     },
-                    _ = tokio::time::sleep(CLOSE_WAIT), if closing => {
+                    _ = tokio::time::sleep_until(closing.unwrap_or_else(tokio::time::Instant::now)), if closing.is_some() => {
                         emit(Event::Closed { code: Some(1000), reason: "no close answer from the server".into() });
                         return;
                     }
@@ -421,6 +423,35 @@ mod client {
             let refused = Target { url: "ws://127.0.0.1:9/".into(), ..Default::default() };
             let err = connect(&refused, Some(Duration::from_secs(5))).await.unwrap_err();
             assert!(format!("{err:#}").contains("couldn't connect to ws://127.0.0.1:9/"), "{err:#}");
+        }
+
+        #[tokio::test(flavor = "multi_thread")]
+        async fn close_wait_ends_while_the_server_keeps_talking() {
+            // A server that streams a frame every 500 ms and never reads, so it never answers our close.
+            let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+            let addr = listener.local_addr().unwrap();
+            tokio::spawn(async move {
+                let (tcp, _) = listener.accept().await.unwrap();
+                let mut ws = tokio_tungstenite::accept_async(tcp).await.unwrap();
+                while ws.send(Message::text("tick")).await.is_ok() {
+                    tokio::time::sleep(Duration::from_millis(500)).await;
+                }
+            });
+            let req = Request { url: format!("ws://{addr}"), kind: Some("websocket".into()), ..Default::default() };
+            let mut conn = connect(&target(&req, None, &HashMap::new()).unwrap(), None).await.unwrap();
+            conn.sender.close();
+            // The close wait is a deadline, not a timer restarted by every frame.
+            let closed = tokio::time::timeout(CLOSE_WAIT + Duration::from_secs(3), async {
+                loop {
+                    match conn.events.recv().await {
+                        Some(Event::Message(_)) => continue,
+                        other => return other,
+                    }
+                }
+            })
+            .await
+            .expect("closing finished within the close wait");
+            assert_eq!(closed, Some(Event::Closed { code: Some(1000), reason: "no close answer from the server".into() }));
         }
 
         #[test]
