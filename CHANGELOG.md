@@ -4,6 +4,20 @@ Releases before 1.2 are listed in ROADMAP.md (section 5) and on the GitHub Relea
 
 ## Unreleased
 
+### Lifecycle fixes (spec/STATE_MACHINES.md)
+
+- **Security, web app:** a send or run in another tab no longer drops the secret-manager values
+  a request in flight needs for masking, so its History entry can't keep a `${secret:...}` value in clear.
+- Web app: a cancelled WebSocket connection or gRPC call can't change a newer one; gRPC shows
+  Cancelled; deleting a request stops its send, socket and call; response panel and status chips
+  carry `data-state` for tests and agents.
+- `hitop ws`, desktop and the hitop-server bridge: closing ends within 5 s even when the server
+  keeps sending and never answers Close.
+- `hitop run`: report.json and JUnit `file` stay right when a folder has WebSocket or gRPC requests.
+- Sync server: mock servers and monitors follow the plan in force (off after a lapse or refund);
+  a Git sync no longer overwrites a disconnect or relink that happened during it; alert results
+  are written only while queued; a SCIM PUT without `active` keeps the user's state.
+
 ### HITOP Cloud Enterprise: SCIM provisioning, self-host support package, SOC 2 readiness (C6, built, not deployed)
 
 - **SCIM 2.0** (`/scim/v2`): an org's identity provider (Okta, Entra ID, Keycloak...) adds and
