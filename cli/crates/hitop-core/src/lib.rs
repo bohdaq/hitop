@@ -27,4 +27,5 @@ pub mod snippet;
 pub mod storage;
 pub mod sync;
 pub mod telemetry;
+pub mod timing;
 pub mod websocket;

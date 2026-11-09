@@ -1357,6 +1357,8 @@ dependencies = [
  "tokio-tungstenite",
  "tonic",
  "tonic-reflection",
+ "tower-layer",
+ "tower-service",
  "webpki-roots 1.0.11",
  "yaml_serde",
 ]

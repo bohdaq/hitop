@@ -678,7 +678,7 @@ mod tests {
             method: "GET".into(),
             url: format!("http://h/{name}"),
             result: match status {
-                Some(s) => Ok(RequestResult { status: s, headers: Default::default(), body: String::new(), duration_ms: 7 }),
+                Some(s) => Ok(RequestResult { status: s, headers: Default::default(), body: String::new(), duration_ms: 7, timings: None }),
                 None => Err(anyhow::anyhow!("connection refused")),
             },
             tests: tests.iter().map(|(n, p, d)| TestResult { name: n.to_string(), pass: *p, detail: d.to_string() }).collect(),

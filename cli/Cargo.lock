@@ -1705,6 +1705,8 @@ dependencies = [
  "tonic",
  "tonic-reflection",
  "tower",
+ "tower-layer",
+ "tower-service",
  "webpki-roots 1.0.11",
  "yaml_serde",
 ]

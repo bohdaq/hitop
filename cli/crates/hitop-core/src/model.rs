@@ -592,4 +592,26 @@ pub struct RequestResult {
     pub headers: HashMap<String, String>,
     pub body: String,
     pub duration_ms: u64,
+    /// Where the time went, when the client could tell (src/timing.rs).
+    pub timings: Option<Timings>,
 }
+
+/// The phases of one request, in milliseconds. `dns + connect + wait + download == total`.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Timings {
+    /// Looking up the host name (0 for an IP literal or a reused connection).
+    pub dns_ms: u64,
+    /// Opening the TCP connection and, for https, the TLS handshake.
+    pub connect_ms: u64,
+    /// From the connection being ready (or the start, when reused) to the response headers:
+    /// sending the request and the server's think time.
+    pub wait_ms: u64,
+    /// Reading the response body.
+    pub download_ms: u64,
+    pub total_ms: u64,
+    /// The request went over a connection that was already open.
+    pub reused: bool,
+}
+
+

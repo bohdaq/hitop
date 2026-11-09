@@ -32,6 +32,10 @@ keyring = { version = "4.2", optional = true }
 tokio = { version = "1.54.1", default-features = false, features = ["rt", "net", "sync", "time", "macros"], optional = true }
 tokio-tungstenite = { version = "0.30", default-features = false, features = ["connect", "handshake", "rustls-tls-webpki-roots"], optional = true }
 futures-util = { version = "0.3", default-features = false, features = ["sink", "std"], optional = true }
+# Request timing (src/timing.rs): reqwest's connector-layer and resolver hooks are tower
+# services; both crates are already in the tree through hyper and reqwest.
+tower-service = { version = "0.3", optional = true }
+tower-layer = { version = "0.3", optional = true }
 rustls = { version = "0.23", default-features = false, features = ["ring", "std", "tls12"], optional = true }
 webpki-roots = { version = "1", optional = true }
 # `${secret:aws:...}` (src/secret_managers.rs): SigV4's SHA-256 and HMAC. ring is
@@ -52,7 +56,7 @@ default = ["keychain", "native", "websocket", "grpc", "secret-managers"]
 # HTTP (reqwest), scripts (boa), the runner and the JSON storage in the
 # config directory. Off for wasm32 (hitop-wasm: the format module and the
 # model in the web app).
-native = ["dep:reqwest", "dep:boa_engine", "dep:dirs", "dep:ring"]
+native = ["dep:reqwest", "dep:boa_engine", "dep:dirs", "dep:ring", "dep:tokio", "dep:tower-service", "dep:tower-layer"]
 # WebSocket connections (src/websocket.rs's client): the CLI's `hitop ws` and the desktop.
 websocket = ["native", "dep:tokio", "dep:tokio-tungstenite", "dep:futures-util", "dep:rustls", "dep:webpki-roots"]
 # gRPC calls (src/grpc.rs's client): the CLI's `hitop grpc` and the desktop.

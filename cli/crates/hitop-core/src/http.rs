@@ -6,9 +6,12 @@ use reqwest::blocking::Client;
 use reqwest::header::{HeaderMap, HeaderName, HeaderValue};
 
 use crate::cookies::{self, Jar};
-use crate::model::RequestResult;
+use crate::model::{RequestResult, Timings};
+use crate::timing::{Recorder, TimedConnectLayer, TimedResolver};
 
 static CLIENT: std::sync::OnceLock<Client> = std::sync::OnceLock::new();
+/// The default client's timing hooks; unset when another client was installed.
+static RECORDER: std::sync::OnceLock<Recorder> = std::sync::OnceLock::new();
 
 /// A check every URL passes before it is sent.
 pub type UrlCheck = fn(&str) -> std::result::Result<(), String>;
@@ -36,11 +39,21 @@ pub fn install_client(c: Client) -> bool {
 
 fn client() -> &'static Client {
     CLIENT.get_or_init(|| {
+        let recorder = RECORDER.get_or_init(Recorder::default).clone();
         Client::builder()
             .use_rustls_tls()
+            .dns_resolver(std::sync::Arc::new(TimedResolver::new(recorder.clone())))
+            .connector_layer(TimedConnectLayer::new(recorder))
             .build()
             .expect("failed to build HTTP client")
     })
+}
+
+/// The phases of a request to `url` (None with an installed client, which has no hooks).
+fn timings(url: &str, start: Instant, headers: Instant, done: Instant) -> Option<Timings> {
+    let recorder = RECORDER.get()?;
+    let host = reqwest::Url::parse(url).ok()?.host_str()?.trim_start_matches('[').trim_end_matches(']').to_string();
+    Some(recorder.phases(&host, start, headers, done))
 }
 
 pub fn execute(
@@ -127,7 +140,7 @@ pub fn execute_opts(method: &str, url: &str, headers: &[(String, String)], body:
 
     let start = Instant::now();
     let resp = req.send()?;
-    let duration_ms = start.elapsed().as_millis() as u64;
+    let headers_at = Instant::now();
     jar_store(&mut opts.jar, &resp);
 
     let status = resp.status().as_u16();
@@ -146,12 +159,14 @@ pub fn execute_opts(method: &str, url: &str, headers: &[(String, String)], body:
         (Some(_), Err(e)) if e.is_timeout() => return Err(e.into()),
         (_, Err(_)) => String::new(),
     };
+    let done = Instant::now();
 
     Ok(RequestResult {
         status,
         headers: resp_headers,
         body,
-        duration_ms,
+        duration_ms: done.duration_since(start).as_millis() as u64,
+        timings: timings(url, start, headers_at, done),
     })
 }
 
@@ -165,6 +180,8 @@ pub struct Response {
     pub headers: Vec<(String, String)>,
     pub body: Vec<u8>,
     pub duration_ms: u64,
+    /// Where the time went, when the client could tell (src/timing.rs).
+    pub timings: Option<Timings>,
 }
 
 /// [`execute`] for any body (a multipart body with files is bytes), keeping
@@ -199,6 +216,7 @@ pub fn send_with(method: &str, url: &str, headers: &[(String, String)], body: Ve
     }
     let start = Instant::now();
     let resp = req.send()?;
+    let headers_at = Instant::now();
     jar_store(&mut opts.jar, &resp);
     let status = resp.status();
     let final_url = resp.url().to_string();
@@ -208,13 +226,15 @@ pub fn send_with(method: &str, url: &str, headers: &[(String, String)], body: Ve
         .map(|(k, v)| (k.as_str().to_lowercase(), String::from_utf8_lossy(v.as_bytes()).into_owned()))
         .collect();
     let body = resp.bytes()?.to_vec();
+    let done = Instant::now();
     Ok(Response {
         status: status.as_u16(),
         status_text: status.canonical_reason().unwrap_or("").to_string(),
         url: final_url,
         headers,
         body,
-        duration_ms: start.elapsed().as_millis() as u64,
+        duration_ms: done.duration_since(start).as_millis() as u64,
+        timings: timings(url, start, headers_at, done),
     })
 }
 
@@ -261,6 +281,44 @@ mod send_tests {
         assert_eq!(cookies, ["a=1", "b=2"]);
         assert_eq!(r.body, [0xff, 0x00, 0x41]);
         assert!(r.url.ends_with("/up"));
+    }
+
+    /// Serves `n` requests on one kept-alive connection.
+    fn serve_keep_alive(n: usize) -> (u16, std::thread::JoinHandle<()>) {
+        let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+        let port = listener.local_addr().unwrap().port();
+        let handle = std::thread::spawn(move || {
+            let (mut stream, _) = listener.accept().unwrap();
+            let mut buf = [0u8; 4096];
+            for _ in 0..n {
+                let mut got = vec![];
+                while !String::from_utf8_lossy(&got).contains("\r\n\r\n") {
+                    let k = stream.read(&mut buf).unwrap();
+                    got.extend_from_slice(&buf[..k]);
+                }
+                std::thread::sleep(Duration::from_millis(15));
+                stream.write_all(b"HTTP/1.1 200 OK\r\nContent-Length: 2\r\n\r\nok").unwrap();
+            }
+        });
+        (port, handle)
+    }
+
+    #[test]
+    fn timings_split_a_new_connection_and_see_a_reused_one() {
+        let (port, server) = serve_keep_alive(2);
+        // "localhost" goes through the timed resolver; the server waits 15 ms before answering.
+        let url = format!("http://localhost:{port}/t");
+        let first = send("GET", &url, &[], vec![]).unwrap();
+        let t = first.timings.expect("the default client times requests");
+        assert!(!t.reused, "{t:?}");
+        assert_eq!(t.dns_ms + t.connect_ms + t.wait_ms + t.download_ms, t.total_ms, "{t:?}");
+        assert!(t.wait_ms >= 10, "the server's think time is waiting: {t:?}");
+        let second = execute("GET", &url, &[], "").unwrap();
+        let t2 = second.timings.unwrap();
+        assert_eq!(t2.dns_ms, 0, "no lookup on a pooled connection: {t2:?}");
+        assert_eq!(t2.dns_ms + t2.connect_ms + t2.wait_ms + t2.download_ms, t2.total_ms);
+        assert_eq!(t2.total_ms, second.duration_ms);
+        server.join().unwrap();
     }
 
     #[test]
