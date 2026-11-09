@@ -49,8 +49,8 @@ pub(crate) fn plan_allows_feature(state: &State, tx: &mut Tx, org: &str, feature
     if !state.config.plan_limits {
         return Ok(());
     }
-    let e = crate::limits::entitlement(tx, org)?;
-    if e.plan == "free" {
+    // The plan in force: a lapsed, refunded or paused subscription is on Free (as every other gate).
+    if crate::limits::entitlement(tx, org)?.plan_in_force() == "free" {
         return Err(ApiError::new(402, "limit", format!("{feature} come with the Pro, Team, Business and Enterprise plans")));
     }
     Ok(())

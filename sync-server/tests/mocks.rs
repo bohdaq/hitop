@@ -64,4 +64,13 @@ fn mocks_need_a_paid_plan_when_plans_are_on() {
     shop(&s, &ada);
     let r = s.call("PUT", "/v1/library/collection/1/mock", Some(&ada), None);
     assert_eq!((r.status, r.json["error"].as_str()), (402, Some("limit")), "{}", r.json);
+    // A paid plan turns them on; a lapsed subscription (plan kept, status expired) is on Free again.
+    let me = s.call("GET", "/v1/me", Some(&ada), None);
+    let personal = format!("personal-{}", me.json["id"].as_str().unwrap());
+    hitop_sync_server::limits::set_plan(s.app.state(), &personal, "pro", 0).unwrap();
+    assert_eq!(s.call("PUT", "/v1/library/collection/1/mock", Some(&ada), None).status, 201);
+    assert_eq!(s.call("DELETE", "/v1/library/collection/1/mock", Some(&ada), None).status, 200);
+    s.app.state().db.tx(|tx| tx.execute("UPDATE entitlements SET status = 'expired' WHERE org_id = $1", &[(&personal).into()])).unwrap();
+    let r = s.call("PUT", "/v1/library/collection/1/mock", Some(&ada), None);
+    assert_eq!((r.status, r.json["error"].as_str()), (402, Some("limit")), "{}", r.json);
 }
