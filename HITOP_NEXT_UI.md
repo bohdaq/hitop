@@ -1,6 +1,6 @@
 # HITOP Next: UI redesign (PRD)
 
-Status: proposal, 2026-11-09. Nothing here is built yet.
+Status: in progress since 2026-11-09 (owner: "start"). See "Progress" below the plan.
 Concept canvas (private, open it from the owner's account): https://claude.ai/artifact/Y5TViNJUgGVkoHnx34Vcwg
 
 ## Why
@@ -176,6 +176,13 @@ Two tracks run at once.
 2. `timings` in hitop-server's proxy answer, the desktop `send_request`, and report.json
    (additive field, `spec/run-report.md` + compat case).
 3. The app shows the waterfall when `timings` exist; browser-direct sends show total time only.
+
+### Progress
+
+| Step | Status | Commit |
+| --- | --- | --- |
+| A1 tokens + dark default | in progress | |
+| B1 hitop-core timing phases | in progress | |
 
 ## Accessibility and quality bar
 
