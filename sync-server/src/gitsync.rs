@@ -640,12 +640,21 @@ pub(crate) fn deleted(tx: &mut Tx, user: &str, kind: &str, id: &str) -> Result<(
     Ok(())
 }
 
+/// A sync's closing write lands only on the link it read: the row was not relinked
+/// (DELETE + INSERT `pending` for another repo, branch or folder) nor disconnected by
+/// the App's webhook while the sync talked to GitHub. Parameters $n..$n+3 = installation,
+/// repo, branch, path. A sync that loses the race writes nothing; the link's own next
+/// sync (relinked: already due) takes over.
+fn same_link(n: usize) -> String {
+    format!("installation_id = ${n} AND repo = ${} AND branch = ${} AND path = ${} AND state <> 'disconnected'", n + 1, n + 2, n + 3)
+}
+
 fn save_fail(state: &State, link: &Link, f: &Fail) {
     let due = if f.state == "error" { state.now() + RETRY_SECS } else { 0 };
     let r = state.db.tx(|tx| {
         tx.execute(
-            "UPDATE git_links SET state = $1, message = $2, due_at = $3 WHERE user_id = $4 AND collection_id = $5",
-            &[f.state.into(), (&f.message).into(), due.into(), (&link.user_id).into(), (&link.collection_id).into()],
+            &format!("UPDATE git_links SET state = $1, message = $2, due_at = $3 WHERE user_id = $4 AND collection_id = $5 AND {}", same_link(6)),
+            &[f.state.into(), (&f.message).into(), due.into(), (&link.user_id).into(), (&link.collection_id).into(), link.installation.into(), (&link.repo).into(), (&link.branch).into(), (&link.path).into()],
         )
     });
     if let Err(e) = r {
@@ -726,8 +735,8 @@ fn sync_inner(state: &State, c: &GitConfig, user_id: &str, collection_id: &str, 
             let (head_sha, tree_sha, base_json) = if conflicts.is_empty() { (head.commit, head.tree, base_json) } else { (link.head.clone(), link.tree.clone(), serde_json::to_string(&link.base).unwrap_or_else(|_| "{}".into())) };
             state.db.tx(|tx| {
                 tx.execute(
-                    "UPDATE git_links SET head = $1, tree = $2, base = $3, state = $4, conflicts = $5, message = $6, synced_at = $7, due_at = CASE WHEN due_at > $8 THEN due_at ELSE 0 END WHERE user_id = $9 AND collection_id = $10",
-                    &[(&head_sha).into(), (&tree_sha).into(), (&base_json).into(), st.into(), (&conflicts_json).into(), (&message).into(), state.now().into(), started.into(), user_id.into(), collection_id.into()],
+                    &format!("UPDATE git_links SET head = $1, tree = $2, base = $3, state = $4, conflicts = $5, message = $6, synced_at = $7, due_at = CASE WHEN due_at > $8 THEN due_at ELSE 0 END WHERE user_id = $9 AND collection_id = $10 AND {}", same_link(11)),
+                    &[(&head_sha).into(), (&tree_sha).into(), (&base_json).into(), st.into(), (&conflicts_json).into(), (&message).into(), state.now().into(), started.into(), user_id.into(), collection_id.into(), link.installation.into(), (&link.repo).into(), (&link.branch).into(), (&link.path).into()],
                 )
             })?;
         }
