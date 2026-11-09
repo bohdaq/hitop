@@ -78,7 +78,7 @@ jobs:
       - working-directory: desktop
         run: npm ci
       # GitHub builds load the Lit web app (webapp/, built by beforeBuildCommand in
-      # tauri.github.conf.json). The Mac App Store build keeps desktop/src until the owner's macOS check.
+      # tauri.github.conf.json). The Mac App Store build (tauri.conf.json) uses it too since HITOP Next T5.
       - working-directory: webapp
         run: npm ci
       - uses: tauri-apps/tauri-action@v0

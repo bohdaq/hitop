@@ -155,6 +155,13 @@ function listTree(dir, base = dir, out = {}) {
   return out;
 }
 
+// Where the time went, as the desktop's send_request answers (hitop-core timing.rs): the phases add
+// up to the total; the mock has no DNS or TLS of its own, so it splits the time it measured.
+function mockTimings(total) {
+  const dnsMs = Math.floor(total / 10), connectMs = Math.floor(total / 5), downloadMs = Math.floor(total / 10);
+  return { dnsMs, connectMs, waitMs: total - dnsMs - connectMs - downloadMs, downloadMs, totalMs: total, reused: false };
+}
+
 class TauriMock {
   // `seed`: a directory of storage files to start from (copied).
   constructor({ seed } = {}) {
@@ -438,7 +445,7 @@ class TauriMock {
     } catch {
       text = null;
     }
-    return { status: res.status, statusText: res.statusText, url: res.url, headers, body: text ?? bytes.toString('base64'), ...(text == null ? { bodyEncoding: 'base64' } : {}), timeMs: Date.now() - started, ...(cookies ? { cookies } : {}) };
+    return { status: res.status, statusText: res.statusText, url: res.url, headers, body: text ?? bytes.toString('base64'), ...(text == null ? { bodyEncoding: 'base64' } : {}), timeMs: Date.now() - started, timings: mockTimings(Date.now() - started), ...(cookies ? { cookies } : {}) };
   }
 
   // commands.rs ws_connect: Node's WebSocket (undici) sends handshake

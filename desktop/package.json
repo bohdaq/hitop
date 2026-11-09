@@ -7,8 +7,10 @@
     "build": "vite build",
     "preview": "vite preview",
     "tauri": "tauri",
-    "dev:webapp": "tauri dev --config src-tauri/tauri.webapp.conf.json",
-    "build:webapp": "tauri build --config src-tauri/tauri.webapp.conf.json"
+    "dev:webapp": "tauri dev",
+    "build:webapp": "tauri build",
+    "dev:react": "tauri dev --config src-tauri/tauri.react.conf.json",
+    "build:react": "tauri build --config src-tauri/tauri.react.conf.json"
   },
   "dependencies": {
     "@emotion/react": "^11.11.3",

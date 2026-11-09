@@ -325,9 +325,11 @@ hitop/
 ### Desktop (`desktop/`)
 - Framework: Tauri 2.0, frontend: React 19 + MUI v7, build: Vite 6
 - Bundle ID: `tech.rws8.hitop` (tauri.conf.json `identifier`)
-- Two frontends until the owner's macOS check (ROADMAP T5): React `desktop/src` (default config, what
-  `release-desktop.yml` ships) and the Lit web app via `--config src-tauri/tauri.webapp.conf.json`
-  (`npm run build:webapp`, `dev:webapp`; CI checks it with `TAURI_CONFIG="$(cat tauri.webapp.conf.json)" cargo check`).
+- Frontend: the Lit web app (`webapp/dist-tauri`) is the default in tauri.conf.json since HITOP Next T5 (2026-11-09);
+  GitHub builds used it already (tauri.github.conf.json). The old React UI `desktop/src` stays reachable with
+  `--config src-tauri/tauri.react.conf.json` (`npm run dev:react`, `build:react`; CI checks it with
+  `TAURI_CONFIG="$(cat tauri.react.conf.json)" cargo check`). The Mac App Store build (plain `tauri build` on the owner's Mac)
+  now builds the web app first: it needs the wasm32 target and wasm-bindgen-cli 0.2.126, and `npm ci` in webapp/.
   WebSocket: `ws_connect {args: {url, headers, protocols, timeoutMs}, onEvent: Channel}` → `{id, status, protocol, headers}`, events
   `{type: message|closed|error}` (binary as base64) on the channel; `ws_send {id, data, binary?}`, `ws_close {id}` (state `Sockets`).
   gRPC: `grpc_list {args: {address, plaintext, metadata, protos, importPaths, baseDir, timeoutMs}}` → `{source, services}`,

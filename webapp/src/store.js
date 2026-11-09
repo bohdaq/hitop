@@ -608,6 +608,19 @@ export class Store extends EventTarget {
     this.emit();
   }
 
+  /** Moves a tab (the tab strip's drag or Alt+Shift+Arrow); the open tab stays open. */
+  moveTab(from, to) {
+    const n = this.tabs.length;
+    if (from === to || from < 0 || to < 0 || from >= n || to >= n) return;
+    const openId = this.tabs[this.currentTab]?.id;
+    const tabs = [...this.tabs];
+    const [moved] = tabs.splice(from, 1);
+    tabs.splice(to, 0, moved);
+    this.tabs = tabs;
+    this.currentTab = Math.max(0, tabs.findIndex((t) => t.id === openId));
+    this.emit();
+  }
+
   closeTab(index) {
     if (this.tabs.length <= 1) return;
     this.cancel(this.tabs[index].id);

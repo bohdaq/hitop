@@ -3,10 +3,10 @@
   "version": "1.2.0",
   "identifier": "tech.rws8.hitop",
   "build": {
-    "beforeDevCommand": "npm run dev",
-    "beforeBuildCommand": "npm run build",
-    "devUrl": "http://localhost:1420",
-    "frontendDist": "../dist"
+    "beforeDevCommand": "npm --prefix ../webapp run dev:tauri",
+    "beforeBuildCommand": "npm --prefix ../webapp run build:tauri",
+    "devUrl": "http://localhost:1421",
+    "frontendDist": "../../webapp/dist-tauri"
   },
   "app": {
     "windows": [

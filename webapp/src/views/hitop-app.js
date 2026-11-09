@@ -9,6 +9,7 @@ import { icon } from "../icons.js";
 import { methodLabel, Store } from "../store.js";
 import { IS_TAURI, platform } from "../platform/index.js";
 import { issueText } from "../pm.js";
+import "@lit-material/navigation";
 import "./request-view.js";
 import "./collection-views.js";
 import { WIDE_DIALOGS, codeDialog, compareDialog, refreshCode } from "./tools-dialogs.js";
@@ -70,6 +71,12 @@ function showMenuFor(e, menu) {
   addEventListener("pointerup", () => setTimeout(() => menu.show(anchor)), { once: true, capture: true });
 }
 
+// "⌘K" on Apple platforms, "Ctrl K" elsewhere.
+const APPLE = typeof navigator !== "undefined" && /Mac|iPhone|iPad/.test(navigator.platform || navigator.userAgent || "");
+export function keyLabel(key) {
+  return APPLE ? `⌘${key}` : `Ctrl ${key}`;
+}
+
 export class HitopApp extends LitElement {
   static properties = {
     navOpen: { state: true },
@@ -101,6 +108,8 @@ export class HitopApp extends LitElement {
   }
 
   firstUpdated() {
+    // HITOP Next: dense controls where there is a precise pointer; touch keeps the 40-48 px targets.
+    if (window.matchMedia?.("(pointer: fine)").matches) document.documentElement.setAttribute("density", "compact");
     platform().onStart?.(this);
     document.addEventListener("keydown", (e) => this.onShortcut(e), true);
   }
@@ -938,6 +947,31 @@ export class HitopApp extends LitElement {
     return html`<span class="storage-icon" title=${w.detail} aria-hidden="true">${icon(w.icon)}${w.attention ? html`<span class="storage-dot" aria-hidden="true"></span>` : nothing}</span>`;
   }
 
+  // The rail's sections (HITOP Next): icon only, the label is the tooltip and the accessible name.
+  // Desktop-only pages come from the platform adapter.
+  railItems() {
+    const pages = (platform().pages ?? []).filter((page) => page.sidebar !== false);
+    return [
+      { kind: "collections", label: "Collections", icon: "folders", also: ["collection", "variables", "request"] },
+      { kind: "history", label: "History", icon: "clock-counter-clockwise" },
+      { kind: "environments", label: "Environments", icon: "globe" },
+      { kind: "cookies", label: "Cookies", icon: "cookie" },
+      ...pages.map((page) => ({ kind: page.kind, label: page.label, icon: page.icon })),
+      { kind: "settings", label: "Settings", icon: "gear-six" },
+    ];
+  }
+
+  renderRail() {
+    const kind = this.store.view.kind;
+    const items = this.railItems();
+    const selected = items.findIndex((it) => it.kind === kind || it.also?.includes(kind));
+    return html`<nav class="rail sidebar-footer" aria-label="Sections">
+      <lit-material-navigation-rail compact .selected=${selected}>
+        ${items.map((it) => html`<lit-material-navigation-rail-item @click=${() => this.go(it.kind)}>${icon(it.icon, { slot: "icon" })}${it.label}</lit-material-navigation-rail-item>`)}
+      </lit-material-navigation-rail>
+    </nav>`;
+  }
+
   renderSidebar() {
     const s = this.store;
     const { kind, collectionId } = s.view;
@@ -946,6 +980,8 @@ export class HitopApp extends LitElement {
     const matches = (r) => !filter || `${methodLabel(r)} ${r.name} ${r.url ?? ""}`.toLowerCase().includes(filter);
     return html`
       <aside class=${`sidebar ${this.navOpen ? "open" : ""}`} aria-label="Collections">
+        ${this.renderRail()}
+        <div class="side-pane">
         ${this.tools("in-drawer")}
         <lit-material-button variant="filled" class="new-request" @click=${() => (this.navOpen = false, s.newRequestInFirstCollection())}>
           ${icon("plus")} New request
@@ -953,9 +989,6 @@ export class HitopApp extends LitElement {
         <input type="search" class="tree-filter" placeholder="Filter requests" aria-label="Filter requests" .value=${this.filter}
           @input=${(e) => (this.filter = e.target.value)} />
         <nav class="tree" aria-label="Collections">
-          <button type="button" class="tree-row heading" aria-current=${kind === "collections" ? "page" : "false"} @click=${() => this.go("collections")}>
-            ${icon("folders")}<span>Collections</span>
-          </button>
           <ul>
             ${!s.visibleCollections.length && s.currentOrgInfo && !s.currentOrgInfo.personal
               ? html`<li class="tree-empty hint">No collections in ${s.currentOrgInfo.name} yet.</li>`
@@ -994,15 +1027,10 @@ export class HitopApp extends LitElement {
             })}
           </ul>
         </nav>
-        <div class="sidebar-footer">
-          <button type="button" class="tree-row" aria-current=${kind === "environments" ? "page" : "false"} @click=${() => this.go("environments")}>${icon("globe")}<span>Environments</span></button>
-          <button type="button" class="tree-row" aria-current=${kind === "cookies" ? "page" : "false"} @click=${() => this.go("cookies")}>${icon("cookie")}<span>Cookies</span></button>
-          <button type="button" class="tree-row" aria-current=${kind === "history" ? "page" : "false"} @click=${() => this.go("history")}>${icon("clock-counter-clockwise")}<span>History</span></button>
+        <div class="side-pane-footer">
+          <button type="button" class="tree-row" @click=${() => this.openDialog("import")}>${icon("file-arrow-up")}<span>Import</span></button>
           <button type="button" class="tree-row" @click=${() => this.openDialog("export")}>${icon("file-arrow-down")}<span>Export</span></button>
-          <button type="button" class="tree-row" @click=${() => this.openDialog("import")}>${icon("file-arrow-up")}<span>Import</span></button>          ${(platform().pages ?? []).filter((page) => page.sidebar !== false).map(
-            (page) => html`<button type="button" class="tree-row" aria-current=${kind === page.kind ? "page" : "false"} @click=${() => this.go(page.kind)}>${icon(page.icon)}<span>${page.label}</span></button>`,
-          )}
-          <button type="button" class="tree-row" aria-current=${kind === "settings" ? "page" : "false"} @click=${() => this.go("settings")}>${icon("gear-six")}<span>Settings</span></button>
+        </div>
         </div>
       </aside>`;
   }
@@ -1021,8 +1049,10 @@ export class HitopApp extends LitElement {
       <div class="tab-strip">
         <lit-material-tabs
           aria-label="Open requests"
+          reorderable
           .selected=${s.currentTab}
           @change=${(e) => s.selectTab(e.target.selected)}
+          @reorder=${(e) => s.moveTab(e.detail.from, e.detail.to)}
         >
           ${s.tabs.map(
             (t, i) => html`<lit-material-tab id=${`tab-${i}`} title=${t.title} @contextmenu=${(e) => this.openTabMenu(e, i)}
@@ -1061,6 +1091,59 @@ export class HitopApp extends LitElement {
       destructive: true,
     });
     if (ok) this.store.deleteTabRequest(index);
+  }
+
+  // --- title bar and status bar (HITOP Next) ---------------------------------------------------
+
+  /** The collection on screen: the page's, or the open request's. */
+  currentCollection() {
+    const s = this.store;
+    const { kind, collectionId } = s.view;
+    if (kind === "collection" || kind === "variables") return s.collection(collectionId);
+    if (kind === "request") return s.collection(s.tab?.loadedCollectionId);
+    return null;
+  }
+
+  crumb() {
+    const c = this.currentCollection();
+    return c ? html`<span class="crumb" aria-hidden="true">/</span><span class="crumb crumb-name" title=${c.name}>${c.name}</span>` : nothing;
+  }
+
+  // The title bar's search field: one place for requests and commands.
+  commandField() {
+    return html`<button type="button" class="command-field" aria-label="Search requests and commands" @click=${() => this.openCommand()}>
+      ${icon("magnifying-glass")}<span class="command-text">Search requests, run a command…</span><kbd class="command-kbd">${keyLabel("P")}</kbd>
+    </button>`;
+  }
+
+  openCommand() {
+    this.openDialog("quick-open", { query: "", active: 0 });
+  }
+
+  /** Where the open request lives (its file in a folder collection), for the status bar. */
+  requestPlace() {
+    const s = this.store;
+    const t = s.tab;
+    if (s.view.kind !== "request" || !t) return "";
+    const c = s.collection(t.loadedCollectionId);
+    const r = c?.requests?.find((x) => x.id === t.loadedRequestId);
+    if (!c || !r) return "Unsaved request";
+    const folder = s.folderOf(c.id);
+    return folder && r.file ? `${folder.label}/requests/${r.file}.yaml` : `${c.name} › ${r.name}`;
+  }
+
+  renderStatusBar() {
+    const s = this.store;
+    const t = s.view.kind === "request" ? s.tab : null;
+    const dirty = t && s.isDirty(t);
+    const engine = IS_TAURI ? "Desktop · Rust engine" : "Browser · HITOP proxy for public hosts";
+    return html`<footer class="statusbar" aria-label="Status">
+      ${t ? html`<span class="status-item mono">${this.requestPlace()}</span>` : nothing}
+      ${dirty ? html`<span class="status-item status-unsaved">● Unsaved · ${keyLabel("S")} saves</span>` : nothing}
+      <span class="topbar-spacer"></span>
+      <span class="status-item">${engine}</span>
+      <span class="status-item status-hint">Press <kbd>?</kbd> for shortcuts</span>
+    </footer>`;
   }
 
   // --- main -------------------------------------------------------------------------
@@ -1106,6 +1189,9 @@ export class HitopApp extends LitElement {
         ${IS_TAURI
           ? html`<span class="brand">${unsafeSVG(mark())}<span>HITOP</span></span>`
           : html`<a class="brand" href="/" aria-label="HITOP website">${unsafeSVG(mark())}<span>HITOP</span></a>`}
+        ${this.crumb()}
+        <span class="topbar-spacer"></span>
+        ${this.commandField()}
         <span class="topbar-spacer"></span>
         ${this.tools("in-topbar")}
         ${this.accountButton()}
@@ -1115,6 +1201,7 @@ export class HitopApp extends LitElement {
         <div class="scrim" ?hidden=${!this.navOpen} @click=${() => (this.navOpen = false)}></div>
         <main id="main" class="main">${this.renderMain()}</main>
       </div>
+      ${this.renderStatusBar()}
       ${this.renderDialog()} ${this.renderRequestMenu()} ${this.renderAccountMenu()}
       <lit-material-snackbar id="toast" closable></lit-material-snackbar>`;
   }
