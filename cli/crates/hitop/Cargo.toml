@@ -45,7 +45,7 @@ colored = "2"
 indicatif = "0.18"
 rpassword = "7.5"
 # `hitop mcp`: the official MCP SDK, stdio transport only.
-rmcp = { version = "3.8", default-features = false, features = ["server", "macros", "transport-io"] }
+rmcp = { version = "3.9", default-features = false, features = ["server", "macros", "transport-io"] }
 schemars = "1"
 tokio = { version = "1", features = ["rt-multi-thread", "macros", "io-std", "sync", "time", "net"] }
 # `hitop ws`: binary messages as base64 in --json output.
