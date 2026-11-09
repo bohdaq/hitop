@@ -66,7 +66,7 @@ export function aiDialog(app, d) {
         ${actions.map(([a, label, ok]) => html`<button type="button" role="tab" class="share-tab" aria-selected=${String(d.action === a)} ?disabled=${!ok} @click=${() => pick(a)}>${label}</button>`)}
       </div>
       ${d.action === "generate"
-        ? html`<lit-material-textarea id="ai-prompt" variant="outlined" label="A curl command, a description, or part of an OpenAPI spec" rows="6" autofocus></lit-material-textarea>`
+        ? html`<lit-material-textarea id="ai-prompt" variant="outlined" label="A curl command, a description, or part of an OpenAPI spec" rows="6" autofocus .value=${d.prompt ?? ""}></lit-material-textarea>`
         : html`<p class="hint">Claude sees this request and its response with secret values and credential headers hidden.</p>`}
       ${d.error ? html`<p class="error-text" role="alert">${d.error}</p>` : nothing}
       ${d.busy && !d.text ? html`<div class="skeleton block" aria-busy="true"></div>` : nothing}

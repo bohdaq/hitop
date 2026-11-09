@@ -249,7 +249,7 @@ function api() {
   await p.setViewportSize({ width: 1280, height: 860 });
   await settle(p);
 
-  // --- 4. Mod+P quick open (never the browser's Print inside the app); Mod+K still the URL ---
+  // --- 4. Mod+P quick open (never the browser's Print inside the app); Mod+L goes to the URL (Mod+K is the palette) ---
   const mod = process.platform === 'darwin' ? 'Meta' : 'Control';
   await p.evaluate(() => window.addEventListener('keydown', (e) => e.code === 'KeyP' && (window.__lastP = e), true));
   await p.locator('.response-meta .status-chip').click();
@@ -277,16 +277,16 @@ function api() {
   await p.keyboard.press('Shift+Slash');
   await p.locator('#dialog .shortcut-list').waitFor({ timeout: 5000 });
   const list = await p.locator('#dialog .shortcut-list').innerText();
-  check('the shortcuts list has Mod+P and Mod+K', list.includes('Quick open') && list.includes('Go to the URL field'));
+  check('the shortcuts list has Mod+P, Mod+K and Mod+L', list.includes('Quick open') && list.includes('Command palette') && list.includes('Go to the URL field'));
   await p.evaluate(() => (window.__lastP = null));
   await p.keyboard.press(`${mod}+p`);
   check('Mod+P with another dialog open still never prints', (await p.evaluate(() => window.__lastP?.defaultPrevented)) === true && (await p.locator('#dialog .shortcut-list').count()) === 1);
   await p.keyboard.press('Escape');
   await settle(p);
   await p.locator('.pane-title').first().click();
-  await p.keyboard.press(`${mod}+k`);
+  await p.keyboard.press(`${mod}+l`);
   await settle(p);
-  check('Mod+K still goes to the URL field', await p.evaluate(() => document.activeElement?.closest?.('.url') != null || document.activeElement?.classList.contains('url')));
+  check('Mod+L goes to the URL field', await p.evaluate(() => document.activeElement?.closest?.('.url') != null || document.activeElement?.classList.contains('url')));
 
   // --- 7. Folder groups, the request context menu, tab close buttons, the History page --------
   const aside = p.locator('aside');

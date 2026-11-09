@@ -10,11 +10,13 @@ import { methodLabel, Store } from "../store.js";
 import { IS_TAURI, platform } from "../platform/index.js";
 import { issueText } from "../pm.js";
 import "@lit-material/navigation";
+import "@lit-material/command-palette";
+import { PREFIXES, actions as paletteActions, storeItems } from "../commands.js";
 import "./request-view.js";
 import "./collection-views.js";
 import { WIDE_DIALOGS, codeDialog, compareDialog, refreshCode } from "./tools-dialogs.js";
 import { OPENAPI_DIALOGS, openapiDialog, submitOpenapi } from "./openapi-dialogs.js";
-import { shortcutFor } from "../shortcuts.js";
+import { ACTION_KEYS, shortcutFor } from "../shortcuts.js";
 import { quickOpenItems, rankItems } from "../quick-open.js";
 import { requestTree } from "../collection-tree.js";
 import { shortcutList } from "./shortcut-list.js";
@@ -128,8 +130,10 @@ export class HitopApp extends LitElement {
   onShortcut(e) {
     const action = shortcutFor(e);
     if (!action) return;
-    // Mod+P never prints from inside the app, even with a dialog open.
-    if (action === "quickOpen") e.preventDefault();
+    // Mod+P never prints from inside the app, even with a dialog open; Mod+K and Mod+L never reach
+    // the browser's address bar or search.
+    if (["quickOpen", "palette", "focusUrl"].includes(action)) e.preventDefault();
+    if (this.querySelector("lit-material-command-palette")?.open) return;
     if (this.dialog || document.querySelector("lit-material-confirm-dialog[open]")) return;
     const s = this.store;
     const onRequest = s.view.kind === "request";
@@ -147,8 +151,10 @@ export class HitopApp extends LitElement {
         this.saveCurrent();
         break;
       case "focusUrl":
-        if (!onRequest) s.selectTab(s.currentTab);
-        this.updateComplete.then(() => this.querySelector("hitop-request .request-line .url")?.focus());
+        this.focusUrl();
+        break;
+      case "palette":
+        this.openCommand();
         break;
       case "newTab":
         s.newTab();
@@ -1112,12 +1118,44 @@ export class HitopApp extends LitElement {
   // The title bar's search field: one place for requests and commands.
   commandField() {
     return html`<button type="button" class="command-field" aria-label="Search requests and commands" @click=${() => this.openCommand()}>
-      ${icon("magnifying-glass")}<span class="command-text">Search requests, run a command…</span><kbd class="command-kbd">${keyLabel("P")}</kbd>
+      ${icon("magnifying-glass")}<span class="command-text">Search requests, run a command…</span><kbd class="command-kbd">${keyLabel("K")}</kbd>
     </button>`;
   }
 
+  /** The command palette (Mod+K): requests, actions, environments and runs. */
   openCommand() {
-    this.openDialog("quick-open", { query: "", active: 0 });
+    this.navOpen = false;
+    this.paletteItems = this.buildPaletteItems();
+    this.requestUpdate();
+    this.updateComplete.then(() => this.querySelector("lit-material-command-palette")?.show());
+  }
+
+  buildPaletteItems() {
+    return [...storeItems(this, methodLabel), ...paletteActions(this, ACTION_KEYS)];
+  }
+
+  focusUrl() {
+    const s = this.store;
+    if (s.view.kind !== "request") s.selectTab(s.currentTab);
+    this.updateComplete.then(() => this.querySelector("hitop-request .request-line .url")?.focus());
+  }
+
+  // Tab in the palette: the query goes to Ask AI as a "Request from text" prompt; with nothing
+  // typed, Ask AI opens as from its button (tests, explain or generate).
+  paletteToAi(e) {
+    e.preventDefault();
+    const query = e.detail?.query?.trim() ?? "";
+    this.querySelector("lit-material-command-palette")?.hide();
+    if (this.store.view.kind !== "request") this.store.selectTab(this.store.currentTab);
+    if (query) this.openDialog("ai", { action: "generate", prompt: query });
+    else this.openAi();
+  }
+
+  renderPalette() {
+    return html`<lit-material-command-palette label="Command palette" placeholder="Search requests, run a command, or press Tab to ask AI…"
+      .items=${(this.paletteItems ?? []).map(({ run, ...it }) => it)} .prefixes=${PREFIXES}
+      @select=${(e) => this.paletteItems?.find((x) => x.id === e.detail.item.id)?.run()}
+      @tab=${(e) => this.paletteToAi(e)}></lit-material-command-palette>`;
   }
 
   /** Where the open request lives (its file in a folder collection), for the status bar. */
@@ -1202,7 +1240,7 @@ export class HitopApp extends LitElement {
         <main id="main" class="main">${this.renderMain()}</main>
       </div>
       ${this.renderStatusBar()}
-      ${this.renderDialog()} ${this.renderRequestMenu()} ${this.renderAccountMenu()}
+      ${this.renderDialog()} ${this.renderRequestMenu()} ${this.renderAccountMenu()} ${this.renderPalette()}
       <lit-material-snackbar id="toast" closable></lit-material-snackbar>`;
   }
 }

@@ -93,6 +93,46 @@ function api() {
   await settle(p);
   check('Diff vs last compares in the response pane', (await p.locator('.response .compare-summary').count()) === 1 && (await p.locator('.response #diff-left').count()) === 1, await p.locator('.response .compare-summary').innerText().catch(() => ''));
 
+  // --- A5: the command palette (Mod+K) ---
+  const mod = process.platform === 'darwin' ? 'Meta' : 'Control';
+  const palette = p.locator('lit-material-command-palette');
+  const box = palette.getByRole('combobox');
+  await p.locator('.pane-title').first().click();
+  await p.keyboard.press(`${mod}+k`);
+  await box.waitFor({ timeout: 5000 });
+  check('Mod+K opens the command palette with focus in its field', (await palette.evaluate((el) => el.open)) && (await box.evaluate((el) => el.matches(':focus'))));
+  const sections = await palette.evaluate((el) => [...new Set(el.items.map((i) => i.section))]);
+  check('the palette has requests, actions and environments', ['Requests', 'Actions', 'Environments'].every((x) => sections.includes(x)), sections.join());
+  await p.keyboard.type('>histo', { delay: 20 });
+  await settle(p);
+  const opts = await palette.getByRole('option').allInnerTexts();
+  check('">" limits it to actions; fuzzy finds Open history', opts.length >= 1 && opts[0].includes('Open history') && !opts.some((o) => o.includes('New request') && !o.includes('Actions')), opts.join(' | '));
+  await p.keyboard.press('Enter');
+  await settle(p);
+  check('Enter runs the action and closes the palette', (await p.locator('main h1').first().innerText()) === 'History' && !(await palette.evaluate((el) => el.open)));
+  await p.keyboard.press(`${mod}+k`);
+  await box.waitFor({ timeout: 5000 });
+  await p.keyboard.press('Escape');
+  await settle(p);
+  check('Escape closes it', !(await palette.evaluate((el) => el.open)));
+  await p.keyboard.press(`${mod}+k`);
+  await box.waitFor({ timeout: 5000 });
+  await p.keyboard.type('a GET request to list orders', { delay: 5 });
+  await p.keyboard.press('Tab');
+  await settle(p);
+  check('Tab hands the query to Ask AI', !(await palette.evaluate((el) => el.open)) && (await p.evaluate(() => { const d = document.querySelector('hitop-app').dialog; return d?.kind === 'ai' && d.action === 'generate' && d.prompt; })) === 'a GET request to list orders');
+  await p.keyboard.press('Escape');
+  await settle(p);
+  await p.locator('header.topbar .command-field').click();
+  await box.waitFor({ timeout: 5000 });
+  check('the title bar search field opens the palette', await palette.evaluate((el) => el.open));
+  await p.keyboard.press('Escape');
+  await settle(p);
+  await p.locator('.pane-title').first().click().catch(() => {});
+  await p.keyboard.press(`${mod}+l`);
+  await settle(p);
+  check('Mod+L goes to the URL field', await p.evaluate(() => document.activeElement?.closest?.('.url') != null || document.activeElement?.classList.contains('url')));
+
   // Phone: the rail and pane are a drawer; no sideways scroll.
   await p.setViewportSize({ width: 390, height: 844 });
   await settle(p);

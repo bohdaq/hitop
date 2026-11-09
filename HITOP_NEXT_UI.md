@@ -191,6 +191,8 @@ Two tracks run at once.
 
 | A4 + B3 request/response | done: the URL's `${variables}` as chips under the URL bar (an undefined one marked; a click opens a popover with the value, secrets masked, and its scope: script, team environment, environment, collection, globals; `store.variableSource`), timing waterfall (`@lit-material/timing-waterfall`) under the response line when the response has `timings` (desktop always; web through the proxy only, so not for localhost), "reused connection" note, a "Diff vs last" response tab (the Compare view in the pane, from the second response on). Request/response stay side by side ≥ 880 px of view (existing split). Not done: inline highlighting inside the URL field itself (chips instead), a separate Checks tab (the existing Tests tab lists them). Tests: unit, both builds, check-no-telemetry, e2e Tauri 405 PASS, web 313 PASS | 8dc3734 |
 
+| A5 command palette | done: `@lit-material/command-palette` on Mod+K (and the title bar's search field): open tabs, every saved request, environments ("Use …"), recent runs from History, and one action registry (`src/commands.js`, shortcut keys from `shortcuts.js` `ACTION_KEYS`); prefixes `>` actions, `@` environments, `#` runs; Tab hands the query to Ask AI as a "Request from text" prompt. Mod+L goes to the URL field (was Mod+K; `/` still works); Mod+P quick open unchanged. Tests: unit, both builds, check-no-telemetry, e2e Tauri 413 PASS, web 321 PASS (local hitop-server) | (this commit) |
+
 Known gaps: TCP vs TLS not split; concurrent requests to the same host or IP literals may swap
 connect times (totals exact); clients installed with `http::install_client` (sync-server monitors)
 report no timings. B2 must check HitopKit's `CLICompatibilityTests` before report.json gets
