@@ -74,6 +74,13 @@ impl RunStepResult {
     }
 }
 
+/// Whether a run sends this request (one step per such request, in collection order).
+/// WebSocket and gRPC requests are made on demand (`hitop ws`, `hitop grpc`): a run
+/// has nothing to send for them. Anything mapping steps back to requests filters by this.
+pub fn is_run_step(request: &crate::model::Request) -> bool {
+    !request.is_websocket() && !request.is_grpc()
+}
+
 /// Runs the requests in order, passing script context from one to the next.
 /// `environment` overrides collection variables.
 pub fn run_collection(
@@ -138,9 +145,7 @@ pub fn run_collection_jar(
     let mut tokens = crate::oauth2::Tokens::interactive(options.timeout);
 
     for request in &collection.requests {
-        // WebSocket and gRPC requests are made on demand (`hitop ws`,
-        // `hitop grpc`); a run has nothing to send for them.
-        if request.is_websocket() || request.is_grpc() {
+        if !is_run_step(request) {
             continue;
         }
         let started = Instant::now();

@@ -190,7 +190,13 @@ fn plan(args: &RunArgs) -> Result<Plan> {
     let secrets = secret::resolve_with_shared(&source.workspace(), environment.as_ref(), &args.secrets, &shared)?;
     let (globals, global_secrets) = secret::resolve_globals(&source.workspace(), &source.globals()?, &args.secrets)?;
     let files = match source.folder() {
-        Some(dir) => request_files(dir, &source.collection)?,
+        // Report steps are the requests a run sends: their files only, in the same order.
+        Some(dir) => request_files(dir, &source.collection)?
+            .into_iter()
+            .zip(&source.collection.requests)
+            .filter(|(_, r)| hitop_core::runner::is_run_step(r))
+            .map(|(f, _)| f)
+            .collect(),
         None => vec![],
     };
     Ok(Plan {

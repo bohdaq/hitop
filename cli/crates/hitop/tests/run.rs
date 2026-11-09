@@ -520,3 +520,25 @@ fn oauth2_authorization_code_with_pkce_signs_in_once() {
     // Without a person at the terminal (no opener, stderr not a terminal), it says so.
     hitop(&home, tmp.path()).args(["run", "./api", "--env", "ci", "--secret", "token=x"]).assert().code(1).stdout(contains("needs a person to sign in"));
 }
+
+#[test]
+fn report_files_skip_websocket_and_grpc_requests() {
+    // A run skips WebSocket and gRPC requests; each step's `file` is still its own request's.
+    let server = MockServer::start();
+    server.mock(|when, then| {
+        when.method(GET).path("/orders");
+        then.status(200).body("yes");
+    });
+    let (home, tmp) = (TempDir::new().unwrap(), TempDir::new().unwrap());
+    let dir = folder(&tmp, &server.base_url());
+    fs::write(dir.join("hitop.yaml"), "format: 1\nname: Run API\norder:\n- socket\n- ok\n").unwrap();
+    fs::write(dir.join("requests/socket.yaml"), "name: Socket\nkind: websocket\nurl: ws://127.0.0.1:9/feed\n").unwrap();
+    fs::write(dir.join("requests/ok.yaml"), "name: Ok\nurl: ${base}/orders\n").unwrap();
+    fs::remove_file(dir.join("requests/check.yaml")).unwrap();
+    fs::remove_file(dir.join("requests/who.yaml")).unwrap();
+    hitop(&home, tmp.path()).args(["run", "./api", "--env", "ci", "--secret", "token=t", "--reporter", "json", "--out", "r"]).assert().code(0);
+    let v: Value = serde_json::from_str(&fs::read_to_string(tmp.path().join("r/report.json")).unwrap()).unwrap();
+    let steps = v["collections"][0]["iterations"][0]["requests"].as_array().unwrap();
+    assert_eq!(steps.len(), 1, "{v}");
+    assert_eq!((steps[0]["name"].as_str(), steps[0]["file"].as_str()), (Some("Ok"), Some("api/requests/ok.yaml")), "{v}");
+}
