@@ -109,4 +109,46 @@ assert.equal(more.find((i) => i.kind === "history").detail, "History, 500", "the
 assert.equal(rankItems(more, "token")[0].kind, "environment", "an environment is found by a variable name");
 assert.equal(rankItems(more, "auth")[0].key, "col:2");
 
+// Run report (run-report.js): report.json v1, JUnit, p95, the CLI line, the run history.
+{
+  const { buildReport, junitXml, percentile, previousRun, rememberRun, runCommand, runStats, shellWord, timeline } = await import("../src/run-report.js");
+  assert.equal(percentile([10, 20, 30, 40, 1000]), 1000);
+  assert.equal(percentile([5, 1, 3]), 5);
+  assert.equal(percentile([]), null);
+  assert.equal(shellWord("Shop API"), "'Shop API'");
+  assert.equal(shellWord("it's"), "'it'\\''s'");
+  assert.equal(runCommand({ collection: "Shop API", folderLabel: "shop-api", environment: "Staging" }), "hitop run ./shop-api --env Staging --reporter cli,junit,json --out reports");
+  assert.equal(runCommand({ collection: "Shop API", environment: null }), "hitop run 'Shop API' --reporter cli,junit,json --out reports");
+  const timings = { dnsMs: 1, connectMs: 2, waitMs: 30, downloadMs: 1, totalMs: 34, reused: false };
+  const results = [
+    { requestName: "Log in", method: "POST", url: "https://x/login", statusCode: 201, success: true, tests: [{ name: "ok", pass: true }], duration: 40, timings, file: "shop/requests/log-in.yaml" },
+    { requestName: "Cancel", method: "DELETE", url: "https://x/o/1", statusCode: 409, success: false, tests: [{ name: "status is 204", pass: false, detail: "got 409" }], duration: 60 },
+    { requestName: "Never", method: "GET", url: "https://x/n", statusCode: "Error", success: false, response: "connection refused" },
+  ];
+  const report = buildReport({ collection: "Shop & <API>", environment: "Staging", results, startedAt: Date.UTC(2026, 10, 9, 10, 0, 0), durationMs: 120 });
+  assert.equal(report.reportVersion, 1);
+  assert.equal(report.startedAt, "2026-11-09T10:00:00Z");
+  assert.deepEqual(report.summary, { requests: { total: 3, passed: 1, failed: 2 }, assertions: { total: 2, passed: 1, failed: 1 } });
+  const [a, b, c] = report.collections[0].iterations[0].requests;
+  assert.deepEqual(Object.keys(a), ["name", "method", "url", "passed", "status", "responseTimeMs", "durationMs", "error", "failure", "assertions", "file", "timings"], "spec key order, timings last");
+  assert.equal(a.responseTimeMs, 34);
+  assert.equal(b.failure, "status is 204: got 409");
+  assert.equal(b.timings, undefined, "no timings key without timings");
+  assert.deepEqual([c.status, c.error, c.durationMs], [null, "connection refused", 0]);
+  const xmlText = junitXml(report);
+  assert.ok(xmlText.includes('tests="3" failures="1" errors="1"') && xmlText.includes("Shop &amp; &lt;API&gt;") && xmlText.includes('file="shop/requests/log-in.yaml"'), xmlText);
+  const rows = timeline(results);
+  assert.deepEqual(rows.map((r) => r.start), [0, 40, 100]);
+  assert.ok(Math.abs(rows[1].left - 40) < 1e-9);
+  const store = new Map();
+  const storage = { getItem: (k) => store.get(k) ?? null, setItem: (k, v) => store.set(k, v) };
+  assert.equal(previousRun(storage, 7), null);
+  rememberRun(storage, 7, { at: 1, p95: 50 });
+  const stats = runStats(results, 120, previousRun(storage, 7));
+  assert.deepEqual([stats.requests, stats.checks, stats.p95, stats.p95Delta, stats.wallMs], [{ passed: 1, total: 3 }, { passed: 1, total: 2 }, 60, 10, 120]);
+  for (let i = 0; i < 30; i++) rememberRun(storage, 7, { at: i, p95: i });
+  assert.equal(JSON.parse(store.get("hitop_run_history"))["7"].length, 20, "20 runs per collection");
+  rememberRun({ getItem: () => "{", setItem: () => { throw new Error("full"); } }, 1, {});
+}
+
 console.log("unit-ux: all checks passed");

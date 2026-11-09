@@ -685,3 +685,37 @@ button.storage-chip:focus-visible { outline: 2px solid var(--md-sys-color-primar
 .var-peek .var-value { margin: 0 0 var(--space-50); word-break: break-all; }
 .var-peek .mono, .url-vars .mono { font-family: var(--font-mono); }
 .response .timing { display: block; margin: var(--space-100) 0; }
+
+/* Run report (HITOP Next A6): tiles, a timeline on one time axis, the first failure, the CLI line. */
+.run-report-head { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-100); }
+.run-report-head h2 { margin: 0; }
+.run-report-actions { margin-left: auto; display: flex; flex-wrap: wrap; gap: var(--space-75); }
+.run-tiles { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: var(--space-100); }
+.run-tile { display: flex; flex-direction: column; gap: var(--space-25); padding: var(--space-100) var(--space-200); border: 1px solid var(--md-sys-color-outline-variant); border-radius: var(--md-sys-shape-corner-large); background: var(--md-sys-color-surface-container-low); }
+.run-tile-label { font-size: var(--text-xs); line-height: var(--leading-xs); color: var(--md-sys-color-on-surface-variant); }
+.run-tile-value { font-family: var(--font-mono); font-size: var(--text-2xl); line-height: var(--leading-2xl); font-weight: 500; }
+.run-tile-of { color: var(--md-sys-color-on-surface-variant); }
+.run-tile-note { font-size: var(--text-xs); line-height: var(--leading-xs); color: var(--md-sys-color-on-surface-variant); }
+.run-tile-note.bad { color: var(--hitop-fail); }
+.run-tile-note.warn { color: var(--hitop-warn); }
+.run-tile-note.good { color: var(--hitop-pass); }
+.run-report-body { display: flex; flex-wrap: wrap; gap: var(--space-200); align-items: flex-start; }
+.run-timeline { flex: 999 1 480px; min-width: 0; display: grid; gap: var(--space-75); }
+.run-side { flex: 1 1 300px; min-width: 0; display: grid; gap: var(--space-100); }
+.run-filter { display: inline-flex; gap: var(--space-25); padding: var(--space-25); justify-self: start; border: 1px solid var(--md-sys-color-outline-variant); border-radius: var(--md-sys-shape-corner-medium); background: var(--md-sys-color-surface-container); }
+.run-filter button { border: 0; border-radius: var(--md-sys-shape-corner-small); padding: var(--space-25) var(--space-100); background: none; color: var(--md-sys-color-on-surface-variant); font-size: var(--text-sm); cursor: pointer; }
+.run-filter button[aria-checked="true"] { background: var(--md-sys-color-surface-container-highest); color: var(--md-sys-color-on-surface); }
+.run-filter button:focus-visible { outline: 2px solid var(--md-sys-color-primary); }
+.run-row.failed { background: color-mix(in srgb, var(--hitop-fail) 6%, transparent); }
+.run-bar { position: relative; flex: 1 1 160px; min-width: 120px; height: 8px; border-radius: 4px; background: var(--md-sys-color-surface-container-high); overflow: hidden; }
+.run-bar > span { position: absolute; top: 0; bottom: 0; border-radius: 3px; background: var(--hitop-phase-connect); }
+.run-bar > span.slow { background: var(--hitop-warn); }
+.run-bar > span.bad { background: var(--hitop-fail); }
+.run-failure, .run-cli { display: grid; gap: var(--space-75); padding: var(--space-200); border: 1px solid var(--md-sys-color-outline-variant); border-radius: var(--md-sys-shape-corner-large); background: var(--md-sys-color-surface-container-low); }
+.run-failure { border-color: color-mix(in srgb, var(--hitop-fail) 40%, transparent); }
+.run-failure h3, .run-cli h3 { margin: 0; font-size: var(--text-base); }
+.run-failure-where { margin: 0; display: flex; gap: var(--space-75); align-items: center; }
+.run-failure-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--space-100); }
+.run-failure-grid ul { margin: var(--space-25) 0 0; padding-left: var(--space-200); font-family: var(--font-mono); font-size: var(--text-xs); }
+.run-command { display: block; padding: var(--space-100); white-space: pre-wrap; overflow-wrap: anywhere; }
+.run-cli lit-material-button { justify-self: start; }

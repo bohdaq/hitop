@@ -11,6 +11,7 @@ function api() {
   const server = http.createServer((req, res) => {
     const cors = { 'Access-Control-Allow-Origin': '*', 'Access-Control-Allow-Headers': '*', 'Access-Control-Allow-Methods': '*' };
     if (req.method === 'OPTIONS') return res.writeHead(204, cors).end();
+    if (req.url.startsWith('/fail')) return res.writeHead(409, { ...cors, 'Content-Type': 'application/json' }).end('{"error":"already_paid"}');
     res.writeHead(200, { ...cors, 'Content-Type': 'application/json' }).end('{"ok":true}');
   });
   return new Promise((resolve) => server.listen(0, '127.0.0.1', () => resolve({ server, base: `http://127.0.0.1:${server.address().port}` })));
@@ -132,6 +133,39 @@ function api() {
   await p.keyboard.press(`${mod}+l`);
   await settle(p);
   check('Mod+L goes to the URL field', await p.evaluate(() => document.activeElement?.closest?.('.url') != null || document.activeElement?.classList.contains('url')));
+
+  // --- A6: the run report ---
+  await p.evaluate((b) => {
+    const app = document.querySelector('hitop-app');
+    const s = app.store;
+    const req = (id, name, method, url, postRequestScript = '') => ({ id, name, method, url, headers: [], body: '', preRequestScript: '', postRequestScript });
+    s.collections = [...s.collections, { id: 991, name: 'Run report', variables: {}, requests: [
+      req(9911, 'List orders', 'GET', `${b}/one`, 'pm.test("status is 200", () => pm.response.to.have.status(200));'),
+      req(9912, 'Cancel order', 'DELETE', `${b}/fail`, 'pm.test("status is 204", () => pm.response.to.have.status(204));'),
+    ] }];
+    s.emit();
+    app.go('collection', 991);
+  }, base);
+  await settle(p);
+  await p.getByRole('button', { name: 'Run collection' }).click();
+  const report = p.locator('hitop-run-report');
+  await report.locator('.run-tiles').waitFor({ timeout: 10000 });
+  const tiles = await report.locator('.run-tile').allInnerTexts();
+  check('run report: tiles for requests, checks, p95 and wall time', tiles.length === 4 && tiles[0].includes('1/2') && tiles[1].includes('1/2') && tiles[2].includes('first run here'), tiles.join(' | '));
+  check('run report: the failure card says expected vs actual', (await report.locator('.run-failure').innerText()).includes('status is 204') && (await report.locator('.run-failure').innerText()).includes('Actual'));
+  check('run report: the hitop run line for the run', (await report.locator('.run-command').innerText()).startsWith("hitop run 'Run report'") && (await report.locator('.run-command').innerText()).includes('--reporter cli,junit,json'));
+  await report.getByRole('radio', { name: /Failed/ }).click();
+  await settle(p);
+  const failedRows = await report.locator('.run-list > li.run-row').allInnerTexts();
+  check('run report: Failed shows only the failed request', failedRows.length === 1 && failedRows[0].includes('Cancel order'), failedRows.join(' | '));
+  await report.getByRole('radio', { name: /All/ }).click();
+  await p.getByRole('button', { name: 'Run collection' }).click();
+  await settle(p);
+  await report.locator('.run-tiles').waitFor({ timeout: 10000 });
+  await settle(p);
+  check('run report: a second run compares p95 with the last one', /vs last run|same as last run/.test(await report.locator('.run-tile').nth(2).innerText()));
+  const history = await p.evaluate(() => JSON.parse(localStorage.getItem('hitop_run_history') || '{}')['991'] || []);
+  check('run history keeps summaries only', history.length === 2 && !JSON.stringify(history).includes('/fail'), JSON.stringify(history));
 
   // Phone: the rail and pane are a drawer; no sideways scroll.
   await p.setViewportSize({ width: 390, height: 844 });

@@ -50,6 +50,7 @@ import { exampleResponse, snapshotResponse } from "./diff.js";
 import { folderToZip, zipToFolder } from "./zip.js";
 import { loadSettings, saveSettings, seconds } from "./settings.js";
 import { addCollections } from "./collection-tree.js";
+import { buildReport, previousRun, rememberRun, runCommand, runStats } from "./run-report.js";
 
 // Postman's pm.* API for scripts (the shim the CLI and desktop run too).
 const pmShim = loadShim(pmShimText);
@@ -2186,9 +2187,10 @@ export class Store extends EventTarget {
   async runCollection(id) {
     const collection = this.collection(id);
     if (!collection?.requests?.length) return [];
-    this.run = { ...this.run, collectionId: id, results: [], running: true };
+    this.run = { ...this.run, collectionId: id, results: [], running: true, report: null };
     this.emit();
     const results = [];
+    const runStarted = Date.now();
     // Secret values of the environment and of the globals this collection sees.
     this.refValues = {};
     const push = (r) => {
@@ -2220,14 +2222,14 @@ export class Store extends EventTarget {
         this.history = historyService.addToHistory(this.history, item);
         const failed = tests.filter((t) => !t.pass);
         const success = res.ok && failed.length === 0;
-        push({ requestName: request.name, method: request.method, url: prepared.url, statusCode: res.status, success, tests, response: failed.length ? failed.map((t) => `${t.name}: ${t.detail}`).join("; ") : text.slice(0, 200), duration });
+        push({ requestName: request.name, method: request.method, url: prepared.url, statusCode: res.status, success, tests, response: failed.length ? failed.map((t) => `${t.name}: ${t.detail}`).join("; ") : text.slice(0, 200), duration, ...(res.timings ? { timings: res.timings } : {}), ...(request.file ? { file: request.file } : {}) });
         if (!success) break;
       } catch (e) {
-        push({ requestName: request.name, method: request.method, url: request.url, statusCode: e.stage === "prepare" ? "Script error" : "Error", success: false, response: e.message });
+        push({ requestName: request.name, method: request.method, url: request.url, statusCode: e.stage === "prepare" ? "Script error" : "Error", success: false, response: e.message, ...(request.file ? { file: request.file } : {}) });
         break;
       }
     }
-    this.run = { ...this.run, running: false };
+    this.run = { ...this.run, running: false, report: this.runReport(collection, results, runStarted) };
     this.emit();
     return results;
   }
@@ -2546,6 +2548,27 @@ export class Store extends EventTarget {
     this.emit();
     this.notify(`Imported ${col.name}${added.length ? ` and ${added.length} environment${added.length === 1 ? "" : "s"}` : ""}`);
     return col;
+  }
+
+  // What the Run report shows for a finished run (run-report.js): report.json, the stats against
+  // the previous run of this collection, and the `hitop run` line. Remembers the run's summary.
+  runReport(collection, results, startedAt) {
+    if (!results.length) return null;
+    const durationMs = Date.now() - startedAt;
+    const environment = this.activeEnvironment?.name ?? null;
+    const folder = this.folderOf(collection.id);
+    let storage = null;
+    try {
+      storage = globalThis.localStorage ?? null;
+    } catch {
+      storage = null;
+    }
+    const previous = storage ? previousRun(storage, collection.id) : null;
+    const stats = runStats(results, durationMs, previous);
+    const report = buildReport({ collection: collection.name, environment, results, startedAt, durationMs });
+    if (storage) rememberRun(storage, collection.id, { at: startedAt, p95: stats.p95, passed: report.passed, requests: results.length, wallMs: durationMs });
+    const folderLabel = folder && !String(folder.ref ?? "").startsWith("hitop-sync:") ? folder.label : null;
+    return { report, stats, previous, command: runCommand({ collection: collection.name, folderLabel, environment }) };
   }
 
   async runAll() {

@@ -7,11 +7,11 @@ import { confirm } from "@lit-material/confirm";
 import { icon } from "../icons.js";
 import { secretNames } from "../features.js";
 import { platform } from "../platform/index.js";
-import { testList } from "./request-view.js";
 import { methodLabel } from "../store.js";
 import { syncButton } from "./openapi-dialogs.js";
 import { isSyncRef } from "../sync.js";
 import { storageOf } from "../git.js";
+import "./run-report-view.js";
 
 class LightElement extends LitElement {
   createRenderRoot() {
@@ -20,29 +20,6 @@ class LightElement extends LitElement {
 }
 
 const count = (n, word) => `${n} ${word}${n === 1 ? "" : "s"}`;
-
-function runResults(results, running) {
-  if (!results.length && !running) return nothing;
-  return html`
-    <section class="run" aria-label="Run results" aria-live="polite">
-      <h2>${running ? "Running" : "Last run"}</h2>
-      <ol class="run-list">
-        ${results.map(
-          (r) => html`
-            <li>
-              <span class=${`status-chip ${r.success ? "ok" : "bad"}`}>${r.statusCode}</span>
-              <span class="method">${r.method}</span>
-              <span class="run-name">${r.requestName}</span>
-              ${r.duration != null ? html`<span class="run-time">${r.duration} ms</span>` : nothing}
-              ${r.tests?.length ? html`<span class="run-tests">${r.tests.filter((x) => x.pass).length} of ${r.tests.length} tests passed</span>` : nothing}
-              ${!r.success && !r.tests?.some((x) => !x.pass) ? html`<p class="run-detail">${r.response}</p>` : nothing}
-              ${r.tests?.some((x) => !x.pass) ? html`<div class="run-detail-tests">${testList(r.tests)}</div>` : nothing}
-            </li>`,
-        )}
-        ${running ? html`<li class="skeleton row" aria-label="Sending the next request"></li>` : nothing}
-      </ol>
-    </section>`;
-}
 
 export class HitopCollections extends LightElement {
   static properties = { store: { attribute: false }, version: { attribute: false }, app: { attribute: false } };
@@ -163,7 +140,7 @@ export class HitopCollection extends LightElement {
             </p>`
           : nothing}
         <p class="page-lead">Run sends the requests in this order, passes values saved with <code>setContext</code> to the next one, and stops at the first failure.</p>
-        ${mine ? runResults(run.results, run.running) : nothing}
+        ${mine ? html`<hitop-run-report .run=${run} .store=${s}></hitop-run-report>` : nothing}
         <section aria-label="Requests">
           <h2>${count(n, "request")}</h2>
           ${n
