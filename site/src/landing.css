@@ -9,7 +9,7 @@
   text-decoration: none; cursor: pointer;
   transition: background-color var(--duration-color) var(--ease), transform var(--duration-color) var(--ease);
 }
-.button-filled:hover { background: light-dark(#4a3296, #b8abfb); }
+.button-filled:hover { background: light-dark(#4a3296, #c2b8ff); }
 .button-filled:active { transform: scale(0.98); }
 .button-filled svg, .text-link svg { width: 18px; height: 18px; }
 .text-link {
@@ -37,11 +37,11 @@
 .terminal {
   min-width: 0;
   border-radius: var(--md-sys-shape-corner-extra-large);
-  background: #16120f; color: #f2ebe3;
-  border: 1px solid light-dark(#16120f, #313131);
+  background: #0a0a0c; color: #ededf0;
+  border: 1px solid light-dark(#0a0a0c, #26262c);
 }
 .terminal-bar { display: flex; gap: var(--space-75); padding: var(--space-200) var(--space-200) 0; }
-.terminal-bar span { width: 12px; height: 12px; border-radius: 9999px; background: #313131; }
+.terminal-bar span { width: 12px; height: 12px; border-radius: 9999px; background: #26262c; }
 .terminal-bar span:first-child { background: var(--hitop-purple); }
 .terminal pre {
   margin: 0; padding: var(--space-200) var(--space-300) var(--space-300);
@@ -49,9 +49,9 @@
   font-size: var(--text-sm); line-height: var(--leading-sm);
 }
 .t-line { display: block; white-space: pre; }
-.t-prompt { color: #9a918a; }
-.t-out { color: #c4bbb3; }
-.t-accent { color: #a594f9; }
+.t-prompt { color: #a1a1aa; }
+.t-out { color: #c8c8cf; }
+.t-accent { color: #a99cff; }
 .t-typing::after { content: "▍"; color: var(--hitop-purple); animation: blink 1s steps(1) infinite; }
 @keyframes blink { 50% { opacity: 0; } }
 

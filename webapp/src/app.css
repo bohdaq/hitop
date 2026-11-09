@@ -254,7 +254,7 @@ lit-material-code-block::part(pre) { max-height: 60vh; overflow: auto; font-fami
   padding: var(--space-25) var(--space-75); border-radius: var(--md-sys-shape-corner-full);
   font-family: var(--font-mono); font-size: var(--text-sm); line-height: var(--leading-sm); font-weight: 600;
 }
-.status-chip.ok { background: light-dark(#dcebd3, #23361a); color: light-dark(#2a4a1b, #9fcf86); }
+.status-chip.ok { background: light-dark(#dcebd3, rgb(63 211 155 / 0.12)); color: light-dark(#1f4a2f, var(--hitop-pass)); }
 .status-chip.info { background: var(--md-sys-color-primary-container); color: var(--md-sys-color-on-primary-container); }
 .status-chip.bad { background: var(--md-sys-color-error-container); color: var(--md-sys-color-on-error-container); }
 

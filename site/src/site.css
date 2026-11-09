@@ -74,11 +74,11 @@
 :root {
   /* color-mix() over light-dark() resolves to transparent in Chromium, so the
      translucent surfaces are spelled out per scheme. */
-  --hitop-glass: light-dark(rgb(242 235 227 / 0.8), rgb(19 18 9 / 0.8));
-  --hitop-glass-strong: light-dark(rgb(242 235 227 / 0.97), rgb(19 18 9 / 0.97));
-  --hitop-mark-rack: light-dark(#16120f, #f2ebe3);
-  --hitop-mark-dot: light-dark(#f2ebe3, #16120f);
-  --hitop-mark-slot: light-dark(#7a706a, #6b625c);
+  --hitop-glass: light-dark(rgb(242 235 227 / 0.8), rgb(10 10 12 / 0.8));
+  --hitop-glass-strong: light-dark(rgb(242 235 227 / 0.97), rgb(10 10 12 / 0.97));
+  --hitop-mark-rack: light-dark(#16120f, #ededf0);
+  --hitop-mark-dot: light-dark(#f2ebe3, #0a0a0c);
+  --hitop-mark-slot: light-dark(#7a706a, #6b6b75);
 }
 
 .site-footer {

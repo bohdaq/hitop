@@ -106,7 +106,8 @@ ${modified ? `<meta property="article:modified_time" content="${modified}">` : "
 <meta property="og:image" content="${ORIGIN}/social-preview.png">
 <meta name="twitter:card" content="summary_large_image">
 <meta name="apple-itunes-app" content="app-id=6785326628">
-<meta name="theme-color" content="#16120F">
+<meta name="theme-color" media="(prefers-color-scheme: dark)" content="#0A0A0C">
+<meta name="theme-color" media="(prefers-color-scheme: light)" content="#F2EBE3">
 <script>${THEME_BOOT}</script>
 ${jsonLd.map((d) => `<script type="application/ld+json">${JSON.stringify(d).replace(/</g, "\\u003c")}</script>`).join("")}
 ${css}

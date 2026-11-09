@@ -90,21 +90,21 @@
 
   /* HITOP Next: meaning colours (HITOP_NEXT_UI.md "Foundations"). Methods, results and
      timing phases; light values are first drafts until the light pass (plan step 9). */
-  --hitop-method-get: light-dark(#2f6b4a, #5ec79b);
-  --hitop-method-post: light-dark(#8a5a12, #f2b45c);
+  --hitop-method-get: light-dark(#24573b, #5ec79b);
+  --hitop-method-post: light-dark(#6f4708, #f2b45c);
   --hitop-method-put: light-dark(#2457a8, #6ca8ff);
   --hitop-method-patch: light-dark(#6a3fb5, #c69cff);
   --hitop-method-delete: light-dark(#a3221b, #ff8a8a);
   --hitop-method-other: light-dark(#5b3fb5, #a99cff);
-  --hitop-pass: light-dark(#2f6b4a, #7fd8b0);
+  --hitop-pass: light-dark(#24573b, #7fd8b0);
   --hitop-fail: light-dark(#a3221b, #ff9c9c);
-  --hitop-warn: light-dark(#8a5a12, #f2b45c);
+  --hitop-warn: light-dark(#6f4708, #f2b45c);
   --hitop-info: light-dark(#2457a8, #6ca8ff);
   --hitop-phase-dns: light-dark(#2457a8, #6ca8ff);
   --hitop-phase-connect: light-dark(#5b3fb5, #8f84f0);
   --hitop-phase-tls: light-dark(#6a3fb5, #c69cff);
-  --hitop-phase-wait: light-dark(#8a5a12, #f2b45c);
-  --hitop-phase-download: light-dark(#2f6b4a, #5ec79b);
+  --hitop-phase-wait: light-dark(#6f4708, #f2b45c);
+  --hitop-phase-download: light-dark(#24573b, #5ec79b);
 
   /* MD3 type roles → Geist, Tailwind steps */
   --md-sys-typescale-label-large-font: var(--font-sans);

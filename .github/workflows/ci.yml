@@ -262,7 +262,7 @@ jobs:
       # stay drafts (site/scripts/check-pages.mjs).
       - name: Site checks
         working-directory: site
-        run: node scripts/check-pages.mjs
+        run: node scripts/check-pages.mjs && node scripts/check-contrast.mjs
       # curl -fsSL https://hitop.rws8.tech/install.sh | sh: the newest CLI release and a pinned one,
       # under sh and dash, into a temporary folder (SHA-256 checked by the script).
       - name: CLI install script
