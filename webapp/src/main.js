@@ -25,6 +25,9 @@ import "@lit-material/tabs";
 import "@lit-material/text-field";
 
 import { initPlatform } from "./platform/index.js";
+import { watchScheme } from "./theme.js";
+
+watchScheme();
 
 // Storage loads before the app starts (the desktop reads it from Rust).
 const p = await initPlatform();

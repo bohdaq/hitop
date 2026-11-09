@@ -3,8 +3,9 @@
  * and ink grounds, Geist, landing-page-design rules) with HITOP's purple, the
  * app icon's colour, as the accent.
  *
- * Light = cream ground, near-black text. Dark = #131209 ground, cream text.
- * Interactive purple: #5B3FB5 on cream (6.3:1), #A594F9 on ink (7.3:1).
+ * Light = cream ground, near-black text. Dark = HITOP Next graphite (HITOP_NEXT_UI.md,
+ * owner decision 2026-11-09): #0A0A0C ground, #EDEDF0 text, one violet accent.
+ * Interactive purple: #5B3FB5 on cream (6.3:1), #A99CFF on graphite (8.2:1).
  */
 
 :root {
@@ -52,40 +53,58 @@
   --duration-color: 300ms;
 
   /* MD3 colour roles */
-  --md-sys-color-primary: light-dark(#5b3fb5, #a594f9);
-  --md-sys-color-on-primary: light-dark(#f2ebe3, #16120f);
-  --md-sys-color-primary-container: light-dark(#e3dcf7, #2e2452);
-  --md-sys-color-on-primary-container: light-dark(#1f1147, #e3dcf7);
-  --md-sys-color-secondary: light-dark(#6b625c, #9a918a);
-  --md-sys-color-on-secondary: light-dark(#f2ebe3, #16120f);
-  --md-sys-color-secondary-container: light-dark(#e4dbd1, #272727);
-  --md-sys-color-on-secondary-container: light-dark(#16120f, #f2ebe3);
-  --md-sys-color-tertiary: light-dark(#16120f, #f2ebe3);
-  --md-sys-color-on-tertiary: light-dark(#f2ebe3, #16120f);
-  --md-sys-color-tertiary-container: light-dark(#e4dbd1, #272727);
-  --md-sys-color-on-tertiary-container: light-dark(#16120f, #f2ebe3);
-  --md-sys-color-error: light-dark(#a3221b, #f2a29c);
+  --md-sys-color-primary: light-dark(#5b3fb5, #a99cff);
+  --md-sys-color-on-primary: light-dark(#f2ebe3, #0a0a0c);
+  --md-sys-color-primary-container: light-dark(#e3dcf7, #26223d);
+  --md-sys-color-on-primary-container: light-dark(#1f1147, #e3dcff);
+  --md-sys-color-secondary: light-dark(#6b625c, #8a8a94);
+  --md-sys-color-on-secondary: light-dark(#f2ebe3, #0a0a0c);
+  --md-sys-color-secondary-container: light-dark(#e4dbd1, #1d1d22);
+  --md-sys-color-on-secondary-container: light-dark(#16120f, #ededf0);
+  --md-sys-color-tertiary: light-dark(#16120f, #ededf0);
+  --md-sys-color-on-tertiary: light-dark(#f2ebe3, #0a0a0c);
+  --md-sys-color-tertiary-container: light-dark(#e4dbd1, #1d1d22);
+  --md-sys-color-on-tertiary-container: light-dark(#16120f, #ededf0);
+  --md-sys-color-error: light-dark(#a3221b, #ff9c9c);
   --md-sys-color-on-error: light-dark(#ffffff, #3d0906);
-  --md-sys-color-error-container: light-dark(#f7d9d6, #5c1611);
-  --md-sys-color-on-error-container: light-dark(#3d0906, #f7d9d6);
-  --md-sys-color-background: light-dark(#f2ebe3, #131209);
-  --md-sys-color-on-background: light-dark(#16120f, #f2ebe3);
-  --md-sys-color-surface: light-dark(#f2ebe3, #131209);
-  --md-sys-color-on-surface: light-dark(#16120f, #f2ebe3);
-  --md-sys-color-surface-variant: light-dark(#e4dbd1, #272727);
-  --md-sys-color-on-surface-variant: light-dark(#4f4843, #c4bbb3);
-  --md-sys-color-surface-container-lowest: light-dark(#fbf7f2, #000000);
-  --md-sys-color-surface-container-low: light-dark(#ece4da, #181818);
-  --md-sys-color-surface-container: light-dark(#e8dfd4, #1f1f1f);
-  --md-sys-color-surface-container-high: light-dark(#e2d8cc, #272727);
-  --md-sys-color-surface-container-highest: light-dark(#dcd1c4, #313131);
-  --md-sys-color-inverse-surface: light-dark(#16120f, #f2ebe3);
-  --md-sys-color-inverse-on-surface: light-dark(#f2ebe3, #16120f);
+  --md-sys-color-error-container: light-dark(#f7d9d6, #3a1d20);
+  --md-sys-color-on-error-container: light-dark(#3d0906, #ffd9d6);
+  --md-sys-color-background: light-dark(#f2ebe3, #0a0a0c);
+  --md-sys-color-on-background: light-dark(#16120f, #ededf0);
+  --md-sys-color-surface: light-dark(#f2ebe3, #0a0a0c);
+  --md-sys-color-on-surface: light-dark(#16120f, #ededf0);
+  --md-sys-color-surface-variant: light-dark(#e4dbd1, #1d1d22);
+  --md-sys-color-on-surface-variant: light-dark(#4f4843, #a1a1aa);
+  --md-sys-color-surface-container-lowest: light-dark(#fbf7f2, #050507);
+  --md-sys-color-surface-container-low: light-dark(#ece4da, #0d0d10);
+  --md-sys-color-surface-container: light-dark(#e8dfd4, #111114);
+  --md-sys-color-surface-container-high: light-dark(#e2d8cc, #17171b);
+  --md-sys-color-surface-container-highest: light-dark(#dcd1c4, #1d1d22);
+  --md-sys-color-inverse-surface: light-dark(#16120f, #ededf0);
+  --md-sys-color-inverse-on-surface: light-dark(#f2ebe3, #0a0a0c);
   --md-sys-color-inverse-primary: light-dark(#a594f9, #5b3fb5);
-  --md-sys-color-outline: light-dark(#8a817a, #6b625c);
-  --md-sys-color-outline-variant: light-dark(#d3c9bd, #313131);
+  --md-sys-color-outline: light-dark(#8a817a, #6b6b75);
+  --md-sys-color-outline-variant: light-dark(#d3c9bd, #1f1f24);
   --md-sys-color-shadow: #000000;
   --md-sys-color-scrim: #000000;
+
+  /* HITOP Next: meaning colours (HITOP_NEXT_UI.md "Foundations"). Methods, results and
+     timing phases; light values are first drafts until the light pass (plan step 9). */
+  --hitop-method-get: light-dark(#2f6b4a, #5ec79b);
+  --hitop-method-post: light-dark(#8a5a12, #f2b45c);
+  --hitop-method-put: light-dark(#2457a8, #6ca8ff);
+  --hitop-method-patch: light-dark(#6a3fb5, #c69cff);
+  --hitop-method-delete: light-dark(#a3221b, #ff8a8a);
+  --hitop-method-other: light-dark(#5b3fb5, #a99cff);
+  --hitop-pass: light-dark(#2f6b4a, #7fd8b0);
+  --hitop-fail: light-dark(#a3221b, #ff9c9c);
+  --hitop-warn: light-dark(#8a5a12, #f2b45c);
+  --hitop-info: light-dark(#2457a8, #6ca8ff);
+  --hitop-phase-dns: light-dark(#2457a8, #6ca8ff);
+  --hitop-phase-connect: light-dark(#5b3fb5, #8f84f0);
+  --hitop-phase-tls: light-dark(#6a3fb5, #c69cff);
+  --hitop-phase-wait: light-dark(#8a5a12, #f2b45c);
+  --hitop-phase-download: light-dark(#2f6b4a, #5ec79b);
 
   /* MD3 type roles → Geist, Tailwind steps */
   --md-sys-typescale-label-large-font: var(--font-sans);
@@ -131,7 +150,7 @@
   --lit-material-alert-warning-color: var(--md-sys-color-primary);
   --lit-material-alert-warning-container: var(--md-sys-color-primary-container);
   --lit-material-alert-on-warning-container: var(--md-sys-color-on-primary-container);
-  --lit-material-alert-success-color: light-dark(#3f6b2a, #9fcf86);
+  --lit-material-alert-success-color: light-dark(#3f6b2a, #7fd8b0);
   --lit-material-alert-success-container: var(--md-sys-color-surface-container);
   --lit-material-alert-on-success-container: var(--md-sys-color-on-surface);
 

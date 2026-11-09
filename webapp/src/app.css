@@ -90,8 +90,15 @@ a.brand:focus-visible { outline: 2px solid var(--md-sys-color-primary); outline-
   font-family: var(--font-mono); font-size: var(--text-xs); line-height: var(--leading-xs); font-weight: 600;
   color: var(--md-sys-color-primary);
 }
-.method-tag.m-GET { color: light-dark(#3f6b2a, #9fcf86); }
-.method-tag.m-DELETE { color: var(--md-sys-color-error); }
+/* Method colours: HITOP Next tokens (site/src/theme.css); anything else (WS, gRPC, SSE…) is the accent. */
+.method-tag { color: var(--hitop-method-other); }
+.method-tag.m-GET { color: var(--hitop-method-get); }
+.method-tag.m-POST { color: var(--hitop-method-post); }
+.method-tag.m-PUT { color: var(--hitop-method-put); }
+.method-tag.m-PATCH { color: var(--hitop-method-patch); }
+.method-tag.m-DELETE { color: var(--hitop-method-delete); }
+/* Numbers line up: times, sizes, counts and code use tabular figures. */
+.method-tag, code, kbd, .mono, .tabular { font-variant-numeric: tabular-nums; }
 
 /* Tab strip */
 .tab-strip { display: flex; align-items: center; gap: var(--space-50); min-width: 0; border-bottom: 1px solid var(--md-sys-color-outline-variant); }

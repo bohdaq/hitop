@@ -6,7 +6,8 @@
 // the web build never contains.
 import { LitElement, html, nothing } from "lit";
 import { confirm } from "@lit-material/confirm";
-import { COLOR_SCHEME_EVENT, setColorScheme, storedColorScheme } from "@lit-material/color-scheme";
+import { COLOR_SCHEME_EVENT, setColorScheme } from "@lit-material/color-scheme";
+import { appScheme } from "../theme.js";
 import { AI_MODELS, aiSettings, saveAiSettings } from "../ai.js";
 import { platform } from "../platform/index.js";
 import { storageUsage } from "../platform/response-store.js";
@@ -32,8 +33,8 @@ class HitopAppSettings extends LitElement {
 
   connectedCallback() {
     super.connectedCallback();
-    this.theme = storedColorScheme(THEME_KEY);
-    this.onScheme = () => (this.theme = storedColorScheme(THEME_KEY));
+    this.theme = appScheme();
+    this.onScheme = () => (this.theme = appScheme());
     document.addEventListener(COLOR_SCHEME_EVENT, this.onScheme);
     this.measure();
   }
