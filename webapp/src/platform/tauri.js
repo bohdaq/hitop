@@ -98,6 +98,8 @@ async function send(url, options = {}) {
     url: r.url,
     headers: new NativeHeaders(r.headers),
     timeMs: r.timeMs,
+    // DNS, connect, waiting, download (hitop-core timing.rs).
+    timings: r.timings,
     // The jar after this response (when the request used it).
     cookies: r.cookies,
     text: async () => text,

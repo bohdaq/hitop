@@ -174,6 +174,13 @@ fn json_report_is_versioned_and_complete() {
     assert_eq!(reqs[1]["name"], "Check & <compare>");
     assert_eq!(reqs[1]["status"], 200);
     assert!(reqs[1]["responseTimeMs"].is_u64() && reqs[1]["durationMs"].is_u64());
+    // Timings: the phases add up to the total; the first request opened a connection.
+    for r in reqs.as_array().unwrap() {
+        let t = &r["timings"];
+        let sum: u64 = ["dnsMs", "connectMs", "waitMs", "downloadMs"].iter().map(|k| t[k].as_u64().unwrap()).sum();
+        assert_eq!(sum, t["totalMs"].as_u64().unwrap(), "{t}");
+    }
+    assert_eq!(reqs[0]["timings"]["reused"], false);
     assert_eq!(reqs[1]["failure"], "body contains \"yes\": not found in the response body");
     assert_eq!(reqs[1]["assertions"][1], serde_json::json!({"name": "body contains \"yes\"", "passed": false, "message": "not found in the response body"}));
     assert_eq!(reqs[0]["assertions"][0]["message"], Value::Null);

@@ -84,6 +84,8 @@ class ProxiedResponse {
     this.url = envelope.url;
     this.headers = new ProxiedHeaders(envelope.headers);
     this.timeMs = envelope.timeMs;
+    // DNS, connect, waiting, download (hitop-server, HITOP Next track B); undefined from older servers.
+    this.timings = envelope.timings;
     this.truncated = envelope.truncated;
     this.bodyText = decodeBody(envelope.body, envelope.bodyEncoding);
   }

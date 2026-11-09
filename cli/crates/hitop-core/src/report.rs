@@ -115,6 +115,10 @@ pub struct RequestReport {
     /// 0.3.0, within reportVersion 1. Older reports have no key.
     #[serde(default)]
     pub file: Option<String>,
+    /// Where the request's time went (DNS, connect, waiting, download), when the client
+    /// could tell. Added after hitop 1.2.0, within reportVersion 1; absent otherwise.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub timings: Option<crate::model::Timings>,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -136,9 +140,9 @@ impl RequestReport {
                 message: (!t.pass).then(|| if t.detail.is_empty() { "failed".to_string() } else { t.detail.clone() }),
             })
             .collect();
-        let (status, response_time_ms, error) = match &step.result {
-            Ok(r) => (Some(r.status), Some(r.duration_ms), None),
-            Err(e) => (None, None, Some(format!("{e:#}"))),
+        let (status, response_time_ms, error, timings) = match &step.result {
+            Ok(r) => (Some(r.status), Some(r.duration_ms), None, r.timings),
+            Err(e) => (None, None, Some(format!("{e:#}")), None),
         };
         let passed = step.passed();
         let failed: Vec<String> = assertions
@@ -167,6 +171,7 @@ impl RequestReport {
             failure,
             assertions,
             file: None,
+            timings,
         }
     }
 }

@@ -154,6 +154,23 @@ every assertion passed.
 | `failure` | string or null | One line on why the request failed (the `error`, the failed assertions joined by `; `, or `HTTP <status>`); null when it passed. |
 | `assertions` | array | The post-request script's `assert.*` results, in order. |
 | `file` | string or null | The request's file when the collection ran from a collection folder: the folder as given on the command line (without a leading `./`, `/` as separator), then `requests/<file>.yaml` (`api/requests/orders/create-order.yaml`); null for a collection in global storage. Added in hitop 0.3.0; reports from earlier versions don't have the key. |
+| `timings` | object, optional | Where the request's time went, when the client could measure it; the key is absent otherwise (no response, other clients, reports from hitop 1.2.0 and earlier). See Timings. Added after hitop 1.2.0. |
+
+### Timings
+
+All integers, milliseconds. `dnsMs + connectMs + waitMs + downloadMs == totalMs`.
+
+| Key | Type | Meaning |
+| --- | --- | --- |
+| `dnsMs` | integer | Looking up the host name; 0 for an IP literal or a reused connection. |
+| `connectMs` | integer | Opening the TCP connection and, for https, the TLS handshake (not split). 0 when reused. |
+| `waitMs` | integer | From the connection being ready to the response headers: sending the request and the server's time. |
+| `downloadMs` | integer | Reading the response body. |
+| `totalMs` | integer | The request from sending to the last body byte (scripts not included, unlike `durationMs`). |
+| `reused` | boolean | The request went over a connection that was already open. |
+
+Phases are exact for one request at a time (how `hitop run` sends). A reader must not require
+the key, and should ignore keys it doesn't know inside it.
 
 ### Assertion
 

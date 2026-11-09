@@ -63,6 +63,12 @@ impl Recorder {
         events.push(e);
     }
 
+    /// The phases of a request to `url`'s host (None when the URL has no host), see [`Recorder::phases`].
+    pub fn phases_for(&self, url: &str, start: Instant, headers: Instant, done: Instant) -> Option<Timings> {
+        let host = reqwest::Url::parse(url).ok()?.host_str()?.trim_start_matches('[').trim_end_matches(']').to_string();
+        Some(self.phases(&host, start, headers, done))
+    }
+
     /// The phases of a request to `host` that started at `start`, had its headers at
     /// `headers` and its body at `done`. The events it used are removed.
     pub fn phases(&self, host: &str, start: Instant, headers: Instant, done: Instant) -> Timings {
@@ -95,15 +101,21 @@ impl Recorder {
     }
 }
 
-/// A resolver that looks names up like hyper's default (the system's getaddrinfo on a
-/// blocking thread) and records how long each lookup took.
+/// A resolver that records how long each lookup took. On its own it looks names up like
+/// hyper's default (the system's getaddrinfo on a blocking thread); [`TimedResolver::wrapping`]
+/// times another resolver instead (hitop-server's proxy keeps its address guard).
 pub struct TimedResolver {
     recorder: Recorder,
+    inner: Option<Arc<dyn Resolve>>,
 }
 
 impl TimedResolver {
     pub fn new(recorder: Recorder) -> Self {
-        TimedResolver { recorder }
+        TimedResolver { recorder, inner: None }
+    }
+
+    pub fn wrapping(recorder: Recorder, inner: Arc<dyn Resolve>) -> Self {
+        TimedResolver { recorder, inner: Some(inner) }
     }
 }
 
@@ -111,8 +123,16 @@ impl Resolve for TimedResolver {
     fn resolve(&self, name: Name) -> Resolving {
         let recorder = self.recorder.clone();
         let host = name.as_str().to_string();
+        let start = Instant::now();
+        if let Some(inner) = &self.inner {
+            let lookup = inner.resolve(name);
+            return Box::pin(async move {
+                let addrs = lookup.await?;
+                recorder.push(Event { kind: Kind::Dns, host: Some(host), start, end: Instant::now() });
+                Ok(addrs)
+            });
+        }
         Box::pin(async move {
-            let start = Instant::now();
             let lookup = host.clone();
             let addrs: Vec<SocketAddr> = tokio::task::spawn_blocking(move || (lookup.as_str(), 0).to_socket_addrs().map(|a| a.collect()))
                 .await

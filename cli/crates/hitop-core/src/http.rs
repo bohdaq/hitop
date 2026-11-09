@@ -51,9 +51,7 @@ fn client() -> &'static Client {
 
 /// The phases of a request to `url` (None with an installed client, which has no hooks).
 fn timings(url: &str, start: Instant, headers: Instant, done: Instant) -> Option<Timings> {
-    let recorder = RECORDER.get()?;
-    let host = reqwest::Url::parse(url).ok()?.host_str()?.trim_start_matches('[').trim_end_matches(']').to_string();
-    Some(recorder.phases(&host, start, headers, done))
+    RECORDER.get()?.phases_for(url, start, headers, done)
 }
 
 pub fn execute(

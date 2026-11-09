@@ -27,6 +27,8 @@ use rust_web_server::response::StatusCodeReasonPhrase;
 use serde::{Deserialize, Serialize};
 
 use crate::guard::{ip_allowed, port_allowed, PublicResolver};
+use hitop_core::model::Timings;
+use hitop_core::timing::{Recorder, TimedConnectLayer, TimedResolver};
 
 pub const MAX_REQUEST_BODY: usize = 10 * 1024 * 1024;
 pub const MAX_RESPONSE_BODY: u64 = 5 * 1024 * 1024;
@@ -69,6 +71,10 @@ struct ProxyResponse {
     truncated: bool,
     time_ms: u64,
     url: String,
+    /// DNS, connect (TCP + TLS), waiting and download; after redirects, the first hop's
+    /// lookup and connection only.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    timings: Option<Timings>,
 }
 
 #[derive(Clone)]
@@ -80,6 +86,8 @@ pub struct Proxy {
     origins: Arc<Vec<String>>,
     deny: Arc<Vec<IpAddr>>,
     in_flight: Arc<AtomicUsize>,
+    /// The client's DNS and connect hooks (hitop-core timing.rs): where each answer's time went.
+    timing: Recorder,
 }
 
 /// Scheme, port and (for IP literals) address checks for one URL. Hostnames
@@ -128,6 +136,7 @@ impl Proxy {
     }
 
     pub fn new(origins: Vec<String>, deny: Vec<IpAddr>) -> Self {
+        let timing = Recorder::default();
         let builder = |total: Option<Duration>| {
             let deny_redirect = deny.clone();
             let policy = redirect::Policy::custom(move |attempt| {
@@ -143,7 +152,8 @@ impl Proxy {
                 .use_rustls_tls()
                 .no_proxy()
                 .redirect(policy)
-                .dns_resolver(Arc::new(PublicResolver { deny: deny.clone() }))
+                .dns_resolver(Arc::new(TimedResolver::wrapping(timing.clone(), Arc::new(PublicResolver { deny: deny.clone() }))))
+                .connector_layer(TimedConnectLayer::new(timing.clone()))
                 .connect_timeout(Duration::from_secs(10));
             b = match total {
                 Some(t) => b.timeout(t),
@@ -158,6 +168,7 @@ impl Proxy {
             origins: Arc::new(origins),
             deny: Arc::new(deny),
             in_flight: Arc::new(AtomicUsize::new(0)),
+            timing,
         }
     }
 
@@ -277,7 +288,9 @@ impl Proxy {
     fn send(&self, req: ProxyRequest) -> Result<ProxyResponse, (&'static StatusCodeReasonPhrase, String)> {
         let s = STATUS_CODE_REASON_PHRASE;
         let started = Instant::now();
+        let asked = req.url.clone();
         let response = self.start(&self.client, req)?;
+        let headers_at = Instant::now();
         let status = response.status();
         let final_url = response.url().to_string();
         let headers = upstream_headers(&response);
@@ -300,6 +313,7 @@ impl Proxy {
             body_encoding,
             truncated,
             time_ms: started.elapsed().as_millis() as u64,
+            timings: self.timing.phases_for(&asked, started, headers_at, Instant::now()),
             url: final_url,
         })
     }

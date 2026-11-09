@@ -226,7 +226,7 @@ final class CLICompatibilityTests: XCTestCase {
     func normalized(_ v: JSONValue) -> JSONValue {
         switch v {
         case let .object(pairs):
-            return .object(pairs.filter { !["durationMs", "responseTimeMs", "startedAt", "tool"].contains($0.0) }.map { ($0.0, normalized($0.1)) })
+            return .object(pairs.filter { !["durationMs", "responseTimeMs", "startedAt", "tool", "timings"].contains($0.0) }.map { ($0.0, normalized($0.1)) })
         case let .array(a): return .array(a.map(normalized))
         default: return v
         }
