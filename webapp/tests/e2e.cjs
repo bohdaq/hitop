@@ -39,7 +39,7 @@ const { results, check } = checker();
   await p.getByRole('button', { name: /Run collection/ }).click();
   await p.locator('.run h2', { hasText: 'Last run' }).waitFor({ timeout: 30000 });
   const run = await p.locator('.run-list').innerText();
-  check('collection run: 2 requests ok', (run.match(/20\d/g) || []).length === 2, run.replace(/\n/g, ' | '));
+  check('collection run: 2 requests ok', (run.match(/^20\d$/gm) || []).length === 2, run.replace(/\n/g, ' | '));
   const sent2 = proxied.find(x => x.url.endsWith('/posts/1'));
   const prev = sent2?.headers.find(h => h[0] === 'X-Prev');
   check('variables interpolated + context passed between requests', proxied.some(x => x.url === 'https://jsonplaceholder.typicode.com/posts' && x.headers.some(h => h[0] === 'Authorization' && h[1] === 'Bearer abc')) && prev && prev[1] === '101', `X-Prev=${prev?.[1]}`);
