@@ -406,7 +406,9 @@ pub fn deliver_pending(state: &State) -> Result<usize, DbError> {
         } else {
             sent += 1;
         }
-        state.db.tx(|tx| tx.execute("UPDATE alert_deliveries SET outcome = $1, attempts = $2, updated_at = $3 WHERE id = $4", &[outcome.into(), attempts.into(), state.now().into(), (&id).into()]))?;
+        // Only a delivery still queued moves on (queued → sent | skipped | failed, or stays queued
+        // with one more attempt): another worker's answer for the same row is never overwritten.
+        state.db.tx(|tx| tx.execute("UPDATE alert_deliveries SET outcome = $1, attempts = $2, updated_at = $3 WHERE id = $4 AND outcome = 'queued'", &[outcome.into(), attempts.into(), state.now().into(), (&id).into()]))?;
     }
     Ok(sent)
 }
