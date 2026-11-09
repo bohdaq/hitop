@@ -362,7 +362,7 @@ hitop/
 - Build output: `build/` (compatible with extension build pipeline)
 - Dev server: `npm start` (port 3000)
 - Build: `npm run build`
-- Extension build: `npm run build:extension` (copies manifest_extension.json). Since HITOP Next A8 the repo's `build-*extension*.sh`/`build-chrome-store.sh` ship the web app instead (`webapp`: `npm run build:extension` → `dist-extension/`, then `webapp/scripts/package-extension.mjs chrome|store|firefox <dir>`; scripts run in the manifest's sandboxed page); `HITOP_EXTENSION_UI=react` builds this React app
+- Extension build: `npm run build:extension` (copies manifest_extension.json). Since HITOP Next A8 the repo's `build-*extension*.sh`/`build-chrome-store.sh` ship the web app instead (`webapp`: `npm run build:extension` → `dist-extension/`, then `webapp/scripts/package-extension.mjs chrome|store|firefox <dir>`; scripts run in the manifest's sandboxed page in Chrome; Firefox has no sandboxed pages, so there they run in boa compiled to wasm in a worker: `cli/crates/hitop-scripts-wasm` (own workspace, hitop-core feature `scripting`), `build-wasm.mjs --scripts` → `src/wasm/pkg-scripts/`, `platform/wasm-scripts.js` + `src/scripts-worker.js`, 30 s limit, e2e `tests/firefox.cjs` (Playwright Firefox, `?wasm-scripts`)); `HITOP_EXTENSION_UI=react` builds this React app
 - `services/` are shared with `webapp/` (plain JS, no React): change them with both apps in mind
 - `services/transportService.jsx`: every request goes through `sendRequest()`; public hosts use
   the proxy when `VITE_HITOP_PROXY` is set (webapp build), otherwise fetch

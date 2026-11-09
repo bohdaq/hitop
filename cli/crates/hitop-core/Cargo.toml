@@ -56,7 +56,10 @@ default = ["keychain", "native", "websocket", "grpc", "secret-managers"]
 # HTTP (reqwest), scripts (boa), the runner and the JSON storage in the
 # config directory. Off for wasm32 (hitop-wasm: the format module and the
 # model in the web app).
-native = ["dep:reqwest", "dep:boa_engine", "dep:dirs", "dep:ring", "dep:tokio", "dep:tower-service", "dep:tower-layer"]
+native = ["dep:reqwest", "scripting", "dep:dirs", "dep:ring", "dep:tokio", "dep:tower-service", "dep:tower-layer"]
+# Pre/post request scripts alone (src/scripting.rs: boa + the pm.* shim), without HTTP or storage:
+# hitop-scripts-wasm builds it for the Firefox extension, which may not evaluate code in its pages.
+scripting = ["dep:boa_engine"]
 # WebSocket connections (src/websocket.rs's client): the CLI's `hitop ws` and the desktop.
 websocket = ["native", "dep:tokio", "dep:tokio-tungstenite", "dep:futures-util", "dep:rustls", "dep:webpki-roots"]
 # gRPC calls (src/grpc.rs's client): the CLI's `hitop grpc` and the desktop.

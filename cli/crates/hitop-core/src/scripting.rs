@@ -1,4 +1,4 @@
-#![cfg(feature = "native")]
+#![cfg(feature = "scripting")]
 use std::collections::HashMap;
 use anyhow::{anyhow, Result};
 use boa_engine::{Context, Source};

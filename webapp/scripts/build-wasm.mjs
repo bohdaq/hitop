@@ -39,8 +39,19 @@ and the target with: rustup target add wasm32-unknown-unknown`);
 
 const env = { ...process.env, CARGO_PROFILE_RELEASE_DEBUG: "0" };
 const cargoPath = tool("cargo");
-// cwd inside cli/ so cli/rust-toolchain.toml picks the toolchain.
-execFileSync(cargoPath, ["build", "--release", "--locked", "--target", "wasm32-unknown-unknown"], { cwd: crate, stdio: "inherit", env });
-const wasm = join(crate, "target/wasm32-unknown-unknown/release/hitop_wasm.wasm");
-execFileSync(bindgen, ["--target", "web", "--no-typescript", "--out-dir", out, wasm], { stdio: "inherit" });
-console.log(`hitop-wasm → ${out}`);
+const build = (dir, file, dest, label) => {
+  // cwd inside cli/ so cli/rust-toolchain.toml picks the toolchain.
+  execFileSync(cargoPath, ["build", "--release", "--locked", "--target", "wasm32-unknown-unknown"], { cwd: dir, stdio: "inherit", env });
+  const wasm = join(dir, `target/wasm32-unknown-unknown/release/${file}`);
+  execFileSync(bindgen, ["--target", "web", "--no-typescript", "--out-dir", dest, wasm], { stdio: "inherit" });
+  console.log(`${label} → ${dest}`);
+};
+build(crate, "hitop_wasm.wasm", out, "hitop-wasm");
+// --scripts: also hitop-scripts-wasm (boa + the pm.* shim) → src/wasm/pkg-scripts/, the Firefox
+// extension's script runner (npm run build:extension).
+if (process.argv.includes("--scripts")) {
+  const scripts = join(here, "../../cli/crates/hitop-scripts-wasm");
+  const spin = readFileSync(join(scripts, "Cargo.toml"), "utf8").match(/wasm-bindgen = "=([^"]+)"/)?.[1];
+  if (spin !== WASM_BINDGEN) throw new Error(`hitop-scripts-wasm pins wasm-bindgen ${spin}, this script expects ${WASM_BINDGEN}: change both`);
+  build(scripts, "hitop_scripts_wasm.wasm", join(here, "../src/wasm/pkg-scripts"), "hitop-scripts-wasm");
+}

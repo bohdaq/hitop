@@ -36,11 +36,17 @@ export const IS_EXTENSION = import.meta.env.VITE_HITOP_PLATFORM === "extension";
 
 let current = null;
 
+function useWasmScripts() {
+  return location.protocol === "moz-extension:" || new URLSearchParams(location.search).has("wasm-scripts");
+}
+
 export async function initPlatform() {
   const mod = IS_TAURI ? await import("./tauri.js") : await import("./web.js");
   current = mod.createPlatform();
   if (IS_EXTENSION) {
-    current.scripts = (await import("./sandbox-scripts.js")).sandboxScripts;
+    // Chrome: the manifest's sandboxed page. Firefox has none: boa in WebAssembly in a worker
+    // (wasm-scripts.js). `?wasm-scripts` picks the Firefox runner anywhere (its e2e, tests/firefox.cjs).
+    current.scripts = useWasmScripts() ? (await import("./wasm-scripts.js")).wasmScripts : (await import("./sandbox-scripts.js")).sandboxScripts;
     current.extension = true;
   }
   await current.init();

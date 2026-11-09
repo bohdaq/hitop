@@ -1,3 +1,4 @@
+import { fileURLToPath } from "node:url";
 import { defineConfig } from "vite";
 
 // The web app at hitop.rws8.tech/app/. The request logic is shared with the
@@ -22,11 +23,29 @@ const inlineBoot = {
   },
 };
 
+// The Firefox extension's script runner (src/platform/wasm-scripts.js): hitop-scripts-wasm, built
+// into src/wasm/pkg-scripts/ only by npm run build:extension; the other builds get a stub.
+const scriptsWasm = (extension) => {
+  const dir = fileURLToPath(new URL("./src/wasm/", import.meta.url));
+  return extension
+    ? [
+        { find: /^hitop-scripts-wasm\/wasm/, replacement: `${dir}pkg-scripts/hitop_scripts_wasm_bg.wasm` },
+        { find: /^hitop-scripts-wasm$/, replacement: `${dir}pkg-scripts/hitop_scripts_wasm.js` },
+      ]
+    : [
+        { find: /^hitop-scripts-wasm\/wasm/, replacement: `${dir}scripts-stub.js` },
+        { find: /^hitop-scripts-wasm$/, replacement: `${dir}scripts-stub.js` },
+      ];
+};
+
 export default defineConfig(({ mode }) =>
   mode === "extension"
     ? {
         base: "./",
         plugins: [inlineBoot],
+        resolve: { alias: scriptsWasm(true) },
+        // The script runner is a module worker (Firefox 114+; the manifest asks for 115 ESR).
+        worker: { format: "es" },
         build: {
           outDir: "dist-extension",
           emptyOutDir: true,
@@ -36,6 +55,8 @@ export default defineConfig(({ mode }) =>
       }
     : {
         base: "/app/",
+        resolve: { alias: scriptsWasm(false) },
+        worker: { format: "es" },
         build: { outDir: "dist", emptyOutDir: true },
         server: { port: 3001, fs: { allow: [".."] } },
       },

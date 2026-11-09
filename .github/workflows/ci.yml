@@ -108,6 +108,14 @@ jobs:
           cargo test --locked
           cargo clippy --locked --all-targets -- -D warnings
           cargo clippy --locked --target wasm32-unknown-unknown -- -D warnings
+      - name: hitop-core with only the scripting feature (what hitop-scripts-wasm builds)
+        run: cargo clippy --locked -p hitop-core --no-default-features --features scripting --all-targets -- -D warnings
+      - name: hitop-scripts-wasm (its own workspace; the Firefox extension's script runner)
+        working-directory: cli/crates/hitop-scripts-wasm
+        run: |
+          cargo test --locked
+          cargo clippy --locked --all-targets -- -D warnings
+          cargo clippy --locked --target wasm32-unknown-unknown -- -D warnings
 
   server:
     name: Site server and proxy
@@ -461,6 +469,47 @@ jobs:
           node-version: 22
       - run: npm ci
       - run: npm run build:extension
+
+  # The extensions built from the web app (HITOP Next A8): Chrome loaded unpacked (scripts in the
+  # manifest's sandboxed page), Firefox's script runner (boa in WebAssembly, tests/firefox.cjs) and
+  # web-ext lint of the packaged Firefox build.
+  extension-web:
+    name: Browser extensions from the web app
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: wasm32-unknown-unknown
+      - uses: taiki-e/install-action@v2
+        with:
+          tool: wasm-bindgen@0.2.126
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: |
+            cli/crates/hitop-wasm
+            cli/crates/hitop-scripts-wasm
+      - name: Build the extension pages
+        working-directory: webapp
+        run: npm ci --no-audit --no-fund && npm run build:extension
+      - name: Package Chrome and Firefox
+        run: |
+          node webapp/scripts/package-extension.mjs chrome "$RUNNER_TEMP/chrome"
+          node webapp/scripts/package-extension.mjs firefox "$RUNNER_TEMP/firefox"
+      - name: web-ext lint (Firefox)
+        run: npx --yes web-ext@8 lint --source-dir "$RUNNER_TEMP/firefox"
+      - name: Playwright browsers
+        working-directory: webapp
+        run: npx playwright install --with-deps chromium firefox
+      - name: Chrome extension, unpacked
+        working-directory: webapp
+        run: EXTENSION_DIR="$RUNNER_TEMP/chrome" node tests/extension.cjs
+      - name: Firefox script runner
+        working-directory: webapp
+        run: node tests/firefox.cjs
 
   brand:
     name: Brand (icons from brand/logo.svg, one product name)

@@ -17,9 +17,9 @@ function start() {
     frame.hidden = true;
     frame.setAttribute("aria-hidden", "true");
     frame.title = "Script runner";
-    // Firefox has no sandboxed extension pages: there the runner never starts, and every script
-    // call fails at once after this with the reason (the web app, desktop and CLI run them).
-    const timer = setTimeout(() => reject(new Error("Scripts don't run in this browser's extension; the web app, the desktop app and the CLI run them")), 3000);
+    // Chrome only: Firefox has no sandboxed extension pages and uses wasm-scripts.js instead
+    // (platform/index.js). Should the sandbox not start, every script call fails with the reason.
+    const timer = setTimeout(() => reject(new Error("The script runner didn't start in this extension")), 3000);
     window.addEventListener("message", (e) => {
       if (e.source !== frame.contentWindow) return;
       const m = e.data;

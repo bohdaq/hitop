@@ -42,18 +42,18 @@ const icon = (size, name = `icon-${size}.png`) => fs.copyFileSync(path.join(root
 let manifest;
 if (kind === "firefox") {
   icon(48);
-  // icon-96.png has always been the 192 px render (brand/BRAND.md).
-  icon(192, "icon-96.png");
+  // The 128 px render, declared as 128 (web-ext lint checks sizes; extension/icons/icon-96.png is a 192 px file).
+  icon(128);
   manifest = {
     manifest_version: 3,
     name: "HITOP",
     version: VERSION,
     description: DESCRIPTION,
-    icons: { 48: "icons/icon-48.png", 96: "icons/icon-96.png" },
+    icons: { 48: "icons/icon-48.png", 128: "icons/icon-128.png" },
     action: { default_icon: { 48: "icons/icon-48.png" }, default_title: "HITOP" },
     host_permissions: ["<all_urls>"],
     background: { scripts: ["background.js"] },
-    browser_specific_settings: { gecko: { id: "hitop@example.com", strict_min_version: "109.0" } },
+    browser_specific_settings: { gecko: { id: "hitop@example.com", strict_min_version: "115.0" } },
     content_security_policy: { extension_pages: CSP_PAGES },
   };
 } else {
