@@ -59,6 +59,40 @@ function api() {
   await settle(p);
   check('the dirty tab shows unsaved in the status bar', (await p.locator('footer.statusbar').innerText()).includes('Unsaved'));
 
+  // --- A4 + B3: variables in the URL, the response line, the timing waterfall, Diff vs last ---
+  await p.locator('.tab-strip').getByRole('button', { name: 'New tab' }).click();
+  await settle(p);
+  const url = p.locator('hitop-request .request-line .url');
+  await url.click();
+  await p.keyboard.type(`${base}/one?id=\${orderId}`);
+  await settle(p);
+  const chip = p.locator('.url-vars .var-chip');
+  check('the URL\'s variables show as chips; an undefined one is marked', (await chip.count()) === 1 && (await chip.innerText()).trim() === '${orderId}' && (await chip.getAttribute('class')).includes('missing'));
+  await chip.click();
+  await settle(p);
+  check('a click on a variable says where it comes from', (await p.locator('lit-material-popover.var-peek').evaluate((el) => el.open)) && (await p.locator('.var-peek').innerText()).includes('Nothing defines it'));
+  await p.keyboard.press('Escape');
+  await url.click();
+  await p.keyboard.press('End');
+  for (let i = 0; i < '?id=${orderId}'.length; i++) await p.keyboard.press('Backspace');
+  await p.keyboard.press('Control+Enter');
+  await p.locator('.response-meta .status-chip').waitFor();
+  const waterfall = p.locator('.response lit-material-timing-waterfall');
+  check('one response: no Diff vs last yet', !(await p.locator('.response lit-material-tabs[aria-label="Response details"] lit-material-tab').allInnerTexts()).some((t) => t.trim() === 'Diff vs last'));
+  if (TAURI) {
+    check('[tauri] the response shows where the time went', (await waterfall.count()) === 1 && (await waterfall.evaluate((el) => el.timings?.totalMs >= 0)));
+  } else {
+    check('[web] localhost goes straight from the browser: no phases, no waterfall', (await waterfall.count()) === 0);
+  }
+  await p.keyboard.press('Control+Enter');
+  await settle(p);
+  await p.locator('.response-meta .status-chip').waitFor();
+  const respTabs = p.locator('.response lit-material-tabs[aria-label="Response details"] lit-material-tab');
+  check('a second response offers Diff vs last', (await respTabs.allInnerTexts()).some((t) => t.trim() === 'Diff vs last'));
+  await respTabs.filter({ hasText: 'Diff vs last' }).click();
+  await settle(p);
+  check('Diff vs last compares in the response pane', (await p.locator('.response .compare-summary').count()) === 1 && (await p.locator('.response #diff-left').count()) === 1, await p.locator('.response .compare-summary').innerText().catch(() => ''));
+
   // Phone: the rail and pane are a drawer; no sideways scroll.
   await p.setViewportSize({ width: 390, height: 844 });
   await settle(p);

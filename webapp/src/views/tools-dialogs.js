@@ -78,7 +78,8 @@ function defaultBefore(sources, right) {
   return others.find((s) => right.request && s.request === right.request) ?? others[0] ?? sources.find((s) => s !== right);
 }
 
-export function compareDialog(app, d) {
+/** The Compare dialog; with `pick` it's the response pane's "Diff vs last" tab (selections go to `pick`). */
+export function compareDialog(app, d, pick = null) {
   const sources = app.store.compareSources();
   const footer = html`
     <div slot="actions" class="dialog-actions">
@@ -95,7 +96,8 @@ export function compareDialog(app, d) {
   }
   const right = sources.find((s) => s.id === d.right) ?? sources[0];
   const left = sources.find((s) => s.id === d.left) ?? defaultBefore(sources, right);
-  const set = (changes) => (app.dialog = { ...app.dialog, left: left.id, right: right.id, ...changes });
+  const set = (changes) => (pick ? pick({ left: left.id, right: right.id, ...changes }) : (app.dialog = { ...app.dialog, left: left.id, right: right.id, ...changes }));
+  const prefix = pick ? "diff" : "compare";
   const c = compareResponses(left.response, right.response);
   const changedHeaders = c.headers.filter((h) => h.kind !== "same");
   const rows = sideBySide(c.body.lines);
@@ -103,8 +105,8 @@ export function compareDialog(app, d) {
     headline: "Compare responses",
     body: html`
       <div class="compare-pick">
-        ${sourceSelect("compare-left", "Before", left.id, sources, (v) => set({ left: v }))}
-        ${sourceSelect("compare-right", "After", right.id, sources, (v) => set({ right: v }))}
+        ${sourceSelect(`${prefix}-left`, "Before", left.id, sources, (v) => set({ left: v }))}
+        ${sourceSelect(`${prefix}-right`, "After", right.id, sources, (v) => set({ right: v }))}
       </div>
       <p class=${`compare-summary ${c.same ? "same" : ""}`}>${c.same ? "The responses are the same." : summary(c, changedHeaders)}</p>
       <section class="compare-status" aria-label="Status">

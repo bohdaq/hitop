@@ -258,7 +258,7 @@ export function storedTabInDb(t) {
 }
 
 // A tab's response fields when it has none (Settings: clear stored responses).
-const NO_RESPONSE = { response: null, responseHeaders: null, statusCode: null, responseType: "", tests: null, durationMs: null, truncated: false, responseCut: false, responseStored: undefined, jsonError: null };
+const NO_RESPONSE = { response: null, responseHeaders: null, statusCode: null, responseType: "", tests: null, durationMs: null, timings: null, truncated: false, responseCut: false, responseStored: undefined, jsonError: null };
 
 // Drops keys set to undefined (a cleared bodyType), so they aren't saved.
 const clean = (r) => Object.fromEntries(Object.entries(r).filter(([, v]) => v !== undefined));
@@ -1336,6 +1336,28 @@ export class Store extends EventTarget {
     return withRefs ? withSecretRefs(out, this.refValues) : out;
   }
 
+  /**
+   * Where `${name}` gets its value in a request of `collectionId`, in the order `variables()` applies
+   * them: { value, scope }, secret values masked; null when nothing defines it.
+   */
+  variableSource(collectionId, name) {
+    if (name.startsWith("secret:")) return { value: "••••", scope: "secret manager reference" };
+    const script = this.scriptVariables[collectionId] ?? {};
+    if (name in script && script[name] !== null) return { value: String(script[name]), scope: "set by a script" };
+    const env = this.activeEnvironment;
+    const secrets = new Set([...(env?.secrets ?? []), ...(this.globals?.secrets ?? [])]);
+    const scopes = [
+      [this.sharedFor(collectionId), "team environment"],
+      [env?.variables ?? {}, env ? `environment ${this.environmentLabel(env)}` : "environment"],
+      [collectionService.getCollectionVariables(this.collections, collectionId) ?? {}, "collection"],
+      [this.globalsFor(collectionId), "globals"],
+    ];
+    for (const [vars, scope] of scopes) {
+      if (vars && Object.hasOwn(vars, name)) return { value: secrets.has(name) ? "••••" : String(vars[name] ?? ""), scope };
+    }
+    return null;
+  }
+
   setScriptVariables(collectionId, updates) {
     if (updates && Object.keys(updates).length) this.scriptVariables[collectionId] = { ...this.scriptVariables[collectionId], ...updates };
   }
@@ -1800,6 +1822,8 @@ export class Store extends EventTarget {
         statusCode: res.status,
         responseHeaders: headers,
         durationMs,
+        // DNS, connect, waiting, download (hitop-core timing.rs: the desktop and the web proxy).
+        timings: res.timings ?? null,
         truncated: Boolean(res.truncated),
         loading: false,
       });

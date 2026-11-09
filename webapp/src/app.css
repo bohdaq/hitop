@@ -671,3 +671,17 @@ button.storage-chip:focus-visible { outline: 2px solid var(--md-sys-color-primar
 .sse-hint { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-100); }
 .ai-answer { white-space: pre-wrap; margin: var(--space-100) 0 0; }
 .comment-list li { gap: var(--space-50); } .comment-text { margin: 0; white-space: pre-wrap; overflow-wrap: anywhere; } .comments { display: grid; gap: var(--space-150, 12px); }
+
+/* HITOP Next A4: the URL's variables (a click peeks at the value and its scope), the timing waterfall. */
+.url-vars { display: flex; flex-wrap: wrap; gap: var(--space-50); margin-top: var(--space-75); }
+.var-chip {
+  height: 26px; padding: 0 var(--space-75); border: 1px solid var(--md-sys-color-outline-variant);
+  border-radius: var(--md-sys-shape-corner-small); background: var(--md-sys-color-surface-container);
+  color: var(--hitop-warn); font-family: var(--font-mono); font-size: var(--text-xs); cursor: pointer;
+}
+.var-chip:hover { border-color: var(--md-sys-color-outline); }
+.var-chip:focus-visible { outline: 2px solid var(--md-sys-color-primary); outline-offset: 1px; }
+.var-chip.missing { color: var(--hitop-fail); border-style: dashed; }
+.var-peek .var-value { margin: 0 0 var(--space-50); word-break: break-all; }
+.var-peek .mono, .url-vars .mono { font-family: var(--font-mono); }
+.response .timing { display: block; margin: var(--space-100) 0; }

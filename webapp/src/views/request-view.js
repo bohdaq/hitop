@@ -14,6 +14,9 @@ import { commentsPanel } from "./comments-view.js";
 import { AUTH_TYPES, emptyAuth, parseQuery, withQuery } from "../features.js";
 import { BODY_METHODS, METHODS } from "../store.js";
 import "./code-editor.js";
+import "@lit-material/timing-waterfall";
+import "@lit-material/popover";
+import { compareDialog } from "./tools-dialogs.js";
 import { SAVE_KEYS, SEND_KEYS } from "../shortcuts.js";
 import { SPLIT, clampSplit, layoutFor, loadLayout, saveLayout, splitAt, splitForKey } from "../split.js";
 import { socketHeaders, socketLine, socketLog, socketMessages } from "./websocket-view.js";
@@ -515,7 +518,11 @@ export class HitopRequest extends LitElement {
     // Tabs: Body, Headers, then Tests and Events when there are some.
     const testsAt = tests.length ? 2 : -1;
     const eventsAt = live?.events.length ? (tests.length ? 3 : 2) : -1;
-    if (this.responseSection >= 2 && this.responseSection !== testsAt && this.responseSection !== eventsAt) this.responseSection = 0;
+    // Diff vs last: the current response against the one before it (or a saved example).
+    // The current response is in History already: a diff needs one more (or a saved example).
+    const canDiff = this.store.history.filter((h) => h?.response).length > 1 || (this.store.loadedRequest(t)?.examples || []).length > 0;
+    const diffAt = canDiff ? 2 + (tests.length ? 1 : 0) + (live?.events.length ? 1 : 0) : -1;
+    if (this.responseSection >= 2 && ![testsAt, eventsAt, diffAt].includes(this.responseSection)) this.responseSection = 0;
     return html`
       <section class="response" data-state=${t.responseType === "error" ? "error" : "done"} aria-label="Response">
         <div class="response-meta">
@@ -524,6 +531,7 @@ export class HitopRequest extends LitElement {
           <span>${bytes(t.response || "")}</span>
           ${t.truncated ? html`<span class="warn">Cut at 5 MB</span>` : nothing}
           ${tests.length ? html`<span class=${passed === tests.length ? "pass" : "warn"}>${passed} of ${tests.length} tests passed</span>` : nothing}
+          ${t.timings?.reused ? html`<span class="hint">reused connection</span>` : nothing}
           <span class="response-actions">
             ${this.store.loadedRequest(t)
               ? html`<lit-material-button variant="text" @click=${() => this.app.openDialog("save-example", { name: `${t.statusCode} response`, request: this.store.loadedRequest(t).name })}>${icon("bookmark-simple")} Save as example</lit-material-button>`
@@ -536,7 +544,9 @@ export class HitopRequest extends LitElement {
           <lit-material-tab>Headers (${headers.length})</lit-material-tab>
           ${tests.length ? html`<lit-material-tab>Tests (${passed}/${tests.length})</lit-material-tab>` : nothing}
           ${live?.events.length ? html`<lit-material-tab>Events (${live.events.length})</lit-material-tab>` : nothing}
+          ${canDiff ? html`<lit-material-tab>Diff vs last</lit-material-tab>` : nothing}
         </lit-material-tabs>
+        ${this.timing()}
         ${!live && /text\/event-stream/i.test(t.responseHeaders?.["content-type"] ?? "") && platform().stream
           ? html`<p class="hint sse-hint">An event stream: add the header <code>Accept: text/event-stream</code> to see its events as they arrive.
               <lit-material-button variant="text" @click=${() => this.set({ headers: [...(t.headers || []).filter((h) => h.name || h.value), { name: "Accept", value: "text/event-stream" }] })}>Add it</lit-material-button></p>`
@@ -547,6 +557,8 @@ export class HitopRequest extends LitElement {
             : html`<p class="hint">No body${t.method === "HEAD" ? ": HEAD responses never have one" : ""}.</p>`
           : this.responseSection === eventsAt
             ? this.renderEvents(live)
+          : this.responseSection === diffAt
+            ? this.renderDiff()
           : this.responseSection === 1
             ? html`<dl class="response-headers">
                 ${headers.map(([k, v]) => html`<dt>${k}</dt><dd>${v}</dd>`)}
@@ -632,6 +644,42 @@ export class HitopRequest extends LitElement {
     </lit-material-select>`;
   }
 
+  // The URL's ${variables} as chips under the URL bar: a click shows the value (secrets masked)
+  // and where it comes from; a variable nothing defines is marked.
+  urlVariables() {
+    const t = this.tab;
+    const names = [...new Set([...String(t.url ?? "").matchAll(/\$\{([^}]+)\}/g)].map((m) => m[1].trim()).filter(Boolean))];
+    if (!names.length) return nothing;
+    const peek = this.peek && names.includes(this.peek) ? this.peek : null;
+    const src = peek ? this.store.variableSource(t.loadedCollectionId, peek) : null;
+    return html`<div class="url-vars" role="group" aria-label="Request variables">
+      ${names.map((n) => {
+        const found = this.store.variableSource(t.loadedCollectionId, n);
+        return html`<button type="button" id=${`var-${n.replace(/[^\w-]/g, "_")}`} class=${`var-chip ${found ? "" : "missing"}`}
+          aria-haspopup="dialog" title=${found ? `${found.value} (${found.scope})` : "Not defined"}
+          @click=${(e) => ((this.peek = n), this.requestUpdate(), this.updateComplete.then(() => this.querySelector(".var-peek")?.show(e.target)))}>\${${n}}</button>`;
+      })}
+      <lit-material-popover class="var-peek" @close=${() => (this.peek = null)}>
+        <span slot="header" class="mono">\${${peek ?? ""}}</span>
+        ${src
+          ? html`<p class="var-value mono">${src.value || html`<span class="hint">empty</span>`}</p><p class="hint">From the ${src.scope}.</p>`
+          : html`<p class="hint">Nothing defines it: the request won't be sent until an environment, the collection or globals do.</p>`}
+        <lit-material-button slot="footer" variant="text" @click=${() => this.app.go(src?.scope === "collection" ? "variables" : "environments", t.loadedCollectionId)}>Edit</lit-material-button>
+      </lit-material-popover>
+    </div>`;
+  }
+
+  // Where the request's time went (desktop, and the web proxy for public hosts).
+  timing() {
+    const t = this.tab;
+    if (!t.timings) return nothing;
+    return html`<lit-material-timing-waterfall class="timing" .timings=${t.timings}></lit-material-timing-waterfall>`;
+  }
+
+  renderDiff() {
+    return compareDialog(this.app, this.diffPick ?? {}, (pick) => ((this.diffPick = pick), this.requestUpdate())).body;
+  }
+
   render() {
     const t = this.tab;
     if (!t) return nothing;
@@ -673,6 +721,7 @@ export class HitopRequest extends LitElement {
           ${icon("code")}
         </lit-material-icon-button>
       </form>
+      ${this.urlVariables()}
       ${this.panes(this.renderEditor(), () => this.renderResponse(), "Response")}`;
   }
 
