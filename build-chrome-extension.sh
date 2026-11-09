@@ -1,6 +1,17 @@
 #!/bin/bash
 
 # Build script for HITOP Chrome Extension
+# Since HITOP Next A8 the extension is the web app (webapp/, npm run build:extension); the React
+# UI (frontend/) stays buildable with HITOP_EXTENSION_UI=react until the store listings switch.
+if [ "${HITOP_EXTENSION_UI:-web}" != "react" ]; then
+  set -e
+  (cd webapp && npm run build:extension)
+  node webapp/scripts/package-extension.mjs chrome chrome-extension
+  rm -f hitop-chrome-extension.zip
+  (cd chrome-extension && zip -r ../hitop-chrome-extension.zip manifest.json background.js icons app -x "*.DS_Store")
+  echo "📦 Extension package: hitop-chrome-extension.zip (the web app). Load unpacked: chrome-extension/"
+  exit 0
+fi
 
 echo "🚀 Building HITOP Chrome Extension..."
 

@@ -1,6 +1,17 @@
 #!/bin/bash
 
 # Build script for HITOP Firefox Extension
+# Since HITOP Next A8 the extension is the web app (webapp/, npm run build:extension); the React
+# UI (frontend/) stays buildable with HITOP_EXTENSION_UI=react until the store listings switch.
+if [ "${HITOP_EXTENSION_UI:-web}" != "react" ]; then
+  set -e
+  (cd webapp && npm run build:extension)
+  node webapp/scripts/package-extension.mjs firefox extension
+  rm -f hitop-firefox-extension.zip
+  (cd extension && zip -r ../hitop-firefox-extension.zip manifest.json background.js icons app -x "*.DS_Store")
+  echo "📦 Extension package: hitop-firefox-extension.zip (the web app)"
+  exit 0
+fi
 
 echo "🚀 Building HITOP Firefox Extension..."
 

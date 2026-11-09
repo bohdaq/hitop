@@ -31,7 +31,6 @@ import {
   mergeGlobals,
   normalizeGlobals,
   parseGlobals,
-  makeAssert,
   maskSecrets,
   mergeCookies,
   multipartBody,
@@ -43,17 +42,30 @@ import {
   urlEncodedBody,
 } from "./features.js";
 import { platform } from "./platform/index.js";
-import { fillVariables, forWebApp, isPostmanCollection, loadShim, runScript, scriptScans, usesPostmanApi } from "./pm.js";
+import { fillVariables, forWebApp, isPostmanCollection, loadShim, scriptScans, usesPostmanApi } from "./pm.js";
 import pmShimText from "../../shared/pm-shim.js?raw";
 import { loadFormat } from "./wasm/format.js";
 import { exampleResponse, snapshotResponse } from "./diff.js";
 import { folderToZip, zipToFolder } from "./zip.js";
 import { loadSettings, saveSettings, seconds } from "./settings.js";
 import { addCollections } from "./collection-tree.js";
+import { runPost, runPre } from "./script-run.js";
 import { buildReport, previousRun, rememberRun, runCommand, runStats } from "./run-report.js";
 
 // Postman's pm.* API for scripts (the shim the CLI and desktop run too).
-const pmShim = loadShim(pmShimText);
+// The pm.* shim, loaded on first use. The browser extensions may not evaluate code in their pages
+// (HITOP Next A8): there scripts run in the sandboxed page, and the Postman import report goes
+// without its unsupported-call notes.
+let shimCache = null;
+function pmShim() {
+  if (shimCache) return shimCache;
+  try {
+    shimCache = loadShim(pmShimText);
+  } catch {
+    shimCache = { create() { throw new Error("Scripts can't run in this page"); }, unsupported: () => [] };
+  }
+  return shimCache;
+}
 
 const storage = () => platform().storage;
 const account = (workspace, env, name) => `${workspace}/${env}/${name}`;
@@ -1006,7 +1018,7 @@ export class Store extends EventTarget {
     const parsed = JSON.parse(json.replace(/^\uFEFF/, "")); // throws on bad JSON
     if (isPostmanCollection(parsed)) {
       // hitop-core's importer (hitop-wasm), as `hitop import` runs it.
-      const out = (await loadFormat()).importPostman(json, scriptScans(pmShim, parsed));
+      const out = (await loadFormat()).importPostman(json, scriptScans(pmShim(), parsed));
       imported = [forWebApp(out.collection)];
       report = { name: out.collection.name, issues: out.report.issues || [] };
     } else {
@@ -1444,44 +1456,11 @@ export class Store extends EventTarget {
       this.setScriptGlobals(collectionId, r.globals);
       return { url: r.url, headers: r.headers, body: r.body };
     }
-    const updates = {};
-    const ctx = {
-      url,
-      method,
-      headers: headers.map((h) => ({ ...h })),
-      body,
-      variables: { ...variables },
-      context: { ...context },
-      setContext: (k, v) => (updates[k] = v),
-      getContext: (k) => (updates[k] !== undefined ? updates[k] : context[k]),
-      getVariable: (k) => variables[k],
-      setHeader: (name, value) => {
-        const h = ctx.headers.find((x) => x.name === name);
-        if (h) h.value = value;
-        else ctx.headers.push({ name, value });
-      },
-      setUrl: (u) => (ctx.url = u),
-      setBody: (b) => (ctx.body = b),
-    };
-    const vars = {};
-    const globals = {};
-    runScript(pmShim, script, ctx, {
-      vars: { ...variables },
-      setVar: (k, v) => (vars[k] = v),
-      globals: this.globalsFor(collectionId),
-      setGlobal: (k, v) => (globals[k] = v),
-      assert: { ok() {} },
-      request: { get url() { return ctx.url; }, method, get headers() { return ctx.headers.map((h) => [h.name, h.value]); }, get body() { return ctx.body; } },
-      setUrl: ctx.setUrl,
-      setHeader: ctx.setHeader,
-      removeHeader: (n) => (ctx.headers = ctx.headers.filter((h) => String(h.name).toLowerCase() !== String(n).toLowerCase())),
-      setBody: ctx.setBody,
-      response: null,
-    });
-    for (const [k, v] of Object.entries(updates)) this.setContext(collectionId, k, v);
-    this.setScriptVariables(collectionId, vars);
-    this.setScriptGlobals(collectionId, globals);
-    return { url: ctx.url, headers: ctx.headers, body: ctx.body };
+    const r = runPre(pmShim(), { script, url, method, headers, body, variables, context, globals: this.globalsFor(collectionId) });
+    for (const [k, v] of Object.entries(r.contextUpdates)) this.setContext(collectionId, k, v);
+    this.setScriptVariables(collectionId, r.variables);
+    this.setScriptGlobals(collectionId, r.globals);
+    return { url: r.url, headers: r.headers, body: r.body };
   }
 
   // The agent's dry run (HITOP Next A7): `script` as the script after the request, run against the
@@ -1513,50 +1492,16 @@ export class Store extends EventTarget {
       for (const [k, v] of Object.entries(r.contextUpdates)) this.setContext(collectionId, k, v);
       this.setScriptVariables(collectionId, r.variables);
       this.setScriptGlobals(collectionId, r.globals);
+      // The extension's sandbox answers a script that threw with `error` (the desktop never does).
+      if (r.error) throw new Error(r.error);
       return r.tests;
     }
-    let parsed = text;
-    try {
-      parsed = JSON.parse(text);
-    } catch {
-      // not JSON
-    }
-    const context = contextService.getCollectionContext(this.contexts, collectionId);
-    const variables = this.variables(collectionId);
-    const updates = {};
-    const { assert, results } = makeAssert({ statusCode: status, text, headers, durationMs });
-    const ctx = {
-      assert,
-      response: parsed,
-      responseText: text,
-      responseHeaders: headers,
-      statusCode: status,
-      variables: { ...variables },
-      context: { ...context },
-      setContext: (k, v) => (updates[k] = v),
-      getContext: (k) => (updates[k] !== undefined ? updates[k] : context[k]),
-      getVariable: (k) => variables[k],
-      getResponseValue: (path) => path.split(".").reduce((v, k) => (v && typeof v === "object" ? v[k] : undefined), parsed),
-      getResponseHeader: (name) => headers[name.toLowerCase()],
-    };
-    const vars = {};
-    const globals = {};
-    try {
-      runScript(pmShim, script, ctx, {
-        vars: { ...variables },
-        setVar: (k, v) => (vars[k] = v),
-        globals: this.globalsFor(collectionId),
-        setGlobal: (k, v) => (globals[k] = v),
-        assert,
-        request: { url: sent?.url ?? "", method: sent?.method ?? "", headers: (sent?.headers ?? []).filter((h) => h.name).map((h) => [h.name, h.value]), body: typeof sent?.body === "string" ? sent.body : "" },
-        response: { code: status, text, headers, time: durationMs },
-      });
-    } finally {
-      for (const [k, v] of Object.entries(updates)) this.setContext(collectionId, k, v);
-      this.setScriptVariables(collectionId, vars);
-      this.setScriptGlobals(collectionId, globals);
-    }
-    return results;
+    const r = runPost(pmShim(), { script, text, headers, status, durationMs, sent, variables: this.variables(collectionId), context: contextService.getCollectionContext(this.contexts, collectionId), globals: this.globalsFor(collectionId) });
+    for (const [k, v] of Object.entries(r.contextUpdates)) this.setContext(collectionId, k, v);
+    this.setScriptVariables(collectionId, r.variables);
+    this.setScriptGlobals(collectionId, r.globals);
+    if (r.error) throw new Error(r.error);
+    return r.tests;
   }
 
   // Interpolates variables, adds auth and runs the pre-request script: the

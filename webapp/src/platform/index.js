@@ -30,12 +30,19 @@
 //   saveFile(name, data, type)  data is text or bytes
 //   secretsNote              where secret values are kept, for the environments page
 export const IS_TAURI = import.meta.env.VITE_HITOP_PLATFORM === "tauri";
+// The browser extensions (HITOP Next A8): the web adapter without a proxy (host permissions
+// let the page fetch any host), scripts in the extension's sandboxed page.
+export const IS_EXTENSION = import.meta.env.VITE_HITOP_PLATFORM === "extension";
 
 let current = null;
 
 export async function initPlatform() {
   const mod = IS_TAURI ? await import("./tauri.js") : await import("./web.js");
   current = mod.createPlatform();
+  if (IS_EXTENSION) {
+    current.scripts = (await import("./sandbox-scripts.js")).sandboxScripts;
+    current.extension = true;
+  }
   await current.init();
   return current;
 }

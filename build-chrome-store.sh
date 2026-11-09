@@ -1,6 +1,19 @@
 #!/bin/bash
 
 # Build script for HITOP Chrome Web Store Submission
+# Since HITOP Next A8 the extension is the web app (webapp/, npm run build:extension); the React
+# UI (frontend/) stays buildable with HITOP_EXTENSION_UI=react until the store listing switches.
+# Nothing is uploaded: the owner submits the zip.
+if [ "${HITOP_EXTENSION_UI:-web}" != "react" ]; then
+  set -e
+  (cd webapp && npm run build:extension)
+  rm -rf chrome-store-package
+  node webapp/scripts/package-extension.mjs store chrome-store-package
+  rm -f hitop-chrome-store.zip
+  (cd chrome-store-package && zip -r ../hitop-chrome-store.zip . -x "*.DS_Store")
+  echo "📦 Chrome Web Store package: hitop-chrome-store.zip (the web app)"
+  exit 0
+fi
 
 echo "🚀 Building HITOP Chrome Extension for Web Store..."
 
