@@ -484,7 +484,13 @@ class HitopSync extends LitElement {
           this.note = `Took theirs: ${k.path}`;
         })}>Take theirs</lit-material-button>
       </div>
-      ${open ? html`<div class="sync-both" aria-label=${`Both versions of ${k.path}`}>${pre("Mine (this device)", k.mine)}${pre("Theirs (the server)", k.theirs)}${pre("Before both changes", k.base)}</div>` : nothing}
+      ${open
+        ? html`<div class="sync-both" aria-label=${`Both versions of ${k.path}`}>
+            <!-- The one conflict view (HITOP Next S14); a shared collection keeps one side per file. -->
+            <lit-material-conflict-resolver class="conflict-view" yours-label="Mine (this device)" theirs-label="Theirs (the server)" .yours=${k.mine ?? ""} .theirs=${k.theirs ?? ""} choice="yours"></lit-material-conflict-resolver>
+            ${pre("Before both changes", k.base)}
+          </div>`
+        : nothing}
     </li>`;
   }
 

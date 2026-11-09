@@ -322,7 +322,8 @@ async function launchOff(options) {
   check('a request changed on both sides is a conflict', (await conflicts.count()) === 1 && (await note(bob)).includes('1 conflict'), await note(bob));
   await conflicts.getByRole('button', { name: 'View both' }).click();
   await settle(bob.page);
-  const both = await S(bob).locator('.sync-both').innerText();
+  // Mine and theirs are in the conflict view (lit-material-conflict-resolver), the base below it.
+  const both = await S(bob).locator('.sync-both').evaluate((el) => { const r = el.querySelector('lit-material-conflict-resolver'); return [r?.yours, r?.theirs, el.innerText].join('\n'); });
   check('View both shows mine, theirs and the base', both.includes('bob.e2e-sync.test') && both.includes('ada.e2e-sync.test') && both.includes('orders/1'), both);
   await conflicts.getByRole('button', { name: 'Take theirs' }).click();
   await idle(bob);

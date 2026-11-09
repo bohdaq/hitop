@@ -226,7 +226,24 @@ async function syncServer() {
     check('a collection made in the team org shows there', (await aside()).some((t) => t.includes('Acme API')), JSON.stringify(await aside()));
     const item = (await (await store(two, 'return s.library.client.api("GET", "/v1/library");')).items).find((i) => i.data?.name === 'Acme API');
     check('...and is filed under the team org on the server', item?.data?.org === acme, JSON.stringify(item?.data));
-    check('the plan link opens the team org\'s plan page', (await two.page.evaluate(() => document.querySelector('hitop-app').planUrl())).endsWith(`/orgs/${acme}/plan`));
+    // Plan & billing is in the app now (HITOP Next 7b), on the team org's Organization page.
+    await two.page.evaluate(() => document.querySelector('hitop-app').openOrg('billing'));
+    await two.page.locator('hitop-org section[aria-label="Plan and billing"]').waitFor({ timeout: 10000 });
+    const billingText = await two.page.locator('hitop-org').innerText();
+    check('Plan & billing opens in the app for the team org', /acme/i.test(billingText) && billingText.includes('Usage') && (await two.page.locator('hitop-org .org-meter').count()) > 0, billingText.slice(0, 600));
+    const orgNav = await two.page.locator('hitop-org .org-nav-item').allInnerTexts();
+    check('the Organization area lists its sections', ['General', 'Members', 'Plan & billing', 'Access tokens & MCP', 'Runs & monitors'].every((x) => orgNav.includes(x)), orgNav.join('|'));
+    await two.page.locator('hitop-org').getByRole('button', { name: 'Members', exact: true }).click();
+    await settle(two.page, 800);
+    check('Members lists the owner', (await two.page.locator('hitop-org section[aria-label="Members"]').innerText()).includes('ada@example.com'));
+    await two.page.locator('hitop-org').getByRole('button', { name: 'Access tokens & MCP' }).click();
+    await two.page.locator('hitop-org #token-name').waitFor();
+    await two.page.locator('hitop-org').getByLabel('Token name').fill('e2e agent');
+    await two.page.locator('hitop-org').getByRole('button', { name: 'New token' }).click();
+    await two.page.locator('hitop-org code.org-token').waitFor({ timeout: 10000 });
+    check('a new token shows once, then is listed', (await two.page.locator('hitop-org code.org-token').innerText()).startsWith('hitop_pat_') && (await two.page.locator('hitop-org [aria-label="Tokens"]').innerText()).includes('e2e agent'));
+    await two.page.evaluate(() => document.querySelector('hitop-app').go('collections'));
+    await settle(two.page);
     await org(two).click();
     await two.page.getByRole('option', { name: /^Personal/ }).click();
     await settle(two.page);
@@ -240,17 +257,19 @@ async function syncServer() {
     await two.page.getByRole('option', { name: 'New organization…' }).click();
     await two.page.locator('#dialog #name').waitFor();
     await two.page.locator('#dialog').getByLabel('Organization name').fill('Beta Team');
-    await two.page.locator('#dialog').getByRole('button', { name: 'Create' }).click();
+    await two.page.locator('#dialog').getByRole('button', { name: 'Create and invite people' }).click();
     await two.page.waitForFunction(() => document.querySelector('hitop-app').store.currentOrgInfo?.name === 'Beta Team', null, { timeout: 10000 });
     check('New organization… creates it and switches to it', (await org(two).locator('lit-material-select-option').allInnerTexts()).some((t) => t.includes('Beta Team')));
-    await two.page.locator('header.topbar .account-button').click();
-    await two.page.locator('#account-menu').getByText('Invite to Beta Team').click();
-    await two.page.locator('#dialog').getByLabel('Email').fill('carol@example.com');
-    await two.page.locator('#dialog').getByRole('button', { name: 'Invite' }).click();
+    // It opens the Members page and the invite dialog (S3 → S4).
+    await two.page.locator('#dialog').getByLabel(/Email addresses/).waitFor({ timeout: 10000 });
+    check('...then its Members page and the invite dialog', (await two.page.locator('hitop-org').count()) === 1);
+    await two.page.locator('#dialog').getByLabel(/Email addresses/).fill('carol@example.com, dave@example.org');
+    await settle(two.page);
+    await two.page.locator('#dialog').getByRole('button', { name: 'Send 2 invites' }).click();
     await settle(two.page, 800);
     const beta = await store(two, 'return s.currentOrg;');
     const members = await store(two, 'return s.library.client.api("GET", `/v1/orgs/${a}/members`);', beta);
-    check('Invite to … invites by mail', (await two.page.locator('#dialog').innerText()).includes('carol@example.com') && JSON.stringify(members.invites ?? []).includes('carol@example.com'), JSON.stringify(members));
+    check('Invite to … invites by mail, several at once', (await two.page.locator('#dialog').innerText()).includes('carol@example.com') && JSON.stringify(members.invites ?? []).includes('carol@example.com') && JSON.stringify(members.invites ?? []).includes('dave@example.org'), JSON.stringify(members));
     await two.page.locator('#dialog').getByRole('button', { name: /Cancel|Close/ }).first().click();
     await store(two, 's.setCurrentOrg(s.personalOrg);');
 

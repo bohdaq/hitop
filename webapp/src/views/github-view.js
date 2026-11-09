@@ -148,10 +148,14 @@ class HitopGitPanel extends LightElement {
         ${conflicts.map(
           (k) => html`<li class="sync-item">
             <b>${k.name}</b> <span class="hint">${k.path}</span>
-            <div class="sync-compare">
-              <div><span class="hint">Here</span><pre class="code-preview">${k.mine ?? "(deleted here)"}</pre></div>
-              <div><span class="hint">On GitHub</span><pre class="code-preview">${k.theirs ?? "(deleted on GitHub)"}</pre></div>
-            </div>
+            <!-- The one conflict view (HITOP Next S14): yours and theirs side by side, the result below. -->
+            <lit-material-conflict-resolver class="conflict-view" yours-label="Here" theirs-label="On GitHub"
+              .yours=${k.mine ?? ""} .theirs=${k.theirs ?? ""} .choice=${picks[k.path] === "mine" ? "yours" : picks[k.path] === "theirs" ? "theirs" : "both"}
+              @change=${(e) => {
+                const both = k.path !== "hitop.yaml" && k.mine && k.theirs;
+                const v = e.detail.choice === "yours" ? "mine" : e.detail.choice === "theirs" ? "theirs" : both ? "both" : null;
+                if (v) this.choices = { ...this.choices, [k.path]: v };
+              }}></lit-material-conflict-resolver>
             <span class="page-actions" role="group" aria-label=${`Keep for ${k.name}`}>
               ${[
                 ["mine", "Keep mine"],

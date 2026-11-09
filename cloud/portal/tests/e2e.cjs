@@ -290,7 +290,10 @@ const TEXT_OF = `(root) => {
   const csp = [];
   const axeFindings = [];
   // Every page of every context: the text helper, CSP violations reported back here.
-  const prepare = async (ctx) => {
+  // The pages the app replaces redirect there (src/app-redirect.js, HITOP Next 7b); this run keeps
+  // them with the escape hatch to test them, and checks the redirects in a context of their own.
+  const prepare = async (ctx, { stay = true } = {}) => {
+    if (stay) await ctx.addInitScript(() => localStorage.setItem("hitop_portal_stay", "1"));
     await ctx.exposeFunction("__cspReport", (s) => csp.push(s));
     await ctx.addInitScript(`window.__text = ${TEXT_OF}; document.addEventListener("securitypolicyviolation", (e) => window.__cspReport(e.violatedDirective + " " + e.blockedURI + " " + (e.sourceFile || "") + ":" + e.lineNumber + " " + e.sample));`);
   };
@@ -859,6 +862,38 @@ const TEXT_OF = `(root) => {
     await go("/tokens");
     await page.getByRole("heading", { name: "Sign in", exact: true }).waitFor({ timeout: 10000 });
     check("an ended session goes back to sign-in with a word", page.url().startsWith(`${origin}/sign-in`) && (await toastWait("session ended")).includes("session ended"), `${page.url()} ${await toast()}`);
+
+    // The pages that moved into the app: each portal path goes to its org page there, with the org id.
+    {
+      const rctx = await browser.newContext();
+      await prepare(rctx, { stay: false });
+      const landed = [];
+      await rctx.route("https://hitop.rws8.tech/app/**", (r) => {
+        landed.push(r.request().url());
+        return r.fulfill({ status: 200, contentType: "text/html", body: "<!doctype html><title>HITOP</title><p>app</p>" });
+      });
+      const rp = await rctx.newPage();
+      rp.on("pageerror", (e) => errors.push(e.message));
+      const cases = [
+        ["/orgs/org-1/plan", "#org=org-1&section=billing"],
+        ["/orgs/org-1/members", "#org=org-1&section=members"],
+        ["/orgs/org-1", "#org=org-1&section=general"],
+        ["/orgs/org-1/settings/general", "#org=org-1&section=general"],
+        ["/tokens", "#section=tokens"],
+      ];
+      for (const [from, hash] of cases) {
+        await rp.goto(`${origin}${from}`);
+        await rp.waitForURL("https://hitop.rws8.tech/app/**", { timeout: 10000 });
+        check(`${from} redirects into the app's org page`, rp.url() === `https://hitop.rws8.tech/app/${hash}`, rp.url());
+      }
+      await rp.goto(`${origin}/orgs/org-1/settings/sso`);
+      await rp.waitForTimeout(800);
+      check("SSO setup stays on the portal (the app doesn't replace it)", rp.url().startsWith(origin), rp.url());
+      await rp.goto(`${origin}/sign-in`);
+      await rp.getByRole("heading", { name: "Sign in", exact: true }).waitFor({ timeout: 10000 });
+      check("sign-in stays on the portal", rp.url().startsWith(`${origin}/sign-in`), rp.url());
+      await rctx.close();
+    }
 
     const events = (await server.api("GET", `/v1/me/audit?limit=100`, bobSession)).json.events.map((e) => e.event);
     check("the server's audit log has the sign-ins", events.includes("signin"), events.join());

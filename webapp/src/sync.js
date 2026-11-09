@@ -259,7 +259,7 @@ export class SyncClient {
     } catch {
       json = null;
     }
-    return { status: res.status, json };
+    return { status: res.status, json, text };
   }
 
   async call(method, path, body, { allow = [] } = {}) {

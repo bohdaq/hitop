@@ -26,6 +26,7 @@ import "./pages/plan-page.js";
 import "./pages/settings-page.js";
 import "./pages/tokens-page.js";
 import "./pages/account-page.js";
+import { appLink, redirecting } from "./app-redirect.js";
 
 const guard = ({ path }) => {
   if (session.signedIn) return true;
@@ -33,19 +34,29 @@ const guard = ({ path }) => {
   return "/sign-in";
 };
 
+// A page the app replaces (app-redirect.js): the browser goes to the app, keeping the org id;
+// with hitop_portal_stay the old page renders as before.
+const moved = (page) => (params, _outlet, ctx) => {
+  const to = redirecting() && appLink(ctx?.path ?? location.pathname);
+  if (!to) return page(params);
+  location.replace(to);
+  return html`<p class="moved" role="status">This page moved into the HITOP app. <a href=${to}>Open it there</a>.</p>`;
+};
+const movedGuard = (ctx) => (redirecting() && appLink(ctx.path) ? true : guard(ctx));
+
 const routes = [
   { path: "/sign-in", title: "Sign in", render: () => html`<sign-in-page></sign-in-page>` },
   { path: "/", guard, title: "Home", render: () => html`<home-page></home-page>` },
   { path: "/workspaces", guard, title: "Workspaces", render: () => html`<workspaces-page></workspaces-page>` },
   { path: "/workspaces/:ws/runs", guard, title: "Runs", render: (p) => html`<runs-page .ws=${p.ws}></runs-page>` },
   { path: "/workspaces/:ws/runs/:run", guard, title: "Run", render: (p) => html`<runs-page .ws=${p.ws} .run=${p.run}></runs-page>` },
-  { path: "/orgs", guard, title: "Organizations", render: () => html`<orgs-page></orgs-page>` },
-  { path: "/orgs/:org", guard, title: "Organization", render: (p) => html`<org-page .orgId=${p.org}></org-page>` },
-  { path: "/orgs/:org/members", guard, title: "Members", render: (p) => html`<members-page .orgId=${p.org}></members-page>` },
-  { path: "/orgs/:org/plan", guard, title: "Plan and billing", render: (p) => html`<plan-page .orgId=${p.org}></plan-page>` },
+  { path: "/orgs", guard: movedGuard, title: "Organizations", render: moved(() => html`<orgs-page></orgs-page>`) },
+  { path: "/orgs/:org", guard: movedGuard, title: "Organization", render: moved((p) => html`<org-page .orgId=${p.org}></org-page>`) },
+  { path: "/orgs/:org/members", guard: movedGuard, title: "Members", render: moved((p) => html`<members-page .orgId=${p.org}></members-page>`) },
+  { path: "/orgs/:org/plan", guard: movedGuard, title: "Plan and billing", render: moved((p) => html`<plan-page .orgId=${p.org}></plan-page>`) },
   { path: "/orgs/:org/settings", redirect: "/orgs/:org/settings/general" },
-  { path: "/orgs/:org/settings/:tab", guard, title: "Settings", render: (p) => html`<settings-page .orgId=${p.org} .tab=${p.tab}></settings-page>` },
-  { path: "/tokens", guard, title: "Access tokens", render: () => html`<tokens-page></tokens-page>` },
+  { path: "/orgs/:org/settings/:tab", guard: movedGuard, title: "Settings", render: moved((p) => html`<settings-page .orgId=${p.org} .tab=${p.tab}></settings-page>`) },
+  { path: "/tokens", guard: movedGuard, title: "Access tokens", render: moved(() => html`<tokens-page></tokens-page>`) },
   { path: "/account", guard, title: "Account", render: () => html`<account-page></account-page>` },
   { path: "/*", title: "Not found", status: 404, render: (p) => html`<not-found-page .path=${p.wildcard}></not-found-page>` },
 ];

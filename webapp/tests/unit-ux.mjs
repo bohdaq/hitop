@@ -174,4 +174,34 @@ assert.equal(rankItems(more, "auth")[0].key, "col:2");
   assert.equal(requestText({ ...current, postRequestScript: "pm.test('a', () => {});" }), "GET https://x/o\nAuthorization: Bearer real\n\n# Script after\npm.test('a', () => {});");
 }
 
+// The Organization area (org.js).
+{
+  const { limitInfo, meters, planCards, sectionsFor } = await import("../src/org.js");
+  assert.deepEqual(sectionsFor({ role: "member" }).map((s) => s[0]), ["general", "members", "billing", "tokens", "runs"]);
+  assert.ok(sectionsFor({ role: "owner", personal: false }).some((s) => s[0] === "security"));
+  assert.ok(!sectionsFor({ role: "owner", personal: true }).some((s) => s[0] === "security"), "no SSO for a personal org");
+  const m = meters({ usage: { seats: 6, guestViewers: 0, workspaces: 2, storageBytes: 1.2 * 1024 ** 3, devices: 3, runners: 4 }, limits: { seats: 6, guests: 0, workspaces: null, storageBytes: 16 * 1024 ** 3, devices: 10, runners: 5 } });
+  assert.deepEqual(m.map((x) => [x.id, x.level]), [["seats", "full"], ["workspaces", "ok"], ["storage", "ok"], ["devices", "ok"], ["runners", "warn"]], "no guest meter on a plan without guests");
+  assert.equal(m.find((x) => x.id === "storage").text, "1.2 GB of 16 GB");
+  assert.equal(m.find((x) => x.id === "workspaces").text, "2 · no limit");
+  const cards = planCards({ plan: "free", personal: false }, { offers: [{ plan: "team", period: "annual" }, { plan: "team", period: "monthly" }, { plan: "business", period: "annual" }] });
+  assert.deepEqual(cards.map((c) => [c.plan, c.buy, c.period, c.current]), [["free", false, null, true], ["team", true, "monthly", false], ["business", true, "annual", false]]);
+  assert.deepEqual(planCards({ plan: "free", personal: true }, { offers: [{ plan: "pro", period: "monthly" }] }).map((c) => c.plan), ["free", "pro"]);
+  const { parseOrgLink } = await import("../src/org.js");
+  assert.deepEqual(parseOrgLink("#org=o%201&section=billing"), { org: "o 1", section: "billing" });
+  assert.deepEqual(parseOrgLink("#section=tokens"), { org: null, section: "tokens" });
+  assert.equal(parseOrgLink("#git=ok"), null);
+  assert.equal(parseOrgLink("#section=evil"), null);
+  // The portal's side (cloud/portal/src/app-redirect.js) produces exactly what the app reads.
+  const { appLink, appSection } = await import("../../cloud/portal/src/app-redirect.js");
+  for (const [path, want] of [["/orgs/acme/plan", { org: "acme", section: "billing" }], ["/orgs/acme/members/", { org: "acme", section: "members" }], ["/orgs/acme", { org: "acme", section: "general" }], ["/orgs/acme/settings/danger", { org: "acme", section: "general" }], ["/tokens", { org: null, section: "tokens" }], ["/orgs", { org: null, section: "general" }]]) {
+    assert.deepEqual(appSection(path), want, path);
+    assert.deepEqual(parseOrgLink(new URL(appLink(path)).hash), want, path);
+  }
+  for (const kept of ["/", "/sign-in", "/account", "/workspaces", "/workspaces/w/runs", "/orgs/acme/settings/sso", "/orgs/acme/settings/scim", "/orgs/acme/settings/admin", "/orgs/acme/settings/audit"]) assert.equal(appLink(kept), null, kept);
+  assert.equal(limitInfo({ status: 500 }), null);
+  const li = limitInfo({ status: 402, message: "Free allows 3 workspaces", body: { error: "limit", limit: "workspaces", plan: "free", used: 3, max: 3, org: "o1" } });
+  assert.deepEqual([li.headline, li.org, li.message], ["Free has used its 3 shared collections", "o1", "Free allows 3 workspaces"]);
+}
+
 console.log("unit-ux: all checks passed");

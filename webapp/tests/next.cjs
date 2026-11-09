@@ -42,7 +42,7 @@ function api() {
   await p.locator('aside .tree-row.leaf', { hasText: 'New request' }).first().click();
   await settle(p);
   check('title bar names the collection on screen', (await p.locator('header.topbar .crumb-name').innerText()).trim().length > 0);
-  check('status bar says where the request is', (await p.locator('footer.statusbar').innerText()).includes('›') || (await p.locator('footer.statusbar').innerText()).includes('Unsaved'));
+  check('status bar says where the request is', (await p.locator('.statusbar').innerText()).includes('›') || (await p.locator('.statusbar').innerText()).includes('Unsaved'));
 
   // Tab reorder: two tabs, move the second before the first with the keyboard.
   await p.locator('hitop-request .request-line .url input, hitop-request .request-line .url').first().click();
@@ -58,7 +58,7 @@ function api() {
   check('Alt+Shift+Arrow reorders tabs, the open one stays open', after.length === 2 && after[0] === before[1] && after[1] === before[0] && (await h.stored.tabs()).current === 0, `${before} → ${after}`);
   await p.keyboard.press('Alt+Shift+KeyW');
   await settle(p);
-  check('the dirty tab shows unsaved in the status bar', (await p.locator('footer.statusbar').innerText()).includes('Unsaved'));
+  check('the dirty tab shows unsaved in the status bar', (await p.locator('.statusbar').innerText()).includes('Unsaved'));
 
   // --- A4 + B3: variables in the URL, the response line, the timing waterfall, Diff vs last ---
   await p.locator('.tab-strip').getByRole('button', { name: 'New tab' }).click();

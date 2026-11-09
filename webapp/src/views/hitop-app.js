@@ -27,11 +27,17 @@ import { storageOf } from "../git.js";
 import { syncClient } from "./sync-view.js";
 import { orgLabel } from "../orgs.js";
 import { agentPanel, runAi } from "./ai-view.js";
+import "./org-view.js";
+import { limitInfo, parseOrgLink } from "../org.js";
+
+/** Email addresses typed in the invite dialog: comma, space or line separated. */
+function inviteEmails(text) {
+  return [...new Set(String(text).split(/[\s,;]+/).map((e) => e.trim()).filter((e) => /^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(e)))];
+}
 import "./mock-view.js";
 import "./monitor-view.js";
 import { historyDialog, loadRequestHistory } from "./history-dialog.js";
 import { aiSettings } from "../ai.js";
-import { DEFAULT_SERVER } from "../sync.js";
 
 // The HITOP Cloud portal (plan, organizations, billing): web only, never in the desktop build (App
 // Store: no purchase links).
@@ -73,11 +79,6 @@ function showMenuFor(e, menu) {
   addEventListener("pointerup", () => setTimeout(() => menu.show(anchor)), { once: true, capture: true });
 }
 
-// "⌘K" on Apple platforms, "Ctrl K" elsewhere.
-const APPLE = typeof navigator !== "undefined" && /Mac|iPhone|iPad/.test(navigator.platform || navigator.userAgent || "");
-export function keyLabel(key) {
-  return APPLE ? `⌘${key}` : `Ctrl ${key}`;
-}
 
 export class HitopApp extends LitElement {
   static properties = {
@@ -116,6 +117,37 @@ export class HitopApp extends LitElement {
     if (window.matchMedia?.("(pointer: fine)").matches) document.documentElement.setAttribute("density", "compact");
     platform().onStart?.(this);
     document.addEventListener("keydown", (e) => this.onShortcut(e), true);
+    // A link into the Organization area (the portal's pages send the browser here, 7b).
+    const openLink = () => {
+      const link = parseOrgLink(location.hash);
+      if (!link) return;
+      history.replaceState(null, "", location.pathname + location.search);
+      this.orgLink = link;
+      this.applyOrgLink();
+    };
+    openLink();
+    window.addEventListener("hashchange", openLink);
+    // The org comes once the orgs are loaded (after the account is read).
+    this.store.addEventListener("change", () => this.orgLink?.org && this.applyOrgLink());
+  }
+
+  applyOrgLink() {
+    const link = this.orgLink;
+    if (!link) return;
+    const s = this.store;
+    if (link.org) {
+      if (!s.orgs?.some((o) => o.id === link.org)) {
+        // Not loaded yet (or not this account's): show the page once, pick the org when it comes.
+        if (!link.opened) {
+          link.opened = true;
+          this.openOrg(link.section);
+        }
+        return;
+      }
+      if (s.currentOrg !== link.org) s.setCurrentOrg(link.org);
+    }
+    this.orgLink = null;
+    this.openOrg(link.section);
   }
 
   updated() {
@@ -485,20 +517,55 @@ export class HitopApp extends LitElement {
     switch (d.kind) {
       case "new-org":
         headline = "New organization";
-        body = html`<p>For a team: its collections, members and plan are its own. You own it; invite people next.</p>
-          <lit-material-text-field id="name" variant="outlined" label="Organization name" required autofocus ?error=${Boolean(d.error)} error-text=${d.error ?? ""}></lit-material-text-field>`;
-        footer = actions("Create");
+        body = html`<p>A shared space for your team's collections, environments and runs. Your personal space stays private. You own it; invite people next.</p>
+          <lit-material-text-field id="name" variant="outlined" label="Organization name" required autofocus ?error=${Boolean(d.error)} error-text=${d.error ?? ""}></lit-material-text-field>
+          <fieldset class="org-start">
+            <legend>Start on</legend>
+            <label class="org-choice"><input type="radio" name="org-start" value="trial" checked /> <span><b>Team trial</b>, free for 14 days, no card: unlimited shared collections, 5 free guest viewers, mocks and monitors.</span></label>
+            <label class="org-choice"><input type="radio" name="org-start" value="free" /> <span><b>Free</b>: 3 members, 3 shared collections, 100 MB.</span></label>
+          </fieldset>`;
+        footer = actions("Create and invite people");
         break;
-      case "org-invite":
-        headline = `Invite to ${s.currentOrgInfo?.name ?? "the organization"}`;
-        body = html`<p>They get a mail; once they sign in with that address they are a member${d.added?.length ? html`. Invited so far: ${d.added.join(", ")}` : ""}.</p>
-          <lit-material-text-field id="email" variant="outlined" type="email" label="Email" required autofocus ?error=${Boolean(d.error)} error-text=${d.error ?? ""}></lit-material-text-field>
+      case "org-invite": {
+        const usage = d.seats;
+        const seatsMax = usage?.limits?.seats;
+        const seatsUsed = usage?.usage?.seats ?? 0;
+        const pending = inviteEmails(d.draft ?? "");
+        const domain = (s.syncClient?.account?.()?.email ?? "").split("@")[1] ?? "";
+        const outside = domain ? pending.filter((e) => !e.endsWith(`@${domain}`)) : [];
+        headline = `Invite people to ${s.currentOrgInfo?.name ?? "the organization"}`;
+        body = html`<p>They get an email with a link; once they sign in with that address they are members${d.added?.length ? html`. Invited so far: ${d.added.join(", ")}` : ""}.</p>
+          <lit-material-textarea id="email" variant="outlined" rows="2" label="Email addresses (comma or space separated)" required autofocus .value=${d.draft ?? ""} ?error=${Boolean(d.error)} error-text=${d.error ?? ""}
+            @input=${(e) => (this.dialog = { ...this.dialog, draft: e.target.value })}></lit-material-textarea>
+          ${outside.length ? html`<p class="hint warn-text">${outside.join(", ")} ${outside.length === 1 ? "is" : "are"} outside ${domain}: a guest viewer (read only, free on Team) may fit better, from a collection's Share dialog.</p>` : nothing}
           <lit-material-select id="role" variant="outlined" label="Role" .value=${"member"}>
-            <lit-material-select-option value="member">Member</lit-material-select-option>
-            <lit-material-select-option value="admin">Admin: manages members and the plan</lit-material-select-option>
-          </lit-material-select>`;
-        footer = actions("Invite");
+            <lit-material-select-option value="member">Member: edit and run</lit-material-select-option>
+            <lit-material-select-option value="admin">Admin: also invite and manage the plan</lit-material-select-option>
+          </lit-material-select>
+          ${seatsMax != null
+            ? html`<p class=${`hint tabular ${seatsUsed + pending.length > seatsMax ? "warn-text" : ""}`} role="status">Seats after these invites: ${seatsUsed + pending.length} of ${seatsMax}${seatsUsed + pending.length > seatsMax ? ". Add seats on Plan & billing first." : ""}</p>`
+            : nothing}`;
+        footer = actions(pending.length > 1 ? `Send ${pending.length} invites` : "Invite");
         break;
+      }
+      case "limit": {
+        const l = d.limit;
+        headline = l.headline;
+        body = html`<p>${l.message}</p>
+          <ul class="limit-list">
+            <li class="ok-text">${icon("check-circle")} What you have keeps syncing and running</li>
+            <li class="ok-text">${icon("check-circle")} Everything local, the CLI and CI keep working</li>
+            <li class="warn-text">${icon("warning-circle")} New ones need a bigger plan or a free slot</li>
+          </ul>
+          ${d.admin ? nothing : html`<p class="hint">Only owners and admins change the plan.</p>`}`;
+        footer = html`<div slot="actions" class="dialog-actions">
+          <lit-material-button variant="text" @click=${() => this.closeDialog()}>Close</lit-material-button>
+          ${d.admin
+            ? html`<lit-material-button variant="filled" @click=${() => (this.closeDialog(), this.openOrg("billing"))}>Plan &amp; billing</lit-material-button>`
+            : html`<lit-material-button variant="filled" @click=${() => (this.closeDialog(), this.openOrg("members"))}>See who can upgrade</lit-material-button>`}
+        </div>`;
+        break;
+      }
       case "add-collection":
         headline = "New collection";
         body = html`<lit-material-text-field id="name" variant="outlined" label="Collection name" required autofocus></lit-material-text-field>`;
@@ -747,23 +814,60 @@ export class HitopApp extends LitElement {
     const client = s.library?.client ?? syncClient(s);
     try {
       if (d.kind === "new-org") {
+        const trial = this.querySelector('#dialog input[name="org-start"]:checked')?.value === "trial";
         const org = await client.api("POST", "/v1/orgs", { name: this.field("name") });
-        const { loadOrgs } = await import("../orgs.js");
-        await loadOrgs(s, client);
+        let note = "";
+        if (trial) {
+          try {
+            await client.api("POST", `/v1/orgs/${encodeURIComponent(org.id)}/billing/trial`, {});
+            note = " The Team trial has started.";
+          } catch (e) {
+            note = ` No trial: ${e.message}`;
+          }
+        }
+        await this.reloadOrgs(client);
         s.setCurrentOrg(org.id);
         this.closeDialog();
-        this.toast(`${org.name} created. Invite people from the account menu.`);
+        this.toast(`${org.name} created.${note}`);
+        await this.openOrg("members");
+        const usage = await client.api("GET", `/v1/orgs/${encodeURIComponent(org.id)}/usage`).catch(() => null);
+        this.openDialog("org-invite", { seats: usage });
       } else {
-        const email = this.field("email");
-        await client.api("POST", `/v1/orgs/${encodeURIComponent(s.currentOrg)}/members`, { email, role: this.querySelector("#dialog #role")?.value || "member" });
-        this.dialog = { ...d, submitted: false, error: null, added: [...(d.added ?? []), email] };
-        await this.updateComplete;
-        const f = this.querySelector("#dialog #email");
-        if (f) f.value = "";
+        const emails = inviteEmails(this.field("email"));
+        if (!emails.length) throw new Error("Enter at least one email address");
+        const role = this.querySelector("#dialog #role")?.value || "member";
+        const added = [...(d.added ?? [])];
+        for (const email of emails) {
+          await client.api("POST", `/v1/orgs/${encodeURIComponent(s.currentOrg)}/members`, { email, role });
+          added.push(email);
+        }
+        this.dialog = { ...d, submitted: false, error: null, added, draft: "" };
+        this.querySelector("hitop-org")?.load();
       }
     } catch (err) {
+      const limit = limitInfo(err);
+      if (limit) return this.openLimit(limit, s.currentOrgInfo);
       this.dialog = { ...d, submitted: false, error: err?.message || String(err) };
     }
+  }
+
+  async reloadOrgs(client) {
+    const s = this.store;
+    const { loadOrgs } = await import("../orgs.js");
+    await loadOrgs(s, client ?? s.library?.client ?? syncClient(s));
+  }
+
+  /** The Organization area on one of its sections (org-view.js). */
+  async openOrg(section = "general") {
+    this.go("org");
+    await this.updateComplete;
+    this.querySelector("hitop-org")?.pick(section);
+  }
+
+  /** A plan limit stopped something (402): what still works, and who can change the plan. */
+  openLimit(limit, org) {
+    const admin = org ? org.role === "owner" || org.role === "admin" : false;
+    this.openDialog("limit", { limit, admin });
   }
 
   /** The current org's plan page on the portal. */
@@ -919,7 +1023,6 @@ export class HitopApp extends LitElement {
     const where = !st?.on ? "Collections stay on this device" : st.error ? "Couldn't save to HITOP Cloud" : st.saving ? "Saving to HITOP Cloud…" : "Collections saved to HITOP Cloud";
     const needs = this.needs();
     const org = this.store.currentOrgInfo;
-    const web = platform().name === "web" && a.server === DEFAULT_SERVER;
     return html`<lit-material-menu id="account-menu" aria-label="Account">
       <div class="account-head" role="presentation"><b>${a.email}</b><span class="hint">${st?.on && !st.error ? icon("check-circle") : nothing} ${where}</span></div>
       ${needs.map((x) => html`<lit-material-list-item interactive class="account-need" @click=${() => x.run()}>${icon("warning-circle")} ${x.text}</lit-material-list-item>`)}
@@ -928,7 +1031,7 @@ export class HitopApp extends LitElement {
       ${org && !org.personal && ["owner", "admin"].includes(org.role)
         ? html`<lit-material-list-item interactive @click=${() => this.openDialog("org-invite")}>${icon("plus")} Invite to ${org.name}…</lit-material-list-item>`
         : nothing}
-      ${web ? html`<lit-material-list-item interactive @click=${() => window.open(this.planUrl(), "_blank", "noopener")}>${icon("arrow-square-out")} Plan & billing</lit-material-list-item>` : nothing}
+      ${this.store.orgs?.length ? html`<lit-material-list-item interactive @click=${() => this.openOrg("billing")}>${icon("users-three")} Plan & billing</lit-material-list-item>` : nothing}
       <lit-material-list-item interactive @click=${() => this.signOut()}>${icon("sign-out")} Sign out</lit-material-list-item>
     </lit-material-menu>`;
   }
@@ -991,6 +1094,7 @@ export class HitopApp extends LitElement {
       { kind: "environments", label: "Environments", icon: "globe" },
       { kind: "cookies", label: "Cookies", icon: "cookie" },
       ...pages.map((page) => ({ kind: page.kind, label: page.label, icon: page.icon })),
+      ...(this.store.orgs?.length ? [{ kind: "org", label: "Organization", icon: "users-three" }] : []),
       { kind: "settings", label: "Settings", icon: "gear-six" },
     ];
   }
@@ -1146,7 +1250,7 @@ export class HitopApp extends LitElement {
   // The title bar's search field: one place for requests and commands.
   commandField() {
     return html`<button type="button" class="command-field" aria-label="Search requests and commands" @click=${() => this.openCommand()}>
-      ${icon("magnifying-glass")}<span class="command-text">Search requests, run a command…</span><kbd class="command-kbd">${keyLabel("K")}</kbd>
+      ${icon("magnifying-glass")}<span class="command-text">Search requests, run a command…</span><lit-material-kbd class="command-kbd" keys="Mod+K"></lit-material-kbd>
     </button>`;
   }
 
@@ -1203,13 +1307,13 @@ export class HitopApp extends LitElement {
     const t = s.view.kind === "request" ? s.tab : null;
     const dirty = t && s.isDirty(t);
     const engine = IS_TAURI ? "Desktop · Rust engine" : "Browser · HITOP proxy for public hosts";
-    return html`<footer class="statusbar" aria-label="Status">
-      ${t ? html`<span class="status-item mono">${this.requestPlace()}</span>` : nothing}
-      ${dirty ? html`<span class="status-item status-unsaved">● Unsaved · ${keyLabel("S")} saves</span>` : nothing}
-      <span class="topbar-spacer"></span>
-      <span class="status-item">${engine}</span>
-      <span class="status-item status-hint">Press <kbd>?</kbd> for shortcuts</span>
-    </footer>`;
+    // @lit-material/status-bar (HITOP Next): a labelled region, tabular numbers, wraps on phones.
+    return html`<lit-material-status-bar class="statusbar" label="Status">
+      ${t ? html`<lit-material-status-bar-item class="mono">${this.requestPlace()}</lit-material-status-bar-item>` : nothing}
+      ${dirty ? html`<lit-material-status-bar-item class="status-unsaved" tone="warning">● Unsaved · <lit-material-kbd keys="Mod+S"></lit-material-kbd> saves</lit-material-status-bar-item>` : nothing}
+      <lit-material-status-bar-item slot="end">${engine}</lit-material-status-bar-item>
+      <lit-material-status-bar-item slot="end" class="status-hint" button description="Keyboard shortcuts" @click=${() => this.openDialog("shortcuts")}>Press <lit-material-kbd keys="?"></lit-material-kbd> for shortcuts</lit-material-status-bar-item>
+    </lit-material-status-bar>`;
   }
 
   // --- main -------------------------------------------------------------------------
@@ -1221,6 +1325,9 @@ export class HitopApp extends LitElement {
     if (page) return page.render(s, this);
     if (kind === "history") {
       return html`<hitop-history .store=${s} .version=${s.version} .app=${this}></hitop-history>`;
+    }
+    if (kind === "org") {
+      return html`<hitop-org .store=${s} .version=${s.version} .app=${this}></hitop-org>`;
     }
     if (kind === "settings") {
       return html`<hitop-app-settings .store=${s} .version=${s.version} .app=${this}></hitop-app-settings>`;

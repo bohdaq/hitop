@@ -225,7 +225,8 @@ const WEBHOOK = 'whsec-e2e';
     await shot(page, 'clash');
     await chip().click();
     await D().getByLabel('GitHub conflicts in Shop').waitFor({ timeout: 10000 }).catch(() => {});
-    const conflict = await D().getByLabel('GitHub conflicts in Shop').innerText().catch(() => '');
+    // Both versions are in the conflict view (lit-material-conflict-resolver, HITOP Next S14).
+    const conflict = await D().getByLabel('GitHub conflicts in Shop').evaluate((el) => [el.innerText, ...[...el.querySelectorAll('lit-material-conflict-resolver')].flatMap((r) => [r.yours, r.theirs])].join('\n')).catch(() => '');
     await shot(page, 'conflict');
     check('a request changed on both sides shows both versions', conflict.includes('List orders') && conflict.includes('/v4/orders') && conflict.includes('/v3/orders'), conflict);
     await D().getByRole('group', { name: 'Keep for List orders' }).getByRole('button', { name: 'Keep both' }).click();
