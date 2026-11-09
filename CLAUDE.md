@@ -177,6 +177,7 @@ hitop/
 ├── shared/pm-shim.js           # the pm.* shim for Postman scripts, run by hitop-core (copy in the crate), the web app and HitopKit (copy in Resources/)
 ├── spec/sending.md             # what hitop adds when sending (behaviour, not format) + spec/vectors/send.json (cases only added)
 ├── spec/run-report.md          # `hitop run --reporter json` report, reportVersion 1, and the JUnit shape (CC BY 4.0)
+├── spec/STATE_MACHINES.md      # every lifecycle (send, socket, call, sync link, billing...): the rule (one status, guarded transitions with an identity, wire strings fixed, `data-state` for automation) and what is still implicit
 ├── brand/                      # logo.svg (master), logo-mono.svg, png/, BRAND.md (name, tagline, colors, asset map), export.sh, check.sh (CI job brand)
 ├── ROADMAP.md                  # agent work order to v1.x: decisions, rules, tranches T0–T26, status
 ├── cloud/                      # HITOP Cloud (AGPL, spec/CLOUD_SERVICE.md): portal/ (Lit + lit-material console: app shell, real paths /orgs/<id>/plan served by hitop-server's spa fallback, sign-in/pricing vendored in vendor/ until npm; served at cloud.hitop.rws8.tech from www/cloud/, npm test = e2e against the sync server + axe + CSP),
