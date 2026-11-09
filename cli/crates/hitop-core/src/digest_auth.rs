@@ -3,6 +3,7 @@
 //! ([`answer`]). MD5 (here, RFC 1321: no crate for one hash), MD5-sess and SHA-256 (ring), `qop`
 //! `auth` or none. No native dependencies, so the web app computes the same (features.js).
 
+#[cfg(feature = "native")]
 use crate::model::Auth;
 
 /// MD5 (RFC 1321) of `data`, lower-case hex.

@@ -1,6 +1,7 @@
 //! scripting::set_limits: a script past the loop or call-depth limit fails instead of running on
 //! (the sync server's monitors run other people's scripts). Its own test binary: the limits are
 //! process-wide.
+#![cfg(feature = "native")]
 use std::collections::HashMap;
 
 use hitop_core::scripting::{run_post_request_script_with, set_limits, PostRequestCtx};
