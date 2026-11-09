@@ -121,7 +121,7 @@ export function socketLog(view) {
   return html`
     <section class="response ws-log-panel" aria-label="Messages log">
       <div class="response-meta">
-        <span class=${`status-chip ${cls}`} role="status">${label}</span>
+        <span class=${`status-chip ${cls}`} role="status" data-state=${s.status}>${label}</span>
         ${s.protocol ? html`<span>Subprotocol ${s.protocol}</span>` : nothing}
         <span>${s.log.length} event${s.log.length === 1 ? "" : "s"}</span>
         ${s.log.length ? html`<lit-material-button variant="text" @click=${() => view.store.wsClearLog()}>${icon("trash")} Clear</lit-material-button>` : nothing}

@@ -19,6 +19,7 @@ function api() {
     if (req.method === 'OPTIONS') return res.writeHead(204, cors).end();
     const url = new URL(req.url, 'http://x');
     hits.push(req.url);
+    if (url.pathname === '/slow') return setTimeout(() => res.writeHead(200, { ...cors, 'Content-Type': 'application/json' }).end(JSON.stringify({ query: Object.fromEntries(url.searchParams) })), 1500);
     res.writeHead(200, { ...cors, 'Content-Type': 'application/json' }).end(JSON.stringify({ query: Object.fromEntries(url.searchParams) }));
   });
   return new Promise((resolve) => server.listen(0, '127.0.0.1', () => resolve({ server, hits })));
@@ -90,6 +91,18 @@ function api() {
     const error = await sendRefused();
     check('[tauri] a failing reference is named', error.includes('${secret:op:Dev/Missing/field} (op): not found') && !error.includes('Cannot create'), error);
     check('[tauri] nothing sent for it', hits.length === 1, hits.join(' '));
+    // Another tab's send while one is in flight: the slow one's history entry is still masked
+    // (resolved values are kept for masking, not cleared by the next send).
+    await p.getByLabel('URL').fill('${base}/slow?t=${secret:vault:kv/app#token}');
+    await p.getByRole('button', { name: 'Send' }).click();
+    await p.keyboard.press('Alt+Shift+KeyN'); // a new tab while the slow one waits
+    await p.waitForTimeout(200);
+    await p.getByLabel('URL').fill('${base}/echo?k=${key}');
+    await p.getByLabel('URL').press('Enter');
+    await p.waitForFunction(() => !document.querySelector('[aria-busy="true"]'), null, { timeout: 30000 });
+    await p.waitForTimeout(2500);
+    const after = ['history.json', 'collections.json'].map((f) => h.mock.read(f, '')).join('\n');
+    check('[tauri] two tabs in flight: no value in history', hits.some((u) => u.startsWith('/slow')) && !after.includes(VAULT) && !after.includes(AZURE), after.slice(0, 400));
   }
 
   check('no page errors', errors.length === 0, errors.join(' || '));

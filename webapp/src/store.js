@@ -322,6 +322,9 @@ export class Store extends EventTarget {
     // ${secret:vault|aws|azure|op:...} values (desktop only), by inner text:
     // memory only, for one send or run, masked like secrets, never saved.
     this.refValues = {};
+    // Every value a reference resolved to since the page loaded (memory only): masking reads
+    // this, not refValues, which the next send or run clears while others are still in flight.
+    this.refSeen = new Set();
     // hitop-wasm, once loaded: the Headers note asks it for the Content-Type
     // (hitop-core's rules, as every surface sends it) while rendering.
     this.format = null;
@@ -663,6 +666,9 @@ export class Store extends EventTarget {
 
   deleteTabRequest(index) {
     const tab = this.tabs[index];
+    this.cancel(tab.id);
+    this.wsDisconnect(tab.id);
+    this.grpcCancel(tab.id);
     if (tab.loadedRequestId && tab.loadedCollectionId) {
       this.collections = collectionService.deleteRequestFromCollection(this.collections, tab.loadedCollectionId, tab.loadedRequestId);
     }
@@ -1112,7 +1118,7 @@ export class Store extends EventTarget {
 
   secretValuesFor(collectionId) {
     const own = this.folders.get(collectionId)?.globals ?? this.globals;
-    return [...secretValues(this.activeEnvironment), ...secretValues(own), ...Object.values(this.sharedFor(collectionId)), ...Object.values(this.refValues).filter(Boolean)];
+    return [...secretValues(this.activeEnvironment), ...secretValues(own), ...Object.values(this.sharedFor(collectionId)), ...[...this.refSeen]];
   }
 
   // HITOP Cloud C4: secret values shared end to end in a synced collection's workspace (`hitop
@@ -1141,6 +1147,7 @@ export class Store extends EventTarget {
     if (!p.resolveSecretRefs) throw new Error(`Secret manager references resolve in the hitop desktop app and the CLI, not in the browser: ${list}`);
     const values = await p.resolveSecretRefs(wanted);
     this.refValues = { ...this.refValues, ...values };
+    for (const v of Object.values(values ?? {})) if (typeof v === "string" && v) this.refSeen.add(v);
   }
 
   // True when the tab has edits its saved request doesn't (computed, never
@@ -1740,7 +1747,7 @@ export class Store extends EventTarget {
       auth: tab.auth,
       ...SAVED_FIELDS(tab),
     };
-    this.tabs = tabService.updateTab(this.tabs, index, { loading: true, response: null, statusCode: null, responseHeaders: null, durationMs: null, tests: null, responseCut: false, responseStored: undefined, jsonError: null });
+    this.tabs = tabService.updateTab(this.tabs, index, { ...NO_RESPONSE, loading: true });
     // An event stream (Accept: text/event-stream, web app): its events as they arrive, in memory
     // (store.events by tab id), until it ends or Stop; no time limit.
     const streaming = Boolean(platform().stream) && asksForEvents(tab.headers);
@@ -1884,6 +1891,10 @@ export class Store extends EventTarget {
     const tab = this.tab;
     const id = tab.id;
     if (["open", "connecting"].includes(this.socket(id).status)) return;
+    // This connection's identity: callbacks of an older (cancelled) one never touch a newer one.
+    const token = {};
+    this.wsSet(id, { status: "connecting", protocol: null, token });
+    const current = () => this.socket(id).token === token;
     let url, headers, protocols;
     try {
       await this.resolveRefs({ url: tab.url, headers: tab.headers, auth: tab.auth, subprotocols: tab.subprotocols, wsMessages: tab.wsMessages }, tab.loadedCollectionId);
@@ -1894,36 +1905,41 @@ export class Store extends EventTarget {
       headers = authed.headers;
       protocols = (tab.subprotocols || []).map(fill).filter(Boolean);
     } catch (e) {
+      if (current()) this.wsSet(id, { status: "closed", token: null });
       this.notify(`Not connected: ${errorText(e)}`);
       return;
     }
+    if (!current()) return; // cancelled while references resolved
     const p = platform();
-    this.wsSet(id, { status: "connecting", protocol: null });
     this.wsLog(id, { kind: "system", text: `Connecting to ${url}${protocols.length ? ` (subprotocols ${protocols.join(", ")})` : ""}` });
     if (headers.length && !(p.websocketHeaders || p.websocketSendsHeaders?.(url)))
       this.wsLog(id, { kind: "system", text: `Not sent: ${headers.map((h) => h.name).join(", ")}. A browser can't set WebSocket handshake headers (auth included); the desktop app and hitop ws send them. An API key in the query works here.` });
     let opened = false;
     const conn = p.websocket(url, { headers, protocols }, {
       onOpen: ({ protocol }) => {
+        if (!current()) return;
         opened = true;
         this.wsSet(id, { status: "open", protocol: protocol || null });
         this.wsLog(id, { kind: "system", text: `Connected${protocol ? `, subprotocol ${protocol}` : ""}` });
       },
-      onMessage: ({ text, bytes }) => this.wsLog(id, bytes ? { kind: "received", bytes: Array.from(bytes) } : { kind: "received", text }),
-      onError: (message) => this.wsLog(id, { kind: "error", text: opened ? message : `Couldn't connect: ${message}` }),
+      onMessage: ({ text, bytes }) => current() && this.wsLog(id, bytes ? { kind: "received", bytes: Array.from(bytes) } : { kind: "received", text }),
+      onError: (message) => current() && this.wsLog(id, { kind: "error", text: opened ? message : `Couldn't connect: ${message}` }),
       onClose: ({ code, reason }) => {
-        this.wsSet(id, { status: "closed", conn: null });
+        if (!current()) return;
+        this.wsSet(id, { status: "closed", conn: null, token: null });
         if (opened || code) this.wsLog(id, { kind: "system", text: `Closed${code ? ` ${code}` : ""}${reason ? ` ${reason}` : ""}` });
       },
     });
-    if (this.socket(id).status !== "closed") this.wsSet(id, { conn });
+    if (current()) this.wsSet(id, { conn });
+    else conn?.close();
   }
 
   wsDisconnect(tabId = this.tab?.id) {
     const s = this.socket(tabId);
     if (s.status === "closed") return;
     s.conn?.close();
-    if (s.status === "connecting") this.wsSet(tabId, { status: "closed", conn: null });
+    // Cancel while connecting: closed now, and that connection's late callbacks are ignored (token).
+    if (s.status === "connecting") this.wsSet(tabId, { status: "closed", conn: null, token: null });
   }
 
   // Sends text with variables filled in; logs it as sent.
@@ -2043,40 +2059,49 @@ export class Store extends EventTarget {
     if (!g) return this.notify("gRPC is available in the desktop app and CLI.");
     if (this.grpcState(id).status === "running") return;
     if (!tab.grpcService || !tab.grpcMethod) return this.notify("Pick a service and method first (Load schema).");
+    // This call's identity: events of a cancelled call never touch a newer one.
+    const token = {};
+    this.grpcSet(id, { status: "running", token });
+    const current = () => this.grpcState(id).token === token;
     let args;
     try {
       await this.resolveRefs({ url: tab.url, headers: tab.headers, auth: tab.auth, grpcMessage: tab.grpcMessage }, tab.loadedCollectionId);
       const fill = (text) => (text ? interpolateVariables(text, this.variables(tab.loadedCollectionId)) : text);
       args = { ...this.grpcServer(tab), service: tab.grpcService, method: tab.grpcMethod, message: fill(tab.grpcMessage || "") };
     } catch (e) {
+      if (current()) this.grpcSet(id, { status: "done", token: null });
       return this.notify(`Not sent: ${errorText(e)}`);
     }
-    this.grpcSet(id, { status: "running" });
+    if (!current()) return; // cancelled while references resolved
     this.grpcLog(id, { kind: "sent", text: `${args.service}/${args.method} ${args.message.trim() || "{}"}` });
-    const done = () => this.grpcSet(id, { status: "done", call: null });
+    const done = () => this.grpcSet(id, { status: "done", call: null, token: null });
     const call = g.call(args, {
-      onHeaders: (metadata) => metadata.length && this.grpcLog(id, { kind: "headers", text: metadata.map(([k, v]) => `${k}: ${v}`).join("\n") }),
-      onMessage: (data) => this.grpcLog(id, { kind: "message", text: JSON.stringify(data, null, 2) }),
+      onHeaders: (metadata) => current() && metadata.length && this.grpcLog(id, { kind: "headers", text: metadata.map(([k, v]) => `${k}: ${v}`).join("\n") }),
+      onMessage: (data) => current() && this.grpcLog(id, { kind: "message", text: JSON.stringify(data, null, 2) }),
       onStatus: ({ code, name, message, trailers }) => {
+        if (!current()) return;
         const head = code === 0 ? "OK" : `${name} (${code})${message ? `: ${message}` : ""}`;
         const tail = (trailers || []).map(([k, v]) => `${k}: ${v}`).join("\n");
         this.grpcLog(id, { kind: "status", ok: code === 0, text: tail ? `${head}\n${tail}` : head });
         done();
       },
       onError: (message) => {
+        if (!current()) return;
         this.grpcLog(id, { kind: "error", text: message });
         done();
       },
     });
-    if (this.grpcState(id).status === "running") this.grpcSet(id, { call });
+    if (current()) this.grpcSet(id, { call });
+    else call?.cancel?.();
   }
 
   grpcCancel(tabId = this.tab?.id) {
     const g = this.grpcState(tabId);
     if (g.status !== "running") return;
     g.call?.cancel();
-    this.grpcSet(tabId, { status: "done", call: null });
-    this.grpcLog(tabId, { kind: "system", text: "Cancelled" });
+    this.grpcSet(tabId, { status: "done", call: null, token: null });
+    // `cancelled` marks the call's outcome for the status chip (grpc-view.js), next to status and error.
+    this.grpcLog(tabId, { kind: "system", text: "Cancelled", cancelled: true });
   }
 
   // Fetches the GraphQL schema of the current tab's endpoint by

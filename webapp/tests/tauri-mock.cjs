@@ -519,7 +519,7 @@ class TauriMock {
       if (m.name === 'SayHello') emit({ type: 'message', data: { message: `Hello, ${msg.name || ''}`, tenant: meta('x-tenant'), authorization: meta('authorization'), index: 0 } });
       else for (let i = 0; i < (msg.times || 0); i++) emit({ type: 'message', data: { message: `Hello #${i}, ${msg.name || ''}`, tenant: '', authorization: '', index: i } });
       emit(ok);
-    }, 20);
+    }, this.grpcDelayMs ?? 20);
     return { id };
   }
 

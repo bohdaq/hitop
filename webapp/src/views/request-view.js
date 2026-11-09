@@ -460,7 +460,7 @@ export class HitopRequest extends LitElement {
 
   // Server-Sent Events as they arrive (store.events): newest last, the stream's state on top.
   renderEvents(live) {
-    return html`<section class="response sse" aria-label="Events">
+    return html`<section class="response sse" data-state=${live.open ? "streaming" : "done"} aria-label="Events">
       <div class="response-meta">
         ${live.open ? html`<lit-material-status status="info">Live</lit-material-status>` : html`<span class="hint">Stream ended</span>`}
         <span>${live.events.length} ${live.events.length === 1 ? "event" : "events"}</span>
@@ -477,19 +477,19 @@ export class HitopRequest extends LitElement {
     const live = this.store.events?.get(t.id);
     if (live && (live.open || t.responseType === "cancelled")) return this.renderEvents(live);
     if (t.loading) {
-      return html`<section class="response" aria-label="Response" aria-busy="true">
+      return html`<section class="response" data-state="sending" aria-label="Response" aria-busy="true">
         <div class="skeleton bar"></div>
         <div class="skeleton block"></div>
       </section>`;
     }
     if (t.responseType === "cancelled") {
-      return html`<section class="response" aria-label="Response">
+      return html`<section class="response" data-state="cancelled" aria-label="Response">
         <lit-material-status status="warning">Cancelled</lit-material-status>
         <p class="hint">You stopped the request before its response arrived. Nothing was recorded in History.</p>
       </section>`;
     }
     if (t.statusCode == null && (t.response == null || t.response === "")) {
-      return html`<section class="response empty" aria-label="Response">
+      return html`<section class="response empty" data-state="idle" aria-label="Response">
         <lit-material-empty-state size="compact" headline="Send a request to see the response">
           ${usesProxy(t.url || "https://example.com")
             ? "Requests to public APIs go through the HITOP proxy, so CORS doesn't block them. Requests to localhost go straight from your browser."
@@ -502,7 +502,7 @@ export class HitopRequest extends LitElement {
       </section>`;
     }
     if (t.responseType === "error" || t.statusCode == null) {
-      return html`<section class="response" aria-label="Response">
+      return html`<section class="response" data-state="error" aria-label="Response">
         <lit-material-status status="error">Request failed</lit-material-status>
         <p class="error-text">${String(t.response).replace(/^Error: /, "")}</p>
       </section>`;
@@ -517,7 +517,7 @@ export class HitopRequest extends LitElement {
     const eventsAt = live?.events.length ? (tests.length ? 3 : 2) : -1;
     if (this.responseSection >= 2 && this.responseSection !== testsAt && this.responseSection !== eventsAt) this.responseSection = 0;
     return html`
-      <section class="response" aria-label="Response">
+      <section class="response" data-state=${t.responseType === "error" ? "error" : "done"} aria-label="Response">
         <div class="response-meta">
           <span class=${`status-chip ${cls}`}>${t.statusCode} ${getStatusText(t.statusCode) === "Unknown Status" ? "" : getStatusText(t.statusCode)}</span>
           ${t.durationMs != null ? html`<span>${t.durationMs} ms</span>` : nothing}

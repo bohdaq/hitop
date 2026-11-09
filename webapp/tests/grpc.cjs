@@ -110,6 +110,15 @@ const FIXTURES = path.join(__dirname, '../../cli/crates/hitop-core/tests/fixture
     await send.click();
     check('[tauri] an error status with its trailers', (await waitLog('NOT_FOUND (5): no user named bo')) && (await log()).includes('x-reason: test') && (await chip()) === 'NOT_FOUND', await log());
 
+    // Cancel: the chip says Cancelled (not the previous call's NOT_FOUND), and a late answer is ignored.
+    h.mock.grpcDelayMs = 400;
+    await send.click();
+    await p.getByRole('button', { name: /Cancel/ }).click();
+    const cancelled = (await chip()) === 'Cancelled' && (await p.locator('.grpc-log-panel .status-chip').getAttribute('data-state')) === 'cancelled';
+    await p.waitForTimeout(600);
+    check('[tauri] a cancelled call shows Cancelled (data-state) and nothing arrives after it', cancelled && (await chip()) === 'Cancelled' && h.mock.grpcCancelled.length > 0, `${await chip()} ${await log()}`);
+    h.mock.grpcDelayMs = 20;
+
     await pick('RPC method', 'Chat (bidi)');
     const warn = await p.locator('.editor-panel').innerText();
     await send.click();

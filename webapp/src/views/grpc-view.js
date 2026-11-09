@@ -146,14 +146,16 @@ export function grpcLog(view) {
   const t = view.tab;
   const store = view.store;
   const g = store.grpcState(t.id);
-  const last = [...g.log].reverse().find((e) => e.kind === "status" || e.kind === "error");
+  const last = [...g.log].reverse().find((e) => e.kind === "status" || e.kind === "error" || e.cancelled);
   const [cls, label] =
-    g.status === "running" ? ["info", "Calling"] : !last ? ["info", "Not called"] : last.kind === "error" ? ["bad", "Failed"] : last.ok ? ["ok", "OK"] : ["bad", last.text.split("\n")[0].replace(/\s*\(.*$/, "")];
+    g.status === "running" ? ["info", "Calling"] : !last ? ["info", "Not called"] : last.cancelled ? ["info", "Cancelled"] : last.kind === "error" ? ["bad", "Failed"] : last.ok ? ["ok", "OK"] : ["bad", last.text.split("\n")[0].replace(/\s*\(.*$/, "")];
+  // Machine-readable state for tests and agents: idle | running | ok | failed | cancelled.
+  const state = g.status === "running" ? "running" : !last ? "idle" : last.cancelled ? "cancelled" : last.kind === "status" && last.ok ? "ok" : "failed";
   const messages = g.log.filter((e) => e.kind === "message").length;
   return html`
     <section class="response ws-log-panel grpc-log-panel" aria-label="Call log">
       <div class="response-meta">
-        <span class=${`status-chip ${cls}`} role="status">${label}</span>
+        <span class=${`status-chip ${cls}`} role="status" data-state=${state}>${label}</span>
         <span>${messages} message${messages === 1 ? "" : "s"}</span>
         ${g.log.length ? html`<lit-material-button variant="text" @click=${() => store.grpcClearLog()}>${icon("trash")} Clear</lit-material-button>` : nothing}
       </div>
