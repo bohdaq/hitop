@@ -483,7 +483,10 @@ fn update_user(state: &State, tx: &mut Tx, ctx: &Ctx, u: ScimUser, input: UserIn
     let external_id = pick(input.external_id, &u.external_id);
     let display_name = pick(input.display_name, &u.display_name);
     let name = input.name.unwrap_or_else(|| if full { json!({}) } else { u.name.clone() });
-    let active = input.active.unwrap_or(if full { true } else { u.active });
+    // Only an explicit `active` moves a user between active and deactivated: a full replace
+    // (PUT) that leaves it out keeps the current state, so it never reactivates (and re-grants)
+    // a deprovisioned person by omission.
+    let active = input.active.unwrap_or(u.active);
     // The old address leaves first (a new address, or a deactivation).
     if u.active && (!active || user_name != u.user_name) {
         deprovision(state, tx, ctx, &u.user_name)?;

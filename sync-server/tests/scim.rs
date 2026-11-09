@@ -177,6 +177,11 @@ fn create_filter_update_deactivate_delete() {
     assert_eq!(r.json["active"], false);
     assert_eq!(o.org_role("bob@corp.test"), None);
     assert_eq!(o.s.call("GET", "/v1/me", Some(&bob.session), None).status, 200);
+    // A PUT that leaves out `active` keeps him deactivated: only an explicit value reactivates.
+    let r = o.scim("PUT", &format!("/Users/{bob_id}"), Some(json!({ "userName": "bob@corp.test", "displayName": "Robert" })));
+    assert_eq!(r.status, 200, "{}", r.json);
+    assert_eq!(r.json["active"], false);
+    assert_eq!(o.org_role("bob@corp.test"), None);
     // Reactivate: back in.
     let r = o.scim("PATCH", &format!("/Users/{bob_id}"), Some(patch(json!([{ "op": "replace", "path": "active", "value": true }]))));
     assert_eq!(r.json["active"], true);
