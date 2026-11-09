@@ -166,6 +166,7 @@ Two tracks run at once.
 5. Palette on Mod+K (action registry; Mod+L = URL).
 6. Run report page.
 7. Agent side sheet (patch, diff, dry run).
+7b. **Organization area in the app** (S3–S8, S13, S15–S20): members, plan & billing (Stripe checkout/portal; desktop via system browser + deep link), tokens & MCP, runs & monitors, security & audit; unified conflict view (S14); limit dialogs (S18). The portal redirects into the app, then retires.
 8. **Extensions on the web app** (Firefox + Chrome builds from `webapp/`; storage keys already
    shared with React; extension CSP and the proxy-less send path to check).
 9. Site restyle with the same tokens; light theme pass; store screenshots.
@@ -184,3 +185,129 @@ Two tracks run at once.
 - Every control reachable by keyboard; palette and side sheets trap focus and restore it.
 - Touch targets ≥ 44 px on touch devices.
 - No regressions in `npm run test:e2e` and `test:e2e:tauri`.
+
+## User stories
+
+Canvas pages "User story" (S1–S8) and "More stories" (S9–S20) draw the key ones. Persona: **Maya**,
+API lead at a six-person team; **Jonas**, admin; **Priya**, member; **Ana**, guest viewer;
+**CI runner**, the team's GitHub Actions credential.
+
+**Decision (owner, 2026-11-09): organization settings, members, plan and billing, tokens, SSO and
+audit move inside the app** (an "Organization" settings area with a left menu). The portal at
+cloud.hitop.rws8.tech (`cloud/portal`: account, home, members, org, orgs, plan, runs, settings,
+tokens, workspaces pages) stays as a redirect into the app, then retires. All app builds (web,
+desktop, extensions) get the same pages; desktop opens Stripe checkout and the Stripe portal in the
+system browser and comes back through a deep link.
+
+Status: **have** = exists today (maybe restyle), **partial**, **new**.
+
+### Getting started
+
+| # | As … I want … | So that … | Today | Screen |
+| --- | --- | --- | --- | --- |
+| U1 | a new user, to send a request without an account | I can try HITOP in seconds | have | — |
+| U2 | Maya, to sign in with GitHub, Google, email + password, a mailed code or SSO | my data syncs across devices | have (portal + app) | S1 |
+| U3 | Maya, to import Postman collections, environments and globals | I leave Postman in one step | have | S2 |
+| U4 | Maya, to open a collection folder in our repo | requests live next to the code | have (desktop, FS Access) | S2 |
+| U5 | Maya, to start from an OpenAPI URL and later sync it without losing edits | the spec stays the source | have | S2 |
+| U6 | a newcomer, a sample collection and a three-step setup | I learn by doing | partial (sample yes, stepper new) | S2 |
+| U7 | Maya, to install the CLI and run the same collection locally | CLI and app agree | have | S9 |
+
+### Everyday work
+
+| # | As … I want … | So that … | Today | Screen |
+| --- | --- | --- | --- | --- |
+| U8 | Priya, to build a request with params, headers, body, auth, scripts and checks | one tool covers it | have | concept 1 |
+| U9 | Priya, to see variable values and where they come from | no guessing which env applies | new | concept 1 |
+| U10 | Priya, to see status, time, size and timing phases | slow parts are obvious | partial (no phases) | concept 1 |
+| U11 | Priya, to compare a response with the last one or a saved example | I spot regressions | have (dialog) → tab | concept 1 |
+| U12 | Priya, WebSocket, SSE, GraphQL and gRPC in the same app | one client for every API | have (gRPC web via bridge) | — |
+| U13 | Priya, to find anything and run any command from ⌘K | I never leave the keyboard | partial (Mod+P) | concept 3 |
+| U14 | Priya, the agent to write checks or fix a request as a diff I approve | AI helps without surprises | partial (Ask AI) | concept 3 |
+| U15 | Priya, to copy any request as curl, fetch, Python, Go, Java or Rust | I share it with anyone | have | — |
+
+### Environments and secrets
+
+| # | As … I want … | So that … | Today | Screen |
+| --- | --- | --- | --- | --- |
+| U16 | Maya, environments per stage with secret values kept on each device | secrets never sync or leak | have | S10 |
+| U17 | Maya, team environments shared with the org, secrets still per device | everyone points at the same staging | have | S10 |
+| U18 | Maya, `${secret:vault:…}` references to Vault, AWS, Azure, 1Password | secrets stay in our manager | have (desktop, CLI) | S10 |
+| U19 | Priya, a clear note when a secret is missing on this device | I know what to fill | partial | S10 |
+
+### Git and files
+
+| # | As … I want … | So that … | Today | Screen |
+| --- | --- | --- | --- | --- |
+| U20 | Priya on desktop, changed files marked in the tree | I see what I touched | new | concept 1 |
+| U21 | Priya on desktop, to diff, stage, commit, pull, push and switch branches | no terminal needed | have (Git page) | S11 |
+| U22 | Maya on the web, to link a Cloud collection to a GitHub repo, branch and folder | every save becomes a commit | have | S12 |
+| U23 | Priya, to know where a collection is kept (browser, Cloud, shared, GitHub, folder) | no surprises about who can see it | have (icon) → clearer | S12 |
+
+### Sharing and teams
+
+| # | As … I want … | So that … | Today | Screen |
+| --- | --- | --- | --- | --- |
+| U24 | Maya, to create an org and start a Team trial | the team gets a shared space | have (switcher) | S3 |
+| U25 | Maya, to invite people with a role and see seats before sending | no billing surprises | have (portal) → app | S4 |
+| U26 | Maya, to share one collection end-to-end encrypted and confirm each device | the server can't read it | have | S13 |
+| U27 | Jonas, to accept an invite with a code and see the fingerprint | I join the right team | have | S13 |
+| U28 | Ana, read-only access as a free guest viewer | stakeholders can look | have (Team) | S8 |
+| U29 | Maya, to change roles, resend or revoke invites, remove people | access matches the team | have (portal) → app | S8 |
+| U30 | Maya, to transfer ownership | the org survives me leaving | have (admin) → app | S8 |
+| U31 | Priya, comments on requests of shared collections | discussion stays with the API | have | — |
+| U32 | Priya, version history per request with restore | mistakes are undoable | have | S14 |
+
+### Conflicts
+
+| # | As … I want … | So that … | Today | Screen |
+| --- | --- | --- | --- | --- |
+| U33 | Priya, a side-by-side view when a shared collection changed on two devices, with mine / theirs / both per file | nothing is lost | have (People tab) → unified | S14 |
+| U34 | Maya, the same view for GitHub-linked collections | one way to resolve everywhere | have (git panel) → unified | S14 |
+| U35 | Priya, a merge-conflict view on desktop git | I finish merges in the app | have (Git page) | S14 |
+| U36 | Priya, a Cloud library conflict to keep both, never overwrite | my offline edits survive | have ("(this browser)" copy) → explained | S14 |
+| U37 | Maya, OpenAPI sync to show what it would change and keep my edits | the spec can't clobber us | have | — |
+| U38 | anyone, one badge on the account button counting open conflicts and errors | I see problems at once | have | S14 |
+
+### Runs, CI and automation
+
+| # | As … I want … | So that … | Today | Screen |
+| --- | --- | --- | --- | --- |
+| U39 | Priya, to run a collection or folder and read a clear report | failures explain themselves | partial | concept 2 |
+| U40 | Maya, to generate a GitHub Actions workflow or crontab line | the suite runs in CI | have (CLI `hitop schedule`) → app | S9 |
+| U41 | Maya, a read-only runner credential for CI | CI pulls shared collections safely | have | S9 |
+| U42 | Maya, run history from CI in the app | I see trends, not just today | have (Cloud) | S15 |
+| U43 | Maya, monitors that run on schedule and mail on fail/recover | we hear before customers do | have (paid) | S15 |
+| U44 | Priya, a mock server from saved examples | the frontend can start before the API | have (paid) | S16 |
+| U45 | Maya, personal access tokens and the hosted MCP endpoint | agents and scripts use our library | have (portal) → app | S17 |
+| U46 | Priya, `hitop mcp` for Claude Code and Cursor | my editor's agent drives HITOP | have | S17 |
+
+### Plans, billing and usage
+
+| # | As … I want … | So that … | Today | Screen |
+| --- | --- | --- | --- | --- |
+| U47 | Maya, to compare plans and pick seats | I pay for what we use | have (portal) → app | S5 |
+| U48 | Maya, to review and pay on Stripe | the card never touches HITOP | have | S6 |
+| U49 | Maya, usage against limits and a warning before a limit | nothing blocks us mid-task | partial (402 on create) | S7, S18 |
+| U50 | Priya, a clear message when a limit stops an action, with who can fix it | I'm not stuck | partial | S18 |
+| U51 | Maya, invoices, payment method, tax ID, cancel | billing is self-serve | have (Stripe portal) | S7 |
+| U52 | Maya, to know a trial or failed payment never deletes data | I trust the product | have (rules) → said in UI | S5, S7 |
+
+### Account, devices and security
+
+| # | As … I want … | So that … | Today | Screen |
+| --- | --- | --- | --- | --- |
+| U53 | Maya, a list of my devices with fingerprints, and to remove one | a lost laptop loses access | have | S19 |
+| U54 | Maya, a recovery phrase and password reset that keep my keys | I never lose shared data | have | S19 |
+| U55 | Maya, to turn the Cloud library off and keep everything local | privacy is my choice | have | S19 |
+| U56 | Maya (Business), SSO for our domain with DNS verification | people sign in with company accounts | have (server) → app | S20 |
+| U57 | Maya (Business), audit log with export and signed daily anchors | auditors are satisfied | have (server) → app | S20 |
+| U58 | Jonas (Business), an admin console: request key rotation, remove devices from org workspaces | we respond to incidents | have (server) → app | S20 |
+
+### Settings and preferences
+
+| # | As … I want … | So that … | Today | Screen |
+| --- | --- | --- | --- | --- |
+| U59 | Priya, request time limit, theme, shortcuts list, storage usage | the app fits me | have | — |
+| U60 | Priya, my own Anthropic key for the agent, kept on this device | AI uses my account | have | — |
+| U61 | Priya on desktop, a choice about the weekly usage ping | telemetry is opt-in | have (desktop only) | — |
