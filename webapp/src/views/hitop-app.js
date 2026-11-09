@@ -26,7 +26,7 @@ import "./github-view.js";
 import { storageOf } from "../git.js";
 import { syncClient } from "./sync-view.js";
 import { orgLabel } from "../orgs.js";
-import { aiDialog, runAi } from "./ai-view.js";
+import { agentPanel, runAi } from "./ai-view.js";
 import "./mock-view.js";
 import "./monitor-view.js";
 import { historyDialog, loadRequestHistory } from "./history-dialog.js";
@@ -87,6 +87,7 @@ export class HitopApp extends LitElement {
     collapsed: { state: true },
     menuTab: { state: true },
     exportFormat: { state: true },
+    agent: { state: true },
   };
 
   constructor() {
@@ -94,6 +95,7 @@ export class HitopApp extends LitElement {
     this.store = new Store();
     this.navOpen = false;
     this.dialog = null; // { kind, ...data }
+    this.agent = null; // the agent side sheet (ai-view.js): { action, prompt, text, patch, ... }
     this.exportFormat = "hitop";
     this.filter = "";
     this.collapsed = loadCollapsed();
@@ -617,9 +619,6 @@ export class HitopApp extends LitElement {
       case "compare":
         ({ headline, body, footer } = (d.kind === "code" ? codeDialog : compareDialog)(this, d));
         break;
-      case "ai":
-        ({ headline, body, footer } = aiDialog(this, d));
-        break;
       case "request-history":
         ({ headline, body, footer } = historyDialog(this, d));
         break;
@@ -704,13 +703,42 @@ export class HitopApp extends LitElement {
     </lit-material-select>`;
   }
 
-  // Ask AI: tests when there is a response, an explanation after a failure, else a request from text.
-  openAi(action) {
+  // Ask AI (the agent side sheet): an explanation after a failure, tests for a response, a change
+  // to a request with a URL, else a request from text. Tests and explanations start at once.
+  openAi(action, data = {}) {
     const t = this.store.tab;
     const failed = t.responseType === "error" || (t.tests || []).some((x) => !x.pass);
-    const pick = action ?? (failed ? "explain" : t.statusCode != null ? "tests" : "generate");
-    this.openDialog("ai", { action: pick });
-    if (pick !== "generate" && aiSettings().key) runAi(this, pick);
+    const pick = action ?? (failed ? "explain" : t.statusCode != null ? "tests" : t.url ? "edit" : "generate");
+    this.openAgent({ action: pick, ...data });
+    if ((pick === "tests" || pick === "explain") && aiSettings().key) runAi(this, pick);
+  }
+
+  setAgent(changes) {
+    this.agent = { ...(this.agent ?? {}), ...changes };
+  }
+
+  async openAgent(data) {
+    this.navOpen = false;
+    this.agent = { text: "", result: null, patch: null, dryRun: null, error: null, busy: false, ...data };
+    await this.updateComplete;
+    const sheet = this.querySelector("#agent");
+    sheet?.show();
+    await sheet?.updateComplete;
+    requestAnimationFrame(() => this.querySelector("#ai-prompt")?.focus());
+  }
+
+  closeAgent() {
+    this.aiAbort?.abort();
+    this.querySelector("#agent")?.close();
+  }
+
+  renderAgent() {
+    return html`<lit-material-side-sheet id="agent" class="agent-sheet" variant="modal" position="end" aria-label="Agent" @close=${() => this.aiAbort?.abort()}>
+      <div slot="header" class="agent-head">${icon("sparkle")}<span>Agent</span>
+        <lit-material-icon-button aria-label="Close the agent" @click=${() => this.closeAgent()}>${icon("x")}</lit-material-icon-button>
+      </div>
+      ${this.agent ? agentPanel(this) : nothing}
+    </lit-material-side-sheet>`;
   }
 
   // New organization (then it's the current one) or an invite to the current one.
@@ -1147,7 +1175,7 @@ export class HitopApp extends LitElement {
     const query = e.detail?.query?.trim() ?? "";
     this.querySelector("lit-material-command-palette")?.hide();
     if (this.store.view.kind !== "request") this.store.selectTab(this.store.currentTab);
-    if (query) this.openDialog("ai", { action: "generate", prompt: query });
+    if (query) this.openAgent({ action: "generate", prompt: query });
     else this.openAi();
   }
 
@@ -1240,7 +1268,7 @@ export class HitopApp extends LitElement {
         <main id="main" class="main">${this.renderMain()}</main>
       </div>
       ${this.renderStatusBar()}
-      ${this.renderDialog()} ${this.renderRequestMenu()} ${this.renderAccountMenu()} ${this.renderPalette()}
+      ${this.renderDialog()} ${this.renderRequestMenu()} ${this.renderAccountMenu()} ${this.renderPalette()} ${this.renderAgent()}
       <lit-material-snackbar id="toast" closable></lit-material-snackbar>`;
   }
 }

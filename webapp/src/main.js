@@ -11,6 +11,8 @@ import "@lit-material/code-block";
 import "@lit-material/color-scheme";
 import "@lit-material/confirm";
 import "@lit-material/dialog";
+import "@lit-material/diff";
+import "@lit-material/sheet";
 import "@lit-material/empty-state";
 import "@lit-material/icon-button";
 import "@lit-material/key-value";

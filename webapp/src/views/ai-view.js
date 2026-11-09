@@ -1,14 +1,23 @@
-// The "Ask AI" dialog (ai.js): write tests for the response, explain a failure, or a request
-// from a curl command, a description or a spec snippet. The answer streams into the dialog;
-// nothing changes until the person applies it.
+// The agent (HITOP Next A7, concept screen 3): Ask AI in a side sheet beside the request. It can
+// change the request, write tests, explain a failure, or make a request from text. Changes
+// arrive as a patch (agent.js), shown as a diff and, when they touch the tests, dry-run against
+// the last response; nothing changes until the person applies it. Secret values are masked
+// before anything is sent (ai.js describeExchange).
 import { html, nothing } from "lit";
 import { icon } from "../icons.js";
 import { aiSettings, askAi, describeExchange } from "../ai.js";
+import { patched, requestOf, requestText, tabUpdates, validatePatch } from "../agent.js";
+import { testList } from "./request-view.js";
 
-const TITLES = { tests: "Write tests", explain: "Explain", generate: "Request from text" };
+const ACTIONS = [
+  ["edit", "Change this request"],
+  ["tests", "Write tests"],
+  ["explain", "Explain"],
+  ["generate", "Request from text"],
+];
 
 /** The tab's request and response as the model sees them (secrets masked). */
-function exchange(app) {
+function exchange(app, withScripts = false) {
   const s = app.store;
   const t = s.tab;
   const failed = t.responseType === "error" ? String(t.response || "").replace(/^Error: /, "") : null;
@@ -23,86 +32,129 @@ function exchange(app) {
       response: failed ? "" : t.response,
       tests: t.tests,
       error: failed,
+      ...(withScripts ? { preRequestScript: t.preRequestScript, postRequestScript: t.postRequestScript } : {}),
     },
     s.secretValuesFor(t.loadedCollectionId),
   );
 }
 
-/** Starts (or restarts) the dialog's action. */
-export async function runAi(app, action = app.dialog?.action, prompt) {
-  const set = (changes) => {
-    if (app.dialog?.kind === "ai") app.dialog = { ...app.dialog, ...changes };
-  };
+/** A checked patch on the sheet, with its dry run when it changes the tests. */
+async function showPatch(app, raw) {
+  const s = app.store;
+  const before = requestOf(s.tab);
+  const v = validatePatch(raw, before);
+  if (!v.ok) return app.setAgent({ error: `The answer couldn't be used: ${v.error}`, busy: false });
+  app.setAgent({ patch: v.patch, dropped: v.dropped, before, busy: false, dryRun: null });
+  if (v.patch.changes.postRequestScript !== undefined && s.tab.statusCode != null) {
+    const tests = await s.dryRunChecks(v.patch.changes.postRequestScript);
+    app.setAgent({ dryRun: tests });
+  }
+}
+
+/** Starts (or restarts) an action. */
+export async function runAi(app, action = app.agent?.action, prompt) {
+  const set = (changes) => app.setAgent(changes);
   app.aiAbort?.abort();
   const controller = new AbortController();
   app.aiAbort = controller;
-  set({ action, text: "", result: null, error: null, busy: true });
+  set({ action, text: "", result: null, patch: null, dryRun: null, dropped: [], error: null, busy: true, ...(prompt !== undefined ? { prompt } : {}) });
   try {
+    if (action === "edit") {
+      const input = `${exchange(app, true)}\n\nWhat to change: ${prompt ?? ""}`;
+      const out = await askAi("edit", input, { signal: controller.signal });
+      await showPatch(app, out);
+      return;
+    }
     const input = action === "generate" ? prompt : exchange(app);
     let text = "";
     const out = await askAi(action, input, { signal: controller.signal, onText: (d) => set({ text: (text += d) }) });
-    set(action === "generate" ? { result: out, busy: false } : { text: out, busy: false });
+    if (action === "generate") set({ result: out, busy: false });
+    else if (action === "tests") {
+      set({ text: out });
+      const t = app.store.tab;
+      await showPatch(app, { summary: "New tests in the script after the request.", changes: { postRequestScript: [t.postRequestScript?.trim(), out].filter(Boolean).join("\n\n") } });
+    } else set({ text: out, busy: false });
   } catch (e) {
     if (!controller.signal.aborted) set({ error: e.message || String(e), busy: false });
   }
 }
 
-export function aiDialog(app, d) {
+function patchView(app, a) {
+  const s = app.store;
+  const { patch, before } = a;
+  const changed = Object.keys(patch.changes);
+  const passed = a.dryRun?.filter((t) => t.pass).length ?? 0;
+  return html`<section class="agent-patch" aria-label="Proposed change">
+    <p class="agent-summary">${patch.summary}</p>
+    ${changed.length
+      ? html`<lit-material-diff class="agent-diff" label="Proposed change" original-label="Now" modified-label="After" .original=${requestText(before)} .modified=${requestText(patched(before, patch.changes))}></lit-material-diff>`
+      : html`<p class="hint">The answer changes nothing in this request.</p>`}
+    ${a.dropped?.length ? html`<p class="hint">Left out: ${a.dropped.join(", ")} (they held a hidden value).</p>` : nothing}
+    ${a.dryRun
+      ? html`<p class=${`agent-dry ${passed === a.dryRun.length ? "ok" : "bad"}`} role="status">${icon(passed === a.dryRun.length ? "check-circle" : "warning-circle")} Dry run against the last response: ${passed} of ${a.dryRun.length} pass</p>
+          ${passed < a.dryRun.length ? testList(a.dryRun) : nothing}`
+      : patch.changes.postRequestScript !== undefined && s.tab.statusCode == null
+        ? html`<p class="hint">Send the request once to dry-run these tests.</p>`
+        : nothing}
+    ${changed.length
+      ? html`<div class="agent-actions">
+          <lit-material-button variant="filled" @click=${() => applyPatch(app, false)}>Apply</lit-material-button>
+          <lit-material-button variant="outlined" @click=${() => applyPatch(app, true)}>${icon("play")} Run with checks</lit-material-button>
+          <lit-material-button variant="text" @click=${() => app.setAgent({ patch: null, dryRun: null, text: "" })}>Discard</lit-material-button>
+        </div>`
+      : nothing}
+  </section>`;
+}
+
+function applyPatch(app, run) {
+  const s = app.store;
+  const { patch } = app.agent;
+  s.updateTab(tabUpdates(patch.changes, s.tab));
+  app.setAgent({ patch: null, dryRun: null, text: "" });
+  app.toast(run ? "Applied. Sending the request with its checks." : "Applied to the request. Save it to keep the change.");
+  if (run) s.send();
+}
+
+/** The sheet's content (hitop-app renders the sheet). */
+export function agentPanel(app) {
   const s = app.store;
   const t = s.tab;
+  const a = app.agent ?? { action: "edit" };
   const hasKey = Boolean(aiSettings().key);
-  const close = () => {
-    app.aiAbort?.abort();
-    app.closeDialog();
-  };
-  const pick = (action) => (action === "generate" ? (app.dialog = { ...d, action, text: "", result: null, error: null }) : runAi(app, action));
-  const actions = [["tests", "Write tests", t.statusCode != null], ["explain", "Explain", t.statusCode != null || t.responseType === "error"], ["generate", "Request from text", true]];
-  let body;
   if (!hasKey) {
-    body = html`<p>Ask Claude to write tests for a response, explain a failure, or make a request from a curl command or a description.</p>
-      <p>It uses your own Anthropic API key, kept on this device only. Add one in Settings, under AI assistant.</p>`;
-  } else {
-    body = html`<div class="share-tabs" role="tablist" aria-label="What to ask">
-        ${actions.map(([a, label, ok]) => html`<button type="button" role="tab" class="share-tab" aria-selected=${String(d.action === a)} ?disabled=${!ok} @click=${() => pick(a)}>${label}</button>`)}
-      </div>
-      ${d.action === "generate"
-        ? html`<lit-material-textarea id="ai-prompt" variant="outlined" label="A curl command, a description, or part of an OpenAPI spec" rows="6" autofocus .value=${d.prompt ?? ""}></lit-material-textarea>`
-        : html`<p class="hint">Claude sees this request and its response with secret values and credential headers hidden.</p>`}
-      ${d.error ? html`<p class="error-text" role="alert">${d.error}</p>` : nothing}
-      ${d.busy && !d.text ? html`<div class="skeleton block" aria-busy="true"></div>` : nothing}
-      ${d.text
-        ? d.action === "tests"
-          ? html`<lit-material-code-block class="ai-answer" label="Script after" copyable>${d.text}</lit-material-code-block>`
-          : html`<p class="ai-answer" aria-live="polite">${d.text}</p>`
-        : nothing}
-      ${d.result
-        ? html`<lit-material-code-block class="ai-answer" label=${d.result.name} copyable>${`${d.result.method} ${d.result.url}\n${d.result.headers.map((h) => `${h.name}: ${h.value}`).join("\n")}${d.result.body ? `\n\n${d.result.body}` : ""}`}</lit-material-code-block>`
-        : nothing}`;
+    return html`<div class="agent-body">
+      <p>The agent changes the open request, writes tests for a response, explains a failure, or makes a request from a curl command or a description.</p>
+      <p>It uses your own Anthropic API key, kept on this device only. Add one in Settings, under AI assistant.</p>
+      <lit-material-button variant="filled" @click=${() => (app.closeAgent(), app.go("settings"))}>Open Settings</lit-material-button>
+    </div>`;
   }
-  const apply =
-    d.action === "tests" && d.text && !d.busy
-      ? html`<lit-material-button variant="filled" @click=${() => {
-          s.updateTab({ postRequestScript: [t.postRequestScript?.trim(), d.text].filter(Boolean).join("\n\n") });
-          close();
-          app.toast("Added to Script after. Send the request to run the tests.");
-        }}>${icon("plus")} Add to Script after</lit-material-button>`
-      : d.action === "generate" && d.result
-        ? html`<lit-material-button variant="filled" @click=${() => {
-            const r = d.result;
+  const can = { edit: Boolean(t?.url), tests: t?.statusCode != null, explain: t?.statusCode != null || t?.responseType === "error", generate: true };
+  const pick = (action) => (action === "edit" || action === "generate" ? app.setAgent({ action, text: "", result: null, patch: null, dryRun: null, error: null }) : runAi(app, action));
+  return html`<div class="agent-body">
+    <div class="share-tabs" role="tablist" aria-label="What to ask">
+      ${ACTIONS.map(([id, label]) => html`<button type="button" role="tab" class="share-tab" aria-selected=${String(a.action === id)} ?disabled=${!can[id]} @click=${() => pick(id)}>${label}</button>`)}
+    </div>
+    ${a.action === "edit" || a.action === "generate"
+      ? html`<lit-material-textarea id="ai-prompt" variant="outlined" rows="4"
+            label=${a.action === "edit" ? "What should change? (\"add a check that total is positive\", \"send JSON with a Bearer token\")" : "A curl command, a description, or part of an OpenAPI spec"}
+            .value=${a.prompt ?? ""}></lit-material-textarea>
+          <lit-material-button variant="filled" ?disabled=${a.busy} @click=${() => runAi(app, a.action, app.querySelector("#ai-prompt")?.value ?? "")}>${icon("sparkle")} ${a.action === "edit" ? "Propose a change" : "Make the request"}</lit-material-button>`
+      : html`<p class="hint">The agent sees this request and its response with secret values and credential headers hidden.</p>`}
+    ${a.error ? html`<p class="error-text" role="alert">${a.error}</p>` : nothing}
+    ${a.busy && !a.text ? html`<div class="skeleton block" aria-busy="true"></div>` : nothing}
+    ${a.text && a.action === "explain" ? html`<p class="ai-answer" aria-live="polite">${a.text}</p>` : nothing}
+    ${a.text && a.action === "tests" && !a.patch ? html`<lit-material-code-block class="ai-answer" label="Script after" copyable>${a.text}</lit-material-code-block>` : nothing}
+    ${a.patch ? patchView(app, a) : nothing}
+    ${a.result
+      ? html`<lit-material-code-block class="ai-answer" label=${a.result.name} copyable>${`${a.result.method} ${a.result.url}\n${a.result.headers.map((h) => `${h.name}: ${h.value}`).join("\n")}${a.result.body ? `\n\n${a.result.body}` : ""}`}</lit-material-code-block>
+          <lit-material-button variant="filled" @click=${() => {
+            const r = a.result;
             if (t.url) s.addTab?.();
             s.updateTab({ title: r.name, method: r.method, url: r.url, headers: [...r.headers, { name: "", value: "" }], requestBody: r.body });
-            close();
+            app.setAgent({ result: null });
+            app.closeAgent();
           }}>Open as a request</lit-material-button>`
-        : d.action === "generate" && hasKey
-          ? html`<lit-material-button variant="filled" ?disabled=${d.busy} @click=${() => runAi(app, "generate", app.querySelector("#ai-prompt")?.value ?? "")}>${icon("sparkle")} Make the request</lit-material-button>`
-          : nothing;
-  return {
-    headline: hasKey ? TITLES[d.action] ?? "Ask AI" : "Ask AI",
-    body,
-    footer: html`<div slot="actions" class="dialog-actions">
-      ${!hasKey ? html`<lit-material-button variant="filled" @click=${() => (close(), app.go("settings"))}>Open Settings</lit-material-button>` : nothing}
-      <lit-material-button variant="text" @click=${close}>Close</lit-material-button>
-      ${apply}
-    </div>`,
-  };
+      : nothing}
+    <p class="hint agent-note">Secrets stay masked. Your key, your model: only the prompt leaves this device. Other agents get the same tools over MCP (<code>hitop mcp</code>).</p>
+  </div>`;
 }

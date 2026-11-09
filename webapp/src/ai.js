@@ -8,6 +8,7 @@
 // official SDK; the default model is Claude Opus 5.5, with the server-side refusal fallback on.
 
 import { maskSecrets } from "./features.js";
+import { PATCH_SCHEMA } from "./agent.js";
 
 const KEY = "hitop_ai";
 export const AI_MODELS = [
@@ -37,7 +38,7 @@ export function saveAiSettings(next) {
 }
 
 /** What the model sees of a request and its response: secret values and credential headers masked. */
-export function describeExchange({ method, url, headers, body, status, responseHeaders, response, tests, error }, secrets = []) {
+export function describeExchange({ method, url, headers, body, status, responseHeaders, response, tests, error, preRequestScript, postRequestScript }, secrets = []) {
   const mask = (text) => maskSecrets(String(text ?? ""), secrets);
   const header = ([k, v]) => `${k}: ${SECRET_HEADERS.test(k) ? "••••" : mask(v)}`;
   const cut = (text) => (text.length > MAX_BODY ? `${text.slice(0, MAX_BODY)}\n… (${text.length - MAX_BODY} more characters left out)` : text);
@@ -45,6 +46,8 @@ export function describeExchange({ method, url, headers, body, status, responseH
   const reqHeaders = (headers || []).filter((h) => h.name && h.enabled !== false).map((h) => [h.name, h.value]);
   if (reqHeaders.length) lines.push("Request headers:", ...reqHeaders.map(header));
   if (body) lines.push("Request body:", cut(mask(body)));
+  if (preRequestScript?.trim()) lines.push("Script before the request:", cut(mask(preRequestScript)));
+  if (postRequestScript?.trim()) lines.push("Script after the request:", cut(mask(postRequestScript)));
   if (error) lines.push(`The request failed: ${mask(error)}`);
   if (status != null) {
     lines.push(`Response status: ${status}`);
@@ -66,6 +69,12 @@ const PROMPTS = {
   explain: {
     system: "You help a developer with a failed API request or failing tests in HITOP, an API client. Say briefly what went wrong and the most likely fixes, most likely first. Plain text, no Markdown headings, at most 150 words. Values shown as •••• are hidden on purpose: don't ask for them.",
     effort: "low",
+  },
+  // The agent (HITOP Next A7): a change to the open request, answered as a patch (agent.js).
+  edit: {
+    system: `You change one HTTP request in HITOP, an API client, as the developer asks. ${SCRIPT_API} Answer with a patch in the JSON schema given: in "changes", give the new value of each field you change (the whole header list, the whole script) and null for fields you leave as they are. Use \${name} placeholders for secrets and per-environment values. Values shown as •••• are hidden on purpose: never write •••• into a field, keep such fields null. "summary" says in one or two sentences what changes and why.`,
+    effort: "medium",
+    schema: PATCH_SCHEMA,
   },
   generate: {
     system: "You turn what a developer pastes (a curl command, a description of an API call, or part of an OpenAPI spec) into one HTTP request for HITOP, an API client. Use ${name} placeholders for secrets and for values that differ per environment (a base URL used by many requests, tokens). Answer in the JSON schema given.",

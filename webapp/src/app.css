@@ -719,3 +719,19 @@ button.storage-chip:focus-visible { outline: 2px solid var(--md-sys-color-primar
 .run-failure-grid ul { margin: var(--space-25) 0 0; padding-left: var(--space-200); font-family: var(--font-mono); font-size: var(--text-xs); }
 .run-command { display: block; padding: var(--space-100); white-space: pre-wrap; overflow-wrap: anywhere; }
 .run-cli lit-material-button { justify-self: start; }
+
+/* The agent side sheet (HITOP Next A7). */
+.agent-sheet { --lit-material-side-sheet-width: min(520px, 100vw); }
+.agent-head { display: flex; align-items: center; gap: var(--space-75); font-weight: 600; width: 100%; }
+.agent-head lit-material-icon-button { margin-left: auto; }
+.agent-head > lit-material-icon:first-child { color: var(--md-sys-color-primary); }
+.agent-body { display: grid; gap: var(--space-100); padding: 0 var(--space-200) var(--space-300); }
+.agent-body > lit-material-button { justify-self: start; }
+.agent-patch { display: grid; gap: var(--space-100); }
+.agent-summary { margin: 0; }
+.agent-diff { max-height: 50vh; overflow: auto; }
+.agent-dry { display: flex; align-items: center; gap: var(--space-50); margin: 0; font-size: var(--text-sm); }
+.agent-dry.ok { color: var(--hitop-pass); }
+.agent-dry.bad { color: var(--hitop-fail); }
+.agent-actions { display: flex; flex-wrap: wrap; gap: var(--space-75); }
+.agent-note { margin-top: var(--space-100); }

@@ -121,8 +121,9 @@ function api() {
   await p.keyboard.type('a GET request to list orders', { delay: 5 });
   await p.keyboard.press('Tab');
   await settle(p);
-  check('Tab hands the query to Ask AI', !(await palette.evaluate((el) => el.open)) && (await p.evaluate(() => { const d = document.querySelector('hitop-app').dialog; return d?.kind === 'ai' && d.action === 'generate' && d.prompt; })) === 'a GET request to list orders');
+  check('Tab hands the query to the agent', !(await palette.evaluate((el) => el.open)) && (await p.locator('#agent').evaluate((el) => el.open)) && (await p.evaluate(() => { const a = document.querySelector('hitop-app').agent; return a?.action === 'generate' && a.prompt; })) === 'a GET request to list orders');
   await p.keyboard.press('Escape');
+  await settle(p);
   await settle(p);
   await p.locator('header.topbar .command-field').click();
   await box.waitFor({ timeout: 5000 });

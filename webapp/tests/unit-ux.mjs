@@ -151,4 +151,27 @@ assert.equal(rankItems(more, "auth")[0].key, "col:2");
   rememberRun({ getItem: () => "{", setItem: () => { throw new Error("full"); } }, 1, {});
 }
 
+// The agent's patches (agent.js).
+{
+  const { validatePatch, requestText, tabUpdates, PATCH_SCHEMA } = await import("../src/agent.js");
+  const current = { method: "GET", url: "https://x/o", headers: [{ name: "Authorization", value: "Bearer real" }, { name: "X-Old", value: "1", enabled: false }], body: "", postRequestScript: "" };
+  const nulls = { method: null, url: null, headers: null, body: null, preRequestScript: null, postRequestScript: null };
+  assert.deepEqual(PATCH_SCHEMA.properties.changes.required, Object.keys(nulls));
+  assert.equal(validatePatch(null).ok, false);
+  assert.equal(validatePatch({ summary: "x" }).ok, false, "changes required");
+  assert.match(validatePatch({ summary: "x", changes: { ...nulls, auth: "basic" } }).error, /auth/);
+  assert.match(validatePatch({ summary: "x", changes: { ...nulls, method: "FETCH" } }).error, /FETCH/);
+  assert.match(validatePatch({ summary: "x", changes: { ...nulls, body: 3 } }).error, /text/);
+  const ok = validatePatch({ summary: " Use POST ", changes: { ...nulls, method: "post", url: "https://x/o", body: "{}", postRequestScript: "// ••••", headers: [{ name: "Authorization", value: "Bearer ••••" }, { name: "Content-Type", value: "application/json" }] } }, current);
+  assert.ok(ok.ok);
+  assert.deepEqual(ok.patch.changes, { method: "POST", headers: [{ name: "Authorization", value: "Bearer real" }, { name: "Content-Type", value: "application/json" }], body: "{}" }, "unchanged url dropped, masked header restored");
+  assert.deepEqual(ok.dropped, ["postRequestScript"], "a field holding •••• is never written");
+  assert.equal(ok.patch.summary, "Use POST");
+  const unknownMasked = validatePatch({ summary: "x", changes: { ...nulls, headers: [{ name: "X-Key", value: "••••" }] } }, current);
+  assert.deepEqual([unknownMasked.patch.changes.headers, unknownMasked.dropped], [undefined, ["headers"]], "a masked header nobody had: the headers are left alone");
+  const up = tabUpdates({ body: "{}", headers: [{ name: "A", value: "1" }] }, current);
+  assert.deepEqual(up, { requestBody: "{}", headers: [{ name: "A", value: "1" }, { name: "X-Old", value: "1", enabled: false }, { name: "", value: "" }] }, "disabled headers stay");
+  assert.equal(requestText({ ...current, postRequestScript: "pm.test('a', () => {});" }), "GET https://x/o\nAuthorization: Bearer real\n\n# Script after\npm.test('a', () => {});");
+}
+
 console.log("unit-ux: all checks passed");

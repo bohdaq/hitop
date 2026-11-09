@@ -1484,6 +1484,25 @@ export class Store extends EventTarget {
     return { url: ctx.url, headers: ctx.headers, body: ctx.body };
   }
 
+  // The agent's dry run (HITOP Next A7): `script` as the script after the request, run against the
+  // current tab's last response. Nothing it sets (context, variables, globals) is kept.
+  async dryRunChecks(script) {
+    const t = this.tab;
+    if (t?.statusCode == null || !script?.trim()) return null;
+    const saved = { contexts: this.contexts, vars: structuredClone(this.scriptVariables), globals: structuredClone(this.scriptGlobals) };
+    try {
+      const raw = this.rawBodies.get(t.id);
+      const text = typeof raw === "string" ? raw : typeof t.response === "string" ? t.response : JSON.stringify(t.response ?? "");
+      return await this.runPostScript(script, t.loadedCollectionId, text, t.responseHeaders || {}, t.statusCode, t.durationMs ?? 0, { url: t.url, method: t.method, headers: t.headers, body: t.requestBody });
+    } catch (e) {
+      return [{ name: "Script after", pass: false, detail: e.message }];
+    } finally {
+      this.contexts = saved.contexts;
+      this.scriptVariables = saved.vars;
+      this.scriptGlobals = saved.globals;
+    }
+  }
+
   // Returns the assert.* results (an empty list without a script).
   // `sent` is the request as sent ({url, method, headers, body}), pm.request.
   async runPostScript(script, collectionId, text, headers, status, durationMs, sent) {
