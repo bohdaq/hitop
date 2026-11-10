@@ -4,3 +4,5 @@ dist-tauri/
 src/wasm/pkg/
 src/wasm/pkg-scripts/
 dist-extension/
+
+visual/
