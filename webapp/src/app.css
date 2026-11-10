@@ -1109,7 +1109,7 @@ hitop-app lit-material-text-field::part(label) { inset-inline-start: -20px; }
 .gs-steps li.next { color: var(--md-sys-color-on-surface); font-weight: 500; }
 .gs-steps li.next > :first-child { color: var(--md-sys-color-primary); }
 .gs-hint { margin: 0; font-size: 12px; line-height: 17px; }
-.getting-started .link-button { font-size: 12.5px; color: var(--md-sys-color-primary); }
+.getting-started .link-button { font-size: 12.5px; color: var(--md-sys-color-primary); text-decoration: none; }
 
 /* U49: the title bar's plan usage warning and the Share dialog's room line; U50: who can lift a
    limit (the limit dialog, the Share dialog's tabs). */

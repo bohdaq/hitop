@@ -178,7 +178,44 @@ async function main() {
     await page.locator(`lit-material-navigation-rail-item`, { hasText: label }).click();
     await shot(name);
   }
+
+  // Stories audit (S1): a secret with no value on this device, before and after Send.
+  await page.evaluate(() => {
+    const s = document.querySelector("hitop-app").store;
+    s.environments = s.environments.map((e) => (e.id === "env-staging" ? { ...e, secrets: [...new Set([...(e.secrets || []), "API_TOKEN"])], variables: { ...e.variables, API_TOKEN: "" } } : e));
+    s.setActiveEnvironment("env-staging");
+    s.show("request");
+    s.updateTab({ url: "${baseUrl}/v2/orders?token=${API_TOKEN}" });
+    s.emit();
+  });
+  await page.waitForTimeout(400);
+  await shot("secret-missing");
+  await page.getByRole("button", { name: "Send", exact: true }).click();
+  await page.waitForSelector('.response[data-state="not-sent"]', { timeout: 10000 }).catch(() => {});
+  await shot("secret-not-sent");
+  // Plan usage near a limit and the limit dialog (a made-up org; no server: the owner by org name).
+  await page.evaluate(() => {
+    const app = document.querySelector("hitop-app");
+    const s = app.store;
+    s.orgs = [{ id: "o-acme", name: "Acme", role: "member", plan: "free", personal: false }];
+    s.currentOrg = "o-acme";
+    s.setOrgUsage("o-acme", { plan: "free", planInForce: "free", usage: { seats: 3, workspaces: 2, storageBytes: 1024, devices: 1, runners: 0 }, limits: { seats: 3, guests: 0, workspaces: 3, storageBytes: 100 * 1024 ** 2, devices: 3, runners: 5 } });
+    app.openLimit({ limit: "seats", plan: "free", used: 3, max: 3, org: "o-acme", message: "plan limit: the free plan of the organization Acme allows 3 seats; nothing was changed.", headline: "Free has used its 3 seats" }, null);
+  });
+  await page.waitForTimeout(500);
+  await shot("limit-dialog");
   await browser.close();
+
+  // A newcomer: an empty app with the Get started card.
+  const fresh = await chromium.launch();
+  const fctx = await fresh.newContext({ viewport: { width: 1440, height: 900 }, deviceScaleFactor: 1, colorScheme: "dark" });
+  const fpage = await fctx.newPage();
+  await fpage.goto(base);
+  await fpage.waitForSelector("aside .getting-started", { timeout: 10000 }).catch(() => {});
+  await fpage.waitForTimeout(500);
+  await fpage.screenshot({ path: path.join(out, "getting-started.png") });
+  console.log("getting-started.png");
+  await fresh.close();
   server.close();
   console.log(`Screenshots in ${out}`);
 }

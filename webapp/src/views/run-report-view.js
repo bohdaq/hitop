@@ -88,7 +88,7 @@ export class HitopRunReport extends LitElement {
               <div><span class="run-tile-label">Actual</span><p>HTTP ${x.status}</p></div>
             </div>`}
       ${x.cause ? html`<p class="run-failure-cause">${icon("info")} <span><span class="run-tile-label">Likely cause</span> ${x.cause}</span></p>` : nothing}
-      ${x.url ? html`<p class="run-failure-url"><span class="run-tile-label">Sent to</span> <code>${x.url}</code></p>` : nothing}
+      ${x.url ? html`<p class="run-failure-url"><span class="run-tile-label">${x.kind === "not-sent" || x.kind === "no-answer" ? "URL" : "Sent to"}</span> <code>${x.url}</code></p>` : nothing}
       ${x.excerpt
         ? html`<div class="run-failure-body"><span class="run-tile-label">Response body${x.excerpt.length >= 400 ? ", first 400 characters" : ""}</span><pre class="mono">${x.excerpt}</pre></div>`
         : nothing}

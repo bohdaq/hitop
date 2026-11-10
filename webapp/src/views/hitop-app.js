@@ -16,7 +16,7 @@ import "./request-view.js";
 import "./collection-views.js";
 import { WIDE_DIALOGS, codeDialog, compareDialog, refreshCode } from "./tools-dialogs.js";
 import { OPENAPI_DIALOGS, openapiDialog, submitOpenapi } from "./openapi-dialogs.js";
-import { ACTION_KEYS, SAVE_KEYS, shortcutFor } from "../shortcuts.js";
+import { ACTION_KEYS, SAVE_KEYS, SEND_KEYS, shortcutFor } from "../shortcuts.js";
 import { quickOpenItems, rankItems } from "../quick-open.js";
 import { protocolLabel } from "../request-facts.js";
 import { folderOf, requestTree, slugName, withFolders } from "../collection-tree.js";
@@ -1441,7 +1441,7 @@ export class HitopApp extends LitElement {
     } catch {
       // storage blocked: decided from this page's state only
     }
-    const steps = gettingStartedSteps({ history: s.history, collections: s.collections, runs, ranNow: Boolean(s.run.report) });
+    const steps = gettingStartedSteps({ history: s.history, collections: s.collections, runs, ranNow: Boolean(s.run.report), keys: { send: SEND_KEYS, save: SAVE_KEYS } });
     if (!showGettingStarted(storage, { fresh: s.isFresh, steps })) return nothing;
     const done = steps.filter((x) => x.done).length;
     const next = steps.find((x) => !x.done);
