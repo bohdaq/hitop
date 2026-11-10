@@ -180,6 +180,21 @@ pub struct Response {
     pub duration_ms: u64,
     /// Where the time went, when the client could tell (src/timing.rs).
     pub timings: Option<Timings>,
+    /// The response's protocol version ("HTTP/1.1", "HTTP/2", "HTTP/3"); `None` when unknown.
+    /// Not in any run report: runs go through [`execute_opts`].
+    pub http_version: Option<&'static str>,
+}
+
+/// A protocol version as the apps show it; `None` for one reqwest doesn't name.
+pub fn version_name(v: reqwest::Version) -> Option<&'static str> {
+    match v {
+        reqwest::Version::HTTP_09 => Some("HTTP/0.9"),
+        reqwest::Version::HTTP_10 => Some("HTTP/1.0"),
+        reqwest::Version::HTTP_11 => Some("HTTP/1.1"),
+        reqwest::Version::HTTP_2 => Some("HTTP/2"),
+        reqwest::Version::HTTP_3 => Some("HTTP/3"),
+        _ => None,
+    }
 }
 
 /// [`execute`] for any body (a multipart body with files is bytes), keeping
@@ -218,6 +233,7 @@ pub fn send_with(method: &str, url: &str, headers: &[(String, String)], body: Ve
     jar_store(&mut opts.jar, &resp);
     let status = resp.status();
     let final_url = resp.url().to_string();
+    let http_version = version_name(resp.version());
     let headers = resp
         .headers()
         .iter()
@@ -233,6 +249,7 @@ pub fn send_with(method: &str, url: &str, headers: &[(String, String)], body: Ve
         body,
         duration_ms: done.duration_since(start).as_millis() as u64,
         timings: timings(url, start, headers_at, done),
+        http_version,
     })
 }
 
@@ -279,6 +296,7 @@ mod send_tests {
         assert_eq!(cookies, ["a=1", "b=2"]);
         assert_eq!(r.body, [0xff, 0x00, 0x41]);
         assert!(r.url.ends_with("/up"));
+        assert_eq!(r.http_version, Some("HTTP/1.1"), "the protocol version comes out");
     }
 
     /// Serves `n` requests on one kept-alive connection.

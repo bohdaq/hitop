@@ -354,6 +354,9 @@ pub struct SendResult {
     /// The jar after the response, when the request used it.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub cookies: Option<Jar>,
+    /// The response's protocol version ("HTTP/1.1", "HTTP/2", "HTTP/3"); left out when unknown.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub http_version: Option<&'static str>,
 }
 
 /// Sends a request. With an `id`, the HTTP exchange runs on its own thread
@@ -408,7 +411,7 @@ fn send_now(args: SendArgs, cancelled: &std::sync::atomic::AtomicBool) -> Result
         Ok(text) => (text, None),
         Err(e) => (B64.encode(e.into_bytes()), Some("base64".to_string())),
     };
-    Ok(SendResult { status: r.status, status_text: r.status_text, url: r.url, headers: r.headers, body, body_encoding, time_ms: r.duration_ms, timings: r.timings, cookies: jar })
+    Ok(SendResult { status: r.status, status_text: r.status_text, url: r.url, headers: r.headers, body, body_encoding, time_ms: r.duration_ms, timings: r.timings, cookies: jar, http_version: r.http_version })
 }
 
 /// The cookie jar the web app shows on its Cookies page (workspace `global`).

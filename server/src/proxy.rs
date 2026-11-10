@@ -3,7 +3,9 @@
 //!
 //! Request:  `{"method","url","headers":[[name,value]...],"body","bodyEncoding"?}`
 //! Response: `{"status","statusText","headers":[[name,value]...],"body",
-//!             "bodyEncoding":"utf8"|"base64","truncated","timeMs","url"}`
+//!             "bodyEncoding":"utf8"|"base64","truncated","timeMs","url","timings"?,
+//!             "httpVersion"?}`: `httpVersion` is the upstream response's protocol version
+//!             ("HTTP/1.0", "HTTP/1.1", "HTTP/2", "HTTP/3"), left out when unknown.
 //! Failures: `{"error": "..."}` with a 4xx/5xx status. Nothing is logged.
 //!
 //! `POST /api/proxy/stream` (Server-Sent Events, chunked streams): the same request, answered
@@ -76,6 +78,21 @@ struct ProxyResponse {
     /// lookup and connection only.
     #[serde(skip_serializing_if = "Option::is_none")]
     timings: Option<Timings>,
+    /// The upstream response's protocol version ("HTTP/1.1", "HTTP/2", ...); none when unknown.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    http_version: Option<&'static str>,
+}
+
+/// The protocol version as the web app shows it; `None` for one reqwest doesn't name.
+fn http_version(v: reqwest::Version) -> Option<&'static str> {
+    match v {
+        reqwest::Version::HTTP_09 => Some("HTTP/0.9"),
+        reqwest::Version::HTTP_10 => Some("HTTP/1.0"),
+        reqwest::Version::HTTP_11 => Some("HTTP/1.1"),
+        reqwest::Version::HTTP_2 => Some("HTTP/2"),
+        reqwest::Version::HTTP_3 => Some("HTTP/3"),
+        _ => None,
+    }
 }
 
 #[derive(Clone)]
@@ -295,6 +312,7 @@ impl Proxy {
         let headers_at = Instant::now();
         let status = response.status();
         let final_url = response.url().to_string();
+        let version = http_version(response.version());
         let headers = upstream_headers(&response);
         let mut bytes = Vec::new();
         response
@@ -317,6 +335,7 @@ impl Proxy {
             time_ms: started.elapsed().as_millis() as u64,
             timings: self.timing.phases_for(&asked, started, headers_at, Instant::now()),
             url: final_url,
+            http_version: version,
         })
     }
 }
@@ -391,6 +410,29 @@ mod tests {
         drop(open);
         drop(late);
         assert_eq!(streams.load(Ordering::SeqCst), 0, "each stream gave its slot back");
+    }
+
+    #[test]
+    fn the_answer_names_the_http_version_only_when_known() {
+        assert_eq!(http_version(reqwest::Version::HTTP_11), Some("HTTP/1.1"));
+        assert_eq!(http_version(reqwest::Version::HTTP_2), Some("HTTP/2"));
+        assert_eq!(http_version(reqwest::Version::HTTP_3), Some("HTTP/3"));
+        let answer = |v| ProxyResponse {
+            status: 200,
+            status_text: "OK".into(),
+            headers: vec![],
+            body: String::new(),
+            body_encoding: "utf8",
+            truncated: false,
+            time_ms: 1,
+            url: "https://example.com/".into(),
+            timings: None,
+            http_version: v,
+        };
+        let json = serde_json::to_value(answer(Some("HTTP/2"))).unwrap();
+        assert_eq!(json["httpVersion"], "HTTP/2");
+        let json = serde_json::to_value(answer(None)).unwrap();
+        assert!(json.get("httpVersion").is_none(), "left out when unknown: {json}");
     }
 
     #[test]
