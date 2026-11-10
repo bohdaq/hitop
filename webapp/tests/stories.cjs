@@ -87,6 +87,16 @@ function api() {
   const hit = hits.at(-1);
   check('U19 ...and the request goes out with it', hit?.auth === 'Bearer tok-u19' && hit.url.includes('t=tok-u19'), JSON.stringify(hit));
   check('U6 a sent request checks off the first step', (await steps()).startsWith('x Send a request (done) | - Save') && (await gs.locator('.gs-count').innerText()) === '1/3', await steps());
+  // Saving into the sample counts too (owner 2026-11-11: a request saved there wasn't ticked off).
+  await store(() => {
+    const s = document.querySelector('hitop-app').store;
+    s.addSampleCollection();
+    const c = s.collections.find((x) => x.name === 'Sample: JSONPlaceholder');
+    s.openRequest(c.requests.find((r) => r.name === 'Get the first post'), c.id);
+    s.saveRequest('Get the first post', c.id);
+  });
+  await settle(p);
+  check('U6 saving a request into the sample checks off the second step', (await gs.locator('.gs-count').innerText().catch(() => '')) === '2/3', await steps().catch(() => ''));
 
   // --- U39 -------------------------------------------------------------------------------------
   await store((b) => {

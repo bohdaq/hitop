@@ -7,11 +7,14 @@
 
 const KEY = "hitop_getting_started";
 export const SAMPLE_NAME = "Sample: JSONPlaceholder";
+/** The sample's own requests: anything else in the sample was saved there by the person. */
+export const SAMPLE_REQUESTS = ["List posts", "Get the first post", "Create a post"];
 
 /** The three steps, done or not. `runs`: the run history ({collectionId: [...]}) or null. */
-export function gettingStartedSteps({ history = [], collections = [], runs = null, ranNow = false, keys = { send: "⌘↵", save: "⌘S" } } = {}) {
+export function gettingStartedSteps({ history = [], collections = [], runs = null, ranNow = false, savedOnce = false, keys = { send: "⌘↵", save: "⌘S" } } = {}) {
   const sent = history.length > 0;
-  const saved = collections.some((c) => c.name !== SAMPLE_NAME && (c.requests || []).some((r) => String(r.url ?? "").trim()));
+  const own = (c, r) => String(r.url ?? "").trim() && (c.name !== SAMPLE_NAME || !SAMPLE_REQUESTS.includes(r.name));
+  const saved = savedOnce || collections.some((c) => (c.requests || []).some((r) => own(c, r)));
   const ran = ranNow || Object.values(runs ?? {}).some((list) => Array.isArray(list) && list.length > 0);
   return [
     { id: "send", label: "Send a request", hint: `Type a URL above and press Send (${keys.send}), or open the sample.`, done: sent },
@@ -48,6 +51,17 @@ export function showGettingStarted(storage, { fresh, steps }) {
     write(storage, state);
   }
   return Boolean(state.fresh) && !state.hidden && steps.some((s) => !s.done);
+}
+
+/** Remembers that the person saved a request (any save, the sample's requests too). */
+export function markSaved(storage) {
+  const state = read(storage);
+  if (state && !state.saved) write(storage, { ...state, saved: true });
+}
+
+/** Whether a save was remembered. */
+export function savedOnce(storage) {
+  return Boolean(read(storage)?.saved);
 }
 
 export function hideGettingStarted(storage) {

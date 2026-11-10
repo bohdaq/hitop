@@ -31,7 +31,7 @@ import { orgLabel } from "../orgs.js";
 import { agentPanel, runAi } from "./ai-view.js";
 import "./org-view.js";
 import { limitInfo, parseOrgLink, usageWarnings } from "../org.js";
-import { gettingStartedSteps, hideGettingStarted, SAMPLE_NAME, showGettingStarted } from "../getting-started.js";
+import { gettingStartedSteps, hideGettingStarted, SAMPLE_NAME, savedOnce, showGettingStarted } from "../getting-started.js";
 
 /** Email addresses typed in the invite dialog: comma, space or line separated. */
 function inviteEmails(text) {
@@ -1441,7 +1441,7 @@ export class HitopApp extends LitElement {
     } catch {
       // storage blocked: decided from this page's state only
     }
-    const steps = gettingStartedSteps({ history: s.history, collections: s.collections, runs, ranNow: Boolean(s.run.report), keys: { send: SEND_KEYS, save: SAVE_KEYS } });
+    const steps = gettingStartedSteps({ history: s.history, collections: s.collections, runs, ranNow: Boolean(s.run.report), savedOnce: savedOnce(storage), keys: { send: SEND_KEYS, save: SAVE_KEYS } });
     if (!showGettingStarted(storage, { fresh: s.isFresh, steps })) return nothing;
     const done = steps.filter((x) => x.done).length;
     const next = steps.find((x) => !x.done);

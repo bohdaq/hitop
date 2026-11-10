@@ -286,16 +286,18 @@ assert.equal(rankItems(more, "auth")[0].key, "col:2");
 
 // U6: the newcomer's three steps.
 {
-  const { gettingStartedSteps, showGettingStarted, hideGettingStarted, SAMPLE_NAME } = await import("../src/getting-started.js");
+  const { gettingStartedSteps, showGettingStarted, hideGettingStarted, markSaved, savedOnce, SAMPLE_NAME } = await import("../src/getting-started.js");
   const mem = () => {
     const m = new Map();
     return { getItem: (k) => (m.has(k) ? m.get(k) : null), setItem: (k, v) => m.set(k, String(v)) };
   };
   const done = (x) => x.map((s) => s.done);
   assert.deepEqual(done(gettingStartedSteps({})), [false, false, false]);
-  assert.deepEqual(done(gettingStartedSteps({ history: [{}], collections: [{ name: SAMPLE_NAME, requests: [{ url: "x" }] }] })), [true, false, false], "the sample doesn't count as saving one's own");
+  assert.deepEqual(done(gettingStartedSteps({ history: [{}], collections: [{ name: SAMPLE_NAME, requests: [{ name: "List posts", url: "x" }] }] })), [true, false, false], "the sample doesn't count as saving one's own");
   assert.deepEqual(done(gettingStartedSteps({ collections: [{ name: "Mine", requests: [{ url: "" }, { url: "https://x" }] }] })), [false, true, false]);
   assert.deepEqual(done(gettingStartedSteps({ runs: { 1: [{}] } })), [false, false, true]);
+  assert.deepEqual(done(gettingStartedSteps({ collections: [{ name: SAMPLE_NAME, requests: [{ name: "List posts", url: "x" }, { name: "List posts2", url: "x" }] }] })), [false, true, false], "a request saved into the sample counts");
+  assert.equal(done(gettingStartedSteps({ savedOnce: true }))[1], true, "any remembered save counts");
   assert.deepEqual(done(gettingStartedSteps({ runs: { 1: [] }, ranNow: false })), [false, false, false]);
   assert.equal(done(gettingStartedSteps({ ranNow: true }))[2], true);
   const open = gettingStartedSteps({});
@@ -303,6 +305,8 @@ assert.equal(rankItems(more, "auth")[0].key, "col:2");
   assert.equal(showGettingStarted(a, { fresh: true, steps: open }), true, "a newcomer sees it");
   assert.equal(showGettingStarted(a, { fresh: false, steps: open }), true, "...and keeps seeing it once they have data");
   assert.equal(showGettingStarted(a, { fresh: true, steps: gettingStartedSteps({ history: [{}], collections: [{ name: "M", requests: [{ url: "x" }] }], ranNow: true }) }), false, "all done: gone");
+  markSaved(a);
+  assert.equal(savedOnce(a), true, "a save is remembered");
   hideGettingStarted(a);
   assert.equal(showGettingStarted(a, { fresh: true, steps: open }), false, "hidden stays hidden");
   const b = mem();

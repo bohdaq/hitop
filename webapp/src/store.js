@@ -3,6 +3,7 @@
 // keep their localStorage keys and shapes: the React app and this one read
 // each other's data. Views subscribe with `store.addEventListener("change")`
 // and report problems through the `notify` event (never window.alert).
+import { markSaved } from "./getting-started.js";
 import collectionService from "../../frontend/src/services/collectionService.jsx";
 import contextService from "../../frontend/src/services/contextService.jsx";
 import historyService from "../../frontend/src/services/historyService.jsx";
@@ -835,6 +836,11 @@ export class Store extends EventTarget {
       const request = clean({ ...data, ...collectionService.createRequest(title, data), ...(file ? { file } : {}) });
       this.collections = collectionService.addRequestToCollection(this.collections, collectionId, request);
       this.tabs = tabService.updateTab(this.tabs, this.currentTab, { loadedRequestId: request.id, loadedCollectionId: collectionId, title, folder: undefined });
+    }
+    try {
+      markSaved(globalThis.localStorage);
+    } catch {
+      // storage blocked: the card decides from the collections alone
     }
     this.emit();
     this.notify(`Saved "${title}" to ${this.collection(collectionId)?.name ?? "the collection"}`);
