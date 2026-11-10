@@ -1,8 +1,43 @@
 // Unit checks for the 1.2 UX helpers (no browser): node tests/unit-ux.mjs
 import assert from "node:assert/strict";
-import { addCollections, folderOf, requestTree } from "../src/collection-tree.js";
+import { addCollections, folderOf, folderPaths, moveRequestTo, renameFolderIn, requestFile, requestTree, slugName, withFolders } from "../src/collection-tree.js";
 import { clampSplit, layoutFor, splitAt, splitForKey } from "../src/split.js";
 import { fuzzyMatch, quickOpenItems, rankItems } from "../src/quick-open.js";
+
+// Requests and collections UX: file names as hitop-core's names::slug, folders made on screen,
+// moves between collections and folders, folder renames.
+assert.equal(slugName("List Users (v2)!"), "list-users-v2");
+assert.equal(slugName("  "), "request");
+assert.equal(slugName("CON"), "con-file");
+assert.equal(slugName("Über Straße"), "über-straße");
+assert.equal(slugName("x".repeat(100)).length, 80);
+const inFolder = [{ id: 1, name: "Me", file: "admin/me" }, { id: 2, name: "List" }];
+assert.equal(requestFile(inFolder, "admin", "Me"), "admin/me-2", "a taken file gets a number");
+assert.equal(requestFile(inFolder, "", "Me"), "me");
+assert.equal(requestFile(inFolder, "admin/deep", "New request"), "admin/deep/new-request");
+const tree = withFolders(requestTree(inFolder), ["admin", "admin/keys", "billing"]);
+assert.deepEqual(folderPaths(tree), ["admin", "admin/keys", "billing"], "existing folders kept once, new ones added where they come");
+assert.equal(tree.folders[0].folders[0].name, "keys");
+const cols = [
+  { id: 1, name: "A", requests: [{ id: 10, name: "One", file: "x/one", bodyMode: "raw" }, { id: 11, name: "Two" }] },
+  { id: 2, name: "B", requests: [{ id: 20, name: "Three", file: "y/three" }] },
+];
+let moved = moveRequestTo(cols, { from: 1, requestId: 10, to: 2, folder: "", beforeId: 20 });
+assert.deepEqual(moved[0].requests.map((r) => r.id), [11]);
+assert.deepEqual(moved[1].requests.map((r) => r.id), [10, 20], "before the anchor");
+assert.deepEqual(moved[1].requests[0], { id: 10, name: "One", bodyMode: "raw" }, "every field but `file` comes along at the top level");
+moved = moveRequestTo(cols, { from: 1, requestId: 11, to: 2, folder: "y" });
+assert.deepEqual(moved[1].requests.map((r) => r.file), ["y/three", "y/two"], "a folder gives the file; at the end without an anchor");
+moved = moveRequestTo(cols, { from: 1, requestId: 11, to: 1, folder: "x", beforeId: 10 });
+assert.deepEqual(moved[0].requests.map((r) => [r.id, r.file]), [[11, "x/two"], [10, "x/one"]], "within a collection: into a folder, before its first request");
+assert.equal(moveRequestTo(cols, { from: 1, requestId: 10, to: 1, folder: "x" })[0].requests[1].file, "x/one", "same folder: file kept");
+assert.equal(moveRequestTo(cols, { from: 1, requestId: 99, to: 2 }), cols, "unknown request: unchanged");
+assert.equal(moveRequestTo(cols, { from: 1, requestId: 10, to: 9 }), cols, "unknown collection: unchanged");
+assert.deepEqual(
+  renameFolderIn([{ id: 1, file: "admin/me" }, { id: 2, file: "admin/keys/rotate" }, { id: 3, file: "administration/x" }, { id: 4 }], "admin", "staff").map((r) => r.file),
+  ["staff/me", "staff/keys/rotate", "administration/x", undefined],
+  "the folder and its subfolders move; a folder with the same prefix doesn't",
+);
 
 // Import that adds: ids in use get new ones, names in use get " (2)", " (3)".
 let next = 100;
