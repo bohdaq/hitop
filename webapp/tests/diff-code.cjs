@@ -71,7 +71,8 @@ function api() {
   await settle(p);
 
   // Code panel: curl by default, the secret as a placeholder.
-  await p.getByRole('button', { name: 'Code' }).click();
+  await p.getByRole('button', { name: 'More options' }).click();
+  await p.locator('#line-menu').getByText('Code', { exact: true }).click();
   await dialog.locator('.snippet').waitFor({ timeout: 10000 });
   let code = await dialog.locator('.snippet').evaluate((el) => el.textContent);
   check('code panel: curl with the secret as {{key}}', code.includes(`curl '${base}/items?key={{key}}'`) && !code.includes(SECRET), code);

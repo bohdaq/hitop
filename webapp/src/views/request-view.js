@@ -17,6 +17,8 @@ import "./code-editor.js";
 import "@lit-material/timing-waterfall";
 import "@lit-material/popover";
 import { compareDialog } from "./tools-dialogs.js";
+import { storageOf } from "../git.js";
+import { loadRequestHistory } from "./history-dialog.js";
 import { SAVE_KEYS, SEND_KEYS } from "../shortcuts.js";
 import { SPLIT, clampSplit, layoutFor, loadLayout, saveLayout, splitAt, splitForKey } from "../split.js";
 import { socketHeaders, socketLine, socketLog, socketMessages } from "./websocket-view.js";
@@ -651,6 +653,31 @@ export class HitopRequest extends LitElement {
     </lit-material-select>`;
   }
 
+  // The "⋯" menu next to Send: Save to… (another collection), Code, Ask AI, Version history
+  // (a cloud or GitHub collection) and Move to… (a saved request).
+  lineMenu() {
+    const t = this.tab;
+    const s = this.store;
+    const request = s.loadedRequest(t);
+    const c = request ? s.collection(t.loadedCollectionId) : null;
+    const where = c ? storageOf(s, c) : null;
+    const history = Boolean(where && ["cloud", "github"].includes(where.kind));
+    const item = (label, run, extra = {}) => html`<lit-material-list-item interactive ?disabled=${Boolean(extra.disabled)} @click=${run}>${label}</lit-material-list-item>`;
+    return html`<lit-material-menu id="line-menu" aria-label="More options">
+      ${item(request ? "Save to…" : "Save to a collection…", () => this.app.openDialog("save", { ...s.saveTarget(), overwrite: false }))}
+      ${item("Code", () => this.app.openDialog("code", { lang: "curl", showSecrets: false }), { disabled: !t.url })}
+      ${item("Ask AI", () => this.app.openAi())}
+      ${history
+        ? item("Version history…", () => {
+            const d = { request, collectionId: t.loadedCollectionId, history: null };
+            this.app.openDialog("request-history", d);
+            loadRequestHistory(this.app, d);
+          })
+        : nothing}
+      ${request ? item("Move to…", () => this.app.openDialog("move-request", { request, collectionId: t.loadedCollectionId })) : nothing}
+    </lit-material-menu>`;
+  }
+
   // What the URL says about the transport (nothing is made up: a browser can't see TLS or h2).
   protocolHint() {
     const url = String(this.tab.url ?? "").trim();
@@ -793,14 +820,13 @@ export class HitopRequest extends LitElement {
             : html`<lit-material-button variant="outlined" class="save-draft" title=${`Save to a collection (${SAVE_KEYS})`} @click=${() => this.app.openDialog("save", this.store.saveTarget())}>
                 ${icon("floppy-disk")} <span class="visually-hidden">Save request, </span>Save to…
               </lit-material-button>`}
-          <lit-material-icon-button aria-label="Ask AI" title="Ask AI: write tests, explain a failure, a request from text" @click=${() => this.app.openAi()}>
-            ${icon("sparkle")}
-          </lit-material-icon-button>
-          <lit-material-icon-button aria-label="Code" title="Code: curl, fetch, Python, Go, Java, Rust" ?disabled=${!t.url} @click=${() => this.app.openDialog("code", { lang: "curl", showSecrets: false })}>
-            ${icon("code")}
+          <lit-material-icon-button class="more-send" aria-label="More options" title="More: Save to…, Code, Ask AI, Version history, Move to…" aria-haspopup="menu"
+            @click=${(e) => this.querySelector("#line-menu")?.show(e.currentTarget)}>
+            ${icon("dots-three")}
           </lit-material-icon-button>
         </span>
       </form>
+      ${this.lineMenu()}
       ${this.varPeek()}
       ${this.panes(this.renderEditor(), () => this.renderResponse(), "Response")}`;
   }

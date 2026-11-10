@@ -40,7 +40,8 @@ function sse(text, model = 'claude-opus-5-5') {
   const tab = () => p.evaluate(() => { const t = document.querySelector('hitop-app').store.tab; return { m: t.method, u: t.url, b: t.requestBody, h: t.headers, s: t.postRequestScript }; });
 
   // No key: the sheet says where to add one.
-  await p.getByRole('button', { name: 'Ask AI' }).click();
+  await p.getByRole('button', { name: 'More options' }).click();
+  await p.locator('#line-menu').getByText('Ask AI').click();
   await settle(p);
   check('Ask AI opens the agent side sheet', await sheet.evaluate((el) => el.open));
   check('without a key the agent points to Settings', (await sheet.innerText()).includes('Add one in Settings') && sent.length === 0);
@@ -61,7 +62,8 @@ function sse(text, model = 'claude-opus-5-5') {
   });
   await settle(p);
   answer = 'pm.test("status is 200", () => pm.response.to.have.status(200));\npm.test("order 7", () => pm.expect(pm.response.json().id).to.eql(7));';
-  await p.getByRole('button', { name: 'Ask AI' }).click();
+  await p.getByRole('button', { name: 'More options' }).click();
+  await p.locator('#line-menu').getByText('Ask AI').click();
   await sheet.getByRole('button', { name: 'Apply', exact: true }).waitFor({ timeout: 10000 });
   const req = sent.at(-1);
   const prompt = JSON.stringify(req.body.messages);
@@ -89,7 +91,8 @@ function sse(text, model = 'claude-opus-5-5') {
       postRequestScript: null,
     },
   });
-  await p.getByRole('button', { name: 'Ask AI' }).click();
+  await p.getByRole('button', { name: 'More options' }).click();
+  await p.locator('#line-menu').getByText('Ask AI').click();
   await settle(p);
   await sheet.getByRole('tab', { name: 'Change this request' }).click();
   await sheet.getByLabel(/What should change/).fill('cancel the order with PATCH');

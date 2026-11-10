@@ -1060,3 +1060,19 @@ hitop-app lit-material-text-field::part(label) { inset-inline-start: -20px; }
 .url-mirror .var-chip:hover { background: rgb(242 180 92 / 0.22); }
 .url-mirror .var-chip:focus-visible { outline: 2px solid var(--md-sys-color-primary); outline-offset: 1px; }
 .url-mirror.url-vars { display: flex; }
+
+/* HITOP Next third pass: the "⋯" menu, the branch pill, git letters, the Raw tab. */
+.chip.branch-pill { display: inline-flex; align-items: center; gap: 6px; height: 30px; padding: 0 10px; border: 1px solid #26262c; border-radius: 8px; background: var(--md-sys-color-surface-container); color: #c8c8cf; font: inherit; font-size: 13px; cursor: pointer; }
+.chip.branch-pill:hover { border-color: #33333a; background: var(--md-sys-color-surface-container-high); }
+.chip.branch-pill:focus-visible { outline: 2px solid var(--md-sys-color-primary); outline-offset: 1px; }
+.chip.branch-pill lit-material-icon { width: 16px; height: 16px; color: #8a8a94; }
+.branch-name { font-size: 12px; }
+.branch-ahead { font-size: 11px; color: var(--hitop-pass); }
+.branch-behind { font-size: 11px; color: var(--hitop-warn); }
+.git-letter { flex: none; margin-inline-start: auto; font-size: 11px; color: var(--hitop-warn); }
+.request-item .tree-row { padding-right: 32px; }
+.response-raw { white-space: pre-wrap; overflow-wrap: anywhere; }
+.response-scroll .raw-copy { position: absolute; right: 20px; top: 8px; z-index: 1; --md-sys-density-icon-button-size: 28px; --md-sys-density-icon-button-padding: 5px; }
+.line-tools .more-send { --md-sys-density-icon-button-size: 44px; --md-sys-density-icon-button-padding: 11px; border: 1px solid #26262c; border-radius: 11px; background: var(--md-sys-color-surface-container); }
+.line-tools .more-send::part(button) { border-radius: 11px; }
+@media (max-width: 899px) { .branch-pill { display: none; } }
