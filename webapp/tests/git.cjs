@@ -131,6 +131,13 @@ function otherPushesUrl(r, url) {
   await gitPage();
   const changes = await section('Changes').innerText();
   check('an edited request shows as modified', changes.includes(USER) && changes.includes('M'), changes);
+  // The shell (HITOP Next): the branch pill in the title bar, the git letter on the tree row.
+  const pill = p.locator('header.topbar .branch-pill');
+  await pill.waitFor({ timeout: 10000 }).catch(() => {});
+  check('title bar: a branch pill with the branch, which opens the Git page', (await pill.count()) === 1 && (await pill.innerText()).includes('main') && (await pill.getAttribute('aria-label')).includes('Open the Git page'), await pill.innerText().catch(() => 'none'));
+  await p.waitForFunction(() => [...document.querySelectorAll('aside .git-letter')].some((el) => el.textContent.trim().startsWith('M')), null, { timeout: 10000 }).catch(() => {});
+  const letters = await p.locator('aside .git-letter').allInnerTexts();
+  check('sidebar: the edited request carries an M', letters.some((l) => l.trim().startsWith('M')), letters.join());
   await section('Changes').getByRole('button', { name: USER }).click();
   const diff = await panel.getByRole('region', { name: `Diff of ${USER}` }).innerText().catch(() => '');
   check('diff shows the changed URL line', diff.includes('-url: ${base}/users/1') && diff.includes('+url: ${base}/users/1/profile'), diff);

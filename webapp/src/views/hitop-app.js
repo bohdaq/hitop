@@ -18,7 +18,7 @@ import { WIDE_DIALOGS, codeDialog, compareDialog, refreshCode } from "./tools-di
 import { OPENAPI_DIALOGS, openapiDialog, submitOpenapi } from "./openapi-dialogs.js";
 import { ACTION_KEYS, SAVE_KEYS, shortcutFor } from "../shortcuts.js";
 import { quickOpenItems, rankItems } from "../quick-open.js";
-import { folderOf, requestTree, withFolders } from "../collection-tree.js";
+import { folderOf, requestTree, slugName, withFolders } from "../collection-tree.js";
 import { shortcutList } from "./shortcut-list.js";
 import "./settings-view.js";
 import "./history-view.js";
@@ -110,6 +110,9 @@ export class HitopApp extends LitElement {
     this.agent = null; // the agent side sheet (ai-view.js): { action, prompt, text, patch, ... }
     this.exportFormat = "hitop";
     this.filter = "";
+    // Desktop: `git status` per folder collection ({branch, ahead, behind, files}; gitStatus()).
+    this.gitStatus = new Map();
+    this.gitSeen = "";
     this.collapsed = loadCollapsed();
     this.store.addEventListener("change", () => this.requestUpdate());
     this.store.addEventListener("notify", (e) => this.toast(e.detail));
@@ -162,6 +165,7 @@ export class HitopApp extends LitElement {
   }
 
   updated() {
+    this.scheduleGitStatus();
     // The selected request tab scrolls into view (the strip scrolls sideways).
     const s = this.store;
     if (s.view.kind !== "request" || (this.shownTab === s.currentTab && this.shownTabs === s.tabs.length)) return;
@@ -1076,7 +1080,9 @@ export class HitopApp extends LitElement {
         ({ request: r }) => html`<div role="listitem" class="request-item" data-sort-id=${r.id} data-sort-label=${r.name}>
           <button type="button" class="tree-row leaf" aria-current=${activeRequest === r.id ? "page" : "false"}
             @click=${() => ((this.navOpen = false), s.openRequest(r, c.id))} @contextmenu=${(e) => this.openRequestMenu(e, r, c.id)}>
-            <span class=${`method-tag m-${methodLabel(r)}`}>${methodLabel(r)}</span><span>${r.name}${s.isDirtyRequest(r.id, c.id) ? html`<span class="dirty-dot" aria-hidden="true">●</span><span class="visually-hidden">, unsaved changes</span>` : nothing}</span>
+            <span class=${`method-tag m-${methodLabel(r)}`}>${methodLabel(r)}</span><span>${r.name}${s.isDirtyRequest(r.id, c.id) ? html`<span class="dirty-dot" aria-hidden="true">●</span><span class="visually-hidden">, unsaved changes</span>` : nothing}</span>${this.gitLetter(c, r)
+              ? html`<span class="git-letter mono" title=${`Changed in git: ${this.gitLetter(c, r)}`}>${this.gitLetter(c, r)}<span class="visually-hidden"> (changed in git)</span></span>`
+              : nothing}
           </button>
           ${sortable ? html`<button type="button" class="sort-handle" data-sort-handle aria-label=${`Reorder ${r.name}`}>${icon("dots-six-vertical")}</button>` : nothing}
         </div>`,
@@ -1386,10 +1392,11 @@ export class HitopApp extends LitElement {
       : w.kind === "cloud" ? "Saved in HITOP Cloud"
       : IS_TAURI ? "On this computer · no cloud" : "In this browser · no cloud";
     const place = w?.kind === "folder" ? w.label : "";
+    const changed = current ? (this.gitStatus.get(current.id)?.files.length ?? 0) : 0;
     return html`<div class="side-pane-footer">
       <div class="side-card">
         <div class="side-card-line">${icon(w?.kind === "folder" ? "lock" : (w?.icon ?? (IS_TAURI ? "desktop" : "browser")))}<span>${where}</span></div>
-        <div class="side-card-meta mono">${place ? html`${place} · ` : nothing}${cols.length} ${cols.length === 1 ? "collection" : "collections"} · ${requests} ${requests === 1 ? "request" : "requests"}</div>
+        <div class="side-card-meta mono">${place ? html`${place} · ` : nothing}${cols.length} ${cols.length === 1 ? "collection" : "collections"} · ${requests} ${requests === 1 ? "request" : "requests"}${changed ? ` · ${changed} changed` : ""}</div>
         <div class="side-card-actions">
           <button type="button" class="link-button" @click=${() => this.openDialog("import")}>${icon("file-arrow-up")}<span>Import</span></button>
           <button type="button" class="link-button" @click=${() => this.openDialog("export")}>${icon("file-arrow-down")}<span>Export</span></button>
@@ -1457,6 +1464,76 @@ export class HitopApp extends LitElement {
     if (ok) this.store.deleteTabRequest(index);
   }
 
+  // --- git status in the shell (desktop) --------------------------------------------------------
+
+  /** Folder collections git can look at: connected, on disk (not hitop sync's app storage). */
+  gitFolders() {
+    const s = this.store;
+    if (!platform().git) return [];
+    return s.collections.map((c) => [c, s.folderOf(c.id)]).filter(([, f]) => f?.connected && !String(f.ref ?? "").startsWith("hitop-sync:"));
+  }
+
+  // A moment after the last change (edits save to the folder in batches), every folder's status.
+  scheduleGitStatus() {
+    const folders = this.gitFolders();
+    if (!folders.length) {
+      if (this.gitStatus.size) {
+        this.gitStatus = new Map();
+        this.requestUpdate();
+      }
+      return;
+    }
+    const key = `${this.store.version}|${folders.map(([c]) => c.id).join()}`;
+    if (key === this.gitSeen) return;
+    this.gitSeen = key;
+    clearTimeout(this.gitTimer);
+    this.gitTimer = setTimeout(() => this.refreshGitStatus(), 700);
+  }
+
+  async refreshGitStatus() {
+    const api = platform().git;
+    if (!api) return;
+    const next = new Map();
+    await Promise.all(
+      this.gitFolders().map(async ([c, f]) => {
+        try {
+          next.set(c.id, await api.call("status", { path: f.ref }));
+        } catch {
+          // Not a repository, or git can't read it: no pill, no letters.
+        }
+      }),
+    );
+    this.gitStatus = next;
+    this.requestUpdate();
+  }
+
+  /** The git letter of a saved request in a folder collection: M, A, D, R, ? (untracked). */
+  gitLetter(c, r) {
+    const st = this.gitStatus.get(c.id);
+    if (!st) return "";
+    // A request's file: its `file` (in a folder) or its name as hitop-core slugs it.
+    const file = `${st.prefix ? `${st.prefix.replace(/\/$/, "")}/` : ""}requests/${r.file || slugName(r.name)}.yaml`;
+    const f = st.files.find((x) => x.path === file);
+    if (!f) return "";
+    if (f.conflicted) return "!";
+    const change = f.worktree ?? f.index;
+    return { added: "A", modified: "M", deleted: "D", renamed: "R", typechange: "T", untracked: "?" }[change] ?? "M";
+  }
+
+  // The title bar's branch pill: the collection on screen, when git knows it; opens the Git page.
+  branchPill() {
+    const c = this.currentCollection();
+    const st = c ? this.gitStatus.get(c.id) : null;
+    if (!st) return nothing;
+    const name = st.branch ?? (st.head ? `detached ${st.head}` : "no commits");
+    const label = `Git: ${name}${st.upstream ? `, ${st.ahead} ahead, ${st.behind} behind` : ""}. Open the Git page`;
+    return html`<button type="button" class="chip branch-pill" aria-label=${label} title=${label} @click=${() => this.go("git", c.id)}>
+      ${icon("git-branch")}<span class="mono branch-name">${name}</span>
+      ${st.upstream && st.ahead ? html`<span class="mono branch-ahead">↑${st.ahead}</span>` : nothing}
+      ${st.upstream && st.behind ? html`<span class="mono branch-behind">↓${st.behind}</span>` : nothing}
+    </button>`;
+  }
+
   // --- title bar and status bar (HITOP Next) ---------------------------------------------------
 
   /** The collection on screen: the page's, or the open request's. */
@@ -1464,6 +1541,7 @@ export class HitopApp extends LitElement {
     const s = this.store;
     const { kind, collectionId } = s.view;
     if (kind === "collection" || kind === "variables") return s.collection(collectionId);
+    if (kind === "git") return s.collection(collectionId) ?? this.gitFolders()[0]?.[0] ?? null;
     if (kind === "request") return s.collection(s.tab?.loadedCollectionId);
     return null;
   }
@@ -1612,6 +1690,7 @@ export class HitopApp extends LitElement {
         ${this.commandField()}
         <span class="topbar-spacer"></span>
         ${this.tools("in-topbar")}
+        ${this.branchPill()}
         ${this.accountButton()}
       </header>
       <div class="layout">
