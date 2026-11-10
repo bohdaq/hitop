@@ -11,6 +11,7 @@ import { methodLabel } from "../store.js";
 import { syncButton } from "./openapi-dialogs.js";
 import { isSyncRef } from "../sync.js";
 import { storageOf } from "../git.js";
+import { SAVE_KEYS } from "../shortcuts.js";
 import "./run-report-view.js";
 
 class LightElement extends LitElement {
@@ -114,7 +115,8 @@ export class HitopCollection extends LightElement {
           <h1>${c.name}</h1>
           <div class="page-actions">
             ${this.app.envSelect()}
-            <lit-material-button variant="filled" ?disabled=${!n || run.running} @click=${() => s.runCollection(c.id)}>
+            <lit-material-button variant=${n ? "outlined" : "filled"} class="new-request-here" @click=${() => this.app.newRequestIn(c.id)}>${icon("plus")} New request</lit-material-button>
+            <lit-material-button variant=${n ? "filled" : "outlined"} ?disabled=${!n || run.running} @click=${() => s.runCollection(c.id)}>
               ${icon("play")} ${mine && run.running ? "Running" : "Run collection"}
             </lit-material-button>
             <lit-material-button variant="outlined" @click=${() => this.app.go("variables", c.id)}>${icon("sliders-horizontal")} Variables</lit-material-button>
@@ -158,7 +160,9 @@ export class HitopCollection extends LightElement {
                 )}
               </ol>`
             : html`<lit-material-empty-state size="compact" headline="No requests in this collection">
-                Send a request, then save it here with the save button next to Send.
+                Start a request here (it joins the collection when you save it with <kbd>${SAVE_KEYS}</kbd>), drag one in from another collection in the sidebar, or import.
+                <lit-material-button slot="actions" variant="filled" @click=${() => this.app.newRequestIn(c.id)}>${icon("plus")} New request</lit-material-button>
+                <lit-material-button slot="actions" variant="text" @click=${() => this.app.openDialog("import")}>Import</lit-material-button>
               </lit-material-empty-state>`}
         </section>
       </div>`;

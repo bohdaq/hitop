@@ -711,9 +711,13 @@ export class HitopRequest extends LitElement {
               ${icon("x")} Cancel
             </lit-material-button>`
           : html`<lit-material-button variant="filled" type="submit" title=${`Send (${SEND_KEYS})`}>${icon("paper-plane-tilt")} Send</lit-material-button>`}
-        <lit-material-icon-button aria-label="Save request" title=${`Save (${SAVE_KEYS})`} ?disabled=${!t.url} @click=${() => this.app.openDialog("save", this.store.saveTarget())}>
-          ${icon("floppy-disk")}
-        </lit-material-icon-button>
+        ${this.store.loadedRequest(t)
+          ? html`<lit-material-icon-button aria-label="Save request" title=${`Save (${SAVE_KEYS})`} @click=${() => this.app.openDialog("save", this.store.saveTarget())}>
+              ${icon("floppy-disk")}
+            </lit-material-icon-button>`
+          : html`<lit-material-button variant="outlined" class="save-draft" title=${`Save to a collection (${SAVE_KEYS})`} @click=${() => this.app.openDialog("save", this.store.saveTarget())}>
+              ${icon("floppy-disk")} <span class="visually-hidden">Save request, </span>Save to…
+            </lit-material-button>`}
         <lit-material-icon-button aria-label="Ask AI" title="Ask AI: write tests, explain a failure, a request from text" @click=${() => this.app.openAi()}>
           ${icon("sparkle")}
         </lit-material-icon-button>

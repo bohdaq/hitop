@@ -72,7 +72,26 @@ a.brand:focus-visible { outline: 2px solid var(--md-sys-color-primary); outline-
 }
 .side-pane-footer { flex: none; display: flex; gap: var(--space-50); margin-top: auto; padding-top: var(--space-75); border-top: 1px solid var(--md-sys-color-outline-variant); }
 .side-pane-footer .tree-row { flex: 1; justify-content: center; }
-.new-request { width: 100%; flex: none; }
+.side-pane-top { display: flex; gap: var(--space-50); align-items: center; flex: none; }
+.new-request { flex: 1; min-width: 0; }
+.new-collection { flex: none; }
+/* Row actions ("+" and "⋯" on a collection or folder): shown on hover, focus and touch. */
+.row-action { display: grid; place-items: center; flex: none; width: 28px; height: 28px; padding: 0; border: 0; border-radius: var(--md-sys-shape-corner-small, 8px); background: none; color: var(--md-sys-color-on-surface-variant); cursor: pointer; opacity: 0; transition: opacity var(--duration-color) var(--ease); }
+.row-action lit-material-icon { width: 16px; height: 16px; }
+.collection-line:hover .row-action, .collection-line:focus-within .row-action, .row-action:focus-visible { opacity: 1; }
+.row-action:hover { background: var(--md-sys-color-surface-container-high); color: var(--md-sys-color-on-surface); }
+.row-action:focus-visible { outline: 2px solid var(--md-sys-color-primary); }
+@media (hover: none) { .row-action { opacity: 1; } }
+/* An empty collection or folder: a drop target with a hint. */
+.tree lit-material-sortable:empty { display: block; min-height: 6px; }
+.tree-hint { display: flex; align-items: center; gap: var(--space-50); min-height: 32px; padding: 0 0 0 var(--space-150); color: var(--md-sys-color-on-surface-variant); font-size: var(--text-xs); line-height: var(--leading-xs); white-space: nowrap; }
+.tree-hint-action { display: inline-flex; align-items: center; gap: 2px; padding: 2px var(--space-50); border: 0; border-radius: var(--md-sys-shape-corner-small, 8px); background: none; color: var(--md-sys-color-primary); font: inherit; font-weight: 600; white-space: nowrap; cursor: pointer; }
+.tree-hint-action lit-material-icon { width: 14px; height: 14px; }
+.tree-hint-action:hover { background: var(--md-sys-color-surface-container-high); }
+.tree-hint-action:focus-visible { outline: 2px solid var(--md-sys-color-primary); }
+.tree-empty { display: grid; gap: var(--space-50); padding: var(--space-100) var(--space-50); }
+.tree-empty .hint { padding: 0 var(--space-75) var(--space-50); }
+.save-draft { white-space: nowrap; }
 /* Only the tree scrolls: New request, the filter and the footer stay put. */
 .tree { flex: 1; min-height: 0; overflow-y: auto; margin: 0 calc(-1 * var(--space-100)); padding: 0 var(--space-100); }
 .tree-filter {
