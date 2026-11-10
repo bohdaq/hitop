@@ -62,7 +62,7 @@ function api() {
   await settle(p);
 
   // A saved request.
-  await p.locator('aside').getByRole('button', { name: /New request/ }).first().click();
+  await p.locator('aside .new-request').click();
   await p.getByLabel('URL').fill('${base}/items?key=${key}');
   await p.getByRole('button', { name: 'Save request' }).click();
   await settle(p);

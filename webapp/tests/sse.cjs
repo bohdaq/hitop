@@ -30,7 +30,7 @@ const settle = (p, ms = 400) => p.waitForTimeout(ms);
   await settle(p, 800);
   const n = await p.evaluate(() => document.querySelector('hitop-app').store.events.get(document.querySelector('hitop-app').store.tab.id).events.length);
   check('Stop ends the stream and keeps the events', !(await p.locator('section.sse').count()) || (await p.locator('section.sse').innerText()).includes('Stream ended'), String(n));
-  check('...as an Events tab next to Body and Headers', (await p.getByRole('tab', { name: /Events \(\d+\)/ }).count()) === 1);
+  check('...as an Events tab next to Body and Headers', (await p.getByRole('tab', { name: /^Events \d+/ }).count()) === 1);
   check('no page errors', errors.length === 0, errors.join(' | '));
   await h.finish();
 })().catch((e) => {
