@@ -121,7 +121,7 @@ function otherPushesUrl(r, url) {
   await p.locator('h1', { hasText: 'Sample API' }).waitFor({ timeout: 10000 });
   await p.locator('.folder-status').getByRole('button', { name: 'Git' }).click();
   await panel.locator('.git-bar').waitFor({ timeout: 10000 });
-  let b = await bar();
+  const b = await bar();
   check('status: branch, upstream, ahead/behind', b.includes('main') && b.includes('origin/main') && b.includes('↑0 ↓0'), b);
   check('status: clean folder', (await section('Changes').innerText()).includes('No changes'));
   check('commits as git config says', (await section('Commit').innerText()).includes('Ada Lovelace <ada@example.test>'));

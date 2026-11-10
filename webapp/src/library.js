@@ -200,7 +200,7 @@ export class Library extends EventTarget {
 
   /** Server items over `app` ({collections, environments, activeEnvironmentId, globals}); returns the new app state. */
   applyItems(items, app) {
-    let collections = [...app.collections];
+    const collections = [...app.collections];
     let { environments, activeEnvironmentId, globals } = app;
     for (const it of items) {
       const key = `${it.kind}/${it.id}`;
@@ -375,7 +375,7 @@ export class Library extends EventTarget {
     if (item.kind === "collection") {
       const mine = item.data;
       const theirs = current && !current.deleted ? current.data : null;
-      let cols = s.collections.filter((c) => idOf(c) !== item.id);
+      const cols = s.collections.filter((c) => idOf(c) !== item.id);
       if (theirs) cols.push(theirs);
       if (mine) {
         const copyId = Date.now() * 1000 + Math.floor(Math.random() * 1000);

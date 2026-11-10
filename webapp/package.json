@@ -12,7 +12,8 @@
     "test:unit": "npm run wasm && node tests/unit.mjs && node tests/unit-ux.mjs && node tests/pm.mjs",
     "test:e2e": "node tests/e2e.cjs && node tests/editing.cjs && node tests/features.cjs && node tests/extras.cjs && node tests/folders.cjs && node tests/postman.cjs && node tests/settings.cjs && node tests/globals.cjs && node tests/graphql.cjs && node tests/diff-code.cjs && node tests/websocket.cjs && node tests/grpc.cjs && node tests/openapi.cjs && node tests/git.cjs && node tests/secret-refs.cjs && node tests/ux.cjs && node tests/ux12.cjs && node tests/onboarding.cjs && node tests/sse.cjs && node tests/ai.cjs && node tests/sync.cjs && node tests/library.cjs && node tests/github.cjs && node tests/next.cjs",
     "test:e2e:tauri": "HITOP_MODE=tauri npm run test:e2e",
-    "build:extension": "node scripts/build-wasm.mjs --scripts && vite build --mode extension"
+    "build:extension": "node scripts/build-wasm.mjs --scripts && vite build --mode extension",
+    "lint": "eslint ."
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^1.6.0",
@@ -67,6 +68,10 @@
     "lit": "3.3.3"
   },
   "devDependencies": {
+    "@eslint/js": "10.0.1",
+    "eslint": "10.14.0",
+    "eslint-plugin-lit": "2.3.1",
+    "globals": "17.14.0",
     "playwright": "1.63.0",
     "vite": "8.3.4"
   }

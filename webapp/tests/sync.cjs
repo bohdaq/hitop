@@ -182,7 +182,7 @@ async function launchOff(options) {
     await S(h).getByRole('button', { name: 'Sign in', exact: true }).click();
     await idle(h);
     await h.page.waitForFunction(() => document.querySelector('hitop-sync [aria-label="Your fingerprint"]')?.textContent.trim().length > 30, null, { timeout: 15000 }).catch(async (e) => {
-      throw new Error(`sign-in as ${email} didn't finish: ${await alertText(h)} ${await note(h)} ${errors.join(' | ')}`);
+      throw new Error(`sign-in as ${email} didn't finish (${e.message}): ${await alertText(h)} ${await note(h)} ${errors.join(' | ')}`);
     });
     return text(S(h).getByLabel('Your fingerprint'));
   };

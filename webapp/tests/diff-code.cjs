@@ -8,7 +8,7 @@
 const fs = require('fs');
 const http = require('http');
 const path = require('path');
-const { launch, checker, TAURI } = require('./harness.cjs');
+const { launch, checker } = require('./harness.cjs');
 const { results, check } = checker();
 const settle = (p) => p.waitForTimeout(400);
 const SECRET = 'd1ff-s3cret';

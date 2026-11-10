@@ -110,7 +110,7 @@ export class HomePage extends LitElement {
         </lit-material-checklist-item>
         <lit-material-checklist-item label="Share a workspace" ?done=${workspaces.length > 0}>
           <p>In the web app, open a collection and share it from its Sync page (sign in with this account). It is end-to-end encrypted and shows up here within seconds. From a terminal, in the collection's folder:</p>
-          <lit-material-clipboard-copy label="Share command" value="hitop sync login && hitop sync init"></lit-material-clipboard-copy>
+          <lit-material-clipboard-copy label="Share command" value=${"hitop sync login && hitop sync init"}></lit-material-clipboard-copy>
         </lit-material-checklist-item>
         <lit-material-checklist-item label="Invite a teammate" ?done=${invited}>
           <p>${team.length ? "People you invite join the organization and take a seat; workspaces are still shared from hitop." : "A plan, its seats and limits belong to an organization. Create one for your team first."}</p>

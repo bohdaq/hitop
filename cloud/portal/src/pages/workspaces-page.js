@@ -46,7 +46,7 @@ export class WorkspacesPage extends LitElement {
   empty() {
     return html`<lit-material-empty-state headline="No workspaces yet">
       Share a collection from hitop first: sign in in its folder, then share it. It shows up here within seconds.
-      <lit-material-clipboard-copy slot="actions" label="Share command" value="hitop sync login && hitop sync init"></lit-material-clipboard-copy>
+      <lit-material-clipboard-copy slot="actions" label="Share command" value=${"hitop sync login && hitop sync init"}></lit-material-clipboard-copy>
     </lit-material-empty-state>`;
   }
 

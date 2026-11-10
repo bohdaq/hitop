@@ -128,11 +128,11 @@ export async function askAi(action, input, { onText, signal } = {}) {
     if (p.schema) return JSON.parse(text);
     return text.replace(/^```[a-z]*\n?|\n?```$/g, "").trim();
   } catch (e) {
-    if (e instanceof Anthropic.AuthenticationError) throw new Error("The Anthropic API key was refused. Check it in Settings, under AI assistant.");
-    if (e instanceof Anthropic.PermissionDeniedError) throw new Error("This API key can't use that model. Pick another one in Settings, under AI assistant.");
-    if (e instanceof Anthropic.RateLimitError) throw new Error("The Claude API is rate limiting this key. Try again in a minute.");
+    if (e instanceof Anthropic.AuthenticationError) throw new Error("The Anthropic API key was refused. Check it in Settings, under AI assistant.", { cause: e });
+    if (e instanceof Anthropic.PermissionDeniedError) throw new Error("This API key can't use that model. Pick another one in Settings, under AI assistant.", { cause: e });
+    if (e instanceof Anthropic.RateLimitError) throw new Error("The Claude API is rate limiting this key. Try again in a minute.", { cause: e });
     if (e instanceof Anthropic.APIUserAbortError) throw e;
-    if (e instanceof Anthropic.APIError) throw new Error(`The Claude API answered ${e.status ?? "with an error"}: ${e.message}`);
+    if (e instanceof Anthropic.APIError) throw new Error(`The Claude API answered ${e.status ?? "with an error"}: ${e.message}`, { cause: e });
     throw e;
   }
 }

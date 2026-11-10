@@ -48,7 +48,7 @@ async function launch({ viewport = { width: 1280, height: 860 }, seed = null, ta
       };
     });
     await ctx.route(`${TAURI_ORIGIN}/**`, (route) => {
-      let rel = decodeURIComponent(new URL(route.request().url()).pathname).replace(/^\/+/, '') || 'index.html';
+      const rel = decodeURIComponent(new URL(route.request().url()).pathname).replace(/^\/+/, '') || 'index.html';
       const file = path.join(DIST, rel);
       if (!file.startsWith(DIST) || !fs.existsSync(file) || fs.statSync(file).isDirectory()) return route.fulfill({ status: 404, body: 'not found' });
       route.fulfill({ status: 200, contentType: TYPES[path.extname(file)] || 'application/octet-stream', body: fs.readFileSync(file) });

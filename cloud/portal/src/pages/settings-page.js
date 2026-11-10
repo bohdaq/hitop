@@ -496,7 +496,7 @@ export class SettingsPage extends LitElement {
         <p class="hint">Once a day the server signs the heads of the organization's chains${audit.anchorsOn ? "" : " (turned off on this server)"}; when they moved, it mails the anchor to the owners. Keep those mails: <code>hitop sync audit --verify --anchor anchor.json</code> checks the log against one.</p>
         <div class="grid card" aria-label="Anchor settings">
           <lit-material-switch id="audit-mail" label="Mail anchors to the owners" aria-label="Mail anchors to the owners" ?checked=${audit.mailAnchors} ?disabled=${!owner || this.busy} @change=${(e) => this.auditSetting(org, "mailAnchors", e.target.checked)}></lit-material-switch>
-          <lit-material-switch id="audit-public" label="Publish anchors" aria-label="Publish anchors" supporting-text="Anyone can fetch them at ${audit.publicUrl}<day>.json; they show how many workspaces the organization has and their ids" ?checked=${audit.publicAnchors} ?disabled=${!owner || this.busy} @change=${(e) => this.auditSetting(org, "publicAnchors", e.target.checked)}></lit-material-switch>
+          <lit-material-switch id="audit-public" label="Publish anchors" aria-label="Publish anchors" supporting-text=${`Anyone can fetch them at ${audit.publicUrl}<day>.json; they show how many workspaces the organization has and their ids`} ?checked=${audit.publicAnchors} ?disabled=${!owner || this.busy} @change=${(e) => this.auditSetting(org, "publicAnchors", e.target.checked)}></lit-material-switch>
         </div>
         ${audit.anchors.length
           ? html`<div class="scroll"><lit-material-data-table aria-label="Anchors">

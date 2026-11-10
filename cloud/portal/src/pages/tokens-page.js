@@ -15,7 +15,6 @@ import { confirm } from "@lit-material/confirm";
 import { TaskController, taskCache } from "@lit-material/task";
 import { LitElement, css, html, nothing } from "lit";
 import { act, describeError, errorAlert, loadError, sessionEnded } from "../actions.js";
-import { notify } from "../notify.js";
 import { iso } from "../format.js";
 import { session } from "../session.js";
 import { pageStyles } from "./page-styles.js";

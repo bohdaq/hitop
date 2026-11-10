@@ -7,7 +7,7 @@ import "@lit-material/button";
 import "@lit-material/skeleton";
 import { LitElement, css, html, nothing } from "lit";
 import { loadError } from "../actions.js";
-import { bytes, METRICS, orgName, planLabel, STATUS_NOTES, statusKind } from "../format.js";
+import { METRICS, orgName, planLabel, STATUS_NOTES, statusKind } from "../format.js";
 import { enc, isAdmin, orgTask } from "../org-data.js";
 import { session } from "../session.js";
 import { pageStyles } from "./page-styles.js";

@@ -511,6 +511,25 @@ jobs:
         working-directory: webapp
         run: node tests/firefox.cjs
 
+  # ESLint (each package's eslint.config.js): the web app, the site and the HITOP Cloud portal.
+  lint:
+    name: Lint (web app, site, portal)
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Web app
+        working-directory: webapp
+        run: npm ci --no-audit --no-fund && npm run lint
+      - name: Site
+        working-directory: site
+        run: npm ci --no-audit --no-fund && npm run lint
+      - name: Portal
+        working-directory: cloud/portal
+        run: npm ci --no-audit --no-fund && npm run lint
+
   brand:
     name: Brand (icons from brand/logo.svg, one product name)
     runs-on: ubuntu-24.04

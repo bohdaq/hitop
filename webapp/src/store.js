@@ -2521,7 +2521,7 @@ export class Store extends EventTarget {
     const durationMs = Date.now() - startedAt;
     const environment = this.activeEnvironment?.name ?? null;
     const folder = this.folderOf(collection.id);
-    let storage = null;
+    let storage;
     try {
       storage = globalThis.localStorage ?? null;
     } catch {

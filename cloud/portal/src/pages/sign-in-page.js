@@ -8,7 +8,7 @@ import "@lit-material/text-field";
 import "@lit-material/alert";
 import { navigate } from "@lit-material/router";
 import { LitElement, css, html, nothing } from "lit";
-import { Api, DEFAULT_SERVER, normalizeServer, passkeySignIn, passwordReset, passwordSignIn, passwordSignUp, ssoFinish, ssoStart } from "../api.js";
+import { Api, normalizeServer, passkeySignIn, passwordReset, passwordSignIn, passwordSignUp, ssoFinish, ssoStart } from "../api.js";
 import { describeError } from "../actions.js";
 import { notify } from "../notify.js";
 import { session } from "../session.js";

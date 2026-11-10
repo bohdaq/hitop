@@ -5,7 +5,8 @@
   "scripts": {
     "build": "vite build && node scripts/prerender.js",
     "preview": "vite preview --outDir dist",
-    "check": "node scripts/check-pages.mjs && node scripts/check-contrast.mjs"
+    "check": "node scripts/check-pages.mjs && node scripts/check-contrast.mjs",
+    "lint": "eslint ."
   },
   "dependencies": {
     "@fontsource-variable/geist": "5.3.0",
@@ -19,8 +20,12 @@
     "lit": "3.3.3"
   },
   "devDependencies": {
+    "@eslint/js": "10.0.1",
     "@lit-labs/ssr": "4.1.0",
     "@phosphor-icons/core": "^2.1.1",
+    "eslint": "10.14.0",
+    "eslint-plugin-lit": "2.3.1",
+    "globals": "17.14.0",
     "marked": "^18.1.2",
     "vite": "8.3.4"
   }

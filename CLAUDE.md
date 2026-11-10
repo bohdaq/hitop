@@ -423,6 +423,7 @@ hitop/
 - Secret manager references: `features.js` `secretRefs()`/`withSecretRefs()`; `store.resolveRefs()` (in `prepare`, `wsConnect`, `grpcCall`) asks
   `platform().resolveSecretRefs` (tauri.js → `secret_refs_resolve`; web.js `null` → the request isn't sent, the note names them);
   values in `store.refValues` (memory, reset per send/run), merged by `variables()`, masked via `secretValuesFor()`; Code dialog keeps placeholders
+- Lint: `npm run lint` (ESLint 10 flat config `eslint.config.js`: recommended + eslint-plugin-lit, browser globals for src/, Node for tests/scripts) in webapp/, site/ and cloud/portal/; CI job `lint`. Fix findings, don't disable rules
 - No telemetry in the web build: telemetry UI lives only in `platform/tauri-settings.js` (imported by tauri.js);
   `node scripts/check-no-telemetry.mjs` after both builds checks it. Adapter hooks `pages`/`onStart` add desktop-only pages
 - Builds need the wasm32 target and the wasm-bindgen CLI 0.2.126 (`cargo install wasm-bindgen-cli --version 0.2.126 --locked`):

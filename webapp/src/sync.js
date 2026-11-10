@@ -227,7 +227,7 @@ export class SyncClient {
     if (this.cached?.server === a.server) return this.cached.value;
     const acc = secretAccount(a.server);
     const v = (await platform().folderSecrets.load([acc]))[acc];
-    let value = null;
+    let value;
     try {
       value = v ? JSON.parse(v) : null;
     } catch {
@@ -253,7 +253,7 @@ export class SyncClient {
     const p = platform();
     const res = p.name === "tauri" ? await p.send(url, opts) : await fetch(url, opts);
     const text = await res.text();
-    let json = null;
+    let json;
     try {
       json = text ? JSON.parse(text) : null;
     } catch {
@@ -779,7 +779,7 @@ export class SyncClient {
     const pinned = this.data.pins;
     const headers = r.wraps.map((x) => w.wrapHeader(x.wrapped));
     // The member list only when a sender isn't trusted: its fingerprint, or the inviter's.
-    let listed = {};
+    const listed = {};
     if (headers.some((h) => !h.legacy && !pinned[h.sender])) {
       const info = await this.api("GET", `/v1/workspaces/${ws}`);
       for (const k of info.members.flatMap((m) => m.keys)) listed[k.id] = k.publicKey;
@@ -862,7 +862,7 @@ export class SyncClient {
   async changes(ws, since, keys) {
     const w = (await loadFormat()).sync;
     const out = [];
-    let seq = since;
+    let seq;
     let cursor = since;
     for (;;) {
       const r = await this.api("GET", `/v1/workspaces/${ws}/changes?since=${cursor}`);
@@ -912,7 +912,7 @@ export class SyncClient {
     return Object.entries(syncComments.get(l.workspace))
       .filter(([p]) => p.startsWith(prefix) && !p.slice(prefix.length).includes("/"))
       .map(([path, text]) => {
-        let c = {};
+        let c;
         try {
           c = JSON.parse(text);
         } catch {
@@ -956,7 +956,10 @@ export class SyncClient {
     const ws = l.workspace;
     const me = this.account().keyId;
     const w = (await loadFormat()).sync;
-    let { epoch, keys, legacy } = await this.workspaceKeys(ws);
+    const first = await this.workspaceKeys(ws);
+    const { legacy } = first;
+    // Re-read below when the server says the epoch moved on (stale_epoch).
+    let { epoch, keys } = first;
     // Keys from hitop 1.1 here: an owner's sync upgrades them (members see a warning).
     if (legacy) {
       const u = await this.upgradeWraps(ws, { epoch, keys });

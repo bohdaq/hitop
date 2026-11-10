@@ -15,9 +15,8 @@ const settle = (p) => p.waitForTimeout(400);
   const last = () => sent[sent.length - 1];
   const header = (req, name) => req?.headers.find((h) => h[0].toLowerCase() === name.toLowerCase())?.[1];
   const send = async () => {
-    const n = sent.length;
     await p.getByRole('button', { name: 'Send' }).click();
-    await p.waitForFunction((count) => document.querySelector('.response-meta') && !document.querySelector('[aria-busy="true"]'), n, { timeout: 20000 });
+    await p.waitForFunction(() => document.querySelector('.response-meta') && !document.querySelector('[aria-busy="true"]'), null, { timeout: 20000 });
     await settle(p);
   };
   const tab = async () => (await h.stored.tabs()).tab;

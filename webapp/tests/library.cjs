@@ -14,7 +14,7 @@ const fs = require('fs');
 const net = require('net');
 const os = require('os');
 const path = require('path');
-const { launch, checker, TAURI, BASE } = require('./harness.cjs');
+const { launch, checker, BASE } = require('./harness.cjs');
 const { results, check } = checker();
 const settle = (p, ms = 400) => p.waitForTimeout(ms);
 const SECRET = 'lib-e2e-secret-9c4e1a';
