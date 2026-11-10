@@ -86,6 +86,14 @@ export class HitopCollections extends LightElement {
   }
 }
 
+// U19: the environment's secrets with no value on this device.
+function emptySecretsNote(env) {
+  const empty = secretNames(env).filter((n) => env.variables?.[n] == null || env.variables[n] === "");
+  if (!empty.length) return nothing;
+  const one = empty.length === 1;
+  return html`<p class="secret-missing-note" role="status">${icon("warning-circle")}<span>No value on this device: <span class="mono">${empty.join(", ")}</span>. Requests that use ${one ? "it" : "them"} aren't sent until you fill ${one ? "it" : "them"} in below.</span></p>`;
+}
+
 export class HitopCollection extends LightElement {
   static properties = { store: { attribute: false }, version: { attribute: false }, app: { attribute: false }, collection: { attribute: false } };
 
@@ -321,7 +329,9 @@ export class HitopEnvironments extends LightElement {
         this.json = json;
         const rows = Object.entries(env.variables).map(([key, value]) => ({ key, value: String(value) }));
         this.rows = rows.filter((r) => !names.includes(r.key));
-        this.secretRows = rows.filter((r) => names.includes(r.key));
+        // A secret named but with no value here (an import, a folder, another device) still gets
+        // a row to fill in.
+        this.secretRows = [...rows.filter((r) => names.includes(r.key)), ...names.filter((n) => !Object.hasOwn(env.variables, n)).map((key) => ({ key, value: "" }))];
         this.rowsVersion = (this.rowsVersion ?? 0) + 1;
       }
     }
@@ -380,6 +390,7 @@ export class HitopEnvironments extends LightElement {
                     <section class="env-secrets" aria-labelledby="env-secrets-title">
                       <h2 id="env-secrets-title">Secrets</h2>
                       <p class="hint">${platform().secretsNote}</p>
+                      ${emptySecretsNote(env)}
                       <label class="switch-row">
                         <lit-material-switch aria-label="Show secret values" ?checked=${this.reveal} @change=${(e) => (this.reveal = e.target.checked)}></lit-material-switch>
                         <span>Show secret values</span>

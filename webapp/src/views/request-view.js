@@ -519,6 +519,14 @@ export class HitopRequest extends LitElement {
         <p class="hint">You stopped the request before its response arrived. Nothing was recorded in History.</p>
       </section>`;
     }
+    const notSent = this.store.notSent.get(t.id);
+    if (notSent && t.statusCode == null) {
+      return html`<section class="response" data-state="not-sent" aria-label="Response">
+        <lit-material-status status="warning">Not sent</lit-material-status>
+        <p class="not-sent-text">${notSent.text}</p>
+        <lit-material-button variant="outlined" @click=${() => this.app.go("environments")}>Open Environments</lit-material-button>
+      </section>`;
+    }
     if (t.statusCode == null && (t.response == null || t.response === "")) {
       return html`<section class="response empty" data-state="idle" aria-label="Response">
         <lit-material-empty-state size="compact" headline="Send a request to see the response">
@@ -743,7 +751,13 @@ export class HitopRequest extends LitElement {
       this.peek = n;
       this.peekPinned = pin;
       this.requestUpdate();
-      this.updateComplete.then(() => setTimeout(() => this.querySelector(".var-peek")?.show(el), 0));
+      // The view may have left the page meanwhile (a click that navigates): show nothing then.
+      this.updateComplete.then(() =>
+        setTimeout(() => {
+          const pop = this.querySelector(".var-peek");
+          if (pop?.isConnected && el.isConnected) pop.show(el);
+        }, 0),
+      );
     };
     const leave = () => {
       if (this.peekPinned) return;
@@ -754,8 +768,8 @@ export class HitopRequest extends LitElement {
         if (i % 2 === 0) return html`<span class="url-text" aria-hidden="true">${part}</span>`;
         const n = part.slice(2, -1).trim();
         const found = n ? this.store.variableSource(t.loadedCollectionId, n) : null;
-        return html`<span class=${`var-chip ${found ? "" : "missing"}`} role="button" tabindex="0" aria-haspopup="dialog"
-          title=${found ? `${found.value} (${found.scope})` : "Not defined"}
+        return html`<span class=${`var-chip ${!found ? "missing" : found.missingSecret ? "missing secret-missing" : ""}`} role="button" tabindex="0" aria-haspopup="dialog"
+          title=${!found ? "Not defined" : found.missingSecret ? `Secret with no value on this device (${found.scope})` : `${found.value} (${found.scope})`}
           @pointerenter=${(e) => open(n, e.currentTarget, false)} @pointerleave=${leave}
           @focus=${(e) => open(n, e.currentTarget, false)} @blur=${leave}
           @click=${(e) => open(n, e.currentTarget, true)}
@@ -770,11 +784,27 @@ export class HitopRequest extends LitElement {
     const src = peek ? this.store.variableSource(t.loadedCollectionId, peek) : null;
     return html`<lit-material-popover class="var-peek" @close=${() => (this.peekPinned = false)} @pointerenter=${() => (this.peekPinned = true)}>
       <span slot="header" class="mono">\${${peek}}</span>
-      ${src
+      ${src?.missingSecret
+        ? html`<p class="hint">A secret of the ${src.scope} with no value on this device: the request won't be sent until you fill it in. Secret values stay on each device and never sync.</p>`
+        : src
         ? html`<p class="var-value mono">${src.value || html`<span class="hint">empty</span>`}</p><p class="hint">From the ${src.scope}.</p>`
         : html`<p class="hint">Nothing defines it: the request won't be sent until an environment, the collection or globals do.</p>`}
       <lit-material-button slot="footer" variant="text" @click=${() => this.app.go(src?.scope === "collection" ? "variables" : "environments", t.loadedCollectionId)}>Edit</lit-material-button>
     </lit-material-popover>`;
+  }
+
+  // U19: secrets this request uses with no value on this device, named before Send (the URL's,
+  // its headers', body's and auth's), with a way to fill them in.
+  secretNote() {
+    const t = this.tab;
+    const { missing } = this.store.missingSecretsFor(t, t.loadedCollectionId);
+    if (!missing.length) return nothing;
+    const names = missing.map((m) => m.name);
+    return html`<p class="secret-missing-note" role="status">
+      ${icon("warning-circle")}
+      <span>No value on this device for ${names.length === 1 ? "secret" : "secrets"} <span class="mono">${names.join(", ")}</span>: the request won't be sent until ${names.length === 1 ? "it is" : "they are"} filled in.</span>
+      <lit-material-button variant="text" @click=${() => this.app.go("environments")}>Fill in secrets</lit-material-button>
+    </p>`;
   }
 
   // Keeps the URL mirror on the input's box and scroll position.
@@ -865,6 +895,7 @@ export class HitopRequest extends LitElement {
           </lit-material-icon-button>
         </span>
       </form>
+      ${this.secretNote()}
       ${this.lineMenu()}
       ${this.varPeek()}
       ${this.panes(this.renderEditor(), () => this.renderResponse(), "Response")}`;

@@ -1083,3 +1083,15 @@ hitop-app lit-material-text-field::part(label) { inset-inline-start: -20px; }
 .line-tools .more-send { --md-sys-density-icon-button-size: 44px; --md-sys-density-icon-button-padding: 11px; border: 1px solid #26262c; border-radius: 11px; background: var(--md-sys-color-surface-container); }
 .line-tools .more-send::part(button) { border-radius: 11px; }
 @media (max-width: 899px) { .branch-pill { display: none; } }
+
+/* U19: a secret with no value on this device: the note under the request bar and on the
+   Environments page, the URL chip, the response pane's "Not sent". */
+.secret-missing-note { display: flex; align-items: center; gap: 8px; margin: 0 20px 8px; padding: 4px 4px 4px 12px; border: 1px solid rgb(242 180 92 / 0.35); border-radius: 9px; background: rgb(242 180 92 / 0.07); color: var(--md-sys-color-on-surface); font-size: 12.5px; }
+.secret-missing-note > :first-child { flex: none; color: var(--hitop-warn); }
+.secret-missing-note > span { flex: 1; min-width: 0; }
+.secret-missing-note .mono { color: var(--hitop-warn); }
+.env-secrets .secret-missing-note { margin: 8px 0; padding: 8px 12px; }
+.url-mirror .var-chip.secret-missing { color: var(--hitop-warn); background: rgb(242 180 92 / 0.12); text-decoration: underline dashed; text-underline-offset: 3px; }
+.response[data-state="not-sent"] { display: flex; flex-direction: column; align-items: flex-start; gap: 10px; padding: 20px; }
+.not-sent-text { margin: 0; max-width: 64ch; overflow-wrap: anywhere; }
+@media (max-width: 599px) { .secret-missing-note { margin: 0 16px 8px; } }

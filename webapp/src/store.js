@@ -40,6 +40,9 @@ import {
   secretRefs,
   withSecretRefs,
   urlEncodedBody,
+  usedVariables,
+  missingSecrets,
+  missingSecretsText,
 } from "./features.js";
 import { platform } from "./platform/index.js";
 import { fillVariables, forWebApp, isPostmanCollection, loadShim, scriptScans, usesPostmanApi } from "./pm.js";
@@ -368,6 +371,8 @@ export class Store extends EventTarget {
     this.urlErrors = new Map();
     // Response bodies as received, by tab id, where the tab shows them formatted (JSON).
     this.rawBodies = new Map();
+    // U19: tab id → { text, missing } for a send stopped by a secret with no value here (memory only).
+    this.notSent = new Map();
     // What the main area shows: the request tabs, all collections, one
     // collection, or one collection's variables.
     this.view = { kind: "request", collectionId: null };
@@ -1200,6 +1205,18 @@ export class Store extends EventTarget {
     return [...new Set([...secretNames(this.activeEnvironment), ...secretNames(own)])];
   }
 
+  /**
+   * U19: secrets `source` (a tab or saved request) uses with no value on this device, as
+   * [{name, where}], and the note naming where to fill them in. `variables`: what the request sees
+   * (default: now; prepare passes the values after a Postman pre-script ran).
+   */
+  missingSecretsFor(source, collectionId, variables = this.variables(collectionId)) {
+    const own = this.folders.get(collectionId)?.globals ?? this.globals;
+    const used = usedVariables({ ...source, body: source.body ?? source.requestBody });
+    const missing = missingSecrets(used, variables, secretNames(this.activeEnvironment), secretNames(own));
+    return { missing, text: missingSecretsText(missing, this.activeEnvironment ? this.environmentLabel(this.activeEnvironment) : "") };
+  }
+
   secretValuesFor(collectionId) {
     const own = this.folders.get(collectionId)?.globals ?? this.globals;
     return [...secretValues(this.activeEnvironment), ...secretValues(own), ...Object.values(this.sharedFor(collectionId)), ...[...this.refSeen]];
@@ -1416,16 +1433,23 @@ export class Store extends EventTarget {
     const script = this.scriptVariables[collectionId] ?? {};
     if (name in script && script[name] !== null) return { value: String(script[name]), scope: "set by a script" };
     const env = this.activeEnvironment;
-    const secrets = new Set([...(env?.secrets ?? []), ...(this.globals?.secrets ?? [])]);
+    const ownGlobals = this.folders.get(collectionId)?.globals ?? this.globals;
+    const secrets = new Set([...(env?.secrets ?? []), ...(ownGlobals?.secrets ?? [])]);
+    const envLabel = env ? `environment ${this.environmentLabel(env)}` : "environment";
     const scopes = [
       [this.sharedFor(collectionId), "team environment"],
-      [env?.variables ?? {}, env ? `environment ${this.environmentLabel(env)}` : "environment"],
+      [env?.variables ?? {}, envLabel],
       [collectionService.getCollectionVariables(this.collections, collectionId) ?? {}, "collection"],
       [this.globalsFor(collectionId), "globals"],
     ];
+    // U19: a secret with no value on this device (absent or empty) says so: `missingSecret`.
+    const empty = (v) => v == null || v === "";
     for (const [vars, scope] of scopes) {
-      if (vars && Object.hasOwn(vars, name)) return { value: secrets.has(name) ? "••••" : String(vars[name] ?? ""), scope };
+      if (!vars || !Object.hasOwn(vars, name)) continue;
+      if (secrets.has(name) && empty(vars[name])) return { value: "", scope, missingSecret: true };
+      return { value: secrets.has(name) ? "••••" : String(vars[name] ?? ""), scope };
     }
+    if (secrets.has(name)) return { value: "", scope: secretNames(env).includes(name) ? envLabel : "globals", missingSecret: true };
     return null;
   }
 
@@ -1570,6 +1594,9 @@ export class Store extends EventTarget {
     // A Postman script may set variables this request uses: the ones still
     // missing are filled in after it runs.
     const postman = usesPostmanApi(source.preRequestScript);
+    // U19: a secret with no value on this device stops the send with a note saying where to fill
+    // it in (after a Postman pre-script, which may set it, below).
+    if (!postman) this.checkSecrets(source, collectionId, variables);
     const interpolate = postman ? (text) => fillVariables(text, variables) : (text) => interpolateVariables(text, variables);
     const url = interpolate(source.url);
     const headers = (source.headers || []).map((h) => ({
@@ -1598,9 +1625,18 @@ export class Store extends EventTarget {
     const out = await this.runPreScript(source.preRequestScript, collectionId, source.method, authed.url, authed.headers, authed.body);
     if (!postman) return out;
     const after = this.variables(collectionId);
+    this.checkSecrets(source, collectionId, after);
     const strict = (text) => (text ? interpolateVariables(text, after) : text);
     const sentBody = gql && out.body === authed.body ? graphqlBody(strict) : strict(out.body);
     return { url: strict(out.url), headers: out.headers.map((h) => ({ ...h, name: strict(h.name), value: strict(h.value) })), body: sentBody };
+  }
+
+  checkSecrets(source, collectionId, variables) {
+    const { missing, text } = this.missingSecretsFor(source, collectionId, variables);
+    if (!missing.length) return;
+    const e = new Error(text);
+    e.missingSecrets = missing;
+    throw e;
   }
 
   // OAuth 2.0: a Bearer preset with a token kept in memory until 30 s before it runs out.
@@ -1805,6 +1841,7 @@ export class Store extends EventTarget {
       auth: tab.auth,
       ...SAVED_FIELDS(tab),
     };
+    this.notSent.delete(tab.id);
     this.tabs = tabService.updateTab(this.tabs, index, { ...NO_RESPONSE, loading: true });
     // An event stream (Accept: text/event-stream, web app): its events as they arrive, in memory
     // (store.events by tab id), until it ends or Stop; no time limit.
@@ -1885,6 +1922,8 @@ export class Store extends EventTarget {
         this.patchTab(tab.id, { response: `Error: No response within ${limit}. The time limit is in Settings, under Requests.`, responseType: "error", statusCode: null, responseHeaders: null, loading: false });
       } else if (e.stage === "prepare") {
         this.patchTab(tab.id, { loading: false });
+        // U19: the response pane keeps the note until the next send (memory only).
+        if (e.missingSecrets) this.notSent.set(tab.id, { text: e.message, missing: e.missingSecrets });
         this.notify(`The request wasn't sent: ${e.message}`);
       } else {
         this.patchTab(tab.id, { response: `Error: ${e.message}`, responseType: "error", statusCode: null, responseHeaders: null, loading: false });
@@ -2251,7 +2290,7 @@ export class Store extends EventTarget {
         push({ requestName: request.name, method: request.method, url: prepared.url, statusCode: res.status, success, tests, response: failed.length ? failed.map((t) => `${t.name}: ${t.detail}`).join("; ") : text.slice(0, 200), duration, ...(res.timings ? { timings: res.timings } : {}), ...(request.file ? { file: request.file } : {}) });
         if (!success) break;
       } catch (e) {
-        push({ requestName: request.name, method: request.method, url: request.url, statusCode: e.stage === "prepare" ? "Script error" : "Error", success: false, response: e.message, ...(request.file ? { file: request.file } : {}) });
+        push({ requestName: request.name, method: request.method, url: request.url, statusCode: e.missingSecrets ? "Not sent" : e.stage === "prepare" ? "Script error" : "Error", success: false, response: e.message, ...(request.file ? { file: request.file } : {}) });
         break;
       }
     }

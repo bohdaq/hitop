@@ -451,6 +451,48 @@ export function secretValues(env) {
     .filter((v) => typeof v === "string" && v !== "");
 }
 
+// The `${name}` variables a request fills in when it is sent: URL, enabled headers, body, auth,
+// GraphQL variables and form fields (never its scripts or saved examples); secret manager
+// references (`${secret:...}`) left out, they resolve elsewhere.
+export function usedVariables(source) {
+  const out = new Set();
+  const add = (v) => {
+    if (typeof v === "string") {
+      for (const m of v.matchAll(/\$\{([^}]+)\}/g)) if (!m[1].trim().startsWith("secret:")) out.add(m[1].trim());
+    } else if (Array.isArray(v)) v.forEach(add);
+    else if (v && typeof v === "object") Object.values(v).forEach(add);
+  };
+  add(source?.url);
+  add((source?.headers || []).filter((h) => h && h.enabled !== false).map((h) => [h.name, h.value]));
+  add(source?.body);
+  add(source?.auth);
+  add(source?.graphql);
+  add((source?.formFields || []).filter((f) => f && f.enabled !== false && f.type !== "file").map((f) => [f.key, f.value]));
+  return [...out];
+}
+
+/**
+ * U19: the secrets a request uses that have no value on this device (absent or empty), in use
+ * order: [{ name, where: "environment" | "globals" }]. `variables` is everything the request sees
+ * (scripts, shared values and globals included), so a secret any of them fills is not missing.
+ */
+export function missingSecrets(used, variables, envSecrets = [], globalSecrets = []) {
+  const env = new Set(envSecrets);
+  const glob = new Set(globalSecrets);
+  return used
+    .filter((n) => (env.has(n) || glob.has(n)) && (typeof variables?.[n] !== "string" || variables[n] === ""))
+    .map((name) => ({ name, where: env.has(name) ? "environment" : "globals" }));
+}
+
+/** The note for missing secrets, naming where to fill them in. `envName`: the active environment's. */
+export function missingSecretsText(missing, envName) {
+  if (!missing?.length) return "";
+  const names = missing.map((m) => m.name);
+  const list = names.length === 1 ? `Secret ${names[0]} has` : `Secrets ${names.slice(0, -1).join(", ")} and ${names.at(-1)} have`;
+  const places = [...new Set(missing.map((m) => (m.where === "globals" ? "Environments → Globals → Secret globals" : `Environments → ${envName || "the environment"} → Secrets`)))];
+  return `${list} no value on this device. Fill ${names.length === 1 ? "it" : "them"} in under ${places.join(" and ")}: secret values stay on each device and never sync.`;
+}
+
 // --- secret manager references -------------------------------------------------
 // `${secret:vault:kv/app#token}`, `${secret:aws:name#key}`, `${secret:azure:vault/name}`,
 // `${secret:op:vault/item/field}` (spec section 5b). Their inner text is used as a

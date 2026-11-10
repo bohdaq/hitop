@@ -284,4 +284,25 @@ assert.equal(rankItems(more, "auth")[0].key, "col:2");
   }
 }
 
+// U19: secrets a request uses with no value on this device.
+{
+  const { usedVariables, missingSecrets, missingSecretsText } = await import("../src/features.js");
+  const used = usedVariables({
+    url: "${baseUrl}/orders/${id}?k=${secret:vault:kv/a#b}",
+    headers: [{ name: "Authorization", value: "Bearer ${TOKEN}" }, { name: "X-Off", value: "${OFF}", enabled: false }],
+    body: '{"k": "${apiKey}"}',
+    auth: { type: "basic", username: "${user}", password: "${PASS}" },
+    preRequestScript: "pm.environment.get('${inScript}')",
+    formFields: [{ key: "f", value: "${field}" }, { key: "up", type: "file", value: "${file}" }],
+  });
+  assert.deepEqual(used, ["baseUrl", "id", "TOKEN", "apiKey", "user", "PASS", "field"], "enabled headers, body, auth, form; no scripts, refs, disabled headers or files");
+  const missing = missingSecrets(used, { baseUrl: "x", TOKEN: "", PASS: "set", apiKey: "k" }, ["TOKEN", "apiKey", "PASS"], ["user"]);
+  assert.deepEqual(missing, [{ name: "TOKEN", where: "environment" }, { name: "user", where: "globals" }], "empty and absent count, filled ones don't");
+  assert.deepEqual(missingSecrets(["TOKEN"], { TOKEN: "from a script" }, ["TOKEN"]), [], "a value from anywhere fills it");
+  assert.deepEqual(missingSecrets(["plain"], {}, ["TOKEN"]), [], "only secrets are reported");
+  assert.equal(missingSecretsText([{ name: "TOKEN", where: "environment" }], "Staging"), "Secret TOKEN has no value on this device. Fill it in under Environments → Staging → Secrets: secret values stay on each device and never sync.");
+  assert.match(missingSecretsText(missing, "Staging"), /^Secrets TOKEN and user have no value .* Environments → Staging → Secrets and Environments → Globals → Secret globals:/);
+  assert.equal(missingSecretsText([], "x"), "");
+}
+
 console.log("unit-ux: all checks passed");
