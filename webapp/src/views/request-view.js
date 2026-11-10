@@ -522,14 +522,13 @@ export class HitopRequest extends LitElement {
     const code = highlighted(t.response, t.responseType);
     const tests = t.tests || [];
     const passed = tests.filter((x) => x.pass).length;
-    // Tabs: Body, Headers, then Tests and Events when there are some.
-    const testsAt = tests.length ? 2 : -1;
-    const eventsAt = live?.events.length ? (tests.length ? 3 : 2) : -1;
+    // Tabs: Body, Headers, Raw, then Tests, Events and Diff vs last when there are some.
     // Diff vs last: the current response against the one before it (or a saved example).
     // The current response is in History already: a diff needs one more (or a saved example).
     const canDiff = this.store.history.filter((h) => h?.response).length > 1 || (this.store.loadedRequest(t)?.examples || []).length > 0;
-    const diffAt = canDiff ? 2 + (tests.length ? 1 : 0) + (live?.events.length ? 1 : 0) : -1;
-    if (this.responseSection >= 2 && ![testsAt, eventsAt, diffAt].includes(this.responseSection)) this.responseSection = 0;
+    const tabs = ["body", "headers", "raw", ...(tests.length ? ["tests"] : []), ...(live?.events.length ? ["events"] : []), ...(canDiff ? ["diff"] : [])];
+    if (this.responseSection >= tabs.length) this.responseSection = 0;
+    const shown = tabs[this.responseSection];
     return html`
       <section class="response" data-state=${t.responseType === "error" ? "error" : "done"} aria-label="Response">
         <div class="response-meta">
@@ -550,6 +549,7 @@ export class HitopRequest extends LitElement {
         <lit-material-tabs class="sub-tabs" aria-label="Response details" .selected=${this.responseSection} @change=${(e) => (this.responseSection = e.target.selected)}>
           <lit-material-tab>Body</lit-material-tab>
           <lit-material-tab>Headers <span class="count">${headers.length}</span></lit-material-tab>
+          <lit-material-tab>Raw</lit-material-tab>
           ${tests.length ? html`<lit-material-tab>Tests <span class=${`count ${passed === tests.length ? "pass" : "warn"}`}>${passed}/${tests.length}</span></lit-material-tab>` : nothing}
           ${live?.events.length ? html`<lit-material-tab>Events <span class="count">${live.events.length}</span></lit-material-tab>` : nothing}
           ${canDiff ? html`<lit-material-tab>Diff vs last</lit-material-tab>` : nothing}
@@ -558,20 +558,36 @@ export class HitopRequest extends LitElement {
           ? html`<p class="hint sse-hint">An event stream: add the header <code>Accept: text/event-stream</code> to see its events as they arrive.
               <lit-material-button variant="text" @click=${() => this.set({ headers: [...(t.headers || []).filter((h) => h.name || h.value), { name: "Accept", value: "text/event-stream" }] })}>Add it</lit-material-button></p>`
           : nothing}
-        ${this.responseSection === 0
+        ${shown === "body"
           ? t.response
             ? html`${this.renderBodyView(code)}${tests.length ? testList(tests) : nothing}`
             : html`<p class="hint">No body${t.method === "HEAD" ? ": HEAD responses never have one" : ""}.</p>`
-          : this.responseSection === eventsAt
+          : shown === "events"
             ? this.renderEvents(live)
-          : this.responseSection === diffAt
+          : shown === "diff"
             ? this.renderDiff()
-          : this.responseSection === 1
+          : shown === "headers"
             ? html`<dl class="response-headers">
                 ${headers.map(([k, v]) => html`<dt>${k}</dt><dd>${v}</dd>`)}
               </dl>`
+          : shown === "raw"
+            ? this.renderRaw(headers)
             : testList(tests)}
       </section>`;
+  }
+
+  // The whole answer as curl -i prints it: the status line, every header, a blank line, the body
+  // as received (the version is the proxy's or the engine's: HTTP/1.1 is what both speak today).
+  renderRaw(headers) {
+    const t = this.tab;
+    const raw = this.store.rawBodies.get(t.id);
+    const body = typeof raw === "string" ? raw : typeof t.response === "string" ? t.response : JSON.stringify(t.response ?? "");
+    const reason = getStatusText(t.statusCode);
+    const text = [`HTTP/1.1 ${t.statusCode}${reason === "Unknown Status" ? "" : ` ${reason}`}`, ...headers.map(([k, v]) => `${k}: ${v}`), "", body].join("\n");
+    return html`<div class="response-scroll" tabindex="0" role="region" aria-label="Raw response">
+      <lit-material-icon-button class="raw-copy" aria-label="Copy the raw response" title="Copy" @click=${() => navigator.clipboard?.writeText(text)}>${icon("copy")}</lit-material-icon-button>
+      <pre class="response-text response-raw">${text}</pre>
+    </div>`;
   }
 
   // The response body: Pretty (formatted, highlighted) | Raw (as received) |
