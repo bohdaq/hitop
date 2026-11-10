@@ -111,7 +111,8 @@ async function graphqlServer() {
   if (TAURI) check('[tauri] sent through Rust (send_request)', h.sent.some((s) => s.url === `${base}/graphql` && JSON.parse(s.body).operationName === 'U'));
 
   // The Code panel sends the same body (hitop-core's snippet generator).
-  await p.getByRole('button', { name: 'Code' }).click();
+  await p.getByRole('button', { name: 'More options' }).click();
+  await p.locator('#line-menu').getByText('Code', { exact: true }).click();
   await p.locator('#dialog .snippet').waitFor({ timeout: 10000 });
   const curl = await p.locator('#dialog .snippet').evaluate((el) => el.textContent);
   check('Code panel: curl posts the GraphQL JSON body', curl.includes(`--data-raw '${JSON.stringify({ query, variables: { id: '42' }, operationName: 'U' }).replace('{"id":"42"}', '{"id": "42"}')}'`) && curl.includes("-H 'Content-Type: application/json'"), curl);
