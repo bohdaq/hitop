@@ -271,7 +271,7 @@ export function storedTabInDb(t) {
 }
 
 // A tab's response fields when it has none (Settings: clear stored responses).
-const NO_RESPONSE = { response: null, responseHeaders: null, statusCode: null, responseType: "", tests: null, durationMs: null, timings: null, truncated: false, responseCut: false, responseStored: undefined, jsonError: null };
+const NO_RESPONSE = { response: null, responseHeaders: null, statusCode: null, responseType: "", tests: null, durationMs: null, timings: null, httpVersion: null, responseScheme: null, truncated: false, responseCut: false, responseStored: undefined, jsonError: null };
 
 // Drops keys set to undefined (a cleared bodyType), so they aren't saved.
 const clean = (r) => Object.fromEntries(Object.entries(r).filter(([, v]) => v !== undefined));
@@ -1847,6 +1847,10 @@ export class Store extends EventTarget {
         durationMs,
         // DNS, connect, waiting, download (hitop-core timing.rs: the desktop and the web proxy).
         timings: res.timings ?? null,
+        // The response's HTTP version and the final URL's scheme, when the engine (desktop, web
+        // proxy) said; a direct browser fetch can't see the version, so both stay null.
+        httpVersion: res.httpVersion ?? null,
+        responseScheme: res.httpVersion ? (/^([a-z][a-z0-9+.-]*):/i.exec(res.url || "")?.[1]?.toLowerCase() ?? null) : null,
         truncated: Boolean(res.truncated),
         loading: false,
       });

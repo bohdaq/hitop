@@ -252,4 +252,36 @@ assert.equal(rankItems(more, "auth")[0].key, "col:2");
   assert.ok(JSON.parse(JSON.stringify(post)), "plain data: crosses postMessage");
 }
 
+// The request page's facts (request-facts.js): HTTP version labels, body kind, JSON check with line/col.
+{
+  const { shortVersion, protocolLabel, bodyKind, checkJson } = await import("../src/request-facts.js");
+  assert.deepEqual(["HTTP/2", "HTTP/3", "HTTP/1.1", undefined].map(shortVersion), ["h2", "h3", "HTTP/1.1", ""]);
+  assert.equal(protocolLabel("HTTP/2", "https://api.example.com/x"), "HTTPS · h2");
+  assert.equal(protocolLabel("HTTP/1.1", "http://localhost:3000/"), "HTTP · HTTP/1.1");
+  assert.equal(protocolLabel(null, "https://x/"), "", "no version (a direct browser fetch): nothing");
+  assert.equal(bodyKind("<a/>", "application/json"), "JSON", "the Content-Type wins");
+  assert.equal(bodyKind("{}", "text/plain"), "Text");
+  assert.equal(bodyKind("", "application/soap+xml"), "XML");
+  assert.deepEqual([bodyKind(' {"a":1}'), bodyKind("<a/>"), bodyKind("hello")], ["JSON", "XML", "Text"]);
+  assert.deepEqual(checkJson('{"a": [1, 2.5e3, -0, true, false, null, "x\\u00e9\\n"]}'), { ok: true });
+  assert.deepEqual(checkJson('{"id": ${orderId}, "name": "${name}", "n": [${a}]}'), { ok: true }, "${variables} stand for values");
+  assert.deepEqual(checkJson('{\n  "a": 1,\n  "b": 2,\n}'), { ok: false, line: 4, col: 1 }, "trailing comma: the brace");
+  assert.deepEqual(checkJson('{\n  "a": 1\n  "b": 2\n}'), { ok: false, line: 3, col: 3 }, "missing comma: the next key");
+  assert.deepEqual(checkJson("{'a': 1}"), { ok: false, line: 1, col: 2 });
+  assert.deepEqual(checkJson('{"a": 01}'), { ok: false, line: 1, col: 8 });
+  assert.deepEqual(checkJson('{"a": "x'), { ok: false, line: 1, col: 9 }, "unterminated string: the end");
+  assert.deepEqual(checkJson('{"a": tru}'), { ok: false, line: 1, col: 7 });
+  assert.deepEqual(checkJson("[1] 2"), { ok: false, line: 1, col: 5 }, "text after the value");
+  assert.deepEqual(checkJson(""), { ok: false, line: 1, col: 1 });
+  for (const s of ['{"a":[1,{"b":null}]}', "[]", '"x"', "  3  ", '{"\\u12G4":1}', "[1,]", '{"a"}']) {
+    let native = true;
+    try {
+      JSON.parse(s);
+    } catch {
+      native = false;
+    }
+    assert.equal(checkJson(s).ok, native, `agrees with JSON.parse on ${s}`);
+  }
+}
+
 console.log("unit-ux: all checks passed");

@@ -85,6 +85,19 @@ function api() {
   } else {
     check('[web] localhost goes straight from the browser: no phases, no waterfall', (await waterfall.count()) === 0);
   }
+  // The HTTP version of the response: after the URL and in the status bar, only when the engine said.
+  const urlHint = (await p.locator('hitop-request .url-bar .url-hint').innerText().catch(() => '')).trim();
+  const bar = await p.locator('.statusbar').innerText();
+  if (TAURI) {
+    check('[tauri] the URL bar shows the response\'s HTTP version', urlHint === 'HTTP/1.1', urlHint);
+    check('[tauri] the status bar says scheme · version', bar.includes('HTTP · HTTP/1.1') && !/TLS/.test(bar), bar.replace(/\n/g, ' | '));
+    await settle(p); // saves are batched (250 ms)
+    const kept = (await h.stored.tabs()).tab;
+    check('[tauri] the tab keeps the version and scheme', kept?.httpVersion === 'HTTP/1.1' && kept?.responseScheme === 'http', JSON.stringify({ v: kept?.httpVersion, s: kept?.responseScheme }));
+  } else {
+    check('[web] a direct fetch can\'t see the version: the hint stays the scheme', urlHint === 'HTTP', urlHint);
+    check('[web] no version in the status bar', !/HTTP\/1\.1|\bh2\b|\bh3\b|TLS/.test(bar), bar.replace(/\n/g, ' | '));
+  }
   await p.keyboard.press('Control+Enter');
   await settle(p);
   await p.locator('.response-meta .status-chip').waitFor();
@@ -93,6 +106,27 @@ function api() {
   await respTabs.filter({ hasText: 'Diff vs last' }).click();
   await settle(p);
   check('Diff vs last compares in the response pane', (await p.locator('.response .compare-summary').count()) === 1 && (await p.locator('.response #diff-left').count()) === 1, await p.locator('.response .compare-summary').innerText().catch(() => ''));
+
+  // --- The Body tab's facts line (Main board): kind, JSON valid or where it breaks ---
+  const setTab = (changes) => p.evaluate((c) => document.querySelector('hitop-request').set(c), changes);
+  await setTab({ method: 'POST', requestBody: '{\n  "sku": "A-1",\n  "qty": ${qty}\n}' });
+  await settle(p);
+  await p.locator('hitop-request section.editor').getByRole('tab', { name: 'Body', exact: true }).click();
+  await settle(p);
+  const facts = async () => (await p.locator('hitop-request .body-facts').innerText().catch(() => '')).replace(/\s+/g, ' ').trim();
+  check('Raw JSON body: kind and Valid JSON ✓ (${variables} count as values)', (await facts()) === 'JSON Valid JSON ✓', await facts());
+  check('the body type control keeps its name and options', (await p.locator('hitop-request').getByRole('combobox', { name: 'Body type' }).count()) === 1);
+  const edBefore = await p.locator('hitop-request .cm-editor').boundingBox();
+  await setTab({ requestBody: '{\n  "sku": "A-1"\n  "qty": 2\n}' });
+  await settle(p);
+  const edAfter = await p.locator('hitop-request .cm-editor').boundingBox();
+  check('a JSON error says line and column', (await facts()) === 'JSON JSON error · line 3, col 3', await facts());
+  check('the line doesn\'t move the editor when validity changes', edBefore && edAfter && edBefore.y === edAfter.y, `${edBefore?.y} → ${edAfter?.y}`);
+  await setTab({ requestBody: '<order id="1"/>' });
+  await settle(p);
+  check('XML is named, no JSON verdict', (await facts()) === 'XML', await facts());
+  await setTab({ method: 'GET', requestBody: '' });
+  await settle(p);
 
   // --- A5: the command palette (Mod+K) ---
   const mod = process.platform === 'darwin' ? 'Meta' : 'Control';

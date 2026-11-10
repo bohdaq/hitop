@@ -269,7 +269,7 @@ kbd { display: inline-block; min-width: 1.6em; padding: 1px var(--space-75); bor
 .url-bar .url::part(container) { height: 42px; padding-inline: 14px; border: 0; background: none; }
 .url-bar .url::part(input) { font-family: var(--font-mono); font-size: 13.5px; }
 .url-bar .url::part(supporting) { padding-inline: 14px; }
-.url-hint { flex: none; padding-right: 12px; font-size: 12px; color: #6b6b75; }
+.url-hint { flex: none; padding-right: 12px; font-family: var(--font-mono); font-size: 12px; color: #8a8a94; }
 .request-line .send { --lit-material-button-height: 44px; --lit-material-button-shape: 11px; --lit-material-button-padding-inline: 16px; font-size: 14px; font-weight: 600; }
 .request-line .send::part(button) { gap: 10px; padding-inline-end: 12px; }
 .send-kbd { --lit-material-kbd-background: rgb(10 10 12 / 0.14); --lit-material-kbd-border: transparent; --lit-material-kbd-color: inherit; }
@@ -981,6 +981,13 @@ lit-material-menu::part(menu) { border: 1px solid #33333a; border-radius: 10px; 
 .body-mode lit-material-select::part(trigger) { height: 30px; padding: 0 8px 0 10px; border: 1px solid var(--md-sys-color-outline-variant); border-radius: 8px; background: var(--md-sys-color-surface-container); font-size: 12.5px; color: #c8c8cf; }
 .body-mode lit-material-select::part(label) { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
 .body-mode lit-material-select::part(supporting) { display: none; }
+/* The raw body's facts under the body type (Main board): kind, JSON valid or where it breaks, the
+   OpenAPI operation. One quiet mono line, always there in Raw mode, so nothing shifts as you type. */
+.body-mode:has(+ .body-facts) { margin-bottom: 6px; }
+.body-facts { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 14px; min-height: 18px; margin: 0 0 10px; font-family: var(--font-mono); font-size: 11.5px; line-height: 18px; color: #8a8a94; }
+.body-facts .body-kind { padding: 0 7px; border: 1px solid var(--md-sys-color-outline-variant); border-radius: 6px; color: #c8c8cf; }
+.body-facts .body-valid { color: var(--hitop-pass); }
+.body-facts .body-invalid { color: var(--hitop-warn); }
 
 /* HITOP Next V1, second pass: every field and button at the boards' sizes. Text fields and selects
    get a plain 12 px label above a 32 px hairline box (no floating label); rows (params, headers,

@@ -445,7 +445,10 @@ class TauriMock {
     } catch {
       text = null;
     }
-    return { status: res.status, statusText: res.statusText, url: res.url, headers, body: text ?? bytes.toString('base64'), ...(text == null ? { bodyEncoding: 'base64' } : {}), timeMs: Date.now() - started, timings: mockTimings(Date.now() - started), ...(cookies ? { cookies } : {}) };
+    return { status: res.status, statusText: res.statusText, url: res.url, headers, body: text ?? bytes.toString('base64'), ...(text == null ? { bodyEncoding: 'base64' } : {}), timeMs: Date.now() - started, timings: mockTimings(Date.now() - started), ...(cookies ? { cookies } : {}),
+      // As commands.rs reports reqwest's response version; Node's fetch to the local test servers
+      // speaks HTTP/1.1 (plain HTTP, no ALPN), so that is the honest answer here.
+      httpVersion: 'HTTP/1.1' };
   }
 
   // commands.rs ws_connect: Node's WebSocket (undici) sends handshake

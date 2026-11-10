@@ -98,6 +98,13 @@ function api() {
   check('requests come over with the record and the inlined auth', list?.url === '${baseUrl}/pets?limit=10' && list?.openapi?.operationId === 'listPets' && list?.auth?.key === 'X-Key' && list?.file === 'pets/list-pets', JSON.stringify(list));
   check('the server is the baseUrl variable; the source is recorded', col?.variables?.baseUrl === `${base}/v1` && col?.openapi?.source === `${base}/openapi.yaml`, JSON.stringify(col?.variables) + JSON.stringify(col?.openapi));
   check('response examples are saved examples', list?.examples?.[0]?.name === '200 ok' && list.examples[0].source === 'openapi', JSON.stringify(list?.examples));
+  // The Body tab names the operation the request came from (no schema check: none is kept).
+  await p.locator('aside .tree-row.leaf', { hasText: 'Add a pet' }).first().click();
+  await settle(p);
+  await p.locator('hitop-request section.editor').getByRole('tab', { name: 'Body', exact: true }).click();
+  await settle(p);
+  const facts = (await p.locator('hitop-request .body-facts').innerText().catch(() => '')).replace(/\s+/g, ' ');
+  check('the Body tab names the OpenAPI operation, no schema claim', facts.includes('OpenAPI · addPet') && !/schema/i.test(facts), facts);
 
   // 2. Pasted into the Import dialog: added, nothing replaced.
   await p.locator('aside').getByRole('button', { name: 'Import', exact: true }).click();

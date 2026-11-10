@@ -18,6 +18,7 @@ import { WIDE_DIALOGS, codeDialog, compareDialog, refreshCode } from "./tools-di
 import { OPENAPI_DIALOGS, openapiDialog, submitOpenapi } from "./openapi-dialogs.js";
 import { ACTION_KEYS, SAVE_KEYS, shortcutFor } from "../shortcuts.js";
 import { quickOpenItems, rankItems } from "../quick-open.js";
+import { protocolLabel } from "../request-facts.js";
 import { folderOf, requestTree, slugName, withFolders } from "../collection-tree.js";
 import { shortcutList } from "./shortcut-list.js";
 import "./settings-view.js";
@@ -1660,6 +1661,8 @@ export class HitopApp extends LitElement {
     const dirty = t && s.isDirty(t);
     const proxy = IS_TAURI ? "Proxy off" : "Proxy for public hosts";
     const engine = IS_TAURI ? "Local engine · Rust" : "Browser engine";
+    // The last response's scheme and HTTP version ("HTTPS · h2"), when the engine said.
+    const wire = t?.httpVersion ? protocolLabel(t.httpVersion, `${t.responseScheme || ""}:`) : "";
     // @lit-material/status-bar (HITOP Next): a labelled region, tabular numbers, wraps on phones.
     return html`<lit-material-status-bar class="statusbar" label="Status">
       ${t && s.loadedRequest(t) ? html`<lit-material-status-bar-item class="mono">${this.requestPlace()}</lit-material-status-bar-item>` : nothing}
@@ -1667,6 +1670,7 @@ export class HitopApp extends LitElement {
       ${t && !s.loadedRequest(t)
         ? html`<lit-material-status-bar-item class="status-unsaved" button description="Save to a collection" @click=${() => this.saveCurrent()}>● Draft, not in a collection yet · <lit-material-kbd keys="Mod+S"></lit-material-kbd> saves it to one</lit-material-status-bar-item>`
         : nothing}
+      ${wire ? html`<lit-material-status-bar-item slot="end" class="mono status-wire">${wire}</lit-material-status-bar-item>` : nothing}
       <lit-material-status-bar-item slot="end" class="status-hint">${proxy}</lit-material-status-bar-item>
       <lit-material-status-bar-item slot="end">${engine}</lit-material-status-bar-item>
       <lit-material-status-bar-item slot="end" button description="Keyboard shortcuts" @click=${() => this.openDialog("shortcuts")}><lit-material-kbd keys="?"></lit-material-kbd> Shortcuts</lit-material-status-bar-item>

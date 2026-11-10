@@ -86,6 +86,8 @@ class ProxiedResponse {
     this.timeMs = envelope.timeMs;
     // DNS, connect, waiting, download (hitop-server, HITOP Next track B); undefined from older servers.
     this.timings = envelope.timings;
+    // "HTTP/1.1", "HTTP/2", "HTTP/3" as the proxy received it; undefined from older servers.
+    this.httpVersion = envelope.httpVersion;
     this.truncated = envelope.truncated;
     this.bodyText = decodeBody(envelope.body, envelope.bodyEncoding);
   }

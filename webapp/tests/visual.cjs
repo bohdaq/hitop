@@ -25,6 +25,7 @@ const requests = [
   req(4, "POST", "Create order", "orders/create-order", `${BASE}/v2/orders?expand=items,customer`, {
     headers: [{ name: "Content-Type", value: "application/json" }, { name: "Idempotency-Key", value: "${$guid}" }, { name: "Authorization", value: "Bearer ${token}" }],
     body: '{\n  "customerId": "${customerId}",\n  "currency": "EUR",\n  "items": [\n    { "sku": "TEE-0193", "qty": 2 },\n    { "sku": "CAP-0007", "qty": 1 }\n  ],\n  "shipping": {\n    "method": "express",\n    "address": "${$faker.address}"\n  }\n}',
+    openapi: { operation: "POST /v2/orders", operationId: "createOrder" },
     postRequestScript: 'pm.test("Status is 201", () => pm.response.to.have.status(201));\npm.test("Total equals sum of items", () => pm.expect(pm.response.json().total.amount).to.eql(6480));\npm.test("Responds under 300 ms", () => pm.expect(pm.response.responseTime).to.be.below(300));\npm.test("Has a payment link", () => pm.expect(pm.response.json().links.pay).to.be.a("string"));',
   }),
   req(5, "GET", "Get order", "orders/get-order", `${BASE}/v2/orders/${"${orderId}"}`),
@@ -51,6 +52,9 @@ const tabs = [
     statusCode: 201,
     durationMs: 142,
     timings: { dnsMs: 4, connectMs: 30, waitMs: 96, downloadMs: 12, totalMs: 142, reused: false },
+    // As the desktop and the web proxy answer for an HTTPS host speaking HTTP/2.
+    httpVersion: "HTTP/2",
+    responseScheme: "https",
     responseHeaders: { "content-type": "application/json; charset=utf-8", "content-length": "1268", date: "Mon, 09 Nov 2026 10:42:18 GMT", "x-request-id": "req_01HF8", "cache-control": "no-store", vary: "Accept-Encoding", server: "shop-api/2.14", "strict-transport-security": "max-age=63072000", "x-ratelimit-limit": "600", "x-ratelimit-remaining": "598", "content-encoding": "gzip", connection: "keep-alive" },
     tests: [
       { name: "Status is 201", pass: true, detail: "" },

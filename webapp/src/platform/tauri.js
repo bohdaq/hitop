@@ -100,6 +100,8 @@ async function send(url, options = {}) {
     timeMs: r.timeMs,
     // DNS, connect, waiting, download (hitop-core timing.rs).
     timings: r.timings,
+    // "HTTP/1.1", "HTTP/2", "HTTP/3" (reqwest's response version); absent when unknown.
+    httpVersion: r.httpVersion,
     // The jar after this response (when the request used it).
     cookies: r.cookies,
     text: async () => text,

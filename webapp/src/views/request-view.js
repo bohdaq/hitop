@@ -20,6 +20,7 @@ import { compareDialog } from "./tools-dialogs.js";
 import { storageOf } from "../git.js";
 import { loadRequestHistory } from "./history-dialog.js";
 import { SAVE_KEYS, SEND_KEYS } from "../shortcuts.js";
+import { bodyKind, checkJson } from "../request-facts.js";
 import { SPLIT, clampSplit, layoutFor, loadLayout, saveLayout, splitAt, splitForKey } from "../split.js";
 import { socketHeaders, socketLine, socketLog, socketMessages } from "./websocket-view.js";
 import { grpcLine, grpcLog, grpcMessage, grpcMetadataNote, grpcSchema } from "./grpc-view.js";
@@ -239,6 +240,7 @@ export class HitopRequest extends LitElement {
           <lit-material-select-option value="graphql">GraphQL</lit-material-select-option>
         </lit-material-select>
       </div>
+      ${mode === "raw" ? this.bodyFacts() : nothing}
       ${mode === "graphql" ? this.renderGraphql() : mode === "raw"
         ? html`<hitop-code-editor label="Request body" language=${looksJson ? "json" : "text"} .value=${t.requestBody || ""}
             @input=${(e) => this.set({ requestBody: e.target.value })}></hitop-code-editor>`
@@ -277,6 +279,25 @@ export class HitopRequest extends LitElement {
             <p class="hint">${mode === "multipart"
               ? "Sent as multipart/form-data. Files stay in this page only: they aren't saved, and a collection run sends file fields empty."
               : "Sent as application/x-www-form-urlencoded."} \${variables} work in names and values.</p>`}`;
+  }
+
+  // A quiet line beside the body type (HITOP Next, Main board): the raw body's kind, whether its
+  // JSON parses (with the first error's line and column) and the OpenAPI operation the saved
+  // request came from. No schema check: the app keeps no schemas.
+  bodyFacts() {
+    const t = this.tab;
+    const body = t.requestBody || "";
+    const ct = (t.headers || []).find((h) => h.enabled !== false && h.name?.toLowerCase() === "content-type")?.value;
+    const kind = bodyKind(body, ct);
+    const json = kind === "JSON" && body.trim() ? checkJson(body) : null;
+    const op = this.store.loadedRequest(t)?.openapi;
+    const operation = op?.operationId || op?.operation;
+    return html`<p class="body-facts">
+      <span class="body-kind">${kind}</span>
+      ${json?.ok ? html`<span class="body-valid">Valid JSON ✓</span>` : nothing}
+      ${json && !json.ok ? html`<span class="body-invalid">JSON error · line ${json.line}, col ${json.col}</span>` : nothing}
+      ${operation ? html`<span class="body-openapi">OpenAPI · ${operation}</span>` : nothing}
+    </p>`;
   }
 
   // GraphQL: the query (completion from the fetched schema), its variables
@@ -694,8 +715,10 @@ export class HitopRequest extends LitElement {
     </lit-material-menu>`;
   }
 
-  // What the URL says about the transport (nothing is made up: a browser can't see TLS or h2).
+  // What the URL says about the transport, or after a response the HTTP version it came over
+  // (desktop and web proxy; nothing is made up: a direct browser fetch can't see it, nor TLS).
   protocolHint() {
+    if (this.tab.httpVersion) return html`<span class="url-hint" title="HTTP version of the last response">${this.tab.httpVersion}</span>`;
     const url = String(this.tab.url ?? "").trim();
     const m = /^([a-z][a-z0-9+.-]*):\/\//i.exec(url);
     const scheme = m ? m[1].toLowerCase() : null;
