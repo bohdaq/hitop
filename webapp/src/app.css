@@ -826,7 +826,7 @@ button.storage-chip:focus-visible { outline: 2px solid var(--md-sys-color-primar
 .comment-list li { gap: var(--space-50); } .comment-text { margin: 0; white-space: pre-wrap; overflow-wrap: anywhere; } .comments { display: grid; gap: var(--space-150, 12px); }
 
 /* HITOP Next A4: the URL's variables (a click peeks at the value and its scope), the timing waterfall. */
-.url-vars { display: flex; flex-wrap: wrap; gap: 6px; padding: 0 20px 10px; }
+.url-vars { display: none; }
 .var-chip {
   height: 22px; padding: 0 6px; border: 1px solid transparent;
   border-radius: 4px; background: rgb(242 180 92 / 0.12);
@@ -1046,3 +1046,17 @@ hitop-app lit-material-textarea { --lit-material-text-field-shape: 7px; }
 hitop-app lit-material-text-field::part(container) { padding-inline: 0 10px; }
 hitop-app lit-material-text-field::part(label) { inset-inline-start: -20px; }
 .url-bar .url::part(container) { padding-inline: 0 14px; }
+
+/* The URL field's mirror (HITOP Next): the text drawn over a transparent input, variables as chips. */
+.url-field { position: relative; flex: 1; min-width: 0; display: flex; }
+.url-field .url { flex: 1; min-width: 0; }
+.url-bar .url::part(input) { color: transparent; caret-color: var(--md-sys-color-primary); }
+.url-bar .url::part(input)::placeholder { color: #6b6b75; }
+.url-bar .url::part(input)::selection { background: rgb(169 156 255 / 0.3); }
+.url-mirror { position: absolute; display: flex; align-items: center; overflow: hidden; pointer-events: none; font-family: var(--font-mono); font-size: 13.5px; line-height: 20px; color: var(--md-sys-color-on-surface); white-space: pre; }
+.url-mirror-text { display: inline-block; white-space: pre; will-change: transform; }
+.url-mirror .var-chip { display: inline; height: auto; padding: 1px 3px; margin: 0; border: 0; border-radius: 4px; background: rgb(242 180 92 / 0.12); color: var(--hitop-warn); font: inherit; pointer-events: auto; cursor: pointer; }
+.url-mirror .var-chip.missing { color: var(--hitop-fail); background: rgb(255 122 122 / 0.12); text-decoration: underline dashed; text-underline-offset: 3px; }
+.url-mirror .var-chip:hover { background: rgb(242 180 92 / 0.22); }
+.url-mirror .var-chip:focus-visible { outline: 2px solid var(--md-sys-color-primary); outline-offset: 1px; }
+.url-mirror.url-vars { display: flex; }

@@ -631,6 +631,7 @@ export class HitopRequest extends LitElement {
   }
 
   updated() {
+    this.syncUrlMirror();
     // Brings the current match into view when the search or the match changes.
     const key = this.find ? `${this.find}|${this.findAt}` : "";
     if (key === this.shownMatch) return;
@@ -659,29 +660,82 @@ export class HitopRequest extends LitElement {
     return text ? html`<span class="url-hint" aria-hidden="true">${text}</span>` : nothing;
   }
 
-  // The URL's ${variables} as chips under the URL bar: a click shows the value (secrets masked)
-  // and where it comes from; a variable nothing defines is marked.
-  urlVariables() {
+  // The URL as the field shows it, drawn over the transparent input (HITOP Next): every
+  // ${variable} is an amber chip; hovering, focusing or clicking one peeks at its value and
+  // where it comes from (secrets masked); a variable nothing defines is marked. The mirror
+  // follows the input's box and scroll (updated()). Chips take the pointer; the text does not.
+  urlMirror() {
     const t = this.tab;
-    const names = [...new Set([...String(t.url ?? "").matchAll(/\$\{([^}]+)\}/g)].map((m) => m[1].trim()).filter(Boolean))];
-    if (!names.length) return nothing;
-    const peek = this.peek && names.includes(this.peek) ? this.peek : null;
-    const src = peek ? this.store.variableSource(t.loadedCollectionId, peek) : null;
-    return html`<div class="url-vars" role="group" aria-label="Request variables">
-      ${names.map((n) => {
-        const found = this.store.variableSource(t.loadedCollectionId, n);
-        return html`<button type="button" id=${`var-${n.replace(/[^\w-]/g, "_")}`} class=${`var-chip ${found ? "" : "missing"}`}
-          aria-haspopup="dialog" title=${found ? `${found.value} (${found.scope})` : "Not defined"}
-          @click=${(e) => ((this.peek = n), this.requestUpdate(), this.updateComplete.then(() => this.querySelector(".var-peek")?.show(e.target)))}>\${${n}}</button>`;
-      })}
-      <lit-material-popover class="var-peek" @close=${() => (this.peek = null)}>
-        <span slot="header" class="mono">\${${peek ?? ""}}</span>
-        ${src
-          ? html`<p class="var-value mono">${src.value || html`<span class="hint">empty</span>`}</p><p class="hint">From the ${src.scope}.</p>`
-          : html`<p class="hint">Nothing defines it: the request won't be sent until an environment, the collection or globals do.</p>`}
-        <lit-material-button slot="footer" variant="text" @click=${() => this.app.go(src?.scope === "collection" ? "variables" : "environments", t.loadedCollectionId)}>Edit</lit-material-button>
-      </lit-material-popover>
+    const text = String(t.url ?? "");
+    const parts = text.split(/(\$\{[^}]*\})/);
+    const open = (n, el, pin) => {
+      if (!n) return;
+      // A pointer down outside the popover dismisses it (popover="auto") a tick before the click
+      // arrives, while its `open` still says true: the state is reset first, then it is shown.
+      const pv = this.querySelector(".var-peek");
+      if (pv) pv.open = false;
+      this.peek = n;
+      this.peekPinned = pin;
+      this.requestUpdate();
+      this.updateComplete.then(() => setTimeout(() => this.querySelector(".var-peek")?.show(el), 0));
+    };
+    const leave = () => {
+      if (this.peekPinned) return;
+      this.querySelector(".var-peek")?.close();
+    };
+    return html`<div class="url-mirror url-vars" style=${this.mirrorStyle ?? ""} role="group" aria-label="Request variables">
+      <span class="url-mirror-text" style=${`transform: translateX(-${this.urlScroll || 0}px)`}>${parts.map((part, i) => {
+        if (i % 2 === 0) return html`<span class="url-text" aria-hidden="true">${part}</span>`;
+        const n = part.slice(2, -1).trim();
+        const found = n ? this.store.variableSource(t.loadedCollectionId, n) : null;
+        return html`<span class=${`var-chip ${found ? "" : "missing"}`} role="button" tabindex="0" aria-haspopup="dialog"
+          title=${found ? `${found.value} (${found.scope})` : "Not defined"}
+          @pointerenter=${(e) => open(n, e.currentTarget, false)} @pointerleave=${leave}
+          @focus=${(e) => open(n, e.currentTarget, false)} @blur=${leave}
+          @click=${(e) => open(n, e.currentTarget, true)}
+          @keydown=${(e) => (e.key === "Enter" || e.key === " ") && (e.preventDefault(), open(n, e.currentTarget, true))}>${part}</span>`;
+      })}</span>
     </div>`;
+  }
+
+  varPeek() {
+    const t = this.tab;
+    const peek = this.peek ?? "";
+    const src = peek ? this.store.variableSource(t.loadedCollectionId, peek) : null;
+    return html`<lit-material-popover class="var-peek" @close=${() => (this.peekPinned = false)} @pointerenter=${() => (this.peekPinned = true)}>
+      <span slot="header" class="mono">\${${peek}}</span>
+      ${src
+        ? html`<p class="var-value mono">${src.value || html`<span class="hint">empty</span>`}</p><p class="hint">From the ${src.scope}.</p>`
+        : html`<p class="hint">Nothing defines it: the request won't be sent until an environment, the collection or globals do.</p>`}
+      <lit-material-button slot="footer" variant="text" @click=${() => this.app.go(src?.scope === "collection" ? "variables" : "environments", t.loadedCollectionId)}>Edit</lit-material-button>
+    </lit-material-popover>`;
+  }
+
+  // Keeps the URL mirror on the input's box and scroll position.
+  syncUrlMirror() {
+    const field = this.querySelector(".url-field");
+    const input = field?.querySelector(".url")?.shadowRoot?.querySelector("input");
+    if (!field || !input) return;
+    if (this.urlInput !== input) {
+      this.urlInput = input;
+      const follow = () => {
+        if (this.urlScroll !== input.scrollLeft) {
+          this.urlScroll = input.scrollLeft;
+          this.requestUpdate();
+        }
+      };
+      input.addEventListener("scroll", follow);
+      input.addEventListener("input", () => requestAnimationFrame(follow));
+      input.addEventListener("keyup", follow);
+    }
+    const a = input.getBoundingClientRect();
+    const b = field.getBoundingClientRect();
+    const style = `left: ${a.left - b.left}px; top: ${a.top - b.top}px; width: ${a.width}px; height: ${a.height}px`;
+    if (style !== this.mirrorStyle || this.urlScroll !== input.scrollLeft) {
+      this.mirrorStyle = style;
+      this.urlScroll = input.scrollLeft;
+      this.requestUpdate();
+    }
   }
 
   // Where the request's time went (desktop, and the web proxy for public hosts).
@@ -710,17 +764,20 @@ export class HitopRequest extends LitElement {
       <form class="request-line" novalidate @submit=${(e) => this.send(e)}>
         <div class="url-bar">
           ${this.methodSelect()}
-          <lit-material-text-field
-            class="url"
-            variant="outlined"
-            label="URL"
-            placeholder="https://api.example.com/users or \${baseUrl}/users"
-            ?error=${Boolean(urlError)}
-            error-text=${urlError ?? ""}
-            .value=${t.url}
-            @input=${(e) => this.set({ url: e.target.value })}
-            @keydown=${(e) => e.key === "Enter" && this.send(e)}
-          ></lit-material-text-field>
+          <div class="url-field">
+            <lit-material-text-field
+              class="url"
+              variant="outlined"
+              label="URL"
+              placeholder="https://api.example.com/users or \${baseUrl}/users"
+              ?error=${Boolean(urlError)}
+              error-text=${urlError ?? ""}
+              .value=${t.url}
+              @input=${(e) => this.set({ url: e.target.value })}
+              @keydown=${(e) => e.key === "Enter" && this.send(e)}
+            ></lit-material-text-field>
+            ${this.urlMirror()}
+          </div>
           ${this.protocolHint()}
         </div>
         ${t.loading
@@ -744,7 +801,7 @@ export class HitopRequest extends LitElement {
           </lit-material-icon-button>
         </span>
       </form>
-      ${this.urlVariables()}
+      ${this.varPeek()}
       ${this.panes(this.renderEditor(), () => this.renderResponse(), "Response")}`;
   }
 
@@ -845,6 +902,7 @@ export class HitopRequest extends LitElement {
     this.resizer = new ResizeObserver(([entry]) => {
       const kind = layoutFor(entry.contentRect.width);
       if (kind !== this.layoutKind) this.layoutKind = kind;
+      this.syncUrlMirror();
     });
     this.resizer.observe(this);
   }
