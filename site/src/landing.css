@@ -9,7 +9,7 @@
   text-decoration: none; cursor: pointer;
   transition: background-color var(--duration-color) var(--ease), transform var(--duration-color) var(--ease);
 }
-.button-filled:hover { background: light-dark(#4a3296, #c2b8ff); }
+.button-filled:hover { background: #c2b8ff; }
 .button-filled:active { transform: scale(0.98); }
 .button-filled svg, .text-link svg { width: 18px; height: 18px; }
 .text-link {
@@ -38,7 +38,7 @@
   min-width: 0;
   border-radius: var(--md-sys-shape-corner-extra-large);
   background: #0a0a0c; color: #ededf0;
-  border: 1px solid light-dark(#0a0a0c, #26262c);
+  border: 1px solid #26262c;
 }
 .terminal-bar { display: flex; gap: var(--space-75); padding: var(--space-200) var(--space-200) 0; }
 .terminal-bar span { width: 12px; height: 12px; border-radius: 9999px; background: #26262c; }
@@ -149,7 +149,7 @@
 
 /* Hero headings fade from ink to grey, as on rws8.tech */
 .hero-heading {
-  background: linear-gradient(90deg, light-dark(#000000, #ffffff), light-dark(#666666, #9b9b9b));
+  background: linear-gradient(90deg, #ffffff, #9b9b9b);
   -webkit-background-clip: text;
   background-clip: text;
   color: transparent;

@@ -221,7 +221,7 @@ hitop-request { display: block; }
 .response-scroll .response-body::part(pre) { max-height: none; overflow: visible; }
 .response-scroll.wrap .response-body::part(pre), .response-scroll.wrap .response-text { white-space: pre-wrap; overflow-wrap: anywhere; }
 .response-text { margin: 0; padding: var(--space-200); font-family: var(--font-mono); font-size: var(--text-sm); line-height: var(--leading-sm); }
-.response-text mark { background: light-dark(#fde68a, #6b5a12); color: inherit; border-radius: 2px; }
+.response-text mark { background: #6b5a12; color: inherit; border-radius: 2px; }
 .response-text mark.current { background: var(--md-sys-color-primary); color: var(--md-sys-color-on-primary); }
 .response-preview { display: block; width: 100%; height: 60vh; margin-top: var(--space-100); border: 1px solid var(--md-sys-color-outline-variant); border-radius: var(--md-sys-shape-corner-large); background: #fff; }
 .response-note { display: block; margin-top: var(--space-200); }
@@ -254,16 +254,16 @@ lit-material-code-block::part(pre) { max-height: 60vh; overflow: auto; font-fami
   padding: var(--space-25) var(--space-75); border-radius: var(--md-sys-shape-corner-full);
   font-family: var(--font-mono); font-size: var(--text-sm); line-height: var(--leading-sm); font-weight: 600;
 }
-.status-chip.ok { background: light-dark(#dcebd3, rgb(63 211 155 / 0.12)); color: light-dark(#1f4a2f, var(--hitop-pass)); }
+.status-chip.ok { background: rgb(63 211 155 / 0.12); color: var(--hitop-pass); }
 .status-chip.info { background: var(--md-sys-color-primary-container); color: var(--md-sys-color-on-primary-container); }
 .status-chip.bad { background: var(--md-sys-color-error-container); color: var(--md-sys-color-on-error-container); }
 
 /* highlight.js, on the theme's colours */
 .hljs-attr { color: var(--md-sys-color-primary); }
-.hljs-string { color: light-dark(#3f6b2a, #9fcf86); }
-.hljs-number, .hljs-literal { color: light-dark(#a3221b, #f2a29c); }
+.hljs-string { color: #9fcf86; }
+.hljs-number, .hljs-literal { color: #f2a29c; }
 .hljs-tag, .hljs-name { color: var(--md-sys-color-primary); }
-.hljs-attribute { color: light-dark(#7a4b00, #e9c07a); }
+.hljs-attribute { color: #e9c07a; }
 .hljs-comment, .hljs-meta { color: var(--md-sys-color-on-surface-variant); }
 
 /* Skeletons (loading) */
@@ -399,7 +399,7 @@ lit-material-code-block::part(pre) { max-height: 60vh; overflow: auto; font-fami
 .env-chip.selected .active-tag { color: inherit; }
 
 /* Tests (assertions) */
-.response-meta .pass { color: light-dark(#2a4a1b, #9fcf86); }
+.response-meta .pass { color: #9fcf86; }
 .tests { list-style: none; margin: var(--space-200) 0 0; padding: 0; display: grid; gap: var(--space-75); }
 .tests li { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-100); font-size: var(--text-sm); line-height: var(--leading-sm); }
 .test-detail { flex-basis: 100%; padding-left: var(--space-300); font-family: var(--font-mono); font-size: var(--text-xs); line-height: var(--leading-xs); color: var(--md-sys-color-error); }
@@ -488,13 +488,13 @@ lit-material-dialog.wide::part(container) { width: min(1100px, calc(100vw - 32px
 .compare-status p { margin: 0; font-family: var(--font-mono); }
 .diff-list { list-style: none; margin: 0 0 var(--space-200); padding: 0; display: grid; gap: var(--space-50); font-family: var(--font-mono); font-size: var(--text-sm); line-height: var(--leading-sm); overflow-wrap: anywhere; }
 .diff-list .kind { font-size: var(--text-xs); color: var(--md-sys-color-on-surface-variant); }
-.compare-headers ins, .compare-body ins, .compare-status ins { text-decoration: none; background: light-dark(#dcebd3, #23361a); color: light-dark(#2a4a1b, #9fcf86); }
+.compare-headers ins, .compare-body ins, .compare-status ins { text-decoration: none; background: #23361a; color: #9fcf86; }
 .compare-headers del, .compare-body del, .compare-status del { background: var(--md-sys-color-error-container); color: var(--md-sys-color-on-error-container); }
 .side-by-side { max-height: 50vh; overflow: auto; border-radius: var(--md-sys-shape-corner-large); background: var(--md-sys-color-surface-container-low); font-family: var(--font-mono); font-size: var(--text-sm); line-height: var(--leading-sm); }
 .side-by-side .row { display: grid; grid-template-columns: 1fr 1fr; }
 .side-by-side pre { margin: 0; padding: 0 var(--space-200); white-space: pre-wrap; overflow-wrap: anywhere; min-width: 0; font: inherit; }
 .side-by-side .row.removed .left, .side-by-side .row.changed .left { background: var(--md-sys-color-error-container); color: var(--md-sys-color-on-error-container); }
-.side-by-side .row.added .right, .side-by-side .row.changed .right { background: light-dark(#dcebd3, #23361a); color: light-dark(#2a4a1b, #9fcf86); }
+.side-by-side .row.added .right, .side-by-side .row.changed .right { background: #23361a; color: #9fcf86; }
 @media (max-width: 600px) { .side-by-side .row { grid-template-columns: 1fr; } }
 
 /* WebSocket requests: composer, saved messages, the log. */
@@ -510,7 +510,7 @@ lit-material-dialog.wide::part(container) { width: min(1100px, calc(100vw - 32px
 .ws-event time { color: var(--md-sys-color-on-surface-variant); }
 .ws-event .ws-text { white-space: pre-wrap; overflow-wrap: anywhere; }
 .ws-event.sent .ws-dir { color: var(--md-sys-color-primary); }
-.ws-event.received .ws-dir { color: light-dark(#3f6b2a, #9fcf86); }
+.ws-event.received .ws-dir { color: #9fcf86; }
 .ws-event.system .ws-text { color: var(--md-sys-color-on-surface-variant); }
 .ws-event.error .ws-text, .ws-event.error .ws-dir { color: var(--md-sys-color-error); }
 .grpc-target { display: flex; flex-wrap: wrap; gap: var(--space-100); align-items: center; margin-bottom: var(--space-100); }
@@ -519,7 +519,7 @@ lit-material-dialog.wide::part(container) { width: min(1100px, calc(100vw - 32px
 .grpc-message .cm-scroller { min-height: 6lh !important; max-height: 40vh !important; }
 .grpc-protos, .grpc-imports, .grpc-source { display: block; margin-top: var(--space-200); }
 .grpc-desktop-only { margin: 0 0 var(--space-200); }
-.ws-event.grpc-event.message .ws-dir, .ws-event.grpc-event.status.ok .ws-dir { color: light-dark(#3f6b2a, #9fcf86); }
+.ws-event.grpc-event.message .ws-dir, .ws-event.grpc-event.status.ok .ws-dir { color: #9fcf86; }
 .ws-event.grpc-event.status.bad .ws-text, .ws-event.grpc-event.status.bad .ws-dir { color: var(--md-sys-color-error); }
 .ws-event.grpc-event.headers .ws-text { color: var(--md-sys-color-on-surface-variant); }
 @media (max-width: 720px) {

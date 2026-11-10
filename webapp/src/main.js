@@ -8,7 +8,6 @@ import "@lit-material/alert";
 import "@lit-material/button";
 import "@lit-material/checkbox";
 import "@lit-material/code-block";
-import "@lit-material/color-scheme";
 import "@lit-material/confirm";
 import "@lit-material/dialog";
 import "@lit-material/diff";
@@ -29,9 +28,9 @@ import "@lit-material/tabs";
 import "@lit-material/text-field";
 
 import { initPlatform } from "./platform/index.js";
-import { watchScheme } from "./theme.js";
+import { forgetThemeChoice } from "./theme.js";
 
-watchScheme();
+forgetThemeChoice();
 
 // Storage loads before the app starts (the desktop reads it from Rust).
 const p = await initPlatform();

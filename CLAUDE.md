@@ -368,7 +368,7 @@ hitop/
   the proxy when `VITE_HITOP_PROXY` is set (webapp build), otherwise fetch
 
 ### Web app (`webapp/`)
-- Lit + lit-material in light DOM; theme from `site/src/theme.css`; `npm run build` → `dist/` (base `/app/`)
+- Lit + lit-material in light DOM; theme from `site/src/theme.css`; dark only (owner 2026-11-09: no theme toggle or setting anywhere, `color-scheme: dark`, `src/theme.js` drops old `hitop-theme`/`hitop-theme-system` keys; the site and portal too); `npm run build` → `dist/` (base `/app/`)
 - Storage must stay readable by the React app (same keys/shapes); `npm run test:e2e` with BASE= a running hitop-server
 - Response bodies over 64 KB go to IndexedDB (`platform/response-store.js`, DB `hitop-responses`, by tab id, `{body, raw}`,
   `platform().responses`, both adapters); `hitop_tabs` keeps their first 16 KB with `responseCut` + `responseStored`

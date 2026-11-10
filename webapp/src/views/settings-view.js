@@ -1,4 +1,4 @@
-// The Settings page, in the web app and the desktop: theme, the request time
+// The Settings page, in the web app and the desktop: the request time
 // limit and what the app does with requests, the storage it uses (and
 // clearing stored responses), and the keyboard shortcuts. The desktop adds
 // its own sections (platform().settingsSections: secret managers and, where
@@ -6,15 +6,11 @@
 // the web build never contains.
 import { LitElement, html, nothing } from "lit";
 import { confirm } from "@lit-material/confirm";
-import { COLOR_SCHEME_EVENT, setColorScheme } from "@lit-material/color-scheme";
-import { appScheme } from "../theme.js";
 import { AI_MODELS, aiSettings, saveAiSettings } from "../ai.js";
 import { platform } from "../platform/index.js";
 import { storageUsage } from "../platform/response-store.js";
 import { seconds } from "../settings.js";
 import { shortcutList } from "./shortcut-list.js";
-
-const THEME_KEY = "hitop-theme";
 
 const size = (n) => (n == null ? "unknown" : n < 1024 ? `${n} B` : n < 1024 * 1024 ? `${(n / 1024).toFixed(1)} KB` : `${(n / 1024 / 1024).toFixed(1)} MB`);
 
@@ -24,7 +20,6 @@ class HitopAppSettings extends LitElement {
     version: { attribute: false },
     app: { attribute: false },
     usage: { state: true },
-    theme: { state: true },
   };
 
   createRenderRoot() {
@@ -33,15 +28,7 @@ class HitopAppSettings extends LitElement {
 
   connectedCallback() {
     super.connectedCallback();
-    this.theme = appScheme();
-    this.onScheme = () => (this.theme = appScheme());
-    document.addEventListener(COLOR_SCHEME_EVENT, this.onScheme);
     this.measure();
-  }
-
-  disconnectedCallback() {
-    super.disconnectedCallback();
-    document.removeEventListener(COLOR_SCHEME_EVENT, this.onScheme);
   }
 
   async measure() {
@@ -149,15 +136,6 @@ class HitopAppSettings extends LitElement {
     return html`
       <div class="page settings-page">
         <header class="page-header"><h1>Settings</h1></header>
-        <section aria-label="Appearance" class="settings-section">
-          <h2>Appearance</h2>
-          <lit-material-select class="settings-theme" variant="outlined" label="Theme" .value=${this.theme} @change=${(e) => setColorScheme(e.target.value, { storageKey: THEME_KEY })}>
-            <lit-material-select-option value="light">Light</lit-material-select-option>
-            <lit-material-select-option value="dark">Dark</lit-material-select-option>
-            <lit-material-select-option value="auto">Match the system</lit-material-select-option>
-          </lit-material-select>
-          <p class="hint">The sun and moon button in the top bar switches it too.</p>
-        </section>
         <section aria-label="Requests" class="settings-section">
           <h2>Requests</h2>
           <lit-material-text-field class="settings-timeout" variant="outlined" type="number" min="0" step="1" label="Time limit (seconds)"

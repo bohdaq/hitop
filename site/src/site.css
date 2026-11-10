@@ -67,18 +67,14 @@
 .icon-button:hover { background: var(--md-sys-color-surface-container); }
 .icon-button:active { transform: scale(0.98); }
 .icon-button svg { width: 20px; height: 20px; }
-[data-theme-toggle] .moon { display: none; }
-[data-theme-toggle][aria-pressed="true"] .sun { display: none; }
-[data-theme-toggle][aria-pressed="true"] .moon { display: block; }
 
 :root {
-  /* color-mix() over light-dark() resolves to transparent in Chromium, so the
-     translucent surfaces are spelled out per scheme. */
-  --hitop-glass: light-dark(rgb(242 235 227 / 0.8), rgb(10 10 12 / 0.8));
-  --hitop-glass-strong: light-dark(rgb(242 235 227 / 0.97), rgb(10 10 12 / 0.97));
-  --hitop-mark-rack: light-dark(#16120f, #ededf0);
-  --hitop-mark-dot: light-dark(#f2ebe3, #0a0a0c);
-  --hitop-mark-slot: light-dark(#7a706a, #6b6b75);
+  /* Translucent surfaces, spelled out (color-mix() over the tokens resolves to transparent in Chromium). */
+  --hitop-glass: rgb(10 10 12 / 0.8);
+  --hitop-glass-strong: rgb(10 10 12 / 0.97);
+  --hitop-mark-rack: #ededf0;
+  --hitop-mark-dot: #0a0a0c;
+  --hitop-mark-slot: #6b6b75;
 }
 
 .site-footer {

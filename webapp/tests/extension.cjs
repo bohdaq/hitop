@@ -50,7 +50,7 @@ const check = (name, ok, detail = '') => {
     await p.locator('hitop-app').waitFor({ timeout: 15000 });
     await p.waitForFunction(() => document.querySelector('hitop-app')?.store?.tab, null, { timeout: 15000 });
     check('the app opens as an extension page', (await p.title()).includes('HITOP'));
-    check('dark by default from boot.js (no inline script)', (await p.evaluate(() => document.documentElement.getAttribute('color-scheme'))) === 'dark');
+    check('dark from boot.js (no inline script)', (await p.evaluate(() => document.documentElement.getAttribute('color-scheme'))) === 'dark');
     await p.evaluate((u) => {
       const s = document.querySelector('hitop-app').store;
       s.show('request');

@@ -1,10 +1,8 @@
 // The document around every prerendered page: head, header, footer.
 // Same structure as rws8.tech's shell, with HITOP's pages and links.
 import { html } from "lit";
-import { themeBootScript } from "@lit-material/site-kit/client/theme.js";
 import { unsafeHTML } from "lit/directives/unsafe-html.js";
 import { mark } from "./brand/mark.js";
-import { icon } from "./icons.js";
 import { DRAFT, LEGAL_LINKS } from "./legal-status.js";
 
 export const ORIGIN = "https://hitop.rws8.tech";
@@ -37,10 +35,6 @@ export function header(path) {
           <span class="word"><b>HITOP</b><small>API CLIENT</small></span>
         </a>
         <span class="nav-links">${links(path)}</span>
-        <button class="icon-button" type="button" data-theme-toggle aria-pressed="false" aria-label="Switch theme">
-          <span class="sun">${unsafeHTML(icon("sun"))}</span>
-          <span class="moon">${unsafeHTML(icon("moon"))}</span>
-        </button>
         <button class="icon-button menu-toggle" type="button" data-menu-toggle aria-expanded="false" aria-controls="mobile-menu" aria-label="Open menu">
           <span class="menu-icon" aria-hidden="true"><span></span><span></span></span>
         </button>
@@ -78,9 +72,9 @@ export function footer() {
     </footer>`;
 }
 
-// Applies a saved theme before first paint, so a dark-mode visitor never sees
-// a cream flash. Storage can throw (private windows), hence the try.
-const THEME_BOOT = themeBootScript("hitop-theme");
+// Dark only (owner decision 2026-11-09): set before first paint; theme.css forces it as well, and an
+// old visit's saved choice under hitop-theme is dropped. Storage can throw (private windows).
+const THEME_BOOT = 'document.documentElement.setAttribute("color-scheme","dark");try{localStorage.removeItem("hitop-theme")}catch(e){}';
 
 export function documentHtml({ title, description, path, body, assets, noindex = false, canonical = path, jsonLd = [], ogType = "website", markdown = null, modified = null }) {
   const css = assets.css.map((href) => `<link rel="stylesheet" href="${href}">`).join("");
@@ -106,8 +100,8 @@ ${modified ? `<meta property="article:modified_time" content="${modified}">` : "
 <meta property="og:image" content="${ORIGIN}/social-preview.png">
 <meta name="twitter:card" content="summary_large_image">
 <meta name="apple-itunes-app" content="app-id=6785326628">
-<meta name="theme-color" media="(prefers-color-scheme: dark)" content="#0A0A0C">
-<meta name="theme-color" media="(prefers-color-scheme: light)" content="#F2EBE3">
+<meta name="color-scheme" content="dark">
+<meta name="theme-color" content="#0A0A0C">
 <script>${THEME_BOOT}</script>
 ${jsonLd.map((d) => `<script type="application/ld+json">${JSON.stringify(d).replace(/</g, "\\u003c")}</script>`).join("")}
 ${css}

@@ -385,7 +385,7 @@ export class HitopApp extends LitElement {
       const text = this.field("json");
       const replace = d.mode === "replace";
       const collections = async () => {
-        JSON.parse(text.replace(/^﻿/, "")); // bad JSON says so before anything is asked
+        JSON.parse(text.replace(/^\uFEFF/, "")); // bad JSON says so before anything is asked
         // "Replace all" deletes every collection: ask first when that deletes something.
         if (replace && !(await this.confirmReplace())) return { cancelled: true };
         return { report: await s.importJson(text, { replace }) };
@@ -876,16 +876,13 @@ export class HitopApp extends LitElement {
     return org ? `${PORTAL_URL}orgs/${encodeURIComponent(org)}/plan` : PORTAL_URL;
   }
 
-  // Organization picker, environments, shortcuts and the theme: the top bar's
+  // Organization picker, environments and shortcuts: the top bar's
   // right end, or the top of the drawer on phones (one shows at a time).
   tools(where) {
     return html`<div class=${`app-tools ${where}`}>
       ${this.orgSelect()}
       <lit-material-icon-button aria-label="Manage environments" title="Manage environments" @click=${() => this.go("environments")}>${icon("sliders-horizontal")}</lit-material-icon-button>
       <lit-material-icon-button aria-label="Keyboard shortcuts" title="Keyboard shortcuts (?)" @click=${() => this.openDialog("shortcuts")}>${icon("keyboard")}</lit-material-icon-button>
-      <lit-material-color-scheme-toggle storage-key="hitop-theme" cycle>
-        ${icon("sun", { slot: "light-icon" })}${icon("moon", { slot: "dark-icon" })}
-      </lit-material-color-scheme-toggle>
     </div>`;
   }
 
@@ -1352,7 +1349,6 @@ export class HitopApp extends LitElement {
   }
 
   render() {
-    const s = this.store;
     return html`
       <a class="skip-link" href="#main">Skip to content</a>
       <header class="topbar">

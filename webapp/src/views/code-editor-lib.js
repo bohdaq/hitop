@@ -12,11 +12,11 @@ import { tags as t } from "@lezer/highlight";
 // Colours from theme.css, so light and dark both work.
 export const highlight = HighlightStyle.define([
   { tag: [t.keyword, t.operatorKeyword, t.controlKeyword, t.definitionKeyword, t.moduleKeyword], color: "var(--md-sys-color-primary)" },
-  { tag: [t.string, t.special(t.string)], color: "light-dark(#3f6b2a, #9fcf86)" },
-  { tag: [t.number, t.bool, t.null], color: "light-dark(#a3221b, #f2a29c)" },
-  { tag: [t.propertyName], color: "light-dark(#7a4b00, #e9c07a)" },
+  { tag: [t.string, t.special(t.string)], color: "#9fcf86" },
+  { tag: [t.number, t.bool, t.null], color: "#f2a29c" },
+  { tag: [t.propertyName], color: "#e9c07a" },
   { tag: [t.comment, t.lineComment, t.blockComment], color: "var(--md-sys-color-on-surface-variant)" },
-  { tag: [t.function(t.variableName), t.function(t.propertyName)], color: "light-dark(#1f5f8b, #8cc8f2)" },
+  { tag: [t.function(t.variableName), t.function(t.propertyName)], color: "#8cc8f2" },
 ]);
 
 export const theme = EditorView.theme({

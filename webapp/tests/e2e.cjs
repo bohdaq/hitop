@@ -86,10 +86,8 @@ const { results, check } = checker();
   check('export has HITOP JSON', exported.includes('Billing API'));
   await p.keyboard.press('Escape');
 
-  // 8. Mobile + dark
+  // 8. Mobile (the app is dark only)
   await p.setViewportSize({ width: 390, height: 844 });
-  await p.emulateMedia({ colorScheme: 'dark' });
-  await p.evaluate(() => { document.documentElement.removeAttribute('color-scheme'); });
   await p.locator('aside').getByRole('button', { name: /Default/ }).click({ force: true }).catch(() => {});
   await p.waitForTimeout(300);
   await p.getByRole('button', { name: 'Open collections' }).click();

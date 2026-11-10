@@ -25,7 +25,7 @@ const settle = (p) => p.waitForTimeout(400);
     await settingsButton().click();
     await settle(p);
     const text = await p.locator('main').innerText();
-    check('web app: Settings has theme, requests, storage and shortcuts', ['Appearance', 'Requests', 'Storage', 'Keyboard shortcuts'].every((t) => text.includes(t)), text.slice(0, 300));
+    check('web app: Settings has requests, storage and shortcuts (no theme: dark only)', !text.includes('Appearance') && ['Requests', 'Storage', 'Keyboard shortcuts'].every((t) => text.includes(t)), text.slice(0, 300));
     check('web app: Settings has no usage ping and no secret managers', !text.includes('Usage ping') && (await p.locator('section[aria-label="Secret managers"]').count()) === 0);
   } else {
     h.mock.telemetry.asked = false;

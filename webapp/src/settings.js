@@ -1,8 +1,8 @@
 // The app's own settings (the Settings page), in localStorage `hitop_settings`
 // (a key nothing else reads), in both builds:
 //   timeoutMs   request time limit for Send and collection runs; 0 = none
-// Layout choices live in their own keys (split.js), the theme in `hitop-theme`
-// (lit-material's color scheme). Unknown keys are kept.
+// Layout choices live in their own keys (split.js); the app is dark only (theme.js).
+// Unknown keys are kept.
 const KEY = "hitop_settings";
 
 export const DEFAULT_SETTINGS = { timeoutMs: 0 };

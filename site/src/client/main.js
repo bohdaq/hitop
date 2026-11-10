@@ -10,7 +10,6 @@ import "../landing.css";
 import "../hitop.css";
 
 import "../components.js";
-import { initThemeToggle } from "@lit-material/site-kit/client/theme.js";
 import { initMenu } from "@lit-material/site-kit/client/menu.js";
 import { initInstall } from "@lit-material/site-kit/client/install.js";
 import { initTerminal } from "@lit-material/site-kit/client/terminal.js";
@@ -18,7 +17,6 @@ import { initReveal } from "@lit-material/site-kit/client/reveal.js";
 import { initTagline } from "./tagline.js";
 import { initDownloads } from "./downloads.js";
 
-initThemeToggle({ key: "hitop-theme" });
 initMenu();
 initInstall();
 // Keep the terminal its finished height, so it doesn't shrink while it retypes.

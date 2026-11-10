@@ -153,15 +153,12 @@ function api() {
   await goSettings();
   const page = p.locator('main');
   const sections = await page.locator('section[aria-label]').evaluateAll((els) => els.map((e) => e.getAttribute('aria-label')));
-  check('Settings has its sections', ['Appearance', 'Requests', 'Storage', 'Keyboard shortcuts'].every((n) => sections.includes(n)) && (await page.locator('.shortcut-list').innerText()).includes('Send the request'), sections.join());
-  await p.locator('.settings-theme').click();
-  await p.getByRole('option', { name: 'Dark', exact: true }).click();
-  await settle(p);
-  check('Theme: Dark applies and is remembered under hitop-theme', (await p.evaluate(() => [document.documentElement.getAttribute('color-scheme'), localStorage.getItem('hitop-theme')].join())) === 'dark,dark');
-  await p.locator('.settings-theme').click();
-  await p.getByRole('option', { name: 'Match the system', exact: true }).click();
-  await settle(p);
-  check('Theme: Match the system clears it', (await p.evaluate(() => [document.documentElement.getAttribute('color-scheme'), localStorage.getItem('hitop-theme')].join())) === ',');
+  check('Settings has its sections', ['Requests', 'Storage', 'Keyboard shortcuts'].every((n) => sections.includes(n)) && (await page.locator('.shortcut-list').innerText()).includes('Send the request'), sections.join());
+  // Dark only (owner decision 2026-11-09): no theme choice anywhere, and a light system stays dark.
+  check('Dark only: no Appearance section, no theme select', !sections.includes('Appearance') && (await p.locator('.settings-theme').count()) === 0, sections.join());
+  await p.emulateMedia({ colorScheme: 'light' });
+  check('Dark only: dark even when the system asks for light', (await p.evaluate(() => [document.documentElement.getAttribute('color-scheme'), getComputedStyle(document.documentElement).colorScheme].join())) === 'dark,dark');
+  await p.emulateMedia({ colorScheme: null });
   await p.locator('.settings-timeout').evaluate((el) => {
     el.value = '2.5';
     el.dispatchEvent(new Event('change', { bubbles: true }));
