@@ -27,6 +27,7 @@ use rust_web_server::response::StatusCodeReasonPhrase;
 use serde::{Deserialize, Serialize};
 
 use crate::guard::{ip_allowed, port_allowed, PublicResolver};
+use crate::origins::Origins;
 use hitop_core::model::Timings;
 use hitop_core::timing::{Recorder, TimedConnectLayer, TimedResolver};
 
@@ -83,7 +84,7 @@ pub struct Proxy {
     // No total time limit (streams end on their own, or after STREAM_FOR).
     stream_client: Arc<Client>,
     streams: Arc<AtomicUsize>,
-    origins: Arc<Vec<String>>,
+    origins: Origins,
     deny: Arc<Vec<IpAddr>>,
     in_flight: Arc<AtomicUsize>,
     /// The client's DNS and connect hooks (hitop-core timing.rs): where each answer's time went.
@@ -132,10 +133,11 @@ impl Proxy {
                 .collect()
         };
         let deny: Vec<IpAddr> = list("HITOP_DENY_IPS", "").iter().filter_map(|s| s.parse().ok()).collect();
-        Self::new(list("HITOP_ALLOWED_ORIGINS", "https://hitop.rws8.tech"), deny)
+        Self::new(Origins::from_env(), deny)
     }
 
-    pub fn new(origins: Vec<String>, deny: Vec<IpAddr>) -> Self {
+    pub fn new(origins: impl Into<Origins>, deny: Vec<IpAddr>) -> Self {
+        let origins = origins.into();
         let timing = Recorder::default();
         let builder = |total: Option<Duration>| {
             let deny_redirect = deny.clone();
@@ -165,7 +167,7 @@ impl Proxy {
             client: Arc::new(builder(Some(Duration::from_secs(20)))),
             stream_client: Arc::new(builder(None)),
             streams: Arc::new(AtomicUsize::new(0)),
-            origins: Arc::new(origins),
+            origins,
             deny: Arc::new(deny),
             in_flight: Arc::new(AtomicUsize::new(0)),
             timing,
@@ -181,7 +183,7 @@ impl Proxy {
         // Browsers always send Origin on POST: this keeps other sites' pages
         // from using the proxy. (curl can fake it; the rate limit covers that.)
         let origin = request.header("origin").map(|h| h.value.to_string()).unwrap_or_default();
-        if !self.origins.contains(&origin) {
+        if !self.origins.allows(&origin) {
             return Err(Box::new(error(s.n403_forbidden, "requests must come from the HITOP web app")));
         }
         if request.body.len() > MAX_REQUEST_BODY + 1024 {

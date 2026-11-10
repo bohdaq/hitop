@@ -50,7 +50,7 @@ fn error(status: &'static rust_web_server::response::StatusCodeReasonPhrase, mes
 
 #[derive(Clone)]
 pub struct GrpcBridge {
-    origins: Arc<Vec<String>>,
+    origins: crate::origins::Origins,
     deny: Arc<Vec<IpAddr>>,
     calls: Arc<AtomicUsize>,
     allow_private: bool,
@@ -88,21 +88,21 @@ impl Read for Lines {
 }
 
 impl GrpcBridge {
-    pub fn new(origins: Vec<String>, deny: Vec<IpAddr>, allow_private: bool) -> Self {
-        GrpcBridge { origins: Arc::new(origins), deny: Arc::new(deny), calls: Arc::new(AtomicUsize::new(0)), allow_private }
+    pub fn new(origins: impl Into<crate::origins::Origins>, deny: Vec<IpAddr>, allow_private: bool) -> Self {
+        GrpcBridge { origins: origins.into(), deny: Arc::new(deny), calls: Arc::new(AtomicUsize::new(0)), allow_private }
     }
 
     pub fn from_env() -> Self {
         let list = |name: &str, default: &str| -> Vec<String> { std::env::var(name).unwrap_or_else(|_| default.into()).split(',').map(|s| s.trim().to_string()).filter(|s| !s.is_empty()).collect() };
         let deny = list("HITOP_DENY_IPS", "").iter().filter_map(|s| s.parse().ok()).collect();
-        GrpcBridge::new(list("HITOP_ALLOWED_ORIGINS", "https://hitop.rws8.tech"), deny, std::env::var("HITOP_BRIDGE_ALLOW_PRIVATE").as_deref() == Ok("1"))
+        GrpcBridge::new(crate::origins::Origins::from_env(), deny, std::env::var("HITOP_BRIDGE_ALLOW_PRIVATE").as_deref() == Ok("1"))
     }
 
     /// The request's arguments and a target that connects only to a checked address.
     fn accept(&self, request: &Request) -> Result<(Args, Target), Box<Response>> {
         let s = STATUS_CODE_REASON_PHRASE;
         let origin = request.header("origin").map(|h| h.value.to_string()).unwrap_or_default();
-        if !self.origins.contains(&origin) {
+        if !self.origins.allows(&origin) {
             return Err(Box::new(error(s.n403_forbidden, "requests must come from the HITOP web app")));
         }
         if request.body.len() > 1024 * 1024 {

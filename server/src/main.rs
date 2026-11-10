@@ -4,8 +4,8 @@
 //!
 //! Runs behind the front rws, which terminates TLS and rate limits /api/*.
 //! Settings (environment):
-//! - `HITOP_ALLOWED_ORIGINS`: comma separated Origins allowed to call the
-//!   proxy (default `https://hitop.rws8.tech`)
+//! - `HITOP_ALLOWED_ORIGINS`: comma separated Origins allowed to call the proxy and the bridges
+//!   (default: the web app, the Chrome Web Store extension and `moz-extension://*`, see origins.rs)
 //! - `HITOP_DENY_IPS`: extra addresses to refuse, e.g. the host's own public IP
 //! - `HITOP_TELEMETRY_DIR`, `HITOP_STATS_TOKEN`: opt-in usage pings (`POST /api/ping`,
 //!   `GET /api/stats`), see telemetry.rs
@@ -14,6 +14,7 @@
 mod grpcbridge;
 mod guard;
 mod legacy;
+mod origins;
 mod proxy;
 mod telemetry;
 mod wsbridge;

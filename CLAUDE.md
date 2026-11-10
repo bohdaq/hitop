@@ -448,6 +448,7 @@ hitop/
 
 ### Website and proxy
 - Hosting: VM bohdan-prod-donotdelete (168.119.17.57) behind the front rws; see `deploy/README.md`
+- hitop-server Origins (`server/src/origins.rs`, `HITOP_ALLOWED_ORIGINS`): exact entries plus `moz-extension://*` (any per-install Firefox UUID); default = web app + Chrome Web Store id `mmbpagencfjfgeicmeobbmeocdpeokdk` + Firefox; the extensions (`webapp/.env.extension` `VITE_HITOP_PROXY=https://hitop.rws8.tech/api/proxy`) send public hosts through the proxy and bridges like the web app (owner 2026-11-10; targets Chrome Web Store + Firefox Add-ons only; listing texts `launch/store-listings.md`, limits also on the extension's Settings page)
 - hitop-server bridges (2026-11-06): `POST /api/proxy/stream` (SSE/chunked passthrough, 8 at once), `GET /api/ws` (wsbridge.rs: first frame {url, headers, protocols}, 16 at once) and `POST /api/grpc/{list,describe,call}` (grpcbridge.rs, reflection only, NDJSON events); all check Origin and dial an address checked by `guard::checked_addr` (hitop-core `websocket::Target.connect_to`, `grpc::Target.connect_to`); a default User-Agent on proxied requests; `HITOP_BRIDGE_ALLOW_PRIVATE=1` = tests only
 - Build all: `./deploy/build.sh`; server tests: `cd server && cargo test`
 - Old URLs must keep working: `/privacy.html` (App Store privacy URL), `/pricing.html`, `/app.html`, `/terms/*.html` (301 to `/guides/<name>/` in hitop-server)

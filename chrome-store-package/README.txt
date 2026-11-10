@@ -1,28 +1,15 @@
 HITOP Chrome Extension
 
-A powerful HTTP client for testing and debugging APIs directly in your browser.
+The API client your terminal, your CI and your AI agent can all drive.
 
-FEATURES:
-- Create and organize requests in collections
-- Support for GET, POST, PUT, DELETE, PATCH, and more
-- Collection variables for dynamic values
-- Request history
-- Import/Export collections
-- Drag and drop to reorder requests
-- Dark mode support
+Since manifest 5.0.0 this extension is the HITOP web app (webapp/, npm run build:extension,
+packaged by ./build-chrome-store.sh). The store listing text, permission and data-use answers
+are in launch/store-listings.md (the owner uploads; agents never do).
 
-LIMITATIONS IN CHROME EXTENSION:
-- Pre-request and post-request scripts are NOT supported due to Chrome's Content Security Policy
-- For script functionality, please use the web version at: https://bohdaq.github.io/hitop/
-- You can still use collection variables for dynamic values
+Requests to public hosts go through the HITOP proxy at hitop.rws8.tech; localhost and private
+networks go straight from the browser. Scripts run in the manifest's sandboxed page.
 
-USAGE:
-Click the HITOP icon in your Chrome toolbar to open the HTTP client in a new tab.
+Not in the extension (desktop app or the hitop CLI): secret-manager references, the Git panel.
+Store reviews delay updates.
 
-PRIVACY:
-All data is stored locally in your browser using localStorage. No data is sent to external servers.
-
-PERMISSIONS:
-- host_permissions: To make HTTP requests to APIs you specify
-
-For more information, visit: https://github.com/bohdaq/hitop
+https://hitop.rws8.tech/

@@ -66,6 +66,13 @@ const check = (name, ok, detail = '') => {
     check('a host without CORS answers the extension (host permissions, no proxy)', tab.status === 200 && tab.response.includes('paid'), JSON.stringify(tab));
     check('the script before ran in the sandbox', seen?.headers['x-from-script'] === 'pre-2', JSON.stringify(seen?.headers));
     check('the script after ran in the sandbox: 2 of 2 tests pass', tab.tests?.length === 2 && tab.tests.every((t) => t.pass), JSON.stringify(tab.tests));
+    // Owner decision 2026-11-10: public hosts through hitop.rws8.tech's proxy, limits said in the app.
+    const bundles = fs.readdirSync(path.join(dir, 'app/assets')).filter((f) => f.endsWith('.js')).map((f) => fs.readFileSync(path.join(dir, 'app/assets', f), 'utf8')).join('\n');
+    check('public hosts go through the HITOP proxy (built in)', bundles.includes('https://hitop.rws8.tech/api/proxy'));
+    await p.evaluate(() => document.querySelector('hitop-app').store.show('settings'));
+    await p.locator('section[aria-label="This extension"]').waitFor({ timeout: 10000 }).catch(() => {});
+    const limits = await p.locator('section[aria-label="This extension"]').innerText().catch(() => '');
+    check('Settings states the extension limits', /secret-manager/.test(limits) && /Git panel/.test(limits) && /store reviews/.test(limits), limits);
     check('no page errors', errors.length === 0, errors.join(' | '));
     check('no CSP violation', csp.length === 0, csp.join(' | '));
   } finally {

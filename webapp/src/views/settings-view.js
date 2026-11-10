@@ -128,6 +128,23 @@ class HitopAppSettings extends LitElement {
     </section>`;
   }
 
+  // The browser extensions (owner decision 2026-11-10): a slim scope, said plainly; the desktop app
+  // and the CLI do the rest. Same limits as launch/store-listings.md.
+  renderExtension() {
+    if (!platform().extension) return nothing;
+    const firefox = location.protocol === "moz-extension:";
+    return html`<section aria-label="This extension" class="settings-section extension-limits">
+      <h2>This extension</h2>
+      <p class="hint">The HITOP web app in a browser tab. Requests to public hosts go through the HITOP proxy at hitop.rws8.tech (timing, WebSocket handshake headers and gRPC come from there); localhost and private networks go straight from your browser.</p>
+      <ul class="settings-notes">
+        <li>No secret-manager references (Vault, AWS, Azure, 1Password) and no Git panel: use the desktop app or the hitop CLI.</li>
+        ${firefox ? html`<li>Firefox can't open collection folders on disk: keep collections here, in HITOP Cloud, or use the desktop app.</li>` : nothing}
+        <li>Updates arrive after each store reviews them, so this extension can be a few days behind hitop.rws8.tech/app/.</li>
+      </ul>
+      <p class="hint"><a href="https://hitop.rws8.tech/" target="_blank" rel="noopener">Desktop app, CLI and guides</a></p>
+    </section>`;
+  }
+
   render() {
     const s = this.store;
     const desktop = platform().name === "tauri";
@@ -136,6 +153,7 @@ class HitopAppSettings extends LitElement {
     return html`
       <div class="page settings-page">
         <header class="page-header"><h1>Settings</h1></header>
+        ${this.renderExtension()}
         <section aria-label="Requests" class="settings-section">
           <h2>Requests</h2>
           <lit-material-text-field class="settings-timeout" variant="outlined" type="number" min="0" step="1" label="Time limit (seconds)"

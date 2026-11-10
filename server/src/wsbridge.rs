@@ -36,7 +36,7 @@ const DROPPED: &[&str] = &["host", "connection", "upgrade", "sec-websocket-key",
 
 #[derive(Clone)]
 pub struct Bridge {
-    origins: Arc<Vec<String>>,
+    origins: crate::origins::Origins,
     deny: Arc<Vec<IpAddr>>,
     open: Arc<AtomicUsize>,
     /// Tests only: private addresses allowed.
@@ -44,20 +44,20 @@ pub struct Bridge {
 }
 
 impl Bridge {
-    pub fn new(origins: Vec<String>, deny: Vec<IpAddr>, allow_private: bool) -> Self {
-        Bridge { origins: Arc::new(origins), deny: Arc::new(deny), open: Arc::new(AtomicUsize::new(0)), allow_private }
+    pub fn new(origins: impl Into<crate::origins::Origins>, deny: Vec<IpAddr>, allow_private: bool) -> Self {
+        Bridge { origins: origins.into(), deny: Arc::new(deny), open: Arc::new(AtomicUsize::new(0)), allow_private }
     }
 
     pub fn from_env() -> Self {
         let list = |name: &str, default: &str| -> Vec<String> { std::env::var(name).unwrap_or_else(|_| default.into()).split(',').map(|s| s.trim().to_string()).filter(|s| !s.is_empty()).collect() };
         let deny = list("HITOP_DENY_IPS", "").iter().filter_map(|s| s.parse().ok()).collect();
-        Bridge::new(list("HITOP_ALLOWED_ORIGINS", "https://hitop.rws8.tech"), deny, std::env::var("HITOP_BRIDGE_ALLOW_PRIVATE").as_deref() == Ok("1"))
+        Bridge::new(crate::origins::Origins::from_env(), deny, std::env::var("HITOP_BRIDGE_ALLOW_PRIVATE").as_deref() == Ok("1"))
     }
 
     /// `GET /api/ws`: the upgrade, for the web app's Origin only.
     pub fn handle(&self, request: &rust_web_server::request::Request) -> rust_web_server::response::Response {
         let origin = request.header("origin").map(|h| h.value.to_string()).unwrap_or_default();
-        if !self.origins.contains(&origin) {
+        if !self.origins.allows(&origin) {
             return rust_web_server::response::Response::text(rust_web_server::response::STATUS_CODE_REASON_PHRASE.n403_forbidden, "connections must come from the HITOP web app");
         }
         let bridge = self.clone();

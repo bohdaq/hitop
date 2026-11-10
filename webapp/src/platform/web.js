@@ -197,7 +197,14 @@ async function stream(url, options = {}, onText = () => {}) {
 // WebSocket requests with handshake headers to public hosts go through hitop-server's bridge
 // (GET /api/ws, wsbridge.rs): the page sends {url, headers, protocols} as the first frame, the
 // server connects with them and relays frames. Localhost stays a direct browser connection.
-const BRIDGE_URL = import.meta.env.VITE_HITOP_PROXY ? `${location.protocol === "https:" ? "wss:" : "ws:"}//${location.host}${import.meta.env.VITE_HITOP_PROXY.replace(/\/proxy$/, "/ws")}` : "";
+// The proxy is a path on this site (the web app) or a full URL (the extensions: hitop.rws8.tech).
+const BRIDGE_URL = bridgeUrl(import.meta.env.VITE_HITOP_PROXY);
+function bridgeUrl(proxy) {
+  if (!proxy) return "";
+  const u = new URL(proxy.replace(/\/proxy$/, "/ws"), location.href);
+  u.protocol = u.protocol === "https:" ? "wss:" : "ws:";
+  return u.href;
+}
 const httpForm = (url) => String(url).replace(/^ws(s?):\/\//i, "http$1://");
 const sendsHeaders = (url) => Boolean(BRIDGE_URL) && usesProxy(httpForm(url));
 
