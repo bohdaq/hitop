@@ -824,7 +824,8 @@ export class Store extends EventTarget {
       // A draft made in a folder (the sidebar's "+" on it) gets its file there.
       const target = this.collection(collectionId);
       const file = folder && target ? requestFile(target.requests || [], folder, title) : undefined;
-      const request = clean({ ...collectionService.createRequest(title, data), ...(file ? { file } : {}) });
+      // createRequest knows the React fields only: the kind, websocket, grpc, graphql and form fields come from data.
+      const request = clean({ ...data, ...collectionService.createRequest(title, data), ...(file ? { file } : {}) });
       this.collections = collectionService.addRequestToCollection(this.collections, collectionId, request);
       this.tabs = tabService.updateTab(this.tabs, this.currentTab, { loadedRequestId: request.id, loadedCollectionId: collectionId, title, folder: undefined });
     }
