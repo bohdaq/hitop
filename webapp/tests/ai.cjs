@@ -3,8 +3,11 @@
 // request arrive as a patch with a diff and a dry run against the last response, applied only
 // when asked; a request from text opens as a request; what is sent hides secret values and
 // credential headers, and a hidden value is never written back; without a key the sheet points
-// to Settings.
+// to Settings. U14: an explanation of a failure leads to a proposed fix as a patch, nothing
+// changes before Apply, and Run with checks applies it and sends the request with its tests
+// (a local Node server answers).
 //   BASE=http://localhost:7879 node tests/ai.cjs
+const http = require('http');
 const { launch, checker } = require('./harness.cjs');
 const { results, check } = checker();
 const settle = (p, ms = 400) => p.waitForTimeout(ms);
@@ -25,6 +28,16 @@ function sse(text, model = 'claude-opus-5-5') {
 }
 
 (async () => {
+  const hits = [];
+  const api = http.createServer((req, res) => {
+    const cors = { 'Access-Control-Allow-Origin': '*', 'Access-Control-Allow-Headers': '*', 'Access-Control-Allow-Methods': '*' };
+    if (req.method === 'OPTIONS') return res.writeHead(204, cors).end();
+    hits.push(`${req.method} ${req.url}`);
+    if (req.url === '/orders/7') return res.writeHead(200, { ...cors, 'Content-Type': 'application/json' }).end('{"id":7,"status":"paid"}');
+    res.writeHead(404, { ...cors, 'Content-Type': 'application/json' }).end('{"error":"not found"}');
+  });
+  await new Promise((r) => api.listen(0, '127.0.0.1', r));
+  const base = `http://127.0.0.1:${api.address().port}`;
   const h = await launch({ results });
   const p = h.page;
   const errors = [];
@@ -113,6 +126,30 @@ function sse(text, model = 'claude-opus-5-5') {
   const auth = after.h.find((x) => x.name === 'Authorization');
   check('Apply changes the request; the hidden header keeps its real value', after.m === 'PATCH' && after.b === '{"status":"cancelled"}' && auth?.value === 'Bearer live-token-123' && after.h.some((x) => x.name === 'Content-Type'), JSON.stringify(after));
 
+  // U14: Explain a failure, then Propose a fix: the fix is a patch; Run with checks applies and sends.
+  await p.evaluate((b) => {
+    const s = document.querySelector('hitop-app').store;
+    s.updateTab({ url: `${b}/order/7` });
+    s.patchTab(s.tab.id, { statusCode: 404, responseType: 'json', response: '{"error":"not found"}', responseHeaders: { 'content-type': 'application/json' }, tests: [{ name: 'status is 200', pass: false, detail: 'got 404' }] });
+    s.emit();
+  }, base);
+  await settle(p);
+  answer = 'The path is /order/7 but the orders live under /orders/7, so the server answers 404.';
+  await sheet.getByRole('tab', { name: 'Explain' }).click();
+  await sheet.getByRole('button', { name: /Propose a fix/ }).waitFor({ timeout: 10000 });
+  check('U14 an explanation offers a fix', (await sheet.locator('.ai-answer').innerText()).includes('/orders/7'));
+  answer = JSON.stringify({ summary: 'Use the /orders path.', changes: { method: null, url: `${base}/orders/7`, headers: null, body: null, preRequestScript: null, postRequestScript: null } });
+  await sheet.getByRole('button', { name: /Propose a fix/ }).click();
+  await sheet.locator('.agent-patch').waitFor({ timeout: 10000 });
+  const fixAsk = JSON.stringify(sent.at(-1).body.messages);
+  check('U14 the fix is asked as a patch, with the explanation as the instruction', sent.at(-1).body.output_config?.format?.type === 'json_schema' && fixAsk.includes('Fix this request so that it succeeds') && fixAsk.includes('orders live under /orders/7'));
+  check('U14 ...shown as a diff of the URL, on Change this request', (await sheet.locator('lit-material-diff').evaluate((el) => el.original.includes('/order/7') && el.modified.includes('/orders/7'))) && (await sheet.getByRole('tab', { name: 'Change this request' }).getAttribute('aria-selected')) === 'true');
+  check('U14 ...and nothing changed before Apply', (await tab()).u === `${base}/order/7` && !hits.some((x) => x.includes('/orders/7')));
+  await sheet.getByRole('button', { name: /Run with checks/ }).click();
+  await p.waitForFunction(() => document.querySelector('hitop-app').store.tab.statusCode === 200 && (document.querySelector('hitop-app').store.tab.tests || []).length > 0, null, { timeout: 15000 }).catch(() => {});
+  const ran = await p.evaluate(() => { const t = document.querySelector('hitop-app').store.tab; return { u: t.url, status: t.statusCode, tests: (t.tests || []).map((x) => x.pass) }; });
+  check('U14 Run with checks applies the fix and sends the request with its tests', ran.u === `${base}/orders/7` && ran.status === 200 && ran.tests.length >= 2 && ran.tests.every(Boolean) && hits.some((x) => x.endsWith('/orders/7')), JSON.stringify(ran));
+
   // A request from text.
   answer = JSON.stringify({ name: 'Create user', method: 'POST', url: '${baseUrl}/users', headers: [{ name: 'Content-Type', value: 'application/json' }], body: '{"name":"Ada"}' });
   await sheet.getByRole('tab', { name: 'Request from text' }).click();
@@ -125,6 +162,7 @@ function sse(text, model = 'claude-opus-5-5') {
   check('...and closes the sheet', !(await sheet.evaluate((el) => el.open)));
 
   check('no page errors', errors.length === 0, errors.join(' | '));
+  api.close();
   await h.finish();
 })().catch((e) => {
   console.log(results.join('\n'));

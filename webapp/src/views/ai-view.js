@@ -38,6 +38,15 @@ function exchange(app, withScripts = false) {
   );
 }
 
+/**
+ * U14: from an explanation to a fix: the explanation goes back as the instruction of "Change this
+ * request", so the fix arrives as a patch (diff, dry run, Apply / Run with checks / Discard) and
+ * the prompt stays visible and editable on that tab.
+ */
+export function fixPrompt(explanation) {
+  return `Fix this request so that it succeeds and its tests pass. Change only what the failure needs. The failure, as explained before:\n${String(explanation ?? "").trim()}`;
+}
+
 /** A checked patch on the sheet, with its dry run when it changes the tests. */
 async function showPatch(app, raw) {
   const s = app.store;
@@ -143,6 +152,9 @@ export function agentPanel(app) {
     ${a.error ? html`<p class="error-text" role="alert">${a.error}</p>` : nothing}
     ${a.busy && !a.text ? html`<div class="skeleton block" aria-busy="true"></div>` : nothing}
     ${a.text && a.action === "explain" ? html`<p class="ai-answer" aria-live="polite">${a.text}</p>` : nothing}
+    ${a.text && a.action === "explain" && !a.busy && can.edit
+      ? html`<lit-material-button variant="outlined" class="agent-fix" @click=${() => runAi(app, "edit", fixPrompt(a.text))}>${icon("sparkle")} Propose a fix</lit-material-button>`
+      : nothing}
     ${a.text && a.action === "tests" && !a.patch ? html`<lit-material-code-block class="ai-answer" label="Script after" copyable>${a.text}</lit-material-code-block>` : nothing}
     ${a.patch ? patchView(app, a) : nothing}
     ${a.result
