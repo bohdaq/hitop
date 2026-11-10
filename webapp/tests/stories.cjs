@@ -77,6 +77,51 @@ function api() {
   const hit = hits.at(-1);
   check('U19 ...and the request goes out with it', hit?.auth === 'Bearer tok-u19' && hit.url.includes('t=tok-u19'), JSON.stringify(hit));
 
+  // --- U39 -------------------------------------------------------------------------------------
+  await store((b) => {
+    const s = document.querySelector('hitop-app').store;
+    s.setActiveEnvironment(null);
+    s.addCollection('Runs U39');
+    const c = s.collections.find((x) => x.name === 'Runs U39');
+    const r = (id, name, url, file) => ({ id, name, method: 'GET', url, headers: [], body: '', ...(file ? { file } : {}) });
+    s.collections = s.collections.map((x) => (x.id === c.id ? { ...x, variables: { base: b }, requests: [r(3901, 'List orders', '${base}/orders', 'orders/list'), r(3902, 'Get order', '${base}/missing/7', 'orders/get'), r(3903, 'Health', '${base}/health')] } : x));
+    s.show('collection', c.id);
+    s.emit();
+  }, base);
+  await settle(p);
+  const history = () => store(() => JSON.parse(localStorage.getItem('hitop_run_history') || '{}'));
+  const runsBefore = Object.values(await history()).flat().length;
+  await p.locator('hitop-collection').getByRole('button', { name: /Run collection/ }).click();
+  const report = p.locator('hitop-run-report');
+  await report.locator('.run-report-head h2', { hasText: 'Last run' }).waitFor({ timeout: 15000 });
+  const card = await report.locator('.run-failure').innerText();
+  check('U39 the failure says expected vs actual and the usual cause of the status', card.includes('Get order') && card.includes('HTTP 404') && card.includes('Likely cause') && card.includes('Nothing answers at this path'), card.replace(/\n/g, ' | '));
+  check('U39 ...the URL as sent and the start of the response body', card.includes(`${base}/missing/7`) && card.includes('"ok":false'), card.replace(/\n/g, ' | '));
+  const notRun = await report.locator('.run-not-run').innerText().catch(() => '');
+  check('U39 the report says what was not run after the failure', notRun.includes('1 more request was not run'), notRun);
+  check('U39 ...and the hitop run line stops at the first failure too', (await report.locator('.run-command').innerText()).includes('--bail'));
+  await report.getByRole('button', { name: 'Open the request' }).click();
+  await settle(p);
+  check('U39 Open the request opens the failing request', (await store(() => document.querySelector('hitop-app').store.tab.title)) === 'Get order' && (await store(() => document.querySelector('hitop-app').store.view.kind)) === 'request');
+
+  // A folder's run: from the folder's menu, only its requests, no CLI line, not in the run history.
+  const runsAfterCollection = Object.values(await history()).flat().length;
+  await store(() => {
+    const app = document.querySelector('hitop-app');
+    const c = app.store.collections.find((x) => x.name === 'Runs U39');
+    app.store.collections = app.store.collections.map((x) => (x.id === c.id ? { ...x, requests: x.requests.map((r) => (r.id === 3902 ? { ...r, url: '${base}/orders/7' } : r)) } : x));
+    app.store.emit();
+  });
+  await settle(p);
+  await p.locator('aside').getByRole('button', { name: 'More for folder orders' }).click();
+  await p.locator('#folder-menu').getByText('Run this folder').click();
+  await report.locator('.run-report-head h2', { hasText: 'Last run' }).waitFor({ timeout: 15000 });
+  await settle(p);
+  const head = await report.locator('.run-report-head').innerText();
+  const rows = await report.locator('.run-list .run-row').count();
+  check("U39 Run this folder runs only the folder's requests and says so", head.includes('folder') && head.includes('orders') && rows === 2 && head.includes('Passed'), `${head.replace(/\n/g, ' | ')} rows=${rows}`);
+  check('U39 ...with no hitop run line (it runs whole collections) and no comparison', (await report.locator('.run-command').count()) === 0 && (await report.locator('.run-cli-none').count()) === 1 && Object.values(await history()).flat().length === runsAfterCollection && runsAfterCollection === runsBefore + 1);
+
   check('no page errors', errors.length === 0, errors.join(' | '));
   server.close();
   await h.finish();

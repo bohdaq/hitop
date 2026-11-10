@@ -1,12 +1,14 @@
 // The Run report (HITOP Next A6, concept screen 2): stat tiles, a timeline of the run's requests on
-// one time axis with All / Failed / Slow filters, the first failure with expected vs actual, the
-// `hitop run` line that reproduces the run, and JUnit / JSON downloads in `hitop run`'s shapes.
+// one time axis with All / Failed / Slow filters, the first failure explained (U39: expected vs
+// actual, the status's usual cause, the response's first lines, the URL as sent, Open the
+// request), how many were not run after it, the `hitop run` line that reproduces the run, and
+// JUnit / JSON downloads in `hitop run`'s shapes. A folder's run says which folder.
 import { LitElement, html, nothing } from "lit";
 import { styleMap } from "lit/directives/style-map.js";
 import { icon } from "../icons.js";
 import { platform } from "../platform/index.js";
 import { testList } from "./request-view.js";
-import { junitXml, slowThreshold, timeline } from "../run-report.js";
+import { explainFailure, junitXml, slowThreshold, timeline } from "../run-report.js";
 
 const FILTERS = [
   ["all", "All"],
@@ -59,25 +61,38 @@ export class HitopRunReport extends LitElement {
     </div>`;
   }
 
+  openRequest(f) {
+    const s = this.store;
+    const c = s?.collection(this.run.collectionId);
+    const r = c?.requests?.find((x) => x.id === f.requestId);
+    if (r) s.openRequest(r, c.id);
+  }
+
   failure(results) {
     const f = results.find((r) => !r.success);
     if (!f) return nothing;
-    const failedChecks = (f.tests || []).filter((t) => !t.pass);
-    const responded = typeof f.statusCode === "number";
+    const x = explainFailure(f);
+    const exists = Boolean(this.store?.collection(this.run.collectionId)?.requests?.some((r) => r.id === f.requestId));
     return html`<section class="run-failure" aria-label="First failure">
       <p class="run-failure-where"><span class=${`method-tag m-${f.method}`}>${f.method}</span> ${f.file ? html`<code>${f.file}</code>` : nothing}</p>
       <h3>${f.requestName}</h3>
-      ${!responded
-        ? html`<p>Not answered: ${f.response}</p>`
-        : failedChecks.length
+      ${x.kind === "not-sent" || x.kind === "no-answer"
+        ? html`<p><b>${x.kind === "not-sent" ? "Not sent" : "No response"}:</b> ${x.message}</p>`
+        : x.kind === "checks"
           ? html`<div class="run-failure-grid">
-              <div><span class="run-tile-label">Expected</span><ul>${failedChecks.map((t) => html`<li>${t.name}</li>`)}</ul></div>
-              <div><span class="run-tile-label">Actual</span><ul>${failedChecks.map((t) => html`<li>${t.detail || "failed"}</li>`)}</ul><p class="hint">HTTP ${f.statusCode}</p></div>
+              <div><span class="run-tile-label">Expected</span><ul>${x.checks.map((t) => html`<li>${t.name}</li>`)}</ul></div>
+              <div><span class="run-tile-label">Actual</span><ul>${x.checks.map((t) => html`<li>${t.detail || "failed"}</li>`)}</ul><p class="hint">HTTP ${x.status}</p></div>
             </div>`
           : html`<div class="run-failure-grid">
               <div><span class="run-tile-label">Expected</span><p>a 2xx status</p></div>
-              <div><span class="run-tile-label">Actual</span><p>HTTP ${f.statusCode}</p></div>
+              <div><span class="run-tile-label">Actual</span><p>HTTP ${x.status}</p></div>
             </div>`}
+      ${x.cause ? html`<p class="run-failure-cause">${icon("info")} <span><span class="run-tile-label">Likely cause</span> ${x.cause}</span></p>` : nothing}
+      ${x.url ? html`<p class="run-failure-url"><span class="run-tile-label">Sent to</span> <code>${x.url}</code></p>` : nothing}
+      ${x.excerpt
+        ? html`<div class="run-failure-body"><span class="run-tile-label">Response body${x.excerpt.length >= 400 ? ", first 400 characters" : ""}</span><pre class="mono">${x.excerpt}</pre></div>`
+        : nothing}
+      ${exists ? html`<lit-material-button variant="outlined" @click=${() => this.openRequest(f)}>${icon("arrow-square-out")} Open the request</lit-material-button>` : nothing}
     </section>`;
   }
 
@@ -90,7 +105,7 @@ export class HitopRunReport extends LitElement {
     const done = !run.running && run.report;
     return html`<section class="run run-report" aria-label="Run report" aria-live="polite">
       <header class="run-report-head">
-        <h2>${run.running ? "Running" : "Last run"}</h2>
+        <h2>${run.running ? "Running" : "Last run"}${run.folder ? html` <span class="run-folder">· folder <code>${run.folder}</code></span>` : nothing}</h2>
         ${done
           ? html`<span class=${`status-chip ${run.report.report.passed ? "ok" : "bad"}`}>${run.report.report.passed ? "Passed" : `${run.report.report.summary.requests.failed} failed`}</span>
               <span class="run-report-actions">
@@ -124,16 +139,21 @@ export class HitopRunReport extends LitElement {
             ${run.running ? html`<li class="skeleton row" aria-label="Sending the next request"></li>` : nothing}
             ${!rows.length && !run.running ? html`<li class="hint">Nothing ${this.filter === "failed" ? "failed" : "was slow"} in this run.</li>` : nothing}
           </ol>
+          ${done && run.planned > results.length
+            ? html`<p class="hint run-not-run" role="status">Stopped at the first failure: ${run.planned - results.length} more ${run.planned - results.length === 1 ? "request was" : "requests were"} not run (as <code>hitop run --bail</code>).</p>`
+            : nothing}
         </div>
         ${done
           ? html`<aside class="run-side">
               ${this.failure(results)}
-              <section class="run-cli" aria-label="Same run from your terminal">
-                <h3>Same run from your terminal</h3>
-                <code class="run-command">${run.report.command}</code>
-                <lit-material-button variant="outlined" @click=${() => this.copyCommand(run.report.command)}>${icon("copy")} Copy</lit-material-button>
-                <p class="hint">Exit code ${run.report.report.passed ? 0 : 1}; <code>reports/junit.xml</code> annotates failing files in a pull request.</p>
-              </section>
+              ${run.report.command
+                ? html`<section class="run-cli" aria-label="Same run from your terminal">
+                    <h3>Same run from your terminal</h3>
+                    <code class="run-command">${run.report.command}</code>
+                    <lit-material-button variant="outlined" @click=${() => this.copyCommand(run.report.command)}>${icon("copy")} Copy</lit-material-button>
+                    <p class="hint">Exit code ${run.report.report.passed ? 0 : 1}; <code>reports/junit.xml</code> annotates failing files in a pull request.</p>
+                  </section>`
+                : html`<p class="hint run-cli-none"><code>hitop run</code> runs whole collections: this run was the <code>${run.folder}</code> folder only, so it has no command line and isn't compared with the collection's runs.</p>`}
             </aside>`
           : nothing}
       </div>

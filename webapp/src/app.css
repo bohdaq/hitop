@@ -1112,4 +1112,15 @@ hitop-app lit-material-text-field::part(label) { inset-inline-start: -20px; }
 .share-room.full > :first-child { color: var(--hitop-fail); }
 .limit-note { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; margin: 8px 0; padding: 10px 12px; border: 1px solid var(--md-sys-color-outline-variant); border-radius: 9px; background: var(--md-sys-color-surface-container); font-size: 13px; }
 .limit-note p { display: flex; align-items: flex-start; gap: 8px; flex: 1 1 18rem; margin: 0; }
+/* U39: the failure card explains itself; a folder's run. */
+.run-failure > p { margin: 0; overflow-wrap: anywhere; }
+.run-failure-cause { display: flex; gap: 8px; align-items: flex-start; font-size: 13px; }
+.run-failure-cause > :first-child { flex: none; margin-top: 2px; color: var(--hitop-info, #6ca8ff); }
+.run-failure-cause .run-tile-label, .run-failure-url .run-tile-label { margin-inline-end: 4px; }
+.run-failure-url code { font-size: 12px; overflow-wrap: anywhere; }
+.run-failure-body pre { margin: 4px 0 0; max-height: 160px; overflow: auto; padding: 8px 10px; border: 1px solid #26262c; border-radius: 7px; background: var(--md-sys-color-surface-container-lowest, #0a0a0c); font-size: 12px; line-height: 18px; white-space: pre-wrap; overflow-wrap: anywhere; }
+.run-failure > lit-material-button { justify-self: start; }
+.run-not-run { margin: 8px 0 0; }
+.run-folder { color: var(--md-sys-color-on-surface-variant); font-size: 0.6em; font-weight: 500; }
+.run-cli-none { margin: 0; padding: 12px 14px; border: 1px solid var(--md-sys-color-outline-variant); border-radius: 12px; }
 .limit-note p > :first-child { flex: none; margin-top: 2px; color: var(--md-sys-color-on-surface-variant); }

@@ -1098,10 +1098,21 @@ export class HitopApp extends LitElement {
     </lit-material-menu>`;
   }
 
+  /** U39: runs one folder's requests, its report on the collection page. */
+  runFolder(collectionId, path) {
+    const s = this.store;
+    const c = s.collection(collectionId);
+    if (!(c?.requests || []).some((r) => String(r.file ?? "").startsWith(`${path}/`))) return this.toast(`Nothing to run in ${path} yet: save a request into it first.`);
+    if (s.run.running) return this.toast("A run is going on: wait for it to finish.");
+    this.go("collection", collectionId);
+    s.runCollection(collectionId, { folder: path });
+  }
+
   renderFolderMenu() {
     const m = () => this.menuFolder;
     return html`<lit-material-menu id="folder-menu" aria-label="Folder">
       <lit-material-list-item interactive @click=${() => this.newRequestIn(m().collection.id, m().folder.path)}>${icon("plus")} New request here</lit-material-list-item>
+      <lit-material-list-item interactive @click=${() => this.runFolder(m().collection.id, m().folder.path)}>${icon("play")} Run this folder</lit-material-list-item>
       <lit-material-list-item interactive @click=${() => this.openDialog("new-folder", { collectionId: m().collection.id, parent: m().folder.path })}>${icon("folder-simple-plus")} New folder inside…</lit-material-list-item>
       <lit-material-list-item interactive @click=${() => this.openDialog("rename-folder", { collectionId: m().collection.id, path: m().folder.path, name: m().folder.name })}>${icon("pencil-simple")} Rename…</lit-material-list-item>
     </lit-material-menu>`;

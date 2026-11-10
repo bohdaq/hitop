@@ -2259,11 +2259,16 @@ export class Store extends EventTarget {
     }
   }
 
-  // Runs a collection's requests in order, stopping at the first failure.
-  async runCollection(id) {
+  // Runs a collection's requests in order, stopping at the first failure (as `hitop run --bail`).
+  // `folder`: only the requests in that folder of the collection (U39; their `file` paths).
+  async runCollection(id, { folder = null } = {}) {
     const collection = this.collection(id);
     if (!collection?.requests?.length) return [];
-    this.run = { ...this.run, collectionId: id, results: [], running: true, report: null };
+    const requests = folder ? collection.requests.filter((r) => String(r.file ?? "").startsWith(`${folder}/`)) : collection.requests;
+    if (!requests.length) return [];
+    // WebSocket and gRPC requests connect on demand; a run skips them, as `hitop run` does.
+    const planned = requests.filter((r) => !isWebsocket(r) && !isGrpc(r)).length;
+    this.run = { ...this.run, collectionId: id, folder, planned, results: [], running: true, report: null };
     this.emit();
     const results = [];
     const runStarted = Date.now();
@@ -2275,9 +2280,8 @@ export class Store extends EventTarget {
       this.run = { ...this.run, results: [...results] };
       this.emit();
     };
-    for (let i = 0; i < collection.requests.length; i++) {
-      const request = collection.requests[i];
-      // WebSocket requests connect on demand; a run skips them, as `hitop run` does.
+    for (let i = 0; i < requests.length; i++) {
+      const request = requests[i];
       if (isWebsocket(request) || isGrpc(request)) continue;
       try {
         const started = performance.now();
@@ -2298,14 +2302,14 @@ export class Store extends EventTarget {
         this.history = historyService.addToHistory(this.history, item);
         const failed = tests.filter((t) => !t.pass);
         const success = res.ok && failed.length === 0;
-        push({ requestName: request.name, method: request.method, url: prepared.url, statusCode: res.status, success, tests, response: failed.length ? failed.map((t) => `${t.name}: ${t.detail}`).join("; ") : text.slice(0, 200), duration, ...(res.timings ? { timings: res.timings } : {}), ...(request.file ? { file: request.file } : {}) });
+        push({ requestId: request.id, requestName: request.name, method: request.method, url: prepared.url, statusCode: res.status, success, tests, response: failed.length ? failed.map((t) => `${t.name}: ${t.detail}`).join("; ") : text.slice(0, 200), ...(success ? {} : { excerpt: text.slice(0, 400), contentType: headers["content-type"] ?? null }), duration, ...(res.timings ? { timings: res.timings } : {}), ...(request.file ? { file: request.file } : {}) });
         if (!success) break;
       } catch (e) {
-        push({ requestName: request.name, method: request.method, url: request.url, statusCode: e.missingSecrets ? "Not sent" : e.stage === "prepare" ? "Script error" : "Error", success: false, response: e.message, ...(request.file ? { file: request.file } : {}) });
+        push({ requestId: request.id, requestName: request.name, method: request.method, url: request.url, statusCode: e.missingSecrets ? "Not sent" : e.stage === "prepare" ? "Script error" : "Error", success: false, response: e.message, ...(request.file ? { file: request.file } : {}) });
         break;
       }
     }
-    this.run = { ...this.run, running: false, report: this.runReport(collection, results, runStarted) };
+    this.run = { ...this.run, running: false, report: this.runReport(collection, results, runStarted, { folder }) };
     this.emit();
     return results;
   }
@@ -2628,23 +2632,25 @@ export class Store extends EventTarget {
 
   // What the Run report shows for a finished run (run-report.js): report.json, the stats against
   // the previous run of this collection, and the `hitop run` line. Remembers the run's summary.
-  runReport(collection, results, startedAt) {
+  runReport(collection, results, startedAt, { folder = null } = {}) {
     if (!results.length) return null;
     const durationMs = Date.now() - startedAt;
     const environment = this.activeEnvironment?.name ?? null;
-    const folder = this.folderOf(collection.id);
     let storage;
     try {
       storage = globalThis.localStorage ?? null;
     } catch {
       storage = null;
     }
-    const previous = storage ? previousRun(storage, collection.id) : null;
+    // A folder's run (U39) is compared with nothing and not remembered: its p95 isn't the
+    // collection's. `hitop run` has no folder argument, so it gets no command line either.
+    const previous = storage && !folder ? previousRun(storage, collection.id) : null;
     const stats = runStats(results, durationMs, previous);
     const report = buildReport({ collection: collection.name, environment, results, startedAt, durationMs });
-    if (storage) rememberRun(storage, collection.id, { at: startedAt, p95: stats.p95, passed: report.passed, requests: results.length, wallMs: durationMs });
-    const folderLabel = folder && !String(folder.ref ?? "").startsWith("hitop-sync:") ? folder.label : null;
-    return { report, stats, previous, command: runCommand({ collection: collection.name, folderLabel, environment }) };
+    if (storage && !folder) rememberRun(storage, collection.id, { at: startedAt, p95: stats.p95, passed: report.passed, requests: results.length, wallMs: durationMs });
+    const place = this.folderOf(collection.id);
+    const folderLabel = place && !String(place.ref ?? "").startsWith("hitop-sync:") ? place.label : null;
+    return { report, stats, previous, folder, command: folder ? null : runCommand({ collection: collection.name, folderLabel, environment }) };
   }
 
   async runAll() {

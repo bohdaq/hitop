@@ -21,12 +21,13 @@ export function shellWord(s) {
 
 /**
  * The `hitop run` line that reproduces this run: the folder when the collection is one, else its
- * name in global storage; the environment by name; JUnit and JSON reports into `reports`.
+ * name in global storage; the environment by name; `--bail`, since the app's run stops at the
+ * first failure; JUnit and JSON reports into `reports`.
  */
 export function runCommand({ collection, folderLabel, environment }) {
   const parts = ["hitop", "run", shellWord(folderLabel ? `./${folderLabel.replace(/^\.?\//, "")}` : collection)];
   if (environment) parts.push("--env", shellWord(environment));
-  parts.push("--reporter", "cli,junit,json", "--out", "reports");
+  parts.push("--bail", "--reporter", "cli,junit,json", "--out", "reports");
   return parts.join(" ");
 }
 
@@ -159,4 +160,58 @@ export function rememberRun(storage, collectionId, entry) {
   } catch {
     // Storage full or unavailable: the report still shows, without a comparison next time.
   }
+}
+
+const STATUS_CAUSES = [
+  [401, "The server wants credentials it didn't get or didn't accept: check the request's auth and the token's variable."],
+  [403, "The credentials were accepted but don't allow this: check the account's role or the token's scopes."],
+  [404, "Nothing answers at this path: check the URL as sent and the variables in it."],
+  [405, "The path exists but not with this method."],
+  [408, "The server gave up waiting for the request."],
+  [409, "The server refused it as a conflict with its current state (often data an earlier run left behind)."],
+  [415, "The server doesn't take this body type: check the Content-Type header."],
+  [422, "The server understood the body but refused its content: the response body says which field."],
+  [429, "Too many requests: the server is rate limiting this run."],
+];
+
+/**
+ * U39: why a run's failed request failed, from what the run knows (nothing guessed beyond the
+ * status code and the error's text): `{ kind, status, message, cause, checks, excerpt, url }`.
+ * kind: "not-sent" (stopped before sending), "no-answer" (sent, no response), "checks" (failed
+ * tests), "status" (no tests, a status outside 2xx). `cause` is null when nothing more is known.
+ */
+export function explainFailure(r) {
+  const responded = typeof r.statusCode === "number";
+  const url = r.url ?? "";
+  if (!responded) {
+    const message = String(r.response || "not sent");
+    const missingVar = /Variable '([^']+)' not found/.exec(message);
+    let kind = "no-answer";
+    let cause = null;
+    if (r.statusCode === "Not sent") kind = "not-sent";
+    else if (missingVar) {
+      kind = "not-sent";
+      cause = `\${${missingVar[1]}} has no value: no active environment, collection variable or global defines it, so nothing was sent.`;
+    } else if (r.statusCode === "Script error") {
+      kind = "not-sent";
+      cause = "The script before the request stopped with an error, so nothing was sent.";
+    } else if (/No response within|timed? ?out|TimeoutError/i.test(message)) cause = "No answer within the time limit (Settings, under Requests).";
+    else if (/Failed to fetch|NetworkError|ECONNREFUSED|connection refused|error sending request|dns|resolve|unreachable|ENOTFOUND/i.test(message)) {
+      let host = "";
+      try {
+        host = new URL(url).host;
+      } catch {
+        // a URL with unfilled variables
+      }
+      cause = `No answer${host ? ` from ${host}` : ""}: is the server running, and is the address right?`;
+    }
+    return { kind, status: null, message, cause, checks: [], excerpt: "", url };
+  }
+  const checks = (r.tests || []).filter((t) => !t.pass);
+  const status = r.statusCode;
+  const excerpt = String(r.excerpt ?? "").trim();
+  if (checks.length) return { kind: "checks", status, message: "", cause: null, checks, excerpt, url };
+  const known = STATUS_CAUSES.find(([code]) => code === status)?.[1];
+  const cause = known ?? (status >= 500 ? "The server failed while answering: its response body or logs say why." : status >= 300 && status < 400 ? "A redirect that wasn't followed: the Location header says where to." : null);
+  return { kind: "status", status, message: "", cause, checks: [], excerpt, url };
 }

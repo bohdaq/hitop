@@ -152,8 +152,8 @@ assert.equal(rankItems(more, "auth")[0].key, "col:2");
   assert.equal(percentile([]), null);
   assert.equal(shellWord("Shop API"), "'Shop API'");
   assert.equal(shellWord("it's"), "'it'\\''s'");
-  assert.equal(runCommand({ collection: "Shop API", folderLabel: "shop-api", environment: "Staging" }), "hitop run ./shop-api --env Staging --reporter cli,junit,json --out reports");
-  assert.equal(runCommand({ collection: "Shop API", environment: null }), "hitop run 'Shop API' --reporter cli,junit,json --out reports");
+  assert.equal(runCommand({ collection: "Shop API", folderLabel: "shop-api", environment: "Staging" }), "hitop run ./shop-api --env Staging --bail --reporter cli,junit,json --out reports");
+  assert.equal(runCommand({ collection: "Shop API", environment: null }), "hitop run 'Shop API' --bail --reporter cli,junit,json --out reports");
   const timings = { dnsMs: 1, connectMs: 2, waitMs: 30, downloadMs: 1, totalMs: 34, reused: false };
   const results = [
     { requestName: "Log in", method: "POST", url: "https://x/login", statusCode: 201, success: true, tests: [{ name: "ok", pass: true }], duration: 40, timings, file: "shop/requests/log-in.yaml" },
@@ -282,6 +282,25 @@ assert.equal(rankItems(more, "auth")[0].key, "col:2");
     }
     assert.equal(checkJson(s).ok, native, `agrees with JSON.parse on ${s}`);
   }
+}
+
+// U39: a run's failure explains itself.
+{
+  const { explainFailure } = await import("../src/run-report.js");
+  const v = explainFailure({ statusCode: "Error", response: "Variable 'token' not found in variables object", url: "https://x/${token}" });
+  assert.deepEqual([v.kind, v.cause], ["not-sent", "${token} has no value: no active environment, collection variable or global defines it, so nothing was sent."]);
+  assert.equal(explainFailure({ statusCode: "Not sent", response: "Secret TOKEN has no value on this device." }).kind, "not-sent");
+  assert.equal(explainFailure({ statusCode: "Script error", response: "boom" }).cause, "The script before the request stopped with an error, so nothing was sent.");
+  const net = explainFailure({ statusCode: "Error", response: "Failed to fetch", url: "http://127.0.0.1:9/x" });
+  assert.deepEqual([net.kind, net.cause], ["no-answer", "No answer from 127.0.0.1:9: is the server running, and is the address right?"]);
+  assert.equal(explainFailure({ statusCode: "Error", response: "something odd" }).cause, null, "nothing known: no guess");
+  const st = explainFailure({ statusCode: 404, success: false, tests: [], excerpt: ' {"error":"no such order"} ', url: "https://x/o/9" });
+  assert.deepEqual([st.kind, st.status, st.excerpt], ["status", 404, '{"error":"no such order"}']);
+  assert.match(st.cause, /^Nothing answers at this path/);
+  assert.match(explainFailure({ statusCode: 503, tests: [] }).cause, /^The server failed/);
+  assert.equal(explainFailure({ statusCode: 418, tests: [] }).cause, null);
+  const ck = explainFailure({ statusCode: 200, tests: [{ name: "a", pass: true }, { name: "total > 0", pass: false, detail: "got 0" }] });
+  assert.deepEqual([ck.kind, ck.checks.map((c) => c.name), ck.cause], ["checks", ["total > 0"], null]);
 }
 
 // U49 usage warnings before a limit, U50 who can lift one.
