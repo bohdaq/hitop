@@ -35,7 +35,7 @@ const { results, check } = checker();
   await p.screenshot({ path: `${out}/new-request.png` });
 
   // 3. Open a saved request with variables and run its collection (scripts + context passing)
-  await p.locator('aside').getByRole('button', { name: /Billing API/ }).click();
+  await p.locator('aside').getByRole('button', { name: 'Billing API', exact: true }).click();
   await p.getByRole('button', { name: /Run collection/ }).click();
   await p.locator('.run h2', { hasText: 'Last run' }).waitFor({ timeout: 30000 });
   const run = await p.locator('.run-list').innerText();
@@ -88,7 +88,7 @@ const { results, check } = checker();
 
   // 8. Mobile (the app is dark only)
   await p.setViewportSize({ width: 390, height: 844 });
-  await p.locator('aside').getByRole('button', { name: /Default/ }).click({ force: true }).catch(() => {});
+  await p.locator('aside').getByRole('button', { name: 'Default', exact: true }).click({ force: true }).catch(() => {});
   await p.waitForTimeout(300);
   await p.getByRole('button', { name: 'Open collections' }).click();
   await p.waitForTimeout(700);

@@ -154,7 +154,7 @@ function fakeDirectoryPicker(files) {
   check('saved request written to its file', notes.includes('url: ${base}/users/1') && notes.includes('name: v') && notes.includes("value: '2'"), notes);
   check('fields the editor does not show survive the save', notes.includes('examples:') && notes.includes('x-owner: team-a'), notes);
   check('other files untouched', now['requests/get-user.yaml'] === files['requests/get-user.yaml'] && now['environments/prod.yaml'] === files['environments/prod.yaml']);
-  await p.locator('aside').getByRole('button', { name: 'Sample API' }).click();
+  await p.locator('aside').getByRole('button', { name: 'Sample API', exact: true }).click();
   await p.getByRole('button', { name: 'Rename collection' }).click();
   await p.waitForTimeout(300);
   await p.locator('#dialog #name').evaluate((el) => (el.value = 'Sample API v2'));
