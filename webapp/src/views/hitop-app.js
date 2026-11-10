@@ -26,10 +26,11 @@ import "./history-view.js";
 import "./github-view.js";
 import { storageOf } from "../git.js";
 import { syncClient } from "./sync-view.js";
+import "./limit-note.js";
 import { orgLabel } from "../orgs.js";
 import { agentPanel, runAi } from "./ai-view.js";
 import "./org-view.js";
-import { limitInfo, parseOrgLink } from "../org.js";
+import { limitInfo, parseOrgLink, usageWarnings } from "../org.js";
 
 /** Email addresses typed in the invite dialog: comma, space or line separated. */
 function inviteEmails(text) {
@@ -611,7 +612,7 @@ export class HitopApp extends LitElement {
             <li class="ok-text">${icon("check-circle")} Everything local, the CLI and CI keep working</li>
             <li class="warn-text">${icon("warning-circle")} New ones need a bigger plan or a free slot</li>
           </ul>
-          ${d.admin ? nothing : html`<p class="hint">Only owners and admins change the plan.</p>`}`;
+          <hitop-limit-note bare .limit=${l} .store=${s} .client=${s.library?.client ?? syncClient(s)}></hitop-limit-note>`;
         footer = html`<div slot="actions" class="dialog-actions">
           <lit-material-button variant="text" @click=${() => this.closeDialog()}>Close</lit-material-button>
           ${d.admin
@@ -858,6 +859,27 @@ export class HitopApp extends LitElement {
     </lit-material-select>`;
   }
 
+  // U49: the current org's fullest limit, before a create is refused (from the server's usage;
+  // nothing when it couldn't be read or the server has no limits). Opens Plan & billing.
+  usageChip() {
+    const s = this.store;
+    const all = usageWarnings(s.orgUsage?.get(s.currentOrg));
+    const warn = all[0];
+    if (!warn) return nothing;
+    const label = all.map((m) => `${m.label}: ${m.text}${m.level === "full" ? ", full" : ", nearly full"}`).join("; ");
+    return html`<button type="button" class=${`usage-chip ${warn.level}`} aria-label=${`Plan usage: ${label}`} title=${`${label}. Open Plan & billing`} @click=${() => this.openOrg("billing")}>
+      ${icon("warning-circle")}<span class="mono">${warn.text}</span><span class="usage-chip-what">${warn.label.toLowerCase()}</span>${all.length > 1 ? html`<span class="mono usage-chip-more">+${all.length - 1}</span>` : nothing}
+    </button>`;
+  }
+
+  /** U49: reads an org's usage again (after a create, a refusal, a change on the Organization page). */
+  async refreshUsage(org = this.store.currentOrg) {
+    const s = this.store;
+    const client = s.library?.client ?? syncClient(s);
+    const { loadUsage } = await import("../orgs.js");
+    await loadUsage(s, client, org);
+  }
+
   // Ask AI (the agent side sheet): an explanation after a failure, tests for a response, a change
   // to a request with a URL, else a request from text. Tests and explanations start at once.
   openAi(action, data = {}) {
@@ -954,7 +976,10 @@ export class HitopApp extends LitElement {
 
   /** A plan limit stopped something (402): what still works, and who can change the plan. */
   openLimit(limit, org) {
-    const admin = org ? org.role === "owner" || org.role === "admin" : false;
+    // The org the server refused (a share files under the collection's org, not the top bar's).
+    org = this.store.orgs.find((o) => o.id === limit.org) ?? org;
+    const admin = org ? org.personal || org.role === "owner" || org.role === "admin" : false;
+    if (limit.org) this.refreshUsage(limit.org);
     this.openDialog("limit", { limit, admin });
   }
 
@@ -972,6 +997,7 @@ export class HitopApp extends LitElement {
     const drawer = where === "in-drawer";
     return html`<div class=${`app-tools ${where}`}>
       ${this.orgSelect()}
+      ${this.usageChip()}
       ${this.envSelect()}
       ${drawer
         ? html`<lit-material-icon-button aria-label="Manage environments" title="Manage environments" @click=${() => this.go("environments")}>${icon("sliders-horizontal")}</lit-material-icon-button>

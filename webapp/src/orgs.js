@@ -19,7 +19,18 @@ export async function loadOrgs(store, client) {
     const { orgs } = await client.api("GET", "/v1/orgs");
     const workspaces = await client.workspaces().catch(() => []);
     store.setOrgs(orgs ?? [], new Map(workspaces.filter((w) => w.org).map((w) => [w.id, w.org])));
+    await Promise.all((orgs ?? []).map((o) => loadUsage(store, client, o.id)));
   } catch {
     store.clearOrgs();
   }
+}
+
+/**
+ * U49: one org's usage and limits (`GET /v1/orgs/:org/usage`) into `store.orgUsage`, for the title
+ * bar's warning and the Share dialog; forgotten when it can't be read (nothing is claimed then).
+ */
+export async function loadUsage(store, client, org) {
+  if (!org || !client?.account?.()) return;
+  const usage = await client.api("GET", `/v1/orgs/${encodeURIComponent(org)}/usage`).catch(() => null);
+  store.setOrgUsage(org, usage);
 }

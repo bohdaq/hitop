@@ -11,6 +11,8 @@ import { confirm } from "@lit-material/confirm";
 import { icon } from "../icons.js";
 import { DEFAULT_SERVER, KeyError, SyncClient } from "../sync.js";
 import { planLink } from "../plan-link.js";
+import { limitInfo, shareRoom } from "../org.js";
+import "./limit-note.js";
 import { orgLabel } from "../orgs.js";
 import { platform } from "../platform/index.js";
 import "./github-view.js";
@@ -45,6 +47,7 @@ class HitopSync extends LitElement {
     warnings: { state: true },
     untrusted: { state: true },
     limitUrl: { state: true },
+    limit: { state: true },
     recovery: { state: true },
     recoveryWords: { state: true },
     recovering: { state: true },
@@ -128,10 +131,13 @@ class HitopSync extends LitElement {
     this.note = null;
     this.untrusted = null;
     this.limitUrl = null;
+    this.limit = null;
     try {
       await fn();
     } catch (e) {
       this.limitUrl = planLink(e);
+      // U50: a plan limit says who can lift it (the dialog is open: shown inline).
+      this.limit = limitInfo(e);
       // A refused workspace key: forged, swapped or a hidden rotation is a security warning; a
       // key from a device not trusted yet can be trusted after comparing its fingerprint.
       this.error = e instanceof KeyError && e.security ? `Security warning: ${errorText(e)}` : errorText(e);
@@ -524,6 +530,15 @@ class HitopSync extends LitElement {
     </div>`);
   }
 
+  // U49: before sharing, how many shared collections the collection's org has left (from the
+  // server's usage; nothing when there is plenty, no limit, or it couldn't be read).
+  renderShareRoom(c) {
+    const org = this.store.orgOf?.(c);
+    const room = org ? shareRoom(this.store.orgUsage?.get(org), this.store.orgs.find((o) => o.id === org)) : null;
+    if (!room) return nothing;
+    return html`<p class=${`share-room ${room.level}`} role="status">${icon("warning-circle")} <span>${room.text}</span></p>`;
+  }
+
   // The People tab of a collection's Share dialog.
   renderPeople() {
     const c = this.collection;
@@ -541,8 +556,12 @@ class HitopSync extends LitElement {
       return html`<p>Invite people to work on ${c.name} with you. It becomes a shared collection: <b>end-to-end encrypted</b>, so only its members can read it, not even HITOP Cloud.</p>
         ${git
           ? html`<p class="sync-note">${c.name} is saved to GitHub. Stop saving it to GitHub first (GitHub tab): a shared collection stays encrypted, and GitHub would need it readable.</p>`
-          : html`<lit-material-button variant="filled" ?disabled=${Boolean(this.busy)} @click=${() => this.run("share", async () => {
-              await this.sync.share(c.id);
+          : html`${this.renderShareRoom(c)}<lit-material-button variant="filled" ?disabled=${Boolean(this.busy)} @click=${() => this.run("share", async () => {
+              try {
+                await this.sync.share(c.id);
+              } finally {
+                this.closest("hitop-app")?.refreshUsage?.(this.store.orgOf?.(c));
+              }
               this.note = `Shared ${c.name}. Invite people below.`;
               await this.refresh();
               await this.loadTeam();
@@ -838,6 +857,7 @@ class HitopSync extends LitElement {
       ${this.limitUrl && platform().name !== "tauri"
         ? html`<p class="hint" aria-label="Plan limit">A plan with more room: <a href=${this.limitUrl} target="_blank" rel="noopener noreferrer">Manage plan</a></p>`
         : nothing}
+      ${this.limit ? html`<hitop-limit-note .limit=${this.limit} .store=${this.store} .client=${this.sync}></hitop-limit-note>` : nothing}
       ${this.untrusted ? this.renderUntrusted() : nothing}
       ${this.warnings?.length
         ? html`<ul class="sync-warnings" aria-label="Key warnings">${this.warnings.map((w) => html`<li class=${w.kind === "senderKeyChanged" ? "sync-note security" : "hint"}>${icon("warning-circle")} ${w.message}</li>`)}</ul>`

@@ -2,6 +2,8 @@
 // monitors.rs) and mails when it starts failing and when it passes again. Library collections.
 import { LitElement, html, nothing } from "lit";
 import { icon } from "../icons.js";
+import { limitInfo } from "../org.js";
+import "./limit-note.js";
 
 const EVERY = [
   [5, "Every 5 minutes"],
@@ -13,7 +15,7 @@ const EVERY = [
 ];
 
 class HitopMonitor extends LitElement {
-  static properties = { store: { attribute: false }, collection: { attribute: false }, monitor: { state: true }, busy: { state: true }, error: { state: true }, note: { state: true } };
+  static properties = { store: { attribute: false }, collection: { attribute: false }, monitor: { state: true }, busy: { state: true }, error: { state: true }, limit: { state: true }, note: { state: true } };
 
   createRenderRoot() {
     return this;
@@ -56,7 +58,10 @@ class HitopMonitor extends LitElement {
     try {
       if (method === "PUT") await this.store.library.flush();
       const r = await this.api.call(method, path, body, { allow: [402, 429] });
-      if (r.status === 402 || r.status === 429) this.error = r.json?.message ?? "Not now.";
+      if (r.status === 402 || r.status === 429) {
+        this.error = r.json?.message ?? "Not now.";
+        this.limit = r.status === 402 ? limitInfo({ status: 402, body: r.json, message: r.json?.message }) : null;
+      }
       else if (path.endsWith("/run")) this.note = "Queued: it runs within a minute.";
       else this.monitor = method === "DELETE" ? null : r.json;
     } catch (e) {
@@ -74,6 +79,7 @@ class HitopMonitor extends LitElement {
     return html`<div class="share-file">
       <p>HITOP Cloud runs this collection on a schedule with an environment of yours and mails when it starts failing and when it passes again. Secret values are used from your library; what it keeps of a run (names, statuses, failed tests) hides them.</p>
       ${this.error ? html`<p class="error-text" role="alert">${this.error}</p>` : nothing}
+      ${this.error && this.limit ? html`<hitop-limit-note .limit=${this.limit} .store=${this.store} .client=${this.api}></hitop-limit-note>` : nothing}
       ${this.note ? html`<p class="sync-note" role="status">${this.note}</p>` : nothing}
       ${m === undefined
         ? html`<div class="skeleton block"></div>`

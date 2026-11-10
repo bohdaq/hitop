@@ -67,6 +67,8 @@ export class HitopOrg extends LitElement {
         this.client.api("GET", `${base}/billing`).catch(() => null),
       ]);
       if (this.loadedFor === id) this.data = { org, members, usage, billing };
+      // The title bar's usage warning (U49) follows what this page just read.
+      this.store?.setOrgUsage?.(id, usage);
     } catch (e) {
       this.error = e.message;
     }

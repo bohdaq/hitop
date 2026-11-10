@@ -404,6 +404,8 @@ export class Store extends EventTarget {
     this.personalOrg = null;
     this.currentOrg = null;
     this.workspaceOrgs = new Map();
+    // U49: org id → `GET /v1/orgs/:org/usage` (orgs.js loadUsage); memory only.
+    this.orgUsage = new Map();
   }
 
   // --- plumbing -----------------------------------------------------------
@@ -901,7 +903,16 @@ export class Store extends EventTarget {
     this.emit();
   }
 
+  /** U49: an org's usage and limits (orgs.js loadUsage), or null to forget it. */
+  setOrgUsage(org, usage) {
+    this.orgUsage ??= new Map();
+    if (usage) this.orgUsage.set(org, usage);
+    else this.orgUsage.delete(org);
+    this.emit();
+  }
+
   clearOrgs() {
+    this.orgUsage?.clear();
     if (!this.orgs.length && !this.currentOrg) return;
     this.orgs = [];
     this.personalOrg = null;

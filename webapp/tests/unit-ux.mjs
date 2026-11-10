@@ -284,6 +284,35 @@ assert.equal(rankItems(more, "auth")[0].key, "col:2");
   }
 }
 
+// U49 usage warnings before a limit, U50 who can lift one.
+{
+  const { meters, usageWarnings, shareRoom, limitFixers } = await import("../src/org.js");
+  const free = (workspaces, seats = 1) => ({ plan: "free", planInForce: "free", usage: { seats, workspaces, storageBytes: 1024, devices: 1, runners: 0 }, limits: { seats: 3, guests: 0, workspaces: 3, storageBytes: 100 * 1024 ** 2, devices: 3, runners: 5 } });
+  const ws = (u) => meters(u).find((m) => m.id === "workspaces");
+  assert.deepEqual([ws(free(1)).level, ws(free(2)).level, ws(free(3)).level], ["ok", "warn", "full"], "2 of 3 warns: one left, though under 80%");
+  assert.equal(ws(free(2)).note, "Nearly full: 1 left");
+  assert.equal(meters({ usage: { runners: 0 }, limits: { runners: 1 } })[0].level, "ok", "no one-left warning for a limit of 1 with none used");
+  assert.deepEqual(usageWarnings(free(1)), [], "plenty of room: nothing to warn about");
+  assert.deepEqual(usageWarnings(free(3, 2)).map((m) => [m.id, m.level]), [["workspaces", "full"], ["seats", "warn"]], "fullest first");
+  assert.deepEqual(usageWarnings({ usage: { workspaces: 9 }, limits: null }), [], "a server without limits claims none");
+  assert.deepEqual(usageWarnings(null), []);
+  const acme = { id: "o1", name: "Acme", role: "member", personal: false };
+  assert.equal(shareRoom(free(1), acme), null);
+  assert.deepEqual(shareRoom(free(2), acme), { level: "warn", text: "2 of 3 shared collections of Acme (Free) are used: sharing this one takes the last one." });
+  assert.equal(shareRoom(free(3), { personal: true }).level, "full");
+  assert.match(shareRoom(free(3), { personal: true }).text, /^All 3 shared collections of your personal account \(Free\) are used/);
+  assert.equal(shareRoom({ usage: { workspaces: 5 }, limits: { workspaces: null } }, acme), null, "no limit, no line");
+  const members = { members: [{ email: "me@x.test", role: "member" }, { email: "zed@x.test", role: "admin" }, { email: "ada@x.test", role: "owner" }, { email: "bo@x.test", role: "member" }] };
+  const f = limitFixers({ org: acme, members, me: "me@x.test" });
+  assert.equal(f.canFix, false);
+  assert.deepEqual(f.people.map((p) => p.email), ["ada@x.test", "zed@x.test"], "owners first, then admins; members left out");
+  assert.equal(f.text, "Only owners and admins change the plan. Ask one of ada@x.test (owner), zed@x.test (admin) to make room or upgrade Acme.");
+  assert.equal(limitFixers({ org: acme, members: null }).text, "Only owners and admins change the plan. Ask an owner of Acme to make room or upgrade.", "members unreadable: the org by name");
+  assert.equal(limitFixers({ org: null }).text, "Only owners and admins change the plan. Ask an owner of the organization to make room or upgrade.", "an org that isn't mine: never its id");
+  assert.equal(limitFixers({ org: { ...acme, role: "admin" } }).canFix, true);
+  assert.equal(limitFixers({ org: { personal: true, role: "owner" } }).text, "It's your personal account's plan: you can change it on Plan & billing.");
+}
+
 // U19: secrets a request uses with no value on this device.
 {
   const { usedVariables, missingSecrets, missingSecretsText } = await import("../src/features.js");
