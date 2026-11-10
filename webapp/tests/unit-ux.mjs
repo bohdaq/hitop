@@ -236,7 +236,7 @@ assert.equal(rankItems(more, "auth")[0].key, "col:2");
   for (const kept of ["/", "/sign-in", "/account", "/workspaces", "/workspaces/w/runs", "/orgs/acme/settings/sso", "/orgs/acme/settings/scim", "/orgs/acme/settings/admin", "/orgs/acme/settings/audit"]) assert.equal(appLink(kept), null, kept);
   assert.equal(limitInfo({ status: 500 }), null);
   const li = limitInfo({ status: 402, message: "Free allows 3 workspaces", body: { error: "limit", limit: "workspaces", plan: "free", used: 3, max: 3, org: "o1" } });
-  assert.deepEqual([li.headline, li.org, li.message], ["Free has used its 3 shared collections", "o1", "Free allows 3 workspaces"]);
+  assert.deepEqual([li.headline, li.org, li.message], ["The Free plan has used its 3 shared collections", "o1", "Free allows 3 workspaces"]);
 }
 
 // The scripts as the extension's sandbox runs them (script-run.js; the web build runs the same).

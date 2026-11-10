@@ -182,14 +182,14 @@ async function syncServer() {
     await settle(p);
 
     // The limit dialog (any other refused create) names them too; it is opened for the refused org.
-    await p.evaluate((org) => document.querySelector('hitop-app').openLimit({ limit: 'workspaces', plan: 'free', used: 3, max: 3, org, message: 'plan limit: the free plan of the organization Acme allows 3 shared workspaces; nothing was changed.', headline: 'Free has used its 3 shared collections' }, null), acme);
+    await p.evaluate((org) => document.querySelector('hitop-app').openLimit({ limit: 'workspaces', plan: 'free', used: 3, max: 3, org, message: 'plan limit: the free plan of the organization Acme allows 3 shared workspaces; nothing was changed.', headline: 'The Free plan has used its 3 shared collections' }, null), acme);
     await p.waitForFunction(() => /ada@example\.com/.test(document.querySelector('#dialog hitop-limit-note')?.textContent ?? ''), null, { timeout: 10000 }).catch(() => {});
     const dlg = await p.locator('#dialog').innerText();
-    check('U50 the limit dialog names who can upgrade', dlg.includes('Free has used its 3 shared collections') && dlg.includes('ada@example.com (owner)') && (await p.locator('#dialog').getByRole('button', { name: 'See who can upgrade' }).count()) === 1, dlg.replace(/\n/g, ' | ').slice(0, 500));
+    check('U50 the limit dialog names who can upgrade', dlg.includes('The Free plan has used its 3 shared collections') && dlg.includes('ada@example.com (owner)') && (await p.locator('#dialog').getByRole('button', { name: 'See who can upgrade' }).count()) === 1, dlg.replace(/\n/g, ' | ').slice(0, 500));
     await p.locator('#dialog').getByRole('button', { name: 'Close' }).first().click();
     await settle(p);
     // Bob's own personal plan: he can change it himself.
-    await p.evaluate((org) => document.querySelector('hitop-app').openLimit({ limit: 'workspaces', plan: 'free', used: 3, max: 3, org, message: 'plan limit', headline: 'Free has used its 3 shared collections' }, null), await store('return s.personalOrg;'));
+    await p.evaluate((org) => document.querySelector('hitop-app').openLimit({ limit: 'workspaces', plan: 'free', used: 3, max: 3, org, message: 'plan limit', headline: 'The Free plan has used its 3 shared collections' }, null), await store('return s.personalOrg;'));
     await p.locator('#dialog hitop-limit-note .limit-fixers').waitFor({ timeout: 5000 }).catch(() => {});
     const own = await p.locator('#dialog').innerText();
     check('U50 a personal plan: you can change it, Plan & billing offered', own.includes("It's your personal account's plan") && (await p.locator('#dialog').getByRole('button', { name: 'Plan & billing' }).count()) === 1, own.replace(/\n/g, ' | ').slice(0, 400));

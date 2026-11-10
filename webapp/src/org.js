@@ -163,6 +163,6 @@ export function limitInfo(e) {
     max: b.max ?? null,
     org: b.org ?? null,
     message: e.message || `The plan's limit on ${what} is reached.`,
-    headline: b.max != null ? `${PLAN_NAMES[b.plan] ?? "This plan"} has used its ${b.max} ${what}` : `${PLAN_NAMES[b.plan] ?? "This plan"} has no room for more ${what}`,
+    headline: b.max != null ? `${PLAN_NAMES[b.plan] ? `The ${PLAN_NAMES[b.plan]} plan` : "This plan"} has used its ${b.max} ${what}` : `${PLAN_NAMES[b.plan] ? `The ${PLAN_NAMES[b.plan]} plan` : "This plan"} has no room for more ${what}`,
   };
 }

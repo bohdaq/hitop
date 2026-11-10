@@ -200,7 +200,7 @@ async function main() {
     s.orgs = [{ id: "o-acme", name: "Acme", role: "member", plan: "free", personal: false }];
     s.currentOrg = "o-acme";
     s.setOrgUsage("o-acme", { plan: "free", planInForce: "free", usage: { seats: 3, workspaces: 2, storageBytes: 1024, devices: 1, runners: 0 }, limits: { seats: 3, guests: 0, workspaces: 3, storageBytes: 100 * 1024 ** 2, devices: 3, runners: 5 } });
-    app.openLimit({ limit: "seats", plan: "free", used: 3, max: 3, org: "o-acme", message: "plan limit: the free plan of the organization Acme allows 3 seats; nothing was changed.", headline: "Free has used its 3 seats" }, null);
+    app.openLimit({ limit: "seats", plan: "free", used: 3, max: 3, org: "o-acme", message: "plan limit: the free plan of the organization Acme allows 3 seats; nothing was changed.", headline: "The Free plan has used its 3 seats" }, null);
   });
   await page.waitForTimeout(500);
   await shot("limit-dialog");
