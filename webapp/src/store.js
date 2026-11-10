@@ -48,7 +48,7 @@ import { loadFormat } from "./wasm/format.js";
 import { exampleResponse, snapshotResponse } from "./diff.js";
 import { folderToZip, zipToFolder } from "./zip.js";
 import { loadSettings, saveSettings, seconds } from "./settings.js";
-import { addCollections } from "./collection-tree.js";
+import { addCollections, folderPaths, moveRequestTo, renameFolderIn, requestFile, requestTree } from "./collection-tree.js";
 import { runPost, runPre } from "./script-run.js";
 import { buildReport, previousRun, rememberRun, runCommand, runStats } from "./run-report.js";
 
@@ -613,8 +613,9 @@ export class Store extends EventTarget {
 
   // A new, unsaved request: it uses the collection's variables but joins the
   // collection only when saved, so collections don't fill with blank rows.
-  newTab(collection = this.defaultCollection()) {
-    const tab = { ...tabService.createNewTab(), title: "New request", auth: emptyAuth(), ...EXTRA_FIELDS({}), loadedRequestId: null, loadedCollectionId: collection.id };
+  // `folder`: the folder path it is saved into (tab key `folder`, a draft's only).
+  newTab(collection = this.contextCollection(), folder = "") {
+    const tab = { ...tabService.createNewTab(), title: "New request", auth: emptyAuth(), ...EXTRA_FIELDS({}), loadedRequestId: null, loadedCollectionId: collection.id, ...(folder ? { folder } : {}) };
     this.tabs = [...this.tabs, tab];
     this.currentTab = this.tabs.length - 1;
     this.view = { kind: "request", collectionId: null };
@@ -723,8 +724,25 @@ export class Store extends EventTarget {
     this.emit();
   }
 
+  // The collection a new request goes to: the one on screen (its page, its
+  // variables, the open tab's), else the first one shown; a "Default" one is
+  // made only when there is none at all.
+  contextCollection() {
+    const { kind, collectionId } = this.view;
+    const shown = this.visibleCollections;
+    const byView = kind !== "request" && collectionId != null ? shown.find((c) => c.id === collectionId) : null;
+    const byTab = kind === "request" ? shown.find((c) => c.id === this.tab?.loadedCollectionId) : null;
+    return byView ?? byTab ?? shown[0] ?? this.defaultCollection();
+  }
+
   newRequestInFirstCollection() {
-    this.newTab(this.collections[0] ?? this.defaultCollection());
+    this.newTab(this.contextCollection());
+  }
+
+  /** A new draft in a collection (and folder): the sidebar's "+" and the collection page. */
+  newRequestIn(collectionId, folder = "") {
+    const collection = this.collection(collectionId) ?? this.contextCollection();
+    this.newTab(collection, folder);
   }
 
   // The save dialog's starting values: the loaded request, or a new one.
@@ -733,10 +751,43 @@ export class Store extends EventTarget {
     const request = tab.loadedRequestId && this.collection(tab.loadedCollectionId)?.requests.find((r) => r.id === tab.loadedRequestId);
     return request
       ? { name: request.name, collectionId: tab.loadedCollectionId, overwrite: true }
-      : { name: "", collectionId: (this.collection(tab.loadedCollectionId) ?? this.collections.find((c) => c.name === "Default") ?? this.collections[0])?.id ?? null, overwrite: false };
+      : { name: "", collectionId: (this.collection(tab.loadedCollectionId) ?? this.collections.find((c) => c.name === "Default") ?? this.collections[0])?.id ?? null, overwrite: false, folder: tab.folder || "" };
   }
 
-  saveRequest(name, collectionId) {
+  /** Where a request can go, for the Move dialog: every shown collection and its folders. */
+  moveTargets() {
+    const out = [];
+    for (const c of this.visibleCollections) {
+      out.push({ collectionId: c.id, folder: "", label: c.name });
+      for (const path of folderPaths(requestTree(c.requests || []))) out.push({ collectionId: c.id, folder: path, label: `${c.name} › ${path.replace(/\//g, " › ")}` });
+    }
+    return out;
+  }
+
+  /** The request moved to a collection and folder (collection-tree.js moveRequestTo); open tabs follow it. */
+  moveRequestTo(from, requestId, to, folder = "", beforeId = null) {
+    const next = moveRequestTo(this.collections, { from, requestId, to, folder, beforeId });
+    if (next === this.collections) return false;
+    this.collections = next;
+    this.tabs = this.tabs.map((t) => (t.loadedRequestId === requestId && t.loadedCollectionId === from ? { ...t, loadedCollectionId: to } : t));
+    this.emit();
+    return true;
+  }
+
+  /** Folder `path` of a collection renamed to `name` (its requests' `file` paths move with it). */
+  renameFolder(collectionId, path, name) {
+    const base = name.trim().replace(/[\\/]+/g, "-");
+    const col = this.collection(collectionId);
+    if (!base || !col || !path) return "";
+    const at = path.lastIndexOf("/");
+    const newPath = at === -1 ? base : `${path.slice(0, at + 1)}${base}`;
+    if (newPath === path) return path;
+    this.collections = this.collections.map((c) => (c.id === collectionId ? { ...c, requests: renameFolderIn(c.requests || [], path, newPath) } : c));
+    this.emit();
+    return newPath;
+  }
+
+  saveRequest(name, collectionId, folder = this.tab?.folder || "") {
     const title = name.trim();
     const tab = this.tab;
     if (!title || !collectionId) return;
@@ -770,9 +821,12 @@ export class Store extends EventTarget {
       }
       this.tabs = tabService.updateTab(this.tabs, this.currentTab, { loadedCollectionId: collectionId, title });
     } else {
-      const request = clean(collectionService.createRequest(title, data));
+      // A draft made in a folder (the sidebar's "+" on it) gets its file there.
+      const target = this.collection(collectionId);
+      const file = folder && target ? requestFile(target.requests || [], folder, title) : undefined;
+      const request = clean({ ...collectionService.createRequest(title, data), ...(file ? { file } : {}) });
       this.collections = collectionService.addRequestToCollection(this.collections, collectionId, request);
-      this.tabs = tabService.updateTab(this.tabs, this.currentTab, { loadedRequestId: request.id, loadedCollectionId: collectionId, title });
+      this.tabs = tabService.updateTab(this.tabs, this.currentTab, { loadedRequestId: request.id, loadedCollectionId: collectionId, title, folder: undefined });
     }
     this.emit();
     this.notify(`Saved "${title}" to ${this.collection(collectionId)?.name ?? "the collection"}`);
@@ -930,10 +984,13 @@ export class Store extends EventTarget {
 
   // --- collections ----------------------------------------------------------
 
+  /** A new, empty collection in the current organization; returns it (null for a blank name). */
   addCollection(name) {
-    if (!name.trim()) return;
-    this.collections = [...this.collections, this.inOrg(collectionService.createCollection(name.trim()))];
+    if (!name.trim()) return null;
+    const col = this.inOrg(collectionService.createCollection(name.trim()));
+    this.collections = [...this.collections, col];
     this.emit();
+    return col;
   }
 
   // A first collection to try: JSONPlaceholder (public, through the proxy on the web), with a
