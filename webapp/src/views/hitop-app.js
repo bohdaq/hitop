@@ -16,7 +16,7 @@ import "./request-view.js";
 import "./collection-views.js";
 import { WIDE_DIALOGS, codeDialog, compareDialog, refreshCode } from "./tools-dialogs.js";
 import { OPENAPI_DIALOGS, openapiDialog, submitOpenapi } from "./openapi-dialogs.js";
-import { ACTION_KEYS, shortcutFor } from "../shortcuts.js";
+import { ACTION_KEYS, SAVE_KEYS, shortcutFor } from "../shortcuts.js";
 import { quickOpenItems, rankItems } from "../quick-open.js";
 import { folderOf, requestTree, withFolders } from "../collection-tree.js";
 import { shortcutList } from "./shortcut-list.js";
@@ -1300,7 +1300,7 @@ export class HitopApp extends LitElement {
         <div class="side-pane">
         ${this.tools("in-drawer")}
         <div class="side-pane-top">
-          <lit-material-button variant="filled" class="new-request" title="A draft in the collection on screen; save it there with Mod+S" @click=${() => (this.navOpen = false, s.newRequestInFirstCollection())}>
+          <lit-material-button variant="filled" class="new-request" title=${`A draft in the collection on screen; save it there with ${SAVE_KEYS}`} @click=${() => (this.navOpen = false, s.newRequestInFirstCollection())}>
             ${icon("plus")} New request
           </lit-material-button>
           <lit-material-icon-button class="new-collection" aria-label="New collection" title="New collection" @click=${() => this.openDialog("add-collection")}>${icon("folder-simple-plus")}</lit-material-icon-button>
