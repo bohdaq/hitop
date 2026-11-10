@@ -153,6 +153,14 @@ async function main() {
   await page.keyboard.type("order");
   await shot("palette");
   await page.keyboard.press("Escape");
+  await page.waitForTimeout(300);
+
+  // A dialog with fields (New collection).
+  await page.locator("aside").getByRole("button", { name: "New collection", exact: true }).click();
+  await page.waitForSelector("#dialog lit-material-text-field");
+  await shot("dialog");
+  await page.keyboard.press("Escape");
+  await page.waitForTimeout(300);
 
   // Collection page and its run report.
   await page.locator('.tree-row.collection', { hasText: "shop-api" }).click();

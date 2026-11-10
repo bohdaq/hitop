@@ -204,6 +204,7 @@ export class HitopRequest extends LitElement {
         </li>`;
     };
     return html`
+      <div class="kv-head" aria-hidden="true"><span></span><span>Parameter</span><span>Value</span><span></span></div>
       <ul class="param-rows">
         ${[
           // One list, drafts right after the live rows: a draft that gets its
@@ -240,6 +241,7 @@ export class HitopRequest extends LitElement {
         ? html`<hitop-code-editor label="Request body" language=${looksJson ? "json" : "text"} .value=${t.requestBody || ""}
             @input=${(e) => this.set({ requestBody: e.target.value })}></hitop-code-editor>`
         : html`
+            <div class=${`kv-head ${mode}`} aria-hidden="true"><span></span><span>Field</span>${mode === "multipart" ? html`<span>Type</span>` : nothing}<span>Value</span><span></span></div>
             <ul class=${`form-rows ${mode}`}>
               ${fields.map((f, i) => {
                 const update = (changes) => setFields(fields.map((x, j) => (j === i ? { ...x, ...changes } : x)));
@@ -429,7 +431,8 @@ export class HitopRequest extends LitElement {
           ${this.section === PARAMS ? (grpc ? grpcSchema(this) : this.renderParams()) : nothing}
           ${this.section === AUTH ? this.renderAuth() : nothing}
           ${this.section === HEADERS
-            ? html`<lit-material-key-value-editor
+            ? html`<div class="kv-head headers" aria-hidden="true"><span>${grpc ? "Metadata" : "Header"}</span><span>Value</span><span></span></div>
+              <lit-material-key-value-editor
                 key-label="Header"
                 value-label="Value"
                 add-label="Add header"

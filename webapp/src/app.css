@@ -617,7 +617,8 @@ hitop-code-editor { display: grid; gap: var(--space-50); align-content: start; }
 .cookie-add { --lit-material-text-field-min-width: 0; display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)) auto; gap: var(--space-100); align-items: center; }
 
 @media (max-width: 899px) {
-  .param-row, .form-row, .form-rows.multipart .form-row { grid-template-columns: auto minmax(0, 1fr) auto; }
+  .param-row, .form-row, .form-rows.multipart .form-row { grid-template-columns: 40px minmax(0, 1fr) 32px; }
+  .kv-head { display: none; }
   .param-row > lit-material-text-field:nth-of-type(2), .form-row > :nth-child(n + 3):not(lit-material-icon-button) { grid-column: 2; }
   .cookie-list li { grid-template-columns: minmax(0, 1fr) auto; }
   .cookie-add { grid-template-columns: minmax(0, 1fr); }
@@ -980,3 +981,68 @@ lit-material-menu::part(menu) { border: 1px solid #33333a; border-radius: 10px; 
 .body-mode lit-material-select::part(trigger) { height: 30px; padding: 0 8px 0 10px; border: 1px solid var(--md-sys-color-outline-variant); border-radius: 8px; background: var(--md-sys-color-surface-container); font-size: 12.5px; color: #c8c8cf; }
 .body-mode lit-material-select::part(label) { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
 .body-mode lit-material-select::part(supporting) { display: none; }
+
+/* HITOP Next V1, second pass: every field and button at the boards' sizes. Text fields and selects
+   get a plain 12 px label above a 32 px hairline box (no floating label); rows (params, headers,
+   forms, cookies, the URL bar) keep the label for assistive technology only and use a header row. */
+hitop-app {
+  --md-sys-typescale-label-large-size: 13px; --md-sys-typescale-label-large-line-height: 20px;
+  --md-sys-typescale-label-medium-size: 12px; --md-sys-typescale-label-medium-line-height: 16px;
+  --md-sys-color-outline: #33333a;
+}
+hitop-app lit-material-button { --lit-material-button-height: 34px; --lit-material-button-shape: 9px; --lit-material-button-padding-inline: 12px; }
+hitop-app lit-material-button[variant="text"] { --lit-material-button-padding-inline: 8px; }
+hitop-app lit-material-button::part(button) { min-width: 0; }
+/* Text fields: the label above, a 32 px box. */
+hitop-app lit-material-text-field { padding-top: 18px; --md-sys-density-field-height: 32px; --lit-material-text-field-shape: 7px; }
+hitop-app lit-material-text-field::part(container) { height: 32px; padding-inline: 10px; border: 1px solid #26262c; background: var(--md-sys-color-surface-container); transition: border-color var(--duration-color) var(--ease), box-shadow var(--duration-color) var(--ease); }
+hitop-app lit-material-text-field:focus-within::part(container) { border-color: var(--md-sys-color-primary); border-width: 1px; box-shadow: 0 0 0 3px rgb(169 156 255 / 0.15); }
+hitop-app lit-material-text-field[error]::part(container) { border-color: var(--md-sys-color-error); }
+hitop-app lit-material-text-field::part(label) { position: absolute; top: -20px; inset-inline-start: -10px; transform: none; max-width: none; margin: 0; padding: 0; background: none; font-size: 12px; line-height: 16px; color: #8a8a94; }
+hitop-app lit-material-text-field::part(input) { font-size: 13px; line-height: 20px; }
+hitop-app lit-material-text-field::part(supporting) { padding-inline: 0; }
+/* Selects: the same box; the value sits in the middle (the inset lifts it off the floor). */
+hitop-app lit-material-select { padding-top: 18px; --md-sys-density-field-height: 32px; --md-sys-density-field-value-inset: 6px; --lit-material-select-shape: 7px; --lit-material-select-min-width: 0; }
+hitop-app lit-material-select::part(trigger) { height: 32px; padding: 0 8px 0 10px; border: 1px solid #26262c; background: var(--md-sys-color-surface-container); font-size: 13px; color: var(--md-sys-color-on-surface); }
+hitop-app lit-material-select:focus-within::part(trigger) { border-color: var(--md-sys-color-primary); border-width: 1px; box-shadow: 0 0 0 3px rgb(169 156 255 / 0.15); }
+hitop-app lit-material-select::part(label) { position: absolute; top: -20px; inset-inline-start: 0; transform: none; max-width: none; margin: 0; padding: 0; background: none; font-size: 12px; line-height: 16px; color: #8a8a94; }
+hitop-app lit-material-select::part(listbox) { border: 1px solid #33333a; border-radius: 9px; background: var(--md-sys-color-surface-container-high); }
+hitop-app lit-material-select::part(supporting) { padding-inline: 0; }
+/* Rows and bars: no label on screen (a header row or the context says it), no room above. */
+.url-bar .url, .url-bar .method, .param-row lit-material-text-field, .form-row lit-material-text-field, .form-row lit-material-select,
+.cookie-list lit-material-text-field, .cookie-add lit-material-text-field, .ws-saved-row lit-material-text-field, .grpc-target lit-material-text-field,
+.pill-select, .body-mode lit-material-select, .sync-form lit-material-text-field[aria-label], .history-filter { padding-top: 0; }
+.param-row lit-material-text-field::part(label), .form-row lit-material-text-field::part(label), .form-row lit-material-select::part(label),
+.cookie-list lit-material-text-field::part(label), .cookie-add lit-material-text-field::part(label), .ws-saved-row lit-material-text-field::part(label), .grpc-target lit-material-text-field::part(label) {
+  position: absolute; top: 0; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap;
+}
+.pill-select, .body-mode lit-material-select { --md-sys-density-field-value-inset: 5px; }
+.url-bar .method { --md-sys-density-field-value-inset: 11px; }
+.url-bar .method::part(trigger) { height: 42px; border: 0; border-right: 1px solid #26262c; border-radius: 11px 0 0 11px; background: none; box-shadow: none; }
+.url-bar .url::part(container) { height: 42px; border: 0; background: none; box-shadow: none; }
+/* Key/value rows (params, form fields) and a header row over them. */
+.param-row, .form-row, .kv-head { display: grid; grid-template-columns: 40px minmax(0, 1fr) minmax(0, 1fr) 32px; gap: 6px 8px; align-items: center; }
+.form-rows.multipart .form-row, .kv-head.multipart { grid-template-columns: 40px minmax(0, 1fr) 140px minmax(0, 1.4fr) 32px; }
+.kv-head { margin-bottom: 6px; font-size: 11px; line-height: 16px; letter-spacing: 0.06em; text-transform: uppercase; color: #6b6b75; }
+.kv-head.headers { grid-template-columns: minmax(0, 1fr) minmax(0, 1.5fr) 24px; }
+.param-rows, .form-rows { gap: 6px; }
+.param-rows + lit-material-button, .form-rows + lit-material-button, lit-material-key-value-editor::part(add) { --lit-material-button-height: 28px; font-size: 12.5px; }
+/* The key/value editor (headers, environment variables, globals): compact fields; a floated label
+   becomes invisible (it is still the field's name) and the hairline comes from the outline token. */
+hitop-app lit-material-key-value-editor { --md-sys-density-field-height: 32px; --md-sys-typescale-label-medium-size: 0px; --md-sys-typescale-label-medium-line-height: 0; --lit-material-text-field-shape: 7px; --lit-material-text-field-notch-color: transparent; --md-sys-color-outline: #26262c; --md-sys-density-icon-button-size: 24px; --md-sys-density-icon-button-padding: 3px; }
+/* Chips, buttons and rows on the pages. */
+.storage-chip { min-height: 30px; padding: 0 10px; border-radius: 8px; font-size: 13px; }
+.env-chip { min-height: 30px; padding: 0 12px; border-radius: 8px; font-size: 13px; font-weight: 500; }
+.page-actions .env-select { width: auto; }
+.run-bar > span { min-width: 4px; border-radius: 2px; }
+.org-tr { min-height: 40px; }
+.cookie-list li, .cookie-add { gap: 8px; }
+.account-signin { --lit-material-button-height: 30px; }
+.request-line .send { --lit-material-button-height: 44px; --lit-material-button-shape: 11px; --lit-material-button-padding-inline: 16px; }
+.request-line .cancel-send { --lit-material-button-height: 44px; --lit-material-button-shape: 11px; }
+hitop-app lit-material-textarea { --lit-material-text-field-shape: 7px; }
+.run-bar { background: #1d1d22; }
+.run-bar > span { min-width: 6px; }
+hitop-app lit-material-text-field::part(container) { padding-inline: 0 10px; }
+hitop-app lit-material-text-field::part(label) { inset-inline-start: -20px; }
+.url-bar .url::part(container) { padding-inline: 0 14px; }
