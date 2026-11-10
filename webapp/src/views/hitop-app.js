@@ -31,6 +31,7 @@ import { orgLabel } from "../orgs.js";
 import { agentPanel, runAi } from "./ai-view.js";
 import "./org-view.js";
 import { limitInfo, parseOrgLink, usageWarnings } from "../org.js";
+import { gettingStartedSteps, hideGettingStarted, SAMPLE_NAME, showGettingStarted } from "../getting-started.js";
 
 /** Email addresses typed in the invite dialog: comma, space or line separated. */
 function inviteEmails(text) {
@@ -1429,6 +1430,41 @@ export class HitopApp extends LitElement {
       </aside>`;
   }
 
+  // U6: the newcomer's three steps, checked off from what the app sees (getting-started.js).
+  gettingStarted() {
+    const s = this.store;
+    let storage = null;
+    let runs = null;
+    try {
+      storage = globalThis.localStorage ?? null;
+      runs = JSON.parse(storage?.getItem("hitop_run_history") || "null");
+    } catch {
+      // storage blocked: decided from this page's state only
+    }
+    const steps = gettingStartedSteps({ history: s.history, collections: s.collections, runs, ranNow: Boolean(s.run.report) });
+    if (!showGettingStarted(storage, { fresh: s.isFresh, steps })) return nothing;
+    const done = steps.filter((x) => x.done).length;
+    const next = steps.find((x) => !x.done);
+    return html`<section class="getting-started" aria-labelledby="getting-started-title">
+      <div class="gs-head">
+        <h2 id="getting-started-title">Get started</h2>
+        <span class="mono gs-count" aria-label=${`${done} of ${steps.length} done`}>${done}/${steps.length}</span>
+        <button type="button" class="mini" aria-label="Hide getting started" title="Hide" @click=${() => (hideGettingStarted(storage), this.requestUpdate())}>${icon("x")}</button>
+      </div>
+      <ol class="gs-steps">
+        ${steps.map(
+          (x) => html`<li class=${x.done ? "done" : x === next ? "next" : ""} aria-current=${x === next ? "step" : "false"}>
+            ${icon(x.done ? "check-circle" : "caret-right")}<span>${x.label}${x.done ? html`<span class="visually-hidden"> (done)</span>` : nothing}</span>
+          </li>`,
+        )}
+      </ol>
+      ${next ? html`<p class="hint gs-hint">${next.hint}</p>` : nothing}
+      ${next?.id === "send" && !s.collections.some((c) => c.name === SAMPLE_NAME)
+        ? html`<button type="button" class="link-button" @click=${() => (this.navOpen = false, s.addSampleCollection())}>${icon("play")}<span>Open the sample</span></button>`
+        : nothing}
+    </section>`;
+  }
+
   // The pane's foot (HITOP Next): where collections are kept, the counts, Import and Export.
   sideFooter() {
     const s = this.store;
@@ -1446,6 +1482,7 @@ export class HitopApp extends LitElement {
     const place = w?.kind === "folder" ? w.label : "";
     const changed = current ? (this.gitStatus.get(current.id)?.files.length ?? 0) : 0;
     return html`<div class="side-pane-footer">
+      ${this.gettingStarted()}
       <div class="side-card">
         <div class="side-card-line">${icon(w?.kind === "folder" ? "lock" : (w?.icon ?? (IS_TAURI ? "desktop" : "browser")))}<span>${where}</span></div>
         <div class="side-card-meta mono">${place ? html`${place} · ` : nothing}${cols.length} ${cols.length === 1 ? "collection" : "collections"} · ${requests} ${requests === 1 ? "request" : "requests"}${changed ? ` · ${changed} changed` : ""}</div>

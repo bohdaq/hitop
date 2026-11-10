@@ -32,11 +32,21 @@ function api() {
   await settle(p);
   const store = (fn, arg) => p.evaluate(fn, arg);
 
+  // --- U6 --------------------------------------------------------------------------------------
+  const gs = p.locator('aside .getting-started');
+  const steps = async () => (await gs.locator('.gs-steps li').evaluateAll((els) => els.map((e) => `${e.classList.contains('done') ? 'x' : '-'} ${e.textContent.trim()}`))).join(' | ');
+  check('U6 a fresh app shows the three steps, the first one next', (await gs.count()) === 1 && (await steps()) === '- Send a request | - Save a request to a collection | - Run a collection' && (await gs.locator('li[aria-current="step"]').innerText()).includes('Send a request'), await steps().catch(() => ''));
+  check('U6 ...with its count and a hint for the next step', (await gs.locator('.gs-count').innerText()) === '0/3' && (await gs.locator('.gs-hint').innerText()).includes('press Send'));
+  await gs.getByRole('button', { name: 'Open the sample' }).click();
+  await settle(p);
+  check('U6 Open the sample opens the sample collection; sending is still the next step', (await p.locator('h1').innerText()).includes('Sample: JSONPlaceholder') && (await gs.getByRole('button', { name: 'Open the sample' }).count()) === 0 && (await gs.locator('.gs-count').innerText()) === '0/3');
+
   // --- U19 -------------------------------------------------------------------------------------
   await store((b) => {
     const s = document.querySelector('hitop-app').store;
     s.environments = [...s.environments, { id: 'env-u19', name: 'Staging', variables: { baseUrl: b }, secrets: ['TOKEN'] }];
     s.setActiveEnvironment('env-u19');
+    s.show('request');
     s.updateTab({ url: '${baseUrl}/orders?t=${TOKEN}', headers: [{ name: 'Authorization', value: 'Bearer ${TOKEN}' }, { name: '', value: '' }] });
   }, base);
   await settle(p);
@@ -76,6 +86,7 @@ function api() {
   await p.locator('.response-meta').waitFor({ timeout: 10000 });
   const hit = hits.at(-1);
   check('U19 ...and the request goes out with it', hit?.auth === 'Bearer tok-u19' && hit.url.includes('t=tok-u19'), JSON.stringify(hit));
+  check('U6 a sent request checks off the first step', (await steps()).startsWith('x Send a request (done) | - Save') && (await gs.locator('.gs-count').innerText()) === '1/3', await steps());
 
   // --- U39 -------------------------------------------------------------------------------------
   await store((b) => {
@@ -89,6 +100,7 @@ function api() {
     s.emit();
   }, base);
   await settle(p);
+  check('U6 a request saved in a collection of your own checks off the second step', (await gs.locator('.gs-count').innerText().catch(() => '')) === '2/3', await steps().catch(() => ''));
   const history = () => store(() => JSON.parse(localStorage.getItem('hitop_run_history') || '{}'));
   const runsBefore = Object.values(await history()).flat().length;
   await p.locator('hitop-collection').getByRole('button', { name: /Run collection/ }).click();
@@ -97,6 +109,7 @@ function api() {
   const card = await report.locator('.run-failure').innerText();
   check('U39 the failure says expected vs actual and the usual cause of the status', card.includes('Get order') && card.includes('HTTP 404') && card.includes('Likely cause') && card.includes('Nothing answers at this path'), card.replace(/\n/g, ' | '));
   check('U39 ...the URL as sent and the start of the response body', card.includes(`${base}/missing/7`) && card.includes('"ok":false'), card.replace(/\n/g, ' | '));
+  check('U6 a run completes the steps and the card goes', (await gs.count()) === 0);
   const notRun = await report.locator('.run-not-run').innerText().catch(() => '');
   check('U39 the report says what was not run after the failure', notRun.includes('1 more request was not run'), notRun);
   check('U39 ...and the hitop run line stops at the first failure too', (await report.locator('.run-command').innerText()).includes('--bail'));
@@ -121,6 +134,12 @@ function api() {
   const rows = await report.locator('.run-list .run-row').count();
   check("U39 Run this folder runs only the folder's requests and says so", head.includes('folder') && head.includes('orders') && rows === 2 && head.includes('Passed'), `${head.replace(/\n/g, ' | ')} rows=${rows}`);
   check('U39 ...with no hitop run line (it runs whole collections) and no comparison', (await report.locator('.run-command').count()) === 0 && (await report.locator('.run-cli-none').count()) === 1 && Object.values(await history()).flat().length === runsAfterCollection && runsAfterCollection === runsBefore + 1);
+
+  // Someone who already had requests when this version first started never gets the card.
+  await p.evaluate(() => localStorage.removeItem('hitop_getting_started'));
+  await p.reload({ waitUntil: 'networkidle' });
+  await settle(p);
+  check('U6 an app that already has requests shows no getting-started card', (await gs.count()) === 0 && (await p.evaluate(() => JSON.parse(localStorage.getItem('hitop_getting_started')))).fresh === false);
 
   check('no page errors', errors.length === 0, errors.join(' | '));
   server.close();
