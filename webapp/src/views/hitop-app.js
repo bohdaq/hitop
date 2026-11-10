@@ -75,6 +75,9 @@ function readableError(err, what) {
 // A menu for a right click (or the context menu key). Where the menu opens
 // while the right button is still down (Linux, macOS), the release would
 // dismiss it at once (popover light dismiss): it opens after the release.
+// The method tag of an open tab: WS, GRPC, GQL (a GraphQL body) or the HTTP method.
+const tagOf = (t) => (t.kind === "websocket" ? "WS" : t.kind === "grpc" ? "GRPC" : t.bodyMode === "graphql" ? "GQL" : t.method || "GET");
+
 function showMenuFor(e, menu) {
   const anchor = e.currentTarget;
   if (!(e.buttons & 2)) return menu.show(anchor);
@@ -813,7 +816,8 @@ export class HitopApp extends LitElement {
   envSelect() {
     const s = this.store;
     const env = s.activeEnvironment;
-    return html`<lit-material-select class="env-select" variant="outlined" label="Environment" .value=${env?.id ?? "none"}
+    // A pill with a coloured dot (HITOP Next): amber with an environment, grey without.
+    return html`<lit-material-select class=${`env-select pill-select ${env ? "has-env" : ""}`} variant="outlined" label="Environment" .value=${env?.id ?? "none"}
       @change=${(e) => s.setActiveEnvironment(e.target.value === "none" ? null : e.target.value)}>
       <lit-material-select-option value="none">No environment</lit-material-select-option>
       ${s.visibleEnvironments.map((x) => html`<lit-material-select-option value=${x.id}>${s.environmentLabel(x)}</lit-material-select-option>`)}
@@ -824,7 +828,7 @@ export class HitopApp extends LitElement {
   orgSelect() {
     const s = this.store;
     if (!s.orgs.length) return nothing;
-    return html`<lit-material-select class="org-select" variant="outlined" label="Organization" .value=${s.currentOrg ?? ""}
+    return html`<lit-material-select class="org-select pill-select" variant="outlined" label="Organization" .value=${s.currentOrg ?? ""}
       @change=${(e) => {
         if (e.target.value !== NEW_ORG) return s.setCurrentOrg(e.target.value);
         e.target.value = s.currentOrg;
@@ -943,11 +947,17 @@ export class HitopApp extends LitElement {
 
   // Organization picker, environments and shortcuts: the top bar's
   // right end, or the top of the drawer on phones (one shows at a time).
+  // The title bar's pills (HITOP Next): organization, environment. Phones: the top of the
+  // drawer, with the buttons the status bar has on wide screens.
   tools(where) {
+    const drawer = where === "in-drawer";
     return html`<div class=${`app-tools ${where}`}>
       ${this.orgSelect()}
-      <lit-material-icon-button aria-label="Manage environments" title="Manage environments" @click=${() => this.go("environments")}>${icon("sliders-horizontal")}</lit-material-icon-button>
-      <lit-material-icon-button aria-label="Keyboard shortcuts" title="Keyboard shortcuts (?)" @click=${() => this.openDialog("shortcuts")}>${icon("keyboard")}</lit-material-icon-button>
+      ${this.envSelect()}
+      ${drawer
+        ? html`<lit-material-icon-button aria-label="Manage environments" title="Manage environments" @click=${() => this.go("environments")}>${icon("sliders-horizontal")}</lit-material-icon-button>
+            <lit-material-icon-button aria-label="Keyboard shortcuts" title="Keyboard shortcuts (?)" @click=${() => this.openDialog("shortcuts")}>${icon("keyboard")}</lit-material-icon-button>`
+        : nothing}
     </div>`;
   }
 
@@ -1087,12 +1097,14 @@ export class HitopApp extends LitElement {
     }
     // No request here: an empty list still takes a dropped request, and says what to do.
     if (!node.requests.length) runs.push([]);
+    // The hint only where there is nothing at all (a collection whose requests are all in folders needs none).
+    const bare = !node.items.length;
     const label = node.path ? `Requests in ${c.name}, ${node.path}` : `Requests in ${c.name}`;
     return html`${runs.map((run) =>
       Array.isArray(run)
         ? html`<li>
             ${this.requestList(c, run, label, activeRequest, true, node.path)}
-            ${run.length
+            ${run.length || !bare
               ? nothing
               : html`<div class="tree-hint">
                   <span>No requests yet</span>
@@ -1300,13 +1312,15 @@ export class HitopApp extends LitElement {
         <div class="side-pane">
         ${this.tools("in-drawer")}
         <div class="side-pane-top">
-          <lit-material-button variant="filled" class="new-request" title=${`A draft in the collection on screen; save it there with ${SAVE_KEYS}`} @click=${() => (this.navOpen = false, s.newRequestInFirstCollection())}>
-            ${icon("plus")} New request
-          </lit-material-button>
-          <lit-material-icon-button class="new-collection" aria-label="New collection" title="New collection" @click=${() => this.openDialog("add-collection")}>${icon("folder-simple-plus")}</lit-material-icon-button>
+          <span class="side-title" id="side-title">Collections</span>
+          <button type="button" class="mini new-collection" aria-label="New collection" title="New collection" @click=${() => this.openDialog("add-collection")}>${icon("folder-simple-plus")}</button>
+          <button type="button" class="mini new-request" aria-label="New request" title=${`New request: a draft in the collection on screen; save it there with ${SAVE_KEYS}`} @click=${() => (this.navOpen = false, s.newRequestInFirstCollection())}>${icon("plus")}</button>
         </div>
-        <input type="search" class="tree-filter" placeholder="Filter requests" aria-label="Filter requests" .value=${this.filter}
-          @input=${(e) => (this.filter = e.target.value)} />
+        <label class="tree-filter-wrap">
+          ${icon("magnifying-glass")}
+          <input type="search" class="tree-filter" placeholder="Filter" aria-label="Filter requests" .value=${this.filter}
+            @input=${(e) => (this.filter = e.target.value)} />
+        </label>
         <nav class="tree" aria-label="Collections">
           <ul>
             ${!s.visibleCollections.length
@@ -1352,12 +1366,36 @@ export class HitopApp extends LitElement {
             })}
           </ul>
         </nav>
-        <div class="side-pane-footer">
-          <button type="button" class="tree-row" @click=${() => this.openDialog("import")}>${icon("file-arrow-up")}<span>Import</span></button>
-          <button type="button" class="tree-row" @click=${() => this.openDialog("export")}>${icon("file-arrow-down")}<span>Export</span></button>
-        </div>
+        ${this.sideFooter()}
         </div>
       </aside>`;
+  }
+
+  // The pane's foot (HITOP Next): where collections are kept, the counts, Import and Export.
+  sideFooter() {
+    const s = this.store;
+    const cols = s.visibleCollections;
+    const requests = cols.reduce((n, c) => n + (c.requests?.length ?? 0), 0);
+    const current = this.currentCollection() ?? cols[0];
+    const w = current ? storageOf(s, current) : null;
+    const where = !w
+      ? IS_TAURI ? "On this computer" : "In this browser"
+      : w.kind === "folder" ? "Files in your repo · no cloud"
+      : w.kind === "shared" ? "Shared workspace · end-to-end encrypted"
+      : w.kind === "github" ? `Saved to GitHub · ${w.label}`
+      : w.kind === "cloud" ? "Saved in HITOP Cloud"
+      : IS_TAURI ? "On this computer · no cloud" : "In this browser · no cloud";
+    const place = w?.kind === "folder" ? w.label : "";
+    return html`<div class="side-pane-footer">
+      <div class="side-card">
+        <div class="side-card-line">${icon(w?.kind === "folder" ? "lock" : (w?.icon ?? (IS_TAURI ? "desktop" : "browser")))}<span>${where}</span></div>
+        <div class="side-card-meta mono">${place ? html`${place} · ` : nothing}${cols.length} ${cols.length === 1 ? "collection" : "collections"} · ${requests} ${requests === 1 ? "request" : "requests"}</div>
+        <div class="side-card-actions">
+          <button type="button" class="link-button" @click=${() => this.openDialog("import")}>${icon("file-arrow-up")}<span>Import</span></button>
+          <button type="button" class="link-button" @click=${() => this.openDialog("export")}>${icon("file-arrow-down")}<span>Export</span></button>
+        </div>
+      </div>
+    </div>`;
   }
 
   // --- tabs -----------------------------------------------------------------------
@@ -1374,6 +1412,7 @@ export class HitopApp extends LitElement {
       <div class="tab-strip">
         <lit-material-tabs
           aria-label="Open requests"
+          scrollable
           reorderable
           .selected=${s.currentTab}
           @change=${(e) => s.selectTab(e.target.selected)}
@@ -1381,7 +1420,7 @@ export class HitopApp extends LitElement {
         >
           ${s.tabs.map(
             (t, i) => html`<lit-material-tab id=${`tab-${i}`} title=${t.title} @contextmenu=${(e) => this.openTabMenu(e, i)}
-              @auxclick=${(e) => e.button === 1 && (e.preventDefault(), this.closeTab(i))}>${t.title}${s.isDirty(t)
+              @auxclick=${(e) => e.button === 1 && (e.preventDefault(), this.closeTab(i))}>${t.title.startsWith(`${tagOf(t)} `) ? nothing : html`<span class=${`method-tag tab-method m-${tagOf(t)}`} aria-hidden="true">${tagOf(t)}</span>`}${t.title}${s.isDirty(t)
                 ? html`<span class="dirty-dot" aria-hidden="true">●</span><span class="visually-hidden">, unsaved changes</span>`
                 : nothing}${s.tabs.length > 1
                 ? html`<span class="tab-close" aria-hidden="true" title="Close tab (Alt+Shift+W)"
@@ -1429,9 +1468,24 @@ export class HitopApp extends LitElement {
     return null;
   }
 
+  // "HITOP / <collection> ▾": the collection on screen; the menu switches to another or
+  // opens the collections page.
   crumb() {
     const c = this.currentCollection();
-    return c ? html`<span class="crumb" aria-hidden="true">/</span><span class="crumb crumb-name" title=${c.name}>${c.name}</span>` : nothing;
+    const s = this.store;
+    const cols = s.visibleCollections;
+    if (!c && !cols.length) return nothing;
+    const name = c?.name ?? "Collections";
+    return html`<span class="crumb" aria-hidden="true">/</span>
+      <button type="button" class="crumb crumb-name" title=${c ? `Collection: ${name}` : "Collections"} aria-haspopup="menu" aria-label=${c ? `Collection ${name}: switch` : "Collections"}
+        @click=${(e) => showMenuFor(e, this.querySelector("#crumb-menu"))}>
+        <span>${name}</span>${icon("caret-down")}
+      </button>
+      <lit-material-menu id="crumb-menu" aria-label="Collections">
+        ${cols.map((x) => html`<lit-material-list-item interactive ?selected=${x.id === c?.id} @click=${() => this.go("collection", x.id)}>${x.name}</lit-material-list-item>`)}
+        <lit-material-list-item interactive @click=${() => this.go("collections")}>All collections</lit-material-list-item>
+        <lit-material-list-item interactive @click=${() => this.openDialog("add-collection")}>New collection…</lit-material-list-item>
+      </lit-material-menu>`;
   }
 
   // The title bar's search field: one place for requests and commands.
@@ -1493,16 +1547,18 @@ export class HitopApp extends LitElement {
     const s = this.store;
     const t = s.view.kind === "request" ? s.tab : null;
     const dirty = t && s.isDirty(t);
-    const engine = IS_TAURI ? "Desktop · Rust engine" : "Browser · HITOP proxy for public hosts";
+    const proxy = IS_TAURI ? "Proxy off" : "Proxy for public hosts";
+    const engine = IS_TAURI ? "Local engine · Rust" : "Browser engine";
     // @lit-material/status-bar (HITOP Next): a labelled region, tabular numbers, wraps on phones.
     return html`<lit-material-status-bar class="statusbar" label="Status">
       ${t && s.loadedRequest(t) ? html`<lit-material-status-bar-item class="mono">${this.requestPlace()}</lit-material-status-bar-item>` : nothing}
-      ${dirty ? html`<lit-material-status-bar-item class="status-unsaved" tone="warning">● Unsaved · <lit-material-kbd keys="Mod+S"></lit-material-kbd> saves</lit-material-status-bar-item>` : nothing}
+      ${dirty ? html`<lit-material-status-bar-item class="status-unsaved" tone="warning">● Unsaved · <lit-material-kbd keys="Mod+S"></lit-material-kbd> writes the file</lit-material-status-bar-item>` : nothing}
       ${t && !s.loadedRequest(t)
-        ? html`<lit-material-status-bar-item class="status-unsaved" button description="Save to a collection" @click=${() => this.saveCurrent()}>Draft, not in a collection yet · <lit-material-kbd keys="Mod+S"></lit-material-kbd> saves it to one</lit-material-status-bar-item>`
+        ? html`<lit-material-status-bar-item class="status-unsaved" button description="Save to a collection" @click=${() => this.saveCurrent()}>● Draft, not in a collection yet · <lit-material-kbd keys="Mod+S"></lit-material-kbd> saves it to one</lit-material-status-bar-item>`
         : nothing}
+      <lit-material-status-bar-item slot="end" class="status-hint">${proxy}</lit-material-status-bar-item>
       <lit-material-status-bar-item slot="end">${engine}</lit-material-status-bar-item>
-      <lit-material-status-bar-item slot="end" class="status-hint" button description="Keyboard shortcuts" @click=${() => this.openDialog("shortcuts")}>Press <lit-material-kbd keys="?"></lit-material-kbd> for shortcuts</lit-material-status-bar-item>
+      <lit-material-status-bar-item slot="end" button description="Keyboard shortcuts" @click=${() => this.openDialog("shortcuts")}><lit-material-kbd keys="?"></lit-material-kbd> Shortcuts</lit-material-status-bar-item>
     </lit-material-status-bar>`;
   }
 

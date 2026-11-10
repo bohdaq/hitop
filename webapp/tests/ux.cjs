@@ -247,9 +247,9 @@ function api() {
   const brand = p.locator('header.topbar .brand');
   check('top bar has the logo and HITOP', (await brand.innerText()).trim() === 'HITOP' && (await p.locator('aside .brand').count()) === 0);
   check(TAURI ? '[tauri] logo is not a link (the webview would leave the app)' : 'logo links to the site, named "HITOP website"', TAURI ? (await brand.evaluate((el) => el.localName)) === 'span' : (await brand.getAttribute('aria-label')) === 'HITOP website' && (await brand.getAttribute('href')) === '/');
-  check('environment picker next to Send, no theme toggle (dark only)', (await p.locator('.request-line').getByRole('combobox', { name: 'Environment' }).isVisible()) && (await p.locator('lit-material-color-scheme-toggle').count()) === 0);
-  const first = await p.locator('aside').evaluate((el) => [...el.querySelectorAll('lit-material-button, button, input')].find((b) => b.offsetParent !== null)?.textContent.trim());
-  check('sidebar starts with New request', first === 'New request', first);
+  check('environment pill in the title bar, no theme toggle (dark only)', (await p.locator('header.topbar').getByRole('combobox', { name: 'Environment' }).isVisible()) && (await p.locator('lit-material-color-scheme-toggle').count()) === 0);
+  const first = await p.locator('aside').evaluate((el) => [...el.querySelectorAll('lit-material-button, button, input')].filter((b) => b.offsetParent !== null).map((b) => b.getAttribute('aria-label') || b.textContent.trim()));
+  check('sidebar starts with New collection and New request', first.slice(0, 2).join() === 'New collection,New request', first.join());
   const footer = await p.locator('.sidebar-footer').boundingBox();
   check('sidebar footer stays on screen', footer && footer.y + footer.height <= 860 + 1, JSON.stringify(footer));
   await p.setViewportSize({ width: 390, height: 844 });
@@ -257,7 +257,7 @@ function api() {
   check('phone: top bar is the menu button and the logo', (await p.getByRole('button', { name: 'Open collections' }).isVisible()) && (await brand.isVisible()) && !(await p.locator('header.topbar .app-tools').isVisible()));
   await p.getByRole('button', { name: 'Open collections' }).click();
   await settle(p);
-  check('phone: the drawer has the shortcuts button, the environment picker stays next to Send', (await p.locator('aside').getByRole('button', { name: 'Keyboard shortcuts' }).isVisible()) && (await p.locator('.request-line').getByRole('combobox', { name: 'Environment' }).count()) === 1);
+  check('phone: the drawer has the shortcuts button and the environment pill', (await p.locator('aside').getByRole('button', { name: 'Keyboard shortcuts' }).isVisible()) && (await p.locator('aside').getByRole('combobox', { name: 'Environment' }).count()) === 1);
   check('phone: no horizontal scroll', !(await p.evaluate(() => document.documentElement.scrollWidth > innerWidth)));
 
   check('no page errors', errors.length === 0, errors.join(' || '));

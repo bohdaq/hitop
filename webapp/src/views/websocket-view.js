@@ -37,6 +37,7 @@ export function socketLine(view, methodSelect) {
   };
   return html`
     <form class="request-line" novalidate @submit=${toggle}>
+      <div class="url-bar">
       ${methodSelect}
       <lit-material-text-field
         class="url"
@@ -47,6 +48,7 @@ export function socketLine(view, methodSelect) {
         @input=${(e) => view.set({ url: e.target.value })}
         @keydown=${(e) => e.key === "Enter" && toggle(e)}
       ></lit-material-text-field>
+      </div>
       <lit-material-button variant=${busy ? "outlined" : "filled"} type="submit">
         ${icon(busy ? "x" : "plugs-connected")} ${s.status === "open" ? "Disconnect" : s.status === "connecting" ? "Cancel" : "Connect"}
       </lit-material-button>

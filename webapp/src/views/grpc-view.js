@@ -42,6 +42,7 @@ export function grpcLine(view, methodSelect) {
   };
   return html`
     <form class="request-line" novalidate @submit=${go}>
+      <div class="url-bar">
       ${methodSelect}
       <lit-material-text-field
         class="url"
@@ -52,6 +53,7 @@ export function grpcLine(view, methodSelect) {
         @input=${(e) => view.set({ url: e.target.value })}
         @keydown=${(e) => e.key === "Enter" && go(e)}
       ></lit-material-text-field>
+      </div>
       <lit-material-button variant=${running ? "outlined" : "filled"} type="submit" ?disabled=${!can}>
         ${icon(running ? "x" : "paper-plane-tilt")} ${running ? "Cancel" : "Send"}
       </lit-material-button>

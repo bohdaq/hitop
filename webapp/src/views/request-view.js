@@ -88,11 +88,11 @@ const bytes = (text) => {
 };
 
 export const testList = (tests) => html`
-  <ul class="tests">
+  <ul class="tests" aria-label="Checks">
     ${tests.map(
       (x) => html`<li class=${x.pass ? "pass" : "fail"}>
-        <lit-material-status status=${x.pass ? "ok" : "error"}>${x.pass ? "Passed" : "Failed"}</lit-material-status>
-        <span>${x.name}</span>${x.detail ? html`<span class="test-detail">${x.detail}</span>` : nothing}
+        ${icon(x.pass ? "check-circle" : "warning-circle")}<span class="visually-hidden">${x.pass ? "Passed" : "Failed"}: </span>
+        <span class="test-name">${x.name}</span>${x.detail ? html`<span class="test-detail">${x.detail}</span>` : nothing}
       </li>`,
     )}
   </ul>`;
@@ -397,15 +397,17 @@ export class HitopRequest extends LitElement {
     const grpc = t.kind === "grpc";
     const saved = t.wsMessages?.length ?? 0;
     // gRPC has no query: the first tab is the schema source instead.
+    const counted = (label, count) => (count ? html`${label} <span class="count">${count}</span>` : label);
+    const dotted = (label, on) => (on ? html`${label} <span class="tab-dot" aria-hidden="true">●</span>` : label);
     const labels = [
-      grpc ? "Schema" : paramCount ? `Params (${paramCount})` : "Params",
-      authType ? `Auth ●` : "Auth",
-      grpc ? (headerCount ? `Metadata (${headerCount})` : "Metadata") : headerCount ? `Headers (${headerCount})` : "Headers",
+      grpc ? "Schema" : counted("Params", paramCount),
+      dotted("Auth", authType),
+      counted(grpc ? "Metadata" : "Headers", headerCount),
       ...(grpc
         ? ["Message"]
         : socket
-          ? [saved ? `Messages (${saved})` : "Messages"]
-          : ["Body", t.preRequestScript?.trim() ? "Script before ●" : "Script before", t.postRequestScript?.trim() ? "Script after ●" : "Script after"]),
+          ? [counted("Messages", saved)]
+          : ["Body", dotted("Script before", t.preRequestScript?.trim()), dotted("Script after", t.postRequestScript?.trim())]),
     ];
     // Comments: a saved request of a shared collection (sync.js).
     const sync = syncClient(this.store);
@@ -414,13 +416,13 @@ export class HitopRequest extends LitElement {
     const COMMENTS = labels.length;
     if (shared) {
       const n = sync.comments(t.loadedCollectionId, request).length;
-      labels.push(n ? `Comments (${n})` : "Comments");
+      labels.push(counted("Comments", n));
     }
     if ((socket || grpc) && this.section > BODY && this.section !== COMMENTS) this.section = BODY;
     if (!shared && this.section >= COMMENTS) this.section = PARAMS;
     return html`
       <section class="editor" aria-label="Request details">
-        <lit-material-tabs aria-label="Request details" .selected=${this.section} @change=${(e) => (this.section = e.target.selected)}>
+        <lit-material-tabs class="sub-tabs" aria-label="Request details" .selected=${this.section} @change=${(e) => (this.section = e.target.selected)}>
           ${labels.map((label) => html`<lit-material-tab>${label}</lit-material-tab>`)}
         </lit-material-tabs>
         <div class="editor-panel">
@@ -526,34 +528,34 @@ export class HitopRequest extends LitElement {
     return html`
       <section class="response" data-state=${t.responseType === "error" ? "error" : "done"} aria-label="Response">
         <div class="response-meta">
-          <span class=${`status-chip ${cls}`}>${t.statusCode} ${getStatusText(t.statusCode) === "Unknown Status" ? "" : getStatusText(t.statusCode)}</span>
-          ${t.durationMs != null ? html`<span>${t.durationMs} ms</span>` : nothing}
-          <span>${bytes(t.response || "")}</span>
+          <span class=${`status-chip ${cls}`}><span class="mono">${t.statusCode}</span>${getStatusText(t.statusCode) === "Unknown Status" ? "" : html` ${getStatusText(t.statusCode)}`}</span>
+          ${t.durationMs != null ? html`<span class="mono response-num">${t.durationMs}<span class="unit"> ms</span></span>` : nothing}
+          <span class="mono response-num">${bytes(t.response || "")}</span>
           ${t.truncated ? html`<span class="warn">Cut at 5 MB</span>` : nothing}
-          ${tests.length ? html`<span class=${passed === tests.length ? "pass" : "warn"}>${passed} of ${tests.length} tests passed</span>` : nothing}
           ${t.timings?.reused ? html`<span class="hint">reused connection</span>` : nothing}
+          ${tests.length ? html`<span class=${`checks-summary ${passed === tests.length ? "pass" : "warn"}`}>${icon(passed === tests.length ? "check-circle" : "warning-circle")}${passed} of ${tests.length} tests passed</span>` : nothing}
           <span class="response-actions">
             ${this.store.loadedRequest(t)
-              ? html`<lit-material-button variant="text" @click=${() => this.app.openDialog("save-example", { name: `${t.statusCode} response`, request: this.store.loadedRequest(t).name })}>${icon("bookmark-simple")} Save as example</lit-material-button>`
+              ? html`<lit-material-icon-button aria-label="Save as example" title="Save as example" @click=${() => this.app.openDialog("save-example", { name: `${t.statusCode} response`, request: this.store.loadedRequest(t).name })}>${icon("bookmark-simple")}</lit-material-icon-button>`
               : nothing}
-            <lit-material-button variant="text" @click=${() => this.app.openDialog("compare")}>${icon("git-diff")} Compare</lit-material-button>
+            <lit-material-icon-button aria-label="Compare" title="Compare responses" @click=${() => this.app.openDialog("compare")}>${icon("git-diff")}</lit-material-icon-button>
           </span>
         </div>
-        <lit-material-tabs aria-label="Response details" .selected=${this.responseSection} @change=${(e) => (this.responseSection = e.target.selected)}>
+        ${this.timing()}
+        <lit-material-tabs class="sub-tabs" aria-label="Response details" .selected=${this.responseSection} @change=${(e) => (this.responseSection = e.target.selected)}>
           <lit-material-tab>Body</lit-material-tab>
-          <lit-material-tab>Headers (${headers.length})</lit-material-tab>
-          ${tests.length ? html`<lit-material-tab>Tests (${passed}/${tests.length})</lit-material-tab>` : nothing}
-          ${live?.events.length ? html`<lit-material-tab>Events (${live.events.length})</lit-material-tab>` : nothing}
+          <lit-material-tab>Headers <span class="count">${headers.length}</span></lit-material-tab>
+          ${tests.length ? html`<lit-material-tab>Tests <span class=${`count ${passed === tests.length ? "pass" : "warn"}`}>${passed}/${tests.length}</span></lit-material-tab>` : nothing}
+          ${live?.events.length ? html`<lit-material-tab>Events <span class="count">${live.events.length}</span></lit-material-tab>` : nothing}
           ${canDiff ? html`<lit-material-tab>Diff vs last</lit-material-tab>` : nothing}
         </lit-material-tabs>
-        ${this.timing()}
         ${!live && /text\/event-stream/i.test(t.responseHeaders?.["content-type"] ?? "") && platform().stream
           ? html`<p class="hint sse-hint">An event stream: add the header <code>Accept: text/event-stream</code> to see its events as they arrive.
               <lit-material-button variant="text" @click=${() => this.set({ headers: [...(t.headers || []).filter((h) => h.name || h.value), { name: "Accept", value: "text/event-stream" }] })}>Add it</lit-material-button></p>`
           : nothing}
         ${this.responseSection === 0
           ? t.response
-            ? this.renderBodyView(code)
+            ? html`${this.renderBodyView(code)}${tests.length ? testList(tests) : nothing}`
             : html`<p class="hint">No body${t.method === "HEAD" ? ": HEAD responses never have one" : ""}.</p>`
           : this.responseSection === eventsAt
             ? this.renderEvents(live)
@@ -637,11 +639,21 @@ export class HitopRequest extends LitElement {
   methodSelect() {
     const t = this.tab;
     const pick = (v) => (v === "WS" ? this.set({ kind: "websocket" }) : v === "GRPC" ? this.set({ kind: "grpc" }) : this.set({ method: v, kind: undefined }));
-    return html`<lit-material-select class="method" variant="outlined" label="Method" .value=${t.kind === "websocket" ? "WS" : t.kind === "grpc" ? "GRPC" : t.method} @change=${(e) => pick(e.target.value)}>
+    const current = t.kind === "websocket" ? "WS" : t.kind === "grpc" ? "GRPC" : t.bodyMode === "graphql" ? "GQL" : t.method;
+    return html`<lit-material-select class=${`method m-${current}`} variant="outlined" label="Method" .value=${t.kind === "websocket" ? "WS" : t.kind === "grpc" ? "GRPC" : t.method} @change=${(e) => pick(e.target.value)}>
       ${METHODS.map((m) => html`<lit-material-select-option value=${m}>${m}</lit-material-select-option>`)}
       <lit-material-select-option value="WS">WebSocket</lit-material-select-option>
       <lit-material-select-option value="GRPC">gRPC</lit-material-select-option>
     </lit-material-select>`;
+  }
+
+  // What the URL says about the transport (nothing is made up: a browser can't see TLS or h2).
+  protocolHint() {
+    const url = String(this.tab.url ?? "").trim();
+    const m = /^([a-z][a-z0-9+.-]*):\/\//i.exec(url);
+    const scheme = m ? m[1].toLowerCase() : null;
+    const text = scheme === "https" ? "HTTPS" : scheme === "http" ? "HTTP" : scheme === "wss" ? "WSS" : scheme === "ws" ? "WS" : null;
+    return text ? html`<span class="url-hint" aria-hidden="true">${text}</span>` : nothing;
   }
 
   // The URL's ${variables} as chips under the URL bar: a click shows the value (secrets masked)
@@ -693,37 +705,41 @@ export class HitopRequest extends LitElement {
     return html`
       ${heading}
       <form class="request-line" novalidate @submit=${(e) => this.send(e)}>
-        ${this.methodSelect()}
-        <lit-material-text-field
-          class="url"
-          variant="outlined"
-          label="URL"
-          placeholder="https://api.example.com/users or \${baseUrl}/users"
-          ?error=${Boolean(urlError)}
-          error-text=${urlError ?? ""}
-          .value=${t.url}
-          @input=${(e) => this.set({ url: e.target.value })}
-          @keydown=${(e) => e.key === "Enter" && this.send(e)}
-        ></lit-material-text-field>
-        ${this.app.envSelect()}
+        <div class="url-bar">
+          ${this.methodSelect()}
+          <lit-material-text-field
+            class="url"
+            variant="outlined"
+            label="URL"
+            placeholder="https://api.example.com/users or \${baseUrl}/users"
+            ?error=${Boolean(urlError)}
+            error-text=${urlError ?? ""}
+            .value=${t.url}
+            @input=${(e) => this.set({ url: e.target.value })}
+            @keydown=${(e) => e.key === "Enter" && this.send(e)}
+          ></lit-material-text-field>
+          ${this.protocolHint()}
+        </div>
         ${t.loading
           ? html`<lit-material-button class="cancel-send" variant="outlined" type="button" title="Stop waiting for the response" @click=${() => this.store.cancel(t.id)}>
               ${icon("x")} Cancel
             </lit-material-button>`
-          : html`<lit-material-button variant="filled" type="submit" title=${`Send (${SEND_KEYS})`}>${icon("paper-plane-tilt")} Send</lit-material-button>`}
-        ${this.store.loadedRequest(t)
-          ? html`<lit-material-icon-button aria-label="Save request" title=${`Save (${SAVE_KEYS})`} @click=${() => this.app.openDialog("save", this.store.saveTarget())}>
-              ${icon("floppy-disk")}
-            </lit-material-icon-button>`
-          : html`<lit-material-button variant="outlined" class="save-draft" title=${`Save to a collection (${SAVE_KEYS})`} @click=${() => this.app.openDialog("save", this.store.saveTarget())}>
-              ${icon("floppy-disk")} <span class="visually-hidden">Save request, </span>Save to…
-            </lit-material-button>`}
-        <lit-material-icon-button aria-label="Ask AI" title="Ask AI: write tests, explain a failure, a request from text" @click=${() => this.app.openAi()}>
-          ${icon("sparkle")}
-        </lit-material-icon-button>
-        <lit-material-icon-button aria-label="Code" title="Code: curl, fetch, Python, Go, Java, Rust" ?disabled=${!t.url} @click=${() => this.app.openDialog("code", { lang: "curl", showSecrets: false })}>
-          ${icon("code")}
-        </lit-material-icon-button>
+          : html`<lit-material-button class="send" variant="filled" type="submit" title=${`Send (${SEND_KEYS})`}>Send <lit-material-kbd class="send-kbd" aria-hidden="true" keys="Mod+Enter"></lit-material-kbd></lit-material-button>`}
+        <span class="line-tools">
+          ${this.store.loadedRequest(t)
+            ? html`<lit-material-icon-button aria-label="Save request" title=${`Save (${SAVE_KEYS})`} @click=${() => this.app.openDialog("save", this.store.saveTarget())}>
+                ${icon("floppy-disk")}
+              </lit-material-icon-button>`
+            : html`<lit-material-button variant="outlined" class="save-draft" title=${`Save to a collection (${SAVE_KEYS})`} @click=${() => this.app.openDialog("save", this.store.saveTarget())}>
+                ${icon("floppy-disk")} <span class="visually-hidden">Save request, </span>Save to…
+              </lit-material-button>`}
+          <lit-material-icon-button aria-label="Ask AI" title="Ask AI: write tests, explain a failure, a request from text" @click=${() => this.app.openAi()}>
+            ${icon("sparkle")}
+          </lit-material-icon-button>
+          <lit-material-icon-button aria-label="Code" title="Code: curl, fetch, Python, Go, Java, Rust" ?disabled=${!t.url} @click=${() => this.app.openDialog("code", { lang: "curl", showSecrets: false })}>
+            ${icon("code")}
+          </lit-material-icon-button>
+        </span>
       </form>
       ${this.urlVariables()}
       ${this.panes(this.renderEditor(), () => this.renderResponse(), "Response")}`;
