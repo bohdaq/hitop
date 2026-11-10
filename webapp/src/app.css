@@ -949,7 +949,7 @@ button.storage-chip:focus-visible { outline: 2px solid var(--md-sys-color-primar
 
 /* HITOP Next V1 design parity: the app's type and density (the boards: Geist 14/20, 13 px in the chrome). */
 hitop-app { font-size: 14px; line-height: 20px; }
-hitop-app lit-material-command-palette { --lit-material-command-palette-width: min(980px, 100vw - 32px); --lit-material-command-palette-top: 96px; --lit-material-command-palette-max-height: min(60vh, 520px); }
+hitop-app lit-material-command-palette { --lit-material-command-palette-width: min(980px, 100vw - 32px); --lit-material-command-palette-preview-width: min(980px, 100vw - 32px); --lit-material-command-palette-top: 96px; --lit-material-command-palette-max-height: min(60vh, 520px); }
 hitop-app lit-material-command-palette::part(dialog) { background: var(--md-sys-color-surface-container); border-color: #33333a; box-shadow: 0 40px 120px rgb(0 0 0 / 0.65); }
 hitop-app lit-material-command-palette::part(input) { font-size: 17px; }
 hitop-app lit-material-command-palette::part(option) { min-height: 40px; padding: 0 14px; border-radius: 9px; font-size: 13.5px; color: #c8c8cf; }

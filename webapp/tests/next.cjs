@@ -128,6 +128,18 @@ function api() {
   await p.locator('header.topbar .command-field').click();
   await box.waitFor({ timeout: 5000 });
   check('the title bar search field opens the palette', await palette.evaluate((el) => el.open));
+  const rich = await palette.evaluate((el) => {
+    const r = el.shadowRoot;
+    const opt = [...r.querySelectorAll('[role="option"]')].find((o) => o.querySelector('lit-material-method-tag'));
+    opt?.dispatchEvent(new MouseEvent('mousemove', { bubbles: true }));
+    return { tags: r.querySelectorAll('lit-material-method-tag').length, label: opt?.querySelector('.label')?.textContent ?? '' };
+  });
+  await settle(p);
+  const pane = await palette.evaluate((el) => el.shadowRoot.querySelector('[part="preview"]')?.textContent ?? '');
+  const foot = await palette.evaluate((el) => el.shadowRoot.querySelector('[part="footer"]')?.textContent ?? '');
+  check('requests show a method tag (not the method in the label)', rich.tags > 0 && !/^(GET|POST|PUT|PATCH|DELETE) /.test(rich.label), JSON.stringify(rich));
+  check('the active request shows a preview with its URL', pane.length > 0 && /https?:|\$\{|\//.test(pane), pane.slice(0, 120));
+  check('the footer offers Tab to ask AI', foot.includes('ask AI'), foot);
   await p.keyboard.press('Escape');
   await settle(p);
   await p.locator('.pane-title').first().click().catch(() => {});

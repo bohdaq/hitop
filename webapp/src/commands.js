@@ -4,6 +4,8 @@
 
 // Sections and their prefixes: ">" only commands, "@" only environments, "#" only runs.
 export const SECTIONS = { requests: "Requests", actions: "Actions", environments: "Environments", runs: "Runs" };
+/** Extra key hints in the palette's footer. */
+export const PALETTE_HINTS = [{ keys: ["⇥"], label: "ask AI" }];
 export const PREFIXES = { ">": SECTIONS.actions, "@": SECTIONS.environments, "#": SECTIONS.runs };
 
 /**
@@ -53,10 +55,13 @@ export function storeItems(app, methodLabel) {
     for (const r of c.requests || []) {
       out.push({
         id: `request:${c.id}:${r.id}`,
-        label: `${methodLabel(r)} ${r.name}`,
+        label: r.name,
+        method: methodLabel(r),
         section: SECTIONS.requests,
         hint: c.name,
-        keywords: [r.url ?? "", r.file ?? ""],
+        keywords: [`${methodLabel(r)} ${r.name}`, r.url ?? "", r.file ?? ""],
+        request: r,
+        collection: c,
         run: () => s.openRequest(r, c.id),
       });
     }

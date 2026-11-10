@@ -11,7 +11,7 @@ import { IS_TAURI, platform } from "../platform/index.js";
 import { issueText } from "../pm.js";
 import "@lit-material/navigation";
 import "@lit-material/command-palette";
-import { PREFIXES, actions as paletteActions, storeItems } from "../commands.js";
+import { PALETTE_HINTS, PREFIXES, actions as paletteActions, storeItems } from "../commands.js";
 import "./request-view.js";
 import "./collection-views.js";
 import { WIDE_DIALOGS, codeDialog, compareDialog, refreshCode } from "./tools-dialogs.js";
@@ -84,6 +84,20 @@ function showMenuFor(e, menu) {
   addEventListener("pointerup", () => setTimeout(() => menu.show(anchor)), { once: true, capture: true });
 }
 
+
+// The palette preview renders inside the palette's shadow root, so it brings its own styles.
+const PREVIEW_CSS = `
+  .palette-preview { display: grid; gap: 10px; font-size: 12.5px; color: #c8c8cf; }
+  .mono { font-family: var(--font-mono, "Geist Mono", ui-monospace, monospace); }
+  .pp-line { display: flex; align-items: center; gap: 10px; min-width: 0; }
+  .pp-url { color: #ededf0; overflow-wrap: anywhere; }
+  .pp-place { color: #8a8a94; font-size: 11.5px; }
+  .pp-label { margin-top: 4px; font-size: 11px; font-weight: 600; letter-spacing: 0.08em; text-transform: uppercase; color: #8a8a94; }
+  .pp-headers { display: grid; grid-template-columns: max-content 1fr; gap: 2px 12px; margin: 0; }
+  .pp-headers dt { color: #a1a1aa; }
+  .pp-headers dd { margin: 0; overflow-wrap: anywhere; }
+  .pp-body { margin: 0; padding: 8px 10px; border: 1px solid #26262c; border-radius: 8px; background: #0f0f12; white-space: pre-wrap; overflow-wrap: anywhere; line-height: 19px; }
+`;
 
 export class HitopApp extends LitElement {
   static properties = {
@@ -1581,6 +1595,24 @@ export class HitopApp extends LitElement {
     this.updateComplete.then(() => this.querySelector("lit-material-command-palette")?.show());
   }
 
+  /** The palette's preview pane for a saved request: method and URL, headers, body, where it lives. */
+  palettePreview(item) {
+    const full = this.paletteItems?.find((x) => x.id === item.id);
+    const r = full?.request;
+    if (!r) return nothing;
+    const headers = (r.headers || []).filter((h) => h.name && h.enabled !== false);
+    const body = (r.body || "").split("\n").slice(0, 14).join("\n");
+    const place = r.file || `${full.collection?.name ?? ""}/`;
+    return html`<style>${PREVIEW_CSS}</style><div class="palette-preview">
+      <div class="pp-line"><lit-material-method-tag method=${methodLabel(r)} size="medium"></lit-material-method-tag><span class="pp-url mono">${r.url || "(no URL)"}</span></div>
+      <div class="pp-place mono">${place}</div>
+      ${headers.length
+        ? html`<div class="pp-label">Headers</div><dl class="pp-headers mono">${headers.slice(0, 8).map((h) => html`<dt>${h.name}</dt><dd>${h.value}</dd>`)}</dl>`
+        : nothing}
+      ${body ? html`<div class="pp-label">Body</div><pre class="pp-body mono">${body}</pre>` : nothing}
+    </div>`;
+  }
+
   buildPaletteItems() {
     return [...storeItems(this, methodLabel), ...paletteActions(this, ACTION_KEYS)];
   }
@@ -1604,7 +1636,8 @@ export class HitopApp extends LitElement {
 
   renderPalette() {
     return html`<lit-material-command-palette label="Command palette" placeholder="Search requests, run a command, or press Tab to ask AI…"
-      .items=${(this.paletteItems ?? []).map(({ run, ...it }) => it)} .prefixes=${PREFIXES}
+      .items=${(this.paletteItems ?? []).map(({ run, request, collection, ...it }) => it)} .prefixes=${PREFIXES}
+      .preview=${(item) => this.palettePreview(item)} .hints=${PALETTE_HINTS}
       @select=${(e) => this.paletteItems?.find((x) => x.id === e.detail.item.id)?.run()}
       @tab=${(e) => this.paletteToAi(e)}></lit-material-command-palette>`;
   }
