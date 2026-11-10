@@ -34,7 +34,6 @@ export class HitopCollections extends LightElement {
         <header class="page-header">
           <h1>Collections</h1>
           <div class="page-actions">
-            ${this.app.envSelect()}
             <lit-material-button variant="outlined" ?disabled=${!s.visibleCollections.length || run.running} @click=${() => s.runAll()}>
               ${icon("play")} ${run.running ? `Running ${run.completed + 1} of ${s.visibleCollections.filter((c) => c.requests?.length).length}` : "Run all"}
             </lit-material-button>
@@ -114,7 +113,6 @@ export class HitopCollection extends LightElement {
         <header class="page-header">
           <h1>${c.name}</h1>
           <div class="page-actions">
-            ${this.app.envSelect()}
             <lit-material-button variant=${n ? "outlined" : "filled"} class="new-request-here" @click=${() => this.app.newRequestIn(c.id)}>${icon("plus")} New request</lit-material-button>
             <lit-material-button variant=${n ? "filled" : "outlined"} ?disabled=${!n || run.running} @click=${() => s.runCollection(c.id)}>
               ${icon("play")} ${mine && run.running ? "Running" : "Run collection"}

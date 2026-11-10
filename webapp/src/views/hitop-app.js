@@ -1314,7 +1314,7 @@ export class HitopApp extends LitElement {
         <div class="side-pane-top">
           <span class="side-title" id="side-title">Collections</span>
           <button type="button" class="mini new-collection" aria-label="New collection" title="New collection" @click=${() => this.openDialog("add-collection")}>${icon("folder-simple-plus")}</button>
-          <button type="button" class="mini new-request" aria-label="New request" title=${`New request: a draft in the collection on screen; save it there with ${SAVE_KEYS}`} @click=${() => (this.navOpen = false, s.newRequestInFirstCollection())}>${icon("plus")}</button>
+          <button type="button" class="mini new-request" aria-label="Add a request" title=${`New request: a draft in the collection on screen; save it there with ${SAVE_KEYS}`} @click=${() => (this.navOpen = false, s.newRequestInFirstCollection())}>${icon("plus")}</button>
         </div>
         <label class="tree-filter-wrap">
           ${icon("magnifying-glass")}
