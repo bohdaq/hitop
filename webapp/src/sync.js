@@ -32,6 +32,8 @@ export const DEFAULT_SERVER = "https://sync.hitop.rws8.tech";
 const ACCOUNT_KEY = "hitop_sync_account";
 const STATE_KEY = "hitop_sync";
 const FILES_KEY = (ws) => `hitop_sync_files:${ws}`;
+// A browser sign-in that left this tab for the provider ("Continue in this tab"): { server, verifier, kind }.
+const PENDING_KEY = "hitop_sync_signin";
 export const SYNC_REF = "hitop-sync:";
 export const isSyncRef = (ref) => typeof ref === "string" && ref.startsWith(SYNC_REF);
 
@@ -301,37 +303,71 @@ export class SyncClient {
     this.pending = null;
   }
 
-  // Single sign-on: the sync server signs in with its identity provider. The page it opens ends
-  // on the server, which shows a one-time code to paste here; finishing also needs a verifier
-  // that never leaves this page, so a code seen by anyone else is useless to them.
+  // Browser sign-ins: single sign-on (the server's identity provider, or an organization's found by
+  // the work address's domain), Google and GitHub. The provider's page ends on the sync server,
+  // which hands the browser a one-time code: sent back to `returnTo` (a page of this app, as
+  // `#sso=<code>`) or shown on a page to paste here. Finishing also needs a verifier that never
+  // leaves this app, so a code seen by anyone else is useless to them.
   async ssoInfo(server) {
     const r = await this.http(this.serverUrl(server), "GET", "/v1/auth/sso");
     return r.status === 200 && r.json?.enabled ? r.json : null;
   }
 
-  async startSso(server, email) {
+  // → the provider's URL to open. `kind` sso | google | github; `email` (SSO only) finds an
+  // organization's provider; `returnTo` where the code comes back (none: a page to paste it from);
+  // `keep`: the verifier also goes to this tab's sessionStorage, for a sign-in that leaves the page.
+  async startBrowserSignIn(server, kind, { email = "", returnTo = "", keep = false } = {}) {
     server = this.serverUrl(server);
     const bytes = crypto.getRandomValues(new Uint8Array(32));
     const verifier = Array.from(bytes, (b) => b.toString(16).padStart(2, "0")).join("");
     const digest = new Uint8Array(await crypto.subtle.digest("SHA-256", new TextEncoder().encode(verifier)));
     const challenge = btoa(String.fromCharCode(...digest)).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
-    const r = await this.http(server, "POST", "/v1/auth/sso/start", { challenge, ...(email ? { email } : {}) });
-    if (r.status === 404) throw new Error("This sync server has no single sign-on; sign in by email");
+    const body = { challenge, ...(returnTo ? { returnTo } : {}), ...(kind === "sso" && email ? { email } : {}) };
+    const r = await this.http(server, "POST", `/v1/auth/${kind}/start`, body);
+    if (r.status === 404 && kind === "sso") {
+      // The organization's sign-on (found by the address's domain) or the server's own.
+      const org = r.json?.error === "org_sso_off" || (Boolean(email) && /organization/i.test(r.json?.message ?? ""));
+      throw new SyncError(404, org ? { error: "org_sso_off", message: `No single sign-on for this address's organization here (${r.json?.message ?? "not found"})` } : { error: "no_sso", message: "This sync server has no single sign-on" });
+    }
+    if (r.status === 404 && kind !== "sso") throw new SyncError(404, { error: "no_provider", message: `This sync server has no sign-in with ${kind === "github" ? "GitHub" : "Google"}` });
     if (r.status !== 200) throw new SyncError(r.status, r.json);
-    this.pendingSso = { server, verifier, url: r.json.url };
+    this.pendingBrowser = { server, verifier, kind };
+    if (keep) {
+      try {
+        sessionStorage.setItem(PENDING_KEY, JSON.stringify(this.pendingBrowser));
+      } catch {
+        // storage blocked: this tab can't come back to finish; the pop-up and paste ways still work
+      }
+    }
     return r.json.url;
   }
 
-  async finishSso(code, deviceName) {
-    const { server, verifier } = this.pendingSso ?? {};
-    if (!server) throw new Error("Start the SSO sign-in first");
-    const r = await this.http(server, "POST", "/v1/auth/sso/finish", { code: String(code).trim(), verifier });
-    if (r.status !== 200) throw new SyncError(r.status, r.json);
-    await this.completeSignIn(server, r, r.json.user.email, deviceName);
-    this.pendingSso = null;
+  // A sign-in started in this tab before it left for the provider (`keep`), if any.
+  static pendingInTab() {
+    try {
+      return JSON.parse(sessionStorage.getItem(PENDING_KEY) || "null");
+    } catch {
+      return null;
+    }
   }
 
-  // After a sign-in (`r.json` = {session, user}): keep this device's key or register one.
+  // The one-time code from the provider's way back (or pasted) → signed in: { email, kind, newDevice }.
+  async finishBrowserSignIn(code, deviceName) {
+    const p = this.pendingBrowser ?? SyncClient.pendingInTab();
+    try {
+      sessionStorage.removeItem(PENDING_KEY);
+    } catch {
+      // nothing kept
+    }
+    if (!p?.server) throw new Error("This sign-in wasn't started here, or it was finished already: start again");
+    const r = await this.http(p.server, "POST", `/v1/auth/${p.kind}/finish`, { code: String(code).trim(), verifier: p.verifier });
+    if (r.status !== 200) throw new SyncError(r.status, r.json);
+    this.pendingBrowser = null;
+    const newDevice = await this.completeSignIn(p.server, r, r.json.user.email, deviceName);
+    return { email: this.account().email, kind: p.kind, newDevice };
+  }
+
+  // After a sign-in (`r.json` = {session, user}): keep this device's key or register one (→ true).
   async completeSignIn(server, r, email, deviceName) {
     const session = r.json.session;
     const w = (await loadFormat()).sync;
@@ -340,6 +376,7 @@ export class SyncClient {
     const oldSecret = old && old.userId === r.json.user.id && old.server === server ? await this.secret() : null;
     const me = await this.http(server, "GET", "/v1/me", undefined, session);
     let keyId, secret, name, recovery, password;
+    let newDevice = false;
     if (oldSecret && me.json.keys.some((k) => k.id === old.keyId)) {
       ({ keyId, deviceName: name } = old);
       secret = oldSecret.secret;
@@ -352,10 +389,12 @@ export class SyncClient {
       if (added.status !== 201) throw new SyncError(added.status, added.json);
       keyId = added.json.id;
       secret = k.secret;
+      newDevice = true;
     }
     await this.saveSecret(server, { session, secret, ...(recovery ? { recovery } : {}), ...(password ? { password } : {}) });
     writeJson(ACCOUNT_KEY, { server, email: r.json.user.email ?? email, userId: r.json.user.id, keyId, deviceName: name });
     this.update((d) => (d.pins[keyId] = w.publicKey(secret)));
+    return newDevice;
   }
 
   // What a sign-in page can offer on `server`: {password, emailCode, passkey, sso, google, github}
@@ -560,29 +599,6 @@ export class SyncClient {
     void password;
     await this.saveSecret(a.server, mine ? { ...rest, password: keys.bundleKey } : rest);
     if (mine) this.update((d) => (d.recoveryHash = null));
-  }
-
-  // "Continue with Google" / "Continue with GitHub": the same pasted one-time code as SSO.
-  async startOAuth(server, kind) {
-    server = this.serverUrl(server);
-    const bytes = crypto.getRandomValues(new Uint8Array(32));
-    const verifier = Array.from(bytes, (b) => b.toString(16).padStart(2, "0")).join("");
-    const digest = new Uint8Array(await crypto.subtle.digest("SHA-256", new TextEncoder().encode(verifier)));
-    const challenge = btoa(String.fromCharCode(...digest)).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
-    const r = await this.http(server, "POST", `/v1/auth/${kind}/start`, { challenge });
-    if (r.status === 404) throw new Error(`This sync server has no sign-in with ${kind === "github" ? "GitHub" : "Google"}`);
-    if (r.status !== 200) throw new SyncError(r.status, r.json);
-    this.pendingOAuth = { server, verifier, kind, url: r.json.url };
-    return r.json.url;
-  }
-
-  async finishOAuth(code, deviceName) {
-    const { server, verifier, kind } = this.pendingOAuth ?? {};
-    if (!server) throw new Error("Start the sign-in first");
-    const r = await this.http(server, "POST", `/v1/auth/${kind}/finish`, { code: String(code).trim(), verifier });
-    if (r.status !== 200) throw new SyncError(r.status, r.json);
-    await this.completeSignIn(server, r, r.json.user.email, deviceName);
-    this.pendingOAuth = null;
   }
 
   async signOut() {
