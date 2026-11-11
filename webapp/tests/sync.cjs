@@ -534,8 +534,8 @@ async function launchOff(options) {
     if (!cb.isClosed()) await cb.close();
     // ...and the app opened with #sso= (back from a sign-in in this tab) takes it off the address
     // and finishes, or says why not (this one was never started here).
-    await bob.page.goto('about:blank');
-    await bob.page.goto(`${bob.url}#sso=never-started`, { waitUntil: 'networkidle' });
+    // (another query, so the browser loads the page instead of only moving to the fragment)
+    await bob.page.goto(`${bob.url}?back=1#sso=never-started`, { waitUntil: 'networkidle' });
     await bob.page.waitForSelector('#dialog hitop-sign-in .signin-error', { timeout: 15000 }).catch(() => {});
     check('#sso= on the app: the code leaves the address and the dialog says it could not finish', !(await bob.page.evaluate(() => location.hash)) && (await D(bob).innerText().catch(() => '')).includes("Couldn't finish signing in"), await D(bob).innerText().catch(() => ''));
     await bob.page.keyboard.press('Escape');
