@@ -121,4 +121,30 @@ async function launch({ viewport = { width: 1280, height: 860 }, seed = null, ta
   return { browser, ctx, page, mode: MODE, tauri: TAURI, url, sent, stored, download, mock, finish };
 }
 
-module.exports = { launch, checker, MODE, TAURI, BASE };
+// Runs `body` (an async function's text with `app`, `c` = the app's SyncClient and `a`) in the
+// page: { ok, value } or { ok: false, error }. The app has no password or mailed-code sign-in in
+// its UI (the Sign in dialog offers GitHub, Google and SSO); the suites sign in through the same
+// client the UI uses.
+async function inApp(page, body, arg) {
+  return page.evaluate(async ([b, a]) => {
+    const AsyncFunction = Object.getPrototypeOf(async function () {}).constructor;
+    const app = document.querySelector('hitop-app');
+    try {
+      return { ok: true, value: await new AsyncFunction('app', 'c', 'a', b)(app, app.sync(), a) };
+    } catch (e) {
+      return { ok: false, error: e?.message ?? String(e) };
+    }
+  }, [body, arg]);
+}
+
+// Signs `email` in on `server` with a mailed code (sync-server's /v1/auth/email), then runs the
+// app's after-sign-in step (library, toast, top bar) as the dialog does. `code()` resolves to the
+// mailed code once the mail is there.
+async function signInByCode(page, server, email, code) {
+  const started = await inApp(page, 'await c.startSignIn(a[0], a[1]);', [server, email]);
+  if (!started.ok) throw new Error(`sign-in as ${email}: ${started.error}`);
+  const done = await inApp(page, 'await c.finishSignIn(a); await app.signedIn();', await code());
+  if (!done.ok) throw new Error(`sign-in as ${email}: ${done.error}`);
+}
+
+module.exports = { launch, checker, inApp, signInByCode, MODE, TAURI, BASE };

@@ -4,8 +4,12 @@
 // share a collection, invite, trust and add, open it on the other side, edit both ways, a
 // conflict resolved both ways (View both, Take theirs, Keep mine), delete, a runner credential,
 // and removing the member; run history (a sealed report opened on the other member's device) and
-// alert settings (HITOP Cloud C4); the owner's audit log; Sign in with SSO (against Keycloak when
-// HITOP_SYNC_TEST_KEYCLOAK is set, see sync-server/tests/keycloak.rs). The server's database never
+// alert settings (HITOP Cloud C4); the owner's audit log; the Sign in dialog (top bar and Share,
+// providers from the server, the second step's inline error, Escape, Continue with GitHub against a
+// fake GitHub: the pop-up, a blocked pop-up continued in this tab, the desktop's pasted code); Sign
+// in with SSO (against Keycloak when HITOP_SYNC_TEST_KEYCLOAK is set, see
+// sync-server/tests/keycloak.rs). The suite signs in by mailed code and password through the app's
+// sync client (the app has no such forms any more). The server's database never
 // holds a URL or a request name. A malicious server (this test editing its SQLite database) can't
 // make the invitee use a workspace key of its own: an unauthenticated wrap, one forged in the
 // owner's name and one from a device the server made up are all refused.
@@ -15,7 +19,8 @@ const fs = require('fs');
 const net = require('net');
 const os = require('os');
 const path = require('path');
-const { launch, checker, TAURI, BASE } = require('./harness.cjs');
+const { launch, checker, inApp, signInByCode, TAURI, BASE } = require('./harness.cjs');
+const { fakeGithub } = require('./fake-github.cjs');
 const { results, check } = checker();
 const settle = (p, ms = 400) => p.waitForTimeout(ms);
 
@@ -102,7 +107,12 @@ async function launchOff(options) {
 }
 
 (async () => {
-  const server = await syncServer();
+  // A fake GitHub for "Continue with GitHub" (Dave signs in with it); this server has no Google.
+  const gh = fakeGithub({ appId: '1', installation: 1, callback: () => 'http://127.0.0.1:9/unused', user: { id: 5005, login: 'dave', email: 'dave@example.com' } });
+  const ghPort = await freePort();
+  await new Promise((r) => gh.server.listen(ghPort, '127.0.0.1', r));
+  const ghUrl = `http://127.0.0.1:${ghPort}`;
+  const server = await syncServer({ HITOP_SYNC_GITHUB_CLIENT_ID: 'Iv1.signin', HITOP_SYNC_GITHUB_CLIENT_SECRET: 'signin-secret', HITOP_SYNC_GITHUB_URL: ghUrl, HITOP_SYNC_GITHUB_API_URL: ghUrl });
   const ada = await launchOff({ results });
   const bob = await launchOff({ results });
   const errors = [];
@@ -126,15 +136,11 @@ async function launchOff(options) {
       await settle(h.page);
     }
   };
-  // The Account page: the top bar's Sign in, or the account menu's Account & devices.
+  // The Account page (signed in): the account menu's Account & devices.
   const openSync = async (h) => {
     await closeDialog(h);
-    const signin = h.page.locator('header.topbar').getByRole('button', { name: 'Sign in', exact: true });
-    if (await signin.count()) await signin.click();
-    else {
-      await h.page.locator('header.topbar .account-button').click();
-      await h.page.locator('#account-menu').getByText('Account & devices').click();
-    }
+    await h.page.locator('header.topbar .account-button').click();
+    await h.page.locator('#account-menu').getByText('Account & devices').click();
     await settle(h.page);
   };
   // A collection's Share dialog, on the People tab.
@@ -151,11 +157,6 @@ async function launchOff(options) {
     if (!(await d.evaluate((e) => e.open))) await d.locator('summary').click();
     await idle(h);
   };
-  // Sign-in's More options: the sync server (here the test's) and SSO.
-  const more = async (h) => {
-    const d = S(h).locator('details.sync-more');
-    if (!(await d.evaluate((e) => e.open))) await d.locator('summary').click();
-  };
   // Password & recovery on the Account page (collapsed).
   const security = async (h) => {
     const d = S(h).locator('details.account-security');
@@ -170,16 +171,11 @@ async function launchOff(options) {
     await S(h).getByRole('button', { name: /Sync now/ }).first().click();
     await idle(h);
   };
+  // A mailed code through the app's sync client, then the Account page.
   const signIn = async (h, email) => {
+    const before = server.mails(email);
+    await signInByCode(h.page, server.url, email, () => server.code(email, '/signin#', before));
     await openSync(h);
-    await more(h);
-    await S(h).getByLabel('Sync server').fill(server.url);
-    await S(h).getByLabel('Email').fill(email);
-    await S(h).getByRole('button', { name: 'Email me a code instead' }).click();
-    await S(h).getByRole('button', { name: 'Send code' }).click();
-    await idle(h);
-    await S(h).getByLabel('Code from the mail').fill(await server.code(email, '/signin#'));
-    await S(h).getByRole('button', { name: 'Sign in', exact: true }).click();
     await idle(h);
     await h.page.waitForFunction(() => document.querySelector('hitop-sync [aria-label="Your fingerprint"]')?.textContent.trim().length > 30, null, { timeout: 15000 }).catch(async (e) => {
       throw new Error(`sign-in as ${email} didn't finish (${e.message}): ${await alertText(h)} ${await note(h)} ${errors.join(' | ')}`);
@@ -430,45 +426,135 @@ async function launchOff(options) {
   await settle(bob.page);
   check('a deleted shared collection stays deleted', (await requests(bob, 'Shop API')) === null && (await S(bob).getByRole('button', { name: 'Open here' }).count()) === 0 && (await bob.page.evaluate(() => Object.keys(localStorage).filter((k) => k.startsWith('hitop_sync_files:')).length)) === 0, JSON.stringify(await requests(bob, 'Shop API')));
 
-  // Sign in with SSO: this server has none.
+  // The Sign in dialog (2026-11-11). Bob signs out; the dialog opens over the app from the top
+  // bar, offers what the server has (GitHub here, no Google) and no email or password field; its
+  // second step says inline that this server has no single sign-on; Escape closes it.
   await openSync(bob);
   await S(bob).getByRole('button', { name: 'Sign out' }).click();
   await idle(bob);
   check('signed out: the top bar offers Sign in', (await bob.page.locator('header.topbar').getByRole('button', { name: 'Sign in', exact: true }).count()) === 1);
-  await more(bob);
-  await S(bob).getByLabel('Sync server').fill(server.url);
-  await S(bob).getByRole('button', { name: 'Sign in with SSO' }).click();
-  await idle(bob);
-  check('Sign in with SSO on a server without it says so', (await alertText(bob)).includes('no single sign-on'), await alertText(bob));
+  // The server the dialog uses (Settings keeps it once someone signed in on another one).
+  await bob.page.evaluate((u) => localStorage.setItem('hitop_settings', JSON.stringify({ syncServer: u })), server.url);
+  const D = (h) => h.page.locator('#dialog hitop-sign-in');
+  const waitStep = (h, s) => h.page.waitForSelector(`#dialog hitop-sign-in .signin[data-step="${s}"]`, { timeout: 15000 });
+  const openSignIn = async (h) => {
+    await h.page.locator('header.topbar').getByRole('button', { name: 'Sign in', exact: true }).click();
+    await waitStep(h, 'providers');
+    await settle(h.page, 200);
+  };
+  const toastText = (h) => h.page.locator('#toast').evaluate((el) => [el.message, el.textContent, el.shadowRoot?.textContent].filter(Boolean).join(' '));
+  await store(bob, 's.show("collections");');
+  await settle(bob.page);
+  await openSignIn(bob);
+  check('Sign in opens a dialog over the app (the page under it stays)', (await bob.page.locator('#dialog[open]').count()) === 1 && (await store(bob, 'return s.view.kind;')) === 'collections', await store(bob, 'return s.view.kind;'));
+  check('the dialog is labelled "Sign in to HITOP"', (await bob.page.getByRole('dialog', { name: 'Sign in to HITOP' }).count()) === 1);
+  check('it offers the providers the server has: GitHub (no Google here)', (await D(bob).locator('.signin-provider').allInnerTexts()).join('|') === 'Continue with GitHub', (await D(bob).locator('.signin-provider').allInnerTexts()).join('|'));
+  check('...and the link to the second step', (await D(bob).getByRole('button', { name: 'Company SSO or your own server…' }).count()) === 1);
+  check('no email or password field, no mailed code', (await D(bob).locator('lit-material-text-field, input').count()) === 0 && !/password|Email me a code/i.test(await D(bob).innerText()), await D(bob).innerText());
+  check('focus is on the first provider button', await bob.page.evaluate(() => document.activeElement?.id === 'signin-github'), await bob.page.evaluate(() => document.activeElement?.outerHTML.slice(0, 80)));
+  check('the fine print links the terms and the privacy policy', (await D(bob).getByRole('link', { name: 'terms' }).getAttribute('href')).endsWith('/legal/terms.html') && (await D(bob).getByRole('link', { name: 'privacy policy' }).getAttribute('href')).endsWith('/privacy.html'));
+  await bob.page.keyboard.press('Escape');
+  await settle(bob.page);
+  check('Escape closes it and focus returns to Sign in', (await D(bob).count()) === 0 && (await bob.page.evaluate(() => Boolean(document.activeElement?.closest('.account-signin')))), await bob.page.evaluate(() => document.activeElement?.outerHTML.slice(0, 80)));
+
+  // The second step: Work email and Server; this server has no single sign-on, said under Server.
+  await openSignIn(bob);
+  await D(bob).getByRole('button', { name: 'Company SSO or your own server…' }).click();
+  await waitStep(bob, 'sso');
+  check('the second step has Work email and Server (the current one)', (await D(bob).getByLabel('Work email').count()) === 1 && (await D(bob).locator('#signin-server').evaluate((e) => e.value)) === server.url);
+  await D(bob).getByRole('button', { name: 'Continue with SSO' }).click();
+  await bob.page.waitForSelector('#dialog #signin-server[error]', { timeout: 15000 }).catch(() => {});
+  const serverError = await D(bob).locator('#signin-server').evaluate((e) => (e.error ? e.errorText : ''));
+  check('no single sign-on: said inline under Server, not in a banner', serverError.includes('no single sign-on') && (await bob.page.locator('#dialog lit-material-alert').count()) === 0, serverError);
+  check('...and focus goes to that field', await bob.page.evaluate(() => document.activeElement?.id === 'signin-server'));
+  await D(bob).getByRole('button', { name: '‹ Back' }).click();
+  await waitStep(bob, 'providers');
+  check('‹ Back returns to the providers', (await D(bob).locator('.signin-provider').count()) === 1);
+  await bob.page.keyboard.press('Escape');
+  await settle(bob.page);
+
+  // From a collection's Share dialog: Sign in there opens the same dialog; Continue with GitHub
+  // (the web: a pop-up that closes itself; the desktop: the code pasted from the server's page)
+  // signs Dave in, and the Share dialog comes back.
+  await store(bob, 's.addCollection("Dave API"); s.save();');
+  await openShare(bob, 'Dave API');
+  await S(bob).getByRole('button', { name: 'Sign in', exact: true }).click();
+  await waitStep(bob, 'providers');
+  check('Share (signed out) opens the Sign in dialog', (await D(bob).locator('.signin-provider').count()) === 1);
+  await D(bob).getByRole('button', { name: 'Continue with GitHub' }).click();
+  if (TAURI) {
+    await waitStep(bob, 'paste');
+    const link = (await D(bob).getByLabel('SSO sign-in link').innerText()).trim();
+    const tab = await bob.page.context().newPage();
+    await tab.goto(link);
+    const pasteCode = (await tab.locator('code').innerText()).trim();
+    await tab.close();
+    check('the desktop: the server shows a one-time code to paste', pasteCode.length > 30, pasteCode.slice(0, 10));
+    await D(bob).getByLabel('Code shown after signing in').fill(pasteCode);
+    await D(bob).getByRole('button', { name: 'Sign in', exact: true }).click();
+  }
+  await bob.page.locator('header.topbar .account-button').waitFor({ timeout: 20000 }).catch(() => {});
+  await bob.page.locator('#dialog hitop-sync').waitFor({ timeout: 10000 }).catch(() => {});
+  await settle(bob.page);
+  check('Continue with GitHub signs Dave in: avatar in the top bar, a toast says who', (await bob.page.locator('header.topbar .account-button').count()) === 1 && (await toastText(bob)).includes('Signed in as dave@example.com'), await toastText(bob));
+  check('...the Sign in dialog closed and the Share dialog is back, ready to share', (await D(bob).count()) === 0 && (await S(bob).getByRole('button', { name: /Share with people/ }).count()) === 1);
+
+  // A blocked pop-up (web): Continue in this tab leaves for GitHub and the app finishes the
+  // sign-in when it comes back.
+  if (!TAURI) {
+    await closeDialog(bob);
+    await bob.page.locator('header.topbar .account-button').click();
+    await bob.page.locator('#account-menu').getByText('Sign out').click();
+    await settle(bob.page);
+    await bob.page.evaluate(() => (window.open = () => null));
+    await openSignIn(bob);
+    await D(bob).getByRole('button', { name: 'Continue with GitHub' }).click();
+    await waitStep(bob, 'waiting');
+    check('a blocked pop-up: the dialog offers Continue in this tab', (await D(bob).innerText()).includes('blocked') && (await D(bob).getByRole('button', { name: 'Continue in this tab' }).count()) === 1);
+    await D(bob).getByRole('button', { name: 'Continue in this tab' }).click();
+    await bob.page.waitForURL((u) => u.href.startsWith(bob.url) && !u.hash, { timeout: 20000 }).catch(() => {});
+    await bob.page.locator('header.topbar .account-button').waitFor({ timeout: 20000 }).catch(() => {});
+    await settle(bob.page);
+    check('...and back in the app, signed in as Dave', (await bob.page.locator('header.topbar .account-button').count()) === 1 && (await toastText(bob)).includes('Signed in as dave@example.com') && !(await bob.page.evaluate(() => location.hash)), await toastText(bob));
+  }
+
   const kc = process.env.HITOP_SYNC_TEST_KEYCLOAK;
   if (kc) {
-    // A second server signing in with Keycloak; the sign-in page runs in a real browser tab.
+    // A second server signing in with Keycloak through the second step (the web: a pop-up; the
+    // desktop: the code pasted from the server's page).
     const secretFile = path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'hitop-sso-')), 'secret');
     fs.writeFileSync(secretFile, 'hitop-sync-test-secret\n');
     const sso = await syncServer({ HITOP_SYNC_OIDC_ISSUER: `${kc.replace(/\/+$/, '')}/realms/hitop`, HITOP_SYNC_OIDC_CLIENT_ID: 'hitop-sync', HITOP_SYNC_OIDC_CLIENT_SECRET_FILE: secretFile });
-    await S(bob).getByLabel('Sync server').fill(sso.url);
+    await closeDialog(bob);
+    await bob.page.locator('header.topbar .account-button').click();
+    await bob.page.locator('#account-menu').getByText('Sign out').click();
+    await settle(bob.page);
+    await bob.page.evaluate((u) => localStorage.setItem('hitop_settings', JSON.stringify({ syncServer: u })), sso.url);
+    await bob.page.locator('header.topbar').getByRole('button', { name: 'Sign in', exact: true }).click();
+    await waitStep(bob, 'sso');
     const popup = TAURI ? null : bob.page.context().waitForEvent('page');
-    await S(bob).getByRole('button', { name: 'Sign in with SSO' }).click();
-    await idle(bob);
-    const link = (await S(bob).getByLabel('SSO sign-in link').innerText()).trim();
+    await D(bob).getByRole('button', { name: 'Continue with SSO' }).click();
     let tab;
     if (popup) tab = await popup;
     else {
+      await waitStep(bob, 'paste');
       tab = await bob.page.context().newPage();
-      await tab.goto(link);
+      await tab.goto((await D(bob).getByLabel('SSO sign-in link').innerText()).trim());
     }
     await tab.waitForSelector('#username', { timeout: 30000 });
     await tab.fill('#username', 'alice');
     await tab.fill('#password', 'alice-test-pw');
     await tab.click('#kc-login');
-    await tab.waitForSelector('code', { timeout: 30000 });
-    const ssoCode = (await tab.locator('code').innerText()).trim();
-    check('the provider sends the browser back to the server, which shows a one-time code', ssoCode.length > 30 && (await tab.content()).includes('alice@corp.test'), ssoCode.slice(0, 10));
-    await tab.close();
-    await S(bob).getByLabel('Code shown after signing in').fill(ssoCode);
-    await S(bob).getByRole('button', { name: 'Sign in', exact: true }).click();
-    await idle(bob);
-    check('Sign in with SSO', (await S(bob).locator('.account-lead').first().innerText()).includes('alice@corp.test'), (await alertText(bob)) + (await S(bob).locator('.account-lead').first().innerText()));
+    if (TAURI) {
+      await tab.waitForSelector('code', { timeout: 30000 });
+      const ssoCode = (await tab.locator('code').innerText()).trim();
+      check('the provider sends the browser back to the server, which shows a one-time code', ssoCode.length > 30 && (await tab.content()).includes('alice@corp.test'), ssoCode.slice(0, 10));
+      await tab.close();
+      await D(bob).getByLabel('Code shown after signing in').fill(ssoCode);
+      await D(bob).getByRole('button', { name: 'Sign in', exact: true }).click();
+    }
+    await bob.page.locator('header.topbar .account-button').waitFor({ timeout: 30000 }).catch(() => {});
+    check('Sign in with SSO', (await toastText(bob)).includes('alice@corp.test'), await toastText(bob));
     sso.stop();
   } else {
     console.log('[sync] HITOP_SYNC_TEST_KEYCLOAK not set: the SSO sign-in with Keycloak is skipped');
@@ -513,51 +599,43 @@ async function launchOff(options) {
   await ada2.browser.close();
   ada2.mock?.cleanup();
 
-  // HITOP Cloud C1b passwords: Carol signs up with a password (confirmation code by mail) and
-  // shares a collection; on a new device her password signs her in and unlocks her device's keys
-  // (no trust step); a wrong password is refused; a password change re-seals them; a reset by
-  // mail signs in but loses them (the page warns before and after).
+  // HITOP Cloud C1b passwords, through the app's sync client (the app's UI signs in with GitHub,
+  // Google or SSO; passwords are the CLI's and HITOP Cloud's): Carol signs up with a password
+  // (confirmation code by mail) and shares a collection; on a new device her password signs her
+  // in and unlocks her device's keys (no trust step); a wrong password is refused; a password
+  // change re-seals them; a device signed in another way unlocks them with "Unlock with password"
+  // (Account, Password & recovery); a reset by mail signs in but loses them.
   const fresh = async () => {
     const h = await launchOff({ results });
     h.page.on('pageerror', (e) => errors.push(e.message));
     await h.page.goto(h.url, { waitUntil: 'networkidle' });
-    await openSync(h);
-    await more(h);
-    await S(h).getByLabel('Sync server').fill(server.url);
     return h;
   };
   const fp = (h) => text(S(h).getByLabel('Your fingerprint'));
-  // Email, Continue, then the password.
-  const emailFirst = async (h, email) => {
-    await S(h).getByLabel('Email').fill(email);
-    const next = S(h).getByRole('button', { name: 'Continue', exact: true });
-    if (await next.count()) await next.click();
-    await settle(h.page, 150);
-  };
+  const pw = (h, body, arg) => inApp(h.page, body, arg);
   const passwordSignIn = async (h, password) => {
-    await emailFirst(h, 'carol@example.com');
-    await S(h).getByLabel('Password', { exact: true }).fill(password);
-    await S(h).getByRole('button', { name: 'Sign in', exact: true }).click();
-    await idle(h);
+    const r = await pw(h, 'const r = await c.passwordSignIn(a[0], a[1], a[2]); await app.signedIn(); return r;', [server.url, 'carol@example.com', password]);
+    if (r.ok) {
+      await openSync(h);
+      await idle(h);
+    }
+    return r;
   };
   const carol = await fresh();
   await store(carol, `s.addCollection("Carol API"); const c = s.collections.find((c) => c.name === "Carol API");
     s.collections = s.collections.filter((x) => x.id === c.id).map((x) => x.id === c.id ? { ...x, requests: [{ id: 301, name: "Ping", method: "GET", url: "https://carol.e2e-sync.test/ping", headers: [], body: "" }] } : x);
     s.emit(); s.save();`);
-  await emailFirst(carol, 'carol@example.com');
-  await S(carol).getByLabel('Password', { exact: true }).fill('short');
-  await S(carol).getByRole('button', { name: 'Create account' }).click();
-  await idle(carol);
-  check('sign-up refuses a short password', (await alertText(carol)).includes('at least 8'), await alertText(carol));
-  await S(carol).getByLabel('Password', { exact: true }).fill('carol correct horse');
+  const short = await pw(carol, 'await c.signUp(a[0], a[1], a[2]);', [server.url, 'carol@example.com', 'short']);
+  check('sign-up refuses a short password', !short.ok && short.error.includes('at least 8'), short.error);
   const before = server.mails('carol@example.com');
-  await S(carol).getByRole('button', { name: 'Create account' }).click();
-  await idle(carol);
-  await S(carol).getByLabel('Code from the confirmation mail').fill(await server.code('carol@example.com', '/signin#', before));
-  await S(carol).getByRole('button', { name: 'Confirm' }).click();
+  const up = await pw(carol, 'await c.signUp(a[0], a[1], a[2]);', [server.url, 'carol@example.com', 'carol correct horse']);
+  const confirmed = await pw(carol, 'const r = await c.finishSignUp(a); await app.signedIn(); return r;', up.ok ? await server.code('carol@example.com', '/signin#', before) : '');
+  await openSync(carol);
   await idle(carol);
   const carolFp = await fp(carol);
-  check('sign up with a password and the mailed code', carolFp.length > 30 && (await text(S(carol).getByLabel('Password status'))).includes('has a password'), (await alertText(carol)) + (await note(carol)));
+  check('sign up with a password and the mailed code', up.ok && confirmed.ok && carolFp.length > 30 && (await text(S(carol).getByLabel('Password status'))).includes('has a password'), `${up.error ?? ''} ${confirmed.error ?? ''}`);
+  await security(carol);
+  check('the Account page has no password form (set or change it with the CLI or HITOP Cloud)', (await S(carol).getByLabel('New password').count()) === 0 && (await S(carol).getByLabel('Current password').count()) === 0 && (await S(carol).getByLabel('Your password').count()) === 0);
   await openShare(carol, 'Carol API');
   await S(carol).getByRole('button', { name: /Share with people/ }).click();
   await idle(carol);
@@ -567,47 +645,49 @@ async function launchOff(options) {
   check("the device's keys are sealed with the password on the server", Number(bundles()) === 1 && (await text(S(carol).getByLabel('Password status'))).includes("this device's keys"), String(bundles()));
 
   const carol2 = await fresh();
-  await passwordSignIn(carol2, 'not the password at all');
-  check('a wrong password is refused, without saying which part', (await alertText(carol2)).includes('email address or the password is wrong') && (await fp(carol2)) === '', await alertText(carol2));
-  await passwordSignIn(carol2, 'carol correct horse');
-  check('a password sign-in on a new device unlocks the same device (no new key)', (await note(carol2)).includes('unlocked your device') && (await fp(carol2)) === carolFp, (await note(carol2)) + (await alertText(carol2)));
+  const wrong = await passwordSignIn(carol2, 'not the password at all');
+  check('a wrong password is refused, without saying which part', !wrong.ok && wrong.error.includes('email address or the password is wrong'), wrong.error);
+  const right = await passwordSignIn(carol2, 'carol correct horse');
+  check('a password sign-in on a new device unlocks the same device (no new key)', right.ok && right.value?.unlocked && (await fp(carol2)) === carolFp, JSON.stringify(right));
   await S(carol2).getByRole('button', { name: 'Open here' }).first().click();
   await idle(carol2);
-  check('...and opens the workspace with no trust step', JSON.stringify(await requests(carol2, 'Carol API')) === JSON.stringify(await requests(carol, 'Carol API')) && !(await S(carol2).locator('.sync-untrusted').count()), JSON.stringify(await requests(carol2, 'Carol API')) + (await alertText(carol2)) + (await note(carol2)) + JSON.stringify(await store(carol2, 'return s.collections.map((c) => c.name)')));
+  check('...and opens the workspace with no trust step', JSON.stringify(await requests(carol2, 'Carol API')) === JSON.stringify(await requests(carol, 'Carol API')) && !(await S(carol2).locator('.sync-untrusted').count()), JSON.stringify(await requests(carol2, 'Carol API')) + (await alertText(carol2)) + (await note(carol2)));
 
   // A password change on the first device re-seals the keys; the new password unlocks them.
-  await security(carol);
-  await S(carol).getByLabel('Current password').fill('carol correct horse');
-  await S(carol).getByLabel('New password', { exact: true }).fill('carol new battery staple');
-  await S(carol).getByLabel('Repeat the new password').fill('carol new battery staple');
-  await S(carol).getByRole('button', { name: 'Change password' }).click();
-  await idle(carol);
-  check('change the password', (await note(carol)).includes('Password changed'), (await note(carol)) + (await alertText(carol)));
+  const changed = await pw(carol, 'await c.changePassword(a[0], a[1]);', ['carol correct horse', 'carol new battery staple']);
+  check('change the password', changed.ok, changed.error);
   await carol2.browser.close();
   carol2.mock?.cleanup();
   const carol3 = await fresh();
-  await passwordSignIn(carol3, 'carol correct horse');
-  check('the old password no longer signs in', (await alertText(carol3)).includes('wrong'), await alertText(carol3));
-  await passwordSignIn(carol3, 'carol new battery staple');
-  check('the new password unlocks the same device', (await fp(carol3)) === carolFp, (await note(carol3)) + (await alertText(carol3)));
+  const old = await passwordSignIn(carol3, 'carol correct horse');
+  check('the old password no longer signs in', !old.ok && old.error.includes('wrong'), old.error);
+  const next = await passwordSignIn(carol3, 'carol new battery staple');
+  check('the new password unlocks the same device', next.ok && (await fp(carol3)) === carolFp, JSON.stringify(next));
   await carol3.browser.close();
   carol3.mock?.cleanup();
 
+  // Signed in another way on a new device (a mailed code here; GitHub, Google and SSO alike get a
+  // new key): Account, Password & recovery offers Unlock with password, which makes this browser
+  // the device the password sealed.
+  const carol5 = await fresh();
+  const otherFp = await signIn(carol5, 'carol@example.com');
+  await security(carol5);
+  check('a new device signed in another way offers Unlock with password', otherFp !== carolFp && (await S(carol5).getByLabel('Your password').count()) === 1, otherFp);
+  await S(carol5).getByLabel('Your password').fill('carol new battery staple');
+  await S(carol5).getByRole('button', { name: 'Unlock with password' }).click();
+  await idle(carol5);
+  check('...which makes it the same device', (await note(carol5)).includes('unlocked the device') && (await fp(carol5)) === carolFp, (await note(carol5)) + (await alertText(carol5)));
+  await carol5.browser.close();
+  carol5.mock?.cleanup();
+
   // Forgot the password: a reset on a new device signs in but can't unlock the workspace.
   const carol4 = await fresh();
-  await emailFirst(carol4, 'carol@example.com');
-  await S(carol4).getByRole('button', { name: 'Forgot password?' }).click();
-  check('the page warns before a reset', (await S(carol4).getByLabel('Reset warning').innerText()).includes("can't unlock your end-to-end encrypted workspaces"));
   const beforeReset = server.mails('carol@example.com');
-  await S(carol4).getByRole('button', { name: 'Send reset code' }).click();
+  const forgot = await pw(carol4, 'await c.forgotPassword(a[0], a[1]);', [server.url, 'carol@example.com']);
+  const reset = await pw(carol4, 'const r = await c.resetPassword(a[0], a[1]); await app.signedIn(); return r;', [forgot.ok ? await server.code('carol@example.com', '/signin#', beforeReset) : '', 'carol third password']);
+  await openSync(carol4);
   await idle(carol4);
-  await S(carol4).getByLabel('Code from the reset mail').fill(await server.code('carol@example.com', '/signin#', beforeReset));
-  await S(carol4).getByLabel('New password', { exact: true }).fill('carol third password');
-  await S(carol4).getByLabel('Repeat the new password').fill('carol third password');
-  await S(carol4).getByRole('button', { name: 'Reset password' }).click();
-  await idle(carol4);
-  const resetNote = await note(carol4);
-  check('a reset says the old key bundle is gone and this device has no workspace keys', resetNote.includes('key bundle is gone') && resetNote.includes('no workspace keys') && (await fp(carol4)) !== carolFp, resetNote + (await alertText(carol4)));
+  check('a reset says the old key bundle is gone and this device has no workspace keys', reset.ok && reset.value.bundleLost && !reset.value.keptDevice && (await fp(carol4)) !== carolFp, JSON.stringify(reset) + (forgot.error ?? ''));
   await S(carol4).getByRole('button', { name: 'Open here' }).first().click();
   await idle(carol4);
   check('...and the workspace stays closed there', (await requests(carol4, 'Carol API')) === null && (await alertText(carol4)) !== '', JSON.stringify(await requests(carol4, 'Carol API')) + (await alertText(carol4)));
@@ -627,6 +707,7 @@ async function launchOff(options) {
   await bob.browser.close();
   bob.mock?.cleanup();
   server.stop();
+  gh.server.close();
   await ada.finish();
 })().catch((e) => {
   console.log(results.join('\n'));

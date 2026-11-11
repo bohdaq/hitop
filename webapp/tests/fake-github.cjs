@@ -1,5 +1,6 @@
 // A fake GitHub for tests/github.cjs, as the HITOP Cloud App sees it (sync-server gitsync.rs):
-// the install page (it sends the browser straight back with a code), the OAuth code exchange,
+// the install page (it sends the browser straight back with a code), the OAuth code exchange
+// (also "Continue with GitHub": the authorize page, GET /user and /user/emails),
 // GET /user/installations, installation tokens, GET /installation/repositories, GET /repos/:o/:r
 // and the Git Data API (refs, commits, recursive trees, blobs, new blobs/trees/commits, a
 // fast-forward-only ref update). In memory; blob ids are Git's own (SHA-1 of "blob <len>\0...").
@@ -10,7 +11,8 @@ const http = require('http');
 const sha1 = (b) => crypto.createHash('sha1').update(b).digest('hex');
 const blobId = (text) => sha1(Buffer.concat([Buffer.from(`blob ${Buffer.byteLength(text)}\0`), Buffer.from(text)]));
 
-function fakeGithub({ appId, installation, callback }) {
+// `user`: who "Continue with GitHub" signs in ({ id, login, email }; primary and verified).
+function fakeGithub({ appId, installation, callback, user = { id: 4242001, login: 'ada', email: 'ada@example.com' } }) {
   const blobs = new Map();
   const trees = new Map();
   const commits = new Map();
@@ -85,9 +87,16 @@ function fakeGithub({ appId, installation, callback }) {
         return res.writeHead(302, { Location: to }).end();
       }
       if (req.method === 'GET' && u.pathname === '/login/oauth/authorize') {
-        visits.push('authorize');
-        return res.writeHead(302, { Location: `${callback()}?code=good-code&state=${encodeURIComponent(u.searchParams.get('state'))}` }).end();
+        // "Continue with GitHub" (sync-server github.rs) names its own callback; the App's
+        // authorization comes back to `callback()` and is the one counted in `visits`.
+        const to = u.searchParams.get('redirect_uri');
+        const signIn = Boolean(to && to.endsWith('/v1/auth/github/callback'));
+        if (!signIn) visits.push('authorize');
+        return res.writeHead(302, { Location: `${signIn ? to : callback()}?code=good-code&state=${encodeURIComponent(u.searchParams.get('state'))}` }).end();
       }
+      // Who signed in with GitHub (sign-in reads these two with the user's token).
+      if (u.pathname === '/user' && auth === 'ghu_user') return json(200, { id: user.id, login: user.login });
+      if (u.pathname === '/user/emails' && auth === 'ghu_user') return json(200, [{ email: user.email, primary: true, verified: true }]);
       if (req.method === 'POST' && u.pathname === '/login/oauth/access_token') {
         const form = new URLSearchParams(raw);
         return json(200, form.get('code') === 'good-code' ? { access_token: 'ghu_user' } : { error: 'bad_verification_code' });

@@ -93,6 +93,24 @@ function serve() {
   return new Promise((resolve) => {
     const server = http.createServer((req, res) => {
       const url = new URL(req.url, "http://x");
+      // The Sign in dialog's server (hitop_settings.syncServer = this origin): GitHub and Google on,
+      // no single sign-on, GitHub's start answers with a page of this server.
+      if (url.pathname === "/v1/auth/methods") {
+        res.writeHead(200, { "content-type": "application/json" });
+        return res.end('{"password":true,"emailCode":true,"passkey":false,"sso":false,"google":true,"github":true}');
+      }
+      if (url.pathname === "/v1/auth/github/start" || url.pathname === "/v1/auth/google/start") {
+        res.writeHead(200, { "content-type": "application/json" });
+        return res.end(JSON.stringify({ url: `http://${req.headers.host}/provider`, expiresAt: 0 }));
+      }
+      if (url.pathname === "/provider") {
+        res.writeHead(200, { "content-type": "text/html" });
+        return res.end("<p>The provider's sign-in page</p>");
+      }
+      if (url.pathname.startsWith("/v1/")) {
+        res.writeHead(404, { "content-type": "application/json" });
+        return res.end('{"error":"not_found","message":"not found"}');
+      }
       if (url.pathname.startsWith("/api/")) {
         res.writeHead(502, { "content-type": "application/json" });
         return res.end('{"error":"no proxy in the visual check"}');
@@ -204,6 +222,34 @@ async function main() {
   });
   await page.waitForTimeout(500);
   await shot("limit-dialog");
+  await page.keyboard.press("Escape");
+  await page.waitForTimeout(300);
+
+  // The Sign in dialog (2026-11-11): providers, waiting for the pop-up, the second step with an
+  // inline error (this server has no single sign-on).
+  await page.evaluate((server) => {
+    const s = JSON.parse(localStorage.getItem("hitop_settings") || "{}");
+    localStorage.setItem("hitop_settings", JSON.stringify({ ...s, syncServer: server }));
+    const app = document.querySelector("hitop-app");
+    app.store.orgs = [];
+    app.store.currentOrg = null;
+    app.requestUpdate();
+  }, `http://127.0.0.1:${server.address().port}`);
+  await page.locator("header.topbar").getByRole("button", { name: "Sign in", exact: true }).click();
+  await page.waitForSelector('#dialog .signin[data-step="providers"]', { timeout: 10000 });
+  await shot("sign-in");
+  const popup = ctx.waitForEvent("page");
+  await page.locator("#dialog").getByRole("button", { name: "Continue with GitHub" }).click();
+  await page.waitForSelector('#dialog .signin[data-step="waiting"]', { timeout: 10000 });
+  await (await popup).close();
+  await shot("sign-in-waiting");
+  await page.locator("#dialog").getByRole("button", { name: "Cancel" }).click();
+  await page.locator("#dialog").getByRole("button", { name: "Company SSO or your own server…" }).click();
+  await page.locator("#dialog").getByLabel("Work email").fill("ada@acme.example");
+  await page.locator("#dialog").getByRole("button", { name: "Continue with SSO" }).click();
+  await page.waitForSelector('#dialog #signin-server[error]', { timeout: 10000 }).catch(() => {});
+  await page.bringToFront();
+  await shot("sign-in-sso-error");
   await browser.close();
 
   // A newcomer: an empty app with the Get started card.

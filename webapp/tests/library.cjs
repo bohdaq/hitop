@@ -14,7 +14,7 @@ const fs = require('fs');
 const net = require('net');
 const os = require('os');
 const path = require('path');
-const { launch, checker, BASE } = require('./harness.cjs');
+const { launch, checker, signInByCode, BASE } = require('./harness.cjs');
 const { results, check } = checker();
 const settle = (p, ms = 400) => p.waitForTimeout(ms);
 const SECRET = 'lib-e2e-secret-9c4e1a';
@@ -85,14 +85,10 @@ async function syncServer() {
   const errors = [];
   for (const h of [one, two]) h.page.on('pageerror', (e) => errors.push(e.message));
   const S = (h) => h.page.locator('hitop-sync').last();
-  // The Account page: the top bar's Sign in, or the account menu's Account & devices.
+  // The Account page (signed in): the account menu's Account & devices.
   const openAccount = async (h) => {
-    const signin = h.page.locator('header.topbar').getByRole('button', { name: 'Sign in', exact: true });
-    if (await signin.count()) await signin.click();
-    else {
-      await h.page.locator('header.topbar .account-button').click();
-      await h.page.locator('#account-menu').getByText('Account & devices').click();
-    }
+    await h.page.locator('header.topbar .account-button').click();
+    await h.page.locator('#account-menu').getByText('Account & devices').click();
     await settle(h.page);
   };
   const alertText = (h) => S(h).locator('lit-material-alert').innerText().catch(() => '');
@@ -106,17 +102,11 @@ async function syncServer() {
   const saved = (h) => settle(h.page, 300).then(() => store(h, 'return s.library.flush();'));
   // Another browser's changes: what the focus event does.
   const pull = (h) => store(h, 'return s.library.pull();').then(() => settle(h.page));
+  // A mailed code through the app's sync client (the app's own UI signs in with GitHub, Google or SSO).
   const signIn = async (h, email) => {
-    await openAccount(h);
-    if (!(await S(h).locator('details.sync-more').evaluate((e) => e.open))) await S(h).locator('details.sync-more summary').click();
-    await S(h).getByLabel('Sync server').fill(server.url);
-    await S(h).getByLabel('Email').fill(email);
-    await S(h).getByRole('button', { name: 'Email me a code instead' }).click();
     const before = server.mails(email);
-    await S(h).getByRole('button', { name: 'Send code' }).click();
-    await idle(h);
-    await S(h).getByLabel('Code from the mail').fill(await server.code(email, before));
-    await S(h).getByRole('button', { name: 'Sign in', exact: true }).click();
+    await signInByCode(h.page, server.url, email, () => server.code(email, before));
+    await openAccount(h);
     await idle(h);
     await S(h).getByLabel('Cloud library').waitFor({ timeout: 15000 }).catch(async () => {
       throw new Error(`no library after signing in as ${email}: ${await alertText(h)} ${errors.join(' | ')}`);

@@ -71,6 +71,9 @@ const WEBHOOK = 'whsec-e2e';
       HITOP_SYNC_GITHUB_APP_CLIENT_ID: 'Iv1.app',
       HITOP_SYNC_GITHUB_APP_CLIENT_SECRET: 'app-secret',
       HITOP_SYNC_GITHUB_APP_WEBHOOK_SECRET: WEBHOOK,
+      // "Continue with GitHub" (the Sign in dialog) against the same fake.
+      HITOP_SYNC_GITHUB_CLIENT_ID: 'Iv1.signin',
+      HITOP_SYNC_GITHUB_CLIENT_SECRET: 'signin-secret',
       HITOP_SYNC_GITHUB_URL: ghUrl,
       HITOP_SYNC_GITHUB_API_URL: ghUrl,
       HITOP_SYNC_GIT_DEBOUNCE: '0',
@@ -86,12 +89,6 @@ const WEBHOOK = 'whsec-e2e';
     }
     await new Promise((r) => setTimeout(r, 100));
   }
-  const mails = (email) => log.split(`mail to ${email}:`).length - 1;
-  const code = async (email, after) => {
-    for (let i = 0; i < 100 && mails(email) <= after; i++) await new Promise((r) => setTimeout(r, 100));
-    const parts = log.split(`mail to ${email}:`);
-    return parts[parts.length - 1].split('\n').find((l) => l.includes('/signin#')).trim().split('#').pop();
-  };
   const waitFor = async (what, fn, ms = 15000) => {
     for (const end = Date.now() + ms; Date.now() < end; await new Promise((r) => setTimeout(r, 250))) if (await fn()) return true;
     return false;
@@ -106,16 +103,12 @@ const WEBHOOK = 'whsec-e2e';
   const errors = [];
   h.page.on('pageerror', (e) => errors.push(e.message));
   const page = h.page;
-  const S = () => page.locator('hitop-sync');
   const G = () => page.locator('hitop-github');
   const store = (fn, arg) => page.evaluate(([f, a]) => new Function('s', 'a', f)(document.querySelector('hitop-app').store, a), [fn, arg]);
+  // The Account page (signed in): the account menu's Account & devices.
   const openSync = async () => {
-    const signin = page.locator('header.topbar').getByRole('button', { name: 'Sign in', exact: true });
-    if (await signin.count()) await signin.click();
-    else {
-      await page.locator('header.topbar .account-button').click();
-      await page.locator('#account-menu').getByText('Account & devices').click();
-    }
+    await page.locator('header.topbar .account-button').click();
+    await page.locator('#account-menu').getByText('Account & devices').click();
     await settle(page);
   };
   // A collection's Share dialog, on the GitHub tab.
@@ -132,16 +125,20 @@ const WEBHOOK = 'whsec-e2e';
         { id: 501, name: "List orders", method: "GET", url: "https://shop.e2e-git.test/orders", headers: [], body: "" },
         { id: 502, name: "Get order", method: "GET", url: "https://shop.e2e-git.test/orders/1", headers: [], body: "" } ] } : x);
       s.emit(); s.save();`);
-    await openSync();
-    await S().locator('details.sync-more summary').click();
-    await S().getByLabel('Sync server').fill(syncUrl);
-    await S().getByLabel('Email').fill('ada@example.com');
-    await S().getByRole('button', { name: 'Email me a code instead' }).click();
-    const before = mails('ada@example.com');
-    await S().getByRole('button', { name: 'Send code' }).click();
+    // Sign in with GitHub in the Sign in dialog: the pop-up goes through the fake GitHub and the
+    // sync server back to the app's callback page, which hands the code to the dialog.
+    await page.evaluate((u) => localStorage.setItem('hitop_settings', JSON.stringify({ syncServer: u })), syncUrl);
+    await page.locator('header.topbar').getByRole('button', { name: 'Sign in', exact: true }).click();
+    const dialog = page.locator('#dialog hitop-sign-in');
+    await dialog.locator('.signin[data-step="providers"]').waitFor({ timeout: 10000 });
+    check('the Sign in dialog offers the providers this server has (GitHub, no Google)', (await dialog.locator('.signin-provider').allInnerTexts()).join('|') === 'Continue with GitHub');
+    await dialog.getByRole('button', { name: 'Continue with GitHub' }).click();
+    await page.locator('header.topbar .account-button').waitFor({ timeout: 15000 });
     await settle(page);
-    await S().getByLabel('Code from the mail').fill(await code('ada@example.com', before));
-    await S().getByRole('button', { name: 'Sign in', exact: true }).click();
+    const toastText = await page.locator('#toast').evaluate((el) => [el.message, el.textContent, el.shadowRoot?.textContent].filter(Boolean).join(' '));
+    check('Continue with GitHub signs in through the pop-up; the dialog closes by itself', (await page.locator('#dialog hitop-sign-in').count()) === 0 && toastText.includes('Signed in as ada@example.com'), toastText);
+    check('...and the person stays where they were', (await store('return s.view.kind;')) !== 'sync');
+    await openSync();
     await G().getByRole('button', { name: 'Connect GitHub' }).waitFor({ timeout: 15000 });
     await store('return s.library.flush();');
     await shot(page, 'connect');

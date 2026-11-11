@@ -16,7 +16,7 @@ const fs = require('fs');
 const net = require('net');
 const os = require('os');
 const path = require('path');
-const { launch, checker, BASE } = require('./harness.cjs');
+const { launch, checker, signInByCode, BASE } = require('./harness.cjs');
 const { results, check } = checker();
 const settle = (p, ms = 400) => p.waitForTimeout(ms);
 
@@ -97,11 +97,6 @@ async function syncServer() {
   const p = bob.page;
   const errors = [];
   p.on('pageerror', (e) => errors.push(e.message));
-  const S = () => p.locator('hitop-sync').last();
-  const idle = async () => {
-    await p.waitForFunction(() => !document.querySelector('hitop-sync [aria-busy="true"]'), null, { timeout: 30000 });
-    await settle(p);
-  };
   const store = (fn, arg) => p.evaluate(([f, a]) => new Function('s', 'a', f)(document.querySelector('hitop-app').store, a), [fn, arg]);
   const addWorkspaces = (org, n) => {
     const db = server.sql();
@@ -117,18 +112,10 @@ async function syncServer() {
     addWorkspaces(acme, 2);
 
     await p.goto(bob.url, { waitUntil: 'networkidle' });
-    await p.locator('header.topbar').getByRole('button', { name: 'Sign in', exact: true }).click();
-    await settle(p);
-    if (!(await S().locator('details.sync-more').evaluate((e) => e.open))) await S().locator('details.sync-more summary').click();
-    await S().getByLabel('Sync server').fill(server.url);
-    await S().getByLabel('Email').fill('bob@example.com');
-    await S().getByRole('button', { name: 'Email me a code instead' }).click();
+    // A mailed code through the app's sync client (the app's own UI signs in with GitHub, Google or SSO).
     const before = server.mails('bob@example.com');
-    await S().getByRole('button', { name: 'Send code' }).click();
-    await idle();
-    await S().getByLabel('Code from the mail').fill(await server.code('bob@example.com', before));
-    await S().getByRole('button', { name: 'Sign in', exact: true }).click();
-    await idle();
+    await signInByCode(p, server.url, 'bob@example.com', () => server.code('bob@example.com', before));
+    await settle(p);
     await p.waitForFunction((id) => document.querySelector('hitop-app').store.orgs.some((o) => o.id === id), acme, { timeout: 15000 });
     check('Bob is a member of Acme after signing in', invited.status < 300 && (await store('return s.orgs.find((o) => o.id === a)?.role;', acme)) === 'member');
 
