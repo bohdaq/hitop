@@ -341,6 +341,9 @@ export class HitopApp extends LitElement {
     if (then) then();
     else if (this.dialog?.kind === "sign-in") this.closeDialog();
     await s.library?.checkAccount().catch(() => {});
+    // The organizations: main.js refreshOrgs loads them once per account, and can run mid sign-in
+    // (account saved, session not yet), fail and not retry; so load them here, signed in for sure.
+    await import("../orgs.js").then(({ loadOrgs }) => loadOrgs(s, sync)).catch(() => {});
     this.requestUpdate();
     if (!a) return;
     // How many collections now sync to HITOP Cloud: the library's own record (git.js storageOf),

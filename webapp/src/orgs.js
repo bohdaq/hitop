@@ -11,6 +11,10 @@ export const orgLabel = (o) => `${o.personal ? "Personal" : o.name} · ${PLAN_NA
  * server without orgs). `client`: the sync.js SyncClient.
  */
 export async function loadOrgs(store, client) {
+  // Only the newest load applies: one started mid sign-in (account saved, session not yet) can fail
+  // after a later one succeeded, and must not clear what that one set.
+  const load = (store.orgsLoad = (store.orgsLoad ?? 0) + 1);
+  const latest = () => store.orgsLoad === load;
   if (!client.account()) {
     store.clearOrgs();
     return;
@@ -18,10 +22,11 @@ export async function loadOrgs(store, client) {
   try {
     const { orgs } = await client.api("GET", "/v1/orgs");
     const workspaces = await client.workspaces().catch(() => []);
+    if (!latest()) return;
     store.setOrgs(orgs ?? [], new Map(workspaces.filter((w) => w.org).map((w) => [w.id, w.org])));
     await Promise.all((orgs ?? []).map((o) => loadUsage(store, client, o.id)));
   } catch {
-    store.clearOrgs();
+    if (latest()) store.clearOrgs();
   }
 }
 

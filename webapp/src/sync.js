@@ -177,6 +177,9 @@ export function withSyncFolders(base) {
 
 const defaultDeviceName = () => (platform().name === "tauri" ? "HITOP desktop" : `HITOP web (${navigator.userAgent.match(/(Firefox|Edg|Chrome|Safari)/)?.[1] ?? "browser"})`);
 
+// SyncClient.secret's memory copy of the session + device secret (one account per page).
+let cachedSecret = null;
+
 export class SyncClient {
   constructor(store) {
     this.store = store;
@@ -225,8 +228,9 @@ export class SyncClient {
   async secret() {
     const a = this.account();
     if (!a) return null;
-    // Kept in memory once read: the desktop's keychain writes don't wait.
-    if (this.cached?.server === a.server) return this.cached.value;
+    // Kept in memory once read (the desktop's keychain writes don't wait), shared by every client
+    // in the page: the library's own client must see a sign-in done through the app's.
+    if (cachedSecret?.server === a.server) return cachedSecret.value;
     const acc = secretAccount(a.server);
     const v = (await platform().folderSecrets.load([acc]))[acc];
     let value;
@@ -235,12 +239,12 @@ export class SyncClient {
     } catch {
       value = null;
     }
-    if (value) this.cached = { server: a.server, value };
+    if (value) cachedSecret = { server: a.server, value };
     return value;
   }
 
   async saveSecret(server, value) {
-    this.cached = value ? { server, value } : null;
+    cachedSecret = value ? { server, value } : null;
     await platform().folderSecrets.save({ [secretAccount(server)]: value ? JSON.stringify(value) : null });
   }
 

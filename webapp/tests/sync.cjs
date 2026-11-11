@@ -499,6 +499,10 @@ async function launchOff(options) {
   await bob.page.locator('#dialog hitop-sync').waitFor({ timeout: 10000 }).catch(() => {});
   await settle(bob.page);
   check('Continue with GitHub signs Dave in: avatar in the top bar, a toast says who', (await bob.page.locator('header.topbar .account-button').count()) === 1 && (await toastText(bob)).includes('Signed in as dave@example.com'), await toastText(bob));
+  // With the library off (this suite), the organizations still load after the sign-in, so the
+  // Organization page and the top bar's switcher aren't left signed out.
+  await bob.page.waitForFunction(() => document.querySelector('hitop-app')?.store?.orgs?.length > 0, null, { timeout: 10000 }).catch(() => {});
+  check('...and the organizations load (library off): Dave has his personal org', (await store(bob, 'return s.orgs.length;')) > 0, String(await store(bob, 'return s.orgs.length;')));
   check('...the Sign in dialog closed and the Share dialog is back, ready to share', (await D(bob).count()) === 0 && (await S(bob).getByRole('button', { name: /Share with people/ }).count()) === 1);
 
   // The Account page follows the account while on screen: signed out there, then signed in as

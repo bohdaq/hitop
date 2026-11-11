@@ -372,6 +372,16 @@ export class HitopOrg extends LitElement {
     </section>`;
   }
 
+  async reloadOrgs() {
+    this.busy = true;
+    try {
+      const { loadOrgs } = await import("../orgs.js");
+      await loadOrgs(this.store, this.client);
+    } finally {
+      this.busy = false;
+    }
+  }
+
   async exportAudit(org) {
     const out = await this.act(() => this.client.call("GET", `/v1/orgs/${enc(org.id)}/audit/export`));
     if (!out) return;
@@ -381,6 +391,12 @@ export class HitopOrg extends LitElement {
 
   render() {
     const s = this.store;
+    if (!s.orgs?.length && this.client.account()) {
+      return html`<div class="page"><lit-material-empty-state headline="No organizations loaded">
+        Signed in as ${this.client.account().email}. HITOP Cloud didn't answer with your organizations.
+        <lit-material-button slot="actions" variant="filled" ?disabled=${this.busy} @click=${() => this.reloadOrgs()}>Try again</lit-material-button>
+      </lit-material-empty-state></div>`;
+    }
     if (!s.orgs?.length) {
       return html`<div class="page"><lit-material-empty-state headline="Sign in to manage an organization">
         Organizations share collections and environments on HITOP Cloud.
