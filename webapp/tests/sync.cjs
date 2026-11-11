@@ -505,6 +505,55 @@ async function launchOff(options) {
   check('...and the organizations load (library off): Dave has his personal org', (await store(bob, 'return s.orgs.length;')) > 0, String(await store(bob, 'return s.orgs.length;')));
   check('...the Sign in dialog closed and the Share dialog is back, ready to share', (await D(bob).count()) === 0 && (await S(bob).getByRole('button', { name: /Share with people/ }).count()) === 1);
 
+  // Signing out and in again with GitHub is the same device: no new key toward the plan's limit.
+  const githubSignIn = async (h) => {
+    await openSignIn(h);
+    await D(h).getByRole('button', { name: 'Continue with GitHub' }).click();
+    if (TAURI) {
+      await waitStep(h, 'paste');
+      const link = (await D(h).getByLabel('SSO sign-in link').innerText()).trim();
+      const tab = await h.page.context().newPage();
+      await tab.goto(link);
+      const pasteCode = (await tab.locator('code').innerText()).trim();
+      await tab.close();
+      await D(h).getByLabel('Code shown after signing in').fill(pasteCode);
+      await D(h).getByRole('button', { name: 'Sign in', exact: true }).click();
+    }
+  };
+  const signOutMenu = async (h) => {
+    await h.page.locator('header.topbar .account-button').click();
+    await h.page.locator('#account-menu').getByText('Sign out').click();
+    await settle(h.page);
+  };
+  const daveKeys = async () => (await inApp(bob.page, 'return (await c.api("GET", "/v1/me")).keys.map((k) => k.name);')).value ?? [];
+  await closeDialog(bob);
+  const keysBefore = (await daveKeys()).length;
+  await signOutMenu(bob);
+  await githubSignIn(bob);
+  await bob.page.locator('header.topbar .account-button').waitFor({ timeout: 20000 }).catch(() => {});
+  await settle(bob.page);
+  check('signing out and in again with GitHub keeps this device (no new device)', (await bob.page.locator('header.topbar .account-button').count()) === 1 && (await daveKeys()).length === keysBefore, `${keysBefore} → ${(await daveKeys()).length}`);
+
+  // At the plan's device limit (Free: 3), a new device lists the account's devices to remove one,
+  // then signs in.
+  await inApp(bob.page, 'const k = () => btoa(String.fromCharCode(...crypto.getRandomValues(new Uint8Array(32)))).replace(/\\+/g, "-").replace(/\\//g, "_").replace(/=+$/, ""); for (let i = 0; i < 3; i++) await c.call("POST", "/v1/me/keys", { name: `Old laptop ${i}`, publicKey: k() }, { allow: [402] });');
+  const atLimit = await daveKeys();
+  const server0 = await inApp(bob.page, 'return c.account().server;');
+  await signOutMenu(bob);
+  // This browser forgets its device (a new browser, as far as the account can tell).
+  await inApp(bob.page, 'localStorage.removeItem("hitop_sync_device"); await c.saveSecret(a, null);', server0.value);
+  await githubSignIn(bob);
+  await waitStep(bob, 'devices').catch(() => {});
+  const listed = await D(bob).locator('.signin-devices li').allInnerTexts().catch(() => []);
+  check('at the device limit the dialog lists the account\'s devices to remove one', listed.length === atLimit.length && listed.length === 3 && (await D(bob).innerText()).includes('allows 3 devices'), `${atLimit.join(',')} | ${listed.join(',')}`);
+  await D(bob).getByRole('button', { name: 'Remove Old laptop 0' }).click();
+  await bob.page.locator('header.topbar .account-button').waitFor({ timeout: 20000 }).catch(() => {});
+  await settle(bob.page);
+  const after = await daveKeys();
+  check('...Remove takes that one off and signs in here as a device', (await bob.page.locator('header.topbar .account-button').count()) === 1 && after.length === 3 && !after.includes('Old laptop 0'), after.join(','));
+  // Back under the limit for the later sign-ins as Dave on another device.
+  await inApp(bob.page, 'const me = await c.api("GET", "/v1/me"); for (const k of me.keys) if (k.name.startsWith("Old laptop")) await c.call("DELETE", `/v1/me/keys/${k.id}`, undefined, { allow: [404, 409] });');
+
   // The Account page follows the account while on screen: signed out there, then signed in as
   // Bob (the same after-sign-in step as the dialog's), it shows Bob's address and fingerprint.
   await closeDialog(bob);

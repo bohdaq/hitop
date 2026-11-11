@@ -853,6 +853,10 @@ lit-material-dialog.sign-in-dialog::part(container) {
 @keyframes signin-spin { to { transform: rotate(360deg); } }
 @media (prefers-reduced-motion: reduce) { .signin-spinner { animation-duration: 2.4s; } }
 .signin-actions { display: flex; flex-wrap: wrap; justify-content: center; gap: 8px; margin-top: 4px; }
+.signin-devices { list-style: none; margin: 0; padding: 0; display: grid; gap: 8px; }
+.signin-devices li { display: grid; grid-template-columns: 1fr auto; align-items: center; gap: 4px 12px; padding: 8px 8px 8px 14px; border: 1px solid #26262c; border-radius: 10px; }
+.signin-devices .signin-error { grid-column: 1 / -1; }
+.signin-device-name { overflow-wrap: anywhere; }
 .signin-url { margin: 0; max-height: 72px; overflow: auto; font-size: 11.5px; overflow-wrap: anywhere; white-space: pre-wrap; }
 .sync-join { display: grid; gap: var(--space-200); }
 @media (max-width: 600px) {

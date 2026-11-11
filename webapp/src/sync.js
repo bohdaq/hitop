@@ -30,6 +30,9 @@ import { requestFiles } from "./git.js";
 
 export const DEFAULT_SERVER = "https://sync.hitop.rws8.tech";
 const ACCOUNT_KEY = "hitop_sync_account";
+// The device this browser/app was for an account before signing out ({server, userId, keyId,
+// deviceName}): signing in to the same account again keeps that device instead of adding one.
+const DEVICE_KEY = "hitop_sync_device";
 const STATE_KEY = "hitop_sync";
 const FILES_KEY = (ws) => `hitop_sync_files:${ws}`;
 // A browser sign-in that left this tab for the provider ("Continue in this tab"): { server, verifier, kind }.
@@ -64,6 +67,22 @@ export class KeyError extends Error {
     this.workspace = workspace;
     Object.assign(this, { kind: error.kind, fingerprint: error.fingerprint ?? null, senderKeyId: error.senderKeyId ?? null, epoch: error.epoch });
     this.security = ["forged", "keyChanged", "rollback"].includes(error.kind);
+  }
+}
+
+/**
+ * A sign-in that would add a device past the plan's limit: nothing was added. `keys` = the
+ * account's devices ({id, name}); `removeDevice(id)` and `retry()` (SyncClient) finish it.
+ */
+export class DeviceLimitError extends Error {
+  constructor(pending, body) {
+    super(body?.message ?? "This account has as many devices as its plan allows");
+    this.pending = pending;
+    this.body = body;
+    this.keys = pending.keys;
+    this.max = body?.max ?? pending.keys.length;
+    this.plan = body?.plan ?? "";
+    this.upgradeUrl = body?.upgradeUrl ?? "";
   }
 }
 
@@ -227,11 +246,14 @@ export class SyncClient {
 
   async secret() {
     const a = this.account();
-    if (!a) return null;
+    return a ? this.secretFor(a.server) : null;
+  }
+
+  async secretFor(server) {
     // Kept in memory once read (the desktop's keychain writes don't wait), shared by every client
     // in the page: the library's own client must see a sign-in done through the app's.
-    if (cachedSecret?.server === a.server) return cachedSecret.value;
-    const acc = secretAccount(a.server);
+    if (cachedSecret?.server === server) return cachedSecret.value;
+    const acc = secretAccount(server);
     const v = (await platform().folderSecrets.load([acc]))[acc];
     let value;
     try {
@@ -239,7 +261,7 @@ export class SyncClient {
     } catch {
       value = null;
     }
-    if (value) cachedSecret = { server: a.server, value };
+    if (value) cachedSecret = { server, value };
     return value;
   }
 
@@ -377,13 +399,13 @@ export class SyncClient {
   async completeSignIn(server, r, email, deviceName) {
     const session = r.json.session;
     const w = (await loadFormat()).sync;
-    // The same account on this device again keeps its key.
-    const old = this.account();
-    const oldSecret = old && old.userId === r.json.user.id && old.server === server ? await this.secret() : null;
+    // The same account on this device again (signed in, or signed out since) keeps its key.
+    const old = this.account() ?? readJson(DEVICE_KEY, null);
+    const oldSecret = old && old.userId === r.json.user.id && old.server === server ? await this.secretFor(server) : null;
     const me = await this.http(server, "GET", "/v1/me", undefined, session);
     let keyId, secret, name, recovery, password;
     let newDevice = false;
-    if (oldSecret && me.json.keys.some((k) => k.id === old.keyId)) {
+    if (oldSecret?.secret && me.json.keys.some((k) => k.id === old.keyId)) {
       ({ keyId, deviceName: name } = old);
       secret = oldSecret.secret;
       recovery = oldSecret.recovery;
@@ -392,6 +414,9 @@ export class SyncClient {
       const k = w.keygen();
       name = deviceName || defaultDeviceName();
       const added = await this.http(server, "POST", "/v1/me/keys", { name, publicKey: k.publicKey }, session);
+      if (added.status === 402 && added.json?.limit === "devices") {
+        throw new DeviceLimitError({ server, r, email, deviceName, keys: (me.json.keys ?? []).map((k) => ({ id: k.id, name: k.name })) }, added.json);
+      }
       if (added.status !== 201) throw new SyncError(added.status, added.json);
       keyId = added.json.id;
       secret = k.secret;
@@ -399,8 +424,22 @@ export class SyncClient {
     }
     await this.saveSecret(server, { session, secret, ...(recovery ? { recovery } : {}), ...(password ? { password } : {}) });
     writeJson(ACCOUNT_KEY, { server, email: r.json.user.email ?? email, userId: r.json.user.id, keyId, deviceName: name });
+    localStorage.removeItem(DEVICE_KEY);
     this.update((d) => (d.pins[keyId] = w.publicKey(secret)));
     return newDevice;
+  }
+
+  /** At the device limit (DeviceLimitError): removes one of the account's devices. 409 = it holds keys to shared collections. */
+  async removeDevice(pending, keyId) {
+    const r = await this.http(pending.server, "DELETE", `/v1/me/keys/${encodeURIComponent(keyId)}`, undefined, pending.r.json.session);
+    if (r.status !== 204 && r.status !== 404) throw new SyncError(r.status, r.json);
+    pending.keys = pending.keys.filter((k) => k.id !== keyId);
+  }
+
+  /** ...then the sign-in again: { email, newDevice } (or DeviceLimitError once more). */
+  async retrySignIn(pending) {
+    const newDevice = await this.completeSignIn(pending.server, pending.r, pending.email, pending.deviceName);
+    return { email: this.account().email, newDevice };
   }
 
   // What a sign-in page can offer on `server`: {password, emailCode, passkey, sso, google, github}
@@ -610,8 +649,15 @@ export class SyncClient {
   async signOut() {
     const a = this.account();
     if (!a) return;
+    const s = await this.secret().catch(() => null);
     await this.call("POST", "/v1/auth/logout", undefined, { allow: [401] }).catch(() => {});
-    await this.saveSecret(a.server, null);
+    // The session goes; this device's key stays (without it), so signing in to the same account
+    // again is the same device, not one more toward the plan's device limit.
+    if (s?.secret) {
+      const { session: _session, ...device } = s;
+      await this.saveSecret(a.server, device);
+      writeJson(DEVICE_KEY, { server: a.server, userId: a.userId, keyId: a.keyId, deviceName: a.deviceName });
+    } else await this.saveSecret(a.server, null);
     localStorage.removeItem(ACCOUNT_KEY);
   }
 

@@ -16,7 +16,7 @@
 import { LitElement, html, nothing } from "lit";
 import { unsafeSVG } from "lit/directives/unsafe-svg.js";
 import { mark } from "../../../site/src/brand/mark.js";
-import { DEFAULT_SERVER, SyncClient } from "../sync.js";
+import { DEFAULT_SERVER, DeviceLimitError, SyncClient } from "../sync.js";
 import { syncClient } from "./sync-view.js";
 import { loadSettings, saveSettings } from "../settings.js";
 import { platform } from "../platform/index.js";
@@ -50,6 +50,7 @@ class HitopSignIn extends LitElement {
     blocked: { state: true },
     busy: { state: true },
     errors: { state: true },
+    limit: { state: true },
   };
 
   createRenderRoot() {
@@ -219,18 +220,49 @@ class HitopSignIn extends LitElement {
     this.setStep("finishing");
     try {
       const r = await this.sync.finishBrowserSignIn(code);
-      const settings = loadSettings();
-      const server = this.sync.account()?.server ?? this.server;
-      if (server === DEFAULT_SERVER) delete settings.syncServer;
-      else settings.syncServer = server;
-      saveSettings(settings);
-      await this.app.signedIn(r, true);
+      await this.signedIn(r);
     } catch (e) {
+      if (e instanceof DeviceLimitError) return this.atLimit(e);
       this.errors = was === "paste" ? { code: errorText(e) } : { general: `Couldn't finish signing in: ${errorText(e)}` };
       if (was === "paste") this.setStep("paste");
       else if (this.methods) this.setStep(this.hasProviders ? "providers" : "sso");
       else this.loadMethods(this.server, true);
     }
+  }
+
+  // The plan's device limit: the account's devices, one to remove, then the sign-in again.
+  atLimit(e) {
+    this.limit = e;
+    this.errors = {};
+    this.setStep("devices");
+  }
+
+  async removeDevice(id) {
+    const e = this.limit;
+    this.busy = true;
+    this.errors = {};
+    try {
+      await this.sync.removeDevice(e.pending, id);
+      this.setStep("finishing");
+      await this.signedIn(await this.sync.retrySignIn(e.pending));
+    } catch (err) {
+      if (err instanceof DeviceLimitError) return this.atLimit(err);
+      this.errors = err?.code === "key_in_use"
+        ? { [id]: "This device holds keys to shared collections, so it stays. Remove it from that device, or pick another." }
+        : { general: errorText(err) };
+      this.setStep("devices");
+    } finally {
+      this.busy = false;
+    }
+  }
+
+  async signedIn(r) {
+    const settings = loadSettings();
+    const server = this.sync.account()?.server ?? this.server;
+    if (server === DEFAULT_SERVER) delete settings.syncServer;
+    else settings.syncServer = server;
+    saveSettings(settings);
+    await this.app.signedIn(r, true);
   }
 
   cancel() {
@@ -342,6 +374,26 @@ class HitopSignIn extends LitElement {
       </div>`;
   }
 
+  renderDevices() {
+    const e = this.limit;
+    const plan = e.plan ? `${e.plan[0].toUpperCase()}${e.plan.slice(1)} plan` : "plan";
+    return html`
+      <h2 class="signin-title">Remove a device to sign in here</h2>
+      <p class="signin-lead">Your ${plan} allows ${e.max} ${e.max === 1 ? "device" : "devices"}, and this account has ${e.keys.length}. Remove one you no longer use; nothing else on the account changes.
+        ${e.upgradeUrl ? html`Or <a href=${e.upgradeUrl} target="_blank" rel="noopener noreferrer">see plans</a>.` : nothing}</p>
+      <ul class="signin-devices" aria-label="Devices on this account">
+        ${e.keys.map((k, i) => html`<li>
+          <span class="signin-device-name">${k.name || `Device ${i + 1}`}</span>
+          <lit-material-button variant="outlined" ?disabled=${this.busy} @click=${() => this.removeDevice(k.id)}>Remove<span class="visually-hidden"> ${k.name || `device ${i + 1}`}</span></lit-material-button>
+          ${this.errors[k.id] ? html`<p class="signin-error" role="alert">${this.errors[k.id]}</p>` : nothing}
+        </li>`)}
+      </ul>
+      ${this.errors.general ? html`<p class="signin-error" role="alert">${this.errors.general}</p>` : nothing}
+      <div class="signin-actions">
+        <lit-material-button variant="text" ?disabled=${this.busy} @click=${() => ((this.limit = null), this.cancel())}>Cancel</lit-material-button>
+      </div>`;
+  }
+
   render() {
     const step = this.step;
     const body =
@@ -349,6 +401,7 @@ class HitopSignIn extends LitElement {
       : step === "sso" ? this.renderSso()
       : step === "waiting" ? this.renderWaiting()
       : step === "paste" ? this.renderPaste()
+      : step === "devices" && this.limit ? this.renderDevices()
       : html`<div class="signin-wait" role="status"><span class="signin-spinner" aria-hidden="true"></span><p class="signin-lead">${step === "finishing" ? "Signing in…" : "Loading…"}</p></div>`;
     return html`<div class="signin" data-step=${step} aria-busy=${String(step === "loading" || step === "finishing" || Boolean(this.busy))}>${body}</div>`;
   }
