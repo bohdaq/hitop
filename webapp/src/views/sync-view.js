@@ -75,6 +75,22 @@ class HitopSync extends LitElement {
     this.refresh().then(() => this.loadTeam());
   }
 
+  // Signed in or out while on screen (the Sign in dialog over this page, Sign out): what this
+  // page read for the previous account goes, and the new one's is read.
+  willUpdate() {
+    const a = this.sync.account();
+    const key = a ? `${a.server} ${a.userId}` : "";
+    if (this.accountKey !== undefined && key !== this.accountKey) {
+      this.fingerprint = null;
+      this.recovery = null;
+      this.recoveryWords = null;
+      this.remote = null;
+      this.team = null;
+      if (key) this.refresh().then(() => this.loadTeam());
+    }
+    this.accountKey = key;
+  }
+
   // In a Share dialog: the collection's members, shown at once.
   async loadTeam() {
     const c = this.collection;

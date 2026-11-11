@@ -331,6 +331,8 @@ export class SyncClient {
     }
     if (r.status === 404 && kind !== "sso") throw new SyncError(404, { error: "no_provider", message: `This sync server has no sign-in with ${kind === "github" ? "GitHub" : "Google"}` });
     if (r.status !== 200) throw new SyncError(r.status, r.json);
+    // The page to open: only a web address (it goes to a window's location).
+    if (!/^https?:\/\//i.test(String(r.json?.url ?? ""))) throw new Error("The sync server answered without a sign-in page address");
     this.pendingBrowser = { server, verifier, kind };
     if (keep) {
       try {

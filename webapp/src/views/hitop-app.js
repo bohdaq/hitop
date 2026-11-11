@@ -346,13 +346,15 @@ export class HitopApp extends LitElement {
     // How many collections now sync to HITOP Cloud: the library's own record (git.js storageOf),
     // only when the library is on and holds some.
     const n = s.library?.status.on ? s.collections.filter((c) => ["cloud", "github"].includes(storageOf(s, c).kind)).length : 0;
-    let text = `Signed in as ${a.email}${n ? ` · ${n} ${n === 1 ? "collection" : "collections"} now sync` : ""}`;
+    let text = `Signed in as ${a.email}${n ? ` · ${n === 1 ? "1 collection now syncs" : `${n} collections now sync`}` : ""}`;
     // A new device of an account with shared collections: their keys open with the recovery
-    // phrase or another device (Account, Password & recovery), not with Google or GitHub.
+    // phrase, the password or another device (Account, Password & recovery), not with Google or GitHub.
     if (r.newDevice) {
       const shared = await sync.workspaces().catch(() => []);
-      if (shared?.length) text += ". To open your shared collections here, use your recovery phrase (Account, Password & recovery)";
+      if (shared?.length) text += ". To open your shared collections here, unlock this device (Account, Password & recovery)";
     }
+    // The Account page, if it is on screen under the dialog, shows the new account.
+    for (const el of this.querySelectorAll("hitop-sync")) el.requestUpdate();
     this.toast(text);
     await this.updateComplete;
     if (!then) this.querySelector("header.topbar .account-button")?.focus();
@@ -366,7 +368,8 @@ export class HitopApp extends LitElement {
     const code = m ? decodeURIComponent(m[1]) : q.get("sso");
     if (!code) return;
     q.delete("sso");
-    history.replaceState(null, "", location.pathname + (q.size ? `?${q}` : ""));
+    const rest = q.toString();
+    history.replaceState(null, "", location.pathname + (rest ? `?${rest}` : ""));
     this.openDialog("sign-in", { step: "finishing", title: "Sign in to HITOP", resume: code });
   }
 
@@ -417,6 +420,8 @@ export class HitopApp extends LitElement {
   // by itself. Enter in a textarea still adds a line.
   dialogKey(e) {
     if (e.key !== "Enter" || e.shiftKey || e.isComposing) return;
+    // The Sign in dialog's buttons and links take Enter themselves; only its fields submit.
+    if (this.dialog?.kind === "sign-in" && !e.composedPath().some((n) => n.localName === "lit-material-text-field")) return;
     if (e.composedPath().some((n) => n.localName === "textarea" || n.localName === "lit-material-select")) return;
     e.preventDefault();
     e.currentTarget.requestSubmit();

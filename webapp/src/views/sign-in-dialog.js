@@ -6,7 +6,8 @@
 //               "Company SSO or your own server…"
 //   sso         Work email (an organization's sign-on by its domain) and Server; errors inline
 //   waiting     the provider's pop-up is open (web): it sends the one-time code back through
-//               /app/sync-callback.html; "Open the window again", "Continue in this tab", Cancel
+//               /app/sync-callback.html; "Open the window again", Cancel, and when the pop-up
+//               was blocked "Continue in this tab" (the tab goes and comes back, hitop-app resumeSignIn)
 //   paste       the provider's page shows the code to paste (the desktop app, or a server that
 //               doesn't send the browser back to this app)
 //   finishing   trading the code for a session
@@ -323,7 +324,6 @@ class HitopSignIn extends LitElement {
           ? html`<lit-material-button variant="filled" data-first ?disabled=${this.busy} @click=${() => this.inThisTab()}>Continue in this tab</lit-material-button>`
           : nothing}
         <lit-material-button variant=${this.blocked ? "outlined" : "filled"} ?data-first=${!this.blocked} ?disabled=${this.busy} @click=${() => this.begin(this.kind)}>Open the window again</lit-material-button>
-        ${this.blocked ? nothing : html`<lit-material-button variant="text" ?disabled=${this.busy} @click=${() => this.inThisTab()}>Continue in this tab</lit-material-button>`}
         <lit-material-button variant="text" @click=${() => this.cancel()}>Cancel</lit-material-button>
       </div>`;
   }
