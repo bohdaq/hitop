@@ -1,13 +1,16 @@
 // The way back from "Continue with GitHub / Google / SSO" in a pop-up (views/sign-in-dialog.js):
-// the sync server sends the browser here with `?flow=<id>#sso=<one-time code>`. The code goes to
+// the sync server sends the browser here with `?flow=<id>#sso=<one-time code>` (`&sso=` on a
+// loopback origin such as http://localhost, sync-server oidc.rs hand_off). The code goes to
 // the app's sign-in dialog on this origin only (a BroadcastChannel, which still works when the
 // provider's pages cut the pop-up off from its opener; and the opener, when there is one), and the
 // window closes. The code alone signs nobody in: the dialog also holds the verifier.
 (function () {
-  const flow = new URLSearchParams(location.search).get("flow") || "";
+  // The code comes as `#sso=` (a web origin) or `?sso=` (a loopback one, such as localhost).
+  const q = new URLSearchParams(location.search);
+  const flow = q.get("flow") || "";
   const m = /^#sso=(.+)$/.exec(location.hash);
-  const code = m ? decodeURIComponent(m[1]) : "";
-  history.replaceState(null, "", location.pathname + location.search);
+  const code = m ? decodeURIComponent(m[1]) : q.get("sso") || "";
+  history.replaceState(null, "", location.pathname);
   const status = document.getElementById("status");
   if (!code) {
     status.textContent = "This sign-in didn't finish. Close this window and try again in HITOP.";

@@ -358,12 +358,16 @@ export class HitopApp extends LitElement {
     if (!then) this.querySelector("header.topbar .account-button")?.focus();
   }
 
-  // Back from "Continue in this tab": the provider sent this tab to the app with `#sso=<code>`.
+  // Back from "Continue in this tab": the provider sent this tab to the app with `#sso=<code>`
+  // (`?sso=<code>` on a loopback origin such as http://localhost).
   resumeSignIn() {
     const m = /^#sso=(.+)$/.exec(location.hash);
-    if (!m) return;
-    history.replaceState(null, "", location.pathname + location.search);
-    this.openDialog("sign-in", { step: "finishing", title: "Sign in to HITOP", resume: decodeURIComponent(m[1]) });
+    const q = new URLSearchParams(location.search);
+    const code = m ? decodeURIComponent(m[1]) : q.get("sso");
+    if (!code) return;
+    q.delete("sso");
+    history.replaceState(null, "", location.pathname + (q.size ? `?${q}` : ""));
+    this.openDialog("sign-in", { step: "finishing", title: "Sign in to HITOP", resume: code });
   }
 
   // --- dialogs ----------------------------------------------------------------
