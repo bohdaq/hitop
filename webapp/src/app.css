@@ -1000,6 +1000,7 @@ hitop-app lit-material-command-palette::part(option) { min-height: 40px; padding
 hitop-app lit-material-command-palette::part(footer) { padding: 8px 18px; background: var(--md-sys-color-surface-container-low); }
 /* The card (`container`); `dialog` is the transparent full-viewport element behind it, so the app shows through the backdrop. */
 lit-material-dialog::part(container) { border: 1px solid #33333a; border-radius: 14px; background: var(--md-sys-color-surface-container); --lit-material-text-field-notch-color: var(--md-sys-color-surface-container); }
+lit-material-dialog::part(dialog)::backdrop { background: rgb(5 5 7 / 0.62); }
 lit-material-menu::part(menu) { border: 1px solid #33333a; border-radius: 10px; background: var(--md-sys-color-surface-container-high); }
 .dialog-form { --md-sys-density-field-height: 40px; --md-sys-density-field-label-top: 2px; --md-sys-density-field-value-inset: 2px; }
 @media (pointer: fine) {

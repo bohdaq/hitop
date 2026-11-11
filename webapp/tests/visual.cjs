@@ -231,6 +231,7 @@ async function main() {
     const s = JSON.parse(localStorage.getItem("hitop_settings") || "{}");
     localStorage.setItem("hitop_settings", JSON.stringify({ ...s, syncServer: server }));
     const app = document.querySelector("hitop-app");
+    document.querySelector("#toast")?.close();
     app.store.orgs = [];
     app.store.currentOrg = null;
     app.requestUpdate();
