@@ -481,7 +481,9 @@ async function launchOff(options) {
   await S(bob).getByRole('button', { name: 'Sign in', exact: true }).click();
   await waitStep(bob, 'providers');
   check('Share (signed out) opens the Sign in dialog', (await D(bob).locator('.signin-provider').count()) === 1);
-  await D(bob).getByRole('button', { name: 'Continue with GitHub' }).click();
+  // Enter on the focused provider button starts it (the dialog's form takes Enter only in its fields).
+  await D(bob).locator('#signin-github').focus();
+  await bob.page.keyboard.press('Enter');
   if (TAURI) {
     await waitStep(bob, 'paste');
     const link = (await D(bob).getByLabel('SSO sign-in link').innerText()).trim();
@@ -499,12 +501,44 @@ async function launchOff(options) {
   check('Continue with GitHub signs Dave in: avatar in the top bar, a toast says who', (await bob.page.locator('header.topbar .account-button').count()) === 1 && (await toastText(bob)).includes('Signed in as dave@example.com'), await toastText(bob));
   check('...the Sign in dialog closed and the Share dialog is back, ready to share', (await D(bob).count()) === 0 && (await S(bob).getByRole('button', { name: /Share with people/ }).count()) === 1);
 
+  // The Account page follows the account while on screen: signed out there, then signed in as
+  // Bob (the same after-sign-in step as the dialog's), it shows Bob's address and fingerprint.
+  await closeDialog(bob);
+  await openSync(bob);
+  await S(bob).getByRole('button', { name: 'Sign out' }).click();
+  await idle(bob);
+  const bobMails = server.mails('bob@example.com');
+  await signInByCode(bob.page, server.url, 'bob@example.com', () => server.code('bob@example.com', '/signin#', bobMails));
+  const bobNow = (await inApp(bob.page, 'return c.fingerprint();')).value;
+  await bob.page.waitForFunction((f) => document.querySelector('hitop-sync [aria-label="Your fingerprint"]')?.textContent.trim() === f, bobNow, { timeout: 15000 }).catch(() => {});
+  check('the Account page under the dialog shows the new account at once', (await store(bob, 'return s.view.kind;')) === 'sync' && (await S(bob).locator('.account-lead').first().innerText()).includes('bob@example.com') && (await text(S(bob).getByLabel('Your fingerprint'))) === bobNow, `${await text(S(bob).getByLabel('Your fingerprint'))} vs ${bobNow}`);
+
   // A blocked pop-up (web): Continue in this tab leaves for GitHub and the app finishes the
   // sign-in when it comes back.
   if (!TAURI) {
     await closeDialog(bob);
     await bob.page.locator('header.topbar .account-button').click();
     await bob.page.locator('#account-menu').getByText('Sign out').click();
+    await settle(bob.page);
+    // A web origin's way back is `#sso=` (localhost gets `?sso=`, as above): the callback page
+    // hands it to the app's tabs over the BroadcastChannel...
+    await bob.page.evaluate(() => {
+      window.__signin = null;
+      const ch = new BroadcastChannel('hitop-sign-in');
+      ch.onmessage = (e) => (window.__signin = e.data);
+    });
+    const cb = await bob.page.context().newPage();
+    await cb.goto(new URL('sync-callback.html?flow=F1#sso=C1', bob.page.url()).href);
+    await settle(bob.page, 400);
+    check('the callback page passes a #sso= code on to the app', JSON.stringify(await bob.page.evaluate(() => window.__signin)) === JSON.stringify({ hitopSignIn: { flow: 'F1', code: 'C1' } }), JSON.stringify(await bob.page.evaluate(() => window.__signin)));
+    if (!cb.isClosed()) await cb.close();
+    // ...and the app opened with #sso= (back from a sign-in in this tab) takes it off the address
+    // and finishes, or says why not (this one was never started here).
+    await bob.page.goto('about:blank');
+    await bob.page.goto(`${bob.url}#sso=never-started`, { waitUntil: 'networkidle' });
+    await bob.page.waitForSelector('#dialog hitop-sign-in .signin-error', { timeout: 15000 }).catch(() => {});
+    check('#sso= on the app: the code leaves the address and the dialog says it could not finish', !(await bob.page.evaluate(() => location.hash)) && (await D(bob).innerText().catch(() => '')).includes("Couldn't finish signing in"), await D(bob).innerText().catch(() => ''));
+    await bob.page.keyboard.press('Escape');
     await settle(bob.page);
     await bob.page.evaluate(() => (window.open = () => null));
     await openSignIn(bob);

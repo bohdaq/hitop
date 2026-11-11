@@ -137,6 +137,7 @@ const WEBHOOK = 'whsec-e2e';
     await settle(page);
     const toastText = await page.locator('#toast').evaluate((el) => [el.message, el.textContent, el.shadowRoot?.textContent].filter(Boolean).join(' '));
     check('Continue with GitHub signs in through the pop-up; the dialog closes by itself', (await page.locator('#dialog hitop-sign-in').count()) === 0 && toastText.includes('Signed in as ada@example.com'), toastText);
+    check('...and the toast counts the collections that now sync (Shop, uploaded at this first sign-in)', toastText.includes('Signed in as ada@example.com · 1 collection now syncs'), toastText);
     check('...and the person stays where they were', (await store('return s.view.kind;')) !== 'sync');
     await openSync();
     await G().getByRole('button', { name: 'Connect GitHub' }).waitFor({ timeout: 15000 });
