@@ -384,7 +384,7 @@ export class HitopOrg extends LitElement {
     if (!s.orgs?.length) {
       return html`<div class="page"><lit-material-empty-state headline="Sign in to manage an organization">
         Organizations share collections and environments on HITOP Cloud.
-        <lit-material-button slot="actions" variant="filled" @click=${() => this.app.go("sync")}>Sign in</lit-material-button>
+        <lit-material-button slot="actions" variant="filled" @click=${() => this.app.openSignIn()}>Sign in</lit-material-button>
       </lit-material-empty-state></div>`;
     }
     const d = this.data;

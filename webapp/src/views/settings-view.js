@@ -103,7 +103,8 @@ class HitopAppSettings extends LitElement {
             <p class="hint sync-library">${on
               ? "Your collections, environments and globals open on every device you sign in on. HITOP Cloud can read them; collections you share with people stay end-to-end encrypted."
               : "Off: your collections stay in this browser only. Shared collections still sync, end-to-end encrypted."}</p>`
-        : html`<p class="hint">Sign in (top right) to save your collections to HITOP Cloud. Until then they stay on this device.</p>`}
+        : html`<p class="hint">Sign in to save your collections to HITOP Cloud. Until then they stay on this device.</p>
+            <lit-material-button variant="outlined" @click=${() => this.closest("hitop-app")?.openSignIn()}>Sign in</lit-material-button>`}
     </section>`;
   }
 

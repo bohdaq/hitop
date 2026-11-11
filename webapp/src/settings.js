@@ -1,6 +1,8 @@
 // The app's own settings (the Settings page), in localStorage `hitop_settings`
 // (a key nothing else reads), in both builds:
 //   timeoutMs   request time limit for Send and collection runs; 0 = none
+//   syncServer  the sync server the Sign in dialog uses (absent = HITOP Cloud's), kept after a
+//               sign-in on another one (sign-in-dialog.js)
 // Layout choices live in their own keys (split.js); the app is dark only (theme.js).
 // Unknown keys are kept.
 const KEY = "hitop_settings";

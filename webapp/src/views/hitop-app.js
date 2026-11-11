@@ -25,6 +25,7 @@ import "./settings-view.js";
 import "./history-view.js";
 import "./github-view.js";
 import { storageOf } from "../git.js";
+import { signInDialog } from "./sign-in-dialog.js";
 import { syncClient } from "./sync-view.js";
 import "./limit-note.js";
 import { orgLabel } from "../orgs.js";
@@ -148,6 +149,7 @@ export class HitopApp extends LitElement {
     if (window.matchMedia?.("(pointer: fine)").matches) document.documentElement.setAttribute("density", "compact");
     platform().onStart?.(this);
     document.addEventListener("keydown", (e) => this.onShortcut(e), true);
+    this.resumeSignIn();
     // A link into the Organization area (the portal's pages send the browser here, 7b).
     const openLink = () => {
       const link = parseOrgLink(location.hash);
@@ -304,7 +306,64 @@ export class HitopApp extends LitElement {
 
   go(kind, collectionId = null) {
     this.navOpen = false;
+    // Signed out, the Account page is the Sign in dialog, over what's on screen.
+    if (kind === "sync" && !this.account()) {
+      this.openSignIn();
+      return;
+    }
     this.store.show(kind, collectionId);
+  }
+
+  // --- sign in ----------------------------------------------------------------------
+
+  /** The hitop sync client of this app (views and the e2e helpers sign in through it). */
+  sync() {
+    return syncClient(this.store);
+  }
+
+  /** The Sign in dialog (sign-in-dialog.js). `then` runs after signing in (a Share dialog reopens). */
+  openSignIn(then = null) {
+    this.signInThen = then;
+    this.openDialog("sign-in", { step: "loading", title: "Sign in to HITOP" });
+  }
+
+  /**
+   * Just signed in (the dialog, or a test through `sync()`): the library links and pulls, the dialog
+   * closes, a toast says who, focus goes to the account button. `r` = finishBrowserSignIn's answer.
+   */
+  async signedIn(r = {}, fromDialog = false) {
+    const s = this.store;
+    const sync = this.sync();
+    const a = sync.account();
+    const then = fromDialog ? this.signInThen : null;
+    this.signInThen = null;
+    // With somewhere to go back to (a Share dialog), the dialog turns into it; else it closes.
+    if (then) then();
+    else if (this.dialog?.kind === "sign-in") this.closeDialog();
+    await s.library?.checkAccount().catch(() => {});
+    this.requestUpdate();
+    if (!a) return;
+    // How many collections now sync to HITOP Cloud: the library's own record (git.js storageOf),
+    // only when the library is on and holds some.
+    const n = s.library?.status.on ? s.collections.filter((c) => ["cloud", "github"].includes(storageOf(s, c).kind)).length : 0;
+    let text = `Signed in as ${a.email}${n ? ` · ${n} ${n === 1 ? "collection" : "collections"} now sync` : ""}`;
+    // A new device of an account with shared collections: their keys open with the recovery
+    // phrase or another device (Account, Password & recovery), not with Google or GitHub.
+    if (r.newDevice) {
+      const shared = await sync.workspaces().catch(() => []);
+      if (shared?.length) text += ". To open your shared collections here, use your recovery phrase (Account, Password & recovery)";
+    }
+    this.toast(text);
+    await this.updateComplete;
+    if (!then) this.querySelector("header.topbar .account-button")?.focus();
+  }
+
+  // Back from "Continue in this tab": the provider sent this tab to the app with `#sso=<code>`.
+  resumeSignIn() {
+    const m = /^#sso=(.+)$/.exec(location.hash);
+    if (!m) return;
+    history.replaceState(null, "", location.pathname + location.search);
+    this.openDialog("sign-in", { step: "finishing", title: "Sign in to HITOP", resume: decodeURIComponent(m[1]) });
   }
 
   // --- dialogs ----------------------------------------------------------------
@@ -371,6 +430,11 @@ export class HitopApp extends LitElement {
       return;
     }
     if (d?.kind === "ai" || d?.kind === "request-history") return;
+    if (d?.kind === "sign-in") {
+      // Enter in Work email / Server: Continue with SSO; in the code field: Sign in.
+      this.querySelector("#dialog hitop-sign-in")?.submitStep();
+      return;
+    }
     if (d?.kind === "join") {
       [...this.querySelectorAll("#dialog hitop-sync lit-material-button")].find((b) => b.textContent.includes("Accept invite"))?.click();
       return;
@@ -805,6 +869,9 @@ export class HitopApp extends LitElement {
             <lit-material-button variant="text" @click=${() => this.closeDialog()}>Close</lit-material-button>
           </div>`;
         break;
+      case "sign-in":
+        ({ headline, body, footer } = signInDialog(this, d));
+        break;
       case "shortcuts":
         headline = "Keyboard shortcuts";
         body = html`${shortcutList()}<p class="dialog-note">They're on the Settings page too.</p>`;
@@ -815,7 +882,7 @@ export class HitopApp extends LitElement {
         break;
     }
     return html`
-      <lit-material-dialog id="dialog" class=${WIDE_DIALOGS.includes(d.kind) || d.kind === "quick-open" || d.kind === "ai" ? "wide" : ""} @close=${() => (this.dialog = null)}>
+      <lit-material-dialog id="dialog" class=${WIDE_DIALOGS.includes(d.kind) || d.kind === "quick-open" || d.kind === "ai" ? "wide" : d.kind === "sign-in" ? "sign-in-dialog" : ""} @close=${() => (this.dialog = null)}>
         <span slot="headline">${headline}</span>
         <form id="dialog-form" class="dialog-form" novalidate @submit=${(e) => this.submitDialog(e)} @input=${(e) => this.clearFieldError(e.target)} @keydown=${(e) => this.dialogKey(e)}>${body}</form>
         ${footer}
@@ -1253,7 +1320,7 @@ export class HitopApp extends LitElement {
   accountButton() {
     const a = this.account();
     if (!a) {
-      return html`<lit-material-button variant="filled" class="account-signin" @click=${() => this.go("sync")}>Sign in</lit-material-button>`;
+      return html`<lit-material-button variant="filled" class="account-signin" @click=${() => this.openSignIn()}>Sign in</lit-material-button>`;
     }
     const n = this.needs().length;
     const label = `Account, ${a.email}${n ? `, ${n} ${n === 1 ? "thing needs" : "things need"} you` : ""}`;

@@ -261,8 +261,12 @@ class HitopGitPanel extends LightElement {
     if (where.kind === "folder" || where.kind === "shared") {
       body = html`<p>${where.detail}. ${where.kind === "folder" ? "Use the Git page of the desktop app, or your own git, for that folder." : "Shared workspaces stay end-to-end encrypted, so HITOP Cloud can't write them to GitHub."}</p>`;
     } else if (!this.store.library?.status.on) {
-      body = html`<p>Collections reach GitHub through HITOP Cloud. Sign in (top right) and keep "Save my collections to HITOP Cloud" on (Settings, Privacy) first.</p>
-        <lit-material-button variant="filled" @click=${() => (this.closest("hitop-app")?.closeDialog(), this.store.show("sync"))}>Open the Sync page</lit-material-button>`;
+      const app = this.closest("hitop-app");
+      body = this.store.library?.client.account()
+        ? html`<p>Collections reach GitHub through HITOP Cloud. Turn "Save my collections to HITOP Cloud" on (Settings, Privacy) first.</p>
+            <lit-material-button variant="filled" @click=${() => (app?.closeDialog(), app?.go("settings"))}>Open Settings</lit-material-button>`
+        : html`<p>Collections reach GitHub through HITOP Cloud. Sign in first: your collections are then saved there.</p>
+            <lit-material-button variant="filled" @click=${() => app?.openSignIn(() => app.openShare(c, "github"))}>Sign in</lit-material-button>`;
     } else if (!g.info) {
       body = html`<p class="hint" role="status">Loading…</p>`;
     } else if (!g.info.enabled) {
