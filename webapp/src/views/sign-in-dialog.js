@@ -21,7 +21,6 @@ import { syncClient } from "./sync-view.js";
 import { loadSettings, saveSettings } from "../settings.js";
 import { platform } from "../platform/index.js";
 
-const TERMS_URL = "https://hitop.rws8.tech/legal/terms.html";
 const PRIVACY_URL = "https://hitop.rws8.tech/privacy.html";
 const CHANNEL = "hitop-sign-in";
 const PROVIDER = { github: "GitHub", google: "Google", sso: "your organization's" };
@@ -280,8 +279,8 @@ class HitopSignIn extends LitElement {
           @click=${() => this.begin(k)}>${unsafeSVG(k === "github" ? GITHUB_MARK : GOOGLE_G)}<span>Continue with ${PROVIDER[k]}</span></button>`)}
       </div>
       ${this.errors.general ? html`<p class="signin-error" role="alert">${this.errors.general}</p>` : nothing}
-      <p class="signin-fine">Requests, environments and the CLI keep working without an account. By continuing you agree to the
-        <a href=${TERMS_URL} target="_blank" rel="noopener noreferrer">terms</a> and <a href=${PRIVACY_URL} target="_blank" rel="noopener noreferrer">privacy policy</a>.</p>
+      <p class="signin-fine">Requests, environments and the CLI keep working without an account.
+        <a href=${PRIVACY_URL} target="_blank" rel="noopener noreferrer">Privacy policy</a></p>
       <div class="signin-more">
         <button type="button" class="signin-link" @click=${() => ((this.errors = {}), this.setStep("sso"))}>Company SSO or your own server…</button>
       </div>`;

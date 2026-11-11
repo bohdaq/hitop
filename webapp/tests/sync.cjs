@@ -452,7 +452,7 @@ async function launchOff(options) {
   check('...and the link to the second step', (await D(bob).getByRole('button', { name: 'Company SSO or your own server…' }).count()) === 1);
   check('no email or password field, no mailed code', (await D(bob).locator('lit-material-text-field, input').count()) === 0 && !/password|Email me a code/i.test(await D(bob).innerText()), await D(bob).innerText());
   check('focus is on the first provider button', await bob.page.evaluate(() => document.activeElement?.id === 'signin-github'), await bob.page.evaluate(() => document.activeElement?.outerHTML.slice(0, 80)));
-  check('the fine print links the terms and the privacy policy', (await D(bob).getByRole('link', { name: 'terms' }).getAttribute('href')).endsWith('/legal/terms.html') && (await D(bob).getByRole('link', { name: 'privacy policy' }).getAttribute('href')).endsWith('/privacy.html'));
+  check('the fine print links the privacy policy, not the draft terms', (await D(bob).getByRole('link', { name: 'Privacy policy' }).getAttribute('href')).endsWith('/privacy.html') && (await D(bob).getByRole('link', { name: 'terms' }).count()) === 0);
   await bob.page.keyboard.press('Escape');
   await settle(bob.page);
   check('Escape closes it and focus returns to Sign in', (await D(bob).count()) === 0 && (await bob.page.evaluate(() => Boolean(document.activeElement?.closest('.account-signin')))), await bob.page.evaluate(() => document.activeElement?.outerHTML.slice(0, 80)));
