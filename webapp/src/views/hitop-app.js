@@ -34,6 +34,7 @@ import { agentPanel, runAi } from "./ai-view.js";
 import "./org-view.js";
 import { limitInfo, parseOrgLink, sectionsFor, usageWarnings } from "../org.js";
 import { asksForEvents } from "../features.js";
+import { isCurl, parseCurl } from "../curl.js";
 import { gettingStartedSteps, hideGettingStarted, SAMPLE_NAME, savedOnce, showGettingStarted } from "../getting-started.js";
 
 /** Email addresses typed in the invite dialog: comma, space or line separated. */
@@ -144,7 +145,11 @@ export class HitopApp extends LitElement {
     return this;
   }
 
-  toast(message) {
+  // `action`: {label, run} for a button on the toast (UX2: "Imported from curl · Undo").
+  async toast(message, action = null) {
+    this.toastAction = action;
+    this.requestUpdate();
+    await this.updateComplete;
     this.querySelector("#toast")?.show(message);
   }
 
@@ -530,6 +535,20 @@ export class HitopApp extends LitElement {
       // A Postman import may come back with things to check: show them. An
       // OpenAPI spec is added as a new collection, with its report.
       const text = this.field("json");
+      // UX2 (2): a curl command is one new request in the collection on screen.
+      if (isCurl(text)) {
+        let parsed;
+        try {
+          parsed = parseCurl(text);
+        } catch (err) {
+          this.dialog = { ...d, submitted: false, error: `That curl command can't be read: ${err.message}` };
+          return;
+        }
+        this.closeDialog();
+        this.newRequest();
+        this.applyCurl(parsed, true);
+        return;
+      }
       const replace = d.mode === "replace";
       const collections = async () => {
         JSON.parse(text.replace(/^\uFEFF/, "")); // bad JSON says so before anything is asked
@@ -803,7 +822,7 @@ export class HitopApp extends LitElement {
           <span><strong>${label}</strong><span class="hint">${help}</span></span>
         </label>`;
         body = html`
-          <p class="dialog-note">Choose a file, drop one here or paste HITOP, Postman v2.1 or Bruno JSON, or an OpenAPI 3 spec (YAML or JSON, always added as a new collection).</p>
+          <p class="dialog-note">Choose a file, drop one here or paste HITOP, Postman v2.1 or Bruno JSON, an OpenAPI 3 spec (YAML or JSON, always added as a new collection) or a curl command (one new request).</p>
           <fieldset class="import-mode">
             <legend>Imported collections</legend>
             ${mode("add", "Add to my collections", "A name you already have gets (2) added.")}
@@ -1847,6 +1866,39 @@ export class HitopApp extends LitElement {
     return [...storeItems(this, methodLabel), ...paletteActions(this, ACTION_KEYS)];
   }
 
+  // UX2 (2): a curl command pasted into the URL field fills the open request instead (any other
+  // text pastes as usual).
+  pasteIntoUrl(e) {
+    const text = e.clipboardData?.getData("text/plain") ?? "";
+    if (!isCurl(text)) return;
+    e.preventDefault();
+    let parsed;
+    try {
+      parsed = parseCurl(text);
+    } catch (err) {
+      this.toast(`That curl command can't be read: ${err.message}`);
+      return;
+    }
+    this.applyCurl(parsed, false);
+  }
+
+  // The parsed command into the open request, with a toast that can undo it (`added`: the request
+  // was made for it by Import, so Undo takes it out again).
+  applyCurl(parsed, added) {
+    const s = this.store;
+    const undo = s.applyCurl(parsed);
+    const id = s.tab?.id;
+    const note = parsed.warnings.length ? ` ${parsed.warnings.join(" ")}` : "";
+    this.toast(`Imported from curl: ${parsed.method} ${parsed.url}.${note}`, {
+      label: "Undo",
+      run: () => {
+        undo?.();
+        const at = s.tabs.findIndex((t) => t.id === id);
+        if (added && at !== -1 && s.tabs.length > 1) this.closeTab(at);
+      },
+    });
+  }
+
   focusUrl() {
     const s = this.store;
     if (s.view.kind !== "request") s.selectTab(s.currentTab);
@@ -1983,7 +2035,9 @@ export class HitopApp extends LitElement {
       </div>
       ${this.renderStatusBar()}
       ${this.renderDialog()} ${this.renderRequestMenu()} ${this.renderCollectionMenu()} ${this.renderFolderMenu()} ${this.renderAccountMenu()} ${this.renderPalette()} ${this.renderAgent()}
-      <lit-material-snackbar id="toast" closable></lit-material-snackbar>`;
+      <lit-material-snackbar id="toast" closable>${this.toastAction
+        ? html`<lit-material-button slot="action" variant="text" @click=${() => this.toastAction?.run()}>${this.toastAction.label}</lit-material-button>`
+        : nothing}</lit-material-snackbar>`;
   }
 }
 

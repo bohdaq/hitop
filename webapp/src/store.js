@@ -681,6 +681,33 @@ export class Store extends EventTarget {
     if (at !== -1) this.tabs = tabService.updateTab(this.tabs, at, updates);
   }
 
+  /**
+   * UX2 (2): a parsed curl command (curl.js parseCurl) into the open request: method, URL, headers,
+   * body and auth as the command says. Returns an undo: the tab's fields as they were.
+   */
+  applyCurl(r, index = this.currentTab) {
+    const t = this.tabs[index];
+    if (!t) return null;
+    const keys = ["url", "method", "kind", "headers", "requestBody", "bodyMode", "formFields", "auth", "disabledParams"];
+    const before = Object.fromEntries(keys.map((k) => [k, t[k]]));
+    this.updateTab(
+      {
+        url: r.url,
+        method: r.method,
+        kind: undefined,
+        headers: r.headers.length ? r.headers : [{ name: "", value: "" }],
+        requestBody: r.body,
+        bodyMode: r.bodyMode,
+        formFields: r.formFields,
+        auth: r.auth ?? { type: "none" },
+        disabledParams: [],
+      },
+      index,
+    );
+    const id = t.id;
+    return () => this.updateTabById(id, before);
+  }
+
   // The tab with this id, which may no longer be the current one.
   updateTabById(id, updates) {
     const at = this.tabs.findIndex((t) => t.id === id);

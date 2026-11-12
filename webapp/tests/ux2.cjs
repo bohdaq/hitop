@@ -128,6 +128,38 @@ function server() {
   check('(7) ...and the Tests tab says so', (await p.getByRole('tab', { name: /Tests 1 of 2 failed/ }).count()) === 1);
   await tabUrl(`${base}/json`, { postRequestScript: '' });
 
+  // --- (2) Pasting curl into the URL field fills the request; Undo puts it back ---
+  await tabUrl(`${base}/before`);
+  const curl = `curl -X POST '${base}/post' \\\n  -H 'Content-Type: application/json' \\\n  -H 'X-Trace: t1' \\\n  -d '{"name": "Ada"}'`;
+  await p.locator('hitop-request .url-field .url input').evaluate((input, text) => {
+    const dt = new DataTransfer();
+    dt.setData('text/plain', text);
+    input.dispatchEvent(new ClipboardEvent('paste', { clipboardData: dt, bubbles: true, cancelable: true, composed: true }));
+  }, curl);
+  await settle(p, 600);
+  tab = (await h.stored.tabs()).tab;
+  check('(2) pasted curl fills method, URL, headers and body', tab.method === 'POST' && tab.url === `${base}/post` && tab.headers.length === 2 && tab.headers[1].value === 't1' && tab.requestBody === '{"name": "Ada"}', JSON.stringify([tab.method, tab.url, tab.headers, tab.requestBody]));
+  check('(2) ...not the whole command as the URL, and the tab is named from it', !tab.url.includes('curl') && (await p.locator('.tab-strip lit-material-tab[selected]').innerText()).includes('/post'));
+  const toastText = await p.locator('#toast').evaluate((el) => el.textContent + ' ' + (el.message ?? ''));
+  check('(2) a toast says so, with Undo', toastText.includes('Imported from curl') && (await p.locator('#toast').getByRole('button', { name: 'Undo' }).count()) === 1, toastText);
+  await p.locator('#toast').getByRole('button', { name: 'Undo' }).click();
+  await settle(p);
+  tab = (await h.stored.tabs()).tab;
+  check('(2) Undo puts the request back', tab.method === 'GET' && tab.url === `${base}/before` && !tab.requestBody, JSON.stringify([tab.method, tab.url]));
+  // Import takes a curl command as one new request.
+  const before = (await h.stored.collections()).find((c) => c.name === 'My requests').requests.length;
+  await store('app.openDialog("import");');
+  await p.locator('#dialog #json').waitFor();
+  await p.locator('#dialog #json').evaluate((el, text) => {
+    el.value = text;
+    el.dispatchEvent(new Event('input', { bubbles: true }));
+  }, `curl -u ada:pw ${base}/me`);
+  await p.locator('#dialog').getByRole('button', { name: 'Import', exact: true }).click();
+  await settle(p, 800);
+  cols = await h.stored.collections();
+  tab = (await h.stored.tabs()).tab;
+  check('(2) Import takes curl as one new request in the collection', cols.find((c) => c.name === 'My requests').requests.length === before + 1 && tab.url === `${base}/me` && tab.auth?.type === 'basic' && tab.auth.username === 'ada', JSON.stringify([tab.url, tab.auth]));
+
   // --- (10) Signed-out Organization page: the empty state's Sign in renders ---
   await store('await app.openOrg("general");');
   await settle(p, 600);
