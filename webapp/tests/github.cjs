@@ -247,19 +247,19 @@ const WEBHOOK = 'whsec-e2e';
     await store('return s.library.flush();');
     await settle(page, 2500);
     check('unlinked: the repository keeps its files and gets nothing new', JSON.stringify(gh.files(REPO)) === kept);
-    // Default was here before the first sign-in, so it is kept in this browser only; the dialog
+    // My requests (the first visit made it) was here before the first sign-in, so it is kept in this browser only; the dialog
     // saves it to HITOP Cloud, then offers GitHub.
-    await store(`const c = s.collections.find((c) => c.name === "Default"); s.collections = s.collections.map((x) => x.id === c.id ? { ...x, requests: [
+    await store(`const c = s.collections.find((c) => c.name === "My requests"); s.collections = s.collections.map((x) => x.id === c.id ? { ...x, requests: [
         { id: 601, name: "Same", method: "GET", url: "", headers: [], body: "" }, { id: 602, name: "Same", method: "GET", url: "", headers: [], body: "" } ] } : x); s.emit();`);
-    await page.locator('aside .tree-row.collection', { hasText: 'Default' }).click();
+    await page.locator('aside .tree-row.collection', { hasText: 'My requests' }).click();
     await settle(page);
-    check('Default is kept in this browser only', (await chip().innerText()).includes('This browser only'), await chip().innerText());
+    check('My requests is kept in this browser only', (await chip().innerText()).includes('This browser only'), await chip().innerText());
     await shareGithub();
     await D().getByRole('button', { name: 'Save to HITOP Cloud' }).click();
     await D().getByLabel('Folder').waitFor({ timeout: 15000 }).catch(() => {});
     check('Save to HITOP Cloud: then the GitHub form', (await D().getByLabel('Folder').count()) === 1, await D().innerText());
     const files = await D().getByLabel('Files HITOP will write').innerText();
-    check('the preview numbers requests with the same name', files.includes('default/requests/same.yaml') && files.includes('default/requests/same-2.yaml'), files);
+    check('the preview numbers requests with the same name', files.includes('my-requests/requests/same.yaml') && files.includes('my-requests/requests/same-2.yaml'), files);
 
     // Create a new repository: GitHub's own page, filled in; back in this tab the new one is chosen.
     const [popup] = await Promise.all([page.waitForEvent('popup'), D().getByRole('button', { name: /Create a new repository/ }).click()]);
@@ -270,8 +270,8 @@ const WEBHOOK = 'whsec-e2e';
     await page.evaluate(() => dispatchEvent(new Event('focus')));
     await D().getByText('ada/hitop-collections is chosen').waitFor({ timeout: 10000 }).catch(() => {});
     check('...and back here the new repository is chosen', (await D().getByLabel('Files HITOP will write').innerText()).includes('ada/hitop-collections'), await D().innerText());
-    const up = await store(`return s.library.client.api("GET", "/v1/library").then((r) => r.items.some((i) => i.kind === "collection" && i.data?.name === "Default"));`);
-    check('...and Default is in the library', up === true);
+    const up = await store(`return s.library.client.api("GET", "/v1/library").then((r) => r.items.some((i) => i.kind === "collection" && i.data?.name === "My requests"));`);
+    check('...and My requests is in the library', up === true);
     await page.locator('#dialog').getByRole('button', { name: 'Close' }).click();
     await settle(page);
     check('...and the chip says HITOP Cloud', (await chip().innerText()).includes('HITOP Cloud'), await chip().innerText());

@@ -73,7 +73,12 @@ function api() {
   // The pointer away from where the chip appeared under it (hovering already peeks), then a click.
   await p.mouse.move(5, 500);
   await settle(p);
-  await chip.click();
+  // (A click can land while the hover's peek is still opening, which light dismiss then closes:
+  // the click is the person's second try, as by hand.)
+  for (let i = 0; i < 2 && !(await p.locator('lit-material-popover.var-peek').evaluate((el) => el.open)); i++) {
+    await chip.click();
+    await p.waitForFunction(() => document.querySelector('lit-material-popover.var-peek')?.open, null, { timeout: 2000 }).catch(() => {});
+  }
   await settle(p);
   check('a click on a variable says where it comes from', (await p.locator('lit-material-popover.var-peek').evaluate((el) => el.open)) && (await p.locator('.var-peek').innerText()).includes('Nothing defines it'));
   await p.keyboard.press('Escape');
