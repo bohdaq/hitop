@@ -1,7 +1,7 @@
 // CodeMirror setup for <hitop-code-editor>; loaded on first use, so the
 // request view doesn't wait for it.
 import { EditorState, Compartment } from "@codemirror/state";
-import { EditorView, keymap, lineNumbers, highlightActiveLine, drawSelection, placeholder } from "@codemirror/view";
+import { Decoration, EditorView, MatchDecorator, ViewPlugin, hoverTooltip, keymap, lineNumbers, highlightActiveLine, drawSelection, placeholder } from "@codemirror/view";
 import { defaultKeymap, history, historyKeymap, indentWithTab } from "@codemirror/commands";
 import { HighlightStyle, bracketMatching, indentOnInput, syntaxHighlighting, syntaxTree } from "@codemirror/language";
 import { javascript } from "@codemirror/lang-javascript";
@@ -66,5 +66,53 @@ export function languageExtensions(language) {
   return [];
 }
 
+
+// UX2: ${variables} in a body, marked as the URL field marks them (amber, red and dashed when nothing
+// defines one); hovering one shows its value and where it comes from. `resolve(name)` →
+// {value, scope, missingSecret?} | null (the store's variableSource; secrets come masked).
+const VAR = /\$\{([^}]*)\}/g;
+export function variableMarks(resolve) {
+  const marks = new MatchDecorator({
+    regexp: VAR,
+    decoration: (m) => {
+      const found = resolve(m[1].trim());
+      return Decoration.mark({ class: !found || found.missingSecret ? "cm-var cm-var-missing" : "cm-var" });
+    },
+  });
+  const plugin = ViewPlugin.fromClass(
+    class {
+      constructor(view) {
+        this.decorations = marks.createDeco(view);
+      }
+      update(u) {
+        this.decorations = marks.updateDeco(u, this.decorations);
+      }
+    },
+    { decorations: (v) => v.decorations },
+  );
+  const peek = hoverTooltip((view, pos) => {
+    const line = view.state.doc.lineAt(pos);
+    for (const m of line.text.matchAll(VAR)) {
+      const from = line.from + m.index;
+      const to = from + m[0].length;
+      if (pos < from || pos > to) continue;
+      const name = m[1].trim();
+      const found = resolve(name);
+      return {
+        pos: from,
+        end: to,
+        above: true,
+        create() {
+          const dom = document.createElement("div");
+          dom.className = "cm-var-peek";
+          dom.textContent = !found ? `\${${name}}: nothing defines it` : found.missingSecret ? `\${${name}}: a secret with no value on this device (${found.scope})` : `\${${name}} = ${found.value || "(empty)"} · ${found.scope}`;
+          return { dom };
+        },
+      };
+    }
+    return null;
+  });
+  return [plugin, peek];
+}
 
 export { EditorState, Compartment, EditorView, keymap, lineNumbers, highlightActiveLine, drawSelection, placeholder, defaultKeymap, history, historyKeymap, indentWithTab, bracketMatching, indentOnInput, syntaxHighlighting };

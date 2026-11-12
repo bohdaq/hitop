@@ -93,7 +93,7 @@ function server() {
   await p.getByRole('option', { name: 'Server-Sent Events', exact: true }).click();
   await settle(p);
   let tab = (await h.stored.tabs()).tab;
-  check('(8) picking it makes a GET with Accept: text/event-stream, tagged SSE', tab.method === 'GET' && tab.headers.some((x) => x.name === 'Accept' && x.value === 'text/event-stream') && (await p.locator('.tab-strip lit-material-tab[selected] .method-tag').innerText()) === 'SSE', JSON.stringify(tab.headers));
+  check('(8) picking it makes a GET with Accept: text/event-stream, tagged SSE', tab.method === 'GET' && tab.headers.some((x) => x.name === 'Accept' && x.value === 'text/event-stream') && (await p.locator('.tab-strip lit-material-tab[selected] .method-tag').getAttribute('data-tag')) === 'SSE', JSON.stringify(tab.headers));
   await pickMethod('GET');
   tab = (await h.stored.tabs()).tab;
   check('(8) back to GET takes the Accept header out', !tab.headers.some((x) => /event-stream/.test(x.value || '')));
@@ -316,6 +316,25 @@ function server() {
   await settle(p);
   const after9 = await order();
   check('(9) Alt+Down moves the request down in its list, focus stays on it', after9[1] === before9[0] && after9[0] === before9[1] && (await focusedKey()) === `r:${myId}:${before9[0]}`, `${before9} → ${after9}`);
+
+  // --- Smaller findings (a few of them) ---
+  await p.locator('.tab-strip').getByRole('button', { name: 'New request' }).click();
+  await settle(p);
+  await p.keyboard.type(`${base}/json`);
+  await settle(p);
+  const tagNow = await p.locator('.tab-strip lit-material-tab[selected] .method-tag').getAttribute('data-tag');
+  const titleNow = (await p.locator('.tab-strip lit-material-tab[selected] .tab-title').innerText()).trim();
+  check('(R) an auto-named tab has its coloured tag, its title without the method', tagNow === 'GET' && titleNow === '/json', `${tagNow} ${titleNow}`);
+  await p.locator('[aria-label="Request details"] lit-material-tab', { hasText: 'Body' }).click();
+  await settle(p);
+  await p.getByRole('button', { name: 'Switch to POST' }).click();
+  await settle(p);
+  check('(R) a GET body offers Switch to POST', (await h.stored.tabs()).tab.method === 'POST');
+  check('(R) the toast sits at the bottom', await p.locator('#toast').evaluate((el) => getComputedStyle(el).top === 'auto' || el.getBoundingClientRect().top > innerHeight / 2));
+  const envOptions = await p.locator('.env-select').first().locator('lit-material-select-option').allInnerTexts();
+  check('(R) the environment menu always has a way to manage environments', envOptions.some((t) => /Add environment|Manage environments/.test(t)), envOptions.join('|'));
+  await p.keyboard.press('Alt+Shift+KeyW');
+  await settle(p);
 
   // --- (10) Signed-out Organization page: the empty state's Sign in renders ---
   await store('await app.openOrg("general");');

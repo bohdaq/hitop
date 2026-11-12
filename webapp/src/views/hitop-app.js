@@ -6,22 +6,22 @@ import { repeat } from "lit/directives/repeat.js";
 import { unsafeSVG } from "lit/directives/unsafe-svg.js";
 import { mark } from "../../../site/src/brand/mark.js";
 import { icon } from "../icons.js";
-import { methodLabel, Store } from "../store.js";
+import { METHODS, methodLabel, Store } from "../store.js";
 import { isBlankRequest, isMyRequests, UNTITLED } from "../new-request.js";
 import { IS_TAURI, platform } from "../platform/index.js";
 import { issueText } from "../pm.js";
 import "@lit-material/navigation";
 import "@lit-material/command-palette";
-import { PALETTE_HINTS, PREFIXES, actions as paletteActions, storeItems } from "../commands.js";
+import { PALETTE_HINTS, PREFIXES, actions as paletteActions, rankSections, storeItems } from "../commands.js";
 import "./request-view.js";
 import "./collection-views.js";
-import { WIDE_DIALOGS, codeDialog, compareDialog, refreshCode } from "./tools-dialogs.js";
+import { FIT_DIALOGS, WIDE_DIALOGS, codeDialog, compareDialog, refreshCode } from "./tools-dialogs.js";
 import { OPENAPI_DIALOGS, openapiDialog, submitOpenapi } from "./openapi-dialogs.js";
 import { ACTION_KEYS, keyLabel, SAVE_KEYS, SEND_KEYS, shortcutFor } from "../shortcuts.js";
 import { loadSidePane, saveLayout } from "../split.js";
 import { quickOpenItems, rankItems } from "../quick-open.js";
 import { protocolLabel } from "../request-facts.js";
-import { folderOf, requestTree, slugName, withFolders } from "../collection-tree.js";
+import { folderOf, folderTitle, requestTree, slugName, withFolders } from "../collection-tree.js";
 import { shortcutList } from "./shortcut-list.js";
 import "./settings-view.js";
 import "./history-view.js";
@@ -36,7 +36,7 @@ import "./org-view.js";
 import { limitInfo, parseOrgLink, sectionsFor, usageWarnings } from "../org.js";
 import { asksForEvents } from "../features.js";
 import { isCurl, parseCurl } from "../curl.js";
-import { gettingStartedSteps, hideGettingStarted, SAMPLE_NAME, savedOnce, showGettingStarted } from "../getting-started.js";
+import { gettingStartedSteps, hideGettingStarted, importedIds, SAMPLE_NAME, savedOnce, showGettingStarted } from "../getting-started.js";
 
 /** Email addresses typed in the invite dialog: comma, space or line separated. */
 function inviteEmails(text) {
@@ -262,6 +262,24 @@ export class HitopApp extends LitElement {
       case "sidePane":
         this.toggleSidePane();
         break;
+      case "environment": {
+        // UX2: the environment picker next to Send (or the one in the drawer on phones).
+        if (!onRequest) s.selectTab(s.currentTab);
+        this.updateComplete.then(() => {
+          const pick = [...this.querySelectorAll(".env-select")].find((el) => el.offsetParent !== null);
+          pick?.focus();
+          pick?.click?.();
+        });
+        break;
+      }
+      case "filter":
+        if (this.sideCollapsed()) this.toggleSidePane();
+        if (this.narrow?.matches) this.navOpen = true;
+        this.updateComplete.then(() => this.querySelector(".tree-filter")?.focus());
+        break;
+      case "responseTabs":
+        this.querySelector('hitop-request lit-material-tabs[aria-label="Response details"] lit-material-tab[selected]')?.focus();
+        break;
       case "help":
         this.openDialog("shortcuts");
         break;
@@ -279,7 +297,8 @@ export class HitopApp extends LitElement {
     const q = String(d?.query ?? "").trim();
     const environments = q ? s.visibleEnvironments.map((e) => ({ ...e, label: s.environmentLabel(e) })) : [];
     const history = q ? s.history : [];
-    return rankItems(quickOpenItems({ collections: s.visibleCollections, tabs: s.tabs, methodLabel, environments, history }), d?.query ?? "", 50);
+    const liveName = (r, collectionId) => s.autoNameTab(r, collectionId)?.title ?? null;
+    return rankItems(quickOpenItems({ collections: s.visibleCollections, tabs: s.tabs, methodLabel, environments, history, liveName }), d?.query ?? "", 50);
   }
 
   quickPick(item) {
@@ -615,19 +634,47 @@ export class HitopApp extends LitElement {
     if (!tab || s.tabs.length < 2) return;
     if (s.isDirty(tab) || s.hasDraftContent(tab)) {
       const saved = s.loadedRequest(tab);
-      const ok = await confirm({
+      const choice = await this.confirmDiscard({
         headline: `Discard changes to ${tab.title}?`,
         message: !saved
           ? "This request isn't saved in a collection."
           : tab.autoName && isBlankRequest(saved) && saved.name === UNTITLED
             ? `This new request was never saved, so it comes out of ${s.collection(tab.loadedCollectionId)?.name ?? "its collection"} again.`
             : "The tab has edits that aren't saved; the saved request stays as it was.",
-        confirmLabel: "Discard",
-        destructive: true,
+        canSave: Boolean(saved),
       });
-      if (!ok) return;
+      if (choice === "cancel") return;
+      if (choice === "save") return this.saveAndClose(s.tabs.indexOf(tab));
     }
     s.closeTab(s.tabs.indexOf(tab));
+  }
+
+  // UX2: closing a tab with edits: Discard, Cancel, or (a saved request) Save and close.
+  // Resolves "discard" | "save" | "cancel".
+  async confirmDiscard({ headline, message, canSave }) {
+    const el = new (customElements.get("lit-material-confirm-dialog"))();
+    el.headline = headline;
+    el.confirmLabel = "Discard";
+    el.destructive = true;
+    let saving = false;
+    const p = document.createElement("p");
+    p.textContent = message;
+    el.append(p);
+    if (canSave) {
+      const save = document.createElement("lit-material-button");
+      save.setAttribute("variant", "outlined");
+      save.className = "discard-save";
+      save.textContent = "Save and close";
+      save.addEventListener("click", () => ((saving = true), el.close(false)));
+      el.append(save);
+    }
+    document.body.append(el);
+    try {
+      const ok = await el.show();
+      return ok ? "discard" : saving ? "save" : "cancel";
+    } finally {
+      el.remove();
+    }
   }
 
   saveAndClose(index) {
@@ -845,7 +892,7 @@ export class HitopApp extends LitElement {
             <span class="file-name">${d.file ?? "No file chosen"}</span>
           </label>
           <div class="drop-zone" @dragover=${(e) => e.preventDefault()} @drop=${(e) => (e.preventDefault(), this.importFile(e.dataTransfer?.files?.[0]))}>
-            <lit-material-textarea id="json" variant="outlined" label="Collection JSON or OpenAPI spec" rows="10" required autofocus
+            <lit-material-textarea id="json" variant="outlined" label="Collection JSON, OpenAPI spec or curl command" placeholder="Paste HITOP, Postman or Bruno JSON, an OpenAPI spec, or a curl command" rows="10" required autofocus
               ?error=${Boolean(d.error)} error-text=${d.error ?? ""}></lit-material-textarea>
           </div>
           <lit-material-button variant="text" class="dialog-link" @click=${() => this.openDialog("openapi-import")}>${icon("globe")} Load an OpenAPI spec from a URL</lit-material-button>`;
@@ -865,14 +912,23 @@ export class HitopApp extends LitElement {
           <ul class="import-report">
             ${issues.map((i) => html`<li><span>${issueText(i)}</span>${i.text ? html`<code>${i.text}</code>` : nothing}</li>`)}
           </ul>`;
-        footer = actions("Done");
+        // UX2: after the import there is nothing to cancel.
+        footer = html`<div slot="actions" class="dialog-actions"><lit-material-button variant="filled" type="submit" form="dialog-form">Done</lit-material-button></div>`;
         break;
       }
       case "export": {
         headline = "Export collections";
-        const json = s.exportJson(this.exportFormat);
-        const name = this.exportFormat === "postman" ? "hitop-postman.json" : "hitop-collections.json";
+        // UX2: one collection or all of them.
+        const only = d.only && d.only !== "all" ? d.only : null;
+        const json = s.exportJson(this.exportFormat, only);
+        const picked = only ? s.collection(Number(only)) ?? s.collections.find((c) => String(c.id) === String(only)) : null;
+        const base = picked ? slugName(picked.name) : "hitop-collections";
+        const name = this.exportFormat === "postman" ? `${picked ? base : "hitop"}-postman.json` : `${base}.json`;
         body = html`
+          <lit-material-select id="export-collection" variant="outlined" label="Collections" .value=${d.only ?? "all"} @change=${(e) => (this.dialog = { ...this.dialog, only: e.target.value })}>
+            <lit-material-select-option value="all">All collections (${s.collections.length})</lit-material-select-option>
+            ${s.visibleCollections.map((c) => html`<lit-material-select-option value=${String(c.id)}>${c.name}</lit-material-select-option>`)}
+          </lit-material-select>
           <lit-material-select variant="outlined" label="Format" .value=${this.exportFormat} @change=${(e) => (this.exportFormat = e.target.value)}>
             <lit-material-select-option value="hitop">HITOP</lit-material-select-option>
             <lit-material-select-option value="postman">Postman v2.1</lit-material-select-option>
@@ -944,7 +1000,7 @@ export class HitopApp extends LitElement {
         break;
     }
     return html`
-      <lit-material-dialog id="dialog" class=${WIDE_DIALOGS.includes(d.kind) || d.kind === "quick-open" || d.kind === "ai" ? "wide" : d.kind === "sign-in" ? "sign-in-dialog" : ""} @close=${() => (this.dialog = null)}>
+      <lit-material-dialog id="dialog" class=${WIDE_DIALOGS.includes(d.kind) || d.kind === "quick-open" || d.kind === "ai" ? "wide" : FIT_DIALOGS.includes(d.kind) ? "fit" : d.kind === "sign-in" ? "sign-in-dialog" : ""} @close=${() => (this.dialog = null)}>
         <span slot="headline">${headline}</span>
         <form id="dialog-form" class="dialog-form" novalidate @submit=${(e) => this.submitDialog(e)} @input=${(e) => this.clearFieldError(e.target)} @keydown=${(e) => this.dialogKey(e)}>${body}</form>
         ${footer}
@@ -972,12 +1028,12 @@ export class HitopApp extends LitElement {
     return html`<lit-material-select class=${`env-select pill-select ${env ? "has-env" : ""}`} variant="outlined" label="Environment" .value=${env?.id ?? "none"}
       @change=${(e) => {
         if (e.target.value !== ADD_ENVIRONMENT) return s.setActiveEnvironment(e.target.value === "none" ? null : e.target.value);
-        e.target.value = "none";
+        e.target.value = env?.id ?? "none";
         this.go("environments");
       }}>
       <lit-material-select-option value="none">${envs.length ? "No environment" : "No environments"}</lit-material-select-option>
       ${envs.map((x) => html`<lit-material-select-option value=${x.id}>${s.environmentLabel(x)}</lit-material-select-option>`)}
-      ${envs.length ? nothing : html`<lit-material-select-option value=${ADD_ENVIRONMENT}>Add environment…</lit-material-select-option>`}
+      <lit-material-select-option value=${ADD_ENVIRONMENT}>${envs.length ? "Manage environments…" : "Add environment…"}</lit-material-select-option>
     </lit-material-select>`;
   }
 
@@ -1033,6 +1089,8 @@ export class HitopApp extends LitElement {
 
   async openAgent(data) {
     this.navOpen = false;
+    // UX2: focus goes back where it was when the sheet closes (not to <body>).
+    this.agentOpener = document.activeElement?.closest?.("hitop-app *") ? document.activeElement : null;
     this.agent = { text: "", result: null, patch: null, dryRun: null, error: null, busy: false, ...data };
     await this.updateComplete;
     const sheet = this.querySelector("#agent");
@@ -1041,13 +1099,20 @@ export class HitopApp extends LitElement {
     requestAnimationFrame(() => this.querySelector("#ai-prompt")?.focus());
   }
 
+  agentReturnFocus() {
+    const to = this.agentOpener;
+    this.agentOpener = null;
+    // The opener may be gone or hidden (a menu item): then the URL field.
+    requestAnimationFrame(() => (to?.isConnected && to.getClientRects().length && !to.closest("lit-material-menu") ? to.focus() : this.focusUrl()));
+  }
+
   closeAgent() {
     this.aiAbort?.abort();
     this.querySelector("#agent")?.close();
   }
 
   renderAgent() {
-    return html`<lit-material-side-sheet id="agent" class="agent-sheet" variant="modal" position="end" aria-label="Agent" @close=${() => this.aiAbort?.abort()}>
+    return html`<lit-material-side-sheet id="agent" class="agent-sheet" variant="modal" position="end" aria-label="Agent" @close=${() => (this.aiAbort?.abort(), this.agentReturnFocus())}>
       <div slot="header" class="agent-head">${icon("sparkle")}<span>Agent</span>
         <lit-material-icon-button aria-label="Close the agent" @click=${() => this.closeAgent()}>${icon("x")}</lit-material-icon-button>
       </div>
@@ -1258,6 +1323,7 @@ export class HitopApp extends LitElement {
       <lit-material-list-item interactive @click=${() => this.newRequestIn(c().id)}>${icon("plus")} New request</lit-material-list-item>
       <lit-material-list-item interactive @click=${() => this.openDialog("new-folder", { collectionId: c().id, parent: "" })}>${icon("folder-simple-plus")} New folder…</lit-material-list-item>
       <lit-material-list-item interactive @click=${() => this.go("collection", c().id)}>${icon("play")} Open and run</lit-material-list-item>
+      <lit-material-list-item interactive @click=${() => this.go("variables", c().id)}>${icon("sliders-horizontal")} Variables…</lit-material-list-item>
       <lit-material-list-item interactive @click=${() => this.openDialog("rename-collection", { id: c().id, name: c().name })}>${icon("pencil-simple")} Rename… <lit-material-kbd slot="trailing" keys="F2"></lit-material-kbd></lit-material-list-item>
       <lit-material-list-item interactive @click=${() => s.duplicateCollection(c().id)}>${icon("copy")} Duplicate</lit-material-list-item>
       <hr class="menu-divider" role="separator" />
@@ -1352,9 +1418,7 @@ export class HitopApp extends LitElement {
               : html`<div class="tree-hint">
                   ${isMyRequests(c) && !node.path ? nothing : html`<span>No requests yet</span>`}
                   <button type="button" class="tree-hint-action" @click=${() => this.newRequestIn(c.id, node.path)}>${icon("plus")} Add request</button>
-                  ${isMyRequests(c) && !node.path
-                    ? html`<span class="tree-hint-sep" aria-hidden="true">·</span><button type="button" class="tree-hint-action" aria-label="Import Postman, OpenAPI or HITOP" title="Import Postman, OpenAPI or HITOP collections" @click=${() => this.openDialog("import")}>${icon("file-arrow-up")} Import</button>`
-                    : nothing}
+
                 </div>`}
           </li>`
         : this.folderRow(c, run.folder, activeRequest),
@@ -1369,7 +1433,7 @@ export class HitopApp extends LitElement {
       <div class="collection-line folder-line" role="none" @contextmenu=${(e) => this.openFolderMenu(e, c, f)}>
         <button type="button" class="tree-row folder" role="treeitem" tabindex="-1" aria-level=${f.path.split("/").length + 1} aria-expanded=${String(open)} aria-owns=${open ? groupId : nothing}
           data-tree="folder" data-key=${`f:${c.id}:${f.path}`} data-collection=${String(c.id)} data-folder=${f.path} title=${f.path} @click=${() => this.toggleCollection(key)}>
-          ${icon(open ? "caret-down" : "caret-right")}${icon("folder-simple")}<span>${f.name}</span>
+          ${icon(open ? "caret-down" : "caret-right")}${icon("folder-simple")}<span>${this.store.folderOf(c.id) ? f.name : folderTitle(f.name)}</span>
         </button>
         <button type="button" class="row-action" tabindex="-1" aria-label=${`Add a request to ${f.name}`} title=${`Add a request to the folder ${f.name}`} @click=${() => this.newRequestIn(c.id, f.path)}>${icon("plus")}</button>
         <button type="button" class="row-action" tabindex="-1" aria-label=${`More for folder ${f.name}`} title="More (Shift+F10)" aria-haspopup="menu" @click=${(e) => this.openFolderMenu(e, c, f, e.currentTarget)}>${icon("dots-three")}</button>
@@ -1813,7 +1877,7 @@ export class HitopApp extends LitElement {
                   </div>
                   ${open
                     ? html`<ul role="group" id=${`group-${c.id}`}>
-                        ${filter
+                        ${filter || !Object.keys(c.variables || {}).length
                           ? nothing
                           : html`<li role="none">
                               <button type="button" class="tree-row leaf" role="treeitem" tabindex="-1" aria-level="2" data-tree="variables" data-key=${`v:${c.id}`} data-collection=${String(c.id)}
@@ -1848,7 +1912,7 @@ export class HitopApp extends LitElement {
     } catch {
       // storage blocked: decided from this page's state only
     }
-    const steps = gettingStartedSteps({ history: s.history, collections: s.collections, runs, ranNow: Boolean(s.run.report), savedOnce: savedOnce(storage), keys: { send: SEND_KEYS, save: SAVE_KEYS } });
+    const steps = gettingStartedSteps({ history: s.history, collections: s.collections, runs, ranNow: Boolean(s.run.report), savedOnce: savedOnce(storage), imported: importedIds(storage), keys: { send: SEND_KEYS, save: SAVE_KEYS } });
     if (!showGettingStarted(storage, { fresh: s.isFresh, steps })) return nothing;
     const done = steps.filter((x) => x.done).length;
     const next = steps.find((x) => !x.done);
@@ -1888,9 +1952,12 @@ export class HitopApp extends LitElement {
       : IS_TAURI ? "On this computer · no cloud" : "In this browser · no cloud";
     const place = w?.kind === "folder" ? w.label : "";
     const changed = current ? (this.gitStatus.get(current.id)?.files.length ?? 0) : 0;
+    // UX2: while Get started shows (after its first step) the storage card is one line.
+    const guide = this.gettingStarted();
+    const compact = guide !== nothing && s.history.length > 0;
     return html`<div class="side-pane-footer">
-      ${this.gettingStarted()}
-      <div class="side-card">
+      ${guide}
+      <div class=${`side-card ${compact ? "compact" : ""}`}>
         <div class="side-card-line">${icon(w?.kind === "folder" ? "lock" : (w?.icon ?? (IS_TAURI ? "desktop" : "browser")))}<span>${where}</span></div>
         <div class="side-card-meta mono">${place ? html`${place} · ` : nothing}${cols.length} ${cols.length === 1 ? "collection" : "collections"} · ${requests} ${requests === 1 ? "request" : "requests"}${changed ? ` · ${changed} changed` : ""}</div>
         <div class="side-card-actions">
@@ -1923,7 +1990,7 @@ export class HitopApp extends LitElement {
         >
           ${s.tabs.map(
             (t, i) => html`<lit-material-tab id=${`tab-${i}`} title=${t.title} @contextmenu=${(e) => this.openTabMenu(e, i)}
-              @auxclick=${(e) => e.button === 1 && (e.preventDefault(), this.closeTab(i))}>${t.title.startsWith(`${tagOf(t)} `) ? nothing : html`<span class=${`method-tag tab-method m-${tagOf(t)}`} aria-hidden="true">${tagOf(t)}</span>`}${t.title}${s.isDirty(t)
+              @auxclick=${(e) => e.button === 1 && (e.preventDefault(), this.closeTab(i))}>${this.tabLabel(t)}${s.isDirty(t)
                 ? html`<span class="dirty-dot" aria-hidden="true">●</span><span class="visually-hidden">, unsaved changes</span>`
                 : nothing}${s.tabs.length > 1
                 ? html`<span class="tab-close" aria-hidden="true" title="Close tab (Alt+Shift+W)"
@@ -1932,11 +1999,17 @@ export class HitopApp extends LitElement {
                 : nothing}</lit-material-tab>`,
           )}
         </lit-material-tabs>
+        <lit-material-icon-button aria-label="All open tabs" title="All open tabs" id="tab-list-button" aria-haspopup="menu" @click=${(e) => this.querySelector("#tab-list").show(e.currentTarget)}>
+          ${icon("list")}
+        </lit-material-icon-button>
         <lit-material-icon-button aria-label="Request actions" id="tab-actions" @click=${(e) => ((this.menuTab = s.currentTab), this.querySelector("#tab-menu").show(e.currentTarget))}>
           ${icon("dots-three-vertical")}
         </lit-material-icon-button>
         <lit-material-icon-button aria-label="New request" title="New request in this collection" @click=${() => this.newRequest()}>${icon("plus")}</lit-material-icon-button>
       </div>
+      <lit-material-menu id="tab-list" aria-label="Open tabs">
+        ${s.tabs.map((t, i) => html`<lit-material-list-item interactive ?selected=${i === s.currentTab} @click=${() => s.selectTab(i)}>${this.tabLabel(t)}</lit-material-list-item>`)}
+      </lit-material-menu>
       <lit-material-menu id="tab-menu">
         <lit-material-list-item interactive @click=${() => this.openDialog("rename-tab", { index: this.menuTab, name: s.tabs[this.menuTab]?.title ?? "" })}>Rename</lit-material-list-item>
         <lit-material-list-item interactive @click=${() => s.duplicateTab(this.menuTab)}>Duplicate</lit-material-list-item>
@@ -1946,6 +2019,16 @@ export class HitopApp extends LitElement {
           : nothing}
         <lit-material-list-item interactive @click=${() => this.deleteTabRequest(this.menuTab)}>Delete request</lit-material-list-item>
       </lit-material-menu>`;
+  }
+
+  // UX2: a tab's coloured method tag (always, auto-named tabs too) and its title without the method
+  // the tag already says ("GET /users" → GET + "/users"; GraphQL's "POST /graphql" → GQL + "/graphql").
+  // The tag is drawn by CSS; the text has the method once for innerText and screen readers.
+  tabLabel(t) {
+    const tag = tagOf(t);
+    const m = /^([A-Z]+) (.+)$/.exec(t.title || "");
+    const label = m && (m[1] === tag || METHODS.includes(m[1])) ? m[2] : t.title;
+    return html`<span class=${`method-tag tab-method m-${tag}`} data-tag=${tag} aria-hidden="true"></span><span class="visually-hidden">${tag} </span><span class="tab-title">${label}</span>`;
   }
 
   async deleteTabRequest(index) {
@@ -2077,7 +2160,17 @@ export class HitopApp extends LitElement {
     this.navOpen = false;
     this.paletteItems = this.buildPaletteItems();
     this.requestUpdate();
-    this.updateComplete.then(() => this.querySelector("lit-material-command-palette")?.show());
+    this.updateComplete.then(() => {
+      const palette = this.querySelector("lit-material-command-palette");
+      // UX2: a section whose item starts with what was typed comes first ("import" → the Import
+      // action before a request that only fuzzy-matches it).
+      if (palette && !palette.rankedSections) {
+        const groups = palette.groups.bind(palette);
+        palette.groups = () => rankSections(groups(), palette.parse().text);
+        palette.rankedSections = true;
+      }
+      palette?.show();
+    });
   }
 
   /** The palette's preview pane for a saved request: method and URL, headers, body, where it lives. */
@@ -2194,7 +2287,7 @@ export class HitopApp extends LitElement {
     const wire = t?.httpVersion ? protocolLabel(t.httpVersion, `${t.responseScheme || ""}:`) : "";
     // @lit-material/status-bar (HITOP Next): a labelled region, tabular numbers, wraps on phones.
     return html`<lit-material-status-bar class="statusbar" label="Status">
-      ${place ? html`<lit-material-status-bar-item class="mono">${place}</lit-material-status-bar-item>` : nothing}
+      ${place ? html`<lit-material-status-bar-item class="mono status-place">${place}</lit-material-status-bar-item>` : nothing}
       ${dirty ? html`<lit-material-status-bar-item class="status-unsaved" tone="warning">● Unsaved · <lit-material-kbd keys="Mod+S"></lit-material-kbd> ${place ? "writes the file" : "saves it"}</lit-material-status-bar-item>` : nothing}
       ${t && s.loadedRequest(t) && !dirty
         ? fresh
@@ -2206,8 +2299,8 @@ export class HitopApp extends LitElement {
         : nothing}
       ${wire ? html`<lit-material-status-bar-item slot="end" class="mono status-wire">${wire}</lit-material-status-bar-item>` : nothing}
       <lit-material-status-bar-item slot="end" class="status-hint">${proxy}</lit-material-status-bar-item>
-      <lit-material-status-bar-item slot="end">${engine}</lit-material-status-bar-item>
-      <lit-material-status-bar-item slot="end" button description="Keyboard shortcuts" @click=${() => this.openDialog("shortcuts")}><lit-material-kbd keys="?"></lit-material-kbd> Shortcuts</lit-material-status-bar-item>
+      <lit-material-status-bar-item slot="end" class="status-engine">${engine}</lit-material-status-bar-item>
+      <lit-material-status-bar-item slot="end" class="status-shortcuts" button description="Keyboard shortcuts" @click=${() => this.openDialog("shortcuts")}><lit-material-kbd keys="?"></lit-material-kbd> Shortcuts</lit-material-status-bar-item>
     </lit-material-status-bar>`;
   }
 

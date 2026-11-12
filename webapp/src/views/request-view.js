@@ -53,6 +53,18 @@ const POST_HELP = `// Runs after the response. Available:
 // assert.header('content-type', 'json'), assert.responseTime(500),
 // assert.equal(getResponseValue('user.id'), 42), assert.ok(statusCode < 300)`;
 
+// UX2: snippets the script editors offer (pm.* works too, through the Postman shim).
+const PRE_SNIPPETS = [
+  ["Header from a saved value", "setHeader('Authorization', 'Bearer ' + getContext('authToken'));"],
+  ["Timestamp header", "setHeader('X-Request-Time', new Date().toISOString());"],
+];
+const POST_SNIPPETS = [
+  ["Status is 200", "assert.status(200);"],
+  ["Body has a value", "assert.equal(getResponseValue('id') != null, true);"],
+  ["Faster than 500 ms", "assert.responseTime(500);"],
+  ["Save a value for later", "setContext('authToken', getResponseValue('token'));"],
+];
+
 const scriptHelp = (text) => html`<details class="script-help"><summary>What a script can use</summary><pre>${text}</pre></details>`;
 
 // Editor sections, in tab order.
@@ -84,6 +96,20 @@ function findMarks(text, query) {
   }
   parts.push(text.slice(from));
   return { parts, count, capped: count === MAX_MARKS && hay.indexOf(needle, from) !== -1 };
+}
+
+// UX2: an event's data: JSON as one line (opens to the formatted text), anything else as sent.
+function eventData(data) {
+  const text = String(data ?? "");
+  let value;
+  try {
+    value = /^\s*[[{]/.test(text) ? JSON.parse(text) : undefined;
+  } catch {
+    value = undefined;
+  }
+  if (value === undefined) return html`<pre>${text}</pre>`;
+  const line = JSON.stringify(value);
+  return html`<details class="sse-json"><summary class="mono">${line.length > 160 ? `${line.slice(0, 160)}…` : line}</summary><pre>${JSON.stringify(value, null, 2)}</pre></details>`;
 }
 
 // "1.4 s" while waiting for a response.
@@ -127,7 +153,8 @@ export class HitopRequest extends LitElement {
     this.section = 0;
     this.responseSection = 0;
     this.bodyMode = "pretty";
-    this.wrap = false;
+    // UX2: long lines wrap by default (JSON bodies were one wide line).
+    this.wrap = true;
     this.find = "";
     this.findAt = 0;
     this.layout = loadLayout();
@@ -267,7 +294,7 @@ export class HitopRequest extends LitElement {
       </div>
       ${mode === "raw" ? this.bodyFacts() : nothing}
       ${mode === "graphql" ? this.renderGraphql() : mode === "raw"
-        ? html`<hitop-code-editor label="Request body" language=${looksJson ? "json" : "text"} .value=${t.requestBody || ""}
+        ? html`<hitop-code-editor label="Request body" language=${looksJson ? "json" : "text"} .value=${t.requestBody || ""} .variables=${this.varResolver()}
             @input=${(e) => this.set({ requestBody: e.target.value })}></hitop-code-editor>`
         : html`
             <div class=${`kv-head ${mode}`} aria-hidden="true"><span></span><span>Field</span>${mode === "multipart" ? html`<span>Type</span>` : nothing}<span>Value</span><span></span></div>
@@ -357,6 +384,23 @@ export class HitopRequest extends LitElement {
       <p class="hint">Sent as application/json: {"query", "variables", "operationName"}. \${variables} work in all three.</p>`;
   }
 
+  // A stable lookup for the body editor's ${variable} marks (the collection of the open tab).
+  varResolver() {
+    this.resolver ??= (n) => (n ? this.store.variableSource(this.tab?.loadedCollectionId, n) : null);
+    return this.resolver;
+  }
+
+  // UX2: one-click snippets under an empty (or any) script: appended on a line of their own.
+  snippetButtons(field, snippets) {
+    const add = (code) => {
+      const now = this.tab[field] || "";
+      this.set({ [field]: now.trim() ? `${now.replace(/\s*$/, "")}\n${code}` : code });
+    };
+    return html`<div class="script-snippets" role="group" aria-label="Snippets">
+      ${snippets.map(([label, code]) => html`<lit-material-button variant="outlined" class="snippet-chip" @click=${() => add(code)}>${icon("plus")} ${label}</lit-material-button>`)}
+    </div>`;
+  }
+
   get auth() {
     return { ...emptyAuth(), ...(this.tab.auth || {}) };
   }
@@ -374,7 +418,7 @@ export class HitopRequest extends LitElement {
         <lit-material-select variant="outlined" label="Type" .value=${a.type} @change=${(e) => this.setAuth({ type: e.target.value })}>
           ${AUTH_TYPES.map(([v, l]) => html`<lit-material-select-option value=${v}>${l}</lit-material-select-option>`)}
         </lit-material-select>
-        ${a.type === "bearer" ? field("Token", "token", { help: "Sent as Authorization: Bearer <token>. ${variables} work here." }) : nothing}
+        ${a.type === "bearer" ? field("Token", "token", { type: "password", help: "Sent as Authorization: Bearer <token>. ${variables} work here; keep the value in a secret variable." }) : nothing}
         ${a.type === "basic"
           ? html`${field("Username", "username")} ${field("Password", "password", { type: "password", help: "Sent base64 encoded in Authorization: Basic." })}`
           : nothing}
@@ -499,15 +543,20 @@ export class HitopRequest extends LitElement {
               ? this.renderBody()
               : html`<lit-material-empty-state size="compact" headline=${`${t.method} requests have no body`}>
                   Switch the method to POST, PUT or PATCH to send one.
+                  <lit-material-button slot="actions" variant="outlined" @click=${() => this.set({ method: "POST" })}>Switch to POST</lit-material-button>
                 </lit-material-empty-state>`
             : nothing}
           ${this.section === PRE && !socket && !grpc
-            ? html`<hitop-code-editor label="Script that runs before the request is sent" language="javascript" .value=${t.preRequestScript || ""} @input=${(e) => this.set({ preRequestScript: e.target.value })}></hitop-code-editor>
+            ? html`<hitop-code-editor label="Script that runs before the request is sent" language="javascript" placeholder="// Runs before the request is sent: pick a snippet below, or see what a script can use."
+                  .value=${t.preRequestScript || ""} @input=${(e) => this.set({ preRequestScript: e.target.value })}></hitop-code-editor>
+                ${this.snippetButtons("preRequestScript", PRE_SNIPPETS)}
                 ${scriptHelp(PRE_HELP)}`
             : nothing}
           ${shared && this.section === COMMENTS ? commentsPanel(this, sync, t.loadedCollectionId, request) : nothing}
           ${this.section === POST && !socket && !grpc
-            ? html`<hitop-code-editor label="Script that runs after the response arrives" language="javascript" .value=${t.postRequestScript || ""} @input=${(e) => this.set({ postRequestScript: e.target.value })}></hitop-code-editor>
+            ? html`<hitop-code-editor label="Script that runs after the response arrives" language="javascript" placeholder="// Runs after the response arrives: checks and saved values. Pick a snippet below."
+                  .value=${t.postRequestScript || ""} @input=${(e) => this.set({ postRequestScript: e.target.value })}></hitop-code-editor>
+                ${this.snippetButtons("postRequestScript", POST_SNIPPETS)}
                 ${scriptHelp(POST_HELP)}`
             : nothing}
         </div>
@@ -523,7 +572,7 @@ export class HitopRequest extends LitElement {
         ${live.open ? html`<lit-material-button variant="outlined" @click=${() => this.store.cancel(this.tab.id)}>${icon("x")} Stop</lit-material-button>` : nothing}
       </div>
       <ol class="sse-events" aria-label="Events received">
-        ${live.events.map((e) => html`<li><span class="hint">${new Date(e.at).toLocaleTimeString()}${e.event !== "message" ? html` · <b>${e.event}</b>` : nothing}${e.id ? ` · id ${e.id}` : ""}</span><pre>${e.data}</pre></li>`)}
+        ${live.events.map((e) => html`<li><span class="hint">${new Date(e.at).toLocaleTimeString()}${e.event !== "message" ? html` · <b>${e.event}</b>` : nothing}${e.id ? ` · id ${e.id}` : ""}</span>${eventData(e.data)}</li>`)}
       </ol>
     </section>`;
   }
@@ -718,6 +767,12 @@ export class HitopRequest extends LitElement {
 
   updated() {
     this.syncUrlMirror();
+    // UX2: on a phone (stacked panes) a response that just arrived is scrolled into view.
+    const waiting = `${this.tab?.id}:${Boolean(this.tab?.loading)}`;
+    if (this.layoutKind === "stack" && this.lastWaiting === `${this.tab?.id}:true` && waiting === `${this.tab?.id}:false`) {
+      this.querySelector(".pane-response")?.scrollIntoView({ block: "start" });
+    }
+    this.lastWaiting = waiting;
     // Brings the current match into view when the search or the match changes.
     const key = this.find ? `${this.find}|${this.findAt}` : "";
     if (key === this.shownMatch) return;
@@ -764,9 +819,11 @@ export class HitopRequest extends LitElement {
     const c = request ? s.collection(t.loadedCollectionId) : null;
     const where = c ? storageOf(s, c) : null;
     const history = Boolean(where && ["cloud", "github"].includes(where.kind));
-    const item = (label, run, extra = {}) => html`<lit-material-list-item interactive ?disabled=${Boolean(extra.disabled)} @click=${run}>${label}</lit-material-list-item>`;
+    // UX2: icons on every item.
+    const ICONS = { "Save to…": "floppy-disk", "Save to a collection…": "floppy-disk", Code: "code", "Ask AI": "sparkle", "Version history…": "clock-counter-clockwise", "Move to…": "arrow-right" };
+    const item = (label, run, extra = {}) => html`<lit-material-list-item interactive ?disabled=${Boolean(extra.disabled)} @click=${run}>${icon(ICONS[label] ?? "dots-three", { slot: "leading" })} ${label}</lit-material-list-item>`;
     return html`<lit-material-menu id="line-menu" aria-label="More options">
-      <lit-material-list-item interactive class="menu-save" @click=${() => this.app.saveCurrent()}>Save <lit-material-kbd slot="trailing" keys="Mod+S"></lit-material-kbd></lit-material-list-item>
+      <lit-material-list-item interactive class="menu-save" @click=${() => this.app.saveCurrent()}>${icon("floppy-disk", { slot: "leading" })} Save <lit-material-kbd slot="trailing" keys="Mod+S"></lit-material-kbd></lit-material-list-item>
       ${item(request ? "Save to…" : "Save to a collection…", () => this.app.openDialog("save", { ...s.saveTarget(), overwrite: false }))}
       ${item("Code", () => this.app.openDialog("code", { lang: "curl", showSecrets: false }), { disabled: !t.url })}
       ${item("Ask AI", () => this.app.openAi())}
@@ -962,7 +1019,7 @@ export class HitopRequest extends LitElement {
       <span>${view === "image" ? "Image" : view === "pdf" ? "PDF" : "Binary"} · ${size(total)} · <span class="mono">${type}</span>${view === "image" && this.imageSize?.for === t.response ? html` · <span class="mono">${this.imageSize.w} × ${this.imageSize.h}</span>` : nothing}</span>
       <lit-material-button variant="text" ?disabled=${!bytes} @click=${download}>${icon("file-arrow-down")} Download</lit-material-button></p>`;
     if (cut || !bytes) {
-      return { tools, content: html`<div class="binary-body">${facts}<p class="hint">The body didn't fit in this browser's storage: send the request again to see it.</p></div>` };
+      return { tools, content: html`<div class="binary-body">${facts}<p class="hint">Only its size is kept here (after a reload, or from History): send the request again to see it.</p></div>` };
     }
     if (view === "image") {
       const src = `data:${type};base64,${t.response}`;

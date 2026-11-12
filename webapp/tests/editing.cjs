@@ -59,7 +59,9 @@ const settle = (p) => p.waitForTimeout(400); // saves are batched every 250 ms
   check('Enter submits a dialog once', ((await p.locator('aside').innerText()).match(/Enter test/g) || []).length === 1);
 
   // My requests' variables (FV1: the first collection is the sample, which has baseUrl already).
-  await p.locator('aside li', { has: p.locator('.tree-row.collection', { hasText: 'My requests' }) }).getByRole('treeitem', { name: 'Variables' }).click();
+  // UX2: no Variables row while a collection has none: the collection menu's Variables….
+  await p.locator('aside').getByRole('button', { name: 'More for My requests' }).click();
+  await p.locator('#collection-menu lit-material-list-item', { hasText: 'Variables…' }).click();
   await p.getByRole('button', { name: 'Add variable' }).click();
   await p.keyboard.type('baseUrl', { delay: 20 });
   await p.keyboard.press('Tab');

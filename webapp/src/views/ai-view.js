@@ -5,7 +5,7 @@
 // before anything is sent (ai.js describeExchange).
 import { html, nothing } from "lit";
 import { icon } from "../icons.js";
-import { aiSettings, askAi, describeExchange } from "../ai.js";
+import { aiSettings, askAi, describeExchange, saveAiSettings } from "../ai.js";
 import { patched, requestOf, requestText, tabUpdates, validatePatch } from "../agent.js";
 import { testList } from "./request-view.js";
 
@@ -133,8 +133,19 @@ export function agentPanel(app) {
   if (!hasKey) {
     return html`<div class="agent-body">
       <p>The agent changes the open request, writes tests for a response, explains a failure, or makes a request from a curl command or a description.</p>
-      <p>It uses your own Anthropic API key, kept on this device only. Add one in Settings, under AI assistant.</p>
-      <lit-material-button variant="filled" @click=${() => (app.closeAgent(), app.go("settings"))}>Open Settings</lit-material-button>
+      <p>It uses your own Anthropic API key, kept on this device only (also in Settings, under AI assistant).</p>
+      <form class="agent-key" @submit=${(e) => {
+        // UX2: the key is taken here, without leaving for Settings.
+        e.preventDefault();
+        const key = String(app.querySelector("#agent-key")?.value ?? "").trim();
+        if (!key) return;
+        saveAiSettings({ ...aiSettings(), key });
+        app.setAgent({});
+        requestAnimationFrame(() => app.querySelector("#ai-prompt")?.focus());
+      }}>
+        <lit-material-text-field id="agent-key" variant="outlined" type="password" label="Anthropic API key" placeholder="sk-ant-…" autocomplete="off"></lit-material-text-field>
+        <lit-material-button variant="filled" type="submit">Save key</lit-material-button>
+      </form>
     </div>`;
   }
   const can = { edit: Boolean(t?.url), tests: t?.statusCode != null, explain: t?.statusCode != null || t?.responseType === "error", generate: true };

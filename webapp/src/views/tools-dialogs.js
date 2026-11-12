@@ -6,7 +6,9 @@ import { html, nothing } from "lit";
 import { compareResponses, sideBySide } from "../diff.js";
 import { loadFormat } from "../wasm/format.js";
 
-export const WIDE_DIALOGS = ["code", "compare", "git"];
+export const WIDE_DIALOGS = ["compare", "git"];
+// UX2: the Code dialog is as wide as its code needs (up to the wide dialogs' width).
+export const FIT_DIALOGS = ["code"];
 
 let languages = null;
 

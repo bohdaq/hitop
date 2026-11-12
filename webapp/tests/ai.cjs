@@ -60,13 +60,15 @@ function sse(text, model = 'claude-opus-5-5') {
   await p.locator('#line-menu').getByText('Ask AI').click();
   await settle(p);
   check('Ask AI opens the agent side sheet', await sheet.evaluate((el) => el.open));
-  check('without a key the agent points to Settings', (await sheet.innerText()).includes('Add one in Settings') && sent.length === 0);
-  await sheet.getByRole('button', { name: 'Open Settings' }).click();
-  await settle(p);
-  await p.locator('section[aria-label="AI assistant"]').getByLabel('Anthropic API key').fill('sk-ant-test-key');
-  await p.keyboard.press('Tab');
+  check('without a key the agent takes one right there (UX2)', (await sheet.innerText()).includes('also in Settings') && (await sheet.getByLabel('Anthropic API key').count()) === 1 && sent.length === 0);
+  await sheet.getByLabel('Anthropic API key').fill('sk-ant-test-key');
+  await sheet.getByRole('button', { name: 'Save key' }).click();
   await settle(p);
   check('the key is kept on this device', (await p.evaluate(() => JSON.parse(localStorage.getItem('hitop_ai')).key)) === 'sk-ant-test-key');
+  check('...and the sheet goes on to the agent', (await sheet.locator('#ai-prompt').count()) === 1);
+  await p.keyboard.press('Escape');
+  await settle(p);
+  check('UX2: Esc closes the sheet and focus goes back into the app, not to <body>', await p.evaluate(() => document.activeElement !== document.body && document.activeElement !== null));
 
   // A response with a secret in it, then Write tests: a patch of Script after, dry-run first.
   await p.evaluate(() => {

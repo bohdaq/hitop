@@ -46,12 +46,16 @@ export class HitopRunReport extends LitElement {
     else await platform().saveFile(`${base}-report.json`, `${JSON.stringify(report, null, 2)}\n`, "application/json");
   }
 
-  tiles(stats) {
+  // UX2: `planned` = the requests the run meant to send; a stopped run says how many it didn't.
+  tiles(stats, planned = 0) {
+    const total = Math.max(planned || 0, stats.requests.total);
+    const failed = stats.requests.total - stats.requests.passed;
+    const notRun = total - stats.requests.total;
     const delta = stats.p95Delta;
     const deltaText = delta == null ? "first run here" : delta === 0 ? "same as last run" : `${delta > 0 ? "+" : "−"}${Math.abs(delta)} ms vs last run`;
     return html`<div class="run-tiles" role="list" aria-label="Run summary">
-      <div class="run-tile" role="listitem"><span class="run-tile-label">Requests</span><span class="run-tile-value tabular">${stats.requests.passed}<span class="run-tile-of">/${stats.requests.total}</span></span>
-        <span class=${`run-tile-note ${stats.requests.passed < stats.requests.total ? "bad" : ""}`}>${stats.requests.total - stats.requests.passed ? `${stats.requests.total - stats.requests.passed} failed` : "all passed"}</span></div>
+      <div class="run-tile" role="listitem"><span class="run-tile-label">Requests</span><span class="run-tile-value tabular">${stats.requests.passed}<span class="run-tile-of">/${total}</span></span>
+        <span class=${`run-tile-note ${stats.requests.passed < total ? "bad" : ""}`}>${[failed ? `${failed} failed` : "", notRun ? `${notRun} not run` : ""].filter(Boolean).join(" · ") || "all passed"}</span></div>
       <div class="run-tile" role="listitem"><span class="run-tile-label">Checks</span><span class="run-tile-value tabular">${stats.checks.passed}<span class="run-tile-of">/${stats.checks.total}</span></span>
         <span class="run-tile-note">${stats.checks.total ? `${Math.round((stats.checks.passed / stats.checks.total) * 100)}% pass` : "no checks"}</span></div>
       <div class="run-tile" role="listitem"><span class="run-tile-label">p95 latency</span><span class="run-tile-value tabular">${ms(stats.p95)}</span>
@@ -114,7 +118,7 @@ export class HitopRunReport extends LitElement {
               </span>`
           : nothing}
       </header>
-      ${done ? this.tiles(run.report.stats) : nothing}
+      ${done ? this.tiles(run.report.stats, run.planned) : nothing}
       <div class="run-report-body">
         <div class="run-timeline">
           <div class="run-filter" role="radiogroup" aria-label="Show">

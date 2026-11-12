@@ -12,6 +12,8 @@ export class HitopCodeEditor extends LitElement {
     language: { type: String },
     label: { type: String },
     placeholderText: { type: String, attribute: "placeholder" },
+    // UX2: name → {value, scope} | null; when set, ${variables} are marked and peekable.
+    variables: { attribute: false },
     schema: { attribute: false },
   };
 
@@ -67,6 +69,7 @@ export class HitopCodeEditor extends LitElement {
           placeholder(this.placeholderText),
           theme,
           this.languageSlot.of(language),
+          ...(this.variables ? cm.variableMarks((n) => this.variables?.(n) ?? null) : []),
           EditorView.updateListener.of((update) => {
             if (!update.docChanged) return;
             this.value = update.state.doc.toString();

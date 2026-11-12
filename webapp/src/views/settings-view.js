@@ -117,7 +117,7 @@ class HitopAppSettings extends LitElement {
     };
     return html`<section aria-label="AI assistant" class="settings-section">
       <h2>AI assistant</h2>
-      <p class="hint">Ask Claude to write tests for a response, explain a failure, or make a request from a curl command or a description (the sparkle button next to Send). It uses your own Anthropic API key, kept on this device only; secret values and credential headers are hidden from it.</p>
+      <p class="hint">Ask Claude to write tests for a response, explain a failure, or make a request from a curl command or a description (Ask AI in the ⋯ menu next to Send, or Tab in the command palette). It uses your own Anthropic API key, kept on this device only; secret values and credential headers are hidden from it.</p>
       <div class="sync-form">
         <lit-material-text-field id="ai-key" variant="outlined" type="password" label="Anthropic API key" .value=${ai.key} placeholder="sk-ant-…"
           @change=${(e) => save({ key: e.target.value.trim() })}></lit-material-text-field>
@@ -146,6 +146,25 @@ class HitopAppSettings extends LitElement {
     </section>`;
   }
 
+  // UX2: an index of the page's sections (buttons that scroll: the hash belongs to the app's links).
+  sectionIndex() {
+    const go = (e, label) => {
+      e.preventDefault();
+      this.querySelector(`.settings-section[aria-label="${label}"]`)?.scrollIntoView({ block: "start" });
+    };
+    this.updateComplete.then(() => {
+      const labels = [...this.querySelectorAll(".settings-section")].map((el) => el.getAttribute("aria-label"));
+      if (labels.join("|") !== (this.indexLabels ?? []).join("|")) {
+        this.indexLabels = labels;
+        this.requestUpdate();
+      }
+    });
+    const labels = this.indexLabels ?? [];
+    return labels.length > 2
+      ? html`<nav class="settings-index" aria-label="Sections of Settings">${labels.map((l) => html`<button type="button" class="link-button" @click=${(e) => go(e, l)}>${l}</button>`)}</nav>`
+      : nothing;
+  }
+
   render() {
     const s = this.store;
     const desktop = platform().name === "tauri";
@@ -154,6 +173,7 @@ class HitopAppSettings extends LitElement {
     return html`
       <div class="page settings-page">
         <header class="page-header"><h1>Settings</h1></header>
+        ${this.sectionIndex()}
         ${this.renderExtension()}
         <section aria-label="Requests" class="settings-section">
           <h2>Requests</h2>

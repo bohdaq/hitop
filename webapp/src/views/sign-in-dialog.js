@@ -51,6 +51,7 @@ class HitopSignIn extends LitElement {
     busy: { state: true },
     errors: { state: true },
     limit: { state: true },
+    methodsError: { state: true },
   };
 
   createRenderRoot() {
@@ -122,10 +123,13 @@ class HitopSignIn extends LitElement {
   }
 
   // The server's sign-in methods; unknown or unreachable counts as none (the second step).
+  // UX2: unreachable is said (with Try again) instead of dropping silently to the second step.
   async loadMethods(server, first = false) {
-    const m = await this.sync.authMethods(server).catch(() => null);
+    let failed = null;
+    const m = await this.sync.authMethods(server).catch((e) => ((failed = e), null));
     if (server !== this.server) return;
     this.methods = m;
+    this.methodsError = failed ? `Couldn't reach ${server.replace(/^https?:\/\//, "")} to see its sign-in options${failed?.message ? ` (${failed.message})` : ""}.` : null;
     if (first) this.setStep(this.hasProviders ? "providers" : "sso");
   }
 
@@ -323,6 +327,10 @@ class HitopSignIn extends LitElement {
     return html`
       ${this.hasProviders ? html`<button type="button" class="signin-back" @click=${() => ((this.errors = {}), this.setStep("providers"))}>‹ Back</button>` : nothing}
       <h2 class="signin-title">${this.hasProviders ? "Company SSO or your own server" : this.app?.signInReason || "Sign in to HITOP"}</h2>
+      ${this.methodsError && !this.hasProviders
+        ? html`<p class="signin-error signin-methods-error" role="alert">${this.methodsError}
+            <button type="button" class="signin-link" @click=${() => ((this.methodsError = null), this.loadMethods(this.server, true))}>Try again</button></p>`
+        : nothing}
       <p class="signin-lead">Sign in with your company's identity provider, or on a HITOP sync server your team runs. Your work email finds your organization's sign-on.</p>
       <lit-material-text-field id="signin-email" data-first variant="outlined" label="Work email" type="email" autocomplete="email" .value=${this.email}
         ?error=${Boolean(e.email)} error-text=${e.email ?? ""} supporting-text=${e.email ? "" : "Leave empty for the server's own sign-on"}

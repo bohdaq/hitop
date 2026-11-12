@@ -292,7 +292,7 @@ export class SyncClient {
 
   async call(method, path, body, { allow = [] } = {}) {
     const a = this.account();
-    if (!a) throw new Error("Sign in to hitop sync first");
+    if (!a) throw new Error("Sign in to HITOP Cloud first");
     const s = await this.secret();
     const r = await this.http(a.server, method, path, body, s?.session);
     if ((r.status >= 200 && r.status < 300) || allow.includes(r.status)) return r;
@@ -444,13 +444,10 @@ export class SyncClient {
 
   // What a sign-in page can offer on `server`: {password, emailCode, passkey, sso, google, github}
   // (null when the server is older than C1b or unreachable).
+  // null: the server answered without a methods list (an older server); throws when unreachable.
   async authMethods(server) {
-    try {
-      const r = await this.http(this.serverUrl(server), "GET", "/v1/auth/methods");
-      return r.status === 200 ? r.json : null;
-    } catch {
-      return null;
-    }
+    const r = await this.http(this.serverUrl(server), "GET", "/v1/auth/methods");
+    return r.status === 200 ? r.json : null;
   }
 
   // --- passwords (sync-server/THREAT_MODEL.md "Passwords") ---------------------------------

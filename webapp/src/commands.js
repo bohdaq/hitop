@@ -39,6 +39,8 @@ export function actions(app, shortcuts = {}) {
     ["settings", "Settings", () => app.go("settings"), { keywords: ["theme", "preferences"] }],
     ["shortcuts", "Keyboard shortcuts", () => app.openDialog("shortcuts"), { shortcut: shortcuts.help }],
     ["account", app.account() ? "Account & devices" : "Sign in to HITOP Cloud", () => app.go("sync"), { keywords: ["login", "sync"] }],
+    // UX2: signed out, ">org" still finds the way to organizations (Sign in first).
+    ...(app.account() ? [] : [["org", "Organization: sign in to manage one", () => app.openSignIn(null, "Sign in to manage your organization"), { keywords: ["organization", "team", "billing", "members"] }]]),
   ];
   return list.map(([id, label, run, opts = {}]) => ({ id: `action:${id}`, label, section: SECTIONS.actions, run, ...opts }));
 }
@@ -77,4 +79,20 @@ export function storeItems(app, methodLabel) {
     out.push({ id: `run:${h.id}`, label: what, section: SECTIONS.runs, hint: h.statusCode != null ? String(h.statusCode) : "", run: () => s.openHistoryItem(h) });
   }
   return out;
+}
+
+/**
+ * UX2: the palette's sections, a section first when one of its items starts with the text typed
+ * (a word of its label does, second best); otherwise their order stays. `groups`: the palette's
+ * [{ section, rows: [{ item }] }].
+ */
+export function rankSections(groups, text) {
+  const q = String(text ?? "").trim().toLowerCase();
+  if (!q) return groups;
+  const score = (g) =>
+    Math.max(0, ...g.rows.map(({ item }) => {
+      const label = String(item.label ?? "").toLowerCase();
+      return label.startsWith(q) ? 2 : label.split(/[^a-z0-9]+/).some((w) => w.startsWith(q)) ? 1 : 0;
+    }));
+  return groups.map((g, i) => ({ g, i, s: score(g) })).sort((a, b) => b.s - a.s || a.i - b.i).map((x) => x.g);
 }

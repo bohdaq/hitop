@@ -59,7 +59,7 @@ class HitopHistory extends LitElement {
             ${s.history.length ? html`<lit-material-button variant="text" @click=${() => this.app.clearHistory()}>${icon("trash")} Clear history</lit-material-button>` : nothing}
           </div>
         </header>
-        <p class="page-lead">Requests you send and collection runs, newest first. HITOP keeps the last 50. Open one to load it into the current tab.</p>
+        <p class="page-lead">Requests you send and collection runs, newest first. HITOP keeps the last 50. Open one to get it back as a new request in My requests, with the response it had.</p>
         ${s.history.length
           ? html`<input type="search" class="tree-filter history-filter" placeholder="Search history: method, URL, status" aria-label="Search history" .value=${this.query}
               @input=${(e) => (this.query = e.target.value)} />`

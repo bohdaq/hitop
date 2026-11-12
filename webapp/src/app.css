@@ -1285,3 +1285,63 @@ lit-material-menu lit-material-kbd[slot="trailing"] { opacity: 0.8; }
 .diff-pane { padding: 14px 20px 24px; }
 .diff-pane .compare-pick { margin-bottom: 12px; }
 .response-meta .timing-inline { flex: 1 1 100px; min-width: 48px; max-width: 160px; }
+
+/* UX2 remaining findings. Tabs: the method tag always (drawn from data-tag), capped width. */
+.tab-strip .tab-method::before { content: attr(data-tag); }
+.tab-strip lit-material-tab { max-width: 13rem; }
+.tab-strip lit-material-tab .tab-title { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+/* Toasts at the bottom (a popover's UA inset put them over the search field). */
+#toast { top: auto; bottom: 24px; }
+/* Dialog titles 20 px, on one line where they fit. */
+lit-material-dialog, lit-material-confirm-dialog { --md-sys-typescale-headline-small-size: 1.25rem; --md-sys-typescale-headline-small-line-height: 1.75rem; }
+/* Focus rings in the accent colour everywhere (sub-tabs, pills). */
+lit-material-tab::part(focus-ring) { outline: 2px solid var(--md-sys-color-primary); outline-offset: -2px; }
+.pill-select:focus-within::part(trigger), .pill-select:focus-visible::part(trigger) { outline: 2px solid var(--md-sys-color-primary); outline-offset: 1px; }
+/* A focused code editor: a top accent line, never over the first line number. */
+.editor-panel .cm-editor.cm-focused { outline: none; box-shadow: inset 0 2px 0 var(--md-sys-color-primary); }
+/* The response pane's surface reaches the bottom of the view. */
+main > hitop-request { display: flex; flex-direction: column; min-height: calc(100% - 41px); }
+hitop-request > .panes { flex: 1 1 auto; }
+.panes.columns:not(.folded) .pane-response { min-height: 100%; }
+/* Touch: no key hints (Send, the search field, the palette footer, the status bar's Shortcuts). */
+@media (pointer: coarse) {
+  .send-kbd, .command-kbd, .status-shortcuts, .wait-esc, lit-material-menu lit-material-kbd[slot="trailing"] { display: none; }
+}
+/* Request editor: ${variables} in the body, script snippets, GraphQL's labels and full-width query. */
+.cm-var { padding: 0 1px; border-radius: 3px; background: rgb(242 180 92 / 0.12); color: var(--hitop-warn); }
+.cm-var-missing { color: var(--hitop-fail); background: rgb(255 122 122 / 0.12); text-decoration: underline dashed; text-underline-offset: 3px; }
+.cm-var-peek { padding: 4px 8px; font-family: var(--font-mono); font-size: 12px; }
+.script-snippets { display: flex; flex-wrap: wrap; gap: 6px; padding: 10px 20px 0; }
+.script-snippets .snippet-chip { --lit-material-button-height: 28px; --lit-material-button-padding-inline: 10px; font-size: 12px; }
+.graphql-panes { grid-template-columns: minmax(0, 1fr); }
+.editor-panel .graphql-panes .code-editor-label { position: static; width: auto; height: auto; overflow: visible; clip: auto; display: block; margin: 0 0 6px; }
+.discard-save { margin-top: 4px; }
+/* The storage card on one line while Get started shows. */
+.side-card.compact { flex-direction: row; align-items: center; gap: 10px; padding: 8px 10px; }
+.side-card.compact .side-card-meta { display: none; }
+.side-card.compact .side-card-line { flex: 1; min-width: 0; }
+.side-card.compact .side-card-line span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.side-card.compact .side-card-actions { flex: none; }
+/* Import: the paste box says what to paste; its label stays for screen readers only. */
+.drop-zone lit-material-textarea::part(label) { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+/* The Code dialog as wide as its code. */
+lit-material-dialog.fit::part(container) { width: fit-content; min-width: min(560px, calc(100vw - 32px)); max-width: min(1100px, calc(100vw - 32px)); }
+.settings-index { display: flex; flex-wrap: wrap; gap: 4px 14px; margin: 0 0 18px; }
+.agent-key { display: grid; gap: 10px; margin-top: 8px; }
+.agent-key lit-material-button { justify-self: start; }
+.signin-methods-error .signin-link { margin-inline-start: 6px; }
+#line-menu lit-material-list-item lit-material-icon[slot="leading"] { width: 16px; height: 16px; color: #8a8a94; }
+.cookie-add-title { margin: 20px 0 8px; font-size: var(--text-sm); font-weight: 600; color: var(--md-sys-color-on-surface-variant); }
+/* Collection page: folders as groups; the delete button only on the row in use. */
+.request-group { display: flex; align-items: center; gap: 6px; margin: 16px 0 6px; font-size: 12px; font-weight: 600; letter-spacing: 0.04em; color: var(--md-sys-color-on-surface-variant); }
+.request-group lit-material-icon { width: 14px; height: 14px; }
+.request-list .row-delete { opacity: 0; }
+.request-list li:hover .row-delete, .request-list li:focus-within .row-delete { opacity: 1; }
+@media (hover: none) { .request-list .row-delete { opacity: 1; } }
+.sse-json summary { cursor: pointer; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: var(--text-sm); color: var(--md-sys-color-on-surface); }
+.sse-json[open] summary { color: var(--md-sys-color-on-surface-variant); }
+.sse-json pre { margin-top: 6px; }
+/* Phones: a status bar of one line. */
+@media (max-width: 599px) {
+  .statusbar .status-engine, .statusbar .status-shortcuts, .statusbar .status-wire, .statusbar .status-place { display: none; }
+}

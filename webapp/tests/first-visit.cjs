@@ -32,7 +32,8 @@ const SAMPLE = 'Sample: JSONPlaceholder';
   check('the empty response pane says to press Send, with the proxy note, and offers no sample/import', empty.includes('Press Send (') && empty.includes('to see the response here') && (TAURI || empty.includes('proxy')) && !/Try a sample|Import from Postman/.test(empty), empty.replace(/\n/g, ' | '));
   const mine = side.locator('li', { has: p.locator('.tree-row.collection', { hasText: 'My requests' }) });
   const hint = mine.locator('.tree-hint');
-  check('the empty My requests row offers Add request and Import', (await hint.getByRole('button', { name: 'Add request' }).count()) === 1 && (await hint.getByRole('button', { name: /^Import Postman/ }).count()) === 1);
+  check('the empty My requests row offers Add request (UX2: Import once, in the storage card)', (await hint.getByRole('button', { name: 'Add request' }).count()) === 1 && (await hint.getByRole('button', { name: /^Import/ }).count()) === 0 && (await p.locator('aside .side-card').getByRole('button', { name: 'Import' }).count()) === 1);
+  check('UX2: a collection without variables has no Variables row', (await mine.getByRole('treeitem', { name: 'Variables' }).count()) === 0);
   check('the request editor opens on Params for the sample request (its URL has a query)', (await p.locator('.sub-tabs lit-material-tab[selected]').innerText()).includes('Params'));
   check('the status bar does not repeat the collection and request (the title bar has them)', !(await p.locator('.statusbar').innerText()).includes('›'), await p.locator('.statusbar').innerText());
   const envText = await p.locator('header .env-select').evaluate((el) => el.shadowRoot?.textContent ?? el.textContent);
@@ -88,7 +89,7 @@ const SAMPLE = 'Sample: JSONPlaceholder';
   await p.keyboard.press(`${mod}+a`);
   await p.keyboard.type('https://api.example.com/users/42');
   await settle(p);
-  check('until renamed, the name keeps following the URL', (await p.locator('.tab-strip lit-material-tab[selected]').innerText()).includes('GET /users/42'));
+  check('until renamed, the name keeps following the URL', (await p.locator('.tab-strip lit-material-tab[selected]').innerText()).replace(/\s+/g, ' ').includes('GET /users/42'));
   await p.keyboard.press(`${mod}+s`);
   await settle(p);
   await p.locator('#tab-actions').click();
@@ -145,7 +146,7 @@ const SAMPLE = 'Sample: JSONPlaceholder';
   check('My requests\' Add request adds it there', myReq.requests.length === 1 && myReq.requests[0].name === 'Untitled' && (await h.stored.tabs()).tab.loadedCollectionId === myReq.id);
   await p.keyboard.press('Alt+Shift+KeyW');
   await settle(p);
-  check('...and closing it leaves My requests empty again (its hints back)', (await h.stored.collections()).find((c) => c.name === 'My requests').requests.length === 0 && (await hint.getByRole('button', { name: /^Import Postman/ }).count()) === 1);
+  check('...and closing it leaves My requests empty again (its hints back)', (await h.stored.collections()).find((c) => c.name === 'My requests').requests.length === 0 && (await hint.getByRole('button', { name: 'Add request' }).count()) === 1);
 
   // --- a collection that can't take a request: My requests instead ---
   // A viewer's shared collection: the role comes from /v1/workspaces (orgs.js → store.setOrgs);

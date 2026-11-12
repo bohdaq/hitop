@@ -158,3 +158,14 @@ export function renameFolderIn(requests, path, newPath) {
     return { ...r, file: `${newPath}${file.slice(path.length)}` };
   });
 }
+
+/**
+ * UX2: a folder's name as a browser collection shows it. Imports keep folders as file slugs
+ * ("folder-a"); a slug of several words reads as words again ("Folder A"). One-word names, and the
+ * folders of a collection on disk (real directory names), stay as they are.
+ */
+export function folderTitle(name) {
+  const n = String(name ?? "");
+  if (!/^[a-z0-9]+(-[a-z0-9]+)+$/.test(n)) return n;
+  return n.split("-").map((w) => w.charAt(0).toUpperCase() + w.slice(1)).join(" ");
+}

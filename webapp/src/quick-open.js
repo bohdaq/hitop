@@ -43,7 +43,8 @@ export function fuzzyMatch(query, text) {
 // tabIndex?, environmentId?, entry?, open }]. Collections, environments (with their
 // variable names) and history (newest first, each method and URL once) come after
 // the requests.
-export function quickOpenItems({ collections, tabs, methodLabel, environments = [], history = [] }) {
+// `liveName(request, collectionId)`: a new request's name while it follows its URL (UX2), or null.
+export function quickOpenItems({ collections, tabs, methodLabel, environments = [], history = [], liveName = () => null }) {
   const items = [];
   tabs.forEach((t, i) => {
     if (t.loadedRequestId != null && collections.some((c) => c.id === t.loadedCollectionId && (c.requests || []).some((r) => r.id === t.loadedRequestId))) return;
@@ -54,7 +55,7 @@ export function quickOpenItems({ collections, tabs, methodLabel, environments = 
     for (const r of c.requests || []) {
       const folder = typeof r.file === "string" && r.file.includes("/") ? r.file.slice(0, r.file.lastIndexOf("/")).replace(/\//g, " › ") : "";
       const open = tabs.some((t) => t.loadedRequestId === r.id && t.loadedCollectionId === c.id);
-      items.push({ key: `req:${c.id}:${r.id}`, kind: "request", title: r.name || "Untitled", detail: folder ? `${c.name} › ${folder}` : c.name, method: methodLabel(r), url: r.url || "", collectionId: c.id, request: r, open });
+      items.push({ key: `req:${c.id}:${r.id}`, kind: "request", title: liveName(r, c.id) || r.name || "Untitled", detail: folder ? `${c.name} › ${folder}` : c.name, method: methodLabel(r), url: r.url || "", collectionId: c.id, request: r, open });
     }
   }
   if (environments.length || history.length) {

@@ -3,7 +3,7 @@
 // keep their localStorage keys and shapes: the React app and this one read
 // each other's data. Views subscribe with `store.addEventListener("change")`
 // and report problems through the `notify` event (never window.alert).
-import { markSaved, SAMPLE_NAME, SAMPLE_REQUESTS } from "./getting-started.js";
+import { markImported, markSaved, SAMPLE_NAME, SAMPLE_REQUESTS } from "./getting-started.js";
 import { isBlankRequest, isEmptyMyRequests, isMyRequests, isPristineSample, MY_REQUESTS, requestAutoName, sampleRequests, SAMPLE_BASE_URL, tabHasContent, UNTITLED } from "./new-request.js";
 import collectionService from "../../frontend/src/services/collectionService.jsx";
 import contextService from "../../frontend/src/services/contextService.jsx";
@@ -1202,6 +1202,7 @@ export class Store extends EventTarget {
     const col = this.inOrg(sampleCollection());
     this.collections = [...this.collections, col];
     this.view = { kind: "collection", collectionId: col.id };
+    markImported(globalThis.localStorage, [col.id]);
     this.emit();
     return col;
   }
@@ -1255,8 +1256,11 @@ export class Store extends EventTarget {
 
   // --- import, export, history --------------------------------------------
 
-  exportJson(format) {
-    return collectionService.exportCollections(this.collections, format);
+  // `only`: one collection's id (UX2: the Export dialog's picker); empty header rows are left out.
+  exportJson(format, only = null) {
+    const picked = only == null ? this.collections : this.collections.filter((c) => String(c.id) === String(only));
+    const clean = picked.map((c) => ({ ...c, requests: (c.requests || []).map((r) => ({ ...r, headers: (r.headers || []).filter((h) => h.name || h.value) })) }));
+    return collectionService.exportCollections(clean, format);
   }
 
   // Returns the import report for a Postman collection (what hitop couldn't
@@ -1280,6 +1284,7 @@ export class Store extends EventTarget {
     if (!replace) {
       const { added, renamed } = addCollections(this.collections, imported, generateUniqueId);
       this.collections = [...this.collections, ...added.map((c) => this.inOrg(c))];
+      markImported(globalThis.localStorage, added.map((c) => c.id));
       const first = added.find((c) => c.requests?.length);
       if (first) this.openRequest(first.requests[0], first.id);
       else this.show("collections");
@@ -1289,6 +1294,7 @@ export class Store extends EventTarget {
     }
     this.closeAllFolders();
     this.collections = imported;
+    markImported(globalThis.localStorage, imported.map((c) => c.id));
     const first = imported.find((c) => c.requests?.length);
     this.tabs = first ? [tabForRequest(first.requests[0], first.id)] : [];
     this.currentTab = 0;
@@ -1369,6 +1375,31 @@ export class Store extends EventTarget {
       auth: item.auth ? { ...emptyAuth(), ...item.auth } : emptyAuth(),
     });
     this.tabs = tabService.updateTab(this.tabs, this.currentTab, { title: requestAutoName(this.tabs[this.currentTab]) });
+    // UX2: with the response History kept (status, headers, body up to 100 kB), shown as it was.
+    const r = item.response;
+    if (r && r.status != null) {
+      const ct = Object.entries(r.headers || {}).find(([k]) => k.toLowerCase() === "content-type")?.[1] ?? "";
+      let body = r.body ?? "";
+      let type = /json/i.test(ct) ? "json" : /html/i.test(ct) ? "html" : /xml/i.test(ct) ? "xml" : "text";
+      if (type === "json") {
+        try {
+          body = JSON.stringify(JSON.parse(body), null, 2);
+        } catch {
+          type = "text";
+        }
+      }
+      if (r.binary) type = "binary";
+      this.tabs = tabService.updateTab(this.tabs, this.currentTab, {
+        response: body,
+        responseType: type,
+        responseSize: r.binary?.size ?? null,
+        // A binary body isn't kept in History (its size and digest are): the view says to send again.
+        responseCut: Boolean(r.binary),
+        statusCode: r.status,
+        responseHeaders: r.headers || {},
+        durationMs: r.durationMs ?? null,
+      });
+    }
     this.emit();
   }
 
@@ -1663,6 +1694,19 @@ export class Store extends EventTarget {
     const env = { id: crypto.randomUUID(), name: name.trim(), variables: {}, ...(this.currentOrg ? { org: this.currentOrg } : {}) };
     this.environments = [...this.environments, env];
     if (!this.activeEnvironment) this.activeEnvironmentId = env.id;
+    this.view = { kind: "environments", collectionId: null, environmentId: env.id };
+    this.emit();
+  }
+
+  /** UX2: a copy of an environment ("Staging (copy)"), its variables and secret names with it. */
+  duplicateEnvironment(id) {
+    const from = this.environments.find((e) => e.id === id);
+    if (!from || from.team) return;
+    const names = new Set(this.environments.map((e) => e.name));
+    let name = `${from.name} (copy)`;
+    for (let n = 2; names.has(name); n++) name = `${from.name} (copy ${n})`;
+    const env = { ...structuredClone(from), id: crypto.randomUUID(), name };
+    this.environments = [...this.environments, env];
     this.view = { kind: "environments", collectionId: null, environmentId: env.id };
     this.emit();
   }

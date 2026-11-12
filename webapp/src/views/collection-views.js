@@ -11,7 +11,7 @@ import { methodLabel } from "../store.js";
 import { syncButton } from "./openapi-dialogs.js";
 import { isSyncRef } from "../sync.js";
 import { storageOf } from "../git.js";
-import { SAVE_KEYS } from "../shortcuts.js";
+import { folderOf, folderTitle } from "../collection-tree.js";
 import "./run-report-view.js";
 
 class LightElement extends LitElement {
@@ -152,27 +152,42 @@ export class HitopCollection extends LightElement {
         <section aria-label="Requests">
           <h2>${count(n, "request")}</h2>
           ${n
-            ? html`<ol class="request-list">
-                ${c.requests.map(
-                  (r) => html`
-                    <li>
-                      <button type="button" class="request-row" @click=${() => s.openRequest(r, c.id)}>
-                        <span class=${`method-tag m-${methodLabel(r)}`}>${methodLabel(r)}</span>
-                        <span class="request-name">${r.name}</span>
-                        <span class="request-url">${r.url}</span>
-                      </button>
-                      <lit-material-icon-button aria-label=${`Delete ${r.name}`} @click=${() => this.app.deleteRequest(r, c.id)}>${icon("trash")}</lit-material-icon-button>
-                    </li>`,
-                )}
-              </ol>`
+            ? groupsByFolder(c.requests).map(
+                ([path, requests]) => html`${path ? html`<h3 class="request-group">${icon("folder-simple")} ${s.folderOf(c.id) ? path : path.split("/").map(folderTitle).join(" / ")}</h3>` : nothing}
+                  <ol class="request-list">
+                    ${requests.map(
+                      (r) => html`
+                        <li>
+                          <button type="button" class="request-row" @click=${() => s.openRequest(r, c.id)}>
+                            <span class=${`method-tag m-${methodLabel(r)}`}>${methodLabel(r)}</span>
+                            <span class="request-name">${r.name}</span>
+                            <span class="request-url">${r.url}</span>
+                          </button>
+                          <lit-material-icon-button class="row-delete" aria-label=${`Delete ${r.name}`} title="Delete…" @click=${() => this.app.deleteRequest(r, c.id)}>${icon("trash")}</lit-material-icon-button>
+                        </li>`,
+                    )}
+                  </ol>`,
+              )
             : html`<lit-material-empty-state size="compact" headline="No requests in this collection">
-                Start a request here (it joins the collection when you save it with <kbd>${SAVE_KEYS}</kbd>), drag one in from another collection in the sidebar, or import.
+                Add a request here, drag one in from another collection in the sidebar, or import.
                 <lit-material-button slot="actions" variant="filled" @click=${() => this.app.newRequestIn(c.id)}>${icon("plus")} New request</lit-material-button>
                 <lit-material-button slot="actions" variant="text" @click=${() => this.app.openDialog("import")}>Import</lit-material-button>
               </lit-material-empty-state>`}
         </section>
       </div>`;
   }
+}
+
+// UX2: the collection page's requests in their folders (a request's folder is its `file` path), in
+// the collection's order; requests at the top level first.
+function groupsByFolder(requests) {
+  const groups = new Map([["", []]]);
+  for (const r of requests) {
+    const path = folderOf(r);
+    if (!groups.has(path)) groups.set(path, []);
+    groups.get(path).push(r);
+  }
+  return [...groups].filter(([path, list]) => path || list.length);
 }
 
 export class HitopVariables extends LightElement {
@@ -363,6 +378,7 @@ export class HitopEnvironments extends LightElement {
                         ? html`<lit-material-button variant="tonal" @click=${() => s.setActiveEnvironment(null)}>Deactivate</lit-material-button>`
                         : html`<lit-material-button variant="tonal" @click=${() => s.setActiveEnvironment(env.id)}>Use this environment</lit-material-button>`}
                       <lit-material-icon-button aria-label=${`Rename ${env.name}`} @click=${() => this.app.openDialog("rename-environment", { id: env.id, name: env.name })}>${icon("pencil-simple")}</lit-material-icon-button>
+                      <lit-material-icon-button aria-label=${`Duplicate ${env.name}`} title="Duplicate" @click=${() => s.duplicateEnvironment(env.id)}>${icon("copy")}</lit-material-icon-button>
                       <lit-material-icon-button aria-label=${`Delete ${env.name}`} @click=${() => this.app.deleteEnvironment(env)}>${icon("trash")}</lit-material-icon-button>
                     </div>
                     ${s.teamEnvs?.teamOrg() && !s.folderEnvs.has(env.id)
@@ -491,10 +507,11 @@ export class HitopCookies extends LightElement {
                 </section>`,
             )
           : html`<lit-material-empty-state size="compact" headline="No cookies yet">Cookies that responses set appear here, or add one below.</lit-material-empty-state>`}
-        <form class="cookie-add" novalidate @submit=${(e) => this.add(e)}>
-          <lit-material-text-field name="domain" variant="outlined" label="Domain" placeholder="api.example.com"></lit-material-text-field>
-          <lit-material-text-field name="name" variant="outlined" label="Name"></lit-material-text-field>
-          <lit-material-text-field name="value" variant="outlined" label="Value"></lit-material-text-field>
+        <h3 class="cookie-add-title" id="cookie-add-title">Add a cookie</h3>
+        <form class="cookie-add" novalidate aria-labelledby="cookie-add-title" @submit=${(e) => this.add(e)}>
+          <lit-material-text-field name="domain" variant="outlined" label="Domain" placeholder="Domain: api.example.com"></lit-material-text-field>
+          <lit-material-text-field name="name" variant="outlined" label="Name" placeholder="Name: session"></lit-material-text-field>
+          <lit-material-text-field name="value" variant="outlined" label="Value" placeholder="Value: abc123"></lit-material-text-field>
           <lit-material-button variant="text" type="submit">${icon("plus")} Add cookie</lit-material-button>
         </form>
       </div>`;

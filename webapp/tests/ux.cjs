@@ -107,7 +107,8 @@ function api() {
   check('Enter steps to the next match', (await p.locator('.find-count').innerText()) === '2 of 2');
   await p.getByLabel('Find in body').fill('');
   await p.getByRole('button', { name: /Wrap/ }).click();
-  check('wrap toggles', (await p.locator('.response-scroll.wrap').count()) === 1);
+  check('wrap toggles (on by default since UX2)', (await p.locator('.response-scroll.wrap').count()) === 0);
+  await p.getByRole('button', { name: /Wrap/ }).click();
   check('the body region can take focus', (await p.locator('.response-scroll').getAttribute('tabindex')) === '0');
 
   // Invalid JSON with a JSON content type says so.

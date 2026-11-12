@@ -13,10 +13,11 @@ const errorText = (e) => String(e?.message ?? e);
 // The collection's record from its import: { source, version, ... } or null.
 export const openapiRecord = (collection) => (collection?.openapi && typeof collection.openapi === "object" ? collection.openapi : null);
 
-function actions(app, label, { back = null } = {}) {
+// `only`: one button (UX2: the import report, after the import happened, has nothing to cancel).
+function actions(app, label, { back = null, only = false } = {}) {
   return html`
     <div slot="actions" class="dialog-actions">
-      <lit-material-button variant="text" @click=${() => (back ? back() : app.closeDialog())}>${back ? "Back" : "Cancel"}</lit-material-button>
+      ${only ? nothing : html`<lit-material-button variant="text" @click=${() => (back ? back() : app.closeDialog())}>${back ? "Back" : "Cancel"}</lit-material-button>`}
       <lit-material-button variant="filled" type="submit" form="dialog-form">${label}</lit-material-button>
     </div>`;
 }
@@ -104,7 +105,7 @@ export function openapiDialog(app, d) {
         footer: actions(app, "Import"),
       };
     case "openapi-report":
-      return { headline: "Check after import", body: reportBody(d.report), footer: actions(app, "Done") };
+      return { headline: "Check after import", body: reportBody(d.report), footer: actions(app, "Done", { only: true }) };
     case "openapi-sync": {
       const col = s.collection(d.id);
       const rec = openapiRecord(col);

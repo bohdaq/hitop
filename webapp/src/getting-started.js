@@ -11,9 +11,11 @@ export const SAMPLE_NAME = "Sample: JSONPlaceholder";
 export const SAMPLE_REQUESTS = ["List posts", "Get the first post", "Create a post"];
 
 /** The three steps, done or not. `runs`: the run history ({collectionId: [...]}) or null. */
-export function gettingStartedSteps({ history = [], collections = [], runs = null, ranNow = false, savedOnce = false, keys = { send: "⌘↵", save: "⌘S" } } = {}) {
+// `imported`: ids of collections that came from an import (UX2: an import isn't saving a request).
+export function gettingStartedSteps({ history = [], collections = [], runs = null, ranNow = false, savedOnce = false, imported = [], keys = { send: "⌘↵", save: "⌘S" } } = {}) {
   const sent = history.length > 0;
-  const own = (c, r) => String(r.url ?? "").trim() && (c.name !== SAMPLE_NAME || !SAMPLE_REQUESTS.includes(r.name));
+  const skip = new Set(imported.map(String));
+  const own = (c, r) => String(r.url ?? "").trim() && !skip.has(String(c.id)) && (c.name !== SAMPLE_NAME || !SAMPLE_REQUESTS.includes(r.name));
   const saved = savedOnce || collections.some((c) => (c.requests || []).some((r) => own(c, r)));
   const ran = ranNow || Object.values(runs ?? {}).some((list) => Array.isArray(list) && list.length > 0);
   return [
@@ -66,4 +68,15 @@ export function savedOnce(storage) {
 
 export function hideGettingStarted(storage) {
   write(storage, { ...(read(storage) ?? { fresh: true }), hidden: true });
+}
+
+/** UX2: remembers collections that came from an import (their requests aren't "saved" by the person). */
+export function markImported(storage, ids) {
+  if (!ids?.length) return;
+  const state = read(storage) ?? {};
+  write(storage, { ...state, imported: [...new Set([...(state.imported ?? []), ...ids.map(String)])].slice(-200) });
+}
+
+export function importedIds(storage) {
+  return read(storage)?.imported ?? [];
 }
