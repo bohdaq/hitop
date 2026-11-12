@@ -41,6 +41,7 @@ function server() {
       return;
     }
     if (u.pathname === '/png') return res.writeHead(200, { ...cors, 'content-type': 'image/png' }).end(PNG);
+    if (u.pathname === '/pdf') return res.writeHead(200, { ...cors, 'content-type': 'application/pdf' }).end(Buffer.from('%PDF-1.4\n%%EOF\n'));
     if (u.pathname === '/bin') return res.writeHead(200, { ...cors, 'content-type': 'application/octet-stream' }).end(Buffer.from([0, 1, 2, 0xff, 0x41, 0x42, 0x43]));
     res.writeHead(200, { ...cors, 'content-type': 'application/json' }).end(JSON.stringify({ ok: true, path: u.pathname }));
   });
@@ -54,6 +55,7 @@ function server() {
   const p = h.page;
   const errors = [];
   p.on('pageerror', (e) => errors.push(e.message));
+  if (process.env.UX2_DEBUG) p.on('console', (m) => m.type() === 'error' && console.log('CONSOLE', m.text().slice(0, 300)));
   await p.goto(h.url, { waitUntil: 'networkidle' });
   await settle(p, 800);
   const store = (body, arg) => inApp(p, body, arg);
@@ -146,6 +148,22 @@ function server() {
   const rule = await p.locator('.response[data-checks="failed"] > .response-meta').evaluate((el) => getComputedStyle(el).boxShadow).catch(() => '');
   check('(7) a failed check: "1 of 2 tests failed" in the fail colour, red rule on the header', summary.includes('1 of 2 tests failed') && red === 'rgb(255, 156, 156)' && rule.includes('255, 156, 156'), `${summary} ${red} ${rule}`);
   check('(7) ...and the Tests tab says so', (await p.getByRole('tab', { name: /Tests 1 of 2 failed/ }).count()) === 1);
+  // (4) The header never overflows (a failed check, the waterfall on the desktop) at 1440, 1024 and 390.
+  for (const [w, hgt] of [[1440, 900], [1024, 768], [390, 844]]) {
+    await p.setViewportSize({ width: w, height: hgt });
+    await settle(p, 500);
+    const fit = await p.locator('.response-meta').evaluate((el) => [el.scrollWidth, el.clientWidth]);
+    check(`(4) at ${w} px the response header fits (wraps rather than overflows)`, fit[0] <= fit[1] + 1, fit.join(' > '));
+  }
+  await p.setViewportSize({ width: 1440, height: 900 });
+  await settle(p, 500);
+  if (TAURI) {
+    // The waterfall's legend (phases, Total) on focus.
+    await p.locator('.timing-inline').focus();
+    await settle(p, 200);
+    const card = await p.locator('.timing-card').evaluate((el) => ({ h: el.getBoundingClientRect().height, shown: getComputedStyle(el).display !== 'none', text: el.querySelector('lit-material-timing-waterfall')?.shadowRoot?.textContent ?? '' }));
+    check('(4) the waterfall\'s legend opens on focus, with the total', card.shown && card.h > 0 && /Total/.test(card.text), JSON.stringify(card).slice(0, 200));
+  }
   await tabUrl(`${base}/json`, { postRequestScript: '' });
 
   // --- (2) Pasting curl into the URL field fills the request; Undo puts it back ---
@@ -178,7 +196,11 @@ function server() {
   await settle(p, 800);
   cols = await h.stored.collections();
   tab = (await h.stored.tabs()).tab;
-  check('(2) Import takes curl as one new request in the collection', cols.find((c) => c.name === 'My requests').requests.length === before + 1 && tab.url === `${base}/me` && tab.auth?.type === 'basic' && tab.auth.username === 'ada', JSON.stringify([tab.url, tab.auth]));
+  const importedReq = cols.find((c) => c.name === 'My requests').requests.find((r) => r.id === tab.loadedRequestId);
+  check('(2) Import takes curl as one new request in the collection, saved', cols.find((c) => c.name === 'My requests').requests.length === before + 1 && importedReq?.url === `${base}/me` && importedReq?.auth?.type === 'basic' && importedReq.auth.username === 'ada', JSON.stringify(importedReq));
+  await p.locator('#toast').getByRole('button', { name: 'Undo' }).click();
+  await settle(p, 600);
+  check('(2) ...and its Undo takes it out again', (await h.stored.collections()).find((c) => c.name === 'My requests').requests.length === before);
 
   // --- (4) The response gets the room: one header line, tools on the tab row (1440×900) ---
   await tabUrl(`${base}/json`, { method: 'GET' });
@@ -251,9 +273,12 @@ function server() {
   const img = await p.locator('.response img.response-image').evaluate((el) => ({ w: el.naturalWidth, h: el.naturalHeight })).catch(() => null);
   const facts = await p.locator('.binary-facts').innerText().catch(() => '');
   check('(6) image/png shows as an image with its size and dimensions', img?.w === 2 && img?.h === 1 && facts.includes('Image') && facts.includes('image/png') && facts.includes('2 × 1') && (await p.locator('.response .response-text').count()) === 0, `${JSON.stringify(img)} ${facts}`);
+  await tabUrl(`${base}/pdf`);
+  await sendAndWait();
+  check('(6) a PDF opens in a frame without scripts (a blob URL)', ((await p.locator('iframe.response-pdf').getAttribute('src')) || '').startsWith('blob:') && (await p.locator('iframe.response-pdf').getAttribute('sandbox')) === 'allow-same-origin');
   await tabUrl(`${base}/bin`);
   await sendAndWait();
-  const hex = await p.locator('.hex-dump').innerText().catch(() => '');
+  const hex = await p.locator(".hex-dump").innerText().catch(() => "");
   check('(6) other binary: "Binary · 7 B", Download and a hex dump', (await p.locator('.binary-facts').innerText()).includes('Binary · 7 B') && hex.startsWith('00000000  00 01 02 ff 41 42 43') && hex.includes('|....ABC|') && (await p.locator('.binary-facts').getByRole('button', { name: 'Download' }).count()) === 1, hex);
   await tabUrl(`${base}/json`);
   await sendAndWait();
@@ -309,6 +334,11 @@ function server() {
   check('(9) Shift+F10 opens the row\'s menu, with Run, Copy as cURL and keys', (await p.locator('#request-menu').evaluate((el) => el.open || el.hasAttribute('open') || el.matches(':popover-open') || Boolean(el.shadowRoot?.querySelector(':popover-open')))) && (await p.locator('#request-menu').innerText()).includes('Copy as cURL'));
   await p.keyboard.press('Escape');
   await settle(p);
+  // Two requests in My requests to swap.
+  if ((await h.stored.collections()).find((c) => c.name === 'My requests').requests.length < 2) {
+    await store('app.newRequest(a);', myId);
+    await settle(p);
+  }
   const order = async () => (await h.stored.collections()).find((c) => c.name === 'My requests').requests.map((r) => r.id);
   const before9 = await order();
   await firstReq.focus();
@@ -335,6 +365,35 @@ function server() {
   check('(R) the environment menu always has a way to manage environments', envOptions.some((t) => /Add environment|Manage environments/.test(t)), envOptions.join('|'));
   await p.keyboard.press('Alt+Shift+KeyW');
   await settle(p);
+  // (Switch to POST left an edit: the Discard question.)
+  if (await p.locator('lit-material-confirm-dialog[open]').count()) await p.locator('lit-material-confirm-dialog[open]').getByRole('button', { name: 'Discard' }).click();
+  await settle(p);
+
+  // --- Shortcuts added by UX2, and Save and close when discarding ---
+  await p.keyboard.press('Alt+Shift+KeyF');
+  await settle(p);
+  check('(R) Alt+Shift+F goes to the sidebar filter', await p.evaluate(() => document.activeElement?.classList.contains('tree-filter')));
+  await p.keyboard.press('Escape');
+  await tabUrl(`${base}/json`);
+  await sendAndWait();
+  await p.keyboard.press('Alt+Shift+KeyR');
+  await settle(p);
+  check('(R) Alt+Shift+R goes to the response tabs', await p.evaluate(() => Boolean(document.activeElement?.closest?.('lit-material-tabs[aria-label="Response details"]'))));
+  await p.keyboard.press('Alt+Shift+KeyE');
+  await settle(p);
+  check('(R) Alt+Shift+E goes to the environment picker', await p.evaluate(() => Boolean(document.activeElement?.closest?.('.env-select'))), await p.evaluate(() => document.activeElement?.outerHTML.slice(0, 120)));
+  await p.keyboard.press('Escape');
+  await settle(p);
+  // A saved request with an edit: closing it offers Save and close.
+  const savedTab = (await h.stored.tabs()).tab;
+  await tabUrl(`${base}/json?saved=1`);
+  await settle(p);
+  await p.keyboard.press('Alt+Shift+KeyW');
+  await p.locator('lit-material-confirm-dialog .discard-save').waitFor({ timeout: 5000 });
+  await p.locator('lit-material-confirm-dialog .discard-save').click();
+  await settle(p, 600);
+  const savedReq = (await h.stored.collections()).flatMap((c) => c.requests).find((r) => r.id === savedTab.loadedRequestId);
+  check('(R) the Discard question offers Save and close: saved, tab closed', savedReq?.url === `${base}/json?saved=1` && !(await h.stored.tabs()).tabs.some((t) => t.id === savedTab.id), JSON.stringify(savedReq?.url));
 
   // --- (10) Signed-out Organization page: the empty state's Sign in renders ---
   await store('await app.openOrg("general");');

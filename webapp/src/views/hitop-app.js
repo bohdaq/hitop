@@ -125,6 +125,9 @@ export class HitopApp extends LitElement {
 
   constructor() {
     super();
+    // UX2 (4): the widths the side pane and the drawer follow (made here, so the first render knows).
+    this.narrow = globalThis.matchMedia?.("(max-width: 899px)") ?? null;
+    this.compact = globalThis.matchMedia?.("(max-width: 1200px)") ?? null;
     this.store = new Store();
     this.navOpen = false;
     this.emptyFolders = {}; // collection id → folder paths made in the sidebar that hold no request yet
@@ -159,10 +162,7 @@ export class HitopApp extends LitElement {
     if (window.matchMedia?.("(pointer: fine)").matches) document.documentElement.setAttribute("density", "compact");
     platform().onStart?.(this);
     // UX2 (4): the side pane folds by itself at 1200 px or less (until chosen); phones use the drawer.
-    this.narrow = window.matchMedia?.("(max-width: 899px)") ?? null;
-    this.compact = window.matchMedia?.("(max-width: 1200px)") ?? null;
     for (const m of [this.narrow, this.compact]) m?.addEventListener?.("change", () => this.requestUpdate());
-    this.requestUpdate();
     document.addEventListener("keydown", (e) => this.onShortcut(e), true);
     this.resumeSignIn();
     // A link into the Organization area (the portal's pages send the browser here, 7b).
@@ -266,9 +266,10 @@ export class HitopApp extends LitElement {
         // UX2: the environment picker next to Send (or the one in the drawer on phones).
         if (!onRequest) s.selectTab(s.currentTab);
         this.updateComplete.then(() => {
-          const pick = [...this.querySelectorAll(".env-select")].find((el) => el.offsetParent !== null);
-          pick?.focus();
-          pick?.click?.();
+          const pick = [...this.querySelectorAll(".env-select")].find((el) => el.getClientRects().length);
+          const trigger = pick?.shadowRoot?.querySelector('[part="trigger"]');
+          (trigger ?? pick)?.focus();
+          trigger?.click();
         });
         break;
       }
@@ -1171,8 +1172,8 @@ export class HitopApp extends LitElement {
     // An open menu or popover takes its own Esc (a toast or tooltip is not one).
     if ([...document.querySelectorAll(":popover-open")].some((el) => !el.matches("lit-material-snackbar, lit-material-tooltip"))) return;
     const path = e.composedPath();
-    if (path.some((el) => el instanceof Element && el.matches("lit-material-select, lit-material-menu, lit-material-popover, lit-material-sheet, dialog, .var-peek"))) return;
-    if (document.querySelector("lit-material-menu[open], lit-material-popover[open], lit-material-select[open], lit-material-sheet[open]")) return;
+    if (path.some((el) => el instanceof Element && el.matches("lit-material-select, lit-material-menu, lit-material-popover, lit-material-sheet, lit-material-side-sheet, dialog, .var-peek"))) return;
+    if (document.querySelector("lit-material-menu[open], lit-material-popover[open], lit-material-select[open], lit-material-sheet[open], lit-material-side-sheet[open]")) return;
     const s = this.store;
     if (s.view.kind === "request") {
       if (this.querySelector("hitop-request")?.cancelInFlight()) e.preventDefault();
@@ -2027,7 +2028,7 @@ export class HitopApp extends LitElement {
   tabLabel(t) {
     const tag = tagOf(t);
     const m = /^([A-Z]+) (.+)$/.exec(t.title || "");
-    const label = m && (m[1] === tag || METHODS.includes(m[1])) ? m[2] : t.title;
+    const label = m && (m[1] === tag || (t.autoName && METHODS.includes(m[1]))) ? m[2] : t.title;
     return html`<span class=${`method-tag tab-method m-${tag}`} data-tag=${tag} aria-hidden="true"></span><span class="visually-hidden">${tag} </span><span class="tab-title">${label}</span>`;
   }
 
@@ -2217,13 +2218,14 @@ export class HitopApp extends LitElement {
     const s = this.store;
     const undo = s.applyCurl(parsed);
     const id = s.tab?.id;
+    if (added) this.saveCurrent();
     const note = parsed.warnings.length ? ` ${parsed.warnings.join(" ")}` : "";
     this.toast(`Imported from curl: ${parsed.method} ${parsed.url}.${note}`, {
       label: "Undo",
       run: () => {
-        undo?.();
         const at = s.tabs.findIndex((t) => t.id === id);
-        if (added && at !== -1 && s.tabs.length > 1) this.closeTab(at);
+        if (added && at !== -1) s.deleteTabRequest(at);
+        else undo?.();
       },
     });
   }

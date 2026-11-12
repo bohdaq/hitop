@@ -1242,12 +1242,12 @@ hitop-app lit-material-text-field::part(label) { inset-inline-start: -20px; }
   .line-tools .line-save { display: none; }
   .menu-save { display: block; }
 }
-.response-meta { flex-wrap: nowrap; gap: 12px; padding: 10px 20px; white-space: nowrap; }
+.response-meta { flex-wrap: wrap; gap: 6px 12px; padding: 10px 20px; white-space: nowrap; }
 .response-meta .checks-summary { flex: none; }
 .timing-inline { position: relative; display: inline-flex; align-items: center; flex: 0 1 160px; min-width: 60px; height: 20px; border-radius: 4px; cursor: help; }
 .timing-inline:focus-visible { outline: 2px solid var(--md-sys-color-primary); outline-offset: 2px; }
 .timing-inline .timing-bar { flex: 1; --lit-material-timing-waterfall-height: 6px; --lit-material-timing-waterfall-track: var(--md-sys-color-surface-container-high); --lit-material-timing-waterfall-dns: var(--hitop-phase-dns); --lit-material-timing-waterfall-connect: var(--hitop-phase-connect); --lit-material-timing-waterfall-wait: var(--hitop-phase-wait); --lit-material-timing-waterfall-download: var(--hitop-phase-download); }
-.timing-card { display: none; position: absolute; z-index: 5; top: calc(100% + 8px); left: 0; width: 360px; padding: 10px 12px; border: 1px solid var(--md-sys-color-outline-variant); border-radius: 10px; background: var(--md-sys-color-surface-container-high); box-shadow: 0 8px 24px rgb(0 0 0 / 0.45); white-space: normal; }
+.timing-card { display: none; position: absolute; z-index: 5; top: calc(100% + 8px); right: 0; width: min(360px, calc(100vw - 48px)); padding: 10px 12px; border: 1px solid var(--md-sys-color-outline-variant); border-radius: 10px; background: var(--md-sys-color-surface-container-high); box-shadow: 0 8px 24px rgb(0 0 0 / 0.45); white-space: normal; }
 .timing-inline:hover .timing-card, .timing-inline:focus-visible .timing-card, .timing-inline:focus .timing-card { display: block; }
 .timing-card .timing { padding: 0; border: 0; }
 .response-tabbar { display: flex; flex-wrap: wrap; align-items: center; column-gap: 4px; min-width: 0; border-bottom: 1px solid var(--md-sys-color-outline-variant); }

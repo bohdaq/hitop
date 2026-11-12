@@ -75,6 +75,8 @@ export function variableMarks(resolve) {
   const marks = new MatchDecorator({
     regexp: VAR,
     decoration: (m) => {
+      // ${$guid}, ${$faker.…}: built-in values made at send time.
+      if (m[1].trim().startsWith("$")) return Decoration.mark({ class: "cm-var" });
       const found = resolve(m[1].trim());
       return Decoration.mark({ class: !found || found.missingSecret ? "cm-var cm-var-missing" : "cm-var" });
     },
@@ -97,7 +99,8 @@ export function variableMarks(resolve) {
       const to = from + m[0].length;
       if (pos < from || pos > to) continue;
       const name = m[1].trim();
-      const found = resolve(name);
+      const builtIn = name.startsWith("$");
+      const found = builtIn ? { value: "a new value each send", scope: "built-in" } : resolve(name);
       return {
         pos: from,
         end: to,
