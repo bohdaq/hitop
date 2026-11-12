@@ -1189,3 +1189,4 @@ hitop-app lit-material-text-field::part(label) { inset-inline-start: -20px; }
 .run-folder { color: var(--md-sys-color-on-surface-variant); font-size: 0.6em; font-weight: 500; }
 .run-cli-none { margin: 0; padding: 12px 14px; border: 1px solid var(--md-sys-color-outline-variant); border-radius: 12px; }
 .limit-note p > :first-child { flex: none; margin-top: 2px; color: var(--md-sys-color-on-surface-variant); }
+.org-card lit-material-alert > [slot="action"] { justify-self: start; align-self: start; width: auto; }

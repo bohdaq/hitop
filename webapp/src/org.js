@@ -95,19 +95,23 @@ export function shareRoom(usage, org) {
  * The plan cards for an org: what it can buy (`billing.offers`, monthly when sold, else annual),
  * the current plan marked. A personal org buys Pro; a team organization Team or Business.
  */
-export function planCards(org, billing) {
+export function planCards(org, billing, inForce = org?.plan ?? "free") {
   const offers = billing?.offers ?? [];
   const forOrg = PLANS.filter((p) => (org?.personal ? ["free", "pro"].includes(p.plan) : p.plan !== "pro"));
   return forOrg.map((p) => {
     const sold = offers.filter((o) => o.plan === p.plan);
     const offer = sold.find((o) => o.period === "monthly") ?? sold[0];
     const current = (org?.plan ?? "free") === p.plan;
+    // The org's plan but not in force (expired, unpaid, cancelled): paying again is buying it.
+    const lapsed = current && p.plan !== "free" && inForce !== p.plan;
     return {
       ...p,
       name: PLAN_NAMES[p.plan],
       current,
+      lapsed,
+      action: lapsed ? `Pay for ${PLAN_NAMES[p.plan]}` : `Choose ${PLAN_NAMES[p.plan]}`,
       period: offer?.period ?? null,
-      buy: Boolean(offer) && !current,
+      buy: Boolean(offer) && (!current || lapsed),
       recommended: p.plan === (org?.personal ? "pro" : "team"),
       note: p.plan === "free" ? "Always free" : !offer ? "Not sold here" : "",
     };

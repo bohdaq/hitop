@@ -222,6 +222,11 @@ assert.equal(rankItems(more, "auth")[0].key, "col:2");
   const cards = planCards({ plan: "free", personal: false }, { offers: [{ plan: "team", period: "annual" }, { plan: "team", period: "monthly" }, { plan: "business", period: "annual" }] });
   assert.deepEqual(cards.map((c) => [c.plan, c.buy, c.period, c.current]), [["free", false, null, true], ["team", true, "monthly", false], ["business", true, "annual", false]]);
   assert.deepEqual(planCards({ plan: "free", personal: true }, { offers: [{ plan: "pro", period: "monthly" }] }).map((c) => c.plan), ["free", "pro"]);
+  // An expired Team (plan team, Free in force): its own card offers to pay for it again.
+  const lapsed = planCards({ plan: "team", personal: false }, { offers: [{ plan: "team", period: "monthly" }, { plan: "business", period: "monthly" }] }, "free");
+  const team = lapsed.find((c) => c.plan === "team");
+  assert.ok(team.current && team.lapsed && team.buy && team.action === "Pay for Team", JSON.stringify(team));
+  assert.ok(!planCards({ plan: "team", personal: false }, { offers: [{ plan: "team", period: "monthly" }] }, "team").find((c) => c.plan === "team").buy);
   const { parseOrgLink } = await import("../src/org.js");
   assert.deepEqual(parseOrgLink("#org=o%201&section=billing"), { org: "o 1", section: "billing" });
   assert.deepEqual(parseOrgLink("#section=tokens"), { org: null, section: "tokens" });

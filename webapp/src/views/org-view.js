@@ -217,7 +217,9 @@ export class HitopOrg extends LitElement {
 
   billing({ org, usage, billing }) {
     const admin = org.role === "owner" || org.role === "admin";
-    const cards = planCards(org, billing);
+    const cards = planCards(org, billing, usage.planInForce);
+    const lapsed = cards.find((c) => c.lapsed && c.buy);
+    const canBuy = !IS_TAURI && billing?.enabled && admin && !billing.subscribed;
     const perSeat = ["team", "business"].includes(org.plan);
     return html`<section class="org-card" aria-label="Plan and billing">
         <div class="org-head">
@@ -225,7 +227,9 @@ export class HitopOrg extends LitElement {
           <span class="status-chip info">${PLAN_NAMES[usage.planInForce] ?? usage.planInForce}${billing?.seats && perSeat ? ` · ${billing.seats} seats` : ""}</span>
         </div>
         ${usage.planInForce !== usage.plan
-          ? html`<lit-material-alert variant="warning">${PLAN_NAMES[usage.plan] ?? usage.plan} is ${usage.status}: Free limits apply until it's paid again. Nothing is deleted; over-limit collections become read-only.</lit-material-alert>`
+          ? html`<lit-material-alert variant="warning">${PLAN_NAMES[usage.plan] ?? usage.plan} is ${usage.status}: Free limits apply until it's paid again. Nothing is deleted; over-limit collections become read-only.
+              ${lapsed && canBuy ? html`<lit-material-button slot="action" variant="filled" ?disabled=${this.busy} @click=${() => this.openBilling("checkout", org, lapsed)}>${lapsed.action}</lit-material-button>` : nothing}
+              ${billing?.subscribed && admin && !IS_TAURI ? html`<lit-material-button slot="action" variant="filled" ?disabled=${this.busy} @click=${() => this.openBilling("portal", org)}>Update payment</lit-material-button>` : nothing}</lit-material-alert>`
           : nothing}
         ${billing?.trial?.endsAt ? html`<p class="hint">The trial ends ${new Date(billing.trial.endsAt * 1000).toLocaleDateString()}. Nothing is deleted if you don't pick a plan.</p>` : nothing}
         <h3>Usage</h3>
@@ -260,7 +264,7 @@ export class HitopOrg extends LitElement {
                           <span class="org-plan-price tabular">${c.price}</span>
                           <ul>${c.items.map((x) => html`<li>${x}</li>`)}</ul>
                           ${c.buy
-                            ? html`<lit-material-button variant=${c.recommended ? "filled" : "outlined"} ?disabled=${this.busy} @click=${() => this.openBilling("checkout", org, c)}>Choose ${c.name}</lit-material-button>`
+                            ? html`<lit-material-button variant=${c.recommended || c.lapsed ? "filled" : "outlined"} ?disabled=${this.busy} @click=${() => this.openBilling("checkout", org, c)}>${c.action}</lit-material-button>`
                             : html`<span class="hint">${c.current ? "Current plan" : c.note ?? ""}</span>`}
                         </div>`,
                       )}
@@ -394,13 +398,13 @@ export class HitopOrg extends LitElement {
     if (!s.orgs?.length && this.client.account()) {
       return html`<div class="page"><lit-material-empty-state headline="No organizations loaded">
         Signed in as ${this.client.account().email}. HITOP Cloud didn't answer with your organizations.
-        <lit-material-button slot="actions" variant="filled" ?disabled=${this.busy} @click=${() => this.reloadOrgs()}>Try again</lit-material-button>
+        <lit-material-button slot="action" variant="filled" ?disabled=${this.busy} @click=${() => this.reloadOrgs()}>Try again</lit-material-button>
       </lit-material-empty-state></div>`;
     }
     if (!s.orgs?.length) {
       return html`<div class="page"><lit-material-empty-state headline="Sign in to manage an organization">
         Organizations share collections and environments on HITOP Cloud.
-        <lit-material-button slot="actions" variant="filled" @click=${() => this.app.openSignIn()}>Sign in</lit-material-button>
+        <lit-material-button slot="action" variant="filled" @click=${() => this.app.openSignIn()}>Sign in</lit-material-button>
       </lit-material-empty-state></div>`;
     }
     const d = this.data;
