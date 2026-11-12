@@ -84,6 +84,7 @@ server): `docker build -f sync-server/Dockerfile -t hitop-sync .`
 | `HITOP_SYNC_PASSWORD_PEPPER` or `HITOP_SYNC_PASSWORD_PEPPER_FILE` | none | a secret (16+ characters) the server's password hashes are keyed with (Argon2 secret); keep it out of backups; hashes made before it was set keep working |
 | `HITOP_SYNC_GOOGLE_CLIENT_ID`, `HITOP_SYNC_GOOGLE_CLIENT_SECRET` (or `_FILE`) | none (off) | "Continue with Google" (OpenID Connect); redirect URI `<public URL>/v1/auth/google/callback` |
 | `HITOP_SYNC_GITHUB_CLIENT_ID`, `HITOP_SYNC_GITHUB_CLIENT_SECRET` (or `_FILE`) | none (off) | "Continue with GitHub" (OAuth app); callback URL `<public URL>/v1/auth/github/callback` |
+| `HITOP_SYNC_APPLE_CLIENT_ID`, `_TEAM_ID`, `_KEY_ID`, `_PRIVATE_KEY_FILE` (or `_PRIVATE_KEY`); `HITOP_SYNC_APPLE_APP_IDS` | none (off) | "Continue with Apple": Services ID, team id, Sign in with Apple key id and `.p8` file; App IDs whose notifications are accepted. Return URL `<public URL>/v1/auth/apple/callback` |
 | `HITOP_SYNC_LIMITS` | `off` | `plans`: enforce each organization's plan limits (HITOP Cloud). Off, a self-hosted server has no seats, plans or per-org limits |
 | `HITOP_SYNC_PORTAL_URL` | `https://cloud.hitop.rws8.tech/` | the account portal limit errors link to |
 | `HITOP_SYNC_RATE_LIMITS` | `on` | `off` turns the request rate limits off (src/ratelimit.rs) |
@@ -193,7 +194,7 @@ org.
   `scim:<token name>` as the actor. `GET /v1/orgs/:org/scim` (admins) lists tokens (never their
   values), directory size and groups.
 
-### Passwords, Google and GitHub
+### Passwords, Google, GitHub and Apple
 
 People can sign up and sign in with an email address and a password (confirmed by a mailed
 code), and reset a forgotten password by mail; mail codes, passkeys and SSO stay. The password
@@ -210,11 +211,21 @@ set. Register the apps with these redirect URIs (exactly, with your public URL):
 | --- | --- | --- |
 | Google | Google Cloud console → APIs & Services → Credentials → OAuth client ID, Web application; consent screen with the `openid` and `email` scopes | `<HITOP_SYNC_PUBLIC_URL>/v1/auth/google/callback` |
 | GitHub | Settings → Developer settings → OAuth Apps → New (not a GitHub App) | `<HITOP_SYNC_PUBLIC_URL>/v1/auth/github/callback` |
+| Apple | developer.apple.com → Certificates, Identifiers & Profiles: Sign In with Apple on an App ID (primary); a Services ID with your public URL's host as domain; a key with Sign in with Apple (download the `.p8`) | `<HITOP_SYNC_PUBLIC_URL>/v1/auth/apple/callback` |
 
-Any Google or GitHub account with a verified address may sign in; the first time, it is linked
+Apple has no client secret to copy: the server signs a short-lived one with the `.p8` key (keep
+it readable only by the service, for example with systemd `LoadCredential=`). Apple posts the
+callback as a form, so a proxy in front must pass `POST /v1/auth/apple/callback`. People may hide
+their address behind `@privaterelay.appleid.com`; to mail them, register your sender address or
+domain under Services → Sign in with Apple for Email Communication. Set the App ID's
+server-to-server notification endpoint to `<HITOP_SYNC_PUBLIC_URL>/v1/auth/apple/notifications`
+(and the App ID in `HITOP_SYNC_APPLE_APP_IDS`): when someone stops using Sign in with Apple with
+your server, or deletes their Apple account, the Apple sign-in is unlinked from their account.
+
+Any Google, GitHub or Apple account with a verified address may sign in; the first time, it is linked
 to the account with that address (or one is made). GitHub must report the address as the
 account's primary and verified one. Addresses that must use SSO (`HITOP_SYNC_SSO_REQUIRED`)
-can't use either. Signing in with Google or GitHub doesn't unlock end-to-end keys on a new
+can't use them. Signing in with Google, GitHub or Apple doesn't unlock end-to-end keys on a new
 device: the password or the recovery phrase does.
 
 ### Run history, alerts and shared environment values
@@ -351,7 +362,7 @@ verifies a wrap (clients do, THREAT_MODEL.md "Authenticated wraps").
 | `POST /v1/auth/sso/start {challenge, returnTo?, email?}` | `challenge` = base64url(SHA-256(verifier)) → `{url}` to open in a browser |
 | `GET /v1/auth/sso/callback` | the provider's redirect (browser): sends a one-time code to `returnTo` (loopback or an allowed web origin) or shows it |
 | `POST /v1/auth/sso/finish {code, verifier}` | → session |
-| `GET /v1/auth/methods` | what a sign-in page can offer → `{password: {enabled, signup, reset}, emailCode, passkey, sso, google, github}` |
+| `GET /v1/auth/methods` | what a sign-in page can offer → `{password: {enabled, signup, reset}, emailCode, passkey, sso, google, github, apple}` |
 | `POST /v1/auth/password/params {email}` | the account's password KDF `{kdf: {alg, m, t, p, salt}}` (made up, but stable, for an address without one) |
 | `POST /v1/auth/password/signup {email, kdf, authKey}` | mails a confirmation code (202 for any address) |
 | `POST /v1/auth/password/verify {token}` | the code → session (`created`); makes the account or adds the password |
@@ -359,6 +370,8 @@ verifies a wrap (clients do, THREAT_MODEL.md "Authenticated wraps").
 | `POST /v1/auth/password/forgot {email}`; `POST /v1/auth/password/reset {token, kdf, authKey}` | mails a reset code (202); the code + new password → session and `bundleLost` (the password's key bundle is deleted, other sessions end) |
 | `POST /v1/me/password {currentAuthKey?, kdf, authKey, bundle?}` | set or change (signed-in device; current required when there is one); `bundle` re-sealed under the new password replaces the old one, else it is deleted |
 | `POST /v1/auth/google/start`, `POST /v1/auth/github/start` `{challenge, returnTo?}`; `GET .../callback`; `POST .../finish {code, verifier}` | as SSO, with Google / GitHub |
+| `POST /v1/auth/apple/start`, `POST /v1/auth/apple/callback` (Apple's form), `POST /v1/auth/apple/finish` | as Google, with Apple |
+| `POST /v1/auth/apple/notifications {payload}` | Apple's server-to-server notifications (a JWT signed by Apple): unlinks on consent revoked or account deleted |
 | `GET /v1/workspaces/:ws/audit?limit&before&event&actor&since&until` | the audit log, newest first (owner) → `{events, next, head, anchor}` |
 | `GET /v1/workspaces/:ws/audit/verify` | the server's check of the chain (owner) → `{ok, checked, head, problem}` |
 | `GET /v1/me/audit` | your own account events |

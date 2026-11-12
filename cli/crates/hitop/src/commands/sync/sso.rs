@@ -1,5 +1,5 @@
 //! `hitop sync login --sso`: single sign-on through the sync server's identity provider; and
-//! `--google` / `--github` (since C1b), the same flow with the server's Google or GitHub app.
+//! `--google` / `--github` (since C1b), `--apple`, the same flow with the server's Google or GitHub app.
 //!
 //! The server is the OpenID Connect / OAuth client (it holds the client secret); this command only opens
 //! the provider's page and collects the one-time code: on a loopback listener the browser is sent
@@ -70,7 +70,7 @@ fn wait_for_code(listener: &TcpListener) -> Result<String> {
     bail!("no answer from the browser in 10 minutes; run `hitop sync login` again")
 }
 
-/// Signs in by `kind` (`sso`, `google`, `github`); returns the server's session answer
+/// Signs in by `kind` (`sso`, `google`, `github`, `apple`); returns the server's session answer
 /// (`{session, expiresAt, user}`).
 pub fn sign_in(api: &Api, kind: &str, email: Option<&str>, no_browser: bool, interactive: bool, ask: impl Fn(&str) -> Result<String>) -> Result<Value> {
     let name = match kind {
@@ -87,7 +87,11 @@ pub fn sign_in(api: &Api, kind: &str, email: Option<&str>, no_browser: bool, int
             info["name"].as_str().unwrap_or("SSO").to_string()
         }
         _ => {
-            let label = if kind == "google" { "Google" } else { "GitHub" };
+            let label = match kind {
+                "google" => "Google",
+                "apple" => "Apple",
+                _ => "GitHub",
+            };
             let methods = api.raw("GET", "/v1/auth/methods", None)?;
             if methods.json[kind] != true {
                 bail!("this sync server doesn't offer sign-in with {label}; sign in with --email");

@@ -142,7 +142,7 @@ export class SignInPage extends LitElement {
 
   render() {
     if (this.step) return this.codeStep();
-    const providers = this.methods?.google || this.methods?.github || this.sso?.enabled;
+    const providers = this.methods?.google || this.methods?.github || this.methods?.apple || this.sso?.enabled;
     return html`<main class="wrap">
       ${this.view.mode === "forgot"
         ? html`<lit-material-alert variant="warning" aria-label="Reset warning">
@@ -166,6 +166,7 @@ export class SignInPage extends LitElement {
           ? html`<div slot="providers" class="providers">
               ${this.methods?.google ? this.provider("google", "Continue with Google") : nothing}
               ${this.methods?.github ? this.provider("github", "Continue with GitHub") : nothing}
+              ${this.methods?.apple ? this.provider("apple", "Continue with Apple") : nothing}
               ${this.sso?.enabled ? this.provider("sso", `Sign in with ${this.sso.name || "SSO"}`) : nothing}
             </div>`
           : nothing}

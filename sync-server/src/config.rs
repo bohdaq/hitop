@@ -27,6 +27,8 @@
 //!   (or `_FILE`), redirect URI `<public URL>/v1/auth/google/callback`; off when unset (oidc.rs)
 //! - "Continue with GitHub": `HITOP_SYNC_GITHUB_CLIENT_ID` and `HITOP_SYNC_GITHUB_CLIENT_SECRET`
 //!   (or `_FILE`), callback URL `<public URL>/v1/auth/github/callback`; off when unset (github.rs)
+//! - "Continue with Apple": `HITOP_SYNC_APPLE_CLIENT_ID` (Services ID), `_TEAM_ID`, `_KEY_ID` and
+//!   `_PRIVATE_KEY_FILE` (the .p8), return URL `<public URL>/v1/auth/apple/callback`; off when unset (apple.rs)
 //! - Billing (HITOP Cloud, Stripe Managed Payments): see billing.rs (`HITOP_SYNC_STRIPE_*`, off
 //!   unless `HITOP_SYNC_STRIPE_SECRET_KEY` and `HITOP_SYNC_STRIPE_WEBHOOK_SECRET` are set) and `HITOP_SYNC_TRIAL_DAYS` (14; 0 = no Team trials)
 //! - Run history and alerts: see runs.rs (`HITOP_SYNC_MAX_RUN_BYTES`, `HITOP_SYNC_RUN_RETENTION_DAYS`,
@@ -82,6 +84,8 @@ pub struct Config {
     pub google: Option<OidcConfig>,
     /// "Continue with GitHub" (OAuth 2); `None` when not configured.
     pub github: Option<GithubConfig>,
+    /// "Continue with Apple" (apple.rs); `None` when not configured.
+    pub apple: Option<crate::apple::AppleConfig>,
     /// Stripe billing (billing.rs); `None` when not configured.
     pub billing: Option<BillingConfig>,
     /// Days of the Team trial (0 = none).
@@ -153,6 +157,7 @@ impl Config {
             password: PasswordConfig::default(),
             google: None,
             github: None,
+            apple: None,
             billing: None,
             trial_days: 14,
             runs: crate::runs::RunsConfig::default(),
@@ -205,6 +210,7 @@ impl Config {
         c.password = PasswordConfig::from_env(&var)?;
         c.google = crate::oidc::google_from_env(&var)?;
         c.github = GithubConfig::from_env(&var)?;
+        c.apple = crate::apple::AppleConfig::from_env(&var)?;
     c.git = crate::gitsync::GitConfig::from_env(&var)?;
         c.billing = BillingConfig::from_env(&var)?;
         c.trial_days = number("HITOP_SYNC_TRIAL_DAYS", c.trial_days)?;

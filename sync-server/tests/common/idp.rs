@@ -52,6 +52,11 @@ pub struct Inner {
     pub challenge: String,
     pub jwks_fetches: u32,
     pub token_requests: u32,
+    /// Sign in with Apple mode: the token endpoint takes `client_secret_post` with an ES256 JWT
+    /// signed by this key (kid, uncompressed public point) for this team, and no PKCE.
+    pub apple: Option<(String, Vec<u8>, String)>,
+    /// The last token request's form (Apple tests look at it).
+    pub last_form: std::collections::HashMap<String, String>,
 }
 
 #[derive(Clone)]
@@ -115,6 +120,27 @@ impl MockIdp {
             "/realm/token" => {
                 inner.token_requests += 1;
                 let form: std::collections::HashMap<String, String> = url::form_urlencoded::parse(body.as_bytes()).into_owned().collect();
+                inner.last_form = form.clone();
+                if let Some((kid, public, team)) = inner.apple.clone() {
+                    if headers.iter().any(|h| h.to_lowercase().starts_with("authorization:")) || form.contains_key("code_verifier") {
+                        return (400, json!({ "error": "invalid_request" }));
+                    }
+                    let secret = form.get("client_secret").cloned().unwrap_or_default();
+                    let header = jsonwebtoken::decode_header(&secret).ok();
+                    let key = jsonwebtoken::DecodingKey::from_ec_components(&URL_SAFE_NO_PAD.encode(&public[1..33]), &URL_SAFE_NO_PAD.encode(&public[33..65])).unwrap();
+                    let mut v = jsonwebtoken::Validation::new(Algorithm::ES256);
+                    v.set_issuer(&[&team]);
+                    v.set_audience(&[&self.issuer]);
+                    v.sub = Some(CLIENT_ID.into());
+                    let ok = header.is_some_and(|h| h.kid.as_deref() == Some(kid.as_str())) && form.get("client_id").map(String::as_str) == Some(CLIENT_ID) && jsonwebtoken::decode::<Value>(&secret, &key, &v).is_ok();
+                    if !ok {
+                        return (400, json!({ "error": "invalid_client" }));
+                    }
+                    if form.get("grant_type").map(String::as_str) != Some("authorization_code") || form.get("code").map(String::as_str) != Some(GOOD_CODE) {
+                        return (400, json!({ "error": "invalid_grant" }));
+                    }
+                    return (200, json!({ "access_token": "opaque", "token_type": "Bearer", "refresh_token": "r", "id_token": inner.id_token }));
+                }
                 let basic = format!("Basic {}", STANDARD.encode(format!("{CLIENT_ID}:{CLIENT_SECRET}")));
                 if !headers.iter().any(|h| h.eq_ignore_ascii_case(&format!("authorization: {basic}"))) {
                     return (401, json!({ "error": "invalid_client" }));

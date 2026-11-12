@@ -127,7 +127,7 @@ export async function passkeySignIn(api, email) {
 }
 
 // --- single sign-on, Google, GitHub: PKCE verifier kept in this tab until the provider sends
-// the browser back (`kind` = sso | google | github, the server's /v1/auth/<kind>/...) ---
+// the browser back (`kind` = sso | google | github | apple, the server's /v1/auth/<kind>/...) ---
 
 export async function ssoStart(api, email, kind = "sso") {
   const verifier = b64url(crypto.getRandomValues(new Uint8Array(32)));

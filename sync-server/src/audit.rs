@@ -79,6 +79,11 @@ pub const CLOUD_EVENTS: &[&str] = &[
     "plan_changed",
     "token_created",
     "token_revoked",
+    // Sign in with Apple notifications (apple.rs), on the account chain: the Apple identity
+    // unlinked (consent revoked, Apple account deleted), mail forwarding to a hidden address
+    // turned off or on.
+    "sso_unlinked",
+    "email_forwarding_changed",
     // C4, on the workspace's chain: alert settings changed (channels, never webhook URLs),
     // shared environment values updated or deleted.
     "alerts_changed",

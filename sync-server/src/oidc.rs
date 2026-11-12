@@ -295,6 +295,9 @@ pub struct Sso {
     keys: Mutex<Option<Keys>>,
     last_jwks_fetch: Mutex<i64>,
     pub(crate) flows: Flows,
+    /// Sign in with Apple (apple.rs): the client secret is a JWT signed here, sent in the token
+    /// request body; no PKCE; the callback is a form POST.
+    pub(crate) minted_secret: Option<crate::apple::ClientSecret>,
     /// How many times the JWKS was fetched (tests check the cache).
     pub jwks_fetches: std::sync::atomic::AtomicU64,
 }
@@ -317,8 +320,22 @@ impl Sso {
             keys: Mutex::new(None),
             last_jwks_fetch: Mutex::new(i64::MIN / 2),
             flows: Flows::default(),
+            minted_secret: None,
             jwks_fetches: std::sync::atomic::AtomicU64::new(0),
         })
+    }
+
+    /// "Continue with Apple" (`kind` "apple"), or an unconfigured one.
+    pub fn apple(config: Option<&crate::apple::AppleConfig>) -> Result<Sso, String> {
+        let mut sso = Self::provider_of("apple", config.map(|c| c.oidc.clone()), vec![])?;
+        sso.minted_secret = config.map(crate::apple::ClientSecret::new).transpose()?;
+        Ok(sso)
+    }
+
+    /// A key of the provider's JWKS (Apple's notifications are signed with them too).
+    pub(crate) fn decoding_key(&self, config: &OidcConfig, kid: Option<&str>, now: i64) -> Result<DecodingKey, String> {
+        let p = self.provider(config, now)?;
+        self.key(&p, kid, now)
     }
 
     fn get_json(&self, url: &str) -> Result<Json, String> {
@@ -407,6 +424,7 @@ pub(crate) fn provider_name(kind: &str) -> &'static str {
     match kind {
         "google" => "Google",
         "github" => "GitHub",
+        "apple" => "Apple",
         _ => "single sign-on",
     }
 }
@@ -504,6 +522,11 @@ pub fn google_start(state: &State, request: &Request, _: &PathParams) -> ApiResu
     start_with(state, &state.google, None, request)
 }
 
+/// `POST /v1/auth/apple/start`: as [`start`], with Apple.
+pub fn apple_start(state: &State, request: &Request, _: &PathParams) -> ApiResult {
+    start_with(state, &state.apple, None, request)
+}
+
 /// The start of a browser sign-in: the client's challenge (32 bytes, base64url), where to send the
 /// code, and an address hint.
 pub(crate) fn start_input(state: &State, request: &Request) -> Result<(String, Option<Url>, Option<String>), ApiError> {
@@ -541,9 +564,13 @@ fn start_with(state: &State, sso: &Sso, org: Option<String>, request: &Request) 
             .append_pair("redirect_uri", &redirect_uri_of(state, sso.kind))
             .append_pair("scope", &c.scopes)
             .append_pair("state", &state_token)
-            .append_pair("nonce", &nonce)
-            .append_pair("code_challenge", &pkce_challenge)
-            .append_pair("code_challenge_method", "S256");
+            .append_pair("nonce", &nonce);
+        if sso.minted_secret.is_some() {
+            // Apple: no PKCE; asking for the address needs a form POST back.
+            q.append_pair("response_mode", "form_post");
+        } else {
+            q.append_pair("code_challenge", &pkce_challenge).append_pair("code_challenge_method", "S256");
+        }
         if let Some(h) = &hint {
             q.append_pair("login_hint", h);
         }
@@ -769,11 +796,15 @@ pub fn google_callback(state: &State, request: &Request) -> Response {
 }
 
 fn callback_with(state: &State, sso: &Sso, request: &Request) -> Response {
+    callback_query(state, sso, query(request))
+}
+
+/// A callback's parameters, from the query or (Apple) a form body.
+pub(crate) fn callback_query(state: &State, sso: &Sso, q: HashMap<String, String>) -> Response {
     let kind = sso.kind;
     let Some(c) = sso.config.as_ref() else {
         return failed_page(&format!("sign-in with {} isn't configured on this server", provider_name(kind)));
     };
-    let q = query(request);
     let now = state.now();
     let Some(flow) = q.get("state").and_then(|s| sso.flows.take_flow(s, now)) else {
         return failed(state, kind, refused("unknown_state", "this sign-in expired or was already used"));
@@ -861,13 +892,24 @@ fn exchange(state: &State, sso: &Sso, c: &OidcConfig, provider: &Provider, code:
     let enc = |s: &str| url::form_urlencoded::byte_serialize(s.as_bytes()).collect::<String>();
     let basic = STANDARD.encode(format!("{}:{}", enc(&c.client_id), enc(&c.client_secret)));
     let redirect = redirect_uri_of(state, sso.kind);
-    let result = sso.http.post(&provider.token_endpoint).header("Authorization", &format!("Basic {basic}")).header("Accept", "application/json").send_form([
-        ("grant_type", "authorization_code"),
-        ("code", code),
-        ("redirect_uri", redirect.as_str()),
-        ("code_verifier", pkce_verifier),
-        ("client_id", c.client_id.as_str()),
-    ]);
+    let mut form = vec![("grant_type", "authorization_code"), ("code", code), ("redirect_uri", redirect.as_str()), ("client_id", c.client_id.as_str())];
+    let minted;
+    let mut req = sso.http.post(&provider.token_endpoint).header("Accept", "application/json");
+    match &sso.minted_secret {
+        // Apple: client_secret_post with the signed secret, and no PKCE.
+        Some(m) => {
+            minted = m.get(c, state.now()).map_err(|e| {
+                let _ = config_error(state, e);
+                refused("provider_unreachable", "the server can't sign its Sign in with Apple request")
+            })?;
+            form.push(("client_secret", minted.as_str()));
+        }
+        None => {
+            req = req.header("Authorization", &format!("Basic {basic}"));
+            form.push(("code_verifier", pkce_verifier));
+        }
+    }
+    let result = req.send_form(form);
     let mut res = result.map_err(|e| {
         let _ = config_error(state, format!("token endpoint: {e}"));
         refused("provider_unreachable", "the identity provider is unreachable")
@@ -905,6 +947,12 @@ pub fn finish(state: &State, request: &Request, _: &PathParams) -> ApiResult {
 pub fn google_finish(state: &State, request: &Request, _: &PathParams) -> ApiResult {
     config(&state.google)?;
     finish_with(state, &state.google.flows, "google", request)
+}
+
+/// `POST /v1/auth/apple/finish {code, verifier}`.
+pub fn apple_finish(state: &State, request: &Request, _: &PathParams) -> ApiResult {
+    config(&state.apple)?;
+    finish_with(state, &state.apple.flows, "apple", request)
 }
 
 pub(crate) fn finish_with(state: &State, flows: &Flows, method: &str, request: &Request) -> ApiResult {

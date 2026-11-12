@@ -184,6 +184,8 @@ pub struct State {
     pub google: crate::oidc::Sso,
     /// "Continue with GitHub" (github.rs).
     pub github: crate::github::Github,
+    /// "Continue with Apple" (apple.rs, an OpenID Connect provider in oidc.rs).
+    pub apple: crate::oidc::Sso,
     /// Wrong passwords per address (password.rs).
     pub password_failures: crate::password::Backoff,
     /// Calls to the Stripe API (billing.rs), DNS over HTTPS (orgsso.rs).
@@ -201,6 +203,7 @@ impl State {
         let limiter = crate::ratelimit::Limiter::new(config.rate_limits.clone());
         let google = crate::oidc::Sso::provider_of("google", config.google.clone(), vec![crate::oidc::GOOGLE_ISSUER_ALT.into()])?;
         let github = crate::github::Github::new(config.github.clone());
+        let apple = crate::oidc::Sso::apple(config.apple.as_ref())?;
         let domains = db.tx(crate::orgsso::load).map_err(|e| e.to_string())?;
         let org_sso = crate::orgsso::OrgSso::default();
         org_sso.set_domains(domains);
@@ -215,6 +218,7 @@ impl State {
             limiter,
             google,
             github,
+            apple,
             password_failures: crate::password::Backoff::default(),
             billing_http: crate::oidc::http_agent(),
             org_sso,
@@ -265,6 +269,9 @@ impl SyncApp {
             ("POST", "/v1/auth/google/finish", crate::oidc::google_finish),
             ("POST", "/v1/auth/github/start", crate::github::start),
             ("POST", "/v1/auth/github/finish", crate::github::finish),
+            ("POST", "/v1/auth/apple/start", crate::apple::start),
+            ("POST", "/v1/auth/apple/finish", crate::apple::finish),
+            ("POST", "/v1/auth/apple/notifications", crate::apple::notifications),
             ("GET", "/v1/me", crate::auth::me),
             // Hosted MCP: the library for AI assistants (mcp.rs).
             ("POST", "/mcp", crate::mcp::handle),
@@ -477,6 +484,10 @@ impl Application for SyncApp {
         } else if request.method == "GET" && path == "/v1/auth/github/callback" {
             set_client(self.client_of(request, connection));
             crate::github::callback(&self.state, request)
+        } else if request.method == "POST" && path == "/v1/auth/apple/callback" {
+            // A form POST from Apple (response_mode=form_post), answered with a page or redirect.
+            set_client(self.client_of(request, connection));
+            crate::apple::callback(&self.state, request)
         } else if let Some(org) = (request.method == "GET").then(|| path.strip_prefix("/v1/orgs/").and_then(|r| r.strip_suffix("/audit/export"))).flatten().filter(|o| !o.is_empty() && !o.contains('/')) {
             // JSON lines, not one JSON value (anchors.rs).
             set_client(self.client_of(request, connection));

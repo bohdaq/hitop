@@ -339,7 +339,7 @@ export class SyncClient {
     return r.status === 200 && r.json?.enabled ? r.json : null;
   }
 
-  // → the provider's URL to open. `kind` sso | google | github; `email` (SSO only) finds an
+  // → the provider's URL to open. `kind` sso | google | github | apple; `email` (SSO only) finds an
   // organization's provider; `returnTo` where the code comes back (none: a page to paste it from);
   // `keep`: the verifier also goes to this tab's sessionStorage, for a sign-in that leaves the page.
   async startBrowserSignIn(server, kind, { email = "", returnTo = "", keep = false } = {}) {
@@ -355,7 +355,7 @@ export class SyncClient {
       const org = r.json?.error === "org_sso_off" || (Boolean(email) && /organization/i.test(r.json?.message ?? ""));
       throw new SyncError(404, org ? { error: "org_sso_off", message: `No single sign-on for this address's organization here (${r.json?.message ?? "not found"})` } : { error: "no_sso", message: "This sync server has no single sign-on" });
     }
-    if (r.status === 404 && kind !== "sso") throw new SyncError(404, { error: "no_provider", message: `This sync server has no sign-in with ${kind === "github" ? "GitHub" : "Google"}` });
+    if (r.status === 404 && kind !== "sso") throw new SyncError(404, { error: "no_provider", message: `This sync server has no sign-in with ${{ github: "GitHub", google: "Google", apple: "Apple" }[kind] ?? kind}` });
     if (r.status !== 200) throw new SyncError(r.status, r.json);
     // The page to open: only a web address (it goes to a window's location).
     if (!/^https?:\/\//i.test(String(r.json?.url ?? ""))) throw new Error("The sync server answered without a sign-in page address");

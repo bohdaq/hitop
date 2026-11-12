@@ -187,6 +187,7 @@ pub fn methods(state: &State, _: &Request, _: &PathParams) -> ApiResult {
             "sso": sso,
             "google": state.config.google.is_some(),
             "github": state.config.github.is_some(),
+            "apple": state.config.apple.is_some(),
         }),
     ))
 }

@@ -30,26 +30,29 @@ use store::{Account, Link, RunnerCredential, Secret};
 #[derive(Subcommand)]
 pub enum SyncCmd {
     /// Sign in with your email and password (asked for), or a mailed code (--code), single
-    /// sign-on (--sso), Google (--google) or GitHub (--github). A password sign-in on a new
+    /// sign-on (--sso), Google (--google), GitHub (--github) or Apple (--apple). A password sign-in on a new
     /// computer unlocks your end-to-end keys: no trust step
     Login {
         /// Your address (with --sso: optional, a hint for the sign-in page)
-        #[arg(long, required_unless_present_any = ["sso", "google", "github"])]
+        #[arg(long, required_unless_present_any = ["sso", "google", "github", "apple"])]
         email: Option<String>,
         /// Sign in with a code mailed to you instead of the password. Alone, it mails one (put it
         /// last); with the code from the mail, it signs in
         #[arg(long, num_args = 0..=1, default_missing_value = "", allow_hyphen_values = true, value_name = "CODE")]
         code: Option<String>,
         /// Sign in with the server's identity provider (SSO) in a browser
-        #[arg(long, conflicts_with_all = ["google", "github", "code", "password_stdin"])]
+        #[arg(long, conflicts_with_all = ["google", "github", "apple", "code", "password_stdin"])]
         sso: bool,
         /// Continue with Google in a browser
-        #[arg(long, conflicts_with_all = ["github", "code", "password_stdin"])]
+        #[arg(long, conflicts_with_all = ["github", "apple", "code", "password_stdin"])]
         google: bool,
         /// Continue with GitHub in a browser
-        #[arg(long, conflicts_with_all = ["code", "password_stdin"])]
+        #[arg(long, conflicts_with_all = ["apple", "code", "password_stdin"])]
         github: bool,
-        /// With --sso, --google or --github: don't open a browser here; print the link and paste
+        /// Continue with Apple in a browser
+        #[arg(long, conflicts_with_all = ["code", "password_stdin"])]
+        apple: bool,
+        /// With --sso, --google, --github or --apple: don't open a browser here; print the link and paste
         /// the code shown after signing in (for SSH sessions)
         #[arg(long)]
         no_browser: bool,
@@ -436,18 +439,20 @@ pub fn run(cmd: SyncCmd) -> Result<i32> {
 
 fn run_cmd(cmd: SyncCmd) -> Result<i32> {
     match cmd {
-        SyncCmd::Login { email, code, sso, google, github, no_browser, password_stdin, server, name } => {
+        SyncCmd::Login { email, code, sso, google, github, apple, no_browser, password_stdin, server, name } => {
             let browser = if sso {
                 Some("sso")
             } else if google {
                 Some("google")
             } else if github {
                 Some("github")
+            } else if apple {
+                Some("apple")
             } else {
                 None
             };
             if no_browser && browser.is_none() {
-                bail!("--no-browser goes with --sso, --google or --github");
+                bail!("--no-browser goes with --sso, --google, --github or --apple");
             }
             let email = email.unwrap_or_default();
             match (browser, code) {

@@ -19,7 +19,7 @@ fn last_mail(s: &Server, email: &str) -> String {
 fn methods_say_what_a_sign_in_page_offers() {
     let s = Server::new("pw-methods");
     let m = s.call("GET", "/v1/auth/methods", None, None);
-    assert_eq!(m.json, json!({ "password": { "enabled": true, "signup": true, "reset": true }, "emailCode": true, "passkey": true, "sso": null, "google": false, "github": false }));
+    assert_eq!(m.json, json!({ "password": { "enabled": true, "signup": true, "reset": true }, "emailCode": true, "passkey": true, "sso": null, "google": false, "github": false, "apple": false }));
     let off = Server::with("pw-off", |c| c.password.enabled = false);
     assert_eq!(off.call("GET", "/v1/auth/methods", None, None).json["password"]["enabled"], false);
     assert_eq!(off.call("POST", "/v1/auth/password/login", None, Some(json!({ "email": "a@x.test", "authKey": b64(&[0; 32]) }))).status, 404);

@@ -6,6 +6,7 @@
 pub mod admin;
 pub mod alerts;
 pub mod anchors;
+pub mod apple;
 pub mod api;
 pub mod audit;
 pub mod auth;
