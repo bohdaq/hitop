@@ -1222,3 +1222,66 @@ hitop-app lit-material-text-field::part(label) { inset-inline-start: -20px; }
 .method-opt.m-SSE, .method-opt.m-GRPC { color: var(--hitop-pass); }
 .method-opt.m-WS { color: var(--hitop-method-ws, var(--hitop-method-other)); }
 .url-bar .method.m-SSE::part(trigger), .url-bar .method.m-GRPC::part(trigger) { color: var(--hitop-pass); }
+
+/* (3, 4) Layout: the side pane folds (Mod+B), the request line stays one row, the response header is one line. */
+.rail-toggle { margin: 6px auto 10px; width: 40px; height: 40px; border-radius: 10px; color: #8a8a94; }
+.rail-toggle lit-material-icon { width: 18px; height: 18px; }
+.rail-toggle[aria-expanded="false"] { color: var(--md-sys-color-primary); }
+@media (min-width: 900px) {
+  .layout.side-collapsed { grid-template-columns: 57px minmax(0, 1fr); }
+  .sidebar.side-collapsed { grid-template-columns: 56px 0; }
+  .request-line { flex-wrap: nowrap; }
+  .url-bar { flex: 1 1 240px; }
+  .line-tools { flex: none; }
+}
+@media (max-width: 899px) { .rail-toggle { display: none; } }
+.side-pane[hidden] { display: none; }
+/* Below 1100 px Save folds into ⋯ (the menu's Save item shows only then). */
+.menu-save { display: none; }
+@media (min-width: 900px) and (max-width: 1099px) {
+  .line-tools .line-save { display: none; }
+  .menu-save { display: block; }
+}
+.response-meta { flex-wrap: nowrap; gap: 12px; padding: 10px 20px; white-space: nowrap; }
+.response-meta .checks-summary { flex: none; }
+.timing-inline { position: relative; display: inline-flex; align-items: center; flex: 0 1 160px; min-width: 60px; height: 20px; border-radius: 4px; cursor: help; }
+.timing-inline:focus-visible { outline: 2px solid var(--md-sys-color-primary); outline-offset: 2px; }
+.timing-inline .timing-bar { flex: 1; --lit-material-timing-waterfall-height: 6px; --lit-material-timing-waterfall-track: var(--md-sys-color-surface-container-high); --lit-material-timing-waterfall-dns: var(--hitop-phase-dns); --lit-material-timing-waterfall-connect: var(--hitop-phase-connect); --lit-material-timing-waterfall-wait: var(--hitop-phase-wait); --lit-material-timing-waterfall-download: var(--hitop-phase-download); }
+.timing-card { display: none; position: absolute; z-index: 5; top: calc(100% + 8px); left: 0; width: 360px; padding: 10px 12px; border: 1px solid var(--md-sys-color-outline-variant); border-radius: 10px; background: var(--md-sys-color-surface-container-high); box-shadow: 0 8px 24px rgb(0 0 0 / 0.45); white-space: normal; }
+.timing-inline:hover .timing-card, .timing-inline:focus-visible .timing-card, .timing-inline:focus .timing-card { display: block; }
+.timing-card .timing { padding: 0; border: 0; }
+.response-tabbar { display: flex; flex-wrap: wrap; align-items: center; column-gap: 4px; min-width: 0; border-bottom: 1px solid var(--md-sys-color-outline-variant); }
+.response-tabbar > .sub-tabs { flex: none; width: fit-content; max-width: 100%; border-bottom: 0; }
+.response-tabbar > .sub-tabs::part(tablist) { border-bottom: 0; gap: 16px; padding-inline-end: 0; }
+.response-tabbar > .sub-tabs lit-material-tab { margin-inline-end: 12px; }
+.response-tabbar > .sub-tabs lit-material-tab:last-child { margin-inline-end: 0; }
+.response-tabbar .segmented { padding: 2px; gap: 2px; }
+.response-tabbar .seg { height: 22px; padding: 0 6px; font-size: 11.5px; }
+.response-tabbar .body-tools lit-material-icon-button { --md-sys-density-icon-button-size: 28px; --md-sys-density-icon-button-padding: 6px; }
+.response-tabbar > .body-tools { flex: 1 0 auto; justify-content: flex-end; flex-wrap: nowrap; gap: 2px; padding: 4px 8px 4px 0; }
+.response-tabbar .wrap-toggle { padding-inline: 6px; height: 28px; }
+/* Find folds to its icon until it is used. */
+.response-tabbar .find { flex: none; width: 30px; height: 28px; padding-inline: 7px; overflow: hidden; transition: width var(--duration-layout, 150ms) var(--ease, ease); }
+.response-tabbar .find:focus-within, .response-tabbar .find.has-query { width: 220px; }
+.response-tabbar .find-input { min-width: 4px; flex: 1; }
+/* (9) The tree's focus ring, menus with icons, keys and Delete set apart. */
+nav.tree [role="treeitem"]:focus-visible { outline: 2px solid var(--md-sys-color-primary); outline-offset: -2px; }
+.menu-divider { height: 1px; margin: 4px 0; border: 0; background: var(--md-sys-color-outline-variant); }
+.menu-danger { color: var(--hitop-fail); }
+.menu-danger lit-material-icon { color: var(--hitop-fail); }
+#request-menu lit-material-list-item lit-material-icon[slot="leading"], #collection-menu lit-material-list-item > lit-material-icon, #folder-menu lit-material-list-item > lit-material-icon { width: 16px; height: 16px; color: #8a8a94; }
+lit-material-menu lit-material-kbd[slot="trailing"] { opacity: 0.8; }
+
+/* (6) Binary bodies and the Diff pane. */
+.binary-body { display: flex; flex-direction: column; gap: 10px; padding: 12px 20px 20px; }
+.binary-facts { display: flex; align-items: center; gap: 8px; margin: 0; color: var(--md-sys-color-on-surface-variant); font-size: 13px; }
+.binary-facts lit-material-icon { width: 16px; height: 16px; flex: none; }
+.binary-facts lit-material-button { margin-inline-start: auto; }
+.image-frame { display: flex; justify-content: center; align-items: flex-start; padding: 16px; border: 1px solid var(--md-sys-color-outline-variant); border-radius: 10px; background: repeating-conic-gradient(#1b1b20 0% 25%, #141418 0% 50%) 0 0 / 16px 16px; overflow: auto; }
+.response-image { max-width: 100%; height: auto; image-rendering: auto; }
+.response-pdf { width: 100%; min-height: 480px; border: 1px solid var(--md-sys-color-outline-variant); border-radius: 10px; background: #fff; }
+.binary-body .response-scroll { padding: 0; }
+.hex-dump { margin: 0; font-family: var(--font-mono); font-size: 12px; line-height: 18px; white-space: pre; }
+.diff-pane { padding: 14px 20px 24px; }
+.diff-pane .compare-pick { margin-bottom: 12px; }
+.response-meta .timing-inline { flex: 1 1 100px; min-width: 48px; max-width: 160px; }

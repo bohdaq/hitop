@@ -13,10 +13,11 @@ const ALT = IS_MAC ? "⌥" : "Alt";
 // [keys, what], in the order the help lists them.
 export const SHORTCUTS = [
   [[MOD, "Enter"], "Send the request (from anywhere, editors included)"],
-  [[MOD, "S"], "Save the request (a draft asks where)"],
+  [[MOD, "S"], "Save the request"],
   [[MOD, "K"], "Command palette: requests, commands, environments, runs"],
   [[MOD, "L"], "Go to the URL field"],
   [[MOD, "P"], "Quick open: find any saved request or open tab (in place of Print)"],
+  [[MOD, "B"], "Show or hide the side pane"],
   [["/"], "Go to the URL field (when not typing)"],
   [[ALT, "Shift", "N"], "New tab"],
   [[ALT, "Shift", "W"], "Close the tab"],
@@ -38,6 +39,7 @@ export const ACTION_KEYS = {
   newTab: [ALT, "Shift", "N"],
   closeTab: [ALT, "Shift", "W"],
   help: ["?"],
+  sidePane: [MOD, "B"],
 };
 
 const typing = (e) =>
@@ -55,6 +57,7 @@ export function shortcutFor(e) {
     if (e.code === "KeyK") return "palette";
     if (e.code === "KeyL") return "focusUrl";
     if (e.code === "KeyP") return "quickOpen";
+    if (e.code === "KeyB") return "sidePane";
   }
   if (e.altKey && e.shiftKey && !e.ctrlKey && !e.metaKey) {
     if (e.code === "KeyN") return "newTab";

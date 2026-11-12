@@ -69,7 +69,7 @@ function api() {
   const me = shop?.requests.find((r) => r.name === 'Me');
   check('folders, {{variables}} and auth come over', me?.file === 'account/me' && me.url === '${base}/me' && me.auth?.token === '${token}', JSON.stringify(me));
 
-  await p.locator('aside').getByRole('button', { name: 'Postman shop', exact: true }).first().click();
+  await p.locator('aside').getByRole('treeitem', { name: 'Postman shop', exact: true }).first().click();
   await p.getByRole('button', { name: /Run collection/ }).click();
   await p.locator('.run h2', { hasText: 'Last run' }).waitFor({ timeout: 30000 });
   const run = await p.locator('.run').innerText();

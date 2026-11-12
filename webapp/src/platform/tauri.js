@@ -109,6 +109,8 @@ async function send(url, options = {}) {
     cookies: r.cookies,
     text: async () => text,
     json: async () => JSON.parse(text),
+    // The body's bytes (UX2: images, PDFs and other binary bodies).
+    arrayBuffer: async () => (r.bodyEncoding === "base64" ? fromBase64(r.body) : new TextEncoder().encode(text)).buffer,
   };
 }
 

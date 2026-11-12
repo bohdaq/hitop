@@ -179,7 +179,11 @@ async function main() {
   await page.keyboard.press("Escape");
   await page.waitForTimeout(300);
 
-  // A dialog with fields (New collection).
+  // A dialog with fields (New collection). At 1200 px or less the side pane starts folded (UX2).
+  if (await page.locator('.rail-toggle[aria-expanded="false"]').count()) {
+    await shot("side-folded");
+    await page.locator(".rail-toggle").click();
+  }
   await page.locator("aside").getByRole("button", { name: "New collection", exact: true }).click();
   await page.waitForSelector("#dialog lit-material-text-field");
   await shot("dialog");

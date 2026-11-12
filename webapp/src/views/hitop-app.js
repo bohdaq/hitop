@@ -17,7 +17,8 @@ import "./request-view.js";
 import "./collection-views.js";
 import { WIDE_DIALOGS, codeDialog, compareDialog, refreshCode } from "./tools-dialogs.js";
 import { OPENAPI_DIALOGS, openapiDialog, submitOpenapi } from "./openapi-dialogs.js";
-import { ACTION_KEYS, SAVE_KEYS, SEND_KEYS, shortcutFor } from "../shortcuts.js";
+import { ACTION_KEYS, keyLabel, SAVE_KEYS, SEND_KEYS, shortcutFor } from "../shortcuts.js";
+import { loadSidePane, saveLayout } from "../split.js";
 import { quickOpenItems, rankItems } from "../quick-open.js";
 import { protocolLabel } from "../request-facts.js";
 import { folderOf, requestTree, slugName, withFolders } from "../collection-tree.js";
@@ -157,6 +158,11 @@ export class HitopApp extends LitElement {
     // HITOP Next: dense controls where there is a precise pointer; touch keeps the 40-48 px targets.
     if (window.matchMedia?.("(pointer: fine)").matches) document.documentElement.setAttribute("density", "compact");
     platform().onStart?.(this);
+    // UX2 (4): the side pane folds by itself at 1200 px or less (until chosen); phones use the drawer.
+    this.narrow = window.matchMedia?.("(max-width: 899px)") ?? null;
+    this.compact = window.matchMedia?.("(max-width: 1200px)") ?? null;
+    for (const m of [this.narrow, this.compact]) m?.addEventListener?.("change", () => this.requestUpdate());
+    this.requestUpdate();
     document.addEventListener("keydown", (e) => this.onShortcut(e), true);
     this.resumeSignIn();
     // A link into the Organization area (the portal's pages send the browser here, 7b).
@@ -201,6 +207,7 @@ export class HitopApp extends LitElement {
   }
 
   updated() {
+    this.rovingTree();
     this.scheduleGitStatus();
     // The selected request tab scrolls into view (the strip scrolls sideways).
     const s = this.store;
@@ -251,6 +258,9 @@ export class HitopApp extends LitElement {
       case "nextTab":
       case "prevTab":
         s.selectTab((s.currentTab + (action === "nextTab" ? 1 : s.tabs.length - 1)) % s.tabs.length);
+        break;
+      case "sidePane":
+        this.toggleSidePane();
         break;
       case "help":
         this.openDialog("shortcuts");
@@ -1248,9 +1258,10 @@ export class HitopApp extends LitElement {
       <lit-material-list-item interactive @click=${() => this.newRequestIn(c().id)}>${icon("plus")} New request</lit-material-list-item>
       <lit-material-list-item interactive @click=${() => this.openDialog("new-folder", { collectionId: c().id, parent: "" })}>${icon("folder-simple-plus")} New folder…</lit-material-list-item>
       <lit-material-list-item interactive @click=${() => this.go("collection", c().id)}>${icon("play")} Open and run</lit-material-list-item>
-      <lit-material-list-item interactive @click=${() => this.openDialog("rename-collection", { id: c().id, name: c().name })}>${icon("pencil-simple")} Rename…</lit-material-list-item>
+      <lit-material-list-item interactive @click=${() => this.openDialog("rename-collection", { id: c().id, name: c().name })}>${icon("pencil-simple")} Rename… <lit-material-kbd slot="trailing" keys="F2"></lit-material-kbd></lit-material-list-item>
       <lit-material-list-item interactive @click=${() => s.duplicateCollection(c().id)}>${icon("copy")} Duplicate</lit-material-list-item>
-      <lit-material-list-item interactive @click=${() => this.deleteCollection(c())}>${icon(folder ? "x" : "trash")} ${folder ? "Close folder" : "Delete…"}</lit-material-list-item>
+      <hr class="menu-divider" role="separator" />
+      <lit-material-list-item interactive class="menu-danger" @click=${() => this.deleteCollection(c())}>${icon(folder ? "x" : "trash")} ${folder ? "Close folder" : "Delete…"} <lit-material-kbd slot="trailing" keys="Delete"></lit-material-kbd></lit-material-list-item>
     </lit-material-menu>`;
   }
 
@@ -1270,7 +1281,7 @@ export class HitopApp extends LitElement {
       <lit-material-list-item interactive @click=${() => this.newRequestIn(m().collection.id, m().folder.path)}>${icon("plus")} New request here</lit-material-list-item>
       <lit-material-list-item interactive @click=${() => this.runFolder(m().collection.id, m().folder.path)}>${icon("play")} Run this folder</lit-material-list-item>
       <lit-material-list-item interactive @click=${() => this.openDialog("new-folder", { collectionId: m().collection.id, parent: m().folder.path })}>${icon("folder-simple-plus")} New folder inside…</lit-material-list-item>
-      <lit-material-list-item interactive @click=${() => this.openDialog("rename-folder", { collectionId: m().collection.id, path: m().folder.path, name: m().folder.name })}>${icon("pencil-simple")} Rename…</lit-material-list-item>
+      <lit-material-list-item interactive @click=${() => this.openDialog("rename-folder", { collectionId: m().collection.id, path: m().folder.path, name: m().folder.name })}>${icon("pencil-simple")} Rename… <lit-material-kbd slot="trailing" keys="F2"></lit-material-kbd></lit-material-list-item>
     </lit-material-menu>`;
   }
 
@@ -1280,19 +1291,21 @@ export class HitopApp extends LitElement {
   // collection's or folder's list moves there (`dropRequest`).
   requestList(c, entries, label, activeRequest, sortable = true, folder = "") {
     const s = this.store;
-    return html`<lit-material-sortable role="list" label=${label} group=${sortable ? "requests" : ""} data-collection=${String(c.id)} data-folder=${folder}
+    const level = folder ? folder.split("/").length + 2 : 2;
+    return html`<lit-material-sortable role="group" label=${label} group=${sortable ? "requests" : ""} data-collection=${String(c.id)} data-folder=${folder}
       @sort=${(e) => sortable && (e.detail.toList && e.detail.toList !== e.detail.fromList ? this.dropRequest(e, c, entries) : s.moveRequest(c.id, entries[e.detail.from].index, entries[e.detail.to].index))}>
       ${repeat(
         entries,
         (x) => x.request.id,
-        ({ request: r }) => html`<div role="listitem" class="request-item" data-sort-id=${r.id} data-sort-label=${r.name}>
-          <button type="button" class="tree-row leaf" aria-current=${activeRequest === r.id ? "page" : "false"}
+        ({ request: r }) => html`<div role="none" class="request-item" data-sort-id=${r.id} data-sort-label=${r.name}>
+          <button type="button" class="tree-row leaf" role="treeitem" tabindex="-1" aria-level=${level} data-tree="request" data-key=${`r:${c.id}:${r.id}`} data-collection=${String(c.id)} data-request=${String(r.id)}
+            aria-current=${activeRequest === r.id ? "page" : "false"}
             @click=${() => ((this.navOpen = false), s.openRequest(r, c.id))} @contextmenu=${(e) => this.openRequestMenu(e, r, c.id)}>
             ${this.requestRowTag(r, c.id)}<span>${this.requestRowName(r, c.id)}${s.isDirtyRequest(r.id, c.id) ? html`<span class="dirty-dot" aria-hidden="true">●</span><span class="visually-hidden">, unsaved changes</span>` : nothing}</span>${this.gitLetter(c, r)
               ? html`<span class="git-letter mono" title=${`Changed in git: ${this.gitLetter(c, r)}`}>${this.gitLetter(c, r)}<span class="visually-hidden"> (changed in git)</span></span>`
               : nothing}
           </button>
-          ${sortable ? html`<button type="button" class="sort-handle" data-sort-handle aria-label=${`Reorder ${r.name}`}>${icon("dots-six-vertical")}</button>` : nothing}
+          ${sortable ? html`<button type="button" class="sort-handle" tabindex="-1" data-sort-handle aria-label=${`Reorder ${r.name} (Alt+Up or Alt+Down on the row)`}>${icon("dots-six-vertical")}</button>` : nothing}
         </div>`,
       )}
     </lit-material-sortable>`;
@@ -1332,7 +1345,7 @@ export class HitopApp extends LitElement {
     const label = node.path ? `Requests in ${c.name}, ${node.path}` : `Requests in ${c.name}`;
     return html`${runs.map((run) =>
       Array.isArray(run)
-        ? html`<li>
+        ? html`<li role="none">
             ${this.requestList(c, run, label, activeRequest, true, node.path)}
             ${run.length || !bare
               ? nothing
@@ -1351,16 +1364,176 @@ export class HitopApp extends LitElement {
   folderRow(c, f, activeRequest) {
     const key = `${c.id}/${f.path}`;
     const open = !this.collapsed.includes(key);
-    return html`<li class="tree-folder">
-      <div class="collection-line folder-line" @contextmenu=${(e) => this.openFolderMenu(e, c, f)}>
-        <button type="button" class="tree-row folder" aria-expanded=${String(open)} title=${f.path} @click=${() => this.toggleCollection(key)}>
+    const groupId = `group-${c.id}-${f.path.replace(/[^\w-]+/g, "_")}`;
+    return html`<li class="tree-folder" role="none">
+      <div class="collection-line folder-line" role="none" @contextmenu=${(e) => this.openFolderMenu(e, c, f)}>
+        <button type="button" class="tree-row folder" role="treeitem" tabindex="-1" aria-level=${f.path.split("/").length + 1} aria-expanded=${String(open)} aria-owns=${open ? groupId : nothing}
+          data-tree="folder" data-key=${`f:${c.id}:${f.path}`} data-collection=${String(c.id)} data-folder=${f.path} title=${f.path} @click=${() => this.toggleCollection(key)}>
           ${icon(open ? "caret-down" : "caret-right")}${icon("folder-simple")}<span>${f.name}</span>
         </button>
-        <button type="button" class="row-action" aria-label=${`Add a request to ${f.name}`} title=${`Add a request to the folder ${f.name}`} @click=${() => this.newRequestIn(c.id, f.path)}>${icon("plus")}</button>
-        <button type="button" class="row-action" aria-label=${`More for folder ${f.name}`} title="More" aria-haspopup="menu" @click=${(e) => this.openFolderMenu(e, c, f, e.currentTarget)}>${icon("dots-three")}</button>
+        <button type="button" class="row-action" tabindex="-1" aria-label=${`Add a request to ${f.name}`} title=${`Add a request to the folder ${f.name}`} @click=${() => this.newRequestIn(c.id, f.path)}>${icon("plus")}</button>
+        <button type="button" class="row-action" tabindex="-1" aria-label=${`More for folder ${f.name}`} title="More (Shift+F10)" aria-haspopup="menu" @click=${(e) => this.openFolderMenu(e, c, f, e.currentTarget)}>${icon("dots-three")}</button>
       </div>
-      ${open ? html`<ul>${this.requestTreeRows(c, f, activeRequest)}</ul>` : nothing}
+      ${open ? html`<ul role="group" id=${groupId}>${this.requestTreeRows(c, f, activeRequest)}</ul>` : nothing}
     </li>`;
+  }
+
+  // --- the sidebar as a keyboard tree (UX2 (9)): one Tab stop, roving tabindex --------------
+  // Up/Down move, Home/End, Right opens (or goes to the first child), Left folds (or goes to the
+  // parent), Enter/Space open, F2 renames, Delete asks, Shift+F10 / the menu key opens the row's
+  // menu, Alt+Up/Down moves a request within its list.
+
+  treeItems() {
+    return [...this.querySelectorAll('nav.tree [role="treeitem"]')].filter((el) => el.offsetParent !== null);
+  }
+
+  // The one row with tabindex 0: the last one focused, else the current request's (or page's), else the first.
+  rovingTree() {
+    const items = this.treeItems();
+    if (!items.length) return;
+    const pick = items.find((el) => el.dataset.key === this.treeKeyNow) ?? items.find((el) => el.getAttribute("aria-current") === "page") ?? items[0];
+    for (const el of items) el.tabIndex = el === pick ? 0 : -1;
+  }
+
+  treeFocused(e) {
+    const item = e.target.closest?.('[role="treeitem"]');
+    if (!item) return;
+    this.treeKeyNow = item.dataset.key;
+    this.rovingTree();
+  }
+
+  treeRowData(el) {
+    const s = this.store;
+    const c = s.collection(Number(el.dataset.collection)) ?? s.collections.find((x) => String(x.id) === el.dataset.collection);
+    const request = el.dataset.request ? c?.requests.find((r) => String(r.id) === el.dataset.request) : null;
+    const folder = el.dataset.folder ? { path: el.dataset.folder, name: el.dataset.folder.split("/").pop() } : null;
+    return { kind: el.dataset.tree, c, request, folder };
+  }
+
+  focusTreeItem(el) {
+    if (!el) return;
+    this.treeKeyNow = el.dataset.key;
+    this.rovingTree();
+    el.focus();
+  }
+
+  async focusTreeKey(key) {
+    this.treeKeyNow = key;
+    await this.updateComplete;
+    this.focusTreeItem(this.treeItems().find((el) => el.dataset.key === key));
+  }
+
+  treeKey(e) {
+    const item = e.target.closest?.('[role="treeitem"]');
+    if (!item || e.ctrlKey || e.metaKey) return;
+    const items = this.treeItems();
+    const at = items.indexOf(item);
+    const level = Number(item.getAttribute("aria-level")) || 1;
+    const expanded = item.getAttribute("aria-expanded");
+    const { kind, c, request, folder } = this.treeRowData(item);
+    const done = () => (e.preventDefault(), e.stopPropagation());
+    if (e.altKey && (e.key === "ArrowUp" || e.key === "ArrowDown")) {
+      if (kind !== "request" || !c) return;
+      done();
+      this.moveTreeRequest(item, c, request, e.key === "ArrowUp" ? -1 : 1);
+      return;
+    }
+    if (e.altKey) return;
+    switch (e.key) {
+      case "ArrowDown":
+        done();
+        this.focusTreeItem(items[Math.min(at + 1, items.length - 1)]);
+        break;
+      case "ArrowUp":
+        done();
+        this.focusTreeItem(items[Math.max(at - 1, 0)]);
+        break;
+      case "Home":
+        done();
+        this.focusTreeItem(items[0]);
+        break;
+      case "End":
+        done();
+        this.focusTreeItem(items.at(-1));
+        break;
+      case "ArrowRight":
+        done();
+        if (expanded === "false") this.foldTreeRow(kind, c, folder, item.dataset.key);
+        else if (expanded === "true" && Number(items[at + 1]?.getAttribute("aria-level")) > level) this.focusTreeItem(items[at + 1]);
+        break;
+      case "ArrowLeft": {
+        done();
+        if (expanded === "true") {
+          this.foldTreeRow(kind, c, folder, item.dataset.key);
+          break;
+        }
+        for (let i = at - 1; i >= 0; i--) {
+          if (Number(items[i].getAttribute("aria-level")) < level) {
+            this.focusTreeItem(items[i]);
+            break;
+          }
+        }
+        break;
+      }
+      case "F2":
+        done();
+        if (kind === "request") this.openDialog("rename-request", { request, collectionId: c.id, name: request.name });
+        else if (kind === "collection") this.openDialog("rename-collection", { id: c.id, name: c.name });
+        else if (kind === "folder") this.openDialog("rename-folder", { collectionId: c.id, path: folder.path, name: folder.name });
+        break;
+      case "Delete":
+        done();
+        if (kind === "request") this.deleteRequest(request, c.id);
+        else if (kind === "collection") this.deleteCollection(c);
+        break;
+      case "ContextMenu":
+      case "F10":
+        if (e.key === "F10" && !e.shiftKey) return;
+        done();
+        this.treeMenu(item, kind, c, request, folder);
+        break;
+      default:
+    }
+  }
+
+  // Shift+F10 / the menu key: the row's own menu, at the row.
+  treeMenu(item, kind, c, request, folder) {
+    const fake = { preventDefault() {}, stopPropagation() {}, currentTarget: item, target: item, clientX: 0, clientY: 0 };
+    if (kind === "request") {
+      this.menuRequest = { request, collectionId: c.id };
+      showMenuFor(fake, this.querySelector("#request-menu"));
+    } else if (kind === "collection") this.openCollectionMenu(fake, c, item);
+    else if (kind === "folder") this.openFolderMenu(fake, c, folder, item);
+  }
+
+  foldTreeRow(kind, c, folder, key) {
+    if (kind === "collection") this.toggleCollection(c.id);
+    else if (kind === "folder") this.toggleCollection(`${c.id}/${folder.path}`);
+    this.focusTreeKey(key);
+  }
+
+  // Alt+Up/Down: the request swaps places with its neighbour in the same list (folder).
+  moveTreeRequest(item, c, request, by) {
+    const list = item.closest("lit-material-sortable");
+    const ids = [...(list?.querySelectorAll("[data-sort-id]") ?? [])].map((el) => el.dataset.sortId);
+    const at = ids.indexOf(String(request.id));
+    const other = ids[at + by];
+    if (at === -1 || other == null) return;
+    const from = c.requests.findIndex((r) => r.id === request.id);
+    const to = c.requests.findIndex((r) => String(r.id) === other);
+    this.store.moveRequest(c.id, from, to);
+    this.focusTreeKey(item.dataset.key);
+  }
+
+  // The request menu's Copy as cURL: hitop-core's snippet, secrets left as {{NAME}}.
+  async copyCurl(request, collectionId) {
+    try {
+      const { code } = await this.store.snippetFor(request, collectionId, "curl");
+      await navigator.clipboard?.writeText(code);
+      this.toast(`Copied ${request.name} as cURL.`);
+    } catch (e) {
+      this.toast(`Couldn't copy it as cURL: ${e?.message ?? e}`);
+    }
   }
 
   // Right click (or the context menu key) on a request in the sidebar.
@@ -1373,19 +1546,24 @@ export class HitopApp extends LitElement {
   renderRequestMenu() {
     const s = this.store;
     const m = () => this.menuRequest;
+    // UX2 (9): icons and keys, Run and Copy as cURL; Delete set apart at the end.
+    const key = (k) => html`<lit-material-kbd slot="trailing" keys=${k}></lit-material-kbd>`;
     return html`<lit-material-menu id="request-menu" aria-label="Request">
-      <lit-material-list-item interactive @click=${() => ((this.navOpen = false), s.openRequest(m().request, m().collectionId))}>Open</lit-material-list-item>
-      <lit-material-list-item interactive @click=${() => this.openDialog("rename-request", { ...m(), name: m().request.name })}>Rename</lit-material-list-item>
-      <lit-material-list-item interactive @click=${() => s.duplicateRequest(m().collectionId, m().request.id)}>Duplicate</lit-material-list-item>
-      <lit-material-list-item interactive @click=${() => this.openDialog("move-request", { ...m() })}>Move to…</lit-material-list-item>
+      <lit-material-list-item interactive @click=${() => ((this.navOpen = false), s.openRequest(m().request, m().collectionId))}>${icon("arrow-square-out", { slot: "leading" })} Open ${key("Enter")}</lit-material-list-item>
+      <lit-material-list-item interactive @click=${() => ((this.navOpen = false), s.openRequest(m().request, m().collectionId), s.send())}>${icon("paper-plane-tilt", { slot: "leading" })} Run</lit-material-list-item>
+      <lit-material-list-item interactive @click=${() => this.copyCurl(m().request, m().collectionId)}>${icon("terminal-window", { slot: "leading" })} Copy as cURL</lit-material-list-item>
+      <lit-material-list-item interactive @click=${() => this.openDialog("rename-request", { ...m(), name: m().request.name })}>${icon("pencil-simple", { slot: "leading" })} Rename ${key("F2")}</lit-material-list-item>
+      <lit-material-list-item interactive @click=${() => s.duplicateRequest(m().collectionId, m().request.id)}>${icon("copy", { slot: "leading" })} Duplicate</lit-material-list-item>
+      <lit-material-list-item interactive @click=${() => this.openDialog("move-request", { ...m() })}>${icon("arrow-right", { slot: "leading" })} Move to…</lit-material-list-item>
       ${this.menuRequest && ["cloud", "github"].includes(storageOf(s, s.collection(m().collectionId) ?? { id: m().collectionId }).kind)
         ? html`<lit-material-list-item interactive @click=${() => {
             const d = { ...m(), history: null };
             this.openDialog("request-history", d);
             loadRequestHistory(this, d);
-          }}>Version history…</lit-material-list-item>`
+          }}>${icon("clock-counter-clockwise", { slot: "leading" })} Version history…</lit-material-list-item>`
         : nothing}
-      <lit-material-list-item interactive @click=${() => this.deleteRequest(m().request, m().collectionId)}>Delete</lit-material-list-item>
+      <hr class="menu-divider" role="separator" />
+      <lit-material-list-item interactive class="menu-danger" @click=${() => this.deleteRequest(m().request, m().collectionId)}>${icon("trash", { slot: "leading" })} Delete… ${key("Delete")}</lit-material-list-item>
     </lit-material-menu>`;
   }
 
@@ -1512,7 +1690,7 @@ export class HitopApp extends LitElement {
   railItems() {
     const pages = (platform().pages ?? []).filter((page) => page.sidebar !== false);
     return [
-      { kind: "collections", label: "Collections", icon: "folders", also: ["collection", "variables", "request"] },
+      { kind: "collections", label: "Collections", icon: "folders", also: ["collection", "variables", "request", "collections"] },
       { kind: "history", label: "History", icon: "clock-counter-clockwise" },
       { kind: "environments", label: "Environments", icon: "globe" },
       { kind: "cookies", label: "Cookies", icon: "cookie" },
@@ -1528,9 +1706,62 @@ export class HitopApp extends LitElement {
     const selected = items.findIndex((it) => it.kind === kind || it.also?.includes(kind));
     return html`<nav class="rail sidebar-footer" aria-label="Sections">
       <lit-material-navigation-rail compact .selected=${selected}>
-        ${items.map((it) => html`<lit-material-navigation-rail-item @click=${() => this.go(it.kind)}>${icon(it.icon, { slot: "icon" })}${it.label}</lit-material-navigation-rail-item>`)}
+        ${items.map((it) => html`<lit-material-navigation-rail-item @click=${() => (it.kind === "collections" ? this.railCollections() : this.go(it.kind))}>${icon(it.icon, { slot: "icon" })}${it.label}</lit-material-navigation-rail-item>`)}
       </lit-material-navigation-rail>
+      ${this.sidePaneToggle()}
     </nav>`;
+  }
+
+  // UX2 (3): the rail's Collections is the workspace (tabs and the open request); the overview
+  // cards stay in the crumb menu ("All collections"). On the workspace already with the side pane
+  // folded away, it brings the pane back.
+  railCollections() {
+    const s = this.store;
+    if (s.view.kind === "request" && this.sideCollapsed()) return this.toggleSidePane();
+    this.showWorkspace();
+  }
+
+  /** The workspace: the tab strip and the open request, as they were left. */
+  showWorkspace() {
+    this.navOpen = false;
+    const s = this.store;
+    if (s.view.kind !== "request") s.selectTab(Math.min(s.currentTab, s.tabs.length - 1));
+  }
+
+  // UX2 (3): Esc on a page (History, Environments, Cookies, Settings, a collection…) goes back to
+  // the workspace, unless it is typing into a field there.
+  leavePage(e) {
+    const typing = e.composedPath().some((n) => n.localName === "input" || n.localName === "textarea" || n.localName === "select" || n.isContentEditable || n.localName === "hitop-code-editor");
+    if (typing || this.navOpen) return;
+    e.preventDefault();
+    this.showWorkspace();
+  }
+
+  // --- the side pane (UX2 (4)): Mod+B, remembered in hitop_layout.sidePane (true = shown,
+  // false = folded); not chosen yet, it folds by itself on a request at 1200 px or less ---------
+  sideCollapsed() {
+    if (this.narrow?.matches) return false; // phones: the drawer instead
+    if (this.sidePref === undefined) this.sidePref = loadSidePane();
+    if (typeof this.sidePref === "boolean") return !this.sidePref;
+    return Boolean(this.compact?.matches) && this.store.view.kind === "request";
+  }
+
+  toggleSidePane() {
+    if (this.narrow?.matches) {
+      this.navOpen = !this.navOpen;
+      return;
+    }
+    const shown = this.sideCollapsed();
+    this.sidePref = shown;
+    saveLayout({ sidePane: shown });
+    this.requestUpdate();
+  }
+
+  sidePaneToggle() {
+    const collapsed = this.sideCollapsed();
+    const label = collapsed ? "Show the side pane" : "Hide the side pane";
+    return html`<button type="button" class="mini rail-toggle" aria-label=${label} title=${`${label} (${keyLabel(ACTION_KEYS.sidePane)})`} aria-expanded=${String(!collapsed)} aria-controls="side-pane"
+      @click=${() => this.toggleSidePane()}>${icon("sidebar-simple")}</button>`;
   }
 
   renderSidebar() {
@@ -1540,9 +1771,9 @@ export class HitopApp extends LitElement {
     const filter = this.filter.trim().toLowerCase();
     const matches = (r) => !filter || `${methodLabel(r)} ${r.name} ${r.url ?? ""}`.toLowerCase().includes(filter);
     return html`
-      <aside class=${`sidebar ${this.navOpen ? "open" : ""}`} aria-label="Collections">
+      <aside class=${`sidebar ${this.navOpen ? "open" : ""} ${this.sideCollapsed() ? "side-collapsed" : ""}`} aria-label="Collections">
         ${this.renderRail()}
-        <div class="side-pane">
+        <div class="side-pane" id="side-pane" ?hidden=${this.sideCollapsed()}>
         ${this.tools("in-drawer")}
         <div class="side-pane-top">
           <span class="side-title" id="side-title">Collections</span>
@@ -1554,10 +1785,10 @@ export class HitopApp extends LitElement {
           <input type="search" class="tree-filter" placeholder="Filter" aria-label="Filter requests" .value=${this.filter}
             @input=${(e) => (this.filter = e.target.value)} />
         </label>
-        <nav class="tree" aria-label="Collections">
-          <ul>
+        <nav class="tree" aria-label="Collections" @keydown=${(e) => this.treeKey(e)} @focusin=${(e) => this.treeFocused(e)}>
+          <ul role="tree" aria-label="Collections">
             ${!s.visibleCollections.length
-              ? html`<li class="tree-empty">
+              ? html`<li class="tree-empty" role="none">
                   <p class="hint">${s.currentOrgInfo && !s.currentOrgInfo.personal ? `No collections in ${s.currentOrgInfo.name} yet.` : "No collections yet. A collection groups requests to run and share together."}</p>
                   <button type="button" class="tree-row" @click=${() => this.openDialog("add-collection")}>${icon("folder-simple-plus")}<span>New collection</span></button>
                   <button type="button" class="tree-row" @click=${() => this.openDialog("import")}>${icon("file-arrow-up")}<span>Import Postman, OpenAPI or HITOP</span></button>
@@ -1568,29 +1799,31 @@ export class HitopApp extends LitElement {
               if (filter && !requests.length) return nothing;
               const open = Boolean(filter) || !this.collapsed.includes(String(c.id));
               return html`
-                <li>
-                  <div class="collection-line" @contextmenu=${(e) => this.openCollectionMenu(e, c)}>
-                    <button type="button" class="tree-toggle" aria-expanded=${String(open)} aria-label="Requests" title=${`Show or hide the requests in ${c.name}`}
+                <li role="none">
+                  <div class="collection-line" role="none" @contextmenu=${(e) => this.openCollectionMenu(e, c)}>
+                    <button type="button" class="tree-toggle" tabindex="-1" aria-hidden="true" title=${`Show or hide the requests in ${c.name}`}
                       ?disabled=${Boolean(filter)} @click=${() => this.toggleCollection(c.id)}>${icon(open ? "caret-down" : "caret-right")}</button>
-                    <button type="button" class="tree-row collection" aria-current=${kind === "collection" && collectionId === c.id ? "page" : "false"} aria-describedby=${`storage-of-${c.id}`} @click=${() => this.go("collection", c.id)}>
+                    <button type="button" class="tree-row collection" role="treeitem" tabindex="-1" aria-level="1" aria-expanded=${String(open)} aria-owns=${open ? `group-${c.id}` : nothing} data-tree="collection" data-key=${`c:${c.id}`} data-collection=${String(c.id)}
+                      aria-current=${kind === "collection" && collectionId === c.id ? "page" : "false"} aria-describedby=${`storage-of-${c.id}`} @click=${() => this.go("collection", c.id)}>
                       ${this.storageIcon(c)}<span>${c.name}</span>
                     </button>
                     <span class="visually-hidden" id=${`storage-of-${c.id}`}>${storageOf(s, c).detail}</span>
-                    <button type="button" class="row-action" aria-label=${`Add a request to ${c.name}`} title=${`Add a request to ${c.name}`} @click=${() => this.newRequestIn(c.id)}>${icon("plus")}</button>
-                    <button type="button" class="row-action" aria-label=${`More for ${c.name}`} title="More" aria-haspopup="menu" @click=${(e) => this.openCollectionMenu(e, c, e.currentTarget)}>${icon("dots-three")}</button>
+                    <button type="button" class="row-action" tabindex="-1" aria-label=${`Add a request to ${c.name}`} title=${`Add a request to ${c.name}`} @click=${() => this.newRequestIn(c.id)}>${icon("plus")}</button>
+                    <button type="button" class="row-action" tabindex="-1" aria-label=${`More for ${c.name}`} title="More (Shift+F10)" aria-haspopup="menu" @click=${(e) => this.openCollectionMenu(e, c, e.currentTarget)}>${icon("dots-three")}</button>
                   </div>
                   ${open
-                    ? html`<ul>
+                    ? html`<ul role="group" id=${`group-${c.id}`}>
                         ${filter
                           ? nothing
-                          : html`<li>
-                              <button type="button" class="tree-row leaf" aria-current=${kind === "variables" && collectionId === c.id ? "page" : "false"} @click=${() => this.go("variables", c.id)}>
+                          : html`<li role="none">
+                              <button type="button" class="tree-row leaf" role="treeitem" tabindex="-1" aria-level="2" data-tree="variables" data-key=${`v:${c.id}`} data-collection=${String(c.id)}
+                                aria-current=${kind === "variables" && collectionId === c.id ? "page" : "false"} @click=${() => this.go("variables", c.id)}>
                                 ${icon("sliders-horizontal")}<span>Variables</span>
                               </button>
                             </li>`}
                         ${filter
                           ? requests.length
-                            ? html`<li>${this.requestList(c, requests.map((request) => ({ request, index: -1 })), `Requests in ${c.name}`, activeRequest, false)}</li>`
+                            ? html`<li role="none">${this.requestList(c, requests.map((request) => ({ request, index: -1 })), `Requests in ${c.name}`, activeRequest, false)}</li>`
                             : nothing
                           : this.requestTreeRows(c, withFolders(requestTree(c.requests || []), this.emptyFolders[String(c.id)]), activeRequest)}
                       </ul>`
@@ -1815,10 +2048,13 @@ export class HitopApp extends LitElement {
     const c = this.currentCollection();
     const s = this.store;
     const cols = s.visibleCollections;
-    if (!c && !cols.length) return nothing;
-    const name = c?.name ?? "Collections";
+    // UX2 (3): on a page (History, Settings…) the crumb names that page.
+    const kind = s.view.kind;
+    const page = c ? null : kind === "collections" ? "All collections" : kind === "sync" ? "Account" : this.railItems().find((it) => it.kind === kind && it.kind !== "collections")?.label ?? null;
+    if (!c && !page && !cols.length) return nothing;
+    const name = c?.name ?? page ?? "Collections";
     return html`<span class="crumb" aria-hidden="true">/</span>
-      <button type="button" class="crumb crumb-name" title=${c ? `Collection: ${name}` : "Collections"} aria-haspopup="menu" aria-label=${c ? `Collection ${name}: switch` : "Collections"}
+      <button type="button" class="crumb crumb-name" title=${c ? `Collection: ${name}` : name} aria-haspopup="menu" aria-label=${c ? `Collection ${name}: switch` : `${name}: collections`}
         @click=${(e) => showMenuFor(e, this.querySelector("#crumb-menu"))}>
         <span>${name}</span>${icon("caret-down")}
       </button>
@@ -2028,7 +2264,7 @@ export class HitopApp extends LitElement {
         ${this.branchPill()}
         ${this.accountButton()}
       </header>
-      <div class="layout">
+      <div class=${`layout ${this.sideCollapsed() ? "side-collapsed" : ""}`}>
         ${this.renderSidebar()}
         <div class="scrim" ?hidden=${!this.navOpen} @click=${() => (this.navOpen = false)}></div>
         <main id="main" class="main">${this.renderMain()}</main>

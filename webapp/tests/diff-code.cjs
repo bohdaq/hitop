@@ -110,7 +110,7 @@ function api() {
   await p.getByRole('button', { name: /^Compare/ }).first().click();
   await dialog.locator('.compare-summary').waitFor({ timeout: 10000 });
   const summary = await dialog.locator('.compare-summary').innerText();
-  check('compare: differs in a header and body paths', summary.includes('1 header') && summary.includes('2 body paths'), summary);
+  check('compare: differs in a header and body paths', summary.includes('1 header') && summary.includes('2 values in the body'), summary);
   const changes = await dialog.locator('.json-changes li').allInnerTexts();
   check('JSON paths: $.n changed, $.tags[1] added, key order ignored', changes.length === 2 && changes.some((c) => c.startsWith('$.n') && c.includes('changed')) && changes.some((c) => c.startsWith('$.tags[1]') && c.includes('added')), changes.join(' | '));
   const headers = await dialog.locator('.compare-headers li').allInnerTexts();

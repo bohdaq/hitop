@@ -92,6 +92,14 @@ class ProxiedResponse {
     // A GET answered with text/event-stream, body unread (hitop-server UX2): the app streams it.
     this.eventStream = Boolean(envelope.eventStream);
     this.bodyText = decodeBody(envelope.body, envelope.bodyEncoding);
+    this.envelopeBody = envelope.body;
+    this.bodyEncoding = envelope.bodyEncoding;
+  }
+
+  /** The body's bytes (a binary body travels base64 encoded). */
+  async arrayBuffer() {
+    if (this.bodyEncoding === 'base64') return Uint8Array.from(atob(this.envelopeBody), c => c.charCodeAt(0)).buffer;
+    return new TextEncoder().encode(this.bodyText).buffer;
   }
 
   async text() {

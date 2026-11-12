@@ -51,6 +51,7 @@ import { fillVariables, forWebApp, isPostmanCollection, loadShim, scriptScans, u
 import pmShimText from "../../shared/pm-shim.js?raw";
 import { loadFormat } from "./wasm/format.js";
 import { exampleResponse, snapshotResponse } from "./diff.js";
+import { isBinaryType, toBase64 } from "./binary.js";
 import { folderToZip, zipToFolder } from "./zip.js";
 import { loadSettings, saveSettings, seconds } from "./settings.js";
 import { addCollections, folderPaths, moveRequestTo, renameFolderIn, requestFile, requestTree } from "./collection-tree.js";
@@ -302,6 +303,11 @@ function sampleCollection() {
 // Turn a fetch-like response into what the response viewer shows.
 async function readResponse(res) {
   const contentType = res.headers.get("content-type") || "";
+  // UX2 (6): images, PDFs and other binary bodies keep their bytes (base64 on the tab).
+  if (isBinaryType(contentType) && typeof res.arrayBuffer === "function") {
+    const bytes = new Uint8Array(await res.arrayBuffer());
+    return { data: toBase64(bytes), type: "binary", size: bytes.length };
+  }
   const text = await res.text();
   if (contentType.includes("json")) {
     try {
@@ -340,7 +346,7 @@ export function storedTabInDb(t) {
 }
 
 // A tab's response fields when it has none (Settings: clear stored responses).
-const NO_RESPONSE = { response: null, responseHeaders: null, statusCode: null, responseType: "", tests: null, durationMs: null, timings: null, httpVersion: null, responseScheme: null, truncated: false, responseCut: false, responseStored: undefined, jsonError: null };
+const NO_RESPONSE = { response: null, responseSize: null, responseHeaders: null, statusCode: null, responseType: "", tests: null, durationMs: null, timings: null, httpVersion: null, responseScheme: null, truncated: false, responseCut: false, responseStored: undefined, jsonError: null };
 
 // Drops keys set to undefined (a cleared bodyType), so they aren't saved.
 const clean = (r) => Object.fromEntries(Object.entries(r).filter(([, v]) => v !== undefined));
@@ -1490,7 +1496,8 @@ export class Store extends EventTarget {
   // What the compare dialog can pick from: the current response, the loaded
   // request's examples, then history items that kept their response (items
   // stored before responses were kept have none and are left out).
-  compareSources() {
+  // `only` {method, url}: history of that request alone (UX2: the response pane's Diff).
+  compareSources(only = null) {
     const out = [];
     const tab = this.tab;
     if (tab?.statusCode != null && tab.responseType !== "error") {
@@ -1501,6 +1508,7 @@ export class Store extends EventTarget {
     (this.loadedRequest(tab)?.examples || []).forEach((e, i) => out.push({ id: `example:${i}`, label: `Example: ${e?.name ?? i + 1}`, response: exampleResponse(e) }));
     for (const h of [...this.history].reverse()) {
       if (!h?.response) continue;
+      if (only && (h.isCollectionRun || h.method !== only.method || h.url !== only.url)) continue;
       const when = new Date(h.timestamp).toLocaleString(undefined, { dateStyle: "medium", timeStyle: "short" });
       const what = h.isCollectionRun ? `${h.collectionName} → ${h.requestName}` : `${h.method} ${h.url}`;
       out.push({ id: `history:${h.id}`, label: `${h.response.status ?? "?"} ${what} · ${when}`, response: h.response, request: h.isCollectionRun ? null : `${h.method} ${h.url}` });
@@ -1518,8 +1526,7 @@ export class Store extends EventTarget {
     return this.format?.rawContentType(tab.requestBody) ?? null;
   }
 
-  snippetInput(showSecrets = false) {
-    const tab = this.tab;
+  snippetInput(showSecrets = false, tab = this.tab) {
     const request = {
       id: 0,
       name: tab.title || "",
@@ -1544,8 +1551,13 @@ export class Store extends EventTarget {
   }
 
   // { code, placeholders } from hitop-core's generator.
-  async snippet(lang, showSecrets = false) {
-    return (await loadFormat()).snippet(this.snippetInput(showSecrets), lang);
+  async snippet(lang, showSecrets = false, tab = this.tab) {
+    return (await loadFormat()).snippet(this.snippetInput(showSecrets, tab), lang);
+  }
+
+  /** A saved request as code without opening it (UX2: the sidebar menu's Copy as cURL). */
+  snippetFor(request, collectionId, lang = "curl") {
+    return this.snippet(lang, false, tabForRequest(request, collectionId));
   }
 
   // --- environments -----------------------------------------------------------
@@ -2083,7 +2095,7 @@ export class Store extends EventTarget {
       if (live) live.open = false;
       const headers = {};
       res.headers.forEach((v, k) => (headers[k] = v));
-      const { data, type, raw, jsonError } = await readResponse(res);
+      const { data, type, raw, jsonError, size } = await readResponse(res);
       const durationMs = res.timeMs ?? Math.round(performance.now() - started);
       // The body as received, for Raw (memory only: the tab keeps the formatted one).
       if (raw !== undefined) this.rawBodies.set(tab.id, raw);
@@ -2102,6 +2114,7 @@ export class Store extends EventTarget {
         httpVersion: res.httpVersion ?? null,
         responseScheme: res.httpVersion ? (/^([a-z][a-z0-9+.-]*):/i.exec(res.url || "")?.[1]?.toLowerCase() ?? null) : null,
         truncated: Boolean(res.truncated),
+        responseSize: type === "binary" ? size : null,
         loading: false,
       });
       // UX2 (8): an event stream sent without `Accept: text/event-stream` came back whole (the

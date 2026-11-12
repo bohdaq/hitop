@@ -227,7 +227,9 @@ function api() {
   await p.getByRole('button', { name: 'Show response' }).click();
   await settle(p);
   check('Show response brings it back', (await p.locator('.response-meta').count()) === 1 && (await layout()).responseCollapsed === false);
-  // Narrower: stacked, the handle sets the editor's height.
+  // Narrower: stacked, the handle sets the editor's height (with the side pane shown: at 1200 px or
+  // less it folds by itself unless chosen, UX2).
+  await p.evaluate(() => (document.querySelector('hitop-app').sidePref = true));
   await p.setViewportSize({ width: 1024, height: 768 });
   await settle(p);
   const editorHeight = () => p.evaluate(() => Math.round(document.querySelector('.pane-editor').getBoundingClientRect().height));
@@ -243,6 +245,7 @@ function api() {
   await p.setViewportSize({ width: 390, height: 844 });
   await settle(p);
   check('phone: stacked, no handle, no horizontal scroll', (await p.locator('.panes.stack').count()) === 1 && (await sep.count()) === 0 && !(await p.evaluate(() => document.documentElement.scrollWidth > innerWidth)));
+  await p.evaluate(() => (document.querySelector('hitop-app').sidePref = undefined));
   await p.setViewportSize({ width: 1280, height: 860 });
   await settle(p);
 
@@ -293,13 +296,13 @@ function api() {
   const ordersFolder = aside.locator('.tree-row.folder', { hasText: 'orders' });
   await ordersFolder.click();
   await settle(p);
-  check('a folder folds (remembered)', (await ordersFolder.getAttribute('aria-expanded')) === 'false' && (await aside.getByRole('button', { name: /List orders/ }).count()) === 0 && (await p.evaluate(() => localStorage.getItem('hitop_collapsed_collections'))).includes(`${shopId}/orders`));
+  check('a folder folds (remembered)', (await ordersFolder.getAttribute('aria-expanded')) === 'false' && (await aside.getByRole('treeitem', { name: /List orders/ }).count()) === 0 && (await p.evaluate(() => localStorage.getItem('hitop_collapsed_collections'))).includes(`${shopId}/orders`));
   await ordersFolder.click();
   await settle(p);
   const health = () => aside.locator('.tree-row.leaf', { hasText: /^\s*GET\s*Health\s*$/ });
   await health().click({ button: 'right' });
   const menu = p.locator('#request-menu');
-  await menu.getByText('Rename', { exact: true }).click();
+  await menu.locator('lit-material-list-item', { hasText: /^\s*Rename/ }).click();
   await p.locator('#dialog #name').waitFor();
   await p.locator('#dialog #name').evaluate((el) => (el.value = 'Health check'));
   await p.locator('#dialog').getByRole('button', { name: 'Rename' }).click();
@@ -319,7 +322,7 @@ function api() {
   shop = (await h.stored.collections()).find((c) => c.name === 'Shop');
   check('… a request in a folder stays in its folder', shop.requests.find((r) => r.name === 'Me (Copy)')?.file === 'account/me-copy');
   await aside.locator('.tree-row.leaf', { hasText: 'Health check (Copy)' }).click({ button: 'right' });
-  await menu.getByText('Delete', { exact: true }).click();
+  await menu.locator('lit-material-list-item', { hasText: /^\s*Delete…/ }).click();
   await p.locator('lit-material-confirm-dialog[open]').getByRole('button', { name: 'Delete', exact: true }).click();
   await settle(p);
   shop = (await h.stored.collections()).find((c) => c.name === 'Shop');

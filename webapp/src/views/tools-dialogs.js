@@ -79,8 +79,8 @@ function defaultBefore(sources, right) {
 }
 
 /** The Compare dialog; with `pick` it's the response pane's "Diff vs last" tab (selections go to `pick`). */
-export function compareDialog(app, d, pick = null) {
-  const sources = app.store.compareSources();
+export function compareDialog(app, d, pick = null, only = null) {
+  const sources = app.store.compareSources(only);
   const footer = html`
     <div slot="actions" class="dialog-actions">
       <lit-material-button variant="filled" @click=${() => app.closeDialog()}>Close</lit-material-button>
@@ -138,7 +138,11 @@ export function compareDialog(app, d, pick = null) {
               )}
             </ul>`
           : nothing}
-        ${c.body.same
+        ${c.body.kind === "binary"
+          ? html`<p class=${c.body.same ? "hint" : ""}>${c.body.same
+              ? `Same bytes (${kb(c.body.after?.size)}).`
+              : `The binary bodies differ: ${c.body.before ? kb(c.body.before.size) : "none"} → ${c.body.after ? kb(c.body.after.size) : "none"}${c.body.before && c.body.after && c.body.before.size === c.body.after.size ? " (same size, other bytes)" : ""}.`}</p>`
+          : c.body.same
           ? html`<p class="hint">Same body.</p>`
           : html`<div class="side-by-side" role="table" aria-label="Body, side by side">
               ${rows.map(
@@ -153,10 +157,14 @@ export function compareDialog(app, d, pick = null) {
   };
 }
 
+const kb = (n) => (n == null ? "?" : n < 1024 ? `${n} B` : n < 1024 * 1024 ? `${(n / 1024).toFixed(1)} KB` : `${(n / 1024 / 1024).toFixed(1)} MB`);
+
+// UX2 (6): what differs, in words: "Different: the status, 3 headers and 2 values in the body."
 function summary(c, headers) {
   const parts = [];
-  if (!c.status.same) parts.push("status");
+  if (!c.status.same) parts.push("the status");
   if (headers.length) parts.push(`${headers.length} header${headers.length === 1 ? "" : "s"}`);
-  if (!c.body.same) parts.push(c.body.kind === "json" ? `${c.body.changes.length} body path${c.body.changes.length === 1 ? "" : "s"}` : "body");
-  return `Differs: ${parts.join(", ")}.`;
+  if (!c.body.same) parts.push(c.body.kind === "json" ? `${c.body.changes.length} value${c.body.changes.length === 1 ? "" : "s"} in the body` : "the body");
+  const list = parts.length > 1 ? `${parts.slice(0, -1).join(", ")} and ${parts.at(-1)}` : parts[0];
+  return `Different: ${list}.`;
 }

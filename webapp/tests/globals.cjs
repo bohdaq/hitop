@@ -99,7 +99,7 @@ function api() {
   const echo = await responseJson();
   check('globals reach the request, the environment wins', echo.query?.g === 'G-val' && echo.query.k === 'E-k' && echo.query.hidden === 'g-s3cret' && echo.query.pmg === 'from-postman', JSON.stringify(echo));
   const meta = await p.locator('.response-meta').innerText();
-  check('pm.globals reads the globals scope', meta.includes('1 of 1 tests passed'), meta.replace(/\n/g, ' '));
+  check('pm.globals reads the globals scope', meta.includes('1/1 passed'), meta.replace(/\n/g, ' '));
   await p.getByLabel('URL').fill('${base}/again?s=${fromScript}');
   await p.getByRole('tab', { name: /Script after/ }).click();
   await p.locator('.cm-content').click();

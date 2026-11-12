@@ -90,7 +90,7 @@ function otherPushesUrl(r, url) {
   const bar = () => panel.locator('.git-bar').innerText();
   const btn = (label) => panel.locator(`lit-material-button[aria-label="${label}"]`);
   const editUrl = async (url) => {
-    await p.locator('aside').getByRole('button', { name: /^GET Get user/ }).click();
+    await p.locator('aside').getByRole('treeitem', { name: /^GET Get user/ }).click();
     await p.getByLabel('URL').fill(url);
     await p.getByRole('button', { name: 'Save request' }).click();
     await p.waitForTimeout(300);
@@ -115,7 +115,7 @@ function otherPushesUrl(r, url) {
   // Open the folder; the collection page links to the panel.
   await footer.getByRole('button', { name: 'Git', exact: true }).click();
   check('Git page without a folder says what to do', (await panel.locator('lit-material-empty-state[headline="No collection folder open"]').count()) === 1);
-  await p.locator('aside').getByRole('button', { name: 'Collections', exact: true }).click();
+  await p.evaluate(() => document.querySelector('hitop-app').go('collections')); // UX2: the overview (crumb menu → All collections)
   h.mock.nextFolder = r.work;
   await p.getByRole('button', { name: 'Open folder' }).click();
   await p.locator('h1', { hasText: 'Sample API' }).waitFor({ timeout: 10000 });

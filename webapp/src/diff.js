@@ -1,3 +1,5 @@
+import { digest, fromBase64, isBinaryType } from "./binary.js";
+
 // Response diff: status, headers and body of two responses (history items
 // or saved examples). JSON bodies compare as structures (key order doesn't
 // matter, arrays by position), anything else line by line.
@@ -8,6 +10,18 @@ export const SNAPSHOT_LIMIT = 100_000;
 
 export function snapshotResponse({ status, headers, body, durationMs }) {
   const text = typeof body === "string" ? body : body == null ? "" : String(body);
+  // UX2 (6): a binary body (base64 on the tab) is kept as its size and digest, compared by those.
+  const type = Object.entries(headers || {}).find(([k]) => k.toLowerCase() === "content-type")?.[1];
+  if (isBinaryType(type)) {
+    const bytes = fromBase64(text);
+    return {
+      status: Number.isInteger(status) ? status : null,
+      headers: { ...(headers || {}) },
+      body: "",
+      binary: { size: bytes.length, digest: digest(bytes) },
+      ...(durationMs != null ? { durationMs } : {}),
+    };
+  }
   return {
     status: Number.isInteger(status) ? status : null,
     headers: { ...(headers || {}) },
@@ -123,6 +137,11 @@ export function compareResponses(left, right) {
   const status = { before: left?.status ?? null, after: right?.status ?? null };
   status.same = status.before === status.after;
   const headers = diffHeaders(left?.headers, right?.headers);
+  if (left?.binary || right?.binary) {
+    const [a, b] = [left?.binary ?? null, right?.binary ?? null];
+    const body = { kind: "binary", before: a, after: b, lines: [], same: Boolean(a && b && a.size === b.size && a.digest === b.digest) };
+    return { status, headers, body, same: status.same && body.same && headers.every((h) => h.kind === "same") };
+  }
   const [ja, jb] = [parseJson(left?.body ?? ""), parseJson(right?.body ?? "")];
   let body;
   if (ja !== undefined && jb !== undefined) {

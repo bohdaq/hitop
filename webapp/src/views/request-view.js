@@ -26,6 +26,7 @@ import { SPLIT, clampSplit, layoutFor, loadLayout, saveLayout, splitAt, splitFor
 import { socketHeaders, socketLine, socketLog, socketMessages } from "./websocket-view.js";
 import { grpcLine, grpcLog, grpcMessage, grpcMetadataNote, grpcSchema } from "./grpc-view.js";
 import { errorCard } from "./error-card.js";
+import { bodyView, fromBase64, hexDump } from "../binary.js";
 
 hljs.registerLanguage("json", json);
 hljs.registerLanguage("xml", xml);
@@ -158,6 +159,11 @@ export class HitopRequest extends LitElement {
     } else if (changed.has("tab") && (this.tab?.kind === "grpc" || this.tab?.kind === "websocket") && changed.get("tab")?.kind !== this.tab.kind) {
       // Switched to gRPC or WebSocket: the message (and service, method) or the messages come first.
       this.section = BODY;
+    }
+    // UX2 (6): Find starts empty on every new response (and another tab's).
+    if (changed.has("tab") && changed.get("tab")?.response !== this.tab?.response && this.find) {
+      this.find = "";
+      this.findAt = 0;
     }
     // The header editor rebuilds its rows whenever `entries` is set, and Lit
     // sets object properties on every render, so the binding is guarded:
@@ -582,15 +588,17 @@ export class HitopRequest extends LitElement {
     }
     if (this.responseSection >= tabs.length) this.responseSection = 0;
     const shown = tabs[this.responseSection];
+    // UX2 (4): the body's tools sit on the tab row, its content below.
+    const bodyParts = shown === "body" && t.response ? (t.responseType === "binary" ? this.renderBinary() : this.renderBodyView(code)) : null;
     return html`
       <section class="response" data-state=${t.responseType === "error" ? "error" : "done"} data-checks=${tests.length ? (passed === tests.length ? "passed" : "failed") : "none"} aria-label="Response">
         <div class="response-meta">
           <span class=${`status-chip ${cls}`}><span class="mono">${t.statusCode}</span>${getStatusText(t.statusCode) === "Unknown Status" ? "" : html` ${getStatusText(t.statusCode)}`}</span>
           ${t.durationMs != null ? html`<span class="mono response-num">${t.durationMs}<span class="unit"> ms</span></span>` : nothing}
-          <span class="mono response-num">${bytes(t.response || "")}</span>
+          <span class="mono response-num">${t.responseType === "binary" && t.responseSize != null ? size(t.responseSize) : bytes(t.response || "")}</span>
           ${t.truncated ? html`<span class="warn">Cut at 5 MB</span>` : nothing}
-          ${t.timings?.reused ? html`<span class="hint">reused connection</span>` : nothing}
-          ${tests.length ? html`<span class=${`checks-summary ${passed === tests.length ? "pass" : "fail"}`}>${icon(passed === tests.length ? "check-circle" : "warning-circle")}${passed === tests.length ? `${passed} of ${tests.length} tests passed` : `${tests.length - passed} of ${tests.length} tests failed`}</span>` : nothing}
+          ${this.timing()}
+          ${tests.length ? html`<span class=${`checks-summary ${passed === tests.length ? "pass" : "fail"}`}>${icon(passed === tests.length ? "check-circle" : "warning-circle")}${passed === tests.length ? `${passed}/${tests.length} passed` : `${tests.length - passed} of ${tests.length} tests failed`}</span>` : nothing}
           <span class="response-actions">
             ${this.store.loadedRequest(t)
               ? html`<lit-material-icon-button aria-label="Save as example" title="Save as example" @click=${() => this.app.openDialog("save-example", { name: `${t.statusCode} response`, request: this.store.loadedRequest(t).name })}>${icon("bookmark-simple")}</lit-material-icon-button>`
@@ -598,22 +606,24 @@ export class HitopRequest extends LitElement {
             <lit-material-icon-button aria-label="Compare" title="Compare responses" @click=${() => this.app.openDialog("compare")}>${icon("git-diff")}</lit-material-icon-button>
           </span>
         </div>
-        ${this.timing()}
+        <div class="response-tabbar">
         <lit-material-tabs class="sub-tabs" aria-label="Response details" .selected=${this.responseSection} @change=${(e) => (this.responseSection = e.target.selected)}>
           <lit-material-tab>Body</lit-material-tab>
           <lit-material-tab>Headers <span class="count">${headers.length}</span></lit-material-tab>
           <lit-material-tab>Raw</lit-material-tab>
           ${tests.length ? html`<lit-material-tab>Tests <span class=${`count ${passed === tests.length ? "pass" : "fail"}`}>${passed === tests.length ? `${passed}/${tests.length}` : `${tests.length - passed} of ${tests.length} failed`}</span></lit-material-tab>` : nothing}
           ${live?.events.length ? html`<lit-material-tab>Events <span class="count">${live.events.length}</span></lit-material-tab>` : nothing}
-          ${canDiff ? html`<lit-material-tab>Diff vs last</lit-material-tab>` : nothing}
+          ${canDiff ? html`<lit-material-tab title="Diff against the last response to this request">Diff</lit-material-tab>` : nothing}
         </lit-material-tabs>
+        ${bodyParts?.tools ?? nothing}
+        </div>
         ${!live && /text\/event-stream/i.test(t.responseHeaders?.["content-type"] ?? "") && platform().stream
           ? html`<p class="hint sse-hint">An event stream: add the header <code>Accept: text/event-stream</code> to see its events as they arrive.
               <lit-material-button variant="text" @click=${() => this.set({ headers: [...(t.headers || []).filter((h) => h.name || h.value), { name: "Accept", value: "text/event-stream" }] })}>Add it</lit-material-button></p>`
           : nothing}
         ${shown === "body"
           ? t.response
-            ? html`${this.renderBodyView(code)}${tests.length ? testList(tests) : nothing}`
+            ? html`${bodyParts.content}${tests.length ? testList(tests) : nothing}`
             : html`<p class="hint">No body${t.method === "HEAD" ? ": HEAD responses never have one" : ""}.</p>`
           : shown === "events"
             ? this.renderEvents(live)
@@ -634,7 +644,7 @@ export class HitopRequest extends LitElement {
   renderRaw(headers) {
     const t = this.tab;
     const raw = this.store.rawBodies.get(t.id);
-    const body = typeof raw === "string" ? raw : typeof t.response === "string" ? t.response : JSON.stringify(t.response ?? "");
+    const body = t.responseType === "binary" ? `(${size(t.responseSize ?? 0)} of binary data: see Body)` : typeof raw === "string" ? raw : typeof t.response === "string" ? t.response : JSON.stringify(t.response ?? "");
     const reason = getStatusText(t.statusCode);
     const text = [`HTTP/1.1 ${t.statusCode}${reason === "Unknown Status" ? "" : ` ${reason}`}`, ...headers.map(([k, v]) => `${k}: ${v}`), "", body].join("\n");
     return html`<div class="response-scroll" tabindex="0" role="region" aria-label="Raw response">
@@ -663,6 +673,31 @@ export class HitopRequest extends LitElement {
       this.requestUpdate();
     };
     const ext = t.responseType === "json" ? "json" : t.responseType === "html" ? "html" : t.responseType === "xml" ? "xml" : "txt";
+    const tools = html`<div class="body-tools">
+        <span class="segmented" role="group" aria-label="Show the body">
+          ${seg("pretty", "Pretty", "Formatted and highlighted")}${seg("raw", "Raw", "As received")}${html_ ? seg("preview", "Preview", "The page, rendered without scripts") : nothing}
+        </span>
+        <button type="button" class="seg wrap-toggle" aria-pressed=${String(this.wrap)} aria-label="Wrap long lines" title="Wrap long lines" @click=${() => (this.wrap = !this.wrap)}>
+          ${icon("text-align-left")}
+        </button>
+        ${mode !== "preview"
+          ? html`<label class=${`find ${query ? "has-query" : ""}`} title="Find in body">
+              ${icon("magnifying-glass")}
+              <input type="search" class="find-input" placeholder="Find in body" aria-label="Find in body" .value=${query}
+                @input=${(e) => ((this.find = e.target.value), (this.findAt = 0))}
+                @keydown=${(e) => e.key === "Enter" && (e.preventDefault(), step(e.shiftKey ? -1 : 1))} />
+              ${query ? html`<span class="find-count" role="status">${marks.count ? `${this.findAt + 1} of ${marks.count}${marks.capped ? "+" : ""}` : "No matches"}</span>` : nothing}
+            </label>`
+          : nothing}
+        <lit-material-icon-button aria-label="Copy the body" title="Copy the body" @click=${() => navigator.clipboard?.writeText(typeof text === "string" ? text : JSON.stringify(text))}>${icon("copy")}</lit-material-icon-button>
+        <lit-material-icon-button aria-label="Download the body" title="Download the body" @click=${() => this.app.download(`response.${ext}`, text, ext === "json" ? "application/json" : "text/plain")}>
+          ${icon("file-arrow-down")}
+        </lit-material-icon-button>
+      </div>`;
+    return { tools, content: this.bodyContent(t, mode, text, marks, code) };
+  }
+
+  bodyContent(t, mode, text, marks, code) {
     return html`
       ${t.responseCut
         ? html`<lit-material-alert variant="info" class="response-note">${t.responseStored
@@ -672,32 +707,12 @@ export class HitopRequest extends LitElement {
       ${t.jsonError
         ? html`<lit-material-alert variant="warning" class="response-note">The server says JSON, but the body doesn't parse: ${t.jsonError}. It's shown as text.</lit-material-alert>`
         : nothing}
-      <div class="body-tools">
-        <span class="segmented" role="group" aria-label="Show the body">
-          ${seg("pretty", "Pretty", "Formatted and highlighted")}${seg("raw", "Raw", "As received")}${html_ ? seg("preview", "Preview", "The page, rendered without scripts") : nothing}
-        </span>
-        <button type="button" class="seg wrap-toggle" aria-pressed=${String(this.wrap)} title="Wrap long lines" @click=${() => (this.wrap = !this.wrap)}>
-          ${icon("text-align-left")} Wrap
-        </button>
-        ${mode !== "preview"
-          ? html`<label class="find">
-              ${icon("magnifying-glass")}
-              <input type="search" class="find-input" placeholder="Find in body" aria-label="Find in body" .value=${query}
-                @input=${(e) => ((this.find = e.target.value), (this.findAt = 0))}
-                @keydown=${(e) => e.key === "Enter" && (e.preventDefault(), step(e.shiftKey ? -1 : 1))} />
-              ${query ? html`<span class="find-count" role="status">${marks.count ? `${this.findAt + 1} of ${marks.count}${marks.capped ? "+" : ""}` : "No matches"}</span>` : nothing}
-            </label>`
-          : nothing}
-        <lit-material-icon-button aria-label="Download the body" title="Download the body" @click=${() => this.app.download(`response.${ext}`, text, ext === "json" ? "application/json" : "text/plain")}>
-          ${icon("file-arrow-down")}
-        </lit-material-icon-button>
-      </div>
       ${mode === "preview"
         ? html`<iframe class="response-preview" title="Preview of the HTML response" sandbox="" referrerpolicy="no-referrer" srcdoc=${t.response}></iframe>`
         : html`<div class=${`response-scroll ${this.wrap ? "wrap" : ""}`} tabindex="0" role="region" aria-label="Response body">
             ${marks
               ? html`<pre class="response-text">${marks.parts.map((p, i) => (i % 2 ? html`<mark class=${(i - 1) / 2 === this.findAt ? "current" : ""}>${p}</mark>` : p))}</pre>`
-              : html`<lit-material-code-block class="response-body" label=${mode === "raw" ? "RAW" : t.responseType.toUpperCase()}>${mode === "pretty" && code ? unsafeHTML(code) : text}</lit-material-code-block>`}
+              : html`<lit-material-code-block class="response-body" .copyable=${false} label=${mode === "raw" ? "RAW" : t.responseType.toUpperCase()}>${mode === "pretty" && code ? unsafeHTML(code) : text}</lit-material-code-block>`}
           </div>`}`;
   }
 
@@ -751,6 +766,7 @@ export class HitopRequest extends LitElement {
     const history = Boolean(where && ["cloud", "github"].includes(where.kind));
     const item = (label, run, extra = {}) => html`<lit-material-list-item interactive ?disabled=${Boolean(extra.disabled)} @click=${run}>${label}</lit-material-list-item>`;
     return html`<lit-material-menu id="line-menu" aria-label="More options">
+      <lit-material-list-item interactive class="menu-save" @click=${() => this.app.saveCurrent()}>Save <lit-material-kbd slot="trailing" keys="Mod+S"></lit-material-kbd></lit-material-list-item>
       ${item(request ? "Save to…" : "Save to a collection…", () => this.app.openDialog("save", { ...s.saveTarget(), overwrite: false }))}
       ${item("Code", () => this.app.openDialog("code", { lang: "curl", showSecrets: false }), { disabled: !t.url })}
       ${item("Ask AI", () => this.app.openAi())}
@@ -902,14 +918,73 @@ export class HitopRequest extends LitElement {
   }
 
   // Where the request's time went (desktop, and the web proxy for public hosts).
+  // UX2 (4): one line in the response header; the legend (phases, total, a reused connection)
+  // opens on hover or focus.
   timing() {
     const t = this.tab;
     if (!t.timings) return nothing;
-    return html`<lit-material-timing-waterfall class="timing" .timings=${t.timings}></lit-material-timing-waterfall>`;
+    return html`<span class="timing-inline" tabindex="0" title="Where the time went">
+      <lit-material-timing-waterfall class="timing-bar" hide-legend .timings=${t.timings}></lit-material-timing-waterfall>
+      <span class="timing-card" aria-hidden="true"><lit-material-timing-waterfall class="timing" .timings=${t.timings}></lit-material-timing-waterfall></span>
+    </span>`;
   }
 
+  // UX2 (6): Diff compares with earlier responses to this same request (method and URL) or its
+  // saved examples; with none it says so.
   renderDiff() {
-    return compareDialog(this.app, this.diffPick ?? {}, (pick) => ((this.diffPick = pick), this.requestUpdate())).body;
+    const t = this.tab;
+    const only = { method: t.method, url: t.url };
+    // The current response is History's newest entry for it: one more is needed (or an example).
+    const earlier = this.store.history.filter((h) => h?.response && !h.isCollectionRun && h.method === t.method && h.url === t.url).length;
+    if (earlier < 2 && !(this.store.loadedRequest(t)?.examples || []).length) {
+      return html`<div class="diff-pane"><lit-material-empty-state size="compact" headline="Nothing earlier to compare">
+        History has no earlier response to ${t.method} ${t.url}, and the request has no saved examples. Send it again, or save this response as an example, to see what changes.
+      </lit-material-empty-state></div>`;
+    }
+    return html`<div class="diff-pane">${compareDialog(this.app, this.diffPick ?? {}, (pick) => ((this.diffPick = pick), this.requestUpdate()), only).body}</div>`;
+  }
+
+  // UX2 (6): an image, a PDF or other bytes, by Content-Type (the body is base64 on the tab).
+  renderBinary() {
+    const t = this.tab;
+    const type = String(t.responseHeaders?.["content-type"] ?? "application/octet-stream").split(";")[0].trim();
+    const view = bodyView(type) ?? "binary";
+    const cut = t.responseCut;
+    const bytesOf = () => (this.binaryFor === t.response ? this.binaryBytes : ((this.binaryFor = t.response), (this.binaryBytes = fromBase64(t.response))));
+    const bytes = cut ? null : bytesOf();
+    const total = t.responseSize ?? bytes?.length ?? 0;
+    const ext = (type.split("/")[1] || "bin").replace(/^x-/, "").replace(/[^a-z0-9]+.*$/i, "") || "bin";
+    const download = () => this.app.download(`response.${ext}`, bytes ?? new Uint8Array(0), type);
+    const tools = html`<div class="body-tools">
+      <lit-material-icon-button aria-label="Download the body" title="Download the body" ?disabled=${!bytes} @click=${download}>${icon("file-arrow-down")}</lit-material-icon-button>
+    </div>`;
+    const facts = html`<p class="binary-facts">${icon(view === "image" ? "image" : view === "pdf" ? "file-pdf" : "file")}
+      <span>${view === "image" ? "Image" : view === "pdf" ? "PDF" : "Binary"} · ${size(total)} · <span class="mono">${type}</span>${view === "image" && this.imageSize?.for === t.response ? html` · <span class="mono">${this.imageSize.w} × ${this.imageSize.h}</span>` : nothing}</span>
+      <lit-material-button variant="text" ?disabled=${!bytes} @click=${download}>${icon("file-arrow-down")} Download</lit-material-button></p>`;
+    if (cut || !bytes) {
+      return { tools, content: html`<div class="binary-body">${facts}<p class="hint">The body didn't fit in this browser's storage: send the request again to see it.</p></div>` };
+    }
+    if (view === "image") {
+      const src = `data:${type};base64,${t.response}`;
+      const loaded = (e) => {
+        const img = e.currentTarget;
+        this.imageSize = { for: t.response, w: img.naturalWidth, h: img.naturalHeight };
+        this.requestUpdate();
+      };
+      return { tools, content: html`<div class="binary-body">${facts}<div class="image-frame"><img class="response-image" alt=${`The response image (${type})`} src=${src} @load=${loaded} /></div></div>` };
+    }
+    if (view === "pdf") {
+      // A frame with no scripts, nothing of the app's: the browser's own PDF viewer (or its link).
+      this.pdfUrl = this.pdfFor === t.response ? this.pdfUrl : (this.pdfUrl && URL.revokeObjectURL(this.pdfUrl), (this.pdfFor = t.response), URL.createObjectURL(new Blob([bytes], { type: "application/pdf" })));
+      return { tools, content: html`<div class="binary-body">${facts}<iframe class="response-pdf" title="The PDF response" sandbox="allow-same-origin" referrerpolicy="no-referrer" src=${this.pdfUrl}></iframe></div>` };
+    }
+    const shown = Math.min(bytes.length, 4096);
+    return {
+      tools,
+      content: html`<div class="binary-body">${facts}
+        <p class="hint">The first ${size(shown)}${bytes.length > shown ? ` of ${size(bytes.length)}` : ""} as hex:</p>
+        <div class="response-scroll" tabindex="0" role="region" aria-label="The body as hex"><pre class="response-text hex-dump">${hexDump(bytes, 4096)}</pre></div></div>`,
+    };
   }
 
   render() {
@@ -937,10 +1012,10 @@ export class HitopRequest extends LitElement {
           : html`<lit-material-button class="send" variant="filled" type="submit" title=${`Send (${SEND_KEYS})`}>Send <lit-material-kbd class="send-kbd" aria-hidden="true" keys="Mod+Enter"></lit-material-kbd></lit-material-button>`}
         <span class="line-tools">
           ${this.store.loadedRequest(t)
-            ? html`<lit-material-icon-button aria-label="Save request" title=${`Save (${SAVE_KEYS})`} @click=${() => this.app.openDialog("save", this.store.saveTarget())}>
+            ? html`<lit-material-icon-button class="line-save" aria-label="Save request" title=${`Save (${SAVE_KEYS})`} @click=${() => this.app.openDialog("save", this.store.saveTarget())}>
                 ${icon("floppy-disk")}
               </lit-material-icon-button>`
-            : html`<lit-material-button variant="outlined" class="save-draft" title=${`Save to a collection (${SAVE_KEYS})`} @click=${() => this.app.openDialog("save", this.store.saveTarget())}>
+            : html`<lit-material-button variant="outlined" class="save-draft line-save" title=${`Save to a collection (${SAVE_KEYS})`} @click=${() => this.app.openDialog("save", this.store.saveTarget())}>
                 ${icon("floppy-disk")} <span class="visually-hidden">Save request, </span>Save to…
               </lit-material-button>`}
           <lit-material-icon-button class="more-send" aria-label="More options" title="More: Save to…, Code, Ask AI, Version history, Move to…" aria-haspopup="menu"

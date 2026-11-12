@@ -153,7 +153,7 @@ const settle = (p) => p.waitForTimeout(400);
 
   // A failed assertion fails the collection run
   const col = (await h.stored.collections()).find((c) => c.requests.some((r) => r.name === 'Posts with key')).name;
-  await p.locator('aside').getByRole('button', { name: col, exact: true }).first().click();
+  await p.locator('aside').getByRole('treeitem', { name: col, exact: true }).first().click();
   await p.getByRole('button', { name: /Run collection/ }).click();
   await p.locator('.run h2', { hasText: 'Last run' }).waitFor({ timeout: 30000 });
   const run = await p.locator('.run').innerText();
@@ -167,7 +167,7 @@ const settle = (p) => p.waitForTimeout(400);
   await p.keyboard.press('Tab');
   await p.keyboard.type('k-1', { delay: 15 });
   await settle(p);
-  await p.locator('aside').getByRole('button', { name: col, exact: true }).first().click();
+  await p.locator('aside').getByRole('treeitem', { name: col, exact: true }).first().click();
   const before = (await h.stored.history()).length;
   await p.getByRole('button', { name: /Run collection/ }).click();
   for (let i = 0; i < 120 && (await h.stored.history()).length <= before; i++) await p.waitForTimeout(250);

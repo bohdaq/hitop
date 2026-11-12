@@ -124,7 +124,7 @@ function fakeDirectoryPicker(files) {
   const folderFiles = async () => (h.tauri ? listTree(dir) : p.evaluate(() => window.__folderFiles()));
 
   await p.goto(h.url, { waitUntil: 'networkidle' });
-  await p.locator('aside').getByRole('button', { name: 'Collections', exact: true }).click();
+  await p.evaluate(() => document.querySelector('hitop-app').go('collections')); // UX2: the overview (crumb menu → All collections)
   if (h.tauri) h.mock.nextFolder = dir;
   await p.getByRole('button', { name: 'Open folder' }).click();
   await p.locator('h1', { hasText: 'Sample API' }).waitFor({ timeout: 10000 });
@@ -143,7 +143,7 @@ function fakeDirectoryPicker(files) {
   check('script context passes between folder requests', api.seen.some((r) => r.url === '/orders/7' && r.headers['x-api-key'] === 'local-key'), JSON.stringify(api.seen.map((r) => r.url)));
 
   // Live save: edit and save a request, rename the collection
-  await p.locator('aside').getByRole('button', { name: /^GET Notes/ }).click();
+  await p.locator('aside').getByRole('treeitem', { name: /^GET Notes/ }).click();
   await p.getByLabel('URL').fill('${base}/users/1?v=2');
   await p.getByRole('button', { name: 'Save request' }).click();
   await p.waitForTimeout(300);
@@ -188,7 +188,7 @@ function fakeDirectoryPicker(files) {
   await settle(p);
   now = await folderFiles();
   check('FV1 ...deleted, its file goes', Object.keys(now).length === fileCount && !('requests/get-users-2.yaml' in now), Object.keys(now).join(' '));
-  await p.locator('aside').getByRole('button', { name: 'Sample API', exact: true }).click();
+  await p.locator('aside').getByRole('treeitem', { name: 'Sample API', exact: true }).click();
   await p.getByRole('button', { name: 'Rename collection' }).click();
   await p.waitForTimeout(300);
   await p.locator('#dialog #name').evaluate((el) => (el.value = 'Sample API v2'));
@@ -207,7 +207,7 @@ function fakeDirectoryPicker(files) {
   check('zip keeps secrets as names only', prodYaml.includes('token:\n    secret: true'), prodYaml);
   const zipPath = path.join(os.tmpdir(), `hitop-e2e-${process.pid}.zip`);
   fs.writeFileSync(zipPath, zip);
-  await p.locator('aside').getByRole('button', { name: 'Collections', exact: true }).click();
+  await p.evaluate(() => document.querySelector('hitop-app').go('collections')); // UX2: the overview (crumb menu → All collections)
   await p.locator('#zip-input').setInputFiles(zipPath);
   await settle(p);
   const side2 = await p.locator('aside').innerText();
@@ -215,7 +215,7 @@ function fakeDirectoryPicker(files) {
   fs.rmSync(zipPath);
 
   // Closing leaves the files
-  await p.locator('aside').getByRole('button', { name: 'Sample API v2' }).first().click();
+  await p.locator('aside').getByRole('treeitem', { name: 'Sample API v2' }).first().click();
   await p.getByRole('button', { name: 'Close folder' }).click();
   await p.getByRole('button', { name: 'Close', exact: true }).click();
   await settle(p);

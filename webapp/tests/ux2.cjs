@@ -8,7 +8,26 @@ const settle = (p, ms = 400) => p.waitForTimeout(ms);
 
 // /json, /slow (answers after 4 s), /sse (an event every 200 ms, never ends), /png (a 2×1 PNG).
 function server() {
-  const PNG = Buffer.from('89504e470d0a1a0a0000000d4948445200000002000000010806000000f478d4fa0000000d49444154789c63f8cfc0f01f0005000201a5f5b6e10000000049454e44ae426082', 'hex');
+  // A 2×1 PNG, made here (zlib + CRC) so it is valid byte for byte.
+  const zlib = require('zlib');
+  const crc = (buf) => {
+    let c = ~0;
+    for (const b of buf) {
+      c ^= b;
+      for (let k = 0; k < 8; k++) c = c & 1 ? (c >>> 1) ^ 0xedb88320 : c >>> 1;
+    }
+    return (~c) >>> 0;
+  };
+  const chunk = (type, data) => {
+    const len = Buffer.alloc(4);
+    len.writeUInt32BE(data.length);
+    const td = Buffer.concat([Buffer.from(type), data]);
+    const c = Buffer.alloc(4);
+    c.writeUInt32BE(crc(td));
+    return Buffer.concat([len, td, c]);
+  };
+  const ihdr = Buffer.from([0, 0, 0, 2, 0, 0, 0, 1, 8, 2, 0, 0, 0]);
+  const PNG = Buffer.concat([Buffer.from('89504e470d0a1a0a', 'hex'), chunk('IHDR', ihdr), chunk('IDAT', zlib.deflateSync(Buffer.from([0, 255, 0, 0, 0, 0, 255]))), chunk('IEND', Buffer.alloc(0))]);
   const s = http.createServer((req, res) => {
     const cors = { 'access-control-allow-origin': '*', 'access-control-allow-headers': '*', 'access-control-allow-methods': '*', 'access-control-expose-headers': '*' };
     if (req.method === 'OPTIONS') return res.writeHead(204, cors).end();
@@ -22,6 +41,7 @@ function server() {
       return;
     }
     if (u.pathname === '/png') return res.writeHead(200, { ...cors, 'content-type': 'image/png' }).end(PNG);
+    if (u.pathname === '/bin') return res.writeHead(200, { ...cors, 'content-type': 'application/octet-stream' }).end(Buffer.from([0, 1, 2, 0xff, 0x41, 0x42, 0x43]));
     res.writeHead(200, { ...cors, 'content-type': 'application/json' }).end(JSON.stringify({ ok: true, path: u.pathname }));
   });
   return new Promise((resolve) => s.listen(0, '127.0.0.1', () => resolve(s)));
@@ -159,6 +179,143 @@ function server() {
   cols = await h.stored.collections();
   tab = (await h.stored.tabs()).tab;
   check('(2) Import takes curl as one new request in the collection', cols.find((c) => c.name === 'My requests').requests.length === before + 1 && tab.url === `${base}/me` && tab.auth?.type === 'basic' && tab.auth.username === 'ada', JSON.stringify([tab.url, tab.auth]));
+
+  // --- (4) The response gets the room: one header line, tools on the tab row (1440×900) ---
+  await tabUrl(`${base}/json`, { method: 'GET' });
+  await p.getByRole('button', { name: 'Send', exact: true }).click();
+  await p.locator('.response-meta').waitFor({ timeout: 15000 });
+  await settle(p, 500);
+  const box = async (sel) => p.locator(sel).first().boundingBox();
+  const meta = await box('.response-meta');
+  const tabbar = await box('.response-tabbar');
+  const tools = await box('.response-tabbar .body-tools');
+  const bodyTop = (await box('.response-scroll')).y;
+  check('(4) one response header line, the body tools on the tab row', meta.height < 50 && tools.y < tabbar.y + 10 && tabbar.height < 50, JSON.stringify({ meta, tabbar, tools }));
+  check('(4) the body starts high up (y < 340 at 1440×900)', bodyTop < 340, String(bodyTop));
+  check('(4) no duplicate "reused connection" or Total in the header', !/reused connection|Total/.test(await p.locator('.response-meta').innerText()));
+  const sendBox = await box('.request-line .send');
+  const moreBox = await box('.request-line .more-send');
+  check('(4) Save and ⋯ stay on the URL row', Math.abs(sendBox.y + sendBox.height / 2 - (moreBox.y + moreBox.height / 2)) < 4);
+  // Mod+B folds the side pane and remembers it.
+  const paneShown = () => p.locator('#side-pane').isVisible();
+  check('(4) at 1440 the side pane shows', await paneShown());
+  await p.keyboard.press('Control+b');
+  await settle(p);
+  const layout = await p.evaluate(() => JSON.parse(localStorage.getItem('hitop_layout') || '{}'));
+  check('(4) Mod+B hides the side pane, remembered in hitop_layout', !(await paneShown()) && layout.sidePane === false, JSON.stringify(layout));
+  await p.keyboard.press('Control+b');
+  await settle(p);
+  check('(4) ...and brings it back', (await paneShown()) && (await p.evaluate(() => JSON.parse(localStorage.getItem('hitop_layout')).sidePane)) === true);
+  // At 1024×768, not chosen yet: folded with a request open; Save folds into ⋯.
+  await p.evaluate(() => {
+    const l = JSON.parse(localStorage.getItem('hitop_layout') || '{}');
+    delete l.sidePane;
+    localStorage.setItem('hitop_layout', JSON.stringify(l));
+    document.querySelector('hitop-app').sidePref = undefined;
+  });
+  await p.setViewportSize({ width: 1024, height: 768 });
+  await settle(p, 600);
+  check('(4) at 1024 the side pane starts folded with a request open', !(await paneShown()));
+  const s2 = await box('.request-line .send');
+  const m2 = await box('.request-line .more-send');
+  check('(4) at 1024 Send and ⋯ share the URL row; Save is in ⋯', Math.abs(s2.y - m2.y) < 4 && !(await p.locator('.request-line .line-save').isVisible()) && (await p.locator('#line-menu .menu-save').evaluate((el) => getComputedStyle(el).display)) !== 'none');
+  check('(4) at 1024 the body starts above the fold', (await box('.response-scroll')).y < 400, String((await box('.response-scroll')).y));
+  await p.setViewportSize({ width: 390, height: 844 });
+  await settle(p, 600);
+  check('(4) at 390 px nothing scrolls sideways', await p.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth + 1), String(await p.evaluate(() => document.documentElement.scrollWidth)));
+  await p.setViewportSize({ width: 1440, height: 900 });
+  await settle(p, 600);
+
+  // --- (3) Rail pages: the crumb names them, Esc and the rail's Collections return to the workspace ---
+  const rail = (name) => p.locator('lit-material-navigation-rail-item', { hasText: name });
+  await rail('History').click();
+  await settle(p);
+  check('(3) the crumb names the page', (await p.locator('header.topbar .crumb-name').innerText()).trim() === 'History');
+  await p.keyboard.press('Escape');
+  await settle(p);
+  check('(3) Esc on a rail page returns to the workspace', (await p.locator('main hitop-request').count()) === 1 && (await p.locator('.tab-strip').count()) === 1);
+  await rail('Settings').click();
+  await settle(p);
+  await rail('Collections').click();
+  await settle(p);
+  check('(3) the rail\'s Collections returns to the tabs and the open request, not the overview', (await p.locator('main hitop-request').count()) === 1 && (await p.locator('main hitop-collections').count()) === 0);
+
+  // --- (6) Binary bodies by Content-Type; Find starts empty; Diff only against the same request ---
+  const sendAndWait = async () => {
+    await p.getByRole('button', { name: 'Send', exact: true }).click();
+    await p.locator('.response-meta').waitFor({ timeout: 15000 });
+    await settle(p, 500);
+  };
+  await tabUrl(`${base}/png`, { method: 'GET', postRequestScript: '' });
+  await sendAndWait();
+  const img = await p.locator('.response img.response-image').evaluate((el) => ({ w: el.naturalWidth, h: el.naturalHeight })).catch(() => null);
+  const facts = await p.locator('.binary-facts').innerText().catch(() => '');
+  check('(6) image/png shows as an image with its size and dimensions', img?.w === 2 && img?.h === 1 && facts.includes('Image') && facts.includes('image/png') && facts.includes('2 × 1') && (await p.locator('.response .response-text').count()) === 0, `${JSON.stringify(img)} ${facts}`);
+  await tabUrl(`${base}/bin`);
+  await sendAndWait();
+  const hex = await p.locator('.hex-dump').innerText().catch(() => '');
+  check('(6) other binary: "Binary · 7 B", Download and a hex dump', (await p.locator('.binary-facts').innerText()).includes('Binary · 7 B') && hex.startsWith('00000000  00 01 02 ff 41 42 43') && hex.includes('|....ABC|') && (await p.locator('.binary-facts').getByRole('button', { name: 'Download' }).count()) === 1, hex);
+  await tabUrl(`${base}/json`);
+  await sendAndWait();
+  await p.getByLabel('Find in body').fill('ok');
+  await settle(p);
+  await sendAndWait();
+  check('(6) Find starts empty on a new response', (await p.getByLabel('Find in body').inputValue()) === '');
+  const respTab = (name) => p.locator('.response lit-material-tabs[aria-label="Response details"] lit-material-tab').filter({ hasText: name });
+  await respTab(/^\s*Diff\s*$/).click();
+  await settle(p);
+  check('(6) Diff offers only earlier responses to the same request', (await p.locator('.diff-pane .compare-summary').count()) === 1 && !(await p.locator('#diff-left').evaluate((el) => [...el.querySelectorAll('lit-material-select-option')].map((o) => o.textContent).join('|'))).includes('/png'));
+  check('(6) ...in a padded panel', (await p.locator('.diff-pane').evaluate((el) => getComputedStyle(el).paddingLeft)) === '20px');
+  await tabUrl(`${base}/json?other=1`);
+  await sendAndWait();
+  await respTab(/^\s*Diff\s*$/).click();
+  await settle(p);
+  check('(6) another URL: Diff says there is nothing earlier', (await p.locator('.diff-pane').innerText()).includes('has no earlier response to GET'), (await p.locator('.response').innerText()).slice(0, 300).replace(/\n/g, ' '));
+
+  // --- (9) The collection tree is one Tab stop with arrow keys ---
+  const tree = p.locator('nav.tree');
+  const stops = await tree.evaluate((el) => [...el.querySelectorAll('button, [tabindex]')].filter((b) => b.tabIndex >= 0 && b.offsetParent !== null && !b.closest('.tree-hint')).length);
+  check('(9) the tree is one Tab stop (roving tabindex)', stops === 1, String(stops));
+  check('(9) ARIA tree roles', (await tree.locator('[role="tree"]').count()) === 1 && (await tree.locator('[role="treeitem"]').count()) > 3 && (await tree.locator('[role="treeitem"][aria-level="1"][aria-expanded]').count()) >= 2);
+  await tree.locator('[role="treeitem"][tabindex="0"]').focus();
+  const focusedKey = () => p.evaluate(() => document.activeElement?.dataset?.key ?? '');
+  const k0 = await focusedKey();
+  await p.keyboard.press('Home');
+  const kHome = await focusedKey();
+  await p.keyboard.press('ArrowDown');
+  const kDown = await focusedKey();
+  check('(9) Home and Down move the focus', kHome.startsWith('c:') && kDown !== kHome && kDown !== '', `${k0} ${kHome} ${kDown}`);
+  await p.keyboard.press('Home');
+  await p.keyboard.press('ArrowLeft');
+  await settle(p);
+  check('(9) Left folds the collection', (await tree.locator('[role="treeitem"][aria-level="1"]').first().getAttribute('aria-expanded')) === 'false');
+  await p.keyboard.press('ArrowRight');
+  await settle(p);
+  check('(9) Right opens it again', (await tree.locator('[role="treeitem"][aria-level="1"]').first().getAttribute('aria-expanded')) === 'true');
+  await p.keyboard.press('ArrowRight');
+  check('(9) Right on an open row goes to its first child', (await focusedKey()).startsWith('v:') || (await focusedKey()).startsWith('r:'));
+  // A request row: F2 renames, Shift+F10 opens its menu, Alt+Down moves it.
+  const myId = (await h.stored.collections()).find((c) => c.name === 'My requests').id;
+  const firstReq = tree.locator(`[data-tree="request"][data-collection="${myId}"]`).first();
+  await firstReq.focus();
+  await p.keyboard.press('F2');
+  await settle(p);
+  check('(9) F2 renames', (await p.locator('#dialog #name').count()) === 1);
+  await p.keyboard.press('Escape');
+  await settle(p);
+  await firstReq.focus();
+  await p.keyboard.press('Shift+F10');
+  await settle(p);
+  check('(9) Shift+F10 opens the row\'s menu, with Run, Copy as cURL and keys', (await p.locator('#request-menu').evaluate((el) => el.open || el.hasAttribute('open') || el.matches(':popover-open') || Boolean(el.shadowRoot?.querySelector(':popover-open')))) && (await p.locator('#request-menu').innerText()).includes('Copy as cURL'));
+  await p.keyboard.press('Escape');
+  await settle(p);
+  const order = async () => (await h.stored.collections()).find((c) => c.name === 'My requests').requests.map((r) => r.id);
+  const before9 = await order();
+  await firstReq.focus();
+  await p.keyboard.press('Alt+ArrowDown');
+  await settle(p);
+  const after9 = await order();
+  check('(9) Alt+Down moves the request down in its list, focus stays on it', after9[1] === before9[0] && after9[0] === before9[1] && (await focusedKey()) === `r:${myId}:${before9[0]}`, `${before9} → ${after9}`);
 
   // --- (10) Signed-out Organization page: the empty state's Sign in renders ---
   await store('await app.openOrg("general");');

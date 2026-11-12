@@ -36,7 +36,7 @@ function api() {
   check('the rail opens History and marks it current', (await p.locator('main h1').first().innerText()) === 'History' && (await rail.getByRole('button', { name: 'History', exact: true }).getAttribute('aria-current')) === 'page');
   await rail.getByRole('button', { name: 'Collections', exact: true }).click();
   await settle(p);
-  check('Collections opens the collections page', (await p.locator('hitop-collections').count()) === 1);
+  check('UX2: Collections returns to the workspace (the overview is in the crumb menu)', (await p.locator('main hitop-request').count()) === 1 && (await p.locator('hitop-collections').count()) === 0);
 
   check('title bar has a search field', (await p.locator('header.topbar .command-field').isVisible()));
   await p.locator('aside .tree-row.leaf', { hasText: 'List posts' }).first().click();
@@ -83,7 +83,7 @@ function api() {
   for (let i = 0; i < '?id=${orderId}'.length; i++) await p.keyboard.press('Backspace');
   await p.keyboard.press('Control+Enter');
   await p.locator('.response-meta .status-chip').waitFor();
-  const waterfall = p.locator('.response lit-material-timing-waterfall');
+  const waterfall = p.locator('.response lit-material-timing-waterfall.timing-bar');
   check('one response: no Diff vs last yet', !(await p.locator('.response lit-material-tabs[aria-label="Response details"] lit-material-tab').allInnerTexts()).some((t) => t.trim() === 'Diff vs last'));
   if (TAURI) {
     check('[tauri] the response shows where the time went', (await waterfall.count()) === 1 && (await waterfall.evaluate((el) => el.timings?.totalMs >= 0)));
@@ -107,8 +107,8 @@ function api() {
   await settle(p);
   await p.locator('.response-meta .status-chip').waitFor();
   const respTabs = p.locator('.response lit-material-tabs[aria-label="Response details"] lit-material-tab');
-  check('a second response offers Diff vs last', (await respTabs.allInnerTexts()).some((t) => t.trim() === 'Diff vs last'));
-  await respTabs.filter({ hasText: 'Diff vs last' }).click();
+  check('a second response offers Diff vs last', (await respTabs.allInnerTexts()).some((t) => t.trim() === 'Diff'));
+  await respTabs.filter({ hasText: /^\s*Diff\s*$/ }).click();
   await settle(p);
   check('Diff vs last compares in the response pane', (await p.locator('.response .compare-summary').count()) === 1 && (await p.locator('.response #diff-left').count()) === 1, await p.locator('.response .compare-summary').innerText().catch(() => ''));
 

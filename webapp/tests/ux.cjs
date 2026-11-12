@@ -255,7 +255,7 @@ function api() {
   check('top bar has the logo and HITOP', (await brand.innerText()).trim() === 'HITOP' && (await p.locator('aside .brand').count()) === 0);
   check(TAURI ? '[tauri] logo is not a link (the webview would leave the app)' : 'logo links to the site, named "HITOP website"', TAURI ? (await brand.evaluate((el) => el.localName)) === 'span' : (await brand.getAttribute('aria-label')) === 'HITOP website' && (await brand.getAttribute('href')) === '/');
   check('environment pill in the title bar, no theme toggle (dark only)', (await p.locator('header.topbar').getByRole('combobox', { name: 'Environment' }).isVisible()) && (await p.locator('lit-material-color-scheme-toggle').count()) === 0);
-  const first = await p.locator('aside').evaluate((el) => [...el.querySelectorAll('lit-material-button, button, input')].filter((b) => b.offsetParent !== null).map((b) => b.getAttribute('aria-label') || b.textContent.trim()));
+  const first = await p.locator('aside .side-pane').evaluate((el) => [...el.querySelectorAll('lit-material-button, button, input')].filter((b) => b.offsetParent !== null).map((b) => b.getAttribute('aria-label') || b.textContent.trim()));
   check('sidebar starts with New collection and Add a request', first.slice(0, 2).join() === 'New collection,Add a request', first.join());
   const footer = await p.locator('.sidebar-footer').boundingBox();
   check('sidebar footer stays on screen', footer && footer.y + footer.height <= 860 + 1, JSON.stringify(footer));

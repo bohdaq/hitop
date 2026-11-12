@@ -141,7 +141,7 @@ function api() {
   await settle(p);
 
   // 4. Sync with the newer spec: preview, then apply.
-  await p.locator('aside').getByRole('button', { name: 'Shop', exact: true }).first().click();
+  await p.locator('aside').getByRole('treeitem', { name: 'Shop', exact: true }).first().click();
   await settle(p);
   await p.getByRole('button', { name: /Sync with OpenAPI/ }).click();
   await settle(p);

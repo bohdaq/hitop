@@ -5,6 +5,8 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { explainError } from "../src/errors.js";
 import { isCurl, parseCurl, shellWords } from "../src/curl.js";
+import { bodyView, digest, fromBase64, hexDump, isBinaryType, toBase64 } from "../src/binary.js";
+import { compareResponses, snapshotResponse } from "../src/diff.js";
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 
@@ -137,6 +139,38 @@ const here = path.dirname(fileURLToPath(import.meta.url));
   assert.equal(read("urlencoded-apikey-query").body, "name=Ada%20Lovelace&note=a%26b%3Dc%2F%C3%A9");
   assert.equal(read("urlencoded-apikey-query").method, "PUT");
   for (const name of fs.readdirSync(goldens).filter((n) => fs.existsSync(path.join(goldens, n, "curl.sh")))) assert.doesNotThrow(() => read(name), name);
+}
+
+// --- (6) binary bodies: kind by Content-Type, base64 both ways, hex, digest; Diff by size + digest ---
+{
+  assert.equal(isBinaryType("image/png"), true);
+  assert.equal(isBinaryType("application/pdf; charset=binary"), true);
+  assert.equal(isBinaryType("application/octet-stream"), true);
+  assert.equal(isBinaryType("image/svg+xml"), false, "SVG is text");
+  assert.equal(isBinaryType("application/json"), false);
+  assert.equal(isBinaryType("text/plain"), false);
+  assert.equal(isBinaryType(""), false);
+  assert.equal(bodyView("image/webp"), "image");
+  assert.equal(bodyView("application/pdf"), "pdf");
+  assert.equal(bodyView("application/zip"), "binary");
+  assert.equal(bodyView("text/html"), null);
+  const bytes = Uint8Array.from([0, 1, 2, 255, 65, 66, 67]);
+  assert.deepEqual([...fromBase64(toBase64(bytes))], [...bytes]);
+  assert.equal(fromBase64("%%%").length, 0, "not base64: no bytes");
+  assert.equal(hexDump(bytes), `00000000  ${"00 01 02 ff 41 42 43".padEnd(23)}  ${"".padEnd(23)}  |....ABC|`);
+  assert.equal(hexDump(new Uint8Array(40), 20).split("\n").length, 2, "only the first `max` bytes");
+  assert.equal(digest(bytes), digest(Uint8Array.from(bytes)));
+  assert.notEqual(digest(bytes), digest(Uint8Array.from([0, 1, 2, 255, 65, 66, 68])));
+  const png = { "content-type": "image/png" };
+  const a = snapshotResponse({ status: 200, headers: png, body: toBase64(bytes) });
+  assert.deepEqual(a.binary, { size: 7, digest: digest(bytes) });
+  assert.equal(a.body, "");
+  const same = compareResponses(a, snapshotResponse({ status: 200, headers: png, body: toBase64(bytes) }));
+  assert.equal(same.same, true);
+  const other = compareResponses(a, snapshotResponse({ status: 200, headers: png, body: toBase64(Uint8Array.from([9])) }));
+  assert.equal(other.body.kind, "binary");
+  assert.equal(other.body.same, false);
+  assert.deepEqual([other.body.before.size, other.body.after.size], [7, 1]);
 }
 
 console.log("unit-ux2: all checks passed");

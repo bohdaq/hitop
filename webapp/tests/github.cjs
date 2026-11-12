@@ -147,7 +147,7 @@ const WEBHOOK = 'whsec-e2e';
 
     // The collection page says where Shop is kept and offers Save to GitHub.
     const openShop = async () => {
-      await page.locator('aside').getByRole('button', { name: /^Shop/ }).click();
+      await page.locator('aside').getByRole('treeitem', { name: /^Shop/ }).click();
       await settle(page);
     };
     await openShop();

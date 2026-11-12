@@ -155,7 +155,7 @@ const settle = (p) => p.waitForTimeout(400);
   await p.locator('main .page-actions').getByRole('button', { name: 'New request' }).click();
   await settle(p);
   check('New request on a collection page adds the request to that collection', (await h.stored.tabs()).tab?.loadedCollectionId === empty.id && (await named('Empty one')).requests.length === 1);
-  await p.locator('nav[aria-label="Sections"]').getByRole('button', { name: 'Collections', exact: true }).click();
+  await p.evaluate(() => document.querySelector('hitop-app').go('collections')); // UX2: the overview (crumb menu → All collections)
   await settle(p);
   await aside.locator('.tree-row.collection', { hasText: 'Users API' }).click();
   await settle(p);

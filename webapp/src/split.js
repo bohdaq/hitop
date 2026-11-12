@@ -3,6 +3,8 @@
 //   columns            the editor's share of the width, in % (side by side)
 //   rows               the editor's height in px (one above the other)
 //   responseCollapsed  the response pane is folded away
+//   sidePane           UX2: the side pane shown (true) or folded (false) by Mod+B; absent = not
+//                      chosen (it folds by itself on a request at 1200 px or less, hitop-app.js)
 // Which layout applies follows the view's width (layoutFor).
 const KEY = "hitop_layout";
 
@@ -52,9 +54,26 @@ export function loadLayout() {
   }
 }
 
+/** UX2: the side pane's state as chosen (true shown, false folded), or null when never chosen. */
+export function loadSidePane() {
+  try {
+    const v = JSON.parse(localStorage.getItem(KEY) || "{}");
+    return typeof v?.sidePane === "boolean" ? v.sidePane : null;
+  } catch {
+    return null;
+  }
+}
+
+// Merged into what is stored: the request view and the app each save their own keys.
 export function saveLayout(layout) {
   try {
-    localStorage.setItem(KEY, JSON.stringify(layout));
+    let stored = {};
+    try {
+      stored = JSON.parse(localStorage.getItem(KEY) || "{}") || {};
+    } catch {
+      stored = {};
+    }
+    localStorage.setItem(KEY, JSON.stringify({ ...stored, ...layout }));
   } catch {
     // storage full or blocked: the layout lasts for this page
   }
