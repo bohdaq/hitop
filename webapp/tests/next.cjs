@@ -70,16 +70,12 @@ function api() {
   await settle(p);
   const chip = p.locator('.url-vars .var-chip');
   check('the URL\'s variables show as chips; an undefined one is marked', (await chip.count()) === 1 && (await chip.innerText()).trim() === '${orderId}' && (await chip.getAttribute('class')).includes('missing'));
-  // The pointer away from where the chip appeared under it (hovering already peeks), then a click.
+  // The pointer away first: the chip appears under where the URL field was clicked, and a hover
+  // already peeks (a click would then toggle it).
   await p.mouse.move(5, 500);
   await settle(p);
-  // (A click can land while the hover's peek is still opening, which light dismiss then closes:
-  // the click is the person's second try, as by hand.)
-  for (let i = 0; i < 2 && !(await p.locator('lit-material-popover.var-peek').evaluate((el) => el.open)); i++) {
-    await chip.click();
-    await p.waitForFunction(() => document.querySelector('lit-material-popover.var-peek')?.open, null, { timeout: 2000 }).catch(() => {});
-  }
-  await settle(p);
+  await chip.click();
+  await p.waitForFunction(() => document.querySelector('lit-material-popover.var-peek')?.open, null, { timeout: 3000 }).catch(() => {});
   check('a click on a variable says where it comes from', (await p.locator('lit-material-popover.var-peek').evaluate((el) => el.open)) && (await p.locator('.var-peek').innerText()).includes('Nothing defines it'));
   await p.keyboard.press('Escape');
   await p.keyboard.press('Control+KeyL'); // the URL field (a click on it would land on the chip)

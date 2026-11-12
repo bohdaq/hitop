@@ -154,6 +154,40 @@ function fakeDirectoryPicker(files) {
   check('saved request written to its file', notes.includes('url: ${base}/users/1') && notes.includes('name: v') && notes.includes("value: '2'"), notes);
   check('fields the editor does not show survive the save', notes.includes('examples:') && notes.includes('x-owner: team-a'), notes);
   check('other files untouched', now['requests/get-user.yaml'] === files['requests/get-user.yaml'] && now['environments/prod.yaml'] === files['environments/prod.yaml']);
+
+  // FV1: a new request in a folder collection is written at once, an untouched one closed leaves
+  // no file, and its first save gives the file its name; re-read, the tab still finds it.
+  const fileCount = Object.keys(now).length;
+  await p.locator('aside').getByRole('button', { name: 'Add a request to Sample API' }).click();
+  await settle(p);
+  now = await folderFiles();
+  check('FV1 + on a folder collection writes requests/untitled.yaml', 'requests/untitled.yaml' in now && Object.keys(now).length === fileCount + 1, Object.keys(now).join(' '));
+  await p.keyboard.press('Alt+Shift+KeyW');
+  await settle(p);
+  now = await folderFiles();
+  check('FV1 ...closing it untouched leaves no file', !('requests/untitled.yaml' in now) && Object.keys(now).length === fileCount, Object.keys(now).join(' '));
+  await p.locator('aside').getByRole('button', { name: 'Add a request to Sample API' }).click();
+  await settle(p);
+  await p.getByLabel('URL').fill('${base}/users/2');
+  await p.keyboard.press('Control+KeyS');
+  await settle(p);
+  now = await folderFiles();
+  const added = Object.keys(now).filter((k) => !(k in files) && k.startsWith('requests/'));
+  check('FV1 Mod+S leaves one file, named after it (requests/get-users-2.yaml)', added.join() === 'requests/get-users-2.yaml' && (now['requests/get-users-2.yaml'] || '').includes('url: ${base}/users/2'), added.join(' '));
+  const reread = await p.evaluate(async () => {
+    const s = document.querySelector('hitop-app').store;
+    const id = await s.reloadFolder(s.tab.loadedCollectionId);
+    const r = s.loadedRequest(s.tab);
+    return { ok: Boolean(id && r), name: r?.name };
+  });
+  check('FV1 ...read again from the folder, the tab still finds its request', reread.ok && reread.name === 'GET /users/2', JSON.stringify(reread));
+  await p.evaluate(() => {
+    const s = document.querySelector('hitop-app').store;
+    s.deleteRequest(s.loadedRequest(s.tab), s.tab.loadedCollectionId);
+  });
+  await settle(p);
+  now = await folderFiles();
+  check('FV1 ...deleted, its file goes', Object.keys(now).length === fileCount && !('requests/get-users-2.yaml' in now), Object.keys(now).join(' '));
   await p.locator('aside').getByRole('button', { name: 'Sample API', exact: true }).click();
   await p.getByRole('button', { name: 'Rename collection' }).click();
   await p.waitForTimeout(300);

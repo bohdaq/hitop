@@ -771,6 +771,10 @@ export class HitopRequest extends LitElement {
         }, 0),
       );
     };
+    // Focus going into the peek (it focuses itself when shown) or coming back from it (it returns
+    // focus to the chip when it closes) is neither leaving nor a new peek: without this, the two
+    // closed and reopened each other in a loop.
+    const fromPeek = (e) => Boolean(e.relatedTarget && this.querySelector(".var-peek")?.contains(e.relatedTarget));
     const leave = () => {
       if (this.peekPinned) return;
       this.querySelector(".var-peek")?.close();
@@ -783,7 +787,7 @@ export class HitopRequest extends LitElement {
         return html`<span class=${`var-chip ${!found ? "missing" : found.missingSecret ? "missing secret-missing" : ""}`} role="button" tabindex="0" aria-haspopup="dialog"
           title=${!found ? "Not defined" : found.missingSecret ? `Secret with no value on this device (${found.scope})` : `${found.value} (${found.scope})`}
           @pointerenter=${(e) => open(n, e.currentTarget, false)} @pointerleave=${leave}
-          @focus=${(e) => open(n, e.currentTarget, false)} @blur=${leave}
+          @focus=${(e) => !fromPeek(e) && open(n, e.currentTarget, false)} @blur=${(e) => !fromPeek(e) && leave()}
           @click=${(e) => open(n, e.currentTarget, true)}
           @keydown=${(e) => (e.key === "Enter" || e.key === " ") && (e.preventDefault(), open(n, e.currentTarget, true))}>${part}</span>`;
       })}</span>

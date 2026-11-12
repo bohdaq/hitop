@@ -701,10 +701,12 @@ export class Store extends EventTarget {
   newTab(collection = this.contextCollection(), folder = "") {
     let target = collection ?? this.defaultCollection();
     let where = folder;
-    const fallback = !this.canTakeRequest(target);
+    let fallback = !this.canTakeRequest(target);
     if (fallback) {
       target = this.defaultCollection();
-      where = "";
+      // My requests itself full: it still gets it (the save is what the server refuses), no toast.
+      if (target.id === collection?.id) fallback = false;
+      else where = "";
     }
     const file = where ? requestFile(target.requests || [], where, UNTITLED) : undefined;
     const request = untitledRequest(file ? { file } : {});
@@ -1310,7 +1312,7 @@ export class Store extends EventTarget {
   applyOpenapiSync(collectionId, preview) {
     const keep = new Set(preview.collection.requests.map((r) => r.id));
     this.collections = this.collections.map((c) => (c.id === collectionId ? preview.collection : c));
-    this.tabs = this.tabs.map((t) => (t.loadedCollectionId === collectionId && !keep.has(t.loadedRequestId) ? { ...t, loadedRequestId: null, loadedCollectionId: null } : t));
+    this.closeTabsOf((t) => t.loadedCollectionId === collectionId && t.loadedRequestId != null && !keep.has(t.loadedRequestId));
     this.emit();
     const d = preview.diff;
     this.notify(`Synced ${preview.collection.name}: ${d.added.length} added, ${d.changed.length} changed, ${d.removed.length} removed${d.pruned && d.removed.length ? " (deleted)" : ""}`);
