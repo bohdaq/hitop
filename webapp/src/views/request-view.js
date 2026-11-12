@@ -12,7 +12,7 @@ import { icon } from "../icons.js";
 import { platform } from "../platform/index.js";
 import { syncClient } from "./sync-view.js";
 import { commentsPanel } from "./comments-view.js";
-import { AUTH_TYPES, emptyAuth, parseQuery, withQuery } from "../features.js";
+import { AUTH_TYPES, asksForEvents, emptyAuth, parseQuery, withQuery } from "../features.js";
 import { BODY_METHODS, METHODS } from "../store.js";
 import "./code-editor.js";
 import "@lit-material/timing-waterfall";
@@ -25,6 +25,7 @@ import { bodyKind, checkJson } from "../request-facts.js";
 import { SPLIT, clampSplit, layoutFor, loadLayout, saveLayout, splitAt, splitForKey } from "../split.js";
 import { socketHeaders, socketLine, socketLog, socketMessages } from "./websocket-view.js";
 import { grpcLine, grpcLog, grpcMessage, grpcMetadataNote, grpcSchema } from "./grpc-view.js";
+import { errorCard } from "./error-card.js";
 
 hljs.registerLanguage("json", json);
 hljs.registerLanguage("xml", xml);
@@ -83,6 +84,9 @@ function findMarks(text, query) {
   parts.push(text.slice(from));
   return { parts, count, capped: count === MAX_MARKS && hay.indexOf(needle, from) !== -1 };
 }
+
+// "1.4 s" while waiting for a response.
+const waitText = (ms) => `${(Math.max(0, ms) / 1000).toFixed(1)} s`;
 
 const size = (n) => (n < 1024 ? `${n} B` : n < 1024 * 1024 ? `${(n / 1024).toFixed(1)} KB` : `${(n / 1024 / 1024).toFixed(1)} MB`);
 
@@ -523,8 +527,12 @@ export class HitopRequest extends LitElement {
     const live = this.store.events?.get(t.id);
     if (live && (live.open || t.responseType === "cancelled")) return this.renderEvents(live);
     if (t.loading) {
+      // UX2 (7): a live "Waiting · 1.4 s" (ticked by tickWait without a render) and the way out.
+      this.tickWait();
+      const start = this.store.callStarts?.get(t.id) ?? Date.now();
       return html`<section class="response" data-state="sending" aria-label="Response" aria-busy="true">
-        <div class="skeleton bar"></div>
+        <p class="waiting" role="status">${icon("hourglass-medium")}<span>Waiting</span> · <span class="wait-time mono" aria-hidden="true">${waitText(Date.now() - start)}</span>
+          <span class="wait-esc hint"><lit-material-kbd keys="Escape" aria-hidden="true"></lit-material-kbd> to cancel</span></p>
         <div class="skeleton block"></div>
       </section>`;
     }
@@ -554,8 +562,7 @@ export class HitopRequest extends LitElement {
     }
     if (t.responseType === "error" || t.statusCode == null) {
       return html`<section class="response" data-state="error" aria-label="Response">
-        <lit-material-status status="error">Request failed</lit-material-status>
-        <p class="error-text">${String(t.response).replace(/^Error: /, "")}</p>
+        ${errorCard(t.response, "http")}
       </section>`;
     }
     const cls = t.statusCode < 300 ? "ok" : t.statusCode < 400 ? "info" : "bad";
@@ -568,17 +575,22 @@ export class HitopRequest extends LitElement {
     // The current response is in History already: a diff needs one more (or a saved example).
     const canDiff = this.store.history.filter((h) => h?.response).length > 1 || (this.store.loadedRequest(t)?.examples || []).length > 0;
     const tabs = ["body", "headers", "raw", ...(tests.length ? ["tests"] : []), ...(live?.events.length ? ["events"] : []), ...(canDiff ? ["diff"] : [])];
+    // UX2 (8): an event stream read whole opens on its events.
+    if (live?.fromBody && this.eventsShownFor !== live && tabs.includes("events")) {
+      this.eventsShownFor = live;
+      this.responseSection = tabs.indexOf("events");
+    }
     if (this.responseSection >= tabs.length) this.responseSection = 0;
     const shown = tabs[this.responseSection];
     return html`
-      <section class="response" data-state=${t.responseType === "error" ? "error" : "done"} aria-label="Response">
+      <section class="response" data-state=${t.responseType === "error" ? "error" : "done"} data-checks=${tests.length ? (passed === tests.length ? "passed" : "failed") : "none"} aria-label="Response">
         <div class="response-meta">
           <span class=${`status-chip ${cls}`}><span class="mono">${t.statusCode}</span>${getStatusText(t.statusCode) === "Unknown Status" ? "" : html` ${getStatusText(t.statusCode)}`}</span>
           ${t.durationMs != null ? html`<span class="mono response-num">${t.durationMs}<span class="unit"> ms</span></span>` : nothing}
           <span class="mono response-num">${bytes(t.response || "")}</span>
           ${t.truncated ? html`<span class="warn">Cut at 5 MB</span>` : nothing}
           ${t.timings?.reused ? html`<span class="hint">reused connection</span>` : nothing}
-          ${tests.length ? html`<span class=${`checks-summary ${passed === tests.length ? "pass" : "warn"}`}>${icon(passed === tests.length ? "check-circle" : "warning-circle")}${passed} of ${tests.length} tests passed</span>` : nothing}
+          ${tests.length ? html`<span class=${`checks-summary ${passed === tests.length ? "pass" : "fail"}`}>${icon(passed === tests.length ? "check-circle" : "warning-circle")}${passed === tests.length ? `${passed} of ${tests.length} tests passed` : `${tests.length - passed} of ${tests.length} tests failed`}</span>` : nothing}
           <span class="response-actions">
             ${this.store.loadedRequest(t)
               ? html`<lit-material-icon-button aria-label="Save as example" title="Save as example" @click=${() => this.app.openDialog("save-example", { name: `${t.statusCode} response`, request: this.store.loadedRequest(t).name })}>${icon("bookmark-simple")}</lit-material-icon-button>`
@@ -591,7 +603,7 @@ export class HitopRequest extends LitElement {
           <lit-material-tab>Body</lit-material-tab>
           <lit-material-tab>Headers <span class="count">${headers.length}</span></lit-material-tab>
           <lit-material-tab>Raw</lit-material-tab>
-          ${tests.length ? html`<lit-material-tab>Tests <span class=${`count ${passed === tests.length ? "pass" : "warn"}`}>${passed}/${tests.length}</span></lit-material-tab>` : nothing}
+          ${tests.length ? html`<lit-material-tab>Tests <span class=${`count ${passed === tests.length ? "pass" : "fail"}`}>${passed === tests.length ? `${passed}/${tests.length}` : `${tests.length - passed} of ${tests.length} failed`}</span></lit-material-tab>` : nothing}
           ${live?.events.length ? html`<lit-material-tab>Events <span class="count">${live.events.length}</span></lit-material-tab>` : nothing}
           ${canDiff ? html`<lit-material-tab>Diff vs last</lit-material-tab>` : nothing}
         </lit-material-tabs>
@@ -701,12 +713,30 @@ export class HitopRequest extends LitElement {
   // Method, WebSocket or gRPC (request kinds of their own in hitop-core).
   methodSelect() {
     const t = this.tab;
-    const pick = (v) => (v === "WS" ? this.set({ kind: "websocket" }) : v === "GRPC" ? this.set({ kind: "grpc" }) : this.set({ method: v, kind: undefined }));
-    const current = t.kind === "websocket" ? "WS" : t.kind === "grpc" ? "GRPC" : t.bodyMode === "graphql" ? "GQL" : t.method;
-    return html`<lit-material-select class=${`method m-${current}`} variant="outlined" label="Method" .value=${t.kind === "websocket" ? "WS" : t.kind === "grpc" ? "GRPC" : t.method} @change=${(e) => pick(e.target.value)}>
-      ${METHODS.map((m) => html`<lit-material-select-option value=${m}>${m}</lit-material-select-option>`)}
-      <lit-material-select-option value="WS">WebSocket</lit-material-select-option>
-      <lit-material-select-option value="GRPC">gRPC</lit-material-select-option>
+    const sse = !t.kind && t.method === "GET" && asksForEvents(t.headers);
+    const pick = (v) => {
+      if (v === "WS") return this.set({ kind: "websocket" });
+      if (v === "GRPC") return this.set({ kind: "grpc" });
+      // UX2 (8): Server-Sent Events = GET + Accept: text/event-stream (the Events view is live).
+      if (v === "SSE") {
+        const rows = (t.headers || []).filter((h) => (h.name || h.value) && h.name?.toLowerCase() !== "accept");
+        return this.set({ method: "GET", kind: undefined, headers: [...rows, { name: "Accept", value: "text/event-stream" }] });
+      }
+      // SSE → GET takes its Accept header out again (another method keeps it: POST streams exist).
+      const strip = sse && v === "GET";
+      const headers = strip ? (t.headers || []).filter((h) => !(h.name?.toLowerCase() === "accept" && /text\/event-stream/i.test(h.value || ""))) : t.headers;
+      this.set({ method: v, kind: undefined, ...(strip ? { headers: headers.length ? headers : [{ name: "", value: "" }] } : {}) });
+    };
+    const value = t.kind === "websocket" ? "WS" : t.kind === "grpc" ? "GRPC" : sse ? "SSE" : t.method;
+    const current = t.bodyMode === "graphql" && !t.kind ? "GQL" : value;
+    // Every item is a coloured mono tag; the three kinds carry their name too (aria-label, and
+    // drawn after the tag by CSS so the closed select shows the tag alone).
+    const opt = (v, name = null) => html`<lit-material-select-option class=${`method-opt m-${v}`} value=${v} aria-label=${name ?? v} data-name=${name ?? ""}>${v}</lit-material-select-option>`;
+    return html`<lit-material-select class=${`method m-${current}`} variant="outlined" label="Method" .value=${value} @change=${(e) => pick(e.target.value)}>
+      ${METHODS.map((m) => opt(m))}
+      ${opt("SSE", "Server-Sent Events")}
+      ${opt("WS", "WebSocket")}
+      ${opt("GRPC", "gRPC")}
     </lit-material-select>`;
   }
 
@@ -744,6 +774,27 @@ export class HitopRequest extends LitElement {
     const scheme = m ? m[1].toLowerCase() : null;
     const text = scheme === "https" ? "HTTPS" : scheme === "http" ? "HTTP" : scheme === "wss" ? "WSS" : scheme === "ws" ? "WS" : null;
     return text ? html`<span class="url-hint" aria-hidden="true">${text}</span>` : nothing;
+  }
+
+  // The URL field of every kind (HTTP, WebSocket, gRPC): a transparent input with the mirror
+  // drawn over it (`data-mirror`: the CSS hides the input's own text only then).
+  urlField({ label, placeholder, error = null, onEnter }) {
+    const t = this.tab;
+    return html`<div class="url-field" data-mirror>
+      <lit-material-text-field
+        class="url"
+        variant="outlined"
+        label=${label}
+        placeholder=${placeholder}
+        ?error=${Boolean(error)}
+        error-text=${error ?? ""}
+        .value=${t.url}
+        @input=${(e) => this.set({ url: e.target.value })}
+        @keydown=${(e) => e.key === "Enter" && onEnter(e)}
+        @paste=${(e) => this.app.pasteIntoUrl?.(e)}
+      ></lit-material-text-field>
+      ${this.urlMirror()}
+    </div>`;
   }
 
   // The URL as the field shows it, drawn over the transparent input (HITOP Next): every
@@ -866,8 +917,8 @@ export class HitopRequest extends LitElement {
     if (!t) return nothing;
     // The page's heading for screen readers: the tab strip shows the title.
     const heading = html`<h1 class="visually-hidden">Request: ${t.title}</h1>`;
-    if (t.kind === "websocket") return html`${heading}${socketLine(this, this.methodSelect())} ${this.panes(this.renderEditor(), () => socketLog(this), "Messages log")}`;
-    if (t.kind === "grpc") return html`${heading}${grpcLine(this, this.methodSelect())} ${this.panes(this.renderEditor(), () => grpcLog(this), "Call log")}`;
+    if (t.kind === "websocket") return html`${heading}${socketLine(this, this.methodSelect())} ${this.varPeek()} ${this.panes(this.renderEditor(), () => socketLog(this), "Messages log")}`;
+    if (t.kind === "grpc") return html`${heading}${grpcLine(this, this.methodSelect())} ${this.varPeek()} ${this.panes(this.renderEditor(), () => grpcLog(this), "Call log")}`;
     // A plain text field: the browser's own URL check refuses \${baseUrl}/x and
     // shows its own message; the store checks the URL as it is sent instead.
     const urlError = this.store.urlErrors.get(t.id);
@@ -876,20 +927,7 @@ export class HitopRequest extends LitElement {
       <form class="request-line" novalidate @submit=${(e) => this.send(e)}>
         <div class="url-bar">
           ${this.methodSelect()}
-          <div class="url-field">
-            <lit-material-text-field
-              class="url"
-              variant="outlined"
-              label="URL"
-              placeholder="https://api.example.com/users or \${baseUrl}/users"
-              ?error=${Boolean(urlError)}
-              error-text=${urlError ?? ""}
-              .value=${t.url}
-              @input=${(e) => this.set({ url: e.target.value })}
-              @keydown=${(e) => e.key === "Enter" && this.send(e)}
-            ></lit-material-text-field>
-            ${this.urlMirror()}
-          </div>
+          ${this.urlField({ label: "URL", placeholder: "https://api.example.com/users or ${baseUrl}/users", error: urlError, onEnter: (e) => this.send(e) })}
           ${this.protocolHint()}
         </div>
         ${t.loading
@@ -1009,6 +1047,40 @@ export class HitopRequest extends LitElement {
     handle.addEventListener("pointercancel", up);
   }
 
+  // Ticks the "Waiting · n s" text ten times a second while the tab waits (no render per tick).
+  tickWait() {
+    if (this.waitTimer) return;
+    this.waitTimer = setInterval(() => {
+      const t = this.tab;
+      const start = t && this.store.callStarts?.get(t.id);
+      if (!t?.loading || !start || !this.isConnected) {
+        clearInterval(this.waitTimer);
+        this.waitTimer = null;
+        return;
+      }
+      const el = this.querySelector(".wait-time");
+      if (el) el.textContent = waitText(Date.now() - start);
+    }, 100);
+  }
+
+  // UX2 (7): what Esc stops in this tab (hitop-app's key listener asks): a send, an event stream,
+  // a gRPC call or a WebSocket still connecting. True when something was stopped.
+  cancelInFlight() {
+    const t = this.tab;
+    if (!t) return false;
+    const s = this.store;
+    if (t.kind === "grpc") {
+      if (s.grpcState(t.id).status !== "running") return false;
+      s.grpcCancel();
+    } else if (t.kind === "websocket") {
+      if (s.socket(t.id).status !== "connecting") return false;
+      s.wsDisconnect();
+    } else if (t.loading || s.events?.get(t.id)?.open) {
+      s.cancel(t.id);
+    } else return false;
+    return true;
+  }
+
   connectedCallback() {
     super.connectedCallback();
     this.resizer = new ResizeObserver(([entry]) => {
@@ -1022,6 +1094,8 @@ export class HitopRequest extends LitElement {
   disconnectedCallback() {
     super.disconnectedCallback();
     this.resizer?.disconnect();
+    clearInterval(this.waitTimer);
+    this.waitTimer = null;
   }
 }
 

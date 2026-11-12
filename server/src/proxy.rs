@@ -5,7 +5,9 @@
 //! Response: `{"status","statusText","headers":[[name,value]...],"body",
 //!             "bodyEncoding":"utf8"|"base64","truncated","timeMs","url","timings"?,
 //!             "httpVersion"?}`: `httpVersion` is the upstream response's protocol version
-//!             ("HTTP/1.0", "HTTP/1.1", "HTTP/2", "HTTP/3"), left out when unknown.
+//!             ("HTTP/1.0", "HTTP/1.1", "HTTP/2", "HTTP/3"), left out when unknown;
+//!             `"eventStream": true` (body empty, unread) for a GET answered with text/event-stream
+//!             when the request asked for it (`"eventStreams": true`).
 //! Failures: `{"error": "..."}` with a 4xx/5xx status. Nothing is logged.
 //!
 //! `POST /api/proxy/stream` (Server-Sent Events, chunked streams): the same request, answered
@@ -61,6 +63,10 @@ struct ProxyRequest {
     body: Option<String>,
     #[serde(default)]
     body_encoding: Option<String>,
+    /// The client reads event streams live (the web app since UX2): a GET answered with
+    /// text/event-stream comes back with `eventStream: true` and its body unread. Others get the body.
+    #[serde(default)]
+    event_streams: bool,
 }
 
 #[derive(Serialize)]
@@ -81,6 +87,10 @@ struct ProxyResponse {
     /// The upstream response's protocol version ("HTTP/1.1", "HTTP/2", ...); none when unknown.
     #[serde(skip_serializing_if = "Option::is_none")]
     http_version: Option<&'static str>,
+    /// A GET answered with `Content-Type: text/event-stream`: its body is left unread (it may never
+    /// end); the web app opens it again through `/api/proxy/stream` (UX2).
+    #[serde(skip_serializing_if = "std::ops::Not::not")]
+    event_stream: bool,
 }
 
 /// The protocol version as the web app shows it; `None` for one reqwest doesn't name.
@@ -308,12 +318,28 @@ impl Proxy {
         let s = STATUS_CODE_REASON_PHRASE;
         let started = Instant::now();
         let asked = req.url.clone();
+        let unread = req.event_streams && req.method.trim().eq_ignore_ascii_case("GET");
         let response = self.start(&self.client, req)?;
         let headers_at = Instant::now();
         let status = response.status();
         let final_url = response.url().to_string();
         let version = http_version(response.version());
         let headers = upstream_headers(&response);
+        if unread && is_event_stream(response.headers()) {
+            return Ok(ProxyResponse {
+                status: status.as_u16(),
+                status_text: status.canonical_reason().unwrap_or("").to_string(),
+                headers,
+                body: String::new(),
+                body_encoding: "utf8",
+                truncated: false,
+                time_ms: started.elapsed().as_millis() as u64,
+                timings: self.timing.phases_for(&asked, started, headers_at, Instant::now()),
+                url: final_url,
+                http_version: version,
+                event_stream: true,
+            });
+        }
         let mut bytes = Vec::new();
         response
             .take(MAX_RESPONSE_BODY + 1)
@@ -336,8 +362,14 @@ impl Proxy {
             timings: self.timing.phases_for(&asked, started, headers_at, Instant::now()),
             url: final_url,
             http_version: version,
+            event_stream: false,
         })
     }
+}
+
+/// Whether an upstream answer is a Server-Sent Events stream.
+fn is_event_stream(headers: &HeaderMap) -> bool {
+    headers.get("content-type").and_then(|v| v.to_str().ok()).is_some_and(|v| v.trim().to_ascii_lowercase().starts_with("text/event-stream"))
 }
 
 fn upstream_headers(response: &reqwest::blocking::Response) -> Vec<(String, String)> {
@@ -428,11 +460,23 @@ mod tests {
             url: "https://example.com/".into(),
             timings: None,
             http_version: v,
+            event_stream: false,
         };
         let json = serde_json::to_value(answer(Some("HTTP/2"))).unwrap();
         assert_eq!(json["httpVersion"], "HTTP/2");
         let json = serde_json::to_value(answer(None)).unwrap();
         assert!(json.get("httpVersion").is_none(), "left out when unknown: {json}");
+        assert!(json.get("eventStream").is_none(), "left out unless a stream: {json}");
+    }
+
+    #[test]
+    fn event_streams_are_known_by_content_type() {
+        let mut h = HeaderMap::new();
+        assert!(!is_event_stream(&h));
+        h.insert("content-type", HeaderValue::from_static("text/event-stream; charset=utf-8"));
+        assert!(is_event_stream(&h));
+        h.insert("content-type", HeaderValue::from_static("application/json"));
+        assert!(!is_event_stream(&h));
     }
 
     #[test]

@@ -8,6 +8,8 @@
 import { html, nothing } from "lit";
 import { platform } from "../platform/index.js";
 import { icon } from "../icons.js";
+import { errorCard } from "./error-card.js";
+import { explainError } from "../errors.js";
 
 const clock = (iso) => {
   const d = new Date(iso);
@@ -44,15 +46,7 @@ export function grpcLine(view, methodSelect) {
     <form class="request-line" novalidate @submit=${go}>
       <div class="url-bar">
       ${methodSelect}
-      <lit-material-text-field
-        class="url"
-        variant="outlined"
-        label="Server"
-        placeholder="localhost:50051, https://api.example.com or \${grpcHost}"
-        .value=${t.url}
-        @input=${(e) => view.set({ url: e.target.value })}
-        @keydown=${(e) => e.key === "Enter" && go(e)}
-      ></lit-material-text-field>
+      ${view.urlField({ label: "Server", placeholder: "localhost:50051, https://api.example.com or ${grpcHost}", onEnter: go })}
       </div>
       <lit-material-button variant=${running ? "outlined" : "filled"} type="submit" ?disabled=${!can}>
         ${icon(running ? "x" : "paper-plane-tilt")} ${running ? "Cancel" : "Send"}
@@ -161,6 +155,9 @@ export function grpcLog(view) {
         <span>${messages} message${messages === 1 ? "" : "s"}</span>
         ${g.log.length ? html`<lit-material-button variant="text" @click=${() => store.grpcClearLog()}>${icon("trash")} Clear</lit-material-button>` : nothing}
       </div>
+      ${g.status !== "running" && last && !last.cancelled && (last.kind === "error" || (last.kind === "status" && !last.ok && explainError(last.text, { kind: "grpc" }).known))
+        ? errorCard(last.text, "grpc")
+        : nothing}
       ${g.log.length
         ? html`<ol class="ws-log grpc-log">
             ${g.log.map(

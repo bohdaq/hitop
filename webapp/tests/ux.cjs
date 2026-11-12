@@ -55,7 +55,7 @@ function api() {
   const url = p.getByLabel('URL');
   const sendAndWait = async () => {
     await p.getByRole('button', { name: 'Send', exact: true }).click();
-    await p.locator('.response-meta, .response .error-text').first().waitFor({ timeout: 15000 });
+    await p.locator('.response-meta, .response .error-card').first().waitFor({ timeout: 15000 });
   };
   const method = async (m) => {
     await p.getByRole('combobox', { name: 'Method' }).click();

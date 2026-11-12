@@ -12,6 +12,8 @@ const path = require("path");
 
 const DIST = path.join(__dirname, "../dist");
 const TYPES = { ".html": "text/html", ".js": "text/javascript", ".css": "text/css", ".wasm": "application/wasm", ".svg": "image/svg+xml", ".woff2": "font/woff2", ".png": "image/png", ".json": "application/json" };
+// VIEWPORT=1024x768 for another size (default 1440x900).
+const [VW, VH] = (process.env.VIEWPORT || "1440x900").split("x").map(Number);
 const out = process.argv[2] || path.join(__dirname, "../visual", new Date().toISOString().replace(/[:.]/g, "-").slice(0, 19));
 
 // --- seed: the "shop-api" collection of the boards --------------------------------------
@@ -131,7 +133,7 @@ async function main() {
   const server = await serve();
   const base = `http://127.0.0.1:${server.address().port}/app/`;
   const browser = await chromium.launch();
-  const ctx = await browser.newContext({ viewport: { width: 1440, height: 900 }, deviceScaleFactor: 1, colorScheme: "dark" });
+  const ctx = await browser.newContext({ viewport: { width: VW, height: VH }, deviceScaleFactor: 1, colorScheme: "dark" });
   await ctx.addInitScript((f) => {
     if (!sessionStorage.getItem("seeded")) {
       for (const [k, v] of Object.entries(f)) localStorage.setItem(k, v);
@@ -255,7 +257,7 @@ async function main() {
 
   // A newcomer: an empty app with the Get started card.
   const fresh = await chromium.launch();
-  const fctx = await fresh.newContext({ viewport: { width: 1440, height: 900 }, deviceScaleFactor: 1, colorScheme: "dark" });
+  const fctx = await fresh.newContext({ viewport: { width: VW, height: VH }, deviceScaleFactor: 1, colorScheme: "dark" });
   const fpage = await fctx.newPage();
   await fpage.goto(base);
   await fpage.waitForSelector("aside .getting-started", { timeout: 10000 }).catch(() => {});

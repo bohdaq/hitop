@@ -398,13 +398,13 @@ export class HitopOrg extends LitElement {
     if (!s.orgs?.length && this.client.account()) {
       return html`<div class="page"><lit-material-empty-state headline="No organizations loaded">
         Signed in as ${this.client.account().email}. HITOP Cloud didn't answer with your organizations.
-        <lit-material-button slot="action" variant="filled" ?disabled=${this.busy} @click=${() => this.reloadOrgs()}>Try again</lit-material-button>
+        <lit-material-button slot="actions" variant="filled" ?disabled=${this.busy} @click=${() => this.reloadOrgs()}>Try again</lit-material-button>
       </lit-material-empty-state></div>`;
     }
     if (!s.orgs?.length) {
       return html`<div class="page"><lit-material-empty-state headline="Sign in to manage an organization">
         Organizations share collections and environments on HITOP Cloud.
-        <lit-material-button slot="action" variant="filled" @click=${() => this.app.openSignIn()}>Sign in</lit-material-button>
+        <lit-material-button slot="actions" variant="filled" @click=${() => this.app.openSignIn()}>Sign in</lit-material-button>
       </lit-material-empty-state></div>`;
     }
     const d = this.data;

@@ -49,12 +49,21 @@ const SAMPLE = 'Sample: JSONPlaceholder';
   const firstStored = await h.stored.collections();
   check('the first visit stores the two collections', firstStored.length === 2 && firstStored[1].name === 'My requests' && firstStored[1].requests.length === 0, firstStored.map((c) => c.name).join());
 
-  // --- + adds "Untitled" to the collection on screen ---
+  // --- UX2 (5): + with the untouched sample open goes to My requests, not the sample ---
   await p.locator('.tab-strip').getByRole('button', { name: 'New request' }).click();
   await settle(p);
   let cols = await h.stored.collections();
+  check('UX2: + with the untouched sample open adds to My requests', cols.find((c) => c.name === 'My requests').requests.length === 1 && cols.find((c) => c.name === SAMPLE).requests.length === 3, cols.map((c) => `${c.name}:${c.requests.length}`).join());
+  await p.keyboard.press('Alt+Shift+KeyW');
+  await settle(p);
+  check('...closing it untouched leaves My requests empty', (await h.stored.collections()).find((c) => c.name === 'My requests').requests.length === 0);
+
+  // --- the sample's own + (explicitly targeted) adds "Untitled" to it ---
+  await side.getByRole('button', { name: `Add a request to ${SAMPLE}` }).click();
+  await settle(p);
+  cols = await h.stored.collections();
   let sample = cols.find((c) => c.name === SAMPLE);
-  check('+ adds "Untitled" to the current collection (the sample)', sample.requests.length === 4 && sample.requests[3].name === 'Untitled' && sample.requests[3].url === '', sample.requests.map((r) => r.name).join());
+  check('its row\'s + adds "Untitled" to the sample', sample.requests.length === 4 && sample.requests[3].name === 'Untitled' && sample.requests[3].url === '', sample.requests.map((r) => r.name).join());
   const selected = side.locator('.tree-row.leaf[aria-current="page"]');
   check('...its sidebar row appears and is selected', (await selected.count()) === 1 && (await selected.innerText()).includes('Untitled'), await selected.innerText().catch(() => ''));
   const tab = (await h.stored.tabs()).tab;

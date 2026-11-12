@@ -106,7 +106,8 @@ export const isWebsocket = (r) => r?.kind === "websocket";
 // A saved request that makes a gRPC call (hitop-core's `kind`).
 export const isGrpc = (r) => r?.kind === "grpc";
 // What request lists show in the method's place.
-export const methodLabel = (r) => (isWebsocket(r) ? "WS" : isGrpc(r) ? "GRPC" : r.method);
+// SSE: a GET that asks for an event stream (Accept: text/event-stream; UX2 method menu).
+export const methodLabel = (r) => (isWebsocket(r) ? "WS" : isGrpc(r) ? "GRPC" : r.method === "GET" && asksForEvents(r.headers) ? "SSE" : r.method);
 
 // Request fields the web app adds, as a tab carries them: a GraphQL request
 // shows the body mode "graphql", with its variables and operation name; a
@@ -863,8 +864,11 @@ export class Store extends EventTarget {
     const { kind, collectionId } = this.view;
     const shown = this.visibleCollections;
     const byView = kind !== "request" && collectionId != null ? shown.find((c) => c.id === collectionId) : null;
+    // UX2 (5): the untouched sample takes a new request only when it is targeted itself (its page,
+    // its row's +, its folder); an open sample request or being first in the list doesn't count.
+    const usable = (c) => c && !isPristineSample(c);
     const byTab = kind === "request" ? shown.find((c) => c.id === this.tab?.loadedCollectionId) : null;
-    return byView ?? byTab ?? shown[0] ?? this.defaultCollection();
+    return byView ?? (usable(byTab) ? byTab : null) ?? shown.find(usable) ?? this.defaultCollection();
   }
 
   newRequestInFirstCollection() {
@@ -1870,7 +1874,11 @@ export class Store extends EventTarget {
   // localhost cookies itself and hides Set-Cookie from scripts).
   // `signal` stops it (Cancel, the request timeout); the desktop gets the
   // timeout too, so Rust gives up as well.
-  async dispatch(source, collectionId, { signal, onText } = {}) {
+  // `onText` + `live`: send it as an event stream (pieces to onText). `onText` without `live`: an
+  // answer that turns out to be an event stream (Content-Type text/event-stream) is read as one,
+  // after `onStream()` (UX2 (8)): a direct answer's own body; through the proxy (which leaves the
+  // body of such a GET unread when asked, `eventStreams`) the stream endpoint.
+  async dispatch(source, collectionId, { signal, onText, live = Boolean(onText), onStream = () => {} } = {}) {
     signal ??= this.timeoutSignal();
     let prepared;
     try {
@@ -1928,7 +1936,19 @@ export class Store extends EventTarget {
     if (body && BODY_METHODS.includes(source.method)) options.body = body;
     let res;
     try {
-      res = onText && p.stream ? await p.stream(prepared.url, options, onText) : await p.send(prepared.url, options);
+      if (onText && live && p.stream) res = await p.stream(prepared.url, options, onText);
+      else {
+        res = await p.send(prepared.url, onText && p.stream ? { ...options, eventStreams: true } : options);
+        if (onText && p.stream && /text\/event-stream/i.test(res.headers?.get?.("content-type") ?? "")) {
+          if (res.eventStream) {
+            onStream();
+            res = await p.stream(prepared.url, options, onText);
+          } else if (p.streamFrom && typeof Response !== "undefined" && res instanceof Response) {
+            onStream();
+            res = await p.streamFrom(res, options, onText);
+          }
+        }
+      }
     } catch (e) {
       if (signal?.aborted) throw signal.reason;
       // fetch says only "Failed to fetch"; for direct requests the usual cause
@@ -1997,29 +2017,43 @@ export class Store extends EventTarget {
     this.tabs = tabService.updateTab(this.tabs, index, { ...NO_RESPONSE, loading: true });
     // An event stream (Accept: text/event-stream, web app): its events as they arrive, in memory
     // (store.events by tab id), until it ends or Stop; no time limit.
-    const streaming = Boolean(platform().stream) && asksForEvents(tab.headers);
+    // UX2 (8): without that header an answer with Content-Type text/event-stream turns into one
+    // too (dispatch `onStream`), so the Events view never waits on a body that doesn't end.
+    let streaming = Boolean(platform().stream) && asksForEvents(tab.headers);
     this.events ??= new Map();
-    let onText;
-    if (streaming) {
-      const live = { events: [], open: true, rest: "" };
+    this.events.delete(tab.id);
+    let live = null;
+    const openLive = () => {
+      if (live) return;
+      live = { events: [], open: true, rest: "" };
       this.events.set(tab.id, live);
-      onText = (piece) => {
-        const { events, rest } = parseEvents(live.rest + piece);
-        live.rest = rest;
-        if (!events.length) return;
-        const at = Date.now();
-        live.events = [...live.events, ...events.map((e) => ({ ...e, at }))].slice(-1000);
-        this.version = (this.version ?? 0) + 1;
-        this.dispatchEvent(new Event("change"));
-      };
-    } else this.events.delete(tab.id);
+      this.emit();
+    };
+    if (streaming) openLive();
+    const onText = platform().stream
+      ? (piece) => {
+          openLive();
+          const { events, rest } = parseEvents(live.rest + piece);
+          live.rest = rest;
+          if (!events.length) return;
+          const at = Date.now();
+          live.events = [...live.events, ...events.map((e) => ({ ...e, at }))].slice(-1000);
+          this.version = (this.version ?? 0) + 1;
+          this.dispatchEvent(new Event("change"));
+        }
+      : undefined;
     // Cancel (store.cancel) and the request timeout (Settings) abort it.
     const call = this.startCall(tab.id, { timeout: !streaming });
+    const onStream = () => {
+      streaming = true;
+      call.keepOpen();
+      openLive();
+    };
     this.emit();
     const started = performance.now();
     try {
-      const { prepared, res } = await this.dispatch(source, tab.loadedCollectionId, { signal: call.signal, onText });
-      if (streaming) this.events.get(tab.id).open = false;
+      const { prepared, res } = await this.dispatch(source, tab.loadedCollectionId, { signal: call.signal, onText, live: streaming, onStream });
+      if (live) live.open = false;
       const headers = {};
       res.headers.forEach((v, k) => (headers[k] = v));
       const { data, type, raw, jsonError } = await readResponse(res);
@@ -2043,6 +2077,13 @@ export class Store extends EventTarget {
         truncated: Boolean(res.truncated),
         loading: false,
       });
+      // UX2 (8): an event stream sent without `Accept: text/event-stream` came back whole (the
+      // proxy or engine read it until its limit): its events from the body, shown in Events.
+      if (!streaming && /text\/event-stream/i.test(headers["content-type"] ?? "") && typeof data === "string") {
+        const at = Date.now();
+        const { events } = parseEvents(`${data}\n\n`);
+        if (events.length) this.events.set(tab.id, { events: events.map((e) => ({ ...e, at })), open: false, rest: "", fromBody: true });
+      }
       this.history = historyService.addToHistory(
         this.history,
         historyService.createHistoryItem({
@@ -2093,10 +2134,17 @@ export class Store extends EventTarget {
   startCall(tabId, { timeout = true } = {}) {
     const controller = new AbortController();
     const ms = timeout ? this.settings.timeoutMs : 0;
-    const timer = ms > 0 ? setTimeout(() => controller.abort(new DOMException(`No response within ${seconds(ms)}`, "TimeoutError")), ms) : null;
+    let timer = ms > 0 ? setTimeout(() => controller.abort(new DOMException(`No response within ${seconds(ms)}`, "TimeoutError")), ms) : null;
     this.inflight.set(tabId, controller);
+    // When it started, for the response pane's "Waiting · 1.4 s" (UX2).
+    (this.callStarts ??= new Map()).set(tabId, Date.now());
     return {
       signal: controller.signal,
+      // It turned into an event stream: no time limit any more.
+      keepOpen: () => {
+        clearTimeout(timer);
+        timer = null;
+      },
       done: () => {
         clearTimeout(timer);
         if (this.inflight.get(tabId) === controller) this.inflight.delete(tabId);

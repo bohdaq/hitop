@@ -76,6 +76,9 @@ async function send(url, options = {}) {
       ...(signal ? { id } : {}),
       ...(options.timeoutMs ? { timeoutMs: options.timeoutMs } : {}),
     },
+    // Rust answers an error as a plain string: an Error, so the response pane can say it (UX2).
+  }).catch((e) => {
+    throw e instanceof Error ? e : new Error(String(e));
   });
   const r = !signal
     ? await call

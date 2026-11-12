@@ -54,7 +54,7 @@ function api() {
   const url = p.getByLabel('URL');
   const sendAndWait = async () => {
     await p.getByRole('button', { name: 'Send', exact: true }).click();
-    await p.locator('.response-meta, .response .error-text').first().waitFor({ timeout: 15000 });
+    await p.locator('.response-meta, .response .error-card').first().waitFor({ timeout: 15000 });
   };
   const flag = async (name, on) => {
     await p.evaluate(([k, v]) => (v ? localStorage.setItem(k, '1') : localStorage.removeItem(k)), [name, on]);
@@ -137,8 +137,8 @@ function api() {
   await p.reload({ waitUntil: 'networkidle' });
   await settle(p);
   await p.getByRole('button', { name: 'Send', exact: true }).click();
-  await p.locator('.response .error-text').waitFor({ timeout: 4000 });
-  const timeoutText = await p.locator('.response .error-text').innerText();
+  await p.locator('.response .error-card').waitFor({ timeout: 4000 });
+  const timeoutText = await p.locator('.response .error-card').innerText();
   check('the request timeout stops a slow request and names the setting', timeoutText.includes('No response within 1 s') && timeoutText.includes('Settings'), timeoutText);
   if (TAURI) check('[tauri] the time limit goes to Rust too', h.mock.sent.at(-1).timeoutMs === 1000);
   await p.evaluate(() => localStorage.removeItem('hitop_settings'));

@@ -94,7 +94,7 @@ const settle = (p) => p.waitForTimeout(400);
   check('bearer token sent with env value', header(req, 'Authorization') === 'Bearer stg-123', header(req, 'Authorization'));
   check('query sent', req.url.endsWith('?userId=1&_limit=2'), req.url);
   const meta = await p.locator('.response-meta').innerText();
-  check('tests summary shown', meta.includes('4 of 5 tests passed'), meta.replace(/\n/g, ' '));
+  check('tests summary shown', meta.includes('1 of 5 tests failed'), meta.replace(/\n/g, ' '));
   await p.getByRole('tab', { name: /^Tests/ }).click();
   const testsText = await p.locator('.tests').innerText();
   check('failed assertion explained', testsText.includes('two posts') && testsText.includes('got 2'), testsText.replace(/\n/g, ' | '));

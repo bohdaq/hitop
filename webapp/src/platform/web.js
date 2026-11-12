@@ -174,6 +174,16 @@ async function stream(url, options = {}, onText = () => {}) {
   }
   const status = viaProxy ? Number(res.headers.get("x-hitop-status")) : res.status;
   const pairs = viaProxy ? JSON.parse(res.headers.get("x-hitop-headers") || "[]") : [...res.headers];
+  return readStream(res, { status, pairs, signal, onText, started, url });
+}
+
+// UX2 (8): a direct answer (a fetch Response, body unread) that turned out to be an event stream,
+// read as one: no second request.
+function streamFrom(res, options = {}, onText = () => {}) {
+  return readStream(res, { status: res.status, pairs: [...res.headers], signal: options.signal, onText, started: options.started ?? performance.now(), url: res.url });
+}
+
+async function readStream(res, { status, pairs, signal, onText, started, url }) {
   let text = "";
   let stopped = false;
   const decoder = new TextDecoder();
@@ -378,6 +388,7 @@ export function createPlatform() {
     cookiesNote: "Applies to requests that go through the HITOP proxy. For localhost your browser keeps cookies itself. Cookies stay in this browser.",
     usesProxy,
     stream,
+    streamFrom,
     scripts: null,
     folders: folders(),
     // Folder environments' secret values: in this browser, by keychain account.

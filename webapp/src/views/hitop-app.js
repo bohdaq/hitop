@@ -32,7 +32,8 @@ import "./limit-note.js";
 import { orgLabel } from "../orgs.js";
 import { agentPanel, runAi } from "./ai-view.js";
 import "./org-view.js";
-import { limitInfo, parseOrgLink, usageWarnings } from "../org.js";
+import { limitInfo, parseOrgLink, sectionsFor, usageWarnings } from "../org.js";
+import { asksForEvents } from "../features.js";
 import { gettingStartedSteps, hideGettingStarted, SAMPLE_NAME, savedOnce, showGettingStarted } from "../getting-started.js";
 
 /** Email addresses typed in the invite dialog: comma, space or line separated. */
@@ -83,7 +84,7 @@ function readableError(err, what) {
 // while the right button is still down (Linux, macOS), the release would
 // dismiss it at once (popover light dismiss): it opens after the release.
 // The method tag of an open tab: WS, GRPC, GQL (a GraphQL body) or the HTTP method.
-const tagOf = (t) => (t.kind === "websocket" ? "WS" : t.kind === "grpc" ? "GRPC" : t.bodyMode === "graphql" ? "GQL" : t.method || "GET");
+const tagOf = (t) => (t.kind === "websocket" ? "WS" : t.kind === "grpc" ? "GRPC" : t.bodyMode === "graphql" ? "GQL" : (t.method || "GET") === "GET" && asksForEvents(t.headers) ? "SSE" : t.method || "GET");
 
 function showMenuFor(e, menu) {
   const anchor = e.currentTarget;
@@ -159,6 +160,12 @@ export class HitopApp extends LitElement {
       if (!link) return;
       history.replaceState(null, "", location.pathname + location.search);
       this.orgLink = link;
+      // UX2 (10): signed out, the link asks to sign in first and continues to its section.
+      if (!this.sync().account()) {
+        const label = sectionsFor(null).find(([k]) => k === link.section)?.[1] ?? "the organization";
+        this.openSignIn(() => (this.closeDialog(), this.applyOrgLink()), `Sign in to open ${label}`);
+        return;
+      }
       this.applyOrgLink();
     };
     openLink();
@@ -166,7 +173,7 @@ export class HitopApp extends LitElement {
     // FV1: a first visit starts on the sample's "List posts" with the URL field focused.
     if (this.store.firstVisit && this.store.view.kind === "request" && !this.dialog) this.focusUrl();
     // The org comes once the orgs are loaded (after the account is read).
-    this.store.addEventListener("change", () => this.orgLink?.org && this.applyOrgLink());
+    this.store.addEventListener("change", () => this.orgLink?.org && this.sync().account() && this.applyOrgLink());
   }
 
   applyOrgLink() {
@@ -201,6 +208,7 @@ export class HitopApp extends LitElement {
 
   // Keyboard shortcuts (shortcuts.js); none while a dialog is open.
   onShortcut(e) {
+    if (e.key === "Escape") return this.onEscape(e);
     const action = shortcutFor(e);
     if (!action) return;
     // Mod+P never prints from inside the app, even with a dialog open; Mod+K and Mod+L never reach
@@ -327,9 +335,11 @@ export class HitopApp extends LitElement {
   }
 
   /** The Sign in dialog (sign-in-dialog.js). `then` runs after signing in (a Share dialog reopens). */
-  openSignIn(then = null) {
+  openSignIn(then = null, reason = null) {
     this.signInThen = then;
-    this.openDialog("sign-in", { step: "loading", title: "Sign in to HITOP" });
+    // UX2: why it is asked ("Sign in to open Plan & billing"), the dialog's headline.
+    this.signInReason = reason;
+    this.openDialog("sign-in", { step: "loading", title: reason || "Sign in to HITOP" });
   }
 
   /**
@@ -342,6 +352,7 @@ export class HitopApp extends LitElement {
     const a = sync.account();
     const then = fromDialog ? this.signInThen : null;
     this.signInThen = null;
+    this.signInReason = null;
     // With somewhere to go back to (a Share dialog), the dialog turns into it; else it closes.
     if (then) then();
     else if (this.dialog?.kind === "sign-in") this.closeDialog();
@@ -1056,6 +1067,24 @@ export class HitopApp extends LitElement {
       if (limit) return this.openLimit(limit, s.currentOrgInfo);
       this.dialog = { ...d, submitted: false, error: err?.message || String(err) };
     }
+  }
+
+  // UX2: Esc with nothing of its own open (a dialog, the palette, a menu, a popover, a select's
+  // list) stops what the request tab has in flight (7), or leaves a rail page for the workspace (3).
+  onEscape(e) {
+    if (e.defaultPrevented || e.altKey || e.ctrlKey || e.metaKey || e.shiftKey) return;
+    if (this.dialog || this.querySelector("lit-material-command-palette")?.open || document.querySelector("lit-material-confirm-dialog[open]")) return;
+    // An open menu or popover takes its own Esc (a toast or tooltip is not one).
+    if ([...document.querySelectorAll(":popover-open")].some((el) => !el.matches("lit-material-snackbar, lit-material-tooltip"))) return;
+    const path = e.composedPath();
+    if (path.some((el) => el instanceof Element && el.matches("lit-material-select, lit-material-menu, lit-material-popover, lit-material-sheet, dialog, .var-peek"))) return;
+    if (document.querySelector("lit-material-menu[open], lit-material-popover[open], lit-material-select[open], lit-material-sheet[open]")) return;
+    const s = this.store;
+    if (s.view.kind === "request") {
+      if (this.querySelector("hitop-request")?.cancelInFlight()) e.preventDefault();
+      return;
+    }
+    this.leavePage?.(e);
   }
 
   async reloadOrgs(client) {

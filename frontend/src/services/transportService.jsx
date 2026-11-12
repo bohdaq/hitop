@@ -89,6 +89,8 @@ class ProxiedResponse {
     // "HTTP/1.1", "HTTP/2", "HTTP/3" as the proxy received it; undefined from older servers.
     this.httpVersion = envelope.httpVersion;
     this.truncated = envelope.truncated;
+    // A GET answered with text/event-stream, body unread (hitop-server UX2): the app streams it.
+    this.eventStream = Boolean(envelope.eventStream);
     this.bodyText = decodeBody(envelope.body, envelope.bodyEncoding);
   }
 
@@ -135,6 +137,8 @@ export const sendRequest = async (url, options = {}) => {
       headers: headerPairs(options.headers),
       body: binary ? toBase64(options.body) : options.body ?? null,
       ...(binary ? { bodyEncoding: 'base64' } : {}),
+      // The web app reads event streams live: a GET answered with one comes back unread (UX2).
+      ...(options.eventStreams ? { eventStreams: true } : {}),
     }),
   });
   let envelope;

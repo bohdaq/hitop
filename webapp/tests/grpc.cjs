@@ -59,7 +59,7 @@ const FIXTURES = path.join(__dirname, '../../cli/crates/hitop-core/tests/fixture
     check('[web] Send is on, through the gRPC bridge', !(await send.isDisabled()) && !line.includes('available in the desktop app'), line.slice(0, 300));
   }
 
-  await p.getByLabel('Server').fill('${grpcHost}');
+  await p.getByLabel('Server', { exact: true }).fill('${grpcHost}');
   await section('Schema');
   await p.getByRole('switch', { name: 'Plaintext (no TLS)' }).click();
   await section('Metadata');

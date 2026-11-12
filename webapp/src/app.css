@@ -1110,7 +1110,7 @@ hitop-app lit-material-text-field::part(label) { inset-inline-start: -20px; }
 /* The URL field's mirror (HITOP Next): the text drawn over a transparent input, variables as chips. */
 .url-field { position: relative; flex: 1; min-width: 0; display: flex; }
 .url-field .url { flex: 1; min-width: 0; }
-.url-bar .url::part(input) { color: transparent; caret-color: var(--md-sys-color-primary); }
+.url-field[data-mirror] .url::part(input) { color: transparent; caret-color: var(--md-sys-color-primary); }
 .url-bar .url::part(input)::placeholder { color: #6b6b75; }
 .url-bar .url::part(input)::selection { background: rgb(169 156 255 / 0.3); }
 .url-mirror { position: absolute; display: flex; align-items: center; overflow: hidden; pointer-events: none; font-family: var(--font-mono); font-size: 13.5px; line-height: 20px; color: var(--md-sys-color-on-surface); white-space: pre; }
@@ -1193,3 +1193,32 @@ hitop-app lit-material-text-field::part(label) { inset-inline-start: -20px; }
 .run-cli-none { margin: 0; padding: 12px 14px; border: 1px solid var(--md-sys-color-outline-variant); border-radius: 12px; }
 .limit-note p > :first-child { flex: none; margin-top: 2px; color: var(--md-sys-color-on-surface-variant); }
 .org-card lit-material-alert > [slot="action"] { justify-self: start; align-self: start; width: auto; }
+
+/* UX2 (reviews/2026-11-12-ux-audit.md). (7) failures read as failures, waits show their time. */
+.checks-summary.fail, .count.fail { color: var(--hitop-fail); }
+.response[data-checks="failed"] > .response-meta { box-shadow: inset 0 2px 0 var(--hitop-fail); }
+.error-card { display: flex; flex-direction: column; align-items: flex-start; gap: 8px; max-width: 72ch; }
+.error-next { margin: 0; color: var(--md-sys-color-on-surface); }
+.error-details summary { cursor: pointer; color: var(--md-sys-color-on-surface-variant); font-size: 12.5px; }
+.error-details .error-text { margin: 6px 0 0; font-size: 12.5px; }
+.ws-log-panel > .error-card { margin: 0 20px 12px; }
+.waiting { display: flex; align-items: center; gap: 6px; margin: 0; color: var(--md-sys-color-on-surface-variant); }
+.waiting lit-material-icon { width: 16px; height: 16px; }
+.waiting .wait-time { color: var(--md-sys-color-on-surface); }
+.waiting .wait-esc { margin-inline-start: 12px; display: inline-flex; align-items: center; gap: 6px; }
+
+/* (8) The method menu: coloured mono tags, all ten items without scrolling, a box that keeps its width. */
+.url-bar .method::part(trigger) { width: 96px; box-sizing: border-box; }
+.url-bar .method::part(listbox) { max-height: min(460px, calc(100vh - 32px)); min-width: 220px; }
+.method-opt { font-family: var(--font-mono); font-size: 12.5px; font-weight: 600; color: var(--hitop-method-other); }
+.method-opt::part(option) { min-height: 34px; padding: 0 14px; }
+.method-opt { position: relative; }
+.method-opt[data-name]:not([data-name=""])::after { content: attr(data-name); position: absolute; left: 96px; top: 50%; transform: translateY(-50%); pointer-events: none; font-family: var(--font-sans, inherit); font-weight: 400; color: var(--md-sys-color-on-surface-variant); }
+.method-opt.m-GET { color: var(--hitop-method-get); }
+.method-opt.m-POST { color: var(--hitop-method-post); }
+.method-opt.m-PUT, .method-opt.m-GQL { color: var(--hitop-method-put); }
+.method-opt.m-PATCH { color: var(--hitop-method-patch); }
+.method-opt.m-DELETE { color: var(--hitop-method-delete); }
+.method-opt.m-SSE, .method-opt.m-GRPC { color: var(--hitop-pass); }
+.method-opt.m-WS { color: var(--hitop-method-ws, var(--hitop-method-other)); }
+.url-bar .method.m-SSE::part(trigger), .url-bar .method.m-GRPC::part(trigger) { color: var(--hitop-pass); }

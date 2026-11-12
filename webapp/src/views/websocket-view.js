@@ -5,6 +5,7 @@
 import { html, nothing } from "lit";
 import { platform } from "../platform/index.js";
 import { icon } from "../icons.js";
+import { errorCard } from "./error-card.js";
 
 const STATUS = {
   open: ["ok", "Connected"],
@@ -39,15 +40,7 @@ export function socketLine(view, methodSelect) {
     <form class="request-line" novalidate @submit=${toggle}>
       <div class="url-bar">
       ${methodSelect}
-      <lit-material-text-field
-        class="url"
-        variant="outlined"
-        label="URL"
-        placeholder="wss://stream.example.com/feed or \${wsBase}/feed"
-        .value=${t.url}
-        @input=${(e) => view.set({ url: e.target.value })}
-        @keydown=${(e) => e.key === "Enter" && toggle(e)}
-      ></lit-material-text-field>
+      ${view.urlField({ label: "URL", placeholder: "wss://stream.example.com/feed or ${wsBase}/feed", onEnter: toggle })}
       </div>
       <lit-material-button variant=${busy ? "outlined" : "filled"} type="submit">
         ${icon(busy ? "x" : "plugs-connected")} ${s.status === "open" ? "Disconnect" : s.status === "connecting" ? "Cancel" : "Connect"}
@@ -128,6 +121,7 @@ export function socketLog(view) {
         <span>${s.log.length} event${s.log.length === 1 ? "" : "s"}</span>
         ${s.log.length ? html`<lit-material-button variant="text" @click=${() => view.store.wsClearLog()}>${icon("trash")} Clear</lit-material-button>` : nothing}
       </div>
+      ${s.status === "closed" && s.log.slice(-2).some((e) => e.kind === "error") ? errorCard(s.log.slice(-2).find((e) => e.kind === "error").text, "websocket") : nothing}
       ${s.log.length
         ? html`<ol class="ws-log">
             ${s.log.map(

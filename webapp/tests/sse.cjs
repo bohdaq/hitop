@@ -31,6 +31,19 @@ const settle = (p, ms = 400) => p.waitForTimeout(ms);
   const n = await p.evaluate(() => document.querySelector('hitop-app').store.events.get(document.querySelector('hitop-app').store.tab.id).events.length);
   check('Stop ends the stream and keeps the events', !(await p.locator('section.sse').count()) || (await p.locator('section.sse').innerText()).includes('Stream ended'), String(n));
   check('...as an Events tab next to Body and Headers', (await p.getByRole('tab', { name: /^Events \d+/ }).count()) === 1);
+  // UX2 (8): without the Accept header the proxy says it is an event stream (body unread) and the
+  // app opens it live through the stream endpoint (needs a hitop-server with `eventStreams`).
+  await p.evaluate(() => {
+    const s = document.querySelector('hitop-app').store;
+    s.updateTab({ headers: [{ name: '', value: '' }] });
+  });
+  await settle(p);
+  await p.getByRole('button', { name: 'Send', exact: true }).click();
+  const live = await p.locator('section.sse[data-state="streaming"] .sse-events li').first().waitFor({ timeout: 30000 }).then(() => true, () => false);
+  check('UX2: through the proxy, an event stream without Accept goes live too', live);
+  await p.keyboard.press('Escape');
+  await settle(p, 800);
+  check('...and Esc stops it', (await p.locator('section.sse[data-state="streaming"]').count()) === 0);
   check('no page errors', errors.length === 0, errors.join(' | '));
   await h.finish();
 })().catch((e) => {

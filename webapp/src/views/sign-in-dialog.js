@@ -109,7 +109,7 @@ class HitopSignIn extends LitElement {
 
   setStep(step) {
     this.step = step;
-    const title = step === "sso" && this.hasProviders ? "Company SSO or your own server" : "Sign in to HITOP";
+    const title = step === "sso" && this.hasProviders ? "Company SSO or your own server" : this.app?.signInReason || "Sign in to HITOP";
     if (this.app?.dialog?.kind === "sign-in") this.app.dialog = { ...this.app.dialog, step, title };
     this.updateComplete.then(() => this.focusFirst());
   }
@@ -304,7 +304,7 @@ class HitopSignIn extends LitElement {
     const list = [m.github && "github", m.google && "google"].filter(Boolean);
     return html`
       <div class="signin-brand" aria-hidden="true">${unsafeSVG(mark())}</div>
-      <h2 class="signin-title">Sign in to HITOP</h2>
+      <h2 class="signin-title">${this.app?.signInReason || "Sign in to HITOP"}</h2>
       <p class="signin-lead">Sync your collections across devices and share them with your team. New here? The same button creates your account.</p>
       <div class="signin-providers">
         ${list.map((k, i) => html`<button type="button" class="signin-provider" id=${`signin-${k}`} ?data-first=${i === 0} ?disabled=${this.busy}
@@ -322,7 +322,7 @@ class HitopSignIn extends LitElement {
     const e = this.errors;
     return html`
       ${this.hasProviders ? html`<button type="button" class="signin-back" @click=${() => ((this.errors = {}), this.setStep("providers"))}>‹ Back</button>` : nothing}
-      <h2 class="signin-title">${this.hasProviders ? "Company SSO or your own server" : "Sign in to HITOP"}</h2>
+      <h2 class="signin-title">${this.hasProviders ? "Company SSO or your own server" : this.app?.signInReason || "Sign in to HITOP"}</h2>
       <p class="signin-lead">Sign in with your company's identity provider, or on a HITOP sync server your team runs. Your work email finds your organization's sign-on.</p>
       <lit-material-text-field id="signin-email" data-first variant="outlined" label="Work email" type="email" autocomplete="email" .value=${this.email}
         ?error=${Boolean(e.email)} error-text=${e.email ?? ""} supporting-text=${e.email ? "" : "Leave empty for the server's own sign-on"}
