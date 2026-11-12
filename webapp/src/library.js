@@ -17,6 +17,7 @@
 // named "… (this browser)".
 import { platform } from "./platform/index.js";
 import { normalizeGlobals, secretNames } from "./features.js";
+import { isEmptyMyRequests, isPristineSample } from "./new-request.js";
 
 const STATE_KEY = "hitop_library";
 // "off": this browser doesn't save to the library (the switch in Settings, Privacy); anything else: on.
@@ -156,8 +157,9 @@ export class Library extends EventTarget {
     if (s && s.account === key) return s;
     // The first account this browser links uploads what is here; a different account later
     // doesn't (those collections stay in this browser only). The empty "Default" collection a
-    // fresh browser makes for itself is never uploaded: every browser would add one.
-    const untouched = (c) => c.name === "Default" && (c.requests || []).every((r) => !r.url && !r.body) && !Object.keys(c.variables || {}).length;
+    // fresh browser makes for itself is never uploaded: every browser would add one. FV1: nor are
+    // what a first visit makes now, an empty "My requests" and the untouched sample.
+    const untouched = (c) => isEmptyMyRequests(c) || isPristineSample(c);
     const localOnly = collections.filter((c) => (s && s.account) || untouched(c)).map(idOf);
     return { account: key, cursor: null, known: {}, localOnly };
   }

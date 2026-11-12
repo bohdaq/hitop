@@ -7,6 +7,7 @@ import json from "highlight.js/lib/languages/json";
 import xml from "highlight.js/lib/languages/xml";
 import { getStatusText } from "../../../frontend/src/services/httpService.jsx";
 import { usesProxy } from "../../../frontend/src/services/transportService.jsx";
+import { interpolateVariables } from "../../../frontend/src/services/variableInterpolation.jsx";
 import { icon } from "../icons.js";
 import { platform } from "../platform/index.js";
 import { syncClient } from "./sync-view.js";
@@ -127,14 +128,28 @@ export class HitopRequest extends LitElement {
     this.layout = loadLayout();
   }
 
+  // Whether the tab's request would go through the HITOP proxy (web: public hosts), with its
+  // variables filled in (the sample's "${baseUrl}/posts" is a public API); no URL yet: a public one.
+  proxied(t) {
+    let url = t.url?.trim() || "https://example.com";
+    try {
+      url = interpolateVariables(url, this.store.variables(t.loadedCollectionId));
+      return usesProxy(url);
+    } catch {
+      return false;
+    }
+  }
+
   createRenderRoot() {
     return this;
   }
 
   update(changed) {
-    // A different tab starts on Headers, or on Body when it has one.
+    // A different tab starts on Body when it has one, on Params when it is new (no URL yet) or
+    // has a query, else on Headers.
     if (changed.has("tab") && changed.get("tab")?.id !== this.tab?.id) {
-      this.section = this.tab?.kind === "websocket" || this.tab?.kind === "grpc" ? BODY : this.tab?.requestBody && BODY_METHODS.includes(this.tab.method) ? BODY : this.tab?.url?.includes("?") ? PARAMS : HEADERS;
+      const t = this.tab;
+      this.section = t?.kind === "websocket" || t?.kind === "grpc" ? BODY : t?.requestBody && BODY_METHODS.includes(t.method) ? BODY : !t?.url?.trim() || t.url.includes("?") ? PARAMS : HEADERS;
       this.responseSection = 0;
     } else if (changed.has("tab") && (this.tab?.kind === "grpc" || this.tab?.kind === "websocket") && changed.get("tab")?.kind !== this.tab.kind) {
       // Switched to gRPC or WebSocket: the message (and service, method) or the messages come first.
@@ -529,14 +544,11 @@ export class HitopRequest extends LitElement {
     }
     if (t.statusCode == null && (t.response == null || t.response === "")) {
       return html`<section class="response empty" data-state="idle" aria-label="Response">
-        <lit-material-empty-state size="compact" headline="Send a request to see the response">
-          ${usesProxy(t.url || "https://example.com")
-            ? "Requests to public APIs go through the HITOP proxy, so CORS doesn't block them. Requests to localhost go straight from your browser."
-            : "The response, its headers and timing appear here."}
-          ${this.store.isFresh
-            ? html`<lit-material-button slot="actions" variant="outlined" @click=${() => this.store.addSampleCollection()}>Try a sample collection</lit-material-button>
-                <lit-material-button slot="actions" variant="text" @click=${() => this.app.openDialog("import")}>Import from Postman</lit-material-button>`
-            : nothing}
+        <lit-material-empty-state size="compact" headline="No response yet">
+          Press Send (${SEND_KEYS}) to see the response here.
+          ${this.proxied(t)
+            ? "Requests to public APIs go through the HITOP proxy, so CORS doesn't block them; requests to localhost go straight from your browser."
+            : "Its body, headers and timing appear here."}
         </lit-material-empty-state>
       </section>`;
     }

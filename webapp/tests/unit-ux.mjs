@@ -389,4 +389,41 @@ assert.equal(rankItems(more, "auth")[0].key, "col:2");
   assert.equal(missingSecretsText([], "x"), "");
 }
 
+// FV1: a new request's automatic name, untouched requests and collections.
+{
+  const { requestAutoName, isBlankRequest, isMyRequests, isPristineSample, isEmptyMyRequests, sampleRequests, tabHasContent } = await import("../src/new-request.js");
+  const { SAMPLE_NAME } = await import("../src/getting-started.js");
+  const n = (url, extra = {}) => requestAutoName({ method: "GET", url, ...extra });
+  assert.equal(n(""), "Untitled", "no URL");
+  assert.equal(n("   "), "Untitled");
+  assert.equal(n("https://api.example.com/users"), "GET /users", "the path");
+  assert.equal(n("api.example.com/users/42?expand=1#top"), "GET /users/42", "no scheme; query and fragment left out");
+  assert.equal(n("https://api.example.com"), "GET api.example.com", "host only");
+  assert.equal(n("https://api.example.com/"), "GET api.example.com", "a bare slash is host only");
+  assert.equal(n("${baseUrl}/posts?_limit=3"), "GET /posts", "a leading variable is the host");
+  assert.equal(n("${baseUrl}"), "GET ${baseUrl}");
+  assert.equal(n("{{base}}/x"), "GET /x");
+  assert.equal(n("https://x.io/users", { method: "POST" }), "POST /users");
+  assert.equal(n("wss://echo.example.com/socket", { kind: "websocket" }), "WS /socket");
+  assert.equal(requestAutoName({ kind: "grpc", url: "localhost:50051", grpcMethod: "SayHello" }), "GRPC SayHello");
+  assert.equal(requestAutoName({ kind: "grpc", url: "localhost:50051" }), "GRPC localhost:50051");
+  assert.equal(requestAutoName({ kind: "grpc", url: "" }), "Untitled");
+  assert.equal(n(`https://x.io/${"a".repeat(80)}`).length, "GET ".length + 48, "long paths are cut");
+  assert.equal(isBlankRequest({ name: "Untitled", url: "", body: "", preRequestScript: "", postRequestScript: "" }), true);
+  assert.equal(isBlankRequest({ url: "x" }), false);
+  assert.equal(isBlankRequest({ url: "", body: "{}" }), false);
+  assert.equal(isBlankRequest({ url: "", kind: "grpc" }), false);
+  assert.equal(tabHasContent({ url: " " }), false);
+  assert.equal(tabHasContent({ url: "", requestBody: "x" }), true);
+  assert.equal(isMyRequests({ name: "My requests" }) && isMyRequests({ name: "Default" }) && !isMyRequests({ name: "Other" }), true, "My requests or an older Default");
+  const sample = { name: SAMPLE_NAME, requests: sampleRequests() };
+  assert.equal(isPristineSample(sample), true, "the sample as added");
+  assert.equal(isPristineSample({ ...sample, requests: [...sample.requests, { name: "Mine", url: "x", method: "GET" }] }), false, "one's own request in it");
+  assert.equal(isPristineSample({ ...sample, requests: sample.requests.map((r, i) => (i ? r : { ...r, url: "https://other" })) }), false, "an edited one");
+  assert.equal(isPristineSample({ name: "Other", requests: [] }), false);
+  assert.equal(isEmptyMyRequests({ name: "My requests", requests: [{ name: "Untitled", url: "" }] }), true);
+  assert.equal(isEmptyMyRequests({ name: "Default", requests: [], variables: { a: "1" } }), false, "variables are something");
+  assert.equal(isEmptyMyRequests({ name: "My requests", requests: [{ url: "https://x" }] }), false);
+}
+
 console.log("unit-ux: all checks passed");

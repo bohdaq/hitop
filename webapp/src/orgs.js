@@ -23,7 +23,7 @@ export async function loadOrgs(store, client) {
     const { orgs } = await client.api("GET", "/v1/orgs");
     const workspaces = await client.workspaces().catch(() => []);
     if (!latest()) return;
-    store.setOrgs(orgs ?? [], new Map(workspaces.filter((w) => w.org).map((w) => [w.id, w.org])));
+    store.setOrgs(orgs ?? [], new Map(workspaces.filter((w) => w.org).map((w) => [w.id, w.org])), new Map(workspaces.map((w) => [w.id, w.role])));
     await Promise.all((orgs ?? []).map((o) => loadUsage(store, client, o.id)));
   } catch {
     if (latest()) store.clearOrgs();

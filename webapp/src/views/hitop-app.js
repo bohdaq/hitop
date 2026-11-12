@@ -7,6 +7,7 @@ import { unsafeSVG } from "lit/directives/unsafe-svg.js";
 import { mark } from "../../../site/src/brand/mark.js";
 import { icon } from "../icons.js";
 import { methodLabel, Store } from "../store.js";
+import { isBlankRequest, isMyRequests, UNTITLED } from "../new-request.js";
 import { IS_TAURI, platform } from "../platform/index.js";
 import { issueText } from "../pm.js";
 import "@lit-material/navigation";
@@ -48,6 +49,8 @@ import { aiSettings } from "../ai.js";
 const PORTAL_URL = "https://cloud.hitop.rws8.tech/";
 // The org switcher's last option: opens the New organization dialog.
 const NEW_ORG = "__new_org";
+// The environment picker's "Add environment…" (FV1, shown when there is none).
+const ADD_ENVIRONMENT = "__add_environment";
 
 // Collections folded in the sidebar, by id (its own key: nothing else reads it).
 const COLLAPSED_KEY = "hitop_collapsed_collections";
@@ -160,6 +163,8 @@ export class HitopApp extends LitElement {
     };
     openLink();
     window.addEventListener("hashchange", openLink);
+    // FV1: a first visit starts on the sample's "List posts" with the URL field focused.
+    if (this.store.firstVisit && this.store.view.kind === "request" && !this.dialog) this.focusUrl();
     // The org comes once the orgs are loaded (after the account is read).
     this.store.addEventListener("change", () => this.orgLink?.org && this.applyOrgLink());
   }
@@ -225,7 +230,7 @@ export class HitopApp extends LitElement {
         this.openCommand();
         break;
       case "newTab":
-        s.newTab();
+        this.newRequest();
         break;
       case "closeTab":
         if (onRequest) this.closeTab(s.currentTab);
@@ -569,9 +574,14 @@ export class HitopApp extends LitElement {
     const tab = s.tabs[index];
     if (!tab || s.tabs.length < 2) return;
     if (s.isDirty(tab) || s.hasDraftContent(tab)) {
+      const saved = s.loadedRequest(tab);
       const ok = await confirm({
         headline: `Discard changes to ${tab.title}?`,
-        message: tab.loadedRequestId ? "The tab has edits that aren't saved; the saved request stays as it was." : "This request isn't saved in a collection.",
+        message: !saved
+          ? "This request isn't saved in a collection."
+          : tab.autoName && isBlankRequest(saved) && saved.name === UNTITLED
+            ? `This new request was never saved, so it comes out of ${s.collection(tab.loadedCollectionId)?.name ?? "its collection"} again.`
+            : "The tab has edits that aren't saved; the saved request stays as it was.",
         confirmLabel: "Discard",
         destructive: true,
       });
@@ -585,16 +595,16 @@ export class HitopApp extends LitElement {
     const tab = s.tabs[index];
     if (!tab || !s.loadedRequest(tab)) return;
     s.selectTab(index);
-    s.saveRequest(s.loadedRequest(tab).name, tab.loadedCollectionId);
+    s.saveRequest(s.savedName(tab), tab.loadedCollectionId);
     s.closeTab(index);
   }
 
-  // Save: a saved request is overwritten in place, a draft asks where (even
-  // without a URL yet: a named, empty request in a collection is a fine start).
+  // Save: a saved request is overwritten in place (a new one under its automatic name), a draft
+  // asks where (even without a URL yet: a named, empty request in a collection is a fine start).
   saveCurrent() {
     const s = this.store;
     const request = s.loadedRequest();
-    if (request) s.saveRequest(request.name, s.tab.loadedCollectionId);
+    if (request) s.saveRequest(s.savedName(s.tab, request), s.tab.loadedCollectionId);
     else if (s.tab) this.openDialog("save", s.saveTarget());
   }
 
@@ -916,11 +926,18 @@ export class HitopApp extends LitElement {
   envSelect() {
     const s = this.store;
     const env = s.activeEnvironment;
-    // A pill with a coloured dot (HITOP Next): amber with an environment, grey without.
+    const envs = s.visibleEnvironments;
+    // A pill with a coloured dot (HITOP Next): amber with an environment, grey without. FV1: with
+    // none at all it says so and offers to add one (the Environments page).
     return html`<lit-material-select class=${`env-select pill-select ${env ? "has-env" : ""}`} variant="outlined" label="Environment" .value=${env?.id ?? "none"}
-      @change=${(e) => s.setActiveEnvironment(e.target.value === "none" ? null : e.target.value)}>
-      <lit-material-select-option value="none">No environment</lit-material-select-option>
-      ${s.visibleEnvironments.map((x) => html`<lit-material-select-option value=${x.id}>${s.environmentLabel(x)}</lit-material-select-option>`)}
+      @change=${(e) => {
+        if (e.target.value !== ADD_ENVIRONMENT) return s.setActiveEnvironment(e.target.value === "none" ? null : e.target.value);
+        e.target.value = "none";
+        this.go("environments");
+      }}>
+      <lit-material-select-option value="none">${envs.length ? "No environment" : "No environments"}</lit-material-select-option>
+      ${envs.map((x) => html`<lit-material-select-option value=${x.id}>${s.environmentLabel(x)}</lit-material-select-option>`)}
+      ${envs.length ? nothing : html`<lit-material-select-option value=${ADD_ENVIRONMENT}>Add environment…</lit-material-select-option>`}
     </lit-material-select>`;
   }
 
@@ -1124,11 +1141,22 @@ export class HitopApp extends LitElement {
     saveCollapsed(this.collapsed);
   }
 
-  /** A draft in a collection (and folder) from the sidebar or a collection page; the drawer closes. */
+  /** A new request in a collection (and folder) from the sidebar or a collection page. */
   newRequestIn(collectionId, folder = "") {
+    this.newRequest(collectionId, folder);
+  }
+
+  /**
+   * FV1: the one way a new request is made (the tab bar's +, Mod+N / Alt+Shift+N, the palette, the
+   * sidebar): an "Untitled" request added to the collection on screen (or `collectionId`, in
+   * `folder`), its row shown and selected, the URL field focused; the drawer closes.
+   */
+  newRequest(collectionId = null, folder = "") {
     this.navOpen = false;
-    this.expand(collectionId, folder);
-    this.store.newRequestIn(collectionId, folder);
+    const s = this.store;
+    const r = collectionId != null ? s.newRequestIn(collectionId, folder) : s.newRequestInFirstCollection();
+    this.expand(r.collectionId, r.folder);
+    this.focusUrl();
   }
 
   // A request dropped on another list (`sort` with toList !== fromList, lit-material
@@ -1212,7 +1240,7 @@ export class HitopApp extends LitElement {
         ({ request: r }) => html`<div role="listitem" class="request-item" data-sort-id=${r.id} data-sort-label=${r.name}>
           <button type="button" class="tree-row leaf" aria-current=${activeRequest === r.id ? "page" : "false"}
             @click=${() => ((this.navOpen = false), s.openRequest(r, c.id))} @contextmenu=${(e) => this.openRequestMenu(e, r, c.id)}>
-            <span class=${`method-tag m-${methodLabel(r)}`}>${methodLabel(r)}</span><span>${r.name}${s.isDirtyRequest(r.id, c.id) ? html`<span class="dirty-dot" aria-hidden="true">●</span><span class="visually-hidden">, unsaved changes</span>` : nothing}</span>${this.gitLetter(c, r)
+            ${this.requestRowTag(r, c.id)}<span>${this.requestRowName(r, c.id)}${s.isDirtyRequest(r.id, c.id) ? html`<span class="dirty-dot" aria-hidden="true">●</span><span class="visually-hidden">, unsaved changes</span>` : nothing}</span>${this.gitLetter(c, r)
               ? html`<span class="git-letter mono" title=${`Changed in git: ${this.gitLetter(c, r)}`}>${this.gitLetter(c, r)}<span class="visually-hidden"> (changed in git)</span></span>`
               : nothing}
           </button>
@@ -1220,6 +1248,22 @@ export class HitopApp extends LitElement {
         </div>`,
       )}
     </lit-material-sortable>`;
+  }
+
+  // A sidebar row's method tag and name: a new request's follow its open tab while its name
+  // follows the URL; a name that starts with the method shows without it ("GET /users" is the GET
+  // tag and "/users").
+  requestRowTag(r, collectionId) {
+    const live = this.store.autoNameTab(r, collectionId);
+    const tag = live ? tagOf(live) : methodLabel(r);
+    return html`<span class=${`method-tag m-${tag}`}>${tag}</span>`;
+  }
+
+  requestRowName(r, collectionId) {
+    const live = this.store.autoNameTab(r, collectionId);
+    const tag = live ? tagOf(live) : methodLabel(r);
+    const name = live ? live.title : r.name;
+    return name.startsWith(`${tag} `) && name.length > tag.length + 1 ? name.slice(tag.length + 1) : name;
   }
 
   // A collection's requests with their folders (Postman folders, OpenAPI
@@ -1245,8 +1289,11 @@ export class HitopApp extends LitElement {
             ${run.length || !bare
               ? nothing
               : html`<div class="tree-hint">
-                  <span>No requests yet</span>
+                  ${isMyRequests(c) && !node.path ? nothing : html`<span>No requests yet</span>`}
                   <button type="button" class="tree-hint-action" @click=${() => this.newRequestIn(c.id, node.path)}>${icon("plus")} Add request</button>
+                  ${isMyRequests(c) && !node.path
+                    ? html`<span class="tree-hint-sep" aria-hidden="true">·</span><button type="button" class="tree-hint-action" aria-label="Import Postman, OpenAPI or HITOP" title="Import Postman, OpenAPI or HITOP collections" @click=${() => this.openDialog("import")}>${icon("file-arrow-up")} Import</button>`
+                    : nothing}
                 </div>`}
           </li>`
         : this.folderRow(c, run.folder, activeRequest),
@@ -1452,7 +1499,7 @@ export class HitopApp extends LitElement {
         <div class="side-pane-top">
           <span class="side-title" id="side-title">Collections</span>
           <button type="button" class="mini new-collection" aria-label="New collection" title="New collection" @click=${() => this.openDialog("add-collection")}>${icon("folder-simple-plus")}</button>
-          <button type="button" class="mini new-request" aria-label="Add a request" title=${`New request: a draft in the collection on screen; save it there with ${SAVE_KEYS}`} @click=${() => (this.navOpen = false, s.newRequestInFirstCollection())}>${icon("plus")}</button>
+          <button type="button" class="mini new-request" aria-label="Add a request" title="New request in the collection on screen" @click=${() => this.newRequest()}>${icon("plus")}</button>
         </div>
         <label class="tree-filter-wrap">
           ${icon("magnifying-glass")}
@@ -1607,7 +1654,7 @@ export class HitopApp extends LitElement {
         <lit-material-icon-button aria-label="Request actions" id="tab-actions" @click=${(e) => ((this.menuTab = s.currentTab), this.querySelector("#tab-menu").show(e.currentTarget))}>
           ${icon("dots-three-vertical")}
         </lit-material-icon-button>
-        <lit-material-icon-button aria-label="New tab" @click=${() => s.newTab()}>${icon("plus")}</lit-material-icon-button>
+        <lit-material-icon-button aria-label="New request" title="New request in this collection" @click=${() => this.newRequest()}>${icon("plus")}</lit-material-icon-button>
       </div>
       <lit-material-menu id="tab-menu">
         <lit-material-list-item interactive @click=${() => this.openDialog("rename-tab", { index: this.menuTab, name: s.tabs[this.menuTab]?.title ?? "" })}>Rename</lit-material-list-item>
@@ -1774,7 +1821,14 @@ export class HitopApp extends LitElement {
   focusUrl() {
     const s = this.store;
     if (s.view.kind !== "request") s.selectTab(s.currentTab);
-    this.updateComplete.then(() => this.querySelector("hitop-request .request-line .url")?.focus());
+    // The request view (and its field) may render a moment after the app does.
+    return this.updateComplete.then(async () => {
+      const view = this.querySelector("hitop-request");
+      await view?.updateComplete;
+      const field = view?.querySelector(".request-line .url");
+      await field?.updateComplete;
+      field?.focus();
+    });
   }
 
   // Tab in the palette: the query goes to Ask AI as a "Request from text" prompt; with nothing
@@ -1803,23 +1857,33 @@ export class HitopApp extends LitElement {
     if (s.view.kind !== "request" || !t) return "";
     const c = s.collection(t.loadedCollectionId);
     const r = c?.requests?.find((x) => x.id === t.loadedRequestId);
-    if (!c || !r) return "Unsaved request";
+    if (!c || !r) return "";
+    // FV1: the title bar names the collection and the tab the request, so only a folder
+    // collection's file (where the request is written) adds something here.
     const folder = s.folderOf(c.id);
-    return folder && r.file ? `${folder.label}/requests/${r.file}.yaml` : `${c.name} › ${r.name}`;
+    return folder && r.file ? `${folder.label}/requests/${r.file}.yaml` : "";
   }
 
   renderStatusBar() {
     const s = this.store;
     const t = s.view.kind === "request" ? s.tab : null;
     const dirty = t && s.isDirty(t);
+    const place = t && s.loadedRequest(t) ? this.requestPlace() : "";
+    // A new request nobody has filled in yet (closing it takes it out again).
+    const fresh = t?.autoName && isBlankRequest(s.loadedRequest(t)) && s.loadedRequest(t)?.name === UNTITLED;
     const proxy = IS_TAURI ? "Proxy off" : "Proxy for public hosts";
     const engine = IS_TAURI ? "Local engine · Rust" : "Browser engine";
     // The last response's scheme and HTTP version ("HTTPS · h2"), when the engine said.
     const wire = t?.httpVersion ? protocolLabel(t.httpVersion, `${t.responseScheme || ""}:`) : "";
     // @lit-material/status-bar (HITOP Next): a labelled region, tabular numbers, wraps on phones.
     return html`<lit-material-status-bar class="statusbar" label="Status">
-      ${t && s.loadedRequest(t) ? html`<lit-material-status-bar-item class="mono">${this.requestPlace()}</lit-material-status-bar-item>` : nothing}
-      ${dirty ? html`<lit-material-status-bar-item class="status-unsaved" tone="warning">● Unsaved · <lit-material-kbd keys="Mod+S"></lit-material-kbd> writes the file</lit-material-status-bar-item>` : nothing}
+      ${place ? html`<lit-material-status-bar-item class="mono">${place}</lit-material-status-bar-item>` : nothing}
+      ${dirty ? html`<lit-material-status-bar-item class="status-unsaved" tone="warning">● Unsaved · <lit-material-kbd keys="Mod+S"></lit-material-kbd> ${place ? "writes the file" : "saves it"}</lit-material-status-bar-item>` : nothing}
+      ${t && s.loadedRequest(t) && !dirty
+        ? fresh
+          ? html`<lit-material-status-bar-item class="status-saved">New request, nothing to save yet</lit-material-status-bar-item>`
+          : html`<lit-material-status-bar-item class="status-saved">${icon("check-circle")} Saved</lit-material-status-bar-item>`
+        : nothing}
       ${t && !s.loadedRequest(t)
         ? html`<lit-material-status-bar-item class="status-unsaved" button description="Save to a collection" @click=${() => this.saveCurrent()}>● Draft, not in a collection yet · <lit-material-kbd keys="Mod+S"></lit-material-kbd> saves it to one</lit-material-status-bar-item>`
         : nothing}

@@ -17,8 +17,8 @@ export function gettingStartedSteps({ history = [], collections = [], runs = nul
   const saved = savedOnce || collections.some((c) => (c.requests || []).some((r) => own(c, r)));
   const ran = ranNow || Object.values(runs ?? {}).some((list) => Array.isArray(list) && list.length > 0);
   return [
-    { id: "send", label: "Send a request", hint: `Type a URL above and press Send (${keys.send}), or open the sample.`, done: sent },
-    { id: "save", label: "Save a request to a collection", hint: `${keys.save} saves the open request; pick a collection or make one.`, done: saved },
+    { id: "send", label: "Send a request", hint: `Press Send (${keys.send}) on the open request, or type a URL of your own.`, done: sent },
+    { id: "save", label: "Save a request to a collection", hint: `${keys.save} saves the open request to its collection; + adds a new one.`, done: saved },
     { id: "run", label: "Run a collection", hint: "On a collection's page, Run collection sends its requests in order and checks their tests.", done: ran },
   ];
 }

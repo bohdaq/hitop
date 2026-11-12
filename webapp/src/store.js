@@ -3,7 +3,8 @@
 // keep their localStorage keys and shapes: the React app and this one read
 // each other's data. Views subscribe with `store.addEventListener("change")`
 // and report problems through the `notify` event (never window.alert).
-import { markSaved } from "./getting-started.js";
+import { markSaved, SAMPLE_NAME, SAMPLE_REQUESTS } from "./getting-started.js";
+import { isBlankRequest, isEmptyMyRequests, isMyRequests, isPristineSample, MY_REQUESTS, requestAutoName, sampleRequests, SAMPLE_BASE_URL, tabHasContent, UNTITLED } from "./new-request.js";
 import collectionService from "../../frontend/src/services/collectionService.jsx";
 import contextService from "../../frontend/src/services/contextService.jsx";
 import historyService from "../../frontend/src/services/historyService.jsx";
@@ -215,23 +216,86 @@ function tabForRequest(request, collectionId) {
   };
 }
 
+// A new request as + (and Mod+N, the palette, the sidebar) adds it to a collection.
+const untitledRequest = (extra = {}) => ({ ...emptyRequest(), name: UNTITLED, ...extra });
+
+// Before FV1 a tab could be a draft outside every collection. One restored with something in it
+// is filed into My requests (made when there is none); an empty one is dropped. Returns the
+// collections and tabs (null tabs: nothing left).
+function fileDrafts(collections, tabs) {
+  let cols = collections;
+  let home = null;
+  const out = [];
+  for (const t of tabs) {
+    // A saved request's tab stays, also when its collection isn't here yet (a desktop folder
+    // collection is read after the store starts).
+    if (t.loadedRequestId != null) {
+      out.push(t);
+      continue;
+    }
+    if (!tabHasContent(t)) continue;
+    home ??= cols.find(isMyRequests);
+    if (!home) {
+      home = collectionService.createCollection(MY_REQUESTS);
+      cols = [...cols, home];
+    }
+    // A title the old draft made from its URL ("GET host/path") goes on following the URL.
+    const auto = !t.title || /^(new request|untitled)$/i.test(t.title.trim()) || t.title.startsWith(`${t.kind === "websocket" ? "WS" : t.kind === "grpc" ? "GRPC" : t.method} `);
+    const name = auto ? requestAutoName(t) : t.title;
+    const request = clean({ ...collectionService.createRequest(name, { url: t.url, method: t.method, headers: t.headers, body: t.requestBody, preRequestScript: t.preRequestScript, postRequestScript: t.postRequestScript, auth: cleanAuth(t.auth) }), ...SAVED_FIELDS(t) });
+    if (!request.auth) delete request.auth;
+    const at = cols.indexOf(home);
+    home = { ...home, requests: [...(home.requests || []), request] };
+    cols = cols.map((c, i) => (i === at ? home : c));
+    const { folder: _folder, ...rest } = t;
+    out.push({ ...rest, title: name, loadedRequestId: request.id, loadedCollectionId: home.id, ...(auto ? { autoName: true } : {}) });
+  }
+  return { collections: cols, tabs: out.length ? out : null };
+}
+
 function initialState() {
   const collections = storage().loadCollections();
   const tabs = storage().loadTabs();
   const current = storage().loadCurrentTab();
-  if (collections?.length && tabs?.length) {
-    return {
-      collections,
-      // A request in flight when the page closed never finishes.
-      tabs: tabs.map((t) => ({ ...t, loading: false })),
-      currentTab: current !== null && current >= 0 && current < tabs.length ? current : 0,
-    };
+  // FV1 first visit (nothing stored at all): the sample with "List posts" open, and an empty
+  // My requests for one's own.
+  if (!collections?.length && !tabs?.length) {
+    const sample = sampleCollection();
+    const mine = collectionService.createCollection(MY_REQUESTS);
+    return { collections: [sample, mine], tabs: [tabForRequest(sample.requests[0], sample.id)], currentTab: 0, firstVisit: true };
   }
-  const request = emptyRequest();
-  const fallback = collections?.length ? collections : [{ id: 1, name: "Default", requests: [request] }];
-  const first = fallback[0];
-  const target = first.requests?.[0] ?? request;
-  return { collections: fallback, tabs: [tabForRequest(target, first.id)], currentTab: 0 };
+  let cols = collections?.length ? collections : [];
+  const open = tabs?.length ? tabs : null;
+  if (open) {
+    const filed = fileDrafts(cols, open);
+    cols = filed.collections;
+    // A request in flight when the page closed never finishes.
+    if (filed.tabs) {
+      const same = filed.tabs.length === open.length;
+      return {
+        collections: cols,
+        tabs: filed.tabs.map((t) => ({ ...t, loading: false })),
+        currentTab: same && current !== null && current >= 0 && current < filed.tabs.length ? current : 0,
+      };
+    }
+  }
+  // No tab to restore: the first collection's first request, else a new one in My requests.
+  const first = cols.find((c) => c.requests?.length);
+  if (first) return { collections: cols, tabs: [tabForRequest(first.requests[0], first.id)], currentTab: 0 };
+  let home = cols.find(isMyRequests);
+  const request = untitledRequest();
+  if (home) cols = cols.map((c) => (c === home ? (home = { ...c, requests: [...(c.requests || []), request] }) : c));
+  else cols = [...cols, (home = { ...collectionService.createCollection(MY_REQUESTS), requests: [request] })];
+  return { collections: cols, tabs: [{ ...tabForRequest(request, home.id), autoName: true }], currentTab: 0 };
+}
+
+// The sample collection (store.addSampleCollection, and the first visit), with ids.
+function sampleCollection() {
+  return {
+    ...collectionService.createCollection(SAMPLE_NAME),
+    variables: { baseUrl: SAMPLE_BASE_URL },
+    requests: sampleRequests().map(({ name, ...r }) => collectionService.createRequest(name, r)),
+  };
 }
 
 // Turn a fetch-like response into what the response viewer shows.
@@ -286,22 +350,9 @@ const headersObject = (headers) => {
   return out;
 };
 
-// A draft's title follows its URL as typed: "GET api.example.com/users", so
-// drafts can be told apart in the tab strip.
+// A tab's title after an edit: a new request's (and an old draft's) follows its URL.
 function autoTitle(tab) {
-  if (tab.loadedRequestId) return tab.title;
-  if (tab.kind === "grpc") return `GRPC ${tab.grpcMethod || tab.url || ""}`.trim();
-  const verb = tab.kind === "websocket" ? "WS" : tab.method;
-  const url = (tab.url || "").trim();
-  if (!url) return "New request";
-  let where = url;
-  try {
-    const u = new URL(/^[a-z][a-z0-9+.-]*:\/\//i.test(url) ? url : `https://${url}`);
-    where = `${u.host}${u.pathname === "/" ? "" : u.pathname}`;
-  } catch {
-    // ${baseUrl}/users and the like: as typed
-  }
-  return `${verb} ${where.length > 48 ? `${where.slice(0, 47)}…` : where}`;
+  return tab.autoName || !tab.loadedRequestId ? requestAutoName(tab) : tab.title;
 }
 
 // What decides whether a tab differs from its saved request: the fields
@@ -329,6 +380,8 @@ export class Store extends EventTarget {
     this.collections = s.collections;
     this.tabs = s.tabs;
     this.currentTab = s.currentTab;
+    // FV1: nothing was stored (the sample and My requests were just made): the app focuses the URL.
+    this.firstVisit = Boolean(s.firstVisit);
     this.history = storage().loadHistory() || [];
     this.contexts = storage().loadContexts() || {};
     const envs = storage().loadEnvironments();
@@ -571,13 +624,33 @@ export class Store extends EventTarget {
     return this.collections.find((c) => c.id === id);
   }
 
+  /** My requests (or an older "Default"), made when the current org has none. */
   defaultCollection() {
-    let col = this.visibleCollections.find((c) => c.name === "Default");
+    const shown = this.visibleCollections;
+    let col = shown.find((c) => c.name === MY_REQUESTS) ?? shown.find(isMyRequests);
     if (!col) {
-      col = this.inOrg(collectionService.createCollection("Default"));
+      col = this.inOrg(collectionService.createCollection(MY_REQUESTS));
       this.collections = [...this.collections, col];
     }
     return col;
+  }
+
+  /**
+   * FV1: whether a new request may be added to `c` here. Not a shared collection where this
+   * account is a viewer (`/v1/workspaces` role, orgs.js), nor one kept in HITOP Cloud (shared or
+   * the library) while its organization's storage is full (`orgUsage`): adding would be refused.
+   */
+  canTakeRequest(c) {
+    if (!c) return false;
+    const folder = this.folders.get(c.id);
+    const shared = String(folder?.ref ?? "").startsWith("hitop-sync:");
+    if (shared && this.workspaceRoles?.get(this.syncClient?.link?.(c.id)?.workspace) === "viewer") return false;
+    const lib = this.library;
+    const cloud = shared || (!folder && lib?.status?.on && !(lib.state?.localOnly ?? []).includes(String(c.id)));
+    if (!cloud) return true;
+    const u = this.orgUsage?.get(this.orgOf(c));
+    const max = u?.limits?.storageBytes;
+    return !(max != null && (u?.usage?.storageBytes ?? 0) >= max);
   }
 
   // --- views --------------------------------------------------------------
@@ -619,15 +692,38 @@ export class Store extends EventTarget {
     this.emit();
   }
 
-  // A new, unsaved request: it uses the collection's variables but joins the
-  // collection only when saved, so collections don't fill with blank rows.
-  // `folder`: the folder path it is saved into (tab key `folder`, a draft's only).
+  // FV1: a new request lands in a collection at once: an "Untitled" request is added to
+  // `collection` (in `folder`) and opens in a tab linked to it. Edits show as unsaved until saved
+  // (Mod+S), as for any saved request; its name follows the URL until it is renamed (tab
+  // `autoName`); closing it untouched takes it out again (closeTab). A collection that can't take
+  // one here (canTakeRequest: a viewer's shared collection, cloud storage full) sends it to My
+  // requests. Returns { collectionId, folder, fallback } (fallback: it went to My requests instead).
   newTab(collection = this.contextCollection(), folder = "") {
-    const tab = { ...tabService.createNewTab(), title: "New request", auth: emptyAuth(), ...EXTRA_FIELDS({}), loadedRequestId: null, loadedCollectionId: collection.id, ...(folder ? { folder } : {}) };
-    this.tabs = [...this.tabs, tab];
+    let target = collection ?? this.defaultCollection();
+    let where = folder;
+    const fallback = !this.canTakeRequest(target);
+    if (fallback) {
+      target = this.defaultCollection();
+      where = "";
+    }
+    const file = where ? requestFile(target.requests || [], where, UNTITLED) : undefined;
+    const request = untitledRequest(file ? { file } : {});
+    this.collections = collectionService.addRequestToCollection(this.collections, target.id, request);
+    this.tabs = [...this.tabs, { ...tabForRequest(request, target.id), autoName: true }];
     this.currentTab = this.tabs.length - 1;
     this.view = { kind: "request", collectionId: null };
     this.emit();
+    if (fallback) this.notify(`${collection?.name ?? "That collection"} can't take new requests here, so this one is in ${target.name}`);
+    return { collectionId: target.id, folder: where, fallback };
+  }
+
+  // A new request's tab closed with nothing ever saved in it: the request goes too.
+  dropIfUntouched(tab) {
+    if (!tab?.autoName) return;
+    const request = this.loadedRequest(tab);
+    if (!request || !isBlankRequest(request) || request.name !== UNTITLED) return;
+    if (this.tabs.some((t) => t !== tab && t.loadedRequestId === request.id && t.loadedCollectionId === tab.loadedCollectionId)) return;
+    this.collections = collectionService.deleteRequestFromCollection(this.collections, tab.loadedCollectionId, request.id);
   }
 
   /** Moves a tab (the tab strip's drag or Alt+Shift+Arrow); the open tab stays open. */
@@ -648,6 +744,7 @@ export class Store extends EventTarget {
     this.cancel(this.tabs[index].id);
     this.wsDisconnect(this.tabs[index].id);
     this.grpcCancel(this.tabs[index].id);
+    this.dropIfUntouched(this.tabs[index]);
     const { tabs, newCurrentTab } = tabService.closeTab(this.tabs, index, this.currentTab);
     this.tabs = tabs;
     this.currentTab = newCurrentTab;
@@ -657,6 +754,8 @@ export class Store extends EventTarget {
   renameTab(index, name) {
     const title = name.trim();
     if (!title) return;
+    // A name of one's own: it no longer follows the URL.
+    this.tabs = tabService.updateTab(this.tabs, index, { autoName: undefined });
     const tab = this.tabs[index];
     if (tab.loadedRequestId && tab.loadedCollectionId) {
       const request = this.collection(tab.loadedCollectionId)?.requests.find((r) => r.id === tab.loadedRequestId);
@@ -711,11 +810,34 @@ export class Store extends EventTarget {
       const { tabs, newCurrentTab } = tabService.closeTab(this.tabs, index, this.currentTab);
       this.tabs = tabs;
       this.currentTab = newCurrentTab;
+      this.emit();
     } else {
-      this.tabs = [{ ...tabService.createNewTab(), title: "New request", auth: emptyAuth(), ...EXTRA_FIELDS({}) }];
-      this.currentTab = 0;
+      // The last tab: a new request takes its place (in the collection it was in, when it can).
+      const col = this.collection(tab.loadedCollectionId);
+      this.tabs = [];
+      this.newTab(col && this.inCurrentOrg(col) ? col : this.contextCollection());
     }
-    this.emit();
+  }
+
+  // Tabs on requests just deleted (`gone(tab)`: the request, or its whole collection) close; when
+  // none is left a new request opens. FV1: no tab is outside a collection.
+  closeTabsOf(gone) {
+    if (!this.tabs.some(gone)) return;
+    const openId = this.tab?.id;
+    for (const t of this.tabs.filter(gone)) {
+      this.cancel(t.id);
+      this.wsDisconnect(t.id);
+      this.grpcCancel(t.id);
+    }
+    this.tabs = this.tabs.filter((t) => !gone(t));
+    if (!this.tabs.length) {
+      const view = this.view;
+      this.newTab(this.contextCollection());
+      this.view = view;
+      return;
+    }
+    const at = this.tabs.findIndex((t) => t.id === openId);
+    this.currentTab = at === -1 ? Math.min(this.currentTab, this.tabs.length - 1) : at;
   }
 
   // --- requests in collections --------------------------------------------
@@ -733,7 +855,7 @@ export class Store extends EventTarget {
   }
 
   // The collection a new request goes to: the one on screen (its page, its
-  // variables, the open tab's), else the first one shown; a "Default" one is
+  // variables, the open tab's), else the first one shown; My requests is
   // made only when there is none at all.
   contextCollection() {
     const { kind, collectionId } = this.view;
@@ -744,22 +866,28 @@ export class Store extends EventTarget {
   }
 
   newRequestInFirstCollection() {
-    this.newTab(this.contextCollection());
+    return this.newTab(this.contextCollection());
   }
 
-  /** A new draft in a collection (and folder): the sidebar's "+" and the collection page. */
+  /** A new request in a collection (and folder): the sidebar's "+" and the collection page. */
   newRequestIn(collectionId, folder = "") {
     const collection = this.collection(collectionId) ?? this.contextCollection();
-    this.newTab(collection, folder);
+    return this.newTab(collection, folder);
   }
 
   // The save dialog's starting values: the loaded request, or a new one.
   saveTarget() {
     const tab = this.tab;
     const request = tab.loadedRequestId && this.collection(tab.loadedCollectionId)?.requests.find((r) => r.id === tab.loadedRequestId);
+    // A new request still named after its URL is saved under that name.
     return request
-      ? { name: request.name, collectionId: tab.loadedCollectionId, overwrite: true }
-      : { name: "", collectionId: (this.collection(tab.loadedCollectionId) ?? this.collections.find((c) => c.name === "Default") ?? this.collections[0])?.id ?? null, overwrite: false, folder: tab.folder || "" };
+      ? { name: this.savedName(tab, request), collectionId: tab.loadedCollectionId, overwrite: true }
+      : { name: "", collectionId: (this.collection(tab.loadedCollectionId) ?? this.collections.find(isMyRequests) ?? this.collections[0])?.id ?? null, overwrite: false, folder: tab.folder || "" };
+  }
+
+  /** The name a save gives the tab's request: a new one's follows its URL (tab `autoName`). */
+  savedName(tab, request = this.loadedRequest(tab)) {
+    return tab?.autoName ? requestAutoName(tab) : request?.name ?? tab?.title ?? UNTITLED;
   }
 
   /** Where a request can go, for the Move dialog: every shown collection and its folders. */
@@ -814,6 +942,15 @@ export class Store extends EventTarget {
     // A body type label from a folder is kept only while the body is the
     // same; graphql is the body mode the editor shows, so it goes with it.
     if (tab.bodyMode !== "graphql" && existing?.bodyType && (existing.body !== data.body || existing.bodyType === "graphql")) data.bodyType = undefined;
+    // A new request added to a folder got the file "<folder>/untitled": its first save under a
+    // real name gives it a file named after it.
+    if (existing && collectionId === tab.loadedCollectionId && title !== UNTITLED && typeof existing.file === "string") {
+      const at = existing.file.lastIndexOf("/");
+      if (/^untitled(-\d+)?$/.test(existing.file.slice(at + 1))) {
+        const others = (this.collection(collectionId)?.requests || []).filter((r) => r.id !== existing.id);
+        data.file = requestFile(others, at === -1 ? "" : existing.file.slice(0, at), title);
+      }
+    }
     if (existing) {
       if (collectionId !== tab.loadedCollectionId) {
         // Moving keeps every field the editor doesn't know (examples, file,
@@ -827,7 +964,8 @@ export class Store extends EventTarget {
           c.id === collectionId ? { ...c, requests: c.requests.map((r) => (r.id === tab.loadedRequestId ? clean(r) : r)) } : c,
         );
       }
-      this.tabs = tabService.updateTab(this.tabs, this.currentTab, { loadedCollectionId: collectionId, title });
+      // A name typed in the Save dialog is one's own: the name stops following the URL.
+      this.tabs = tabService.updateTab(this.tabs, this.currentTab, { loadedCollectionId: collectionId, title, autoName: tab.autoName && title === requestAutoName(tab) ? true : undefined });
     } else {
       // A draft made in a folder (the sidebar's "+" on it) gets its file there.
       const target = this.collection(collectionId);
@@ -853,7 +991,7 @@ export class Store extends EventTarget {
     const request = this.collection(collectionId)?.requests.find((r) => r.id === requestId);
     if (!title || !request) return;
     this.collections = collectionService.updateRequestInCollection(this.collections, collectionId, requestId, { ...request, name: title });
-    this.tabs = this.tabs.map((t) => (t.loadedRequestId === requestId && t.loadedCollectionId === collectionId ? { ...t, title } : t));
+    this.tabs = this.tabs.map((t) => (t.loadedRequestId === requestId && t.loadedCollectionId === collectionId ? { ...t, title, autoName: undefined } : t));
     this.emit();
   }
 
@@ -876,7 +1014,7 @@ export class Store extends EventTarget {
 
   deleteRequest(request, collectionId) {
     this.collections = collectionService.deleteRequestFromCollection(this.collections, collectionId, request.id);
-    this.tabs = this.tabs.map((t) => (t.loadedRequestId === request.id ? { ...t, loadedRequestId: null, loadedCollectionId: null } : t));
+    this.closeTabsOf((t) => t.loadedRequestId === request.id && t.loadedCollectionId === collectionId);
     this.emit();
   }
 
@@ -894,10 +1032,12 @@ export class Store extends EventTarget {
   // --- organizations ----------------------------------------------------------
 
   /** Signed in: the account's orgs (`GET /v1/orgs`) and its shared workspaces' orgs. */
-  setOrgs(orgs, workspaceOrgs = new Map()) {
+  setOrgs(orgs, workspaceOrgs = new Map(), workspaceRoles = new Map()) {
     this.orgs = orgs ?? [];
     this.personalOrg = this.orgs.find((o) => o.personal)?.id ?? this.orgs[0]?.id ?? null;
     this.workspaceOrgs = workspaceOrgs;
+    // FV1: this account's role per shared workspace (canTakeRequest: viewers add nothing).
+    this.workspaceRoles = workspaceRoles;
     let saved = null;
     try {
       saved = localStorage.getItem(ORG_KEY);
@@ -924,6 +1064,7 @@ export class Store extends EventTarget {
     this.personalOrg = null;
     this.currentOrg = null;
     this.workspaceOrgs = new Map();
+    this.workspaceRoles = new Map();
     this.emit();
   }
 
@@ -1019,33 +1160,23 @@ export class Store extends EventTarget {
   // A first collection to try: JSONPlaceholder (public, through the proxy on the web), with a
   // variable, a script that passes a value on, and tests.
   addSampleCollection() {
-    const req = (name, method, url, extra = {}) => collectionService.createRequest(name, { url, method, headers: [{ name: "", value: "" }], body: "", preRequestScript: "", postRequestScript: "", ...extra });
-    const col = this.inOrg({
-      ...collectionService.createCollection("Sample: JSONPlaceholder"),
-      variables: { baseUrl: "https://jsonplaceholder.typicode.com" },
-      requests: [
-        req("List posts", "GET", "${baseUrl}/posts?_limit=3", {
-          postRequestScript: 'pm.test("status is 200", () => pm.response.to.have.status(200));\npm.test("three posts", () => pm.expect(pm.response.json().length).to.eql(3));\n// The next request reads it as ${postId}.\npm.collectionVariables.set("postId", pm.response.json()[0].id);',
-        }),
-        req("Get the first post", "GET", "${baseUrl}/posts/${postId}", {
-          postRequestScript: 'pm.test("same post", () => pm.expect(pm.response.json().id).to.eql(Number(pm.collectionVariables.get("postId"))));',
-        }),
-        req("Create a post", "POST", "${baseUrl}/posts", {
-          headers: [{ name: "Content-Type", value: "application/json" }],
-          body: '{\n  "title": "Hello from HITOP",\n  "body": "A sample post",\n  "userId": 1\n}',
-          postRequestScript: 'pm.test("created", () => pm.response.to.have.status(201));',
-        }),
-      ],
-    });
+    const col = this.inOrg(sampleCollection());
     this.collections = [...this.collections, col];
     this.view = { kind: "collection", collectionId: col.id };
     this.emit();
     return col;
   }
 
-  // Nothing of one's own yet: no request with a URL in any shown collection, no history.
+  // Nothing of one's own yet: no request with a URL in any shown collection (the sample's own
+  // requests don't count), no history.
   get isFresh() {
-    return !this.history.length && this.visibleCollections.every((c) => (c.requests || []).every((r) => !r.url));
+    const own = (c, r) => r.url && !(c.name === SAMPLE_NAME && SAMPLE_REQUESTS.includes(r.name));
+    return !this.history.length && this.visibleCollections.every((c) => (c.requests || []).every((r) => !own(c, r)));
+  }
+
+  /** The open tab of a request whose name follows its URL (tab `autoName`): the sidebar shows its title. */
+  autoNameTab(r, collectionId) {
+    return this.tabs.find((t) => t.autoName && t.loadedRequestId === r.id && t.loadedCollectionId === collectionId) ?? null;
   }
 
   renameCollection(id, name) {
@@ -1062,8 +1193,9 @@ export class Store extends EventTarget {
   deleteCollection(id) {
     if (this.folders.has(id)) this.closeFolder(id);
     this.collections = collectionService.deleteCollection(this.collections, id);
-    this.tabs = this.tabs.map((t) => (t.loadedCollectionId === id ? { ...t, loadedRequestId: null, loadedCollectionId: null } : t));
-    if (this.view.collectionId === id) this.view = { kind: "collections", collectionId: null };
+    const view = this.view.collectionId === id ? { kind: "collections", collectionId: null } : this.view;
+    this.closeTabsOf((t) => t.loadedCollectionId === id);
+    this.view = view;
     this.emit();
   }
 
@@ -1119,9 +1251,11 @@ export class Store extends EventTarget {
     this.closeAllFolders();
     this.collections = imported;
     const first = imported.find((c) => c.requests?.length);
-    this.tabs = first ? [tabForRequest(first.requests[0], first.id)] : [tabService.createNewTab()];
+    this.tabs = first ? [tabForRequest(first.requests[0], first.id)] : [];
     this.currentTab = 0;
     this.view = { kind: "request", collectionId: null };
+    // Nothing to open: a new request (in My requests, made when the import has none).
+    if (!first) this.newTab(this.defaultCollection());
     this.emit();
     this.notify(`Imported ${imported.length} collection${imported.length === 1 ? "" : "s"}`);
     return report;
@@ -1182,24 +1316,20 @@ export class Store extends EventTarget {
     this.notify(`Synced ${preview.collection.name}: ${d.added.length} added, ${d.changed.length} changed, ${d.removed.length} removed${d.pruned && d.removed.length ? " (deleted)" : ""}`);
   }
 
+  // FV1: a history item opens as a new request in My requests, filled in from the item and not
+  // saved yet (the tab shows it as unsaved; closing it unsaved takes it out again).
   openHistoryItem(item) {
-    this.view = { kind: "request", collectionId: null };
+    this.newTab(this.defaultCollection());
     this.tabs = tabService.updateTab(this.tabs, this.currentTab, {
       url: item.url,
       method: item.method,
       headers: item.headers?.length ? item.headers : [{ name: "", value: "" }],
       requestBody: item.body || "",
-      response: null,
-      responseHeaders: null,
-      statusCode: null,
-      responseType: "",
-      loadedRequestId: null,
-      loadedCollectionId: null,
       preRequestScript: item.preRequestScript || "",
       postRequestScript: item.postRequestScript || "",
       auth: item.auth ? { ...emptyAuth(), ...item.auth } : emptyAuth(),
-      title: item.isCollectionRun ? `${item.collectionName} → ${item.requestName}` : `${item.method} ${item.url}`,
     });
+    this.tabs = tabService.updateTab(this.tabs, this.currentTab, { title: requestAutoName(this.tabs[this.currentTab]) });
     this.emit();
   }
 
@@ -1292,9 +1422,12 @@ export class Store extends EventTarget {
   }
 
   // What importing in place of the collections would delete: [{ name, requests }],
-  // empty when there is nothing to lose (the first-run Default with its blank request).
+  // empty when there is nothing to lose (what the first visit made: the untouched sample, an
+  // empty My requests or the older first-run Default with its blank request).
   collectionsAtStake() {
     const filled = (r) => Boolean(r.url?.trim() || r.body?.trim() || r.preRequestScript?.trim() || r.postRequestScript?.trim() || r.kind);
+    const kept = this.collections.filter((c) => !isPristineSample(c) && !isEmptyMyRequests(c));
+    if (!kept.length) return [];
     const stake = this.collections.map((c) => ({ name: c.name, requests: (c.requests || []).length, filled: (c.requests || []).some(filled) || Object.keys(c.variables || {}).length > 0 }));
     return this.collections.length > 1 || stake.some((c) => c.filled) ? stake : [];
   }
