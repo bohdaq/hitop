@@ -23,6 +23,9 @@ const settle = (p) => p.waitForTimeout(400);
   const responseJson = async () => JSON.parse(await p.locator('.response-body').evaluate((el) => el.textContent.replace(/^JSON\s*(Copy)?/, '')));
 
   await p.goto(h.url, { waitUntil: 'networkidle' });
+  // A new request to work on (FV1: the first visit opens the sample's List posts).
+  await p.locator('.tab-strip').getByRole('button', { name: 'New request' }).click();
+  await settle(p);
 
   // Parameter toggles
   await p.getByLabel('URL').fill('https://httpbin.org/get?keep=1&drop=2');
@@ -74,7 +77,7 @@ const settle = (p) => p.waitForTimeout(400);
   await send();
   echo = await responseJson();
   check('cookie kept and sent back', echo.cookies?.session === 'abc123', JSON.stringify(echo));
-  await p.locator('aside').getByRole('button', { name: 'Cookies' }).click();
+  await p.locator('aside').getByRole('button', { name: 'Cookies', exact: true }).click();
   await settle(p);
   const cookiesPage = await p.locator('main').innerText();
   check('cookies page lists it', cookiesPage.includes('httpbin.org') && cookiesPage.includes('session'));
@@ -86,7 +89,8 @@ const settle = (p) => p.waitForTimeout(400);
   }
   await p.getByRole('switch', { name: 'Keep and send cookies' }).click();
   await settle(p);
-  await p.locator('aside').getByRole('button', { name: /New request/ }).first().click();
+  await p.keyboard.press('Control+KeyL'); // back to the request
+  await settle(p);
   await send();
   echo = await responseJson();
   check('turning the jar off stops sending', !echo.cookies?.session, JSON.stringify(echo.cookies));

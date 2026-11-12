@@ -20,44 +20,52 @@ const settle = (p) => p.waitForTimeout(400);
   const field = (id, value) => p.locator(`#dialog #${id}`).evaluate((el, v) => (el.value = v), value);
   const pick = (id, value) => p.locator(`#dialog #${id}`).evaluate((el, v) => ((el.value = v), el.dispatchEvent(new Event('change', { bubbles: true }))), value);
   const named = (name) => h.stored.collections().then((cols) => cols.find((c) => c.name === name));
-  const row = (name) => aside.locator('.tree-row.leaf', { hasText: name }).first();
+  const row = (name) => aside.locator('.tree-row.leaf').filter({ has: p.locator('span', { hasText: new RegExp(`^${name.replace(/[.*+?^${}()|[\]\\/]/g, '\\$&')}(●.*)?$`) }) }).first();
 
   // --- first open: the way in is visible ---
   check('sidebar: a New collection button next to New request', await aside.getByRole('button', { name: 'New collection', exact: true }).isVisible());
-  check('collection rows carry "+ Add a request to …" (keyboard reachable)', (await aside.getByRole('button', { name: 'Add a request to Default' }).count()) === 1);
+  check('collection rows carry "+ Add a request to …" (keyboard reachable)', (await aside.getByRole('button', { name: 'Add a request to My requests' }).count()) === 1);
 
-  // --- Mod+S on a draft without a URL opens the save dialog; "New collection…" inline ---
-  await p.locator('.tab-strip').getByRole('button', { name: 'New tab' }).click();
-  await settle(p);
-  check('a draft says in the status bar that Mod+S puts it in a collection', (await p.locator('.statusbar').innerText()).includes('not in a collection yet'));
-  check('the request line offers "Save to…" for a draft', (await p.locator('hitop-request .save-draft').innerText()).includes('Save to'));
-  await p.keyboard.press('Control+KeyS');
+  // --- a new collection from the sidebar, and "+" on its row (FV1: the request lands in it) ---
+  await aside.getByRole('button', { name: 'New collection', exact: true }).click();
   await dialog.locator('#name').waitFor();
-  check('Mod+S on an empty draft asks where to save (no silent nothing)', (await dialog.innerText()).includes('Save to a collection'));
-  await field('name', 'Ping');
-  await pick('collection', '__new__');
-  await dialog.locator('#new-collection').waitFor();
-  await field('new-collection', 'Users API');
-  await dialog.getByRole('button', { name: 'Save' }).click();
+  await field('name', 'Users API');
+  await dialog.getByRole('button', { name: 'Create' }).click();
   await settle(p);
   let users = await named('Users API');
-  check('"New collection…" in the save dialog makes the collection and saves the request into it', users?.requests?.length === 1 && users.requests[0].name === 'Ping' && typeof users.id === 'number', JSON.stringify(users));
-  check('…the tab now belongs to it', (await h.stored.tabs()).tab?.loadedCollectionId === users?.id && !('folder' in ((await h.stored.tabs()).tab || {})));
-  check('…and the sidebar shows it unfolded', (await row('Ping').count()) === 1);
-
-  // --- "+" on a collection row: a draft there, the save dialog preselects it ---
+  check('New collection makes it (numeric id) and opens its page', typeof users?.id === 'number' && (await p.locator('main h1').first().innerText()) === 'Users API', JSON.stringify(users));
   await aside.getByRole('button', { name: 'Add a request to Users API' }).click();
   await settle(p);
-  check('"+" on a collection starts a draft in that collection', (await h.stored.tabs()).tab?.loadedCollectionId === users.id && (await h.stored.tabs()).tab?.loadedRequestId == null);
-  await p.locator('hitop-request .request-line .url input').first().fill('https://example.com/users');
-  await p.keyboard.press('Control+KeyS');
+  users = await named('Users API');
+  const t = (await h.stored.tabs()).tab;
+  check('"+" on a collection adds "Untitled" to it at once; the tab is linked to it', users.requests.length === 1 && users.requests[0].name === 'Untitled' && t?.loadedCollectionId === users.id && t?.loadedRequestId === users.requests[0].id, JSON.stringify(users.requests));
+  check('…its row shows, selected, and the status bar has nothing to save yet', (await aside.locator('.tree-row.leaf[aria-current="page"]', { hasText: 'Untitled' }).count()) === 1 && (await p.locator('.statusbar').innerText()).includes('nothing to save yet'));
+  check('…no "Save to…" on the request line (it is in a collection)', (await p.locator('hitop-request .save-draft').count()) === 0);
+  await row('Untitled').click({ button: 'right' });
+  await p.locator('#request-menu').getByText('Rename').click();
   await dialog.locator('#name').waitFor();
-  check('…and the save dialog preselects it', (await dialog.locator('#collection').evaluate((el) => el.value)) === String(users.id));
-  await field('name', 'List');
-  await dialog.getByRole('button', { name: 'Save' }).click();
+  await field('name', 'Ping');
+  await dialog.getByRole('button', { name: 'Rename' }).click();
   await settle(p);
   users = await named('Users API');
-  check('saved there, with the editor fields the model keeps', users.requests.map((r) => r.name).join() === 'Ping,List' && users.requests[1].url === 'https://example.com/users' && (users.requests[1].bodyMode ?? 'raw') === 'raw', JSON.stringify(users.requests[1]));
+  check('…renamed from the sidebar menu, the tab follows', users.requests[0].name === 'Ping' && (await h.stored.tabs()).tab?.title === 'Ping');
+  await aside.getByRole('button', { name: 'Add a request to Users API' }).click();
+  await settle(p);
+  await p.locator('hitop-request .request-line .url input').first().fill('https://example.com/users');
+  await settle(p);
+  await p.keyboard.press('Control+KeyS');
+  await settle(p);
+  users = await named('Users API');
+  check('Mod+S saves a new request in place under its automatic name (no dialog)', (await dialog.locator('#name').count()) === 0 && users.requests[1]?.name === 'GET /users' && users.requests[1].url === 'https://example.com/users' && (users.requests[1].bodyMode ?? 'raw') === 'raw', JSON.stringify(users.requests[1]));
+  check('…and the sidebar shows it as the GET tag and /users', (await row('/users').innerText()).replace(/\s+/g, ' ').includes('GET /users'));
+  await row('/users').click({ button: 'right' });
+  await p.locator('#request-menu').getByText('Rename').click();
+  await dialog.locator('#name').waitFor();
+  await field('name', 'List');
+  await dialog.getByRole('button', { name: 'Rename' }).click();
+  await settle(p);
+  users = await named('Users API');
+  check('saved there, in order', users.requests.map((r) => r.name).join() === 'Ping,List', users.requests.map((r) => r.name).join());
 
   // --- folders from the sidebar: the collection menu, "+" on the folder, file paths ---
   await aside.getByRole('button', { name: 'More for Users API' }).click();
@@ -70,16 +78,20 @@ const settle = (p) => p.waitForTimeout(400);
   check('a new folder shows in the sidebar before any request is in it', (await folderRow.count()) === 1 && (await aside.locator('.tree-hint', { hasText: 'No requests yet' }).count()) >= 1);
   await aside.getByRole('button', { name: 'Add a request to admin' }).click();
   await settle(p);
+  users = await named('Users API');
+  check('"+" on a folder adds the request in it: file = admin/untitled', users.requests.find((r) => r.name === 'Untitled')?.file === 'admin/untitled', JSON.stringify(users.requests.map((r) => [r.name, r.file])));
   await p.locator('hitop-request .request-line .url input').first().fill('https://example.com/me');
   await p.keyboard.press('Control+KeyS');
-  await dialog.locator('#name').waitFor();
-  check('a draft from a folder says so in the save dialog', (await dialog.innerText()).includes('In the folder admin'));
-  await field('name', 'Me');
-  await dialog.getByRole('button', { name: 'Save' }).click();
   await settle(p);
   users = await named('Users API');
-  check('saved into the folder: file = admin/me (the folder format path)', users.requests.find((r) => r.name === 'Me')?.file === 'admin/me', JSON.stringify(users.requests.map((r) => [r.name, r.file])));
-  check('…shown under the folder', (await aside.locator('.tree-folder .tree-row.leaf', { hasText: 'Me' }).count()) === 1);
+  check('…its first save names its file after it: admin/get-me (the folder format path)', users.requests.find((r) => r.name === 'GET /me')?.file === 'admin/get-me', JSON.stringify(users.requests.map((r) => [r.name, r.file])));
+  await row('/me').click({ button: 'right' });
+  await p.locator('#request-menu').getByText('Rename').click();
+  await dialog.locator('#name').waitFor();
+  await field('name', 'Me');
+  await dialog.getByRole('button', { name: 'Rename' }).click();
+  await settle(p);
+  check('…renamed, shown under the folder (the file keeps its path)', (await named('Users API')).requests.find((r) => r.name === 'Me')?.file === 'admin/get-me' && (await aside.locator('.tree-folder .tree-row.leaf', { hasText: 'Me' }).count()) === 1);
 
   await aside.getByRole('button', { name: 'More for folder admin' }).click();
   await p.locator('#folder-menu').getByText('Rename…').click();
@@ -88,27 +100,27 @@ const settle = (p) => p.waitForTimeout(400);
   await dialog.getByRole('button', { name: 'Rename' }).click();
   await settle(p);
   users = await named('Users API');
-  check('renaming a folder moves its requests\' files', users.requests.find((r) => r.name === 'Me')?.file === 'staff/me' && (await aside.locator('.tree-row.folder', { hasText: 'staff' }).count()) === 1);
+  check('renaming a folder moves its requests\' files', users.requests.find((r) => r.name === 'Me')?.file === 'staff/get-me' && (await aside.locator('.tree-row.folder', { hasText: 'staff' }).count()) === 1);
 
   // --- Move to… from the request menu: into a folder, then to another collection ---
   await row('List').click({ button: 'right' });
   await p.locator('#request-menu').getByText('Move to…').click();
   await dialog.locator('#target').waitFor();
   const targets = await dialog.locator('#target lit-material-select-option').allInnerTexts();
-  check('Move to… lists collections and their folders', targets.some((t) => t.trim() === 'Users API') && targets.some((t) => t.includes('Users API › staff')) && targets.some((t) => t.trim() === 'Default'), targets.join('|'));
+  check('Move to… lists collections and their folders', targets.some((t) => t.trim() === 'Users API') && targets.some((t) => t.includes('Users API › staff')) && targets.some((t) => t.trim() === 'My requests'), targets.join('|'));
   await pick('target', `${users.id}|staff`);
   await dialog.getByRole('button', { name: 'Move' }).click();
   await settle(p);
   users = await named('Users API');
   check('moved into the folder: file = staff/list, order kept', users.requests.find((r) => r.name === 'List')?.file === 'staff/list' && users.requests.map((r) => r.name).join() === 'Ping,Me,List', JSON.stringify(users.requests.map((r) => [r.name, r.file])));
-  const def = await named('Default');
+  const def = await named('My requests');
   await row('Ping').click({ button: 'right' });
   await p.locator('#request-menu').getByText('Move to…').click();
   await dialog.locator('#target').waitFor();
   await pick('target', `${def.id}|`);
   await dialog.getByRole('button', { name: 'Move' }).click();
   await settle(p);
-  const [defAfter, usersAfter] = [await named('Default'), await named('Users API')];
+  const [defAfter, usersAfter] = [await named('My requests'), await named('Users API')];
   check('moved to another collection: gone here, there without a file, its tab follows', !usersAfter.requests.some((r) => r.name === 'Ping') && defAfter.requests.at(-1)?.name === 'Ping' && !('file' in defAfter.requests.at(-1)) && (await h.stored.tabs()).tabs.some((t) => t.title === 'Ping' && t.loadedCollectionId === def.id));
 
   // --- drag a request onto another collection's list (lit-material sortable group) ---
@@ -123,7 +135,7 @@ const settle = (p) => p.waitForTimeout(400);
   await p.mouse.move(target.x + target.width / 2, target.y + 6, { steps: 2 });
   await p.mouse.up();
   await settle(p);
-  const defDrop = await named('Default');
+  const defDrop = await named('My requests');
   check('dragging a request onto another collection moves it there (file dropped at the top level)', defDrop.requests.some((r) => r.name === 'Me' && !r.file) && !(await named('Users API')).requests.some((r) => r.name === 'Me'), JSON.stringify(defDrop.requests.map((r) => [r.name, r.file])));
 
   // --- the palette knows the new actions ---
@@ -142,7 +154,7 @@ const settle = (p) => p.waitForTimeout(400);
   check('…and the sidebar row says "No requests yet" with a way in', (await aside.locator('.tree-hint', { hasText: 'No requests yet' }).count()) >= 1);
   await p.locator('main .page-actions').getByRole('button', { name: 'New request' }).click();
   await settle(p);
-  check('New request on a collection page starts the draft in that collection', (await h.stored.tabs()).tab?.loadedCollectionId === empty.id);
+  check('New request on a collection page adds the request to that collection', (await h.stored.tabs()).tab?.loadedCollectionId === empty.id && (await named('Empty one')).requests.length === 1);
   await p.locator('nav[aria-label="Sections"]').getByRole('button', { name: 'Collections', exact: true }).click();
   await settle(p);
   await aside.locator('.tree-row.collection', { hasText: 'Users API' }).click();
@@ -158,7 +170,7 @@ const settle = (p) => p.waitForTimeout(400);
     const items = [...(el.shadowRoot ?? el).querySelectorAll('[role="option"], li, .item')];
     return items.map((i) => `${i.textContent.trim().slice(0, 60)}${i.getAttribute('aria-disabled') === 'true' || i.hasAttribute('disabled') ? ' [disabled]' : ''}`).find((t) => t.includes('Move the request')) || '';
   });
-  check('palette: Move the request… is there, off for a draft', moveItem.includes('Move the request') && moveItem.includes('[disabled]'), moveItem);
+  check('palette: Move the request… is there, on for a new request (it is in a collection)', moveItem.includes('Move the request') && !moveItem.includes('[disabled]'), moveItem);
   await p.keyboard.press('Escape');
 
   // --- storage stays the React app's shape ---

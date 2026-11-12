@@ -62,6 +62,10 @@ function api() {
     await p.getByRole('option', { name: m, exact: true }).click();
   };
 
+  // A new request to work on (FV1: the first visit opens the sample; + adds one to it).
+  await p.locator('.tab-strip').getByRole('button', { name: 'New request' }).click();
+  await settle(p);
+
   // 1. A raw JSON body with no Content-Type header is sent as application/json.
   await method('POST');
   await url.fill(`${base}/echo`);
@@ -148,14 +152,13 @@ function api() {
   check('full storage: the toast says tabs could not be saved', toast.includes("Couldn't save your tabs"), toast.trim().slice(0, 160));
   await p.evaluate(() => (window.__storageFull = false));
 
-  // 7. Drafts are titled from their URL; the selected tab is scrolled into view.
-  // (The first tab is the first-run "New request" saved in Default; a new tab is a draft.)
-  await p.getByRole('button', { name: 'New tab' }).click();
+  // 7. New requests are named from their URL; the selected tab is scrolled into view.
+  await p.locator('.tab-strip').getByRole('button', { name: 'New request' }).click();
   await url.fill(`${host}/users/7`);
   await settle(p);
   const draftTitle = await p.locator('.tab-strip lit-material-tab[selected]').first().innerText();
-  check('a draft is titled METHOD host/path as its URL is typed', draftTitle.trim() === `GET ${host}/users/7`, draftTitle);
-  for (let i = 0; i < 12; i++) await p.getByRole('button', { name: 'New tab' }).click();
+  check('a new request is named METHOD /path as its URL is typed', draftTitle.replace(/\s+/g, ' ').trim().startsWith('GET /users/7'), draftTitle);
+  for (let i = 0; i < 12; i++) await p.locator('.tab-strip').getByRole('button', { name: 'New request' }).click();
   await settle(p);
   const inView = await p.evaluate(() => {
     const tabs = [...document.querySelectorAll('.tab-strip lit-material-tab')];
@@ -178,11 +181,15 @@ function api() {
   await settle(p);
   check('Mod+Enter in the body editor sends', got.length === before + 1 && got.at(-1).body === '{"k": 2}' && !(await tab()).requestBody.includes('\n'), JSON.stringify(got.at(-1)?.body));
   await p.keyboard.press(`${mod}+s`);
+  await settle(p);
+  check('Mod+S on a new request saves it in its collection under its automatic name (no dialog)', (await p.locator('#dialog #name').count()) === 0 && (await h.stored.collections()).some((c) => c.requests.some((r) => r.name === 'POST /echo' && r.body === '{"k": 2}')));
+  await p.locator('#tab-actions').click();
+  await p.locator('#tab-menu lit-material-list-item', { hasText: 'Rename' }).click();
   await p.locator('#dialog #name').waitFor({ timeout: 5000 });
   await p.locator('#dialog #name').evaluate((el) => (el.value = 'Echo'));
-  await p.locator('#dialog').getByRole('button', { name: 'Save' }).click();
+  await p.locator('#dialog').getByRole('button', { name: 'Rename' }).click();
   await settle(p);
-  check('Mod+S on a draft asks where, then saves', (await h.stored.collections()).some((c) => c.requests.some((r) => r.name === 'Echo')));
+  check('...and Rename names it', (await h.stored.collections()).some((c) => c.requests.some((r) => r.name === 'Echo')));
 
   // 9. Unsaved edits: a dot on the tab and in the sidebar; closing asks; Mod+S saves in place.
   await url.fill(`${base}/echo?v=2`);
@@ -218,7 +225,7 @@ function api() {
   await settle(p);
 
   // 10. WebSocket opens on Messages.
-  await p.getByRole('button', { name: 'New tab' }).click();
+  await p.locator('.tab-strip').getByRole('button', { name: 'New request' }).click();
   await method('WebSocket');
   await settle(p);
   check('switching to WebSocket shows Messages', (await p.locator('hitop-request .editor lit-material-tab[selected], hitop-request .editor lit-material-tab[aria-selected="true"]').first().innerText()).startsWith('Messages'));
@@ -233,7 +240,7 @@ function api() {
   await p.locator('#dialog').getByRole('radio', { name: /Replace all/ }).check();
   await p.locator('#dialog').getByRole('button', { name: /import/i }).click();
   await ask.getByRole('button', { name: 'Cancel' }).waitFor({ timeout: 5000 });
-  check('replacing asks first, naming what goes', await p.getByText(/Importing deletes .*Default/).isVisible());
+  check('replacing asks first, naming what goes', await p.getByText(/Importing deletes .*Sample: JSONPlaceholder/).isVisible());
   await ask.getByRole('button', { name: 'Cancel' }).click();
   await settle(p);
   check('Cancel keeps the collections and the dialog', (await h.stored.collections()).some((c) => c.requests.some((r) => r.name === 'Echo')) && (await p.locator('#dialog #json').count()) === 1);

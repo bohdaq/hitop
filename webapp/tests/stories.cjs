@@ -36,10 +36,9 @@ function api() {
   const gs = p.locator('aside .getting-started');
   const steps = async () => (await gs.locator('.gs-steps li').evaluateAll((els) => els.map((e) => `${e.classList.contains('done') ? 'x' : '-'} ${e.textContent.trim()}`))).join(' | ');
   check('U6 a fresh app shows the three steps, the first one next', (await gs.count()) === 1 && (await steps()) === '- Send a request | - Save a request to a collection | - Run a collection' && (await gs.locator('li[aria-current="step"]').innerText()).includes('Send a request'), await steps().catch(() => ''));
-  check('U6 ...with its count and a hint for the next step', (await gs.locator('.gs-count').innerText()) === '0/3' && (await gs.locator('.gs-hint').innerText()).includes('press Send'));
-  await gs.getByRole('button', { name: 'Open the sample' }).click();
-  await settle(p);
-  check('U6 Open the sample opens the sample collection; sending is still the next step', (await p.locator('h1').innerText()).includes('Sample: JSONPlaceholder') && (await gs.getByRole('button', { name: 'Open the sample' }).count()) === 0 && (await gs.locator('.gs-count').innerText()) === '0/3');
+  check('U6 ...with its count and a hint for the next step', (await gs.locator('.gs-count').innerText()) === '0/3' && (await gs.locator('.gs-hint').innerText()).includes('Press Send'));
+  // FV1: the first visit already has the sample open, so the card doesn't offer it again.
+  check('U6 the sample is already open (no Open the sample); its requests are not one\'s own', (await gs.getByRole('button', { name: 'Open the sample' }).count()) === 0 && (await p.locator('.tab-strip lit-material-tab[selected]').innerText()).includes('List posts') && (await gs.locator('.gs-count').innerText()) === '0/3');
 
   // --- U19 -------------------------------------------------------------------------------------
   await store((b) => {
@@ -90,7 +89,6 @@ function api() {
   // Saving into the sample counts too (owner 2026-11-11: a request saved there wasn't ticked off).
   await store(() => {
     const s = document.querySelector('hitop-app').store;
-    s.addSampleCollection();
     const c = s.collections.find((x) => x.name === 'Sample: JSONPlaceholder');
     s.openRequest(c.requests.find((r) => r.name === 'Get the first post'), c.id);
     s.saveRequest('Get the first post', c.id);

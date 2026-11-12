@@ -23,6 +23,9 @@ const settle = (p) => p.waitForTimeout(400);
   const section = (name) => p.getByRole('tab', { name: new RegExp(`^${name}`) }).click();
 
   await p.goto(h.url, { waitUntil: 'networkidle' });
+  // A new request to work on (FV1: the first visit opens the sample's List posts).
+  await p.locator('.tab-strip').getByRole('button', { name: 'New request' }).click();
+  await settle(p);
 
   // Query parameters follow the URL both ways
   await p.getByLabel('URL').fill('https://jsonplaceholder.typicode.com/posts?userId=1');
@@ -79,8 +82,9 @@ const settle = (p) => p.waitForTimeout(400);
   const exported = (await h.download(() => p.locator('.page-header').getByRole('button', { name: 'Export' }).click())).toString('utf8');
   check('export keeps the secret name, not its value', !exported.includes('sec-456') && exported.includes('"apiSecret"') && exported.includes('stg-123'), exported.replace(/\s+/g, ' '));
 
-  // Back to the request (the tab strip shows with the request view)
-  await p.locator('aside').getByRole('button', { name: /New request/ }).first().click();
+  // Back to the request (Mod+L: the URL field of the open tab)
+  await p.keyboard.press('Control+KeyL');
+  await settle(p);
   await p.getByRole('tab', { name: /Script after/ }).click();
   await p.locator('.cm-content').click();
   await p.keyboard.type("assert.status(200); assert.bodyContains('userId'); assert.header('content-type', 'json'); assert.responseTime(10000); assert.equal(response.length, 99, 'two posts');", { delay: 2 });
@@ -136,7 +140,7 @@ const settle = (p) => p.waitForTimeout(400);
   check('Postman export keeps auth and header names', item?.request.auth?.type === 'apikey' && pm.every((c) => c.item.every((i) => i.request.header.every((h) => h.key))), JSON.stringify(item?.request.auth));
   await p.keyboard.press('Escape');
   await p.waitForTimeout(300);
-  await p.locator('aside').getByRole('button', { name: 'Import' }).click();
+  await p.locator('aside').getByRole('button', { name: 'Import', exact: true }).click();
   await p.waitForTimeout(300);
   await p.locator('#dialog #json').evaluate((el, text) => (el.value = text), postman);
   await p.locator('#dialog').getByRole('radio', { name: /Replace all/ }).check();

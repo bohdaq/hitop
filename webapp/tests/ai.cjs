@@ -49,6 +49,9 @@ function sse(text, model = 'claude-opus-5-5') {
     await route.fulfill({ status: 200, headers: { 'content-type': 'text/event-stream', 'access-control-allow-origin': '*' }, body: sse(answer) });
   });
   await p.goto(h.url, { waitUntil: 'networkidle' });
+  // A new request to work on (FV1: the first visit opens the sample's List posts, which has tests).
+  await p.locator('.tab-strip').getByRole('button', { name: 'New request' }).click();
+  await settle(p);
   const sheet = p.locator('#agent');
   const tab = () => p.evaluate(() => { const t = document.querySelector('hitop-app').store.tab; return { m: t.method, u: t.url, b: t.requestBody, h: t.headers, s: t.postRequestScript }; });
 

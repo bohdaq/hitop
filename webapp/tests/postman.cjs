@@ -53,7 +53,7 @@ function api() {
     ],
   };
 
-  await p.locator('aside').getByRole('button', { name: 'Import' }).click();
+  await p.locator('aside').getByRole('button', { name: 'Import', exact: true }).click();
   await p.waitForTimeout(300);
   await p.locator('#dialog #json').evaluate((el, text) => (el.value = text), JSON.stringify(collection));
   await p.locator('#dialog').getByRole('button', { name: /import/i }).click();

@@ -39,15 +39,16 @@ function api() {
   check('Collections opens the collections page', (await p.locator('hitop-collections').count()) === 1);
 
   check('title bar has a search field', (await p.locator('header.topbar .command-field').isVisible()));
-  await p.locator('aside .tree-row.leaf', { hasText: 'New request' }).first().click();
+  await p.locator('aside .tree-row.leaf', { hasText: 'List posts' }).first().click();
   await settle(p);
-  check('title bar names the collection on screen', (await p.locator('header.topbar .crumb-name').innerText()).trim().length > 0);
-  check('status bar says where the request is', (await p.locator('.statusbar').innerText()).includes('›') || (await p.locator('.statusbar').innerText()).includes('Unsaved'));
+  check('title bar names the collection on screen', (await p.locator('header.topbar .crumb-name').innerText()).trim() === 'Sample: JSONPlaceholder');
+  const statusText = await p.locator('.statusbar').innerText();
+  check('status bar has the save state, not the collection and request again (FV1)', statusText.includes('Saved') && !statusText.includes('›') && !statusText.includes('Sample: JSONPlaceholder'), statusText.replace(/\n/g, ' | '));
 
   // Tab reorder: two tabs, move the second before the first with the keyboard.
   await p.locator('hitop-request .request-line .url input, hitop-request .request-line .url').first().click();
   await p.keyboard.type(`${base}/one`);
-  await p.locator('.tab-strip').getByRole('button', { name: 'New tab' }).click();
+  await p.locator('.tab-strip').getByRole('button', { name: 'New request' }).click();
   await settle(p);
   const titles = () => p.locator('.tab-strip lit-material-tab').allInnerTexts();
   const before = (await titles()).map((t) => t.trim());
@@ -61,7 +62,7 @@ function api() {
   check('the dirty tab shows unsaved in the status bar', (await p.locator('.statusbar').innerText()).includes('Unsaved'));
 
   // --- A4 + B3: variables in the URL, the response line, the timing waterfall, Diff vs last ---
-  await p.locator('.tab-strip').getByRole('button', { name: 'New tab' }).click();
+  await p.locator('.tab-strip').getByRole('button', { name: 'New request' }).click();
   await settle(p);
   const url = p.locator('hitop-request .request-line .url');
   await url.click();
@@ -69,11 +70,14 @@ function api() {
   await settle(p);
   const chip = p.locator('.url-vars .var-chip');
   check('the URL\'s variables show as chips; an undefined one is marked', (await chip.count()) === 1 && (await chip.innerText()).trim() === '${orderId}' && (await chip.getAttribute('class')).includes('missing'));
+  // The pointer away from where the chip appeared under it (hovering already peeks), then a click.
+  await p.mouse.move(5, 500);
+  await settle(p);
   await chip.click();
   await settle(p);
   check('a click on a variable says where it comes from', (await p.locator('lit-material-popover.var-peek').evaluate((el) => el.open)) && (await p.locator('.var-peek').innerText()).includes('Nothing defines it'));
   await p.keyboard.press('Escape');
-  await url.click();
+  await p.keyboard.press('Control+KeyL'); // the URL field (a click on it would land on the chip)
   await p.keyboard.press('End');
   for (let i = 0; i < '?id=${orderId}'.length; i++) await p.keyboard.press('Backspace');
   await p.keyboard.press('Control+Enter');

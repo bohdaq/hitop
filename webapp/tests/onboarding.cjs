@@ -1,5 +1,5 @@
-// First run and search: a fresh app offers a sample collection and Postman import next to the
-// empty response; the sample runs (web: through the proxy to JSONPlaceholder) with its tests and
+// First run and search: a fresh app starts on the sample collection (FV1: "List posts" open, an
+// empty My requests; tests/first-visit.cjs has the rest of the first visit); the sample runs (web: through the proxy to JSONPlaceholder) with its tests and
 // a value passed from one request to the next; quick open (Mod+P) finds collections,
 // environments by a variable name and history.
 //   BASE=http://localhost:7879 node tests/onboarding.cjs   (HITOP_MODE=tauri for the desktop build)
@@ -15,8 +15,10 @@ const settle = (p, ms = 400) => p.waitForTimeout(ms);
   await p.goto(h.url, { waitUntil: 'networkidle' });
   await settle(p);
 
-  const sample = p.getByRole('button', { name: 'Try a sample collection' });
-  check('a fresh app offers a sample and Postman import', (await sample.isVisible()) && (await p.getByRole('button', { name: 'Import from Postman' }).isVisible()));
+  const sample = p.locator('aside .tree-row.collection', { hasText: 'Sample: JSONPlaceholder' });
+  const empty = await p.locator('.response.empty').innerText();
+  check('a fresh app starts on the sample: List posts open, the response pane says to press Send', (await sample.count()) === 1 && (await p.locator('.tab-strip lit-material-tab[selected]').innerText()).includes('List posts') && empty.includes('Press Send'), empty.replace(/\n/g, ' | '));
+  check('...the sample alone is nothing of your own yet (Get started shows)', (await p.evaluate(() => document.querySelector('hitop-app').store.isFresh)) === true && (await p.locator('.getting-started').count()) === 1);
   await sample.click();
   await settle(p);
   check('the sample opens as a collection', (await p.locator('h1').innerText()).includes('Sample: JSONPlaceholder'));
@@ -36,7 +38,7 @@ const settle = (p, ms = 400) => p.waitForTimeout(ms);
     await p.locator('#dialog .dialog-actions').getByRole('button', { name: 'Close' }).click();
     await settle(p);
   }
-  check('...and the offer is gone once there is something of your own', (await p.evaluate(() => document.querySelector('hitop-app').store.isFresh)) === false);
+  if (!TAURI) check('...and once it has run there is something of your own (history)', (await p.evaluate(() => document.querySelector('hitop-app').store.isFresh)) === false);
 
   // Quick open: a collection, an environment by its variable name, a URL from history.
   await p.evaluate(() => {

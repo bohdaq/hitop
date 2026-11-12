@@ -86,8 +86,8 @@ function api() {
   const page = await p.locator('main').innerText();
   check('Postman globals land in the globals, not a new environment', !page.includes('Workspace Globals') && (await storedGlobals()).variables?.pmg === 'from-postman', page.slice(0, 300));
 
-  // A request with all of them, and a script that sets a global.
-  await p.locator('aside').getByRole('button', { name: /New request/ }).first().click();
+  // A request with all of them, and a script that sets a global (the sidebar's + adds a new one).
+  await p.locator('aside .new-request').click();
   await p.getByLabel('URL').fill('${base}/echo?g=${g}&k=${k}&hidden=${hidden}&pmg=${pmg}');
   await p.getByRole('tab', { name: /Script after/ }).click();
   await p.locator('.cm-content').click();

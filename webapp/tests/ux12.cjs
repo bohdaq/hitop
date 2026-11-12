@@ -73,7 +73,7 @@ function api() {
   let st = await tabs();
   check('no IndexedDB: a 600 KB body is saved as its first 64 KB (1.1)', st.tab.response.length === 64 * 1024 && st.tab.responseCut === true && !st.tab.responseStored, `${st.tab.response.length}`);
   const bigTabId = st.tab.id;
-  await p.getByRole('button', { name: 'New tab' }).click();
+  await p.locator('.tab-strip').getByRole('button', { name: 'New request' }).click();
   await url.fill(`${base}/mid`);
   await sendAndWait();
   st = await tabs();
@@ -328,14 +328,14 @@ function api() {
   // Close "×" on a tab.
   const tabCount = async () => (await h.stored.tabs()).tabs.length;
   const nTabs = await tabCount();
-  await p.getByRole('button', { name: 'New tab' }).click();
+  await p.locator('.tab-strip').getByRole('button', { name: 'New request' }).click();
   await settle(p);
   const lastTab = p.locator('.tab-strip lit-material-tab').last();
   await lastTab.hover();
   await lastTab.locator('.tab-close').click();
   await settle(p);
   check('the × on a tab closes it', (await tabCount()) === nTabs);
-  await p.getByRole('button', { name: 'New tab' }).click();
+  await p.locator('.tab-strip').getByRole('button', { name: 'New request' }).click();
   await url.fill(`${base}/json`);
   await settle(p);
   await p.locator('.tab-strip lit-material-tab').last().locator('.tab-close').click();

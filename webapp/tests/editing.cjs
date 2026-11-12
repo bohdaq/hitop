@@ -15,6 +15,10 @@ const settle = (p) => p.waitForTimeout(400); // saves are batched every 250 ms
   const tab = async () => (await h.stored.tabs()).tab;
   const focusedTag = () => p.evaluate(() => { let a = document.activeElement; while (a?.shadowRoot?.activeElement) a = a.shadowRoot.activeElement; return a?.localName; });
 
+  // A new request (FV1: added to the open collection; its editor opens on Params).
+  await p.locator('.tab-strip').getByRole('button', { name: 'New request' }).click();
+  await settle(p);
+  await p.getByRole('tab', { name: /Headers/ }).click();
   await p.getByRole('button', { name: 'Add header' }).click();
   await p.keyboard.type('X-Trace-Id', { delay: 20 });
   await p.keyboard.press('Tab');
@@ -54,13 +58,14 @@ const settle = (p) => p.waitForTimeout(400); // saves are batched every 250 ms
   await settle(p);
   check('Enter submits a dialog once', ((await p.locator('aside').innerText()).match(/Enter test/g) || []).length === 1);
 
-  await p.locator('aside').getByRole('button', { name: 'Variables' }).first().click();
+  // My requests' variables (FV1: the first collection is the sample, which has baseUrl already).
+  await p.locator('aside li', { has: p.locator('.tree-row.collection', { hasText: 'My requests' }) }).getByRole('button', { name: 'Variables' }).click();
   await p.getByRole('button', { name: 'Add variable' }).click();
   await p.keyboard.type('baseUrl', { delay: 20 });
   await p.keyboard.press('Tab');
   await p.keyboard.type('https://api.example.com', { delay: 10 });
   await settle(p);
-  const vars = (await h.stored.collections())[0].variables;
+  const vars = (await h.stored.collections()).find((c) => c.name === 'My requests').variables;
   check('variable typed in full, focus kept', vars.baseUrl === 'https://api.example.com' && (await focusedTag()) === 'input', JSON.stringify(vars));
 
   check('no page errors', errors.length === 0, errors.join(' || '));

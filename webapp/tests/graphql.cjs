@@ -68,7 +68,7 @@ async function graphqlServer() {
     await settle(p);
   }
 
-  await p.locator('aside').getByRole('button', { name: /New request/ }).first().click();
+  await p.locator('aside .new-request').click(); // the sidebar's +: a new request (FV1)
   await p.getByRole('combobox', { name: 'Method' }).click();
   await p.getByRole('option', { name: 'POST' }).click();
   await p.getByLabel('URL').fill('${base}/graphql');

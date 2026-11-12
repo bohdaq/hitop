@@ -47,7 +47,7 @@ const FIXTURES = path.join(__dirname, '../../cli/crates/hitop-core/tests/fixture
     await settle(p);
   }
 
-  await p.locator('aside').getByRole('button', { name: /New request/ }).first().click();
+  await p.locator('aside .new-request').click(); // the sidebar's +: a new request (FV1)
   await pick('Method', 'gRPC');
   const tabs = await p.getByRole('tablist', { name: 'Request details' }).locator('lit-material-tab').allTextContents();
   check('gRPC tab: Schema, Auth, Metadata, Message', tabs.map((t) => t.trim()).join() === 'Schema,Auth,Metadata,Message', tabs.join());
