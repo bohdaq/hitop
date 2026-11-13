@@ -1010,13 +1010,18 @@ export class Store extends EventTarget {
     };
     follow(from, to);
     this.emit();
+    const moved0 = this.collections;
     return {
       ok: true,
       path: r.path,
+      // Only while nothing else changed the collections (a library pull, a save, another move):
+      // putting the old ones back then would drop that change. → false when it can't.
       undo: () => {
+        if (this.collections !== moved0) return false;
         this.collections = before0;
         follow(to, from);
         this.emit();
+        return true;
       },
     };
   }

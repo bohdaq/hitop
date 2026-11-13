@@ -321,9 +321,13 @@ export class SyncClient {
     return this.api("PUT", `/v1/me/keys/${encodeURIComponent(id)}`, { name });
   }
 
-  /** Removes one of your other devices; `force` for one holding shared workspaces' keys (409 `key_in_use` otherwise). */
+  /**
+   * Removes one of your other devices (the Devices page): `force` for one holding shared
+   * workspaces' keys (409 `key_in_use` otherwise); sign-ins tied to no device (older clients) end
+   * too (`untied`), never this one.
+   */
   async removeMyDevice(id, force = false) {
-    return this.call("DELETE", `/v1/me/keys/${encodeURIComponent(id)}${force ? "?force=true" : ""}`, undefined, { allow: [409] });
+    return this.call("DELETE", `/v1/me/keys/${encodeURIComponent(id)}?untied=true${force ? "&force=true" : ""}`, undefined, { allow: [409] });
   }
 
   async call(method, path, body, { allow = [] } = {}) {

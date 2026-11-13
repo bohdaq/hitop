@@ -1307,9 +1307,11 @@ export class HitopApp extends LitElement {
       if (from < to) to -= 1;
       if (target.line === "after") to += 1;
       if (to === from) return;
-      const before = [...s.collections];
+      const before = s.collections;
       s.reorderCollections(from, to);
-      this.toast(`Moved ${node.label}.`, { label: "Undo", run: () => ((s.collections = before), s.emit()) });
+      const after = s.collections;
+      const undo = () => (s.collections === after ? ((s.collections = before), s.emit()) : this.toast("Can't undo that: the collections changed since."));
+      this.toast(`Moved ${node.label}.`, { label: "Undo", run: undo });
       return;
     }
     this.moveTreeNode(node, { collectionId: target.collectionId, folder: target.folder ?? "", before: target.before ?? null, after: target.after ?? null }, { copy });
@@ -1347,7 +1349,8 @@ export class HitopApp extends LitElement {
     this.expand(place.collectionId, place.folder);
     const where = s.collection(place.collectionId)?.name ?? "";
     const into = place.folder ? `${where} › ${place.folder.replace(/\//g, " › ")}` : where;
-    if (!quiet) this.toast(`${copy ? "Copied" : "Moved"} ${node.label} to ${into}.`, { label: "Undo", run: r.undo });
+    const undo = () => r.undo() || this.toast("Can't undo that: the collections changed since. Move it back by hand.");
+    if (!quiet) this.toast(`${copy ? "Copied" : "Moved"} ${node.label} to ${into}.`, { label: "Undo", run: undo });
     return r;
   }
 

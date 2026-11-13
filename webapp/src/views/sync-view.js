@@ -121,7 +121,7 @@ class HitopSync extends LitElement {
     const ok = await confirm({
       headline: `Remove ${d.name}?`,
       message: held
-        ? `It is signed out and loses the keys of ${d.workspaces} shared collection${d.workspaces === 1 ? "" : "s"}; those collections then get a new key.${only ? ` ${d.onlyHere} of them only this device can open: unless your recovery phrase or another member has them, their content is lost to you.` : ""}`
+        ? `It is signed out and loses the keys of ${d.workspaces} shared collection${d.workspaces === 1 ? "" : "s"}; those collections then get a new key.${only ? ` ${d.onlyHere} of them only that device can open: unless another member has them, their content is lost to you.` : ""} If your recovery phrase or password unlock was set up on that device, set it up again on one you keep.`
         : "It is signed out of your account. Sign in there again to use it.",
       confirmLabel: "Remove",
       destructive: true,
@@ -130,7 +130,8 @@ class HitopSync extends LitElement {
     await this.run("device", async () => {
       const r = await this.sync.removeMyDevice(d.id, held);
       if (r.status === 409) throw new Error(r.json?.message ?? "The server kept the device.");
-      this.note = `${d.name} removed${r.json?.sessionsEnded ? " and signed out" : ""}.${r.json?.rotationRequested?.length ? " Its collections get a new key on the next sync." : ""}`;
+      const untied = r.json?.untiedSessionsEnded ?? 0;
+      this.note = `${d.name} removed${r.json?.sessionsEnded || untied ? " and signed out" : ""}.${r.json?.rotationRequested?.length ? " Its collections get a new key on the next sync." : ""}${untied ? ` Older HITOP versions signed in to your account were signed out too (${untied}): sign in there again.` : ""}`;
       await this.loadDevices();
     });
   }

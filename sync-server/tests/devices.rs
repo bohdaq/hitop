@@ -119,3 +119,27 @@ fn removing_a_device_that_holds_keys_rotates_and_signs_it_out() {
     let r = as_device(&s, "DELETE", &format!("/v1/me/keys/{}", three.key_id), &one, None);
     assert_eq!(r.json["onlyHere"], 1, "{}", r.json);
 }
+
+#[test]
+fn a_device_drops_its_own_fresh_key_and_untied_sessions_end_only_when_asked() {
+    let s = Server::new("devices-fresh");
+    let (one, two) = ada_with_two(&s);
+    // A password unlock on a new computer: a fresh key (no wraps), dropped by the device itself.
+    let fresh = Device::another(&s, "ada@example.com", &one.session);
+    let r = as_device(&s, "DELETE", &format!("/v1/me/keys/{}", fresh.key_id), &fresh, None);
+    assert!(r.status == 204 || r.status == 200, "{} {}", r.status, r.json);
+    assert_eq!(s.call("GET", "/v1/me", Some(&one.session), None).status, 200, "the requester stays signed in");
+    // An older client's session: tied to no device.
+    let old = s.sign_in("ada@example.com");
+    let three = Device::another(&s, "ada@example.com", &old);
+    // Removing another device without `untied`: the untied session stays.
+    let r = as_device(&s, "DELETE", &format!("/v1/me/keys/{}", three.key_id), &one, None);
+    assert!(r.status == 204 || r.status == 200, "{}", r.json);
+    assert_eq!(s.call("GET", "/v1/me", Some(&old), None).status, 200);
+    // With `untied=true` (the Devices page): it ends, the requester's doesn't.
+    let r = as_device(&s, "DELETE", &format!("/v1/me/keys/{}?force=true&untied=true", two.key_id), &one, None);
+    assert_eq!(r.status, 200, "{}", r.json);
+    assert!(r.json["untiedSessionsEnded"].as_u64().unwrap() >= 1, "{}", r.json);
+    assert_eq!(s.call("GET", "/v1/me", Some(&old), None).status, 401);
+    assert_eq!(s.call("GET", "/v1/me", Some(&one.session), None).status, 200);
+}

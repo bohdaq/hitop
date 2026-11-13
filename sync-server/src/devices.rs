@@ -10,7 +10,10 @@
 //! org admin console's device removal does (admin.rs), for every workspace of the person: its
 //! wraps go and a key rotation is requested so the other members' devices rotate the key it could
 //! open; the key itself is deleted, so nothing can be wrapped for it again. The device's sessions
-//! end. The device a request comes from can't remove itself (it signs out instead).
+//! end, and with `untied=true` so do sessions tied to no device (older clients: they can't be told
+//! apart from it), never the requester's. A device can drop its own key only while that key holds nothing (a
+//! password unlock or recovery adopts the old device's key and drops the new one); one that holds
+//! workspace keys signs out instead.
 
 use rust_web_server::request::Request;
 use rust_web_server::router::PathParams;
@@ -131,24 +134,33 @@ pub fn rename(state: &State, request: &Request, params: &PathParams) -> ApiResul
     })
 }
 
-/// `DELETE /v1/me/keys/:id[?force=true]`: removes one of your devices. A device that holds
+/// `DELETE /v1/me/keys/:id[?force=true][&untied=true]`: removes one of your devices. A device that holds
 /// workspace keys needs `force` (409 `key_in_use` with `{wraps, workspaces, onlyHere}` without it);
 /// then it is excluded from those workspaces and a key rotation is requested in each. Its sessions
 /// end. The device the request comes from can't remove itself (409 `this_device`).
 pub fn remove(state: &State, request: &Request, params: &PathParams) -> ApiResult {
     let key = params.get("id").unwrap_or_default().to_string();
-    let force = query(request).get("force").is_some_and(|v| v == "true" || v == "1");
+    let q = query(request);
+    let yes = |k: &str| q.get(k).is_some_and(|v| v == "true" || v == "1");
+    let force = yes("force");
+    // `untied=true` (the Devices page, `hitop sync devices remove`): sessions tied to no device end
+    // too. Not asked for by a client dropping its own fresh key (older clients do that after a
+    // password unlock), which must not sign the account's other older clients out.
+    let end_untied = yes("untied");
     let me = header_device(request);
     state.db.tx(|tx| {
         let user = person(state, tx, request)?;
         let Some(k) = tx.query_one("SELECT name FROM device_keys WHERE id = $1 AND user_id = $2", &[(&key).into(), (&user.id).into()])? else {
             return Err(ApiError::not_found("no such device key on your account"));
         };
-        if me.as_deref() == Some(key.as_str()) {
-            return Err(ApiError::conflict("this_device", "this is the device you are using: sign out here instead", json!({})));
-        }
         let (held, only) = held(tx, &key)?;
         let wraps = tx.query_one("SELECT COUNT(*) FROM wraps WHERE key_id = $1", &[(&key).into()])?.map_or(0, |r| r.int(0));
+        // A device may drop a key it just registered that holds nothing (a password unlock or
+        // recovery here adopts the old device's key, then removes the new one); a key that holds
+        // workspace keys can't remove itself (sign out instead).
+        if me.as_deref() == Some(key.as_str()) && wraps > 0 {
+            return Err(ApiError::conflict("this_device", "this is the device you are using: sign out here instead", json!({})));
+        }
         if wraps > 0 && !force {
             return Err(ApiError::conflict(
                 "key_in_use",
@@ -164,16 +176,31 @@ pub fn remove(state: &State, request: &Request, params: &PathParams) -> ApiResul
             crate::admin::request_rotation(tx, state, ws, &user, "device_removed")?;
             audit::record(tx, state, Event::new(ws, "device_removed", Some(&user)).target(&user.id).detail(json!({ "keyId": key, "email": user.email, "by": "owner" })))?;
         }
-        let ended = tx.execute("DELETE FROM sessions WHERE user_id = $1 AND device_key_id = $2", &[(&user.id).into(), (&key).into()])?;
+        // Its sessions end; never the one this request comes with. Sessions tied to no device
+        // (clients that don't send X-Hitop-Device) can't be told apart from it: with `untied`
+        // they end too, and the answer says how many (those devices sign in again).
+        let mine = bearer(request).map(|t| token_hash(&t)).unwrap_or_default();
+        let ended = tx.execute("DELETE FROM sessions WHERE user_id = $1 AND device_key_id = $2 AND token_hash <> $3", &[(&user.id).into(), (&key).into(), (&mine).into()])?;
+        let untied = if !end_untied || key_was_used_by_requester(&me, &key) {
+            0
+        } else {
+            tx.execute("DELETE FROM sessions WHERE user_id = $1 AND device_key_id = '' AND token_hash <> $2", &[(&user.id).into(), (&mine).into()])?
+        };
         tx.execute("DELETE FROM device_keys WHERE id = $1", &[(&key).into()])?;
         audit::record(
             tx,
             state,
-            Event::new(audit::ACCOUNT, "device_key_removed", Some(&user)).target(&user.id).detail(json!({ "keyId": key, "name": k.text(0), "workspaces": held.len(), "sessionsEnded": ended })),
+            Event::new(audit::ACCOUNT, "device_key_removed", Some(&user)).target(&user.id).detail(json!({ "keyId": key, "name": k.text(0), "workspaces": held.len(), "sessionsEnded": ended, "untiedSessionsEnded": untied })),
         )?;
-        if held.is_empty() && ended == 0 {
+        if held.is_empty() && ended == 0 && untied == 0 {
             return Ok((204, json!(null)));
         }
-        Ok((200, json!({ "removed": key, "rotationRequested": held, "onlyHere": only.len(), "sessionsEnded": ended })))
+        Ok((200, json!({ "removed": key, "rotationRequested": held, "onlyHere": only.len(), "sessionsEnded": ended, "untiedSessionsEnded": untied })))
     })
+}
+
+/// The requesting device dropping its own fresh key (password unlock, recovery): no other
+/// device is being removed, so nobody else is signed out.
+fn key_was_used_by_requester(me: &Option<String>, key: &str) -> bool {
+    me.as_deref() == Some(key)
 }

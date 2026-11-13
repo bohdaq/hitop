@@ -188,6 +188,27 @@ function fakeDirectoryPicker(files) {
   await settle(p);
   now = await folderFiles();
   check('FV1 ...deleted, its file goes', Object.keys(now).length === fileCount && !('requests/get-users-2.yaml' in now), Object.keys(now).join(' '));
+  // DD1: a folder made in the sidebar is written to hitop.yaml (`folders`); moving a folder moves its files; Undo puts them back.
+  const moved = await p.evaluate(async () => {
+    const app = document.querySelector('hitop-app');
+    const s = app.store;
+    const c = s.collections.find((x) => x.name === 'Sample API');
+    app.addFolder(c.id, '', 'archive');
+    await new Promise((r) => setTimeout(r, 600));
+    const r = s.moveNode({ kind: 'folder', from: c.id, path: 'orders', to: c.id, folder: 'archive' });
+    await new Promise((r2) => setTimeout(r2, 800));
+    window.__dd1Undo = r.undo;
+    return { ok: r.ok, path: r.path };
+  });
+  await settle(p);
+  now = await folderFiles();
+  check('DD1 an empty folder made in the sidebar is kept in hitop.yaml', /folders:[\s\S]*- archive/.test(now['hitop.yaml']), now['hitop.yaml']);
+  check('DD1 a folder moved into another: its files move, the old ones go', moved.ok && moved.path === 'archive/orders' && 'requests/archive/orders/create-order.yaml' in now && !('requests/orders/create-order.yaml' in now), Object.keys(now).join(' '));
+  const undone = await p.evaluate(async () => window.__dd1Undo());
+  await settle(p);
+  await p.waitForTimeout(600);
+  now = await folderFiles();
+  check('DD1 Undo puts the files back', undone === true && 'requests/orders/create-order.yaml' in now && !('requests/archive/orders/create-order.yaml' in now), Object.keys(now).join(' '));
   await p.locator('aside').getByRole('treeitem', { name: 'Sample API', exact: true }).click();
   await p.getByRole('button', { name: 'Rename collection' }).click();
   await p.waitForTimeout(300);

@@ -59,7 +59,6 @@ const { results, check } = checker();
   check('after a reload the folder row is there', (await folderRow('asd').count()) === 1);
   // 5) folder before folder: api before asd
   await drag(folderRow('api'), folderRow('asd'), 0.1);
-  st = await state();
   const order = await page.locator('nav.tree [data-drag="folder"]').allInnerTexts();
   check('a folder dragged above another lands before it', order.findIndex((t) => /api/.test(t)) < order.findIndex((t) => /asd/.test(t)), order.join('|'));
   // 6) folder into folder

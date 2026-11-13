@@ -40,14 +40,19 @@ pub fn run(cmd: DevicesCmd) -> Result<i32> {
             if id == s.account.key_id {
                 bail!("that is this device: run `hitop sync logout` here instead");
             }
-            let r = s.api.raw("DELETE", &format!("/v1/me/keys/{id}{}", if force { "?force=true" } else { "" }), None)?;
+            // `untied`: sign-ins of older clients (tied to no device) end too; never this one.
+            let r = s.api.raw("DELETE", &format!("/v1/me/keys/{id}?untied=true{}", if force { "&force=true" } else { "" }), None)?;
             match r.status {
                 200 | 204 => {
                     let rotated = r.json["rotationRequested"].as_array().map_or(0, Vec::len);
                     let ended = r.json["sessionsEnded"].as_i64().unwrap_or(0);
+                    let untied = r.json["untiedSessionsEnded"].as_i64().unwrap_or(0);
                     println!("Removed {id}.");
-                    if ended > 0 {
+                    if ended > 0 || untied > 0 {
                         println!("It is signed out.");
+                    }
+                    if untied > 0 {
+                        println!("Older HITOP versions signed in to your account were signed out too ({untied}): sign in there again.");
                     }
                     if rotated > 0 {
                         println!("{rotated} workspace{} will rotate their key: the next sync on an owner's device does it.", if rotated == 1 { "" } else { "s" });
@@ -57,8 +62,8 @@ pub fn run(cmd: DevicesCmd) -> Result<i32> {
                 409 if r.json["error"] == "key_in_use" => {
                     let n = r.json["workspaces"].as_i64().unwrap_or(0);
                     let only = r.json["onlyHere"].as_i64().unwrap_or(0);
-                    let lose = if only > 0 { format!(" {only} of them only this device can open: their data is lost to you unless your recovery phrase or another member has it.") } else { String::new() };
-                    bail!("this device holds the keys of {n} shared workspace{}.{lose} Run again with --force to remove it; those workspaces then rotate their key", if n == 1 { "" } else { "s" })
+                    let lose = if only > 0 { format!(" {only} of them only that device can open: their data is lost to you unless another member has it.") } else { String::new() };
+                    bail!("that device holds the keys of {n} shared workspace{}.{lose} Run again with --force to remove it; those workspaces then rotate their key. If your recovery phrase or password unlock was set up there, set it up again on a device you keep", if n == 1 { "" } else { "s" })
                 }
                 _ => Err(api_error(&r)),
             }
