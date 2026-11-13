@@ -371,6 +371,8 @@ verifies a wrap (clients do, THREAT_MODEL.md "Authenticated wraps").
 | `POST /v1/me/password {currentAuthKey?, kdf, authKey, bundle?}` | set or change (signed-in device; current required when there is one); `bundle` re-sealed under the new password replaces the old one, else it is deleted |
 | `POST /v1/auth/google/start`, `POST /v1/auth/github/start` `{challenge, returnTo?}`; `GET .../callback`; `POST .../finish {code, verifier}` | as SSO, with Google / GitHub |
 | `POST /v1/auth/apple/start`, `POST /v1/auth/apple/callback` (Apple's form), `POST /v1/auth/apple/finish` | as Google, with Apple |
+| `GET /v1/me/devices` | your devices: `{devices: [{id, name, createdAt, lastUsedAt, workspaces, onlyHere, thisDevice}], limit}`; clients send `X-Hitop-Device: <key id>` (a session is tied to it, last use kept; `/v1/me` has `devices: true` on servers that read it) |
+| `PUT /v1/me/keys/:id {name}`; `DELETE /v1/me/keys/:id[?force=true]` | rename a device; remove one (a device holding workspace keys needs `force`: its wraps go, those workspaces rotate, its sessions end; never the requesting device) |
 | `POST /v1/auth/apple/notifications {payload}` | Apple's server-to-server notifications (a JWT signed by Apple): unlinks on consent revoked or account deleted |
 | `GET /v1/workspaces/:ws/audit?limit&before&event&actor&since&until` | the audit log, newest first (owner) → `{events, next, head, anchor}` |
 | `GET /v1/workspaces/:ws/audit/verify` | the server's check of the chain (owner) → `{ok, checked, head, problem}` |

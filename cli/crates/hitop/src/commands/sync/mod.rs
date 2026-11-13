@@ -5,6 +5,7 @@
 
 mod audit;
 mod client;
+mod devices;
 mod password;
 mod recovery;
 mod runs;
@@ -258,6 +259,9 @@ pub enum SyncCmd {
     /// A recovery phrase: brings this device back on a new computer if you lose it
     #[command(subcommand)]
     Recovery(RecoveryCmd),
+    /// Your devices: list (with when each was last used), rename, remove
+    #[command(subcommand)]
+    Devices(DevicesCmd),
     /// The workspace's audit log (owners): sign-ins aside, who added, removed or invited whom,
     /// role changes, key rotations, runner credentials. --verify checks its hash chain here.
     /// An organization's signed export (HITOP Cloud Business): --export --org <org>, checked
@@ -390,6 +394,25 @@ pub enum PasswordCmd {
 }
 
 #[derive(Subcommand)]
+pub enum DevicesCmd {
+    /// Every device of your account: name, id, added, last used, which is this one
+    Ls,
+    /// Rename a device
+    Rename {
+        /// The device's id (`hitop sync devices ls`)
+        id: String,
+        name: String,
+    },
+    /// Remove a device: it is signed out. One that holds shared workspaces' keys needs --force
+    /// (those workspaces then rotate their key)
+    Remove {
+        id: String,
+        #[arg(long)]
+        force: bool,
+    },
+}
+
+#[derive(Subcommand)]
 pub enum RecoveryCmd {
     /// Make a 24-word recovery phrase (printed once; write it down) and keep this device's
     /// recovery data, sealed with it, on the server. Replaces an earlier phrase
@@ -504,6 +527,7 @@ fn run_cmd(cmd: SyncCmd) -> Result<i32> {
         SyncCmd::Recovery(RecoveryCmd::Create) => recovery::create().map(|_| 0),
         SyncCmd::Recovery(RecoveryCmd::Use { phrase_file }) => recovery::use_phrase(phrase_file.as_deref()).map(|_| 0),
         SyncCmd::Recovery(RecoveryCmd::Status) => recovery::status().map(|_| 0),
+        SyncCmd::Devices(cmd) => devices::run(cmd),
         SyncCmd::Recovery(RecoveryCmd::Remove) => recovery::remove().map(|_| 0),
         SyncCmd::Audit { json, verify, mine, event, actor, limit, export, org, out, file, anchor, folder } => {
             if export {
@@ -580,7 +604,7 @@ fn session() -> Result<Session> {
     let account = Account::load()?.ok_or_else(|| anyhow!("not signed in: run `hitop sync login --email <you>`"))?;
     let secret = store::load_secret(&account.server)?;
     let device = Device { key_id: account.key_id.clone(), keys: secret.device()?, trust: Trust::Local };
-    let api = Api::new(&account.server, Some(secret.session))?;
+    let api = Api::new(&account.server, Some(secret.session))?.with_device(&account.key_id);
     Ok(Session { account, api, device })
 }
 

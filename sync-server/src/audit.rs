@@ -84,6 +84,10 @@ pub const CLOUD_EVENTS: &[&str] = &[
     // turned off or on.
     "sso_unlinked",
     "email_forwarding_changed",
+    // DD3 (devices.rs), on the account chain: a device renamed or removed by its owner (removed
+    // with workspace keys: `device_removed` on each workspace's chain too).
+    "device_renamed",
+    "device_key_removed",
     // C4, on the workspace's chain: alert settings changed (channels, never webhook URLs),
     // shared environment values updated or deleted.
     "alerts_changed",

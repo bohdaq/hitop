@@ -277,7 +277,9 @@ impl SyncApp {
             ("POST", "/mcp", crate::mcp::handle),
             ("GET", "/v1/me/audit", crate::audit::mine),
             ("POST", "/v1/me/keys", crate::workspaces::add_device_key),
-            ("DELETE", "/v1/me/keys/:id", crate::recovery::delete_key),
+            ("DELETE", "/v1/me/keys/:id", crate::devices::remove),
+            ("PUT", "/v1/me/keys/:id", crate::devices::rename),
+            ("GET", "/v1/me/devices", crate::devices::list),
             ("GET", "/v1/me/recovery", crate::recovery::get),
             ("PUT", "/v1/me/recovery", crate::recovery::put),
             ("DELETE", "/v1/me/recovery", crate::recovery::delete),
@@ -454,7 +456,7 @@ impl SyncApp {
         add("Vary", "Origin".into());
         if request.method == "OPTIONS" {
             add("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE".into());
-            add("Access-Control-Allow-Headers", "Authorization, Content-Type".into());
+            add("Access-Control-Allow-Headers", "Authorization, Content-Type, X-Hitop-Device".into());
             add("Access-Control-Max-Age", "600".into());
         }
     }

@@ -106,7 +106,7 @@ pub fn report_file(file: &Path, dir: &Path) -> Result<()> {
     Ok(())
 }
 
-fn when(secs: i64) -> String {
+pub(super) fn when(secs: i64) -> String {
     // UTC, minutes: 2026-11-03 10:04.
     let days = secs.div_euclid(86_400);
     let rem = secs.rem_euclid(86_400);

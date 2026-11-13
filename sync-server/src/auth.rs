@@ -49,11 +49,16 @@ pub fn authenticate(state: &State, tx: &mut Tx, request: &Request) -> Result<Use
         return crate::tokens::authenticate_token(state, tx, request, &token);
     }
     let row = tx.query_one(
-        "SELECT u.id, u.email, u.runner_of FROM sessions s JOIN users u ON u.id = s.user_id WHERE s.token_hash = $1 AND s.expires_at > $2",
+        "SELECT u.id, u.email, u.runner_of, s.device_key_id FROM sessions s JOIN users u ON u.id = s.user_id WHERE s.token_hash = $1 AND s.expires_at > $2",
         &[token_hash(&token).into(), state.now().into()],
     )?;
     let row = row.ok_or_else(ApiError::unauthorized)?;
-    Ok(User { id: row.text(0), email: row.text(1), runner_of: row.text(2) })
+    let user = User { id: row.text(0), email: row.text(1), runner_of: row.text(2) };
+    // DD3: the device the client says it is (devices.rs).
+    if let Some(device) = crate::devices::header_device(request) {
+        crate::devices::seen(state, tx, &user.id, &token, &row.text(3), &device)?;
+    }
+    Ok(user)
 }
 
 pub fn normalize_email(email: &str) -> Result<String, ApiError> {
@@ -220,6 +225,9 @@ pub fn me(state: &State, request: &Request, _: &PathParams) -> ApiResult {
                 "id": user.id,
                 "email": user.email,
                 "keys": keys.iter().map(|r| json!({ "id": r.text(0), "name": r.text(1), "publicKey": b64(&r.bytes(2)) })).collect::<Vec<_>>(),
+                // DD3: this server reads `X-Hitop-Device` and has `/v1/me/devices` (CORS allows
+                // the header); browsers send it only to servers that say so.
+                "devices": true,
                 "passkeys": passkeys.iter().map(|r| json!({ "id": r.text(0), "name": r.text(1) })).collect::<Vec<_>>(),
                 // Since C2: when a recovery phrase was last set (null: none). Only the phrase, as
                 // hitop 1.2 and the 1.2 web app read it.

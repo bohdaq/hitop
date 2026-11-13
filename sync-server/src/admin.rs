@@ -152,7 +152,7 @@ pub fn transfer_owner(state: &State, request: &Request, params: &PathParams) -> 
     })
 }
 
-fn request_rotation(
+pub(crate) fn request_rotation(
     tx: &mut Tx,
     state: &State,
     ws: &str,

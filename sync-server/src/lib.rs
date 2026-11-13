@@ -15,6 +15,7 @@ pub mod blobs;
 pub mod config;
 pub mod db;
 pub mod dbtools;
+pub mod devices;
 pub mod github;
 pub mod gitsync;
 pub mod hostkey;

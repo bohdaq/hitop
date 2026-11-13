@@ -197,7 +197,7 @@ pub fn adopt(api: &Api, server: &str, email: &str, user_id: &str, session: &str,
 pub fn set(from_stdin: bool) -> Result<()> {
     let account = Account::load()?.ok_or_else(|| anyhow!("not signed in: run `hitop sync login` first"))?;
     let mut secret = store::load_secret(&account.server)?;
-    let api = Api::new(&account.server, Some(secret.session.clone()))?;
+    let api = Api::new(&account.server, Some(secret.session.clone()))?.with_device(&account.key_id);
     let anon = Api::new(&account.server, None)?;
     let me = api.call("GET", "/v1/me", None)?;
     let has = me["password"]["set"] == true;
@@ -293,7 +293,7 @@ pub fn reset(code: &str, from_stdin: bool, server: Option<String>, name: Option<
 pub fn unlock(from_stdin: bool) -> Result<()> {
     let account = Account::load()?.ok_or_else(|| anyhow!("sign in on this computer first: hitop sync login"))?;
     let secret = store::load_secret(&account.server)?;
-    let api = Api::new(&account.server, Some(secret.session.clone()))?;
+    let api = Api::new(&account.server, Some(secret.session.clone()))?.with_device(&account.key_id);
     let anon = Api::new(&account.server, None)?;
     let keys = keys_for(&anon, &account.email, &read(&format!("Password for {}: ", account.email), from_stdin)?)?;
     let r = api.raw("GET", "/v1/me/recovery?method=password", None)?;

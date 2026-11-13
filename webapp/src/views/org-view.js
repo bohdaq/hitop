@@ -240,6 +240,7 @@ export class HitopOrg extends LitElement {
               <div class="org-meter-top"><span>${m.label}</span><span class="tabular">${m.text}</span></div>
               <div role="meter" aria-label=${m.label} aria-valuenow=${m.used} aria-valuemin="0" aria-valuemax=${m.max ?? m.used} class=${`org-meter-bar ${m.level}`}><span style=${styleMap({ width: `${m.percent}%` })}></span></div>
               ${m.note ? html`<span class=${`hint ${m.level}`}>${m.note}</span>` : nothing}
+              ${m.id === "devices" ? html`<button type="button" class="link-button" @click=${() => this.app.openDevices()}>See your devices</button>` : nothing}
             </div>`,
           )}
         </div>

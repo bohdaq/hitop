@@ -1056,6 +1056,14 @@ export class HitopApp extends LitElement {
     </lit-material-select>`;
   }
 
+  /** DD3: Account → Devices, opened and in view. */
+  async openDevices() {
+    this.focusDevices = true;
+    this.go("sync");
+    await this.updateComplete;
+    setTimeout(() => this.querySelector("#account-devices")?.scrollIntoView({ block: "start" }), 50);
+  }
+
   // U49: the current org's fullest limit, before a create is refused (from the server's usage;
   // nothing when it couldn't be read or the server has no limits). Opens Plan & billing.
   usageChip() {
@@ -1064,7 +1072,9 @@ export class HitopApp extends LitElement {
     const warn = all[0];
     if (!warn) return nothing;
     const label = all.map((m) => `${m.label}: ${m.text}${m.level === "full" ? ", full" : ", nearly full"}`).join("; ");
-    return html`<button type="button" class=${`usage-chip ${warn.level}`} aria-label=${`Plan usage: ${label}`} title=${`${label}. Open Plan & billing`} @click=${() => this.openOrg("billing")}>
+    // DD3: a device limit is about your own devices: the chip opens Account → Devices.
+    const devices = warn.id === "devices";
+    return html`<button type="button" class=${`usage-chip ${warn.level}`} aria-label=${`Plan usage: ${label}`} title=${`${label}. ${devices ? "Open your devices" : "Open Plan & billing"}`} @click=${() => (devices ? this.openDevices() : this.openOrg("billing"))}>
       ${icon("warning-circle")}<span class="mono">${warn.text}</span><span class="usage-chip-what">${warn.label.toLowerCase()}</span>${all.length > 1 ? html`<span class="mono usage-chip-more">+${all.length - 1}</span>` : nothing}
     </button>`;
   }

@@ -48,6 +48,18 @@ const readJson = (key, fallback) => {
   }
 };
 const writeJson = (key, value) => localStorage.setItem(key, JSON.stringify(value));
+// DD3: servers that said (`/v1/me` → `devices: true`) they read `X-Hitop-Device`: only those get
+// the header (on any other a browser's CORS preflight would refuse every request).
+const CAPS_KEY = "hitop_sync_caps";
+const deviceHeaderOk = (server) => Boolean(readJson(CAPS_KEY, {})?.[server]?.devices);
+const rememberDevices = (server) => {
+  try {
+    const caps = readJson(CAPS_KEY, {});
+    if (!caps[server]?.devices) writeJson(CAPS_KEY, { ...caps, [server]: { ...(caps[server] ?? {}), devices: true } });
+  } catch {
+    // Storage refused: the header just isn't sent.
+  }
+};
 const host = (server) => {
   try {
     return new URL(server).host;
@@ -275,6 +287,9 @@ export class SyncClient {
   async http(server, method, path, body, session) {
     const url = server.replace(/\/+$/, "") + path;
     const headers = { "Content-Type": "application/json", ...(session ? { Authorization: `Bearer ${session}` } : {}) };
+    // DD3: which device this is, for this account's own session on a server that reads it.
+    const a = session ? this.account() : null;
+    if (a?.keyId && a.server === server && deviceHeaderOk(server)) headers["X-Hitop-Device"] = a.keyId;
     const opts = { method, headers, ...(body === undefined ? {} : { body: JSON.stringify(body) }) };
     // The desktop goes through Rust (no CORS); the browser straight to the server (its CORS
     // allows the web app), never through the web proxy.
@@ -287,7 +302,28 @@ export class SyncClient {
     } catch {
       json = null;
     }
+    if (path === "/v1/me" && res.status === 200 && json?.devices === true) rememberDevices(server);
     return { status: res.status, json, text };
+  }
+
+  /** DD3: the account's devices (`GET /v1/me/devices`), or null when the server has no such list. */
+  async devices() {
+    const a = this.account();
+    if (!a) return null;
+    const s = await this.secret();
+    const r = await this.http(a.server, "GET", "/v1/me/devices", undefined, s?.session);
+    if (r.status === 404) return null;
+    if (r.status !== 200) throw new SyncError(r.status, r.json);
+    return r.json;
+  }
+
+  async renameDevice(id, name) {
+    return this.api("PUT", `/v1/me/keys/${encodeURIComponent(id)}`, { name });
+  }
+
+  /** Removes one of your other devices; `force` for one holding shared workspaces' keys (409 `key_in_use` otherwise). */
+  async removeMyDevice(id, force = false) {
+    return this.call("DELETE", `/v1/me/keys/${encodeURIComponent(id)}${force ? "?force=true" : ""}`, undefined, { allow: [409] });
   }
 
   async call(method, path, body, { allow = [] } = {}) {

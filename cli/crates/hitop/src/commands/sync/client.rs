@@ -28,6 +28,9 @@ pub struct Reply {
 pub struct Api {
     base: String,
     session: Option<String>,
+    /// This device's key id, sent as `X-Hitop-Device` (the server shows when each device was last
+    /// used and ends a removed device's sessions; servers that don't know it ignore it).
+    device: Option<String>,
     http: reqwest::blocking::Client,
 }
 
@@ -43,7 +46,13 @@ impl Api {
             .timeout(std::time::Duration::from_secs(60))
             .user_agent(concat!("hitop/", env!("CARGO_PKG_VERSION")))
             .build()?;
-        Ok(Api { base, session, http })
+        Ok(Api { base, session, device: None, http })
+    }
+
+    /// The same API, saying which device of the account this is.
+    pub fn with_device(mut self, key_id: &str) -> Api {
+        self.device = Some(key_id.to_string()).filter(|k| !k.is_empty());
+        self
     }
 
     pub fn raw(&self, method: &str, path: &str, body: Option<Value>) -> Result<Reply> {
@@ -52,6 +61,9 @@ impl Api {
         let mut req = self.http.request(method, &url);
         if let Some(s) = &self.session {
             req = req.bearer_auth(s);
+            if let Some(d) = &self.device {
+                req = req.header("X-Hitop-Device", d);
+            }
         }
         if let Some(b) = body {
             req = req.json(&b);
@@ -68,6 +80,9 @@ impl Api {
         let mut req = self.http.get(format!("{}{path}", self.base));
         if let Some(s) = &self.session {
             req = req.bearer_auth(s);
+            if let Some(d) = &self.device {
+                req = req.header("X-Hitop-Device", d);
+            }
         }
         let res = req.send().with_context(|| format!("can't reach the sync server {}", self.base))?;
         let status = res.status().as_u16();

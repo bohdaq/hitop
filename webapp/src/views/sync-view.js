@@ -43,6 +43,8 @@ class HitopSync extends LitElement {
     runner: { state: true },
     audit: { state: true },
     warnings: { state: true },
+    devices: { state: true },
+    renaming: { state: true },
     untrusted: { state: true },
     limitUrl: { state: true },
     limit: { state: true },
@@ -86,12 +88,90 @@ class HitopSync extends LitElement {
       this.recoveryWords = null;
       this.remote = null;
       this.team = null;
+      this.devices = null;
       if (key) this.refresh().then(() => this.loadTeam());
     }
     this.accountKey = key;
   }
 
   // In a Share dialog: the collection's members, shown at once.
+  /** DD3: the account's devices (null while loading; `{ none: true }` on a server without the list). */
+  async loadDevices() {
+    try {
+      this.devices = (await this.sync.devices()) ?? { none: true };
+    } catch (e) {
+      this.devices = { error: errorText(e) };
+    }
+  }
+
+  async renameDevice(d, name) {
+    const n = String(name ?? "").trim();
+    this.renaming = null;
+    if (!n || n === d.name) return;
+    await this.run("device", async () => {
+      await this.sync.renameDevice(d.id, n);
+      this.note = `Renamed to ${n}.`;
+      await this.loadDevices();
+    });
+  }
+
+  async removeDevice(d) {
+    const held = d.workspaces > 0;
+    const only = d.onlyHere > 0;
+    const ok = await confirm({
+      headline: `Remove ${d.name}?`,
+      message: held
+        ? `It is signed out and loses the keys of ${d.workspaces} shared collection${d.workspaces === 1 ? "" : "s"}; those collections then get a new key.${only ? ` ${d.onlyHere} of them only this device can open: unless your recovery phrase or another member has them, their content is lost to you.` : ""}`
+        : "It is signed out of your account. Sign in there again to use it.",
+      confirmLabel: "Remove",
+      destructive: true,
+    });
+    if (!ok) return;
+    await this.run("device", async () => {
+      const r = await this.sync.removeMyDevice(d.id, held);
+      if (r.status === 409) throw new Error(r.json?.message ?? "The server kept the device.");
+      this.note = `${d.name} removed${r.json?.sessionsEnded ? " and signed out" : ""}.${r.json?.rotationRequested?.length ? " Its collections get a new key on the next sync." : ""}`;
+      await this.loadDevices();
+    });
+  }
+
+  renderDevices() {
+    const d = this.devices;
+    if (!d || d.none) return nothing;
+    const when = (t) => (t ? new Date(t * 1000).toLocaleString(undefined, { dateStyle: "medium", timeStyle: "short" }) : null);
+    // This device: the server says so when it got the header; the account's own key id says so always.
+    const mine = this.sync.account()?.keyId;
+    const list = (d.devices ?? []).map((x) => ({ ...x, thisDevice: x.thisDevice || x.id === mine }));
+    const open = Boolean(this.app?.focusDevices);
+    if (open) queueMicrotask(() => (this.app.focusDevices = false));
+    return html`<details class="account-devices" ?open=${open} id="account-devices">
+      <summary>${icon("desktop")} Devices <span class="hint">· ${list.length}${d.limit != null ? ` of ${d.limit}` : ""}</span></summary>
+      ${d.error ? html`<p class="sync-note" role="alert">${d.error}</p>` : nothing}
+      <p class="hint">Every browser, desktop app and CLI signed in to your account. Remove one you lost or no longer use: it is signed out${list.some((x) => x.workspaces) ? ", and the shared collections it held get a new key" : ""}.</p>
+      <ul class="device-list" aria-label="Devices on this account">
+        ${list.map(
+          (x) => html`<li class="device-row" data-device=${x.id}>
+            <div class="device-main">
+              ${this.renaming === x.id
+                ? html`<input class="device-name-input" aria-label=${`New name for ${x.name}`} .value=${x.name} maxlength="80"
+                    @keydown=${(e) => (e.key === "Enter" ? this.renameDevice(x, e.target.value) : e.key === "Escape" ? ((this.renaming = null), e.stopPropagation()) : null)}
+                    @blur=${(e) => this.renameDevice(x, e.target.value)} />`
+                : html`<b class="device-name">${x.name || "Unnamed device"}</b>`}
+              ${x.thisDevice ? html`<span class="status-chip ok">This device</span>` : nothing}
+              <span class="hint device-facts">Added ${when(x.createdAt)}${when(x.lastUsedAt) ? ` · last used ${when(x.lastUsedAt)}` : x.thisDevice ? "" : " · not seen since this list began"}${x.workspaces ? ` · keys of ${x.workspaces} shared collection${x.workspaces === 1 ? "" : "s"}` : ""}</span>
+            </div>
+            <div class="device-actions">
+              <lit-material-button variant="text" ?disabled=${this.busy} @click=${async () => ((this.renaming = x.id), await this.updateComplete, this.querySelector(".device-name-input")?.focus())}>Rename</lit-material-button>
+              ${x.thisDevice
+                ? nothing
+                : html`<lit-material-button variant="text" class="danger" ?disabled=${this.busy} @click=${() => this.removeDevice(x)}>Remove<span class="visually-hidden"> ${x.name}</span></lit-material-button>`}
+            </div>
+          </li>`,
+        )}
+      </ul>
+    </details>`;
+  }
+
   async loadTeam() {
     const c = this.collection;
     if (!c || !this.sync.account() || !this.sync.link(c.id)) return;
@@ -112,6 +192,7 @@ class HitopSync extends LitElement {
     } catch (e) {
       this.error = errorText(e);
     }
+    await this.loadDevices();
     for (const c of this.shared()) this.conflicts = { ...this.conflicts, [c.id]: await this.sync.conflicts(c.id) };
   }
 
@@ -677,6 +758,7 @@ class HitopSync extends LitElement {
             </div>`
           : nothing}
       </div>
+      ${this.renderDevices()}
       <details class="account-security">
         <summary>${icon("lock")} Password & recovery${unset ? html` <span class="hint">· not set up</span>` : nothing}</summary>
         ${this.renderPassword()}

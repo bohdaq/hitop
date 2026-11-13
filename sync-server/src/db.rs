@@ -838,6 +838,10 @@ CREATE TABLE request_history (
   data TEXT NOT NULL,
   PRIMARY KEY (user_id, collection_id, request_id, version)
 );
+", r"
+ALTER TABLE device_keys ADD COLUMN last_used_at BIGINT NOT NULL DEFAULT 0;
+ALTER TABLE sessions ADD COLUMN device_key_id TEXT NOT NULL DEFAULT '';
+CREATE INDEX sessions_device ON sessions(device_key_id);
 "];
 
 /// Steps in Rust that run in the same transaction as a migration's SQL (index = migration

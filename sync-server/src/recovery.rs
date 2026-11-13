@@ -101,23 +101,3 @@ pub fn delete(state: &State, request: &Request, _: &PathParams) -> ApiResult {
         Ok((204, json!(null)))
     })
 }
-
-/// `DELETE /v1/me/keys/:id`: removes one of the caller's own device keys that holds no workspace
-/// key (one registered by signing in on a new computer before the old device was recovered there).
-/// A key with wraps stays: removing it would take a member device out from under its team.
-pub fn delete_key(state: &State, request: &Request, params: &PathParams) -> ApiResult {
-    let key_id = params.get("id").unwrap_or_default().to_string();
-    state.db.tx(|tx| {
-        let user = device_session(state, tx, request)?;
-        if tx.query_one("SELECT id FROM device_keys WHERE id = $1 AND user_id = $2", &[(&key_id).into(), (&user.id).into()])?.is_none() {
-            return Err(ApiError::not_found("no such device key on your account"));
-        }
-        let wraps = tx.query_one("SELECT COUNT(*) FROM wraps WHERE key_id = $1", &[(&key_id).into()])?.map_or(0, |r| r.int(0));
-        if wraps > 0 {
-            return Err(ApiError::conflict("key_in_use", "this device key holds workspace keys; it stays", json!({ "wraps": wraps })));
-        }
-        tx.execute("DELETE FROM device_keys WHERE id = $1", &[(&key_id).into()])?;
-        audit::record(tx, state, Event::new(audit::ACCOUNT, "device_key_removed", Some(&user)).target(&user.id).detail(json!({ "keyId": key_id })))?;
-        Ok((204, json!(null)))
-    })
-}

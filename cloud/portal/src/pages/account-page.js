@@ -88,7 +88,7 @@ export class AccountPage extends LitElement {
       </section>
       <section class="card">
         <h2>Devices</h2>
-        <p class="hint">${me.keys.length} device key(s): the hitop installs that hold your workspace keys. Remove one in hitop (<code>hitop sync devices</code>); the recovery phrase is set there too.</p>
+        <p class="hint">${me.keys.length} device key(s): the hitop installs that hold your workspace keys. See when each was last used, rename or remove one in the HITOP app (Account → Devices) or with <code>hitop sync devices</code>; the recovery phrase is set there too.</p>
         ${me.keys.length ? html`<ul aria-label="Devices">${me.keys.map((k) => html`<li>${k.name || k.id}</li>`)}</ul>` : nothing}
       </section>
     `;

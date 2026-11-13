@@ -1361,3 +1361,17 @@ lit-material-dialog.fit::part(container) { width: fit-content; min-width: min(56
 .tab-strip lit-material-tab[dragging][data-leaving] { opacity: 0.45; }
 .tab-pin { display: inline-grid; place-items: center; margin-right: 4px; color: #a1a1aa; }
 .tab-pin lit-material-icon { width: 12px; height: 12px; }
+
+/* DD3 devices: Account → Devices, and the plan page's link there. */
+.org-meter .link-button { justify-self: start; padding: 0; border: 0; background: none; color: var(--md-sys-color-primary); font: inherit; font-size: var(--text-sm); cursor: pointer; }
+.org-meter .link-button:hover { text-decoration: underline; }
+.account-devices { margin-top: var(--space-200); }
+.account-devices summary { cursor: pointer; display: flex; align-items: center; gap: var(--space-100); font-weight: 500; }
+.device-list { list-style: none; margin: var(--space-150) 0 0; padding: 0; display: grid; gap: var(--space-100); }
+.device-row { display: flex; align-items: center; justify-content: space-between; gap: var(--space-200); padding: var(--space-100) var(--space-150); border: 1px solid var(--md-sys-color-outline-variant); border-radius: 10px; }
+.device-main { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px var(--space-100); min-width: 0; }
+.device-facts { flex-basis: 100%; }
+.device-name-input { font: inherit; padding: 2px 6px; border-radius: 6px; border: 1px solid var(--md-sys-color-primary); background: transparent; color: inherit; }
+.device-actions { display: flex; gap: 4px; flex-shrink: 0; }
+.device-actions .danger { --md-sys-color-primary: var(--hitop-fail); }
+@media (max-width: 560px) { .device-row { flex-direction: column; align-items: stretch; } }
