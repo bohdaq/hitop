@@ -399,3 +399,9 @@ and on hitop.rws8.tech/cloud/healthz. -->
 ## 2026-11-06 Gaps tranche 1 deployed
 
 - Sync server f4ad518 (hosted MCP POST /mcp, mock servers /mock/, schema 14); site + web app + hitop-server via deploy/deploy.sh (Ask AI, org create/invite, SSE /api/proxy/stream, docs page, OAuth 2.0, quick open, sample collection, which-hitop-app guide). Verified live: healthz schema 14, /mcp 401 without token, hitop-app chunk has Ask AI.
+
+## 2026-11-13 Continue with Apple
+
+- Pre-deploy dump /root/pre-deploy-20261113-001903. Sync server 7e63fbd (Apple sign-in, plus the 2026-11-09 fixes: SCIM PUT keeps active, alert delivery race, Git sync closing write, mocks/monitors use the plan in force), schema 17 unchanged; binary first, healthz ok, then the drop-in.
+- Drop-in `/etc/systemd/system/hitop-sync.service.d/50-apple.conf` holds every Apple setting (`LoadCredential=apple-signin.p8:/etc/hitop-sync/apple-signin.p8`, `HITOP_SYNC_APPLE_PRIVATE_KEY_FILE=%d/apple-signin.p8`, client id `tech.rws8.hitop.signin`, team, key id, `HITOP_SYNC_APPLE_APP_IDS=tech.rws8.hitop`), not the env file: one-off `systemd-run` commands that load only the env file keep working. The .p8 is `/etc/hitop-sync/apple-signin.p8` (root, 0600). To turn Apple off: remove the drop-in, daemon-reload, restart.
+- Site + web app + portal via deploy/deploy.sh. Verified live: `/v1/auth/methods` apple true; Apple's authorize page opens for our URL (Services ID, return URL, form_post accepted); a bogus code through the front proxy's `POST /v1/auth/apple/callback` gets `invalid_grant` from Apple (signed client secret accepted); both bundles carry the Apple button.
