@@ -33,6 +33,7 @@ Each case directory holds:
 | `openapi-rows` | an OpenAPI import by hitop 1.1: the request record's per-row hashes (`openapi.rows`) for headers and query parameters |
 | `secrets` | secret variables in environments and globals, `globals.yaml`, secret manager references (`${secret:vault|aws|azure|op:...}`) |
 | `examples` | saved responses with extra keys |
+| `folders` | `folders` in `hitop.yaml`: stored folder paths, one empty and one nested empty, next to `order` |
 | `unknown-keys` | unknown keys on the collection, a request, an environment and rows (kept and written back) |
 | `quirks` | non-canonical input every reader must take |
 | `run-report/report.json` | a `reportVersion: 1` run report (`../../run-report.md`); later writers keep every key with the same type |

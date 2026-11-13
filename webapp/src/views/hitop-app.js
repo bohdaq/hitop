@@ -21,7 +21,10 @@ import { ACTION_KEYS, keyLabel, SAVE_KEYS, SEND_KEYS, shortcutFor } from "../sho
 import { loadSidePane, saveLayout } from "../split.js";
 import { quickOpenItems, rankItems } from "../quick-open.js";
 import { protocolLabel } from "../request-facts.js";
-import { folderOf, folderTitle, requestTree, slugName, withFolders } from "../collection-tree.js";
+import { folderOf, folderTitle, requestTree, slugName } from "../collection-tree.js";
+import { neighbourPlace, treeOf } from "../tree-moves.js";
+import { TabDrag } from "./tab-drag.js";
+import { TreeDrag } from "./tree-drag.js";
 import { shortcutList } from "./shortcut-list.js";
 import "./settings-view.js";
 import "./history-view.js";
@@ -118,7 +121,6 @@ export class HitopApp extends LitElement {
     menuTab: { state: true },
     menuCollection: { state: true },
     menuFolder: { state: true },
-    emptyFolders: { state: true },
     exportFormat: { state: true },
     agent: { state: true },
   };
@@ -130,7 +132,8 @@ export class HitopApp extends LitElement {
     this.compact = globalThis.matchMedia?.("(max-width: 1200px)") ?? null;
     this.store = new Store();
     this.navOpen = false;
-    this.emptyFolders = {}; // collection id → folder paths made in the sidebar that hold no request yet
+    this.treeDrag = new TreeDrag(this);
+    this.tabDrag = new TabDrag(this);
     this.menuCollection = null;
     this.menuFolder = null;
     this.dialog = null; // { kind, ...data }
@@ -1245,22 +1248,13 @@ export class HitopApp extends LitElement {
     }
   }
 
-  // Folders made in the sidebar before any request is in them: on screen only
-  // (a folder is the path in its requests' `file`), until a request is saved there.
+  // DD1: a folder made in the sidebar is kept in its collection (`folders`), empty or not.
   addFolder(collectionId, parent, name) {
-    const base = name.trim().replace(/[\\/]+/g, "-");
-    if (!base) return;
-    const path = parent ? `${parent}/${base}` : base;
-    const key = String(collectionId);
-    const mine = this.emptyFolders[key] ?? [];
-    if (!mine.includes(path)) this.emptyFolders = { ...this.emptyFolders, [key]: [...mine, path] };
-    this.expand(collectionId, path);
+    const path = this.store.addFolder(collectionId, parent, name);
+    if (path) this.expand(collectionId, path);
   }
 
   folderRenamed(collectionId, path, newPath) {
-    const key = String(collectionId);
-    const mine = this.emptyFolders[key];
-    if (mine) this.emptyFolders = { ...this.emptyFolders, [key]: mine.map((p) => (p === path || p.startsWith(`${path}/`) ? `${newPath}${p.slice(path.length)}` : p)) };
     this.collapsed = this.collapsed.map((k) => (k === `${collectionId}/${path}` || k.startsWith(`${collectionId}/${path}/`) ? `${collectionId}/${newPath}${k.slice(`${collectionId}/${path}`.length)}` : k));
     saveCollapsed(this.collapsed);
   }
@@ -1283,18 +1277,68 @@ export class HitopApp extends LitElement {
     this.focusUrl();
   }
 
-  // A request dropped on another list (`sort` with toList !== fromList, lit-material
-  // sortable `group`): its new collection and folder are the list's data attributes.
-  dropRequest(e, c, entries) {
-    const { from, to, toList, fromList } = e.detail;
-    const request = entries[from]?.request;
-    if (!request || !toList || toList === fromList) return;
-    const toCollection = this.store.collections.find((x) => String(x.id) === toList.dataset.collection);
-    if (!toCollection) return;
-    const folder = toList.dataset.folder ?? "";
-    const target = [...toList.querySelectorAll("[data-sort-id]")].filter((el) => el.dataset.sortId !== String(request.id));
-    const beforeId = target[to] ? Number(target[to].dataset.sortId) : null;
-    if (this.store.moveRequestTo(c.id, request.id, toCollection.id, folder, beforeId)) this.expand(toCollection.id, folder);
+  /**
+   * DD1: a dragged row dropped (tree-drag.js): a request opened on the tab strip, collections
+   * reordered, or a request/folder moved or copied (store.moveNode), with Undo in the toast.
+   */
+  dropTreeNode(node, target, { copy = false } = {}) {
+    const s = this.store;
+    if (target.tabs) {
+      const c = s.collection(node.collectionId);
+      const r = c?.requests.find((x) => x.id === node.id);
+      if (r) s.openRequest(r, c.id);
+      return;
+    }
+    if (node.kind === "collection") {
+      const ids = s.visibleCollections.map((c) => c.id);
+      const from = ids.indexOf(node.collectionId);
+      let to = ids.indexOf(target.collectionId);
+      if (from === -1 || to === -1) return;
+      if (from < to) to -= 1;
+      if (target.line === "after") to += 1;
+      if (to === from) return;
+      const before = [...s.collections];
+      s.reorderCollections(from, to);
+      this.toast(`Moved ${node.label}.`, { label: "Undo", run: () => ((s.collections = before), s.emit()) });
+      return;
+    }
+    this.moveTreeNode(node, { collectionId: target.collectionId, folder: target.folder ?? "", before: target.before ?? null, after: target.after ?? null }, { copy });
+  }
+
+  /** DD2: a tab dropped on the sidebar tree: its request moves there (an unsaved tab is saved there). */
+  dropTabOnTree(node, target) {
+    const s = this.store;
+    const place = { collectionId: target.collectionId, folder: target.folder ?? "", before: target.before ?? null, after: target.after ?? null };
+    if (!node.unsaved) return this.moveTreeNode(node, place);
+    s.selectTab(node.tab);
+    s.saveRequest(s.tabs[node.tab]?.title || "Untitled", place.collectionId, place.folder);
+    this.expand(place.collectionId, place.folder);
+    this.toast(`Saved ${node.label} to ${s.collection(place.collectionId)?.name ?? "the collection"}.`);
+    return null;
+  }
+
+  /** DD2: Close other tabs / Close tabs to the right; unsaved and pinned tabs stay. */
+  closeTabsFrom(index, which) {
+    const s = this.store;
+    const indices = s.tabs.map((_, i) => i).filter((i) => (which === "right" ? i > index : i !== index));
+    const { kept } = s.closeTabsAt(indices);
+    if (kept) this.toast(`Kept ${kept} tab${kept === 1 ? "" : "s"} with unsaved changes.`);
+  }
+
+  /** A request or folder moved (or copied) to `place`; the toast says where, with Undo. */
+  moveTreeNode(node, place, { copy = false, quiet = false } = {}) {
+    const s = this.store;
+    const r = s.moveNode({ kind: node.kind, from: node.collectionId, id: node.id, path: node.path, to: place.collectionId, folder: place.folder, before: place.before, after: place.after, copy });
+    if (!r.ok) {
+      if (r.error) this.toast(r.error);
+      return null;
+    }
+    if (node.kind === "folder" && !copy && node.collectionId === place.collectionId && r.path !== node.path) this.folderRenamed(place.collectionId, node.path, r.path);
+    this.expand(place.collectionId, place.folder);
+    const where = s.collection(place.collectionId)?.name ?? "";
+    const into = place.folder ? `${where} › ${place.folder.replace(/\//g, " › ")}` : where;
+    if (!quiet) this.toast(`${copy ? "Copied" : "Moved"} ${node.label} to ${into}.`, { label: "Undo", run: r.undo });
+    return r;
   }
 
   // Right click (or the context menu key) on a collection or a folder in the sidebar, or its "⋯".
@@ -1349,33 +1393,45 @@ export class HitopApp extends LitElement {
       <lit-material-list-item interactive @click=${() => this.runFolder(m().collection.id, m().folder.path)}>${icon("play")} Run this folder</lit-material-list-item>
       <lit-material-list-item interactive @click=${() => this.openDialog("new-folder", { collectionId: m().collection.id, parent: m().folder.path })}>${icon("folder-simple-plus")} New folder inside…</lit-material-list-item>
       <lit-material-list-item interactive @click=${() => this.openDialog("rename-folder", { collectionId: m().collection.id, path: m().folder.path, name: m().folder.name })}>${icon("pencil-simple")} Rename… <lit-material-kbd slot="trailing" keys="F2"></lit-material-kbd></lit-material-list-item>
+      <hr class="menu-divider" role="separator" />
+      <lit-material-list-item interactive class="menu-danger" @click=${() => this.deleteFolder(m().collection, m().folder.path)}>${icon("trash")} Delete folder…</lit-material-list-item>
     </lit-material-menu>`;
   }
 
-  // One level of a collection's requests, as a reorderable list (`sortable`):
-  // `entries` are { request, index } with the index in the collection.
-  // Every list is in the group "requests": a request dragged onto another
-  // collection's or folder's list moves there (`dropRequest`).
+  /** DD1: a folder deleted with what is in it, after a confirm that counts it. */
+  async deleteFolder(c, path) {
+    const n = (c.requests || []).filter((r) => folderOf(r) === path || folderOf(r).startsWith(`${path}/`)).length;
+    const ok = await confirm({
+      headline: `Delete the folder ${path.split("/").pop()}?`,
+      message: n ? `Its ${n} request${n === 1 ? "" : "s"} and subfolders are deleted too.` : "It holds no requests.",
+      confirmLabel: "Delete",
+      destructive: true,
+    });
+    if (ok) this.store.deleteFolder(c.id, path);
+  }
+
+  // One level of a collection's requests: `entries` are { request, index } with the index in the
+  // collection. Rows drag (tree-drag.js, DD1) unless the filter is on.
   requestList(c, entries, label, activeRequest, sortable = true, folder = "") {
     const s = this.store;
     const level = folder ? folder.split("/").length + 2 : 2;
-    return html`<lit-material-sortable role="group" label=${label} group=${sortable ? "requests" : ""} data-collection=${String(c.id)} data-folder=${folder}
-      @sort=${(e) => sortable && (e.detail.toList && e.detail.toList !== e.detail.fromList ? this.dropRequest(e, c, entries) : s.moveRequest(c.id, entries[e.detail.from].index, entries[e.detail.to].index))}>
+    return html`<div role="none" class="request-list" aria-label=${label} data-collection=${String(c.id)} data-folder=${folder}>
       ${repeat(
         entries,
         (x) => x.request.id,
-        ({ request: r }) => html`<div role="none" class="request-item" data-sort-id=${r.id} data-sort-label=${r.name}>
+        ({ request: r }) => html`<div role="none" class="request-item">
           <button type="button" class="tree-row leaf" role="treeitem" tabindex="-1" aria-level=${level} data-tree="request" data-key=${`r:${c.id}:${r.id}`} data-collection=${String(c.id)} data-request=${String(r.id)}
+            data-drag=${sortable ? "request" : nothing} data-in-folder=${folder} aria-description=${sortable ? "Drag to move, or Alt+Up and Alt+Down" : nothing}
             aria-current=${activeRequest === r.id ? "page" : "false"}
             @click=${() => ((this.navOpen = false), s.openRequest(r, c.id))} @contextmenu=${(e) => this.openRequestMenu(e, r, c.id)}>
             ${this.requestRowTag(r, c.id)}<span>${this.requestRowName(r, c.id)}${s.isDirtyRequest(r.id, c.id) ? html`<span class="dirty-dot" aria-hidden="true">●</span><span class="visually-hidden">, unsaved changes</span>` : nothing}</span>${this.gitLetter(c, r)
               ? html`<span class="git-letter mono" title=${`Changed in git: ${this.gitLetter(c, r)}`}>${this.gitLetter(c, r)}<span class="visually-hidden"> (changed in git)</span></span>`
               : nothing}
           </button>
-          ${sortable ? html`<button type="button" class="sort-handle" tabindex="-1" data-sort-handle aria-label=${`Reorder ${r.name} (Alt+Up or Alt+Down on the row)`}>${icon("dots-six-vertical")}</button>` : nothing}
+          ${sortable ? html`<span class="drag-grip" aria-hidden="true">${icon("dots-six-vertical")}</span>` : nothing}
         </div>`,
       )}
-    </lit-material-sortable>`;
+    </div>`;
   }
 
   // A sidebar row's method tag and name: a new request's follow its open tab while its name
@@ -1433,7 +1489,7 @@ export class HitopApp extends LitElement {
     return html`<li class="tree-folder" role="none">
       <div class="collection-line folder-line" role="none" @contextmenu=${(e) => this.openFolderMenu(e, c, f)}>
         <button type="button" class="tree-row folder" role="treeitem" tabindex="-1" aria-level=${f.path.split("/").length + 1} aria-expanded=${String(open)} aria-owns=${open ? groupId : nothing}
-          data-tree="folder" data-key=${`f:${c.id}:${f.path}`} data-collection=${String(c.id)} data-folder=${f.path} title=${f.path} @click=${() => this.toggleCollection(key)}>
+          data-tree="folder" data-drag="folder" aria-description="Drag to move, or Alt+Up and Alt+Down" data-key=${`f:${c.id}:${f.path}`} data-collection=${String(c.id)} data-folder=${f.path} title=${f.path} @click=${() => this.toggleCollection(key)}>
           ${icon(open ? "caret-down" : "caret-right")}${icon("folder-simple")}<span>${this.store.folderOf(c.id) ? f.name : folderTitle(f.name)}</span>
         </button>
         <button type="button" class="row-action" tabindex="-1" aria-label=${`Add a request to ${f.name}`} title=${`Add a request to the folder ${f.name}`} @click=${() => this.newRequestIn(c.id, f.path)}>${icon("plus")}</button>
@@ -1498,9 +1554,9 @@ export class HitopApp extends LitElement {
     const { kind, c, request, folder } = this.treeRowData(item);
     const done = () => (e.preventDefault(), e.stopPropagation());
     if (e.altKey && (e.key === "ArrowUp" || e.key === "ArrowDown")) {
-      if (kind !== "request" || !c) return;
+      if ((kind !== "request" && kind !== "folder") || !c || this.filter) return;
       done();
-      this.moveTreeRequest(item, c, request, e.key === "ArrowUp" ? -1 : 1);
+      this.moveTreeRow(item, c, request, folder, e.key === "ArrowUp" ? -1 : 1);
       return;
     }
     if (e.altKey) return;
@@ -1577,16 +1633,16 @@ export class HitopApp extends LitElement {
     this.focusTreeKey(key);
   }
 
-  // Alt+Up/Down: the request swaps places with its neighbour in the same list (folder).
-  moveTreeRequest(item, c, request, by) {
-    const list = item.closest("lit-material-sortable");
-    const ids = [...(list?.querySelectorAll("[data-sort-id]") ?? [])].map((el) => el.dataset.sortId);
-    const at = ids.indexOf(String(request.id));
-    const other = ids[at + by];
-    if (at === -1 || other == null) return;
-    const from = c.requests.findIndex((r) => r.id === request.id);
-    const to = c.requests.findIndex((r) => String(r.id) === other);
-    this.store.moveRequest(c.id, from, to);
+  // Alt+Up/Down: a request or folder swaps places with its neighbour in the same folder (DD1).
+  moveTreeRow(item, c, request, folder, by) {
+    const parentOf = (p) => (p.includes("/") ? p.slice(0, p.lastIndexOf("/")) : "");
+    const inFolder = request ? folderOf(request) : parentOf(folder.path);
+    const place = neighbourPlace(treeOf(c, requestTree), inFolder, request ? { request: request.id } : { folder: folder.path }, by);
+    if (!place) return;
+    const node = request ? { kind: "request", collectionId: c.id, id: request.id, label: request.name } : { kind: "folder", collectionId: c.id, path: folder.path, label: folder.name };
+    if (!this.moveTreeNode(node, { collectionId: c.id, ...place }, { quiet: true })) return;
+    this.treeLive = `${node.label} moved ${by < 0 ? "up" : "down"}.`;
+    this.requestUpdate();
     this.focusTreeKey(item.dataset.key);
   }
 
@@ -1850,7 +1906,7 @@ export class HitopApp extends LitElement {
           <input type="search" class="tree-filter" placeholder="Filter" aria-label="Filter requests" .value=${this.filter}
             @input=${(e) => (this.filter = e.target.value)} />
         </label>
-        <nav class="tree" aria-label="Collections" @keydown=${(e) => this.treeKey(e)} @focusin=${(e) => this.treeFocused(e)}>
+        <nav class="tree" aria-label="Collections" @keydown=${(e) => this.treeKey(e)} @focusin=${(e) => this.treeFocused(e)} @pointerdown=${(e) => this.treeDrag.down(e)}>
           <ul role="tree" aria-label="Collections">
             ${!s.visibleCollections.length
               ? html`<li class="tree-empty" role="none">
@@ -1868,7 +1924,7 @@ export class HitopApp extends LitElement {
                   <div class="collection-line" role="none" @contextmenu=${(e) => this.openCollectionMenu(e, c)}>
                     <button type="button" class="tree-toggle" tabindex="-1" aria-hidden="true" title=${`Show or hide the requests in ${c.name}`}
                       ?disabled=${Boolean(filter)} @click=${() => this.toggleCollection(c.id)}>${icon(open ? "caret-down" : "caret-right")}</button>
-                    <button type="button" class="tree-row collection" role="treeitem" tabindex="-1" aria-level="1" aria-expanded=${String(open)} aria-owns=${open ? `group-${c.id}` : nothing} data-tree="collection" data-key=${`c:${c.id}`} data-collection=${String(c.id)}
+                    <button type="button" class="tree-row collection" role="treeitem" tabindex="-1" aria-level="1" aria-expanded=${String(open)} aria-owns=${open ? `group-${c.id}` : nothing} data-tree="collection" data-drag="collection" data-key=${`c:${c.id}`} data-collection=${String(c.id)}
                       aria-current=${kind === "collection" && collectionId === c.id ? "page" : "false"} aria-describedby=${`storage-of-${c.id}`} @click=${() => this.go("collection", c.id)}>
                       ${this.storageIcon(c)}<span>${c.name}</span>
                     </button>
@@ -1890,13 +1946,14 @@ export class HitopApp extends LitElement {
                           ? requests.length
                             ? html`<li role="none">${this.requestList(c, requests.map((request) => ({ request, index: -1 })), `Requests in ${c.name}`, activeRequest, false)}</li>`
                             : nothing
-                          : this.requestTreeRows(c, withFolders(requestTree(c.requests || []), this.emptyFolders[String(c.id)]), activeRequest)}
+                          : this.requestTreeRows(c, treeOf(c, requestTree), activeRequest)}
                       </ul>`
                     : nothing}
                 </li>`;
             })}
           </ul>
         </nav>
+        <p class="visually-hidden" aria-live="polite" data-tree-live>${this.treeLive ?? ""}</p>
         ${this.sideFooter()}
         </div>
       </aside>`;
@@ -1990,10 +2047,10 @@ export class HitopApp extends LitElement {
           @reorder=${(e) => s.moveTab(e.detail.from, e.detail.to)}
         >
           ${s.tabs.map(
-            (t, i) => html`<lit-material-tab id=${`tab-${i}`} title=${t.title} @contextmenu=${(e) => this.openTabMenu(e, i)}
-              @auxclick=${(e) => e.button === 1 && (e.preventDefault(), this.closeTab(i))}>${this.tabLabel(t)}${s.isDirty(t)
+            (t, i) => html`<lit-material-tab id=${`tab-${i}`} title=${t.title} ?data-pinned=${Boolean(t.pinned)} @contextmenu=${(e) => this.openTabMenu(e, i)}
+              @auxclick=${(e) => e.button === 1 && !t.pinned && (e.preventDefault(), this.closeTab(i))}>${t.pinned ? html`<span class="tab-pin" aria-hidden="true">${icon("push-pin")}</span><span class="visually-hidden">Pinned: </span>` : nothing}${this.tabLabel(t)}${s.isDirty(t)
                 ? html`<span class="dirty-dot" aria-hidden="true">●</span><span class="visually-hidden">, unsaved changes</span>`
-                : nothing}${s.tabs.length > 1
+                : nothing}${s.tabs.length > 1 && !t.pinned
                 ? html`<span class="tab-close" aria-hidden="true" title="Close tab (Alt+Shift+W)"
                     @pointerdown=${(e) => e.stopPropagation()} @mousedown=${(e) => e.stopPropagation()}
                     @click=${(e) => (e.stopPropagation(), e.preventDefault(), this.closeTab(i))}>${icon("x")}</span>`
@@ -2014,7 +2071,10 @@ export class HitopApp extends LitElement {
       <lit-material-menu id="tab-menu">
         <lit-material-list-item interactive @click=${() => this.openDialog("rename-tab", { index: this.menuTab, name: s.tabs[this.menuTab]?.title ?? "" })}>Rename</lit-material-list-item>
         <lit-material-list-item interactive @click=${() => s.duplicateTab(this.menuTab)}>Duplicate</lit-material-list-item>
+        <lit-material-list-item interactive @click=${() => s.togglePin(this.menuTab ?? s.currentTab)}>${s.tabs[this.menuTab ?? s.currentTab]?.pinned ? "Unpin tab" : "Pin tab"}</lit-material-list-item>
         <lit-material-list-item interactive ?disabled=${s.tabs.length < 2} @click=${() => this.closeTab(this.menuTab)}>Close tab</lit-material-list-item>
+        <lit-material-list-item interactive ?disabled=${s.tabs.length < 2} @click=${() => this.closeTabsFrom(this.menuTab ?? s.currentTab, "others")}>Close other tabs</lit-material-list-item>
+        <lit-material-list-item interactive ?disabled=${(this.menuTab ?? s.currentTab) >= s.tabs.length - 1} @click=${() => this.closeTabsFrom(this.menuTab ?? s.currentTab, "right")}>Close tabs to the right</lit-material-list-item>
         ${s.tabs[this.menuTab ?? s.currentTab] && s.isDirty(s.tabs[this.menuTab ?? s.currentTab])
           ? html`<lit-material-list-item interactive ?disabled=${s.tabs.length < 2} @click=${() => this.saveAndClose(this.menuTab)}>Save and close</lit-material-list-item>`
           : nothing}

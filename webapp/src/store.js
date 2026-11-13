@@ -54,7 +54,8 @@ import { exampleResponse, snapshotResponse } from "./diff.js";
 import { isBinaryType, toBase64 } from "./binary.js";
 import { folderToZip, zipToFolder } from "./zip.js";
 import { loadSettings, saveSettings, seconds } from "./settings.js";
-import { addCollections, folderPaths, moveRequestTo, renameFolderIn, requestFile, requestTree } from "./collection-tree.js";
+import { addCollections, folderOf as folderOfRequest, folderPaths, renameFolderIn, requestFile, requestTree } from "./collection-tree.js";
+import { addFolder as addFolderTo, deleteFolder as deleteFolderIn, moveFolder, moveRequest as moveRequestIn, renameStored, treeOf, within } from "./tree-moves.js";
 import { runPost, runPre } from "./script-run.js";
 import { buildReport, previousRun, rememberRun, runCommand, runStats } from "./run-report.js";
 
@@ -765,7 +766,11 @@ export class Store extends EventTarget {
   /** Moves a tab (the tab strip's drag or Alt+Shift+Arrow); the open tab stays open. */
   moveTab(from, to) {
     const n = this.tabs.length;
-    if (from === to || from < 0 || to < 0 || from >= n || to >= n) return;
+    if (from < 0 || to < 0 || from >= n || to >= n) return;
+    // DD2: pinned tabs stay before the others.
+    const pinned = this.tabs.filter((t, i) => t.pinned && i !== from).length;
+    to = this.tabs[from].pinned ? Math.min(to, pinned) : Math.max(to, pinned);
+    if (from === to) return;
     const openId = this.tabs[this.currentTab]?.id;
     const tabs = [...this.tabs];
     const [moved] = tabs.splice(from, 1);
@@ -773,6 +778,40 @@ export class Store extends EventTarget {
     this.tabs = tabs;
     this.currentTab = Math.max(0, tabs.findIndex((t) => t.id === openId));
     this.emit();
+  }
+
+  /** DD2: a tab pinned (to the end of the pinned ones, which stay first) or unpinned. */
+  togglePin(index) {
+    const t = this.tabs[index];
+    if (!t) return;
+    const open = this.tabs[this.currentTab];
+    const { pinned: _p, ...rest } = t;
+    const next = t.pinned ? rest : { ...t, pinned: true };
+    const tabs = this.tabs.filter((_, i) => i !== index);
+    tabs.splice(tabs.filter((x) => x.pinned).length, 0, next);
+    this.tabs = tabs;
+    this.currentTab = Math.max(0, tabs.indexOf(open === t ? next : open));
+    this.emit();
+  }
+
+  /**
+   * DD2: the tabs at `indices` closed, except pinned ones and ones with unsaved changes (those
+   * stay: nothing is discarded without asking). → { closed, kept } (kept = unsaved ones left).
+   */
+  closeTabsAt(indices) {
+    let closed = 0;
+    let kept = 0;
+    for (const i of [...new Set(indices)].sort((a, b) => b - a)) {
+      const t = this.tabs[i];
+      if (!t || t.pinned || this.tabs.length <= 1) continue;
+      if (this.isDirty(t)) {
+        kept++;
+        continue;
+      }
+      this.closeTab(i);
+      closed++;
+    }
+    return { closed, kept };
   }
 
   closeTab(index) {
@@ -934,19 +973,87 @@ export class Store extends EventTarget {
     const out = [];
     for (const c of this.visibleCollections) {
       out.push({ collectionId: c.id, folder: "", label: c.name });
-      for (const path of folderPaths(requestTree(c.requests || []))) out.push({ collectionId: c.id, folder: path, label: `${c.name} › ${path.replace(/\//g, " › ")}` });
+      for (const path of folderPaths(treeOf(c, requestTree))) out.push({ collectionId: c.id, folder: path, label: `${c.name} › ${path.replace(/\//g, " › ")}` });
     }
     return out;
   }
 
-  /** The request moved to a collection and folder (collection-tree.js moveRequestTo); open tabs follow it. */
+  /** The request moved to a collection and folder (the Move dialog); open tabs follow it. */
   moveRequestTo(from, requestId, to, folder = "", beforeId = null) {
-    const next = moveRequestTo(this.collections, { from, requestId, to, folder, beforeId });
-    if (next === this.collections) return false;
-    this.collections = next;
-    this.tabs = this.tabs.map((t) => (t.loadedRequestId === requestId && t.loadedCollectionId === from ? { ...t, loadedCollectionId: to } : t));
+    return this.moveNode({ kind: "request", from, id: requestId, to, folder, before: beforeId == null ? null : { request: beforeId } }).ok;
+  }
+
+  /**
+   * DD1: a request or folder moved (or copied) in the tree (tree-moves.js). `node` is { kind:
+   * "request", id } or { kind: "folder", path }, from collection `from` to `to`, into `folder`
+   * before `before` ({ request } | { folder } | null = the end). Open tabs follow; `undo` puts
+   * the collections back as they were. → { ok, error?, path?, undo? }
+   */
+  moveNode({ kind, from, id, path, to, folder = "", before = null, after = null, copy = false }) {
+    const source = this.collection(from);
+    const target = this.collection(to);
+    if (!source || !target) return { ok: false, error: "That place is gone." };
+    if (!copy && this.isReadOnly(source)) return { ok: false, error: `${source.name} is read-only here: nothing in it can move.` };
+    const refused = this.cannotTake(target);
+    if (refused) return { ok: false, error: refused };
+    const before0 = this.collections;
+    const r =
+      kind === "folder"
+        ? moveFolder(this.collections, { from, path, to, parent: folder, before, after, copy, newId: generateUniqueId })
+        : moveRequestIn(this.collections, { from, requestId: id, to, folder, before, after, copy, newId: generateUniqueId });
+    if (!r.collections) return { ok: false, error: r.error ?? "" };
+    this.collections = r.collections;
+    // Open tabs of what moved follow it to the other collection (and back on Undo).
+    const moved = copy ? new Set() : kind === "folder" ? new Set((source.requests || []).filter((x) => within(folderOfRequest(x), path)).map((x) => x.id)) : new Set([id]);
+    const follow = (a, b) => {
+      if (a !== b && moved.size) this.tabs = this.tabs.map((t) => (t.loadedCollectionId === a && moved.has(t.loadedRequestId) ? { ...t, loadedCollectionId: b } : t));
+    };
+    follow(from, to);
     this.emit();
-    return true;
+    return {
+      ok: true,
+      path: r.path,
+      undo: () => {
+        this.collections = before0;
+        follow(to, from);
+        this.emit();
+      },
+    };
+  }
+
+  /** Why `c` can't take a request (sample, viewer, storage full), or "". */
+  cannotTake(c) {
+    if (this.isReadOnly(c)) return `${c.name} is read-only here.`;
+    if (!this.canTakeRequest(c)) return `${c.name} can't take more requests now (its organization's storage is full).`;
+    return "";
+  }
+
+  /** A shared collection where you are a viewer. */
+  isReadOnly(c) {
+    const shared = String(this.folders.get(c?.id)?.ref ?? "").startsWith("hitop-sync:");
+    return shared && this.workspaceRoles?.get(this.syncClient?.link?.(c.id)?.workspace) === "viewer";
+  }
+
+  /** DD1: a new empty folder `name` under `parent`, kept in the collection (`folders`). → its path */
+  addFolder(collectionId, parent, name) {
+    const c = this.collection(collectionId);
+    if (!c || !String(name ?? "").trim()) return "";
+    const { collection, path } = addFolderTo(c, parent, name);
+    this.collections = this.collections.map((x) => (x.id === collectionId ? collection : x));
+    this.emit();
+    return path;
+  }
+
+  /** DD1: a folder deleted with its requests and subfolders (their tabs close). → requests removed */
+  deleteFolder(collectionId, path) {
+    const c = this.collection(collectionId);
+    if (!c || !path) return 0;
+    const { collection, removed } = deleteFolderIn(c, path);
+    this.collections = this.collections.map((x) => (x.id === collectionId ? collection : x));
+    const gone = new Set(removed);
+    this.closeTabsOf((t) => t.loadedCollectionId === collectionId && gone.has(t.loadedRequestId));
+    this.emit();
+    return removed.length;
   }
 
   /** Folder `path` of a collection renamed to `name` (its requests' `file` paths move with it). */
@@ -957,7 +1064,7 @@ export class Store extends EventTarget {
     const at = path.lastIndexOf("/");
     const newPath = at === -1 ? base : `${path.slice(0, at + 1)}${base}`;
     if (newPath === path) return path;
-    this.collections = this.collections.map((c) => (c.id === collectionId ? { ...c, requests: renameFolderIn(c.requests || [], path, newPath) } : c));
+    this.collections = this.collections.map((c) => (c.id === collectionId ? renameStored({ ...c, requests: renameFolderIn(c.requests || [], path, newPath) }, path, newPath) : c));
     this.emit();
     return newPath;
   }

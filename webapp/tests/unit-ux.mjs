@@ -427,3 +427,12 @@ assert.equal(rankItems(more, "auth")[0].key, "col:2");
 }
 
 console.log("unit-ux: all checks passed");
+
+// DD4: the org picker never names a plan that isn't in force without saying so.
+{
+  const { orgLabel } = await import("../src/orgs.js");
+  assert.equal(orgLabel({ name: "testCo", plan: "team", status: "active" }), "testCo · Team");
+  assert.equal(orgLabel({ name: "testCo", plan: "team", status: "expired" }), "testCo · Team (expired)");
+  assert.equal(orgLabel({ personal: true, plan: "free", status: "expired" }), "Personal · Free");
+  console.log("unit-ux: DD4 org label ok");
+}

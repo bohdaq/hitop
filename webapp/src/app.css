@@ -172,12 +172,21 @@ a.brand:focus-visible { outline: 2px solid var(--md-sys-color-primary); outline-
 .tree-row.folder lit-material-icon:first-child { width: 14px; height: 14px; color: #6b6b75; }
 .request-item { position: relative; }
 .request-item .tree-row { padding-right: 36px; }
-.sort-handle { position: absolute; top: 50%; right: 4px; translate: 0 -50%; display: grid; place-items: center; width: 24px; height: 24px; padding: 0; border: 0; border-radius: 6px; background: none; color: #a1a1aa; cursor: grab; opacity: 0; }
-.sort-handle lit-material-icon { width: 16px; height: 16px; }
-.request-item:hover .sort-handle, .sort-handle:focus-visible, .request-item[data-sort-grabbed] .sort-handle { opacity: 1; }
-.sort-handle:focus-visible { outline: 2px solid var(--md-sys-color-primary); }
-.request-item[data-sort-dragging] { opacity: 0.5; }
-@media (hover: none) { .sort-handle { opacity: 1; } .tree-row { min-height: 44px; } }
+/* DD1 tree drag and drop (views/tree-drag.js): rows drag; the grip only says so. */
+.drag-grip { position: absolute; top: 50%; right: 6px; translate: 0 -50%; display: grid; place-items: center; width: 20px; height: 20px; color: #6b6b75; pointer-events: none; opacity: 0; }
+.drag-grip lit-material-icon { width: 14px; height: 14px; }
+.request-item:hover .drag-grip { opacity: 1; }
+nav.tree [data-drag] { touch-action: pan-y; }
+.tree-dragging, .tree-dragging * { cursor: grabbing !important; user-select: none; }
+.tree-dragging .drag-grip { opacity: 0; }
+.drag-source, .request-item:has(> .drag-source), .collection-line:has(> .drag-source) { opacity: 0.45; }
+.drop-inside { background: color-mix(in srgb, var(--md-sys-color-primary) 18%, transparent); border-radius: 8px; box-shadow: inset 0 0 0 1px var(--md-sys-color-primary); }
+.tree-drop-line { position: fixed; z-index: 1000; height: 2px; border-radius: 2px; background: var(--md-sys-color-primary); pointer-events: none; }
+.tree-drop-line::before { content: ""; position: absolute; left: -4px; top: -3px; width: 8px; height: 8px; border-radius: 50%; background: var(--md-sys-color-primary); }
+.tree-drag-ghost { position: fixed; left: 0; top: 0; z-index: 1001; max-width: 240px; padding: 4px 10px; border-radius: 8px; background: var(--md-sys-color-surface-container-high, #2a2a30); color: var(--md-sys-color-on-surface); box-shadow: 0 6px 20px rgb(0 0 0 / 40%); font: 500 13px/1.4 inherit; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; pointer-events: none; }
+.tree-drag-ghost[data-copy="true"]::before { content: "+ "; color: var(--md-sys-color-primary); font-weight: 700; }
+.tab-strip.drop-open { box-shadow: inset 0 -2px 0 var(--md-sys-color-primary); }
+@media (hover: none) { .tree-row { min-height: 44px; } }
 
 .method-tag {
   flex: none; min-width: 40px; text-align: left;
@@ -973,7 +982,7 @@ lit-material-dialog.sign-in-dialog::part(container) {
 .org-person { display: flex; align-items: center; gap: var(--space-100); min-width: 0; overflow-wrap: anywhere; }
 .org-avatar { display: grid; place-items: center; flex: none; width: 28px; height: 28px; border-radius: 50%; background: var(--md-sys-color-primary-container); color: var(--md-sys-color-on-primary-container); font-size: var(--text-xs); font-weight: 600; }
 .org-meters { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: var(--space-200) var(--space-300); }
-.org-meter { display: grid; gap: var(--space-50); font-size: var(--text-sm); }
+.org-meter { display: grid; gap: var(--space-50); align-content: start; font-size: var(--text-sm); }
 .org-meter-top { display: flex; justify-content: space-between; gap: var(--space-100); }
 .org-meter-bar { height: 6px; border-radius: 3px; background: var(--md-sys-color-surface-container-highest); overflow: hidden; }
 .org-meter-bar > span { display: block; height: 100%; border-radius: 3px; background: var(--md-sys-color-primary); }
@@ -1345,3 +1354,10 @@ lit-material-dialog.fit::part(container) { width: fit-content; min-width: min(56
 @media (max-width: 599px) {
   .statusbar .status-engine, .statusbar .status-shortcuts, .statusbar .status-wire, .statusbar .status-place { display: none; }
 }
+
+/* DD2 tabs: the dragged tab lifts (lit-material-tabs marks it `dragging`); leaving the strip for the
+   sidebar fades it; pinned tabs show a pin and no close button. */
+.tab-strip lit-material-tab[dragging] { z-index: 2; opacity: 0.9; background: var(--md-sys-color-surface-container-high, #2a2a30); box-shadow: 0 6px 18px rgb(0 0 0 / 45%); border-radius: 8px 8px 0 0; cursor: grabbing; }
+.tab-strip lit-material-tab[dragging][data-leaving] { opacity: 0.45; }
+.tab-pin { display: inline-grid; place-items: center; margin-right: 4px; color: #a1a1aa; }
+.tab-pin lit-material-icon { width: 12px; height: 12px; }

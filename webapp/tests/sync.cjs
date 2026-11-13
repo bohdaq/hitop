@@ -536,21 +536,24 @@ async function launchOff(options) {
 
   // At the plan's device limit (Free: 3), a new device lists the account's devices to remove one,
   // then signs in.
-  await inApp(bob.page, 'const k = () => btoa(String.fromCharCode(...crypto.getRandomValues(new Uint8Array(32)))).replace(/\\+/g, "-").replace(/\\//g, "_").replace(/=+$/, ""); for (let i = 0; i < 3; i++) await c.call("POST", "/v1/me/keys", { name: `Old laptop ${i}`, publicKey: k() }, { allow: [402] });');
-  const atLimit = await daveKeys();
-  const server0 = await inApp(bob.page, 'return c.account().server;');
-  await signOutMenu(bob);
-  // This browser forgets its device (a new browser, as far as the account can tell).
-  await inApp(bob.page, 'localStorage.removeItem("hitop_sync_device"); await c.saveSecret(a, null);', server0.value);
-  await githubSignIn(bob);
-  await waitStep(bob, 'devices').catch(() => {});
-  const listed = await D(bob).locator('.signin-devices li').allInnerTexts().catch(() => []);
-  check('at the device limit the dialog lists the account\'s devices to remove one', listed.length === atLimit.length && listed.length === 3 && (await D(bob).innerText()).includes('allows 3 devices'), `${atLimit.join(',')} | ${listed.join(',')}`);
-  await D(bob).getByRole('button', { name: 'Remove Old laptop 0' }).click();
-  await bob.page.locator('header.topbar .account-button').waitFor({ timeout: 20000 }).catch(() => {});
-  await settle(bob.page);
-  const after = await daveKeys();
-  check('...Remove takes that one off and signs in here as a device', (await bob.page.locator('header.topbar .account-button').count()) === 1 && after.length === 3 && !after.includes('Old laptop 0'), after.join(','));
+  // Plan limits are on only in the CI step that runs this suite with HITOP_SYNC_LIMITS=plans.
+  if (process.env.HITOP_SYNC_LIMITS === 'plans') {
+    await inApp(bob.page, 'const k = () => btoa(String.fromCharCode(...crypto.getRandomValues(new Uint8Array(32)))).replace(/\\+/g, "-").replace(/\\//g, "_").replace(/=+$/, ""); for (let i = 0; i < 3; i++) await c.call("POST", "/v1/me/keys", { name: `Old laptop ${i}`, publicKey: k() }, { allow: [402] });');
+    const atLimit = await daveKeys();
+    const server0 = await inApp(bob.page, 'return c.account().server;');
+    await signOutMenu(bob);
+    // This browser forgets its device (a new browser, as far as the account can tell).
+    await inApp(bob.page, 'localStorage.removeItem("hitop_sync_device"); await c.saveSecret(a, null);', server0.value);
+    await githubSignIn(bob);
+    await waitStep(bob, 'devices').catch(() => {});
+    const listed = await D(bob).locator('.signin-devices li').allInnerTexts().catch(() => []);
+    check('at the device limit the dialog lists the account\'s devices to remove one', listed.length === atLimit.length && listed.length === 3 && (await D(bob).innerText()).includes('allows 3 devices'), `${atLimit.join(',')} | ${listed.join(',')}`);
+    await D(bob).getByRole('button', { name: 'Remove Old laptop 0' }).click();
+    await bob.page.locator('header.topbar .account-button').waitFor({ timeout: 20000 }).catch(() => {});
+    await settle(bob.page);
+    const after = await daveKeys();
+    check('...Remove takes that one off and signs in here as a device', (await bob.page.locator('header.topbar .account-button').count()) === 1 && after.length === 3 && !after.includes('Old laptop 0'), after.join(','));
+  }
   // Back under the limit for the later sign-ins as Dave on another device.
   await inApp(bob.page, 'const me = await c.api("GET", "/v1/me"); for (const k of me.keys) if (k.name.startsWith("Old laptop")) await c.call("DELETE", `/v1/me/keys/${k.id}`, undefined, { allow: [404, 409] });');
 

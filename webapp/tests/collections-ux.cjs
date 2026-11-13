@@ -123,16 +123,14 @@ const settle = (p) => p.waitForTimeout(400);
   const [defAfter, usersAfter] = [await named('My requests'), await named('Users API')];
   check('moved to another collection: gone here, there without a file, its tab follows', !usersAfter.requests.some((r) => r.name === 'Ping') && defAfter.requests.at(-1)?.name === 'Ping' && !('file' in defAfter.requests.at(-1)) && (await h.stored.tabs()).tabs.some((t) => t.title === 'Ping' && t.loadedCollectionId === def.id));
 
-  // --- drag a request onto another collection's list (lit-material sortable group) ---
-  const handle = aside.locator('.request-item', { hasText: 'Me' }).locator('.sort-handle');
-  await aside.locator('.request-item', { hasText: 'Me' }).hover();
-  const from = await handle.boundingBox();
-  const target = await aside.locator(`lit-material-sortable[data-collection="${def.id}"][data-folder=""]`).boundingBox();
-  await p.mouse.move(from.x + from.width / 2, from.y + from.height / 2);
+  // --- drag a request onto another collection (DD1: the row drags, dropped on the collection row) ---
+  const fromRow = aside.locator('.request-item', { hasText: 'Me' }).locator('.tree-row');
+  const from = await fromRow.boundingBox();
+  const target = await aside.locator('.tree-row.collection', { hasText: 'My requests' }).boundingBox();
+  await p.mouse.move(from.x + 30, from.y + from.height / 2);
   await p.mouse.down();
-  await p.mouse.move(from.x + from.width / 2, from.y + from.height / 2 + 8, { steps: 3 });
-  await p.mouse.move(target.x + target.width / 2, target.y + 4, { steps: 12 });
-  await p.mouse.move(target.x + target.width / 2, target.y + 6, { steps: 2 });
+  await p.mouse.move(from.x + 30, from.y + from.height / 2 + 8, { steps: 3 });
+  await p.mouse.move(target.x + 40, target.y + target.height / 2, { steps: 12 });
   await p.mouse.up();
   await settle(p);
   const defDrop = await named('My requests');
@@ -175,7 +173,8 @@ const settle = (p) => p.waitForTimeout(400);
 
   // --- storage stays the React app's shape ---
   const cols = await h.stored.collections();
-  check('collections keep the shared shape (numeric ids, requests arrays, no new top-level keys)', cols.every((c) => typeof c.id === 'number' && Array.isArray(c.requests) && Object.keys(c).every((k) => ['id', 'name', 'requests', 'variables', 'auth', 'org', 'workspace', 'createdAt', 'updatedAt'].includes(k))), JSON.stringify(cols.map((c) => Object.keys(c))));
+  // `folders` (DD1): stored folder paths; hitop-core keeps it (hitop.yaml `folders`), the frozen React UI may drop it (only empty folders are lost then).
+  check('collections keep the shared shape (numeric ids, requests arrays, no new top-level keys)', cols.every((c) => typeof c.id === 'number' && Array.isArray(c.requests) && Object.keys(c).every((k) => ['id', 'name', 'requests', 'variables', 'auth', 'org', 'workspace', 'createdAt', 'updatedAt', 'folders'].includes(k))), JSON.stringify(cols.map((c) => Object.keys(c))));
   check('no page errors', errors.length === 0, errors.join(' | '));
   await h.finish();
 })().catch((e) => {

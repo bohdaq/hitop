@@ -80,7 +80,7 @@ export function isPristineSample(c) {
   return (c.requests || []).every((r) => as.get(r.name) === shape(r));
 }
 
-/** An empty My requests (or older Default): no request with anything in it, no variables. */
+/** An empty My requests (or older Default): no request with anything in it, no variables, no folders. */
 export function isEmptyMyRequests(c) {
-  return isMyRequests(c) && (c.requests || []).every(isBlankRequest) && !Object.keys(c.variables || {}).length;
+  return isMyRequests(c) && (c.requests || []).every(isBlankRequest) && !Object.keys(c.variables || {}).length && !(c.folders || []).length;
 }

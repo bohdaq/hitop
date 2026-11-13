@@ -81,6 +81,7 @@ order:
 | `variables` | no | Map of variable name to value, used as `${name}` in requests. |
 | `auth` | no | Default auth (section 4) for requests that have no `auth` of their own. |
 | `order` | no | Request order: paths under `requests/` without the extension. Requests not listed follow in path order; listed paths that don't exist are ignored. Left out when it equals path order. |
+| `folders` | no | Folder paths under `requests/` (`/`-separated, no extension) that exist even with no request in them, in the order they were made; added after hitop 1.2 (a reader that doesn't know it keeps it as an unknown key). A folder with requests is where its first request is in `order`; one with none follows the next listed folder of the same parent that has requests, else its parent's end. Left out when empty. |
 
 ## 3. Request files: `requests/**/*.yaml`
 

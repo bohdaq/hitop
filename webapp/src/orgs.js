@@ -3,8 +3,15 @@
 
 const PLAN_NAMES = { free: "Free", pro: "Pro", team: "Team", business: "Business", enterprise: "Enterprise" };
 
-/** "Personal · Free", "Acme · Team". */
-export const orgLabel = (o) => `${o.personal ? "Personal" : o.name} · ${PLAN_NAMES[o.plan] ?? String(o.plan ?? "").replace(/^./, (x) => x.toUpperCase())}`;
+/** Statuses in which a paid plan's limits are off and Free applies (sync-server limits.rs `plan_in_force`). */
+export const LAPSED = ["expired", "unpaid", "paused", "refunded", "incomplete"];
+
+/** "Personal · Free", "Acme · Team", "Acme · Team (expired)" (DD4: never a plan that isn't in force without saying so). */
+export const orgLabel = (o) => {
+  const plan = PLAN_NAMES[o.plan] ?? String(o.plan ?? "").replace(/^./, (x) => x.toUpperCase());
+  const lapsed = o.plan !== "free" && LAPSED.includes(o.status);
+  return `${o.personal ? "Personal" : o.name} · ${plan}${lapsed ? ` (${o.status})` : ""}`;
+};
 
 /**
  * The account's orgs and its shared workspaces' orgs into the store; none signed out (or from a

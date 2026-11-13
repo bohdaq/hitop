@@ -220,7 +220,8 @@ export class HitopOrg extends LitElement {
     const cards = planCards(org, billing, usage.planInForce);
     const lapsed = cards.find((c) => c.lapsed && c.buy);
     const canBuy = !IS_TAURI && billing?.enabled && admin && !billing.subscribed;
-    const perSeat = ["team", "business"].includes(org.plan);
+    // DD4: seats count only while a per-seat plan is in force (a lapsed Team is Free, whatever it paid for).
+    const perSeat = ["team", "business"].includes(usage.planInForce);
     return html`<section class="org-card" aria-label="Plan and billing">
         <div class="org-head">
           <h2>Plan &amp; billing</h2>
@@ -263,7 +264,9 @@ export class HitopOrg extends LitElement {
                           <span class="org-plan-name">${c.name}</span>
                           <span class="org-plan-price tabular">${c.price}</span>
                           <ul>${c.items.map((x) => html`<li>${x}</li>`)}</ul>
-                          ${c.buy
+                          ${c.buy && c === lapsed && usage.planInForce !== usage.plan
+                            ? html`<span class="hint">${usage.status === "expired" ? "Expired" : "Not paid"}: pay above</span>`
+                            : c.buy
                             ? html`<lit-material-button variant=${c.recommended || c.lapsed ? "filled" : "outlined"} ?disabled=${this.busy} @click=${() => this.openBilling("checkout", org, c)}>${c.action}</lit-material-button>`
                             : html`<span class="hint">${c.current ? "Current plan" : c.note ?? ""}</span>`}
                         </div>`,

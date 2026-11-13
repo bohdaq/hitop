@@ -1,0 +1,37 @@
+{
+  "collection": {
+    "folders": [
+      "api",
+      "empty",
+      "api/nested-empty"
+    ],
+    "id": 6821066144174403,
+    "name": "Folders",
+    "requests": [
+      {
+        "body": "",
+        "headers": [],
+        "id": 361424277510090,
+        "method": "GET",
+        "name": "First",
+        "postRequestScript": "",
+        "preRequestScript": "",
+        "url": "https://api.example.test/first"
+      },
+      {
+        "body": "",
+        "file": "api/list",
+        "headers": [],
+        "id": 7743677240721861,
+        "method": "GET",
+        "name": "List",
+        "postRequestScript": "",
+        "preRequestScript": "",
+        "url": "https://api.example.test/list"
+      }
+    ],
+    "variables": {}
+  },
+  "environments": [],
+  "globals": null
+}
