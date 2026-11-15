@@ -75,6 +75,7 @@ async function send(url, options = {}) {
       cookies: Boolean(options.cookies),
       ...(signal ? { id } : {}),
       ...(options.timeoutMs ? { timeoutMs: options.timeoutMs } : {}),
+      ...(options.followRedirects === false ? { followRedirects: false } : {}),
     },
     // Rust answers an error as a plain string: an Error, so the response pane can say it (UX2).
   }).catch((e) => {
@@ -105,6 +106,8 @@ async function send(url, options = {}) {
     timings: r.timings,
     // "HTTP/1.1", "HTTP/2", "HTTP/3" (reqwest's response version); absent when unknown.
     httpVersion: r.httpVersion,
+    // The redirects followed on the way (hitop-core redirects.rs), as the web proxy gives them.
+    redirects: r.redirects ?? [],
     // The jar after this response (when the request used it).
     cookies: r.cookies,
     text: async () => text,
@@ -414,13 +417,14 @@ export function createPlatform() {
     scripts: {
       async pre({ script, url, method, headers, body, variables, context, globals }) {
         const r = await invoke("run_pre_script", { args: { script, url, method, headers: headers.filter((h) => h.name).map((h) => [h.name, h.value]), body: body || "", variables, context, globals: globals || {} } });
-        return { url: r.url, headers: r.headers.map(([name, value]) => ({ name, value })), body: r.body, contextUpdates: r.context_updates || {}, variables: r.variables || {}, globals: r.globals || {} };
+        return { url: r.url, headers: r.headers.map(([name, value]) => ({ name, value })), body: r.body, contextUpdates: r.context_updates || {}, variables: r.variables || {}, globals: r.globals || {}, logs: r.logs || [] };
       },
       async post({ script, text, headers, status, durationMs, sent, variables, context, globals }) {
         // pm.request: the request as sent (a multipart body with files is bytes: left out).
         const request = sent && { url: sent.url ?? "", method: sent.method ?? "", headers: (sent.headers ?? []).filter((h) => h.name).map((h) => [h.name, h.value]), body: typeof sent.body === "string" ? sent.body : "" };
         const r = await invoke("run_post_script", { args: { script, response_body: text, response_headers: headers, status_code: status, duration_ms: Math.round(durationMs || 0), variables, context, request, globals: globals || {} } });
-        return { tests: r.tests || [], contextUpdates: r.context_updates || {}, variables: r.variables || {}, globals: r.globals || {} };
+        // A script that threw: its tests and console lines before it, and why it stopped.
+        return { tests: r.tests || [], contextUpdates: r.context_updates || {}, variables: r.variables || {}, globals: r.globals || {}, logs: r.logs || [], error: r.error ?? null };
       },
     },
     folders: {

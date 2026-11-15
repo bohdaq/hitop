@@ -14,7 +14,7 @@ use hitop_core::{
     interpolation::interpolate,
     model::{Collection, HistoryItem, TestResult},
     runner,
-    scripting::{run_post_request_script_with, run_pre_request_script, PostRequestCtx, PreRequestCtx, SentRequest, VariableUpdates},
+    scripting::{run_post_request_script_full, run_pre_request_script, LogLine, PostRequestCtx, PreRequestCtx, SentRequest, VariableUpdates},
     storage,
 };
 
@@ -129,6 +129,8 @@ pub struct PreScriptResult {
     pub variables: VariableUpdates,
     /// Globals the script set (`pm.globals.set`, ...).
     pub globals: VariableUpdates,
+    /// What `console.*` printed.
+    pub logs: Vec<LogLine>,
 }
 
 #[tauri::command]
@@ -150,6 +152,7 @@ pub fn run_pre_script(args: PreScriptArgs) -> Result<PreScriptResult, String> {
             context_updates: r.context_updates,
             variables: r.variables,
             globals: r.globals,
+            logs: r.logs,
         })
         .map_err(|e| e.to_string())
 }
@@ -193,6 +196,11 @@ pub struct PostScriptResult {
     pub variables: VariableUpdates,
     /// Globals the script set.
     pub globals: VariableUpdates,
+    /// What `console.*` printed (the response's Console tab).
+    pub logs: Vec<LogLine>,
+    /// Why the script stopped, when it threw: the tests before it are kept (as on the web).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub error: Option<String>,
 }
 
 #[tauri::command]
@@ -208,8 +216,8 @@ pub fn run_post_script(args: PostScriptArgs) -> Result<PostScriptResult, String>
         request: sent.as_ref(),
         globals: args.globals.as_ref(),
     };
-    run_post_request_script_with(&args.script, &ctx)
-        .map(|r| PostScriptResult { context_updates: r.context_updates, tests: r.tests, variables: r.variables, globals: r.globals })
+    run_post_request_script_full(&args.script, &ctx)
+        .map(|r| PostScriptResult { context_updates: r.context_updates, tests: r.tests, variables: r.variables, globals: r.globals, logs: r.logs, error: r.error })
         .map_err(|e| e.to_string())
 }
 
@@ -323,6 +331,9 @@ pub struct SendArgs {
     /// Time limit (hitop-core's, connect to last byte); none or 0 = no limit.
     #[serde(default)]
     pub timeout_ms: Option<u64>,
+    /// False: answer with a redirect instead of following it (the request's "Follow redirects").
+    #[serde(default)]
+    pub follow_redirects: Option<bool>,
 }
 
 /// Requests the page can cancel, by its id: how to answer the waiting
@@ -357,6 +368,9 @@ pub struct SendResult {
     /// The response's protocol version ("HTTP/1.1", "HTTP/2", "HTTP/3"); left out when unknown.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub http_version: Option<&'static str>,
+    /// The redirects followed on the way (hitop-core redirects.rs), the same shape as the proxy's.
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub redirects: Vec<hitop_core::redirects::Hop>,
 }
 
 /// Sends a request. With an `id`, the HTTP exchange runs on its own thread
@@ -400,7 +414,7 @@ fn send_now(args: SendArgs, cancelled: &std::sync::atomic::AtomicBool) -> Result
     };
     let timeout = args.timeout_ms.filter(|ms| *ms > 0).map(std::time::Duration::from_millis);
     let mut jar = if args.cookies { Some(Jar::load(GLOBAL_WORKSPACE).map_err(|e| format!("{e:#}"))?) } else { None };
-    let r = http::send_with(&args.method, &args.url, &args.headers, body, http::Options { timeout, jar: jar.as_mut() }).map_err(|e| format!("{e:#}"))?;
+    let r = http::send_with(&args.method, &args.url, &args.headers, body, http::Options { timeout, jar: jar.as_mut(), no_redirects: args.follow_redirects == Some(false) }).map_err(|e| format!("{e:#}"))?;
     if cancelled.load(std::sync::atomic::Ordering::SeqCst) {
         return Err("cancelled".to_string());
     }
@@ -411,7 +425,7 @@ fn send_now(args: SendArgs, cancelled: &std::sync::atomic::AtomicBool) -> Result
         Ok(text) => (text, None),
         Err(e) => (B64.encode(e.into_bytes()), Some("base64".to_string())),
     };
-    Ok(SendResult { status: r.status, status_text: r.status_text, url: r.url, headers: r.headers, body, body_encoding, time_ms: r.duration_ms, timings: r.timings, cookies: jar, http_version: r.http_version })
+    Ok(SendResult { status: r.status, status_text: r.status_text, url: r.url, headers: r.headers, body, body_encoding, time_ms: r.duration_ms, timings: r.timings, cookies: jar, http_version: r.http_version, redirects: r.redirects })
 }
 
 /// The cookie jar the web app shows on its Cookies page (workspace `global`).
