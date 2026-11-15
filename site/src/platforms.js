@@ -23,6 +23,14 @@ export const PLATFORMS = [
     action: [MAC_APP, "Get the Mac app"],
   },
   {
+    icon: "download-simple",
+    name: "Windows and Linux",
+    price: "Free",
+    note: "Windows 10+ · AppImage, .deb, .rpm",
+    points: ["The same app as the Mac one, free from GitHub Releases", "Reaches localhost and your private network", "Collections saved as files on your computer"],
+    action: ["/download/", "Download"],
+  },
+  {
     icon: "device-mobile",
     name: "iPhone and iPad",
     price: "$2.99",

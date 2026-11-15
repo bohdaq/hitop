@@ -36,13 +36,17 @@ export function render() {
     <main id="main" class="container page-text">
       <h1>Download HITOP</h1>
       <p class="lead">
-        Free builds for macOS, Windows and Linux, and the <code>hitop</code> command line tool. Your
-        collections stay on your device. Or skip the download and
-        <a href="/app/">open the web app</a>.
+        The quickest way in needs no download: <a href="/app/">open the web app</a>. For CI and the
+        terminal, install the <a href="#cli"><code>hitop</code> command line tool</a>. The desktop app
+        for macOS, Windows and Linux is free below; your collections stay on your device.
+      </p>
+      <p class="install">
+        <a class="button-filled" href="/app/">${unsafeHTML(icon("browser"))} Open the web app</a>
+        <a class="text-link" href="#cli">Install the CLI ${unsafeHTML(icon("arrow-right"))}</a>
       </p>
 
       <h2 id="desktop">Desktop app</h2>
-      <p data-release-note="desktop">From <a href=${`${RELEASES}?q=desktop-v&expanded=true`}>GitHub Releases</a>.</p>
+      <p data-release-note="desktop">From <a href=${`${RELEASES}?q=desktop-v&expanded=true`}>GitHub Releases</a>. On a Mac, the <a href=${MAC_APP}>Mac App Store version</a> is signed and updates itself.</p>
       <ul class="downloads">
         ${DESKTOP.map(
           ([kind, name, note, label, pattern]) => html`<li>
@@ -53,13 +57,14 @@ export function render() {
           </li>`,
         )}
       </ul>
-      <p>
-        These builds aren't signed with a paid certificate, so your system warns the first time you
-        open them. On macOS, if it says the app is damaged, run
-        <code>xattr -dr com.apple.quarantine /Applications/HITOP.app</code> once. On Windows, choose
-        More info, then Run anyway. The signed <a href=${MAC_APP}>Mac App Store version</a> skips
-        these steps and updates itself.
-      </p>
+      <details class="unsigned-note">
+        <summary>Your system warns the first time you open it</summary>
+        <p>
+          These builds aren't signed with a paid certificate yet. On macOS, if it says the app is
+          damaged, run <code>xattr -dr com.apple.quarantine /Applications/HITOP.app</code> once. On
+          Windows, choose More info, then Run anyway.
+        </p>
+      </details>
 
       <h2 id="cli">Command line</h2>
       <p>Install with one line on Linux and macOS (the release binary, its SHA-256 checked, into <code>~/.local/bin</code>; <code>HITOP_VERSION</code> and <code>HITOP_INSTALL_DIR</code> change it), with Cargo, as a prebuilt binary, or run it from the Docker image:</p>

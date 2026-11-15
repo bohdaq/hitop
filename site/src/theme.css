@@ -99,6 +99,8 @@
   --hitop-pass: #7fd8b0;
   --hitop-fail: #ff9c9c;
   --hitop-warn: #f2b45c;
+  /* Quiet text (counts, table heads, units, placeholders): 4.5:1 or more on every surface. */
+  --hitop-faint: #8a8a96;
   --hitop-info: #6ca8ff;
   --hitop-phase-dns: #6ca8ff;
   --hitop-phase-connect: #8f84f0;
@@ -127,6 +129,15 @@
   --md-sys-typescale-title-medium-weight: 600;
   --md-sys-typescale-title-medium-size: var(--text-base);
   --md-sys-typescale-title-medium-line-height: var(--leading-base);
+  /* Every role the components read, so none falls back to Roboto (dialog headlines did). */
+  --md-sys-typescale-title-small-font: var(--font-sans);
+  --md-sys-typescale-label-small-font: var(--font-sans);
+  --md-sys-typescale-body-small-font: var(--font-sans);
+  --md-sys-typescale-headline-small-font: var(--font-sans);
+  --md-sys-typescale-headline-small-weight: 600;
+  --md-sys-typescale-headline-small-size: var(--text-lg);
+  --md-sys-typescale-headline-small-line-height: var(--leading-lg);
+  --md-sys-typescale-code-font: var(--font-mono);
 
   /* MD3 shape → Tailwind radii */
   --md-sys-shape-corner-none: 0px;

@@ -121,10 +121,17 @@
 
 @media (max-width: 767px) {
   .nav-links { display: none; }
-  .menu-toggle { display: inline-grid; }
-  .site-header nav { gap: var(--space-75); }
-  .lockup .word { display: none; }
+  .menu-toggle { display: inline-grid; place-items: center; width: 44px; height: 44px; margin-inline-start: auto; }
+  /* A full-width bar: the name on the left, the menu on the right. */
+  .site-header { padding: 0 var(--space-150); }
+  .site-header nav { flex: 1; justify-content: space-between; gap: var(--space-75); padding: var(--space-50) var(--space-50) var(--space-50) var(--space-150); }
+  .lockup .word small { display: none; }
+  .mobile-menu a { display: block; padding-block: var(--space-50); }
 }
+.unsigned-note { margin: var(--space-200) 0; }
+.unsigned-note summary { cursor: pointer; color: var(--md-sys-color-on-surface-variant); }
+.app-shot { margin: 0; border: 1px solid var(--md-sys-color-outline-variant); border-radius: var(--md-sys-shape-corner-large); overflow: hidden; background: var(--md-sys-color-surface-container); box-shadow: 0 24px 64px rgb(0 0 0 / 0.45); }
+.app-shot img { display: block; width: 100%; height: auto; }
 @media (min-width: 768px) {
   .nav-links { display: contents; }
 }

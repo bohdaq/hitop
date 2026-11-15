@@ -17,6 +17,7 @@ const NAV = [
   ["/#features", "Features", null],
   ["/pricing.html", "Pricing", "/pricing.html"],
   ["/guides/", "Guides", "/guides/"],
+  ["/download/", "Download", "/download/"],
   ["/app/", "Web app", "/app/"],
 ];
 

@@ -44,15 +44,6 @@ const FAQ = [
 
 const TAGLINE = ["Your requests, keys and responses stay on your device.", "No account, no tracking. Sync only if you want it, encrypted."];
 
-// A request as the app shows it: the hero's picture of the product.
-const RESPONSE = `{
-  "id": 4815,
-  "name": "Dana Whitfield",
-  "email": "dana@northwind.dev",
-  "plan": "team",
-  "created_at": "2026-10-28T09:14:52Z"
-}`;
-
 const CLI = [
   { cmd: "curl -fsSL https://hitop.rws8.tech/install.sh | sh" },
   { cmd: "hitop variables set Billing baseUrl https://api.northwind.dev" },
@@ -62,23 +53,12 @@ const CLI = [
   { out: "Summary: 3/3 requests succeeded", accent: true },
 ];
 
-function appWindow() {
+// The hero's picture: a real screenshot of the web app (public-assets/app-screenshot.jpg,
+// taken from the web app with its sample collection open).
+function appShot() {
   return html`
-    <figure class="app-window" aria-label="The HITOP app: a GET request to api.northwind.dev/v1/customers/4815 returned 200 OK in 212 ms with a JSON customer record.">
-      <div class="app-bar" aria-hidden="true"><span></span><span></span><span></span><b>HITOP</b></div>
-      <div class="app-body" aria-hidden="true">
-        <div class="app-request">
-          <span class="method">GET</span>
-          <span class="url">\${baseUrl}/v1/customers/4815</span>
-          <span class="send">Send</span>
-        </div>
-        <div class="app-headers">
-          <span>Authorization</span><span>Bearer \${token}</span>
-          <span>Accept</span><span>application/json</span>
-        </div>
-        <div class="app-status"><span class="status-pill">200 OK</span><span>212 ms</span><span>148 B</span></div>
-        <pre class="app-response">${RESPONSE}</pre>
-      </div>
+    <figure class="app-shot">
+      <img src="/app-screenshot.jpg" width="1440" height="900" alt="The HITOP web app: a collection in the sidebar, a GET request with its parameters, and the JSON response with status, time and tests." fetchpriority="high" decoding="async" />
     </figure>`;
 }
 
@@ -99,14 +79,14 @@ export function render() {
       <section class="hero container">
         <div class="hero-text">
           <h1 class="hero-heading">Test HTTP APIs <br />without an account <br />or a CORS error</h1>
-          <p class="lead">HITOP is a free, open-source (MIT) API client: a Postman alternative that needs no account and has no CORS errors. Send HTTP requests, keep them in collections as plain files in git, script them in JavaScript and run them in CI; in the browser, as a CLI, and as native Mac and iPhone apps.</p>
+          <p class="lead">HITOP is a free, open-source (MIT) API client: a Postman alternative that needs no account and has no CORS errors. Send HTTP requests, keep them in collections as plain files in git, script them in JavaScript and run them in CI; in the browser, as a CLI, as a desktop app for macOS, Windows and Linux, and on iPhone.</p>
           <div class="install">
             <a class="button-filled" href="/app/">${unsafeHTML(icon("browser"))} Open the web app</a>
-            <a class="text-link" href="/pricing.html">Mac, iOS and CLI ${unsafeHTML(icon("arrow-right"))}</a>
+            <a class="text-link" href="/download/">Download for Windows, macOS, Linux or the CLI ${unsafeHTML(icon("arrow-right"))}</a>
           </div>
           <p class="proof-line">MIT licensed · On the Mac App Store and the App Store · No sign up</p>
         </div>
-        ${appWindow()}
+        ${appShot()}
       </section>
 
       <section id="features" class="section container reveal" aria-labelledby="features-title">
