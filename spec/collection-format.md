@@ -81,7 +81,34 @@ order:
 | `variables` | no | Map of variable name to value, used as `${name}` in requests. |
 | `auth` | no | Default auth (section 4) for requests that have no `auth` of their own. |
 | `order` | no | Request order: paths under `requests/` without the extension. Requests not listed follow in path order; listed paths that don't exist are ignored. Left out when it equals path order. |
+| `headers` | no | Default headers: rows of `name`, `value`, `enabled`, sent with every request of the collection (below). Added after hitop 1.2. |
+| `folderDefaults` | no | Map of folder path (under `requests/`, `/`-separated) to `{auth, headers}`: the defaults of that folder's requests (below). Added after hitop 1.2. Left out when empty. |
 | `folders` | no | Folder paths under `requests/` (`/`-separated, no extension) that exist even with no request in them, in the order they were made; added after hitop 1.2 (a reader that doesn't know it keeps it as an unknown key). A folder with requests is where its first request is in `order`; one with none follows the next listed folder of the same parent that has requests, else its parent's end. Left out when empty. |
+
+### Inherited auth and headers
+
+```yaml
+auth: {type: bearer, token: ${token}}
+headers:
+- name: X-Client
+  value: shop-tests
+folderDefaults:
+  admin:
+    auth: {type: basic, username: admin, password: ${adminPassword}}
+    headers:
+    - name: X-Scope
+      value: admin
+```
+
+A request with no `auth` of its own inherits the nearest one: its folder's,
+then each parent folder's, then the collection's. `{type: none}` on a request
+sends no auth. Inherited headers are sent in front of the request's own,
+collection first, then each folder down to the request's; a header set closer
+to the request replaces one of the same name (ASCII case-insensitive) set
+further out, and a request's own enabled header replaces any inherited one.
+`hitop run`, `hitop requests send`, the web app and the desktop app apply the
+same rule. A hitop that doesn't know `headers` or `folderDefaults` in
+`hitop.yaml` keeps them as unknown keys and sends without them.
 
 ## 3. Request files: `requests/**/*.yaml`
 
@@ -128,6 +155,8 @@ examples:
 | `websocket` | none | A WebSocket request's `subprotocols` and saved `messages` (below). |
 | `grpc` | none | A gRPC request's `service`, `method`, `message` and schema source (below). |
 | `scripts.pre` / `scripts.post` | empty | Pre-request and post-request JavaScript (hitop's script API: `setHeader`, `setUrl`, `setBody`, `getVariable`, `getContext`, `setContext`, `getResponseValue`, `assert.*`). |
+| `settings` | none | Per-request sending options: `followRedirects` (`false`: the redirect itself is the response; default `true`) and `timeoutMs` (a time limit for this request in milliseconds; `0` or absent: the run's limit). Added after hitop 1.2. |
+| `pathVariables` | none | Rows of `key`, `value` that fill `:key` path segments of `url` (`/users/:id`): the value is percent-encoded, `${variables}` in it are filled in after. A segment with no row or an empty value is sent as typed. The query and fragment are not touched. Added after hitop 1.2. |
 | `examples` | none | Saved responses, free-form maps. |
 | `id` | derived from the path | Numeric id used by hitop's JSON storage (section 6). |
 

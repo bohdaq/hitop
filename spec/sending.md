@@ -14,7 +14,7 @@ the web app and desktop since 1.1.0. Reference implementation:
 
 This is send behaviour, not collection format: nothing here is written to a
 collection, and the format (`collection-format.md`, version 1) is unchanged.
-Every hitop surface applies the same two rules to the request as it goes out,
+Every hitop surface applies the same rules to the request as it goes out,
 after `${variables}`, auth and the pre-request script, so one collection sends
 the same headers from `hitop run`, `hitop send`, `hitop requests send`,
 `hitop mcp`, the web app, the desktop app and the iOS companion, and
@@ -75,3 +75,37 @@ their own Unicode whitespace or case folding.
 (`tests/send_vectors.rs`), the web app (`webapp/tests/unit.mjs`, through
 hitop-wasm) and HitopKit (`SendRulesTests`) run every case. Cases are only
 added.
+
+
+## 3. Redirects
+
+Added after hitop 1.2 (CLI, hitop-core, the send proxy, the web app and the
+desktop app). Reference implementation:
+`cli/crates/hitop-core/src/redirects.rs`.
+
+hitop follows a `301`, `302`, `303`, `307` or `308` that has a `Location`
+itself, up to 10 hops, and reports each hop: its status, URL, `Location` and
+`Set-Cookie` lines. The response shown is the last one.
+
+- `301` and `302` turn `POST` into `GET` and drop the body; `303` turns
+  every method but `HEAD` into `GET`; `307` and `308` repeat the method and
+  body.
+- A cookie set on a hop is stored in the jar and sent on the following hops
+  it matches, so a sign-in that answers `302` with `Set-Cookie` works.
+- A hop to another host drops `Authorization`, `Cookie` and
+  `Proxy-Authorization` as written on the request; the jar's cookies for the
+  new host are still sent.
+- The request's time limit covers the whole chain.
+- With following turned off (`settings.followRedirects: false` in the
+  request file, the request's Settings tab, `hitop send --no-follow`) the
+  redirect is the response.
+- The send proxy checks every hop against the rules of the first request
+  (public hosts only) and answers `redirect refused: …` otherwise. Its
+  response envelope gains `redirects` (a list of `{status, url, location,
+  setCookies}`), left out when there was none; the request takes
+  `followRedirects`. Clients that know neither see the envelope they
+  always did, with the final response.
+
+When the browser sends directly (no proxy, no desktop engine) it follows
+redirects on its own and hides the hops; with following turned off the web
+app shows that the answer was a redirect it cannot read.
