@@ -13,6 +13,7 @@ import { isSyncRef } from "../sync.js";
 import { storageOf } from "../git.js";
 import { folderOf, folderTitle } from "../collection-tree.js";
 import "./run-report-view.js";
+import { defaultsSection } from "./defaults-view.js";
 
 class LightElement extends LitElement {
   createRenderRoot() {
@@ -149,6 +150,7 @@ export class HitopCollection extends LightElement {
           : nothing}
         <p class="page-lead">Run sends the requests in this order, passes values saved with <code>setContext</code> to the next one, and stops at the first failure.</p>
         ${mine ? html`<hitop-run-report .run=${run} .store=${s}></hitop-run-report>` : nothing}
+        ${defaultsSection(this, s, c)}
         <section aria-label="Requests">
           <h2>${count(n, "request")}</h2>
           ${n

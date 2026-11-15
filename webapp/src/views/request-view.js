@@ -13,7 +13,7 @@ import { platform } from "../platform/index.js";
 import { syncClient } from "./sync-view.js";
 import { commentsPanel } from "./comments-view.js";
 import { AUTH_TYPES, asksForEvents, emptyAuth, parseQuery, withQuery } from "../features.js";
-import { BODY_METHODS, METHODS } from "../store.js";
+import { BODY_METHODS, METHODS, inheritDefaults, inheritedAuth, pathVariableNames } from "../store.js";
 import "./code-editor.js";
 import "@lit-material/timing-waterfall";
 import "@lit-material/popover";
@@ -27,6 +27,9 @@ import { socketHeaders, socketLine, socketLog, socketMessages } from "./websocke
 import { grpcLine, grpcLog, grpcMessage, grpcMetadataNote, grpcSchema } from "./grpc-view.js";
 import { errorCard } from "./error-card.js";
 import { bodyView, fromBase64, hexDump } from "../binary.js";
+import { jsonPath } from "../json-path.js";
+import { formatBody } from "../format-body.js";
+import { responseCookies, rowsToText, textToRows } from "../rows.js";
 
 hljs.registerLanguage("json", json);
 hljs.registerLanguage("xml", xml);
@@ -48,27 +51,33 @@ const POST_HELP = `// Runs after the response. Available:
 // Example: keep a token for the next request
 // setContext('authToken', getResponseValue('data.token'));
 //
-// Checks, shown under Tests and in collection runs:
+// console.log(...) prints to the response's Console tab.
+//
+// Checks, shown under Tests and in collection runs (pm.test / pm.expect work too):
 // assert.status(200), assert.bodyContains('id'),
 // assert.header('content-type', 'json'), assert.responseTime(500),
 // assert.equal(getResponseValue('user.id'), 42), assert.ok(statusCode < 300)`;
 
 // UX2: snippets the script editors offer (pm.* works too, through the Postman shim).
+// The same API as the sample collection's scripts (pm.*, as in Postman), so what a snippet adds
+// reads like what is already there, and a failure says what was expected.
 const PRE_SNIPPETS = [
-  ["Header from a saved value", "setHeader('Authorization', 'Bearer ' + getContext('authToken'));"],
-  ["Timestamp header", "setHeader('X-Request-Time', new Date().toISOString());"],
+  ["Header from a saved value", "pm.request.headers.upsert({ key: 'Authorization', value: 'Bearer ' + pm.collectionVariables.get('authToken') });"],
+  ["Timestamp header", "pm.request.headers.upsert({ key: 'X-Request-Time', value: new Date().toISOString() });"],
+  ["Log the request", "console.log(pm.request.method, pm.request.url.toString());"],
 ];
 const POST_SNIPPETS = [
-  ["Status is 200", "assert.status(200);"],
-  ["Body has a value", "assert.equal(getResponseValue('id') != null, true);"],
-  ["Faster than 500 ms", "assert.responseTime(500);"],
-  ["Save a value for later", "setContext('authToken', getResponseValue('token'));"],
+  ["Status is 200", "pm.test('status is 200', () => pm.response.to.have.status(200));"],
+  ["Body has an id", "pm.test('body has an id', () => pm.expect(pm.response.json().id).to.exist);"],
+  ["Faster than 500 ms", "pm.test('faster than 500 ms', () => pm.expect(pm.response.responseTime).to.be.below(500));"],
+  ["Save a value for later", "pm.collectionVariables.set('authToken', pm.response.json().token);"],
+  ["Log the body", "console.log(pm.response.json());"],
 ];
 
 const scriptHelp = (text) => html`<details class="script-help"><summary>What a script can use</summary><pre>${text}</pre></details>`;
 
 // Editor sections, in tab order.
-const PARAMS = 0, AUTH = 1, HEADERS = 2, BODY = 3, PRE = 4, POST = 5;
+const PARAMS = 0, AUTH = 1, HEADERS = 2, BODY = 3, PRE = 4, POST = 5, SETTINGS = 6;
 
 function highlighted(text, type) {
   const lang = type === "json" ? "json" : type === "html" || type === "xml" ? "xml" : null;
@@ -144,6 +153,7 @@ export class HitopRequest extends LitElement {
     wrap: { state: true },
     find: { state: true },
     findAt: { state: true },
+    filter: { state: true },
     layout: { state: true },
     layoutKind: { state: true },
   };
@@ -157,6 +167,8 @@ export class HitopRequest extends LitElement {
     this.wrap = true;
     this.find = "";
     this.findAt = 0;
+    // A JSONPath that narrows a JSON response ($.items[*].id).
+    this.filter = "";
     this.layout = loadLayout();
   }
 
@@ -183,6 +195,7 @@ export class HitopRequest extends LitElement {
       const t = this.tab;
       this.section = t?.kind === "websocket" || t?.kind === "grpc" ? BODY : t?.requestBody && BODY_METHODS.includes(t.method) ? BODY : !t?.url?.trim() || t.url.includes("?") ? PARAMS : HEADERS;
       this.responseSection = 0;
+      this.bulk = null;
     } else if (changed.has("tab") && (this.tab?.kind === "grpc" || this.tab?.kind === "websocket") && changed.get("tab")?.kind !== this.tab.kind) {
       // Switched to gRPC or WebSocket: the message (and service, method) or the messages come first.
       this.section = BODY;
@@ -258,7 +271,31 @@ export class HitopRequest extends LitElement {
           <lit-material-icon-button aria-label=${`Remove ${p.key || "parameter"}`} @click=${remove}>${icon("trash")}</lit-material-icon-button>
         </li>`;
     };
+    const pathNames = pathVariableNames(t.url);
+    const pathRows = t.pathVariables || [];
+    const setPath = (key, value) => this.set({ pathVariables: [...pathRows.filter((r) => r.key !== key), { key, value }].filter((r) => pathNames.includes(r.key) || r.value) });
+    const pathSection = pathNames.length
+      ? html`<h3 class="editor-sub">Path variables</h3>
+          <ul class="path-rows">
+            ${pathNames.map((name) => html`<li class="path-row">
+              <span class="mono path-name">:${name}</span>
+              <lit-material-text-field variant="outlined" label=${`Value of ${name}`} .value=${pathRows.find((r) => r.key === name)?.value ?? ""}
+                @input=${(e) => setPath(name, e.target.value)}></lit-material-text-field>
+            </li>`)}
+          </ul>
+          <p class="hint">Filled in where <code>:name</code> stands in the path when the request is sent (encoded); \${variables} work.</p>
+          <h3 class="editor-sub">Query parameters</h3>`
+      : nothing;
+    if (this.bulk === "params") {
+      const rows = [...on.map((p) => ({ name: p.key, value: p.value })), ...off.map((p) => ({ name: p.key, value: p.value, enabled: false }))];
+      return html`${pathSection}${this.bulkEditor(rowsToText(rows), (next) => {
+        const live = next.filter((r) => r.enabled).map((r) => ({ key: r.name, value: r.value }));
+        const offRows = next.filter((r) => !r.enabled).map((r) => ({ key: r.name, value: r.value }));
+        setOn(live, { disabledParams: offRows });
+      })}`;
+    }
     return html`
+      ${pathSection}
       <div class="kv-head" aria-hidden="true"><span></span><span>Parameter</span><span>Value</span><span></span></div>
       <ul class="param-rows">
         ${[
@@ -270,10 +307,48 @@ export class HitopRequest extends LitElement {
           ...off.map((p, i) => row(p, "off", i)),
         ]}
       </ul>
-      <lit-material-button variant="text" @click=${() => this.addRow("param")}>
-        ${icon("plus")} Add parameter
-      </lit-material-button>
+      <div class="row-actions">
+        <lit-material-button variant="text" @click=${() => this.addRow("param")}>
+          ${icon("plus")} Add parameter
+        </lit-material-button>
+        <lit-material-button variant="text" @click=${() => ((this.bulk = "params"), this.requestUpdate())}>${icon("text-align-left")} Bulk edit</lit-material-button>
+      </div>
       <p class="hint">Kept in sync with the URL; unchecked rows are kept but not sent. Values are sent as typed, so encode special characters yourself or use \${variables}.</p>`;
+  }
+
+  // A text area of "name: value" lines in place of a table; Done applies it.
+  bulkEditor(text, apply) {
+    return html`<div class="bulk-edit">
+      <textarea class="bulk-text mono" aria-label="One per line: name: value. Start a line with // to keep it but not send it." spellcheck="false"
+        .value=${text}></textarea>
+      <p class="hint">One per line as <code>name: value</code>; start a line with <code>//</code> to keep it switched off.</p>
+      <lit-material-button variant="filled" @click=${(e) => {
+        apply(textToRows(e.target.closest(".bulk-edit").querySelector("textarea").value));
+        this.bulk = null;
+        this.requestUpdate();
+      }}>Done</lit-material-button>
+      <lit-material-button variant="text" @click=${() => ((this.bulk = null), this.requestUpdate())}>Cancel</lit-material-button>
+    </div>`;
+  }
+
+  // The request's own sending options (saved with it as `settings`; the CLI follows them too).
+  renderSettings() {
+    const t = this.tab;
+    const st = t.settings || {};
+    const set = (changes) => this.set({ settings: { ...st, ...changes } });
+    const appLimit = this.store.settings.timeoutMs;
+    const proxied = this.proxied(t);
+    return html`<div class="request-settings">
+      <label class="setting-row">
+        <span><b>Follow redirects</b><span class="hint">Each redirect is shown with the cookies it sets. Off: the redirect itself is the response.</span></span>
+        <lit-material-switch aria-label="Follow redirects" ?checked=${st.followRedirects !== false} @change=${(e) => set({ followRedirects: e.target.checked ? undefined : false })}></lit-material-switch>
+      </label>
+      <label class="setting-row">
+        <span><b>Time limit</b><span class="hint">Seconds for this request; empty uses the app's (${appLimit ? `${appLimit / 1000} s` : "none"}, in Settings).${proxied ? " Requests through the HITOP proxy stop after 20 s whatever this says." : ""}</span></span>
+        <lit-material-text-field variant="outlined" class="timeout-field" type="number" min="0" label="Seconds" .value=${st.timeoutMs ? String(st.timeoutMs / 1000) : ""}
+          @change=${(e) => set({ timeoutMs: Number(e.target.value) > 0 ? Math.round(Number(e.target.value) * 1000) : undefined })}></lit-material-text-field>
+      </label>
+    </div>`;
   }
 
   // Body: raw text, multipart form data (with files) or a URL encoded form.
@@ -293,6 +368,9 @@ export class HitopRequest extends LitElement {
         </lit-material-select>
       </div>
       ${mode === "raw" ? this.bodyFacts() : nothing}
+      ${mode === "raw" && (t.requestBody || "").trim()
+        ? html`<lit-material-button variant="text" class="format-body" title="Format the body (Shift+Alt+F)" @click=${() => this.formatRequestBody()}>${icon("brackets-curly")} Format</lit-material-button>`
+        : nothing}
       ${mode === "graphql" ? this.renderGraphql() : mode === "raw"
         ? html`<hitop-code-editor label="Request body" language=${looksJson ? "json" : "text"} .value=${t.requestBody || ""} .variables=${this.varResolver()}
             @input=${(e) => this.set({ requestBody: e.target.value })}></hitop-code-editor>`
@@ -331,6 +409,18 @@ export class HitopRequest extends LitElement {
             <p class="hint">${mode === "multipart"
               ? "Sent as multipart/form-data. Files stay in this page only: they aren't saved, and a collection run sends file fields empty."
               : "Sent as application/x-www-form-urlencoded."} \${variables} work in names and values.</p>`}`;
+  }
+
+  // Re-indents a JSON or XML body (variables where values go are kept).
+  formatRequestBody() {
+    const t = this.tab;
+    const ct = (t.headers || []).find((h) => h.enabled !== false && h.name?.toLowerCase() === "content-type")?.value;
+    const out = formatBody(t.requestBody || "", bodyKind(t.requestBody || "", ct));
+    if (out == null) {
+      this.store.notify("Only JSON and XML bodies can be formatted, and this one doesn't parse as either.");
+      return;
+    }
+    if (out !== t.requestBody) this.set({ requestBody: out });
   }
 
   // A quiet line beside the body type (HITOP Next, Main board): the raw body's kind, whether its
@@ -457,8 +547,35 @@ export class HitopRequest extends LitElement {
               ${field("Session token (optional)", "sessionToken", { type: "password" })}
               <p class="hint">The request is signed as it is sent, after the script before it runs.</p>`
           : nothing}
-        ${a.type === "none" ? html`<p class="hint">Pick a type to add credentials. A header you set by hand with the same name wins.</p>` : nothing}
+        ${a.type === "none" ? html`<p class="hint">No auth is sent, even when the folder or the collection has some. A header you set by hand wins.</p>` : nothing}
+        ${a.type === "inherit" ? this.inheritNote() : nothing}
       </div>`;
+  }
+
+  // Headers the request gets from its folder or collection (sent before its own).
+  inheritedHeadersNote() {
+    const t = this.tab;
+    const c = this.store.collection(t.loadedCollectionId);
+    if (!c) return nothing;
+    const source = this.store.loadedRequest(t) ?? t;
+    const sent = inheritDefaults({ ...source, headers: t.headers, auth: { type: "none" } }, c).headers;
+    const own = new Set((t.headers || []).filter((h) => h.name).map((h) => h.name.toLowerCase()));
+    const inherited = sent.filter((h) => h.name && !own.has(h.name.toLowerCase()) && !(t.headers || []).includes(h));
+    if (!inherited.length) return nothing;
+    return html`<p class="hint inherit-note">Also sent, from the collection or folder: ${inherited.map((h, i) => html`${i ? ", " : ""}<span class="mono">${h.name}</span>`)}.
+      <lit-material-button variant="text" @click=${() => this.app.go("collection", c.id)}>Edit</lit-material-button></p>`;
+  }
+
+  // "Inherit from parent": what the request will send and where it comes from.
+  inheritNote() {
+    const t = this.tab;
+    const c = this.store.collection(t.loadedCollectionId);
+    const from = inheritedAuth(this.store.loadedRequest(t) ?? t, c);
+    const label = from ? AUTH_TYPES.find(([v]) => v === from.auth.type)?.[1] ?? from.auth.type : null;
+    return html`<p class="hint inherit-note">${from
+      ? html`Uses <b>${label}</b> from ${from.from}.`
+      : "Nothing to inherit: the collection and its folders have no auth, so none is sent."}
+      ${c ? html`<lit-material-button variant="text" @click=${() => this.app.go("collection", c.id)}>Edit the collection's auth</lit-material-button>` : nothing}</p>`;
   }
 
   set(updates) {
@@ -486,7 +603,7 @@ export class HitopRequest extends LitElement {
     const hasBody = BODY_METHODS.includes(t.method);
     const headerCount = this.headerEntries().length;
     const paramCount = parseQuery(t.url || "").length + (t.disabledParams?.length ?? 0);
-    const authType = t.auth?.type && t.auth.type !== "none" ? AUTH_TYPES.find(([v]) => v === t.auth.type)?.[1] : null;
+    const authType = t.auth?.type && t.auth.type !== "none" && t.auth.type !== "inherit" ? AUTH_TYPES.find(([v]) => v === t.auth.type)?.[1] : null;
     const socket = t.kind === "websocket";
     const grpc = t.kind === "grpc";
     const saved = t.wsMessages?.length ?? 0;
@@ -501,7 +618,7 @@ export class HitopRequest extends LitElement {
         ? ["Message"]
         : socket
           ? [counted("Messages", saved)]
-          : ["Body", dotted("Script before", t.preRequestScript?.trim()), dotted("Script after", t.postRequestScript?.trim())]),
+          : ["Body", dotted("Script before", t.preRequestScript?.trim()), dotted("Script after", t.postRequestScript?.trim()), dotted("Settings", t.settings?.followRedirects === false || t.settings?.timeoutMs > 0)]),
     ];
     // Comments: a saved request of a shared collection (sync.js).
     const sync = syncClient(this.store);
@@ -516,13 +633,16 @@ export class HitopRequest extends LitElement {
     if (!shared && this.section >= COMMENTS) this.section = PARAMS;
     return html`
       <section class="editor" aria-label="Request details">
-        <lit-material-tabs class="sub-tabs" aria-label="Request details" .selected=${this.section} @change=${(e) => (this.section = e.target.selected)}>
+        <lit-material-tabs class="sub-tabs" scrollable aria-label="Request details" .selected=${this.section} @change=${(e) => (this.section = e.target.selected)}>
           ${labels.map((label) => html`<lit-material-tab>${label}</lit-material-tab>`)}
         </lit-material-tabs>
         <div class="editor-panel">
           ${this.section === PARAMS ? (grpc ? grpcSchema(this) : this.renderParams()) : nothing}
           ${this.section === AUTH ? this.renderAuth() : nothing}
-          ${this.section === HEADERS
+          ${this.section === HEADERS && this.bulk === "headers"
+            ? this.bulkEditor(rowsToText((t.headers || []).filter((h) => h.name || h.value)), (rows) => this.set({ headers: rows.length ? rows : [{ name: "", value: "" }] }))
+            : nothing}
+          ${this.section === HEADERS && this.bulk !== "headers"
             ? html`<div class="kv-head headers" aria-hidden="true"><span>${grpc ? "Metadata" : "Header"}</span><span>Value</span><span></span></div>
               <lit-material-key-value-editor
                 key-label="Header"
@@ -531,6 +651,8 @@ export class HitopRequest extends LitElement {
                 .entries=${guard([this.headerRowsVersion], () => this.headerRows)}
                 @change=${(e) => this.onHeaders(e)}
               ></lit-material-key-value-editor>
+              <lit-material-button variant="text" class="bulk-toggle" @click=${() => ((this.bulk = "headers"), this.requestUpdate())}>${icon("text-align-left")} Bulk edit</lit-material-button>
+              ${this.inheritedHeadersNote()}
               ${this.store.autoContentType(t)
                 ? html`<p class="hint auto-header">Content-Type: <code>${this.store.autoContentType(t)}</code> is added when sending, from the body. Add your own Content-Type header to send another.</p>`
                 : nothing}
@@ -553,6 +675,7 @@ export class HitopRequest extends LitElement {
                 ${scriptHelp(PRE_HELP)}`
             : nothing}
           ${shared && this.section === COMMENTS ? commentsPanel(this, sync, t.loadedCollectionId, request) : nothing}
+          ${this.section === SETTINGS && !socket && !grpc ? this.renderSettings() : nothing}
           ${this.section === POST && !socket && !grpc
             ? html`<hitop-code-editor label="Script that runs after the response arrives" language="javascript" placeholder="// Runs after the response arrives: checks and saved values. Pick a snippet below."
                   .value=${t.postRequestScript || ""} @input=${(e) => this.set({ postRequestScript: e.target.value })}></hitop-code-editor>
@@ -599,10 +722,21 @@ export class HitopRequest extends LitElement {
     }
     const notSent = this.store.notSent.get(t.id);
     if (notSent && t.statusCode == null) {
+      const define = notSent.variables?.length && notSent.collectionId != null;
       return html`<section class="response" data-state="not-sent" aria-label="Response">
         <lit-material-status status="warning">Not sent</lit-material-status>
         <p class="not-sent-text">${notSent.text}</p>
-        <lit-material-button variant="outlined" @click=${() => this.app.go("environments")}>Open Environments</lit-material-button>
+        <div class="not-sent-actions">
+          ${define
+            ? html`<lit-material-button variant="filled" @click=${() => {
+                for (const n of notSent.variables) this.store.defineVariable(notSent.collectionId, n);
+                this.app.go("variables", notSent.collectionId);
+              }}>Define ${notSent.variables.length === 1 ? html`<span class="mono">${notSent.variables[0]}</span>` : `${notSent.variables.length} variables`} in the collection</lit-material-button>`
+            : nothing}
+          ${notSent.script
+            ? html`<lit-material-button variant=${define ? "outlined" : "filled"} @click=${() => (this.section = PRE)}>Open the script before</lit-material-button>`
+            : html`<lit-material-button variant="outlined" @click=${() => this.app.go("environments")}>Open Environments</lit-material-button>`}
+        </div>
       </section>`;
     }
     if (t.statusCode == null && (t.response == null || t.response === "")) {
@@ -629,7 +763,11 @@ export class HitopRequest extends LitElement {
     // Diff vs last: the current response against the one before it (or a saved example).
     // The current response is in History already: a diff needs one more (or a saved example).
     const canDiff = this.store.history.filter((h) => h?.response).length > 1 || (this.store.loadedRequest(t)?.examples || []).length > 0;
-    const tabs = ["body", "headers", "raw", ...(tests.length ? ["tests"] : []), ...(live?.events.length ? ["events"] : []), ...(canDiff ? ["diff"] : [])];
+    const cookies = responseCookies(t.responseHeaders);
+    const logs = t.consoleLogs || [];
+    const hops = t.redirects || [];
+    const tabs = ["body", "headers", ...(cookies.length ? ["cookies"] : []), "raw", ...(tests.length ? ["tests"] : []), ...(logs.length ? ["console"] : []), ...(hops.length ? ["redirects"] : []), ...(live?.events.length ? ["events"] : []), ...(canDiff ? ["diff"] : [])];
+    const showTab = (name) => (this.responseSection = tabs.indexOf(name));
     // UX2 (8): an event stream read whole opens on its events.
     if (live?.fromBody && this.eventsShownFor !== live && tabs.includes("events")) {
       this.eventsShownFor = live;
@@ -647,6 +785,10 @@ export class HitopRequest extends LitElement {
           <span class="mono response-num">${t.responseType === "binary" && t.responseSize != null ? size(t.responseSize) : bytes(t.response || "")}</span>
           ${t.truncated ? html`<span class="warn">Cut at 5 MB</span>` : nothing}
           ${this.timing()}
+          ${hops.length
+            ? html`<button type="button" class="redirect-chip" title=${hops.map((h) => `${h.status} ${h.url} → ${h.location}`).join("\n")} @click=${() => showTab("redirects")}>
+                ${icon("arrow-bend-down-right")} ${hops.length} ${hops.length === 1 ? "redirect" : "redirects"}</button>`
+            : nothing}
           ${tests.length ? html`<span class=${`checks-summary ${passed === tests.length ? "pass" : "fail"}`}>${icon(passed === tests.length ? "check-circle" : "warning-circle")}${passed === tests.length ? `${passed}/${tests.length} passed` : `${tests.length - passed} of ${tests.length} tests failed`}</span>` : nothing}
           <span class="response-actions">
             ${this.store.loadedRequest(t)
@@ -656,11 +798,14 @@ export class HitopRequest extends LitElement {
           </span>
         </div>
         <div class="response-tabbar">
-        <lit-material-tabs class="sub-tabs" aria-label="Response details" .selected=${this.responseSection} @change=${(e) => (this.responseSection = e.target.selected)}>
+        <lit-material-tabs class="sub-tabs" scrollable aria-label="Response details" .selected=${this.responseSection} @change=${(e) => (this.responseSection = e.target.selected)}>
           <lit-material-tab>Body</lit-material-tab>
           <lit-material-tab>Headers <span class="count">${headers.length}</span></lit-material-tab>
-          <lit-material-tab>Raw</lit-material-tab>
+          ${cookies.length ? html`<lit-material-tab>Cookies <span class="count">${cookies.length}</span></lit-material-tab>` : nothing}
+          <lit-material-tab title="Status line, headers and body as received">Raw</lit-material-tab>
           ${tests.length ? html`<lit-material-tab>Tests <span class=${`count ${passed === tests.length ? "pass" : "fail"}`}>${passed === tests.length ? `${passed}/${tests.length}` : `${tests.length - passed} of ${tests.length} failed`}</span></lit-material-tab>` : nothing}
+          ${logs.length ? html`<lit-material-tab>Console <span class="count">${logs.length}</span></lit-material-tab>` : nothing}
+          ${hops.length ? html`<lit-material-tab>Redirects <span class="count">${hops.length}</span></lit-material-tab>` : nothing}
           ${live?.events.length ? html`<lit-material-tab>Events <span class="count">${live.events.length}</span></lit-material-tab>` : nothing}
           ${canDiff ? html`<lit-material-tab title="Diff against the last response to this request">Diff</lit-material-tab>` : nothing}
         </lit-material-tabs>
@@ -684,8 +829,52 @@ export class HitopRequest extends LitElement {
               </dl>`
           : shown === "raw"
             ? this.renderRaw(headers)
+          : shown === "cookies"
+            ? this.renderCookies(cookies)
+          : shown === "console"
+            ? this.renderConsole(logs)
+          : shown === "redirects"
+            ? this.renderRedirects(hops)
             : testList(tests)}
       </section>`;
+  }
+
+  // The cookies this response set, as rows; the jar (Cookies page) keeps them when it is on.
+  renderCookies(cookies) {
+    return html`<div class="response-scroll" tabindex="0" role="region" aria-label="Cookies the response set">
+      <table class="cookie-table">
+        <thead><tr><th>Name</th><th>Value</th><th>Domain</th><th>Path</th><th>Expires</th><th>Flags</th></tr></thead>
+        <tbody>${cookies.map((c) => html`<tr><td class="mono">${c.name}</td><td class="mono cookie-value">${c.value}</td><td>${c.domain || "this host"}</td><td>${c.path || "/"}</td><td>${c.expires}</td><td>${c.flags}</td></tr>`)}</tbody>
+      </table>
+      <p class="hint">${this.store.cookieJarEnabled ? "Kept in the cookie jar and sent with later requests to the same site." : "The cookie jar is off, so these aren't kept."}
+        <lit-material-button variant="text" @click=${() => this.app.go("cookies")}>Open the cookie jar</lit-material-button></p>
+    </div>`;
+  }
+
+  // What console.log (and info, warn, error) printed in the scripts before and after the request.
+  renderConsole(logs) {
+    return html`<div class="response-scroll" tabindex="0" role="region" aria-label="Script console">
+      <ol class="console-lines">
+        ${logs.map((l) => html`<li class=${`console-line ${l.level}`}><span class="console-phase">${l.phase === "before" ? "before" : "after"}</span><pre class="mono">${l.text}</pre></li>`)}
+      </ol>
+    </div>`;
+  }
+
+  // Each redirect on the way: its status, where it pointed and the cookies it set.
+  renderRedirects(hops) {
+    const t = this.tab;
+    return html`<div class="response-scroll" tabindex="0" role="region" aria-label="Redirects">
+      <ol class="redirect-chain">
+        ${hops.map((h) => html`<li>
+          <span class="status-chip info"><span class="mono">${h.status}</span></span>
+          <span class="mono redirect-url">${h.url}</span>
+          <span class="redirect-to">→ <span class="mono">${h.location}</span></span>
+          ${h.setCookies?.length ? html`<span class="hint">Set ${h.setCookies.length} ${h.setCookies.length === 1 ? "cookie" : "cookies"}: ${h.setCookies.map((c) => c.split(";")[0].split("=")[0]).join(", ")}</span>` : nothing}
+        </li>`)}
+        <li><span class=${`status-chip ${t.statusCode < 300 ? "ok" : t.statusCode < 400 ? "info" : "bad"}`}><span class="mono">${t.statusCode}</span></span> <span class="hint">The response shown</span></li>
+      </ol>
+      <p class="hint">Redirects are followed and cookies they set go to the next request. Turn this off in the request's Settings tab.</p>
+    </div>`;
   }
 
   // The whole answer as curl -i prints it: the status line, every header, a blank line, the body
@@ -710,7 +899,20 @@ export class HitopRequest extends LitElement {
     const html_ = t.responseType === "html";
     const mode = this.bodyMode === "preview" && !html_ ? "pretty" : this.bodyMode;
     const raw = this.store.rawBodies.get(t.id);
-    const text = mode === "raw" && raw !== undefined ? raw : t.response;
+    let text = mode === "raw" && raw !== undefined ? raw : t.response;
+    // JSONPath filter: the matches as JSON (one value alone, several as a list).
+    let filtered = null;
+    if (t.responseType === "json" && this.filter.trim() && mode !== "preview") {
+      try {
+        const source = typeof raw === "string" ? JSON.parse(raw) : JSON.parse(String(t.response));
+        const found = jsonPath(source, this.filter);
+        filtered = { count: found.length };
+        text = JSON.stringify(found.length === 1 ? found[0] : found, null, 2);
+        code = highlighted(text, "json");
+      } catch (e) {
+        filtered = { error: `Can't filter: ${e.message}` };
+      }
+    }
     const query = this.find ?? "";
     const marks = query && mode !== "preview" ? findMarks(text, query) : null;
     if (marks && this.findAt >= marks.count) this.findAt = 0;
@@ -724,11 +926,19 @@ export class HitopRequest extends LitElement {
     const ext = t.responseType === "json" ? "json" : t.responseType === "html" ? "html" : t.responseType === "xml" ? "xml" : "txt";
     const tools = html`<div class="body-tools">
         <span class="segmented" role="group" aria-label="Show the body">
-          ${seg("pretty", "Pretty", "Formatted and highlighted")}${seg("raw", "Raw", "As received")}${html_ ? seg("preview", "Preview", "The page, rendered without scripts") : nothing}
+          ${seg("pretty", "Pretty", "Formatted and highlighted")}${seg("raw", "Source", "The body as received")}${html_ ? seg("preview", "Preview", "The page, rendered without scripts") : nothing}
         </span>
         <button type="button" class="seg wrap-toggle" aria-pressed=${String(this.wrap)} aria-label="Wrap long lines" title="Wrap long lines" @click=${() => (this.wrap = !this.wrap)}>
           ${icon("text-align-left")}
         </button>
+        ${t.responseType === "json" && mode !== "preview"
+          ? html`<label class=${`find json-filter ${this.filter ? "has-query" : ""}`} title="Filter with JSONPath, such as $.items[*].id">
+              ${icon("funnel")}
+              <input type="search" class="filter-input mono" placeholder="$.items[*].id" aria-label="Filter the JSON (JSONPath)" .value=${this.filter}
+                @input=${(e) => (this.filter = e.target.value)} />
+              ${filtered ? html`<span class="find-count" role="status">${filtered.error ? filtered.error : `${filtered.count} ${filtered.count === 1 ? "match" : "matches"}`}</span>` : nothing}
+            </label>`
+          : nothing}
         ${mode !== "preview"
           ? html`<label class=${`find ${query ? "has-query" : ""}`} title="Find in body">
               ${icon("magnifying-glass")}
@@ -743,7 +953,7 @@ export class HitopRequest extends LitElement {
           ${icon("file-arrow-down")}
         </lit-material-icon-button>
       </div>`;
-    return { tools, content: this.bodyContent(t, mode, text, marks, code) };
+    return { tools, content: this.bodyContent(t, filtered && !filtered.error && mode === "raw" ? "pretty" : mode, text, marks, code) };
   }
 
   bodyContent(t, mode, text, marks, code) {
@@ -908,10 +1118,13 @@ export class HitopRequest extends LitElement {
         if (i % 2 === 0) return html`<span class="url-text" aria-hidden="true">${part}</span>`;
         const n = part.slice(2, -1).trim();
         const found = n ? this.store.variableSource(t.loadedCollectionId, n) : null;
-        return html`<span class=${`var-chip ${!found ? "missing" : found.missingSecret ? "missing secret-missing" : ""}`} role="button" tabindex="0" aria-haspopup="dialog"
+        // Not a Tab stop: Tab from the URL goes on to Send, and focus never opens a peek that
+        // then stays over the editor. Pointer hover peeks; a click (or Enter on a chip the
+        // pointer focused) pins it; it closes when focus leaves.
+        return html`<span class=${`var-chip ${!found ? "missing" : found.missingSecret ? "missing secret-missing" : ""}`} role="button" tabindex="-1" aria-haspopup="dialog"
           title=${!found ? "Not defined" : found.missingSecret ? `Secret with no value on this device (${found.scope})` : `${found.value} (${found.scope})`}
           @pointerenter=${(e) => open(n, e.currentTarget, false)} @pointerleave=${leave}
-          @focus=${(e) => !fromPeek(e) && open(n, e.currentTarget, false)} @blur=${(e) => !fromPeek(e) && leave()}
+          @blur=${(e) => !fromPeek(e) && ((this.peekPinned = false), leave())}
           @click=${(e) => open(n, e.currentTarget, true)}
           @keydown=${(e) => (e.key === "Enter" || e.key === " ") && (e.preventDefault(), open(n, e.currentTarget, true))}>${part}</span>`;
       })}</span>
@@ -922,7 +1135,13 @@ export class HitopRequest extends LitElement {
     const t = this.tab;
     const peek = this.peek ?? "";
     const src = peek ? this.store.variableSource(t.loadedCollectionId, peek) : null;
-    return html`<lit-material-popover class="var-peek" @close=${() => (this.peekPinned = false)} @pointerenter=${() => (this.peekPinned = true)}>
+    return html`<lit-material-popover class="var-peek" @close=${() => (this.peekPinned = false)} @pointerenter=${() => (this.peekPinned = true)}
+      @focusout=${(e) => {
+        const to = e.relatedTarget;
+        if (to && (e.currentTarget.contains(to) || to.classList?.contains("var-chip"))) return;
+        this.peekPinned = false;
+        e.currentTarget.close();
+      }}>
       <span slot="header" class="mono">\${${peek}}</span>
       ${src?.missingSecret
         ? html`<p class="hint">A secret of the ${src.scope} with no value on this device: the request won't be sent until you fill it in. Secret values stay on each device and never sync.</p>`

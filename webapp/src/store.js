@@ -54,6 +54,8 @@ import { exampleResponse, snapshotResponse } from "./diff.js";
 import { isBinaryType, toBase64 } from "./binary.js";
 import { folderToZip, zipToFolder } from "./zip.js";
 import { loadSettings, saveSettings, seconds } from "./settings.js";
+import { applyPathVariables, cleanPathVariables, cleanSettings, inheritDefaults, requestTimeout } from "./defaults.js";
+export { applyPathVariables, inheritDefaults, inheritedAuth, pathVariableNames, requestTimeout } from "./defaults.js";
 import { addCollections, folderOf as folderOfRequest, folderPaths, renameFolderIn, requestFile, requestTree } from "./collection-tree.js";
 import { addFolder as addFolderTo, deleteFolder as deleteFolderIn, moveFolder, moveRequest as moveRequestIn, renameStored, treeOf, within } from "./tree-moves.js";
 import { runPost, runPre } from "./script-run.js";
@@ -130,6 +132,8 @@ const EXTRA_FIELDS = (r) => ({
   disabledParams: r.disabledParams || [],
   graphqlVariables: r.graphql?.variables ?? "",
   graphqlOperationName: r.graphql?.operationName ?? "",
+  settings: r.settings ? { ...r.settings } : undefined,
+  pathVariables: Array.isArray(r.pathVariables) ? r.pathVariables.map((p) => ({ ...p })) : [],
 });
 
 // The same fields of a tab, as saved with the request: the "graphql" mode is
@@ -146,6 +150,8 @@ const SAVED_FIELDS = (t) => {
     kind: t.kind === "websocket" || t.kind === "grpc" ? t.kind : undefined,
     websocket: websocketFields(t),
     grpc: grpcFields(t),
+    settings: cleanSettings(t.settings),
+    pathVariables: cleanPathVariables(t),
   };
 };
 
@@ -347,7 +353,7 @@ export function storedTabInDb(t) {
 }
 
 // A tab's response fields when it has none (Settings: clear stored responses).
-const NO_RESPONSE = { response: null, responseSize: null, responseHeaders: null, statusCode: null, responseType: "", tests: null, durationMs: null, timings: null, httpVersion: null, responseScheme: null, truncated: false, responseCut: false, responseStored: undefined, jsonError: null };
+const NO_RESPONSE = { consoleLogs: null, redirects: null, response: null, responseSize: null, responseHeaders: null, statusCode: null, responseType: "", tests: null, durationMs: null, timings: null, httpVersion: null, responseScheme: null, truncated: false, responseCut: false, responseStored: undefined, jsonError: null };
 
 // Drops keys set to undefined (a cleared bodyType), so they aren't saved.
 const clean = (r) => Object.fromEntries(Object.entries(r).filter(([, v]) => v !== undefined));
@@ -673,6 +679,8 @@ export class Store extends EventTarget {
 
   updateTab(updates, index = this.currentTab) {
     if ("url" in updates && this.tabs[index]) this.urlErrors.delete(this.tabs[index].id);
+    // An edit keeps a History preview tab: it is no longer replaced by the next entry opened.
+    if (this.tabs[index]?.historyPreview) updates = { ...updates, historyPreview: undefined };
     let tabs = tabService.updateTab(this.tabs, index, updates);
     const t = tabs[index];
     const title = autoTitle(t);
@@ -706,7 +714,7 @@ export class Store extends EventTarget {
         requestBody: r.body,
         bodyMode: r.bodyMode,
         formFields: r.formFields,
-        auth: r.auth ?? { type: "none" },
+        auth: r.auth ?? { type: "inherit" },
         disabledParams: [],
       },
       index,
@@ -1361,6 +1369,42 @@ export class Store extends EventTarget {
     this.emit();
   }
 
+  /**
+   * Auth and headers every request of the collection (`folder` "") or of one folder gets unless it
+   * sets its own: `auth`/`headers` on the collection, `folderDefaults[path]` for a folder (hitop.yaml
+   * keeps both; the CLI applies them the same way).
+   */
+  setDefaults(id, folder, { auth, headers }) {
+    const a = cleanAuth(auth);
+    const rows = (headers || []).filter((h) => h.name).map((h) => ({ name: h.name, value: h.value ?? "" }));
+    this.collections = this.collections.map((c) => {
+      if (c.id !== id) return c;
+      const next = { ...c };
+      if (!folder) {
+        if (a && a.type !== "none") next.auth = a;
+        else delete next.auth;
+        if (rows.length) next.headers = rows;
+        else delete next.headers;
+        return next;
+      }
+      const all = { ...(c.folderDefaults || {}) };
+      const d = { ...(a ? { auth: a } : {}), ...(rows.length ? { headers: rows } : {}) };
+      if (Object.keys(d).length) all[folder] = d;
+      else delete all[folder];
+      if (Object.keys(all).length) next.folderDefaults = all;
+      else delete next.folderDefaults;
+      return next;
+    });
+    this.emit();
+  }
+
+  /** Adds `name` with an empty value to the collection's variables (the "Not sent" card's action). */
+  defineVariable(id, name) {
+    const c = this.collection(id);
+    if (!c || Object.prototype.hasOwnProperty.call(c.variables || {}, name)) return;
+    this.setVariables(id, { ...(c.variables || {}), [name]: "" });
+  }
+
   setVariables(id, variables) {
     this.collections = collectionService.updateCollectionVariables(this.collections, id, variables);
     this.emit();
@@ -1475,8 +1519,19 @@ export class Store extends EventTarget {
 
   // FV1: a history item opens as a new request in My requests, filled in from the item and not
   // saved yet (the tab shows it as unsaved; closing it unsaved takes it out again).
+  // History opens in one preview tab (its title in italics): opening another entry replaces it,
+  // so browsing History doesn't leave a new unsaved request in the tree per entry. Editing it (or
+  // saving) makes it a tab of its own; closing it untouched takes its request out again.
   openHistoryItem(item) {
-    this.newTab(this.defaultCollection());
+    const preview = this.tabs.findIndex((t) => t.historyPreview && this.loadedRequest(t) && isBlankRequest(this.loadedRequest(t)));
+    if (preview !== -1) {
+      this.currentTab = preview;
+      this.view = { kind: "request", collectionId: null };
+      this.tabs = tabService.updateTab(this.tabs, preview, { ...NO_RESPONSE });
+    } else {
+      this.newTab(this.defaultCollection());
+      this.tabs = tabService.updateTab(this.tabs, this.currentTab, { historyPreview: true });
+    }
     this.tabs = tabService.updateTab(this.tabs, this.currentTab, {
       url: item.url,
       method: item.method,
@@ -1887,13 +1942,13 @@ export class Store extends EventTarget {
       for (const [k, v] of Object.entries(r.contextUpdates)) this.setContext(collectionId, k, v);
       this.setScriptVariables(collectionId, r.variables);
       this.setScriptGlobals(collectionId, r.globals);
-      return { url: r.url, headers: r.headers, body: r.body };
+      return { url: r.url, headers: r.headers, body: r.body, logs: r.logs ?? [] };
     }
     const r = runPre(pmShim(), { script, url, method, headers, body, variables, context, globals: this.globalsFor(collectionId) });
     for (const [k, v] of Object.entries(r.contextUpdates)) this.setContext(collectionId, k, v);
     this.setScriptVariables(collectionId, r.variables);
     this.setScriptGlobals(collectionId, r.globals);
-    return { url: r.url, headers: r.headers, body: r.body };
+    return { url: r.url, headers: r.headers, body: r.body, logs: r.logs ?? [] };
   }
 
   // The agent's dry run (HITOP Next A7): `script` as the script after the request, run against the
@@ -1907,7 +1962,7 @@ export class Store extends EventTarget {
       const text = typeof raw === "string" ? raw : typeof t.response === "string" ? t.response : JSON.stringify(t.response ?? "");
       return await this.runPostScript(script, t.loadedCollectionId, text, t.responseHeaders || {}, t.statusCode, t.durationMs ?? 0, { url: t.url, method: t.method, headers: t.headers, body: t.requestBody });
     } catch (e) {
-      return [{ name: "Script after", pass: false, detail: e.message }];
+      return [...(e.tests ?? []), { name: "Script after", pass: false, detail: e.message }];
     } finally {
       this.contexts = saved.contexts;
       this.scriptVariables = saved.vars;
@@ -1917,29 +1972,32 @@ export class Store extends EventTarget {
 
   // Returns the assert.* results (an empty list without a script).
   // `sent` is the request as sent ({url, method, headers, body}), pm.request.
+  // A script that throws: an Error whose `tests` are the results it got before (kept, not lost)
+  // and whose message says where it stopped (line, column).
   async runPostScript(script, collectionId, text, headers, status, durationMs, sent) {
-    if (!script?.trim()) return [];
-    const native = platform().scripts;
-    if (native) {
-      const r = await native.post({ script, text, headers, status, durationMs, sent, variables: this.variables(collectionId), globals: this.globalsFor(collectionId), context: contextService.getCollectionContext(this.contexts, collectionId) });
-      for (const [k, v] of Object.entries(r.contextUpdates)) this.setContext(collectionId, k, v);
-      this.setScriptVariables(collectionId, r.variables);
-      this.setScriptGlobals(collectionId, r.globals);
-      // The extension's sandbox answers a script that threw with `error` (the desktop never does).
-      if (r.error) throw new Error(r.error);
-      return r.tests;
-    }
-    const r = runPost(pmShim(), { script, text, headers, status, durationMs, sent, variables: this.variables(collectionId), context: contextService.getCollectionContext(this.contexts, collectionId), globals: this.globalsFor(collectionId) });
-    for (const [k, v] of Object.entries(r.contextUpdates)) this.setContext(collectionId, k, v);
-    this.setScriptVariables(collectionId, r.variables);
-    this.setScriptGlobals(collectionId, r.globals);
-    if (r.error) throw new Error(r.error);
+    const r = await this.runPostScriptFull(script, collectionId, text, headers, status, durationMs, sent);
+    if (r.error) throw Object.assign(new Error(r.error), { tests: r.tests, logs: r.logs });
     return r.tests;
+  }
+
+  // {tests, logs, error}: the results, what console.* printed, and why it stopped (or null).
+  async runPostScriptFull(script, collectionId, text, headers, status, durationMs, sent) {
+    if (!script?.trim()) return { tests: [], logs: [], error: null };
+    const native = platform().scripts;
+    const r = native
+      ? await native.post({ script, text, headers, status, durationMs, sent, variables: this.variables(collectionId), globals: this.globalsFor(collectionId), context: contextService.getCollectionContext(this.contexts, collectionId) })
+      : runPost(pmShim(), { script, text, headers, status, durationMs, sent, variables: this.variables(collectionId), context: contextService.getCollectionContext(this.contexts, collectionId), globals: this.globalsFor(collectionId) });
+    for (const [k, v] of Object.entries(r.contextUpdates ?? {})) this.setContext(collectionId, k, v);
+    this.setScriptVariables(collectionId, r.variables ?? {});
+    this.setScriptGlobals(collectionId, r.globals ?? {});
+    // The extension's sandbox answers a script that threw with `error` (the desktop never does).
+    return { tests: r.tests ?? [], logs: r.logs ?? [], error: r.error ?? null };
   }
 
   // Interpolates variables, adds auth and runs the pre-request script: the
   // request as sent. Auth comes before the script, so a script can override it.
   async prepare(source, collectionId) {
+    source = inheritDefaults(source, this.collection(collectionId));
     await this.resolveRefs(source, collectionId);
     const variables = this.variables(collectionId);
     // A Postman script may set variables this request uses: the ones still
@@ -1949,7 +2007,7 @@ export class Store extends EventTarget {
     // it in (after a Postman pre-script, which may set it, below).
     if (!postman) this.checkSecrets(source, collectionId, variables);
     const interpolate = postman ? (text) => fillVariables(text, variables) : (text) => interpolateVariables(text, variables);
-    const url = interpolate(source.url);
+    const url = applyPathVariables(interpolate(source.url), source.pathVariables, interpolate);
     const headers = (source.headers || []).map((h) => ({
       name: h.name ? interpolate(h.name) : "",
       value: h.value ? interpolate(h.value) : "",
@@ -1979,7 +2037,7 @@ export class Store extends EventTarget {
     this.checkSecrets(source, collectionId, after);
     const strict = (text) => (text ? interpolateVariables(text, after) : text);
     const sentBody = gql && out.body === authed.body ? graphqlBody(strict) : strict(out.body);
-    return { url: strict(out.url), headers: out.headers.map((h) => ({ ...h, name: strict(h.name), value: strict(h.value) })), body: sentBody };
+    return { url: strict(out.url), headers: out.headers.map((h) => ({ ...h, name: strict(h.name), value: strict(h.value) })), body: sentBody, logs: out.logs };
   }
 
   checkSecrets(source, collectionId, variables) {
@@ -2075,6 +2133,8 @@ export class Store extends EventTarget {
   // body of such a GET unread when asked, `eventStreams`) the stream endpoint.
   async dispatch(source, collectionId, { signal, onText, live = Boolean(onText), onStream = () => {} } = {}) {
     signal ??= this.timeoutSignal();
+    // Folder and collection auth and headers (Digest and AWS below read the auth too).
+    source = inheritDefaults(source, this.collection(collectionId));
     let prepared;
     try {
       prepared = await this.prepare(source, collectionId);
@@ -2127,7 +2187,14 @@ export class Store extends EventTarget {
     }
     const options = { method: source.method, headers: headersObject(headers), ...(p.cookies ? { cookies: this.cookieJarEnabled } : {}) };
     if (signal) options.signal = signal;
-    if (this.settings.timeoutMs) options.timeoutMs = this.settings.timeoutMs;
+    const limit = requestTimeout(source, this.settings);
+    if (limit) options.timeoutMs = limit;
+    // The request's Settings: "Follow redirects" off answers with the redirect itself (the web
+    // proxy and the desktop; a direct browser fetch can only stop at it without its details).
+    if (source.settings?.followRedirects === false) {
+      options.followRedirects = false;
+      if (!proxied && p.name === "web") options.redirect = "manual";
+    }
     if (body && BODY_METHODS.includes(source.method)) options.body = body;
     let res;
     try {
@@ -2165,6 +2232,10 @@ export class Store extends EventTarget {
       res = await p.send(prepared.url, options);
     }
     if (Array.isArray(res.cookies)) this.cookies = res.cookies;
+    // Cookies set by redirects on the way (a login's 302) go in the jar too, each for its own URL.
+    if (jar && this.cookieJarEnabled && Array.isArray(res.redirects)) {
+      for (const hop of res.redirects) if (hop.setCookies?.length) this.cookies = mergeCookies(this.cookies, hop.setCookies, hop.url);
+    }
     if (jar && this.cookieJarEnabled && res.headers.pairs) {
       const lines = res.headers.pairs.filter(([k]) => k.toLowerCase() === "set-cookie").map(([, v]) => v);
       if (lines.length) this.cookies = mergeCookies(this.cookies, lines, res.url || prepared.url);
@@ -2207,6 +2278,8 @@ export class Store extends EventTarget {
       preRequestScript: tab.preRequestScript,
       auth: tab.auth,
       ...SAVED_FIELDS(tab),
+      // Its folder, for the folder's auth and headers.
+      file: this.loadedRequest(tab)?.file,
     };
     this.notSent.delete(tab.id);
     this.tabs = tabService.updateTab(this.tabs, index, { ...NO_RESPONSE, loading: true });
@@ -2238,7 +2311,7 @@ export class Store extends EventTarget {
         }
       : undefined;
     // Cancel (store.cancel) and the request timeout (Settings) abort it.
-    const call = this.startCall(tab.id, { timeout: !streaming });
+    const call = this.startCall(tab.id, { timeout: !streaming, ms: requestTimeout(source, this.settings) });
     const onStream = () => {
       streaming = true;
       call.keepOpen();
@@ -2268,6 +2341,7 @@ export class Store extends EventTarget {
         // The response's HTTP version and the final URL's scheme, when the engine (desktop, web
         // proxy) said; a direct browser fetch can't see the version, so both stay null.
         httpVersion: res.httpVersion ?? null,
+        redirects: res.redirects?.length ? res.redirects : null,
         responseScheme: res.httpVersion ? (/^([a-z][a-z0-9+.-]*):/i.exec(res.url || "")?.[1]?.toLowerCase() ?? null) : null,
         truncated: Boolean(res.truncated),
         responseSize: type === "binary" ? size : null,
@@ -2294,26 +2368,32 @@ export class Store extends EventTarget {
       );
       this.history[this.history.length - 1].auth = cleanAuth(tab.auth);
       this.history[this.history.length - 1].response = maskSecrets(snapshotResponse({ status: res.status, headers, body: data, durationMs }), this.secretValuesFor(tab.loadedCollectionId));
-      let tests = [];
-      try {
-        tests = await this.runPostScript(tab.postRequestScript, tab.loadedCollectionId, data, headers, res.status, durationMs, { ...prepared, method: tab.method });
-      } catch (e) {
-        tests = [...tests, { name: "Script after", pass: false, detail: e.message }];
-        this.notify(`The script after the request failed: ${e.message}`);
-      }
-      this.patchTab(tab.id, { tests });
+      // Results the script got before it threw are kept; console.* output goes to Console.
+      const post = await this.runPostScriptFull(tab.postRequestScript, tab.loadedCollectionId, data, headers, res.status, durationMs, { ...prepared, method: tab.method }).catch((e) => ({ tests: [], logs: [], error: e.message }));
+      const tests = post.error ? [...post.tests, { name: "Script after", pass: false, detail: post.error }] : post.tests;
+      if (post.error) this.notify(`The script after the request stopped: ${post.error}`);
+      const consoleLogs = [...(prepared.logs ?? []).map((l) => ({ ...l, phase: "before" })), ...post.logs.map((l) => ({ ...l, phase: "after" }))];
+      this.patchTab(tab.id, { tests, consoleLogs });
     } catch (e) {
       if (call.signal.aborted && call.signal.reason?.name !== "TimeoutError") {
         // Cancelled: no response, nothing in history.
         this.patchTab(tab.id, { response: null, responseType: "cancelled", statusCode: null, responseHeaders: null, loading: false });
       } else if (call.signal.aborted) {
-        const limit = seconds(this.settings.timeoutMs);
-        this.patchTab(tab.id, { response: `Error: No response within ${limit}. The time limit is in Settings, under Requests.`, responseType: "error", statusCode: null, responseHeaders: null, loading: false });
+        const limit = seconds(requestTimeout(source, this.settings));
+        const own = Number(source.settings?.timeoutMs) > 0;
+        this.patchTab(tab.id, { response: `Error: No response within ${limit}. ${own ? "This request's time limit is in its Settings tab." : "The time limit is in Settings, under Requests; a request can have its own in its Settings tab."}`, responseType: "error", statusCode: null, responseHeaders: null, loading: false });
       } else if (e.stage === "prepare") {
         this.patchTab(tab.id, { loading: false });
-        // U19: the response pane keeps the note until the next send (memory only).
+        // U19: the response pane keeps the note until the next send (memory only): a secret with
+        // no value, a variable nothing defines, or the script before the request stopping.
+        const vars = /^Variables? (.+) not found in variables object$/.exec(e.message);
+        const names = vars ? [...vars[1].matchAll(/'([^']+)'/g)].map((m) => m[1]) : [];
         if (e.missingSecrets) this.notSent.set(tab.id, { text: e.message, missing: e.missingSecrets });
-        this.notify(`The request wasn't sent: ${e.message}`);
+        else if (names.length) {
+          const list = names.map((n) => `\${${n}}`).join(", ");
+          this.notSent.set(tab.id, { text: `${list} ${names.length === 1 ? "has" : "have"} no value: no environment, collection variable or global defines ${names.length === 1 ? "it" : "them"}.`, variables: names, collectionId: tab.loadedCollectionId });
+        } else this.notSent.set(tab.id, { text: e.message, script: Boolean(source.preRequestScript?.trim()) });
+        this.notify(`The request wasn't sent: ${this.notSent.get(tab.id).text}`);
       } else {
         this.patchTab(tab.id, { response: `Error: ${e.message}`, responseType: "error", statusCode: null, responseHeaders: null, loading: false });
       }
@@ -2327,9 +2407,9 @@ export class Store extends EventTarget {
 
   // A request in flight for this tab: { signal, done() }. The signal aborts on
   // Cancel (AbortError) or after the Settings time limit (TimeoutError).
-  startCall(tabId, { timeout = true } = {}) {
+  startCall(tabId, { timeout = true, ms: limit = this.settings.timeoutMs } = {}) {
     const controller = new AbortController();
-    const ms = timeout ? this.settings.timeoutMs : 0;
+    const ms = timeout ? limit : 0;
     let timer = ms > 0 ? setTimeout(() => controller.abort(new DOMException(`No response within ${seconds(ms)}`, "TimeoutError")), ms) : null;
     this.inflight.set(tabId, controller);
     // When it started, for the response pane's "Waiting · 1.4 s" (UX2).
@@ -2679,7 +2759,7 @@ export class Store extends EventTarget {
         try {
           tests = await this.runPostScript(request.postRequestScript, id, text, headers, res.status, duration, { ...prepared, method: request.method });
         } catch (e) {
-          tests = [...tests, { name: "Script after", pass: false, detail: e.message }];
+          tests = [...(e.tests ?? []), { name: "Script after", pass: false, detail: e.message }];
         }
         // The run item keeps the request as sent: mask secret values in it.
         const response = snapshotResponse({ status: res.status, headers, body: text, durationMs: duration });

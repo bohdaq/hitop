@@ -1023,6 +1023,13 @@ export class HitopApp extends LitElement {
   // --- sidebar ------------------------------------------------------------------
 
   // The environment picker, next to Send (request-view.js): the current org's environments.
+  // Phones: the active environment stays in sight in the top bar; a tap opens the drawer's picker.
+  phoneEnvChip() {
+    const env = this.store.activeEnvironment;
+    return html`<button type="button" class=${`env-chip-phone ${env ? "has-env" : ""}`} aria-label=${`Environment: ${env ? this.store.environmentLabel(env) : "none"}. Change it`}
+      @click=${() => (this.navOpen = true)}><span class="env-dot" aria-hidden="true"></span><span class="env-chip-name">${env ? this.store.environmentLabel(env) : "No env"}</span></button>`;
+  }
+
   envSelect() {
     const s = this.store;
     const env = s.activeEnvironment;
@@ -1380,7 +1387,9 @@ export class HitopApp extends LitElement {
     return html`<lit-material-menu id="collection-menu" aria-label="Collection">
       <lit-material-list-item interactive @click=${() => this.newRequestIn(c().id)}>${icon("plus")} New request</lit-material-list-item>
       <lit-material-list-item interactive @click=${() => this.openDialog("new-folder", { collectionId: c().id, parent: "" })}>${icon("folder-simple-plus")} New folder…</lit-material-list-item>
-      <lit-material-list-item interactive @click=${() => this.go("collection", c().id)}>${icon("play")} Open and run</lit-material-list-item>
+      <lit-material-list-item interactive @click=${() => this.go("collection", c().id)}>${icon("folder-open")} Open</lit-material-list-item>
+      <lit-material-list-item interactive ?disabled=${!c()?.requests?.length} @click=${() => (this.go("collection", c().id), s.runCollection(c().id))}>${icon("play")} Run</lit-material-list-item>
+      <lit-material-list-item interactive @click=${() => this.openDialog("export", { only: String(c().id) })}>${icon("file-arrow-down")} Export…</lit-material-list-item>
       <lit-material-list-item interactive @click=${() => this.go("variables", c().id)}>${icon("sliders-horizontal")} Variables…</lit-material-list-item>
       <lit-material-list-item interactive @click=${() => this.openDialog("rename-collection", { id: c().id, name: c().name })}>${icon("pencil-simple")} Rename… <lit-material-kbd slot="trailing" keys="F2"></lit-material-kbd></lit-material-list-item>
       <lit-material-list-item interactive @click=${() => s.duplicateCollection(c().id)}>${icon("copy")} Duplicate</lit-material-list-item>
@@ -1839,7 +1848,7 @@ export class HitopApp extends LitElement {
     const items = this.railItems();
     const selected = items.findIndex((it) => it.kind === kind || it.also?.includes(kind));
     return html`<nav class="rail sidebar-footer" aria-label="Sections">
-      <lit-material-navigation-rail compact .selected=${selected}>
+      <lit-material-navigation-rail ?compact=${!this.narrow?.matches} .selected=${selected}>
         ${items.map((it) => html`<lit-material-navigation-rail-item @click=${() => (it.kind === "collections" ? this.railCollections() : this.go(it.kind))}>${icon(it.icon, { slot: "icon" })}${it.label}</lit-material-navigation-rail-item>`)}
       </lit-material-navigation-rail>
       ${this.sidePaneToggle()}
@@ -1864,11 +1873,30 @@ export class HitopApp extends LitElement {
 
   // UX2 (3): Esc on a page (History, Environments, Cookies, Settings, a collection…) goes back to
   // the workspace, unless it is typing into a field there.
+  // In a field, the first Esc leaves the field (focus goes to the page) and the next one goes back.
   leavePage(e) {
+    if (this.navOpen) return;
     const typing = e.composedPath().some((n) => n.localName === "input" || n.localName === "textarea" || n.localName === "select" || n.isContentEditable || n.localName === "hitop-code-editor");
-    if (typing || this.navOpen) return;
     e.preventDefault();
+    if (typing) {
+      let el = document.activeElement;
+      while (el?.shadowRoot?.activeElement) el = el.shadowRoot.activeElement;
+      el?.blur?.();
+      document.activeElement?.blur?.();
+      this.querySelector("#main")?.focus({ preventScroll: true });
+      return;
+    }
     this.showWorkspace();
+  }
+
+  // UX: a page (History, Environments, a collection…) keeps the way back to the open request.
+  backToRequest() {
+    const t = this.store.tabs[this.store.currentTab];
+    if (!t) return nothing;
+    return html`<div class="page-back-bar">
+      <button type="button" class="back-to-request" @click=${() => this.showWorkspace()}>${icon("arrow-left")} Back to <span class="back-title">${this.tabLabel(t)}</span></button>
+      <span class="hint key-hint"><lit-material-kbd keys="Escape"></lit-material-kbd></span>
+    </div>`;
   }
 
   // --- the side pane (UX2 (4)): Mod+B, remembered in hitop_layout.sidePane (true = shown,
@@ -1987,12 +2015,23 @@ export class HitopApp extends LitElement {
     if (!showGettingStarted(storage, { fresh: s.isFresh, steps })) return nothing;
     const done = steps.filter((x) => x.done).length;
     const next = steps.find((x) => !x.done);
-    return html`<section class="getting-started" aria-labelledby="getting-started-title">
-      <div class="gs-head">
+    // After the first step the card folds to one line (the next step), so it doesn't push the
+    // collections down; a click opens it again.
+    const folded = done > 0 && !this.gsOpen;
+    const head = html`<div class="gs-head">
         <h2 id="getting-started-title">Get started</h2>
         <span class="mono gs-count" aria-label=${`${done} of ${steps.length} done`}>${done}/${steps.length}</span>
+        ${done > 0 ? html`<button type="button" class="mini" aria-expanded=${String(!folded)} aria-label=${folded ? "Show the steps" : "Fold the steps"} title=${folded ? "Show the steps" : "Fold"} @click=${() => ((this.gsOpen = folded), this.requestUpdate())}>${icon(folded ? "caret-down" : "caret-up")}</button>` : nothing}
         <button type="button" class="mini" aria-label="Hide getting started" title="Hide" @click=${() => (hideGettingStarted(storage), this.requestUpdate())}>${icon("x")}</button>
-      </div>
+      </div>`;
+    if (folded) {
+      return html`<section class="getting-started folded" aria-labelledby="getting-started-title">
+        ${head}
+        <p class="gs-next">${icon("caret-right")}<span>Next: ${next.label}</span></p>
+      </section>`;
+    }
+    return html`<section class="getting-started" aria-labelledby="getting-started-title">
+      ${head}
       <ol class="gs-steps">
         ${steps.map(
           (x) => html`<li class=${x.done ? "done" : x === next ? "next" : ""} aria-current=${x === next ? "step" : "false"}>
@@ -2060,7 +2099,7 @@ export class HitopApp extends LitElement {
           @reorder=${(e) => s.moveTab(e.detail.from, e.detail.to)}
         >
           ${s.tabs.map(
-            (t, i) => html`<lit-material-tab id=${`tab-${i}`} title=${t.title} ?data-pinned=${Boolean(t.pinned)} @contextmenu=${(e) => this.openTabMenu(e, i)}
+            (t, i) => html`<lit-material-tab id=${`tab-${i}`} title=${t.historyPreview ? `${t.title} (preview from History: opening another entry replaces it; edit to keep it)` : t.title} ?data-pinned=${Boolean(t.pinned)} ?data-preview=${Boolean(t.historyPreview)} @contextmenu=${(e) => this.openTabMenu(e, i)}
               @auxclick=${(e) => e.button === 1 && !t.pinned && (e.preventDefault(), this.closeTab(i))}>${t.pinned ? html`<span class="tab-pin" aria-hidden="true">${icon("push-pin")}</span><span class="visually-hidden">Pinned: </span>` : nothing}${this.tabLabel(t)}${s.isDirty(t)
                 ? html`<span class="dirty-dot" aria-hidden="true">●</span><span class="visually-hidden">, unsaved changes</span>`
                 : nothing}${s.tabs.length > 1 && !t.pinned
@@ -2383,6 +2422,12 @@ export class HitopApp extends LitElement {
 
   renderMain() {
     const s = this.store;
+    const { kind } = s.view;
+    return kind === "request" ? this.renderPage() : html`${this.backToRequest()}${this.renderPage()}`;
+  }
+
+  renderPage() {
+    const s = this.store;
     const { kind, collectionId } = s.view;
     const page = platform().pages?.find((p) => p.kind === kind);
     if (page) return page.render(s, this);
@@ -2425,6 +2470,7 @@ export class HitopApp extends LitElement {
           ? html`<span class="brand">${unsafeSVG(mark())}<span>HITOP</span></span>`
           : html`<a class="brand" href="/" aria-label="HITOP website">${unsafeSVG(mark())}<span>HITOP</span></a>`}
         ${this.crumb()}
+        ${this.phoneEnvChip()}
         <span class="topbar-spacer"></span>
         ${this.commandField()}
         <span class="topbar-spacer"></span>
@@ -2435,7 +2481,7 @@ export class HitopApp extends LitElement {
       <div class=${`layout ${this.sideCollapsed() ? "side-collapsed" : ""}`}>
         ${this.renderSidebar()}
         <div class="scrim" ?hidden=${!this.navOpen} @click=${() => (this.navOpen = false)}></div>
-        <main id="main" class="main">${this.renderMain()}</main>
+        <main id="main" class="main" tabindex="-1">${this.renderMain()}</main>
       </div>
       ${this.renderStatusBar()}
       ${this.renderDialog()} ${this.renderRequestMenu()} ${this.renderCollectionMenu()} ${this.renderFolderMenu()} ${this.renderAccountMenu()} ${this.renderPalette()} ${this.renderAgent()}

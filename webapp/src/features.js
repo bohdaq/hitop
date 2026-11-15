@@ -39,6 +39,8 @@ export function withQuery(url, rows) {
 // --- auth -------------------------------------------------------------------------
 
 export const AUTH_TYPES = [
+  // A request's default: the folder's or the collection's auth (hitop-core `Collection::effective`).
+  ["inherit", "Inherit from parent"],
   ["none", "No auth"],
   ["bearer", "Bearer token"],
   ["basic", "Basic auth"],
@@ -48,12 +50,15 @@ export const AUTH_TYPES = [
   ["digest", "Digest auth"],
 ];
 
-export const emptyAuth = () => ({ type: "none", token: "", username: "", password: "", key: "X-API-Key", value: "", in: "header", grant: "client_credentials", tokenUrl: "", clientId: "", clientSecret: "", scope: "", clientAuth: "" });
+export const emptyAuth = () => ({ type: "inherit", token: "", username: "", password: "", key: "X-API-Key", value: "", in: "header", grant: "client_credentials", tokenUrl: "", clientId: "", clientSecret: "", scope: "", clientAuth: "" });
 
 // Only the fields the chosen type uses, for saving and exporting: switching
 // from Basic to a token shouldn't leave the old password stored.
+// "Inherit" is saved as no `auth` at all; "No auth" as {type: "none"}, which wins over the
+// folder's and the collection's.
 export function cleanAuth(auth) {
-  if (!auth || auth.type === "none") return undefined;
+  if (!auth || auth.type === "inherit") return undefined;
+  if (auth.type === "none") return { type: "none" };
   if (auth.type === "bearer") return { type: "bearer", token: auth.token || "" };
   if (auth.type === "basic") return { type: "basic", username: auth.username || "", password: auth.password || "" };
   if (auth.type === "apikey") return { type: "apikey", key: auth.key || "", value: auth.value || "", in: auth.in === "query" ? "query" : "header" };
@@ -291,7 +296,7 @@ export async function digestAnswer(c, username, password, method, uri, cnonce) {
 // Adds the auth header (or query parameter) to an already interpolated
 // request. A header the user set by hand with the same name wins.
 export function applyAuth(auth, request, interpolate = (s) => s) {
-  if (!auth || auth.type === "none") return request;
+  if (!auth || auth.type === "none" || auth.type === "inherit") return request;
   const has = (name) => request.headers.some((h) => h.name.toLowerCase() === name.toLowerCase() && h.value);
   const add = (name, value) => (has(name) ? request.headers : [...request.headers, { name, value }]);
   if (auth.type === "bearer" && auth.token) {

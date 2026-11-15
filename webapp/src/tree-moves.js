@@ -212,7 +212,12 @@ export function deleteFolder(c, path) {
 /** Stored folder paths after the folder `path` was renamed to `newPath`. */
 export function renameStored(c, path, newPath) {
   const list = storedFolders(c).map((p) => (within(p, path) ? `${newPath}${p.slice(path.length)}` : p));
-  return setFolders(c, [...new Set(list)]);
+  const out = setFolders(c, [...new Set(list)]);
+  // A folder's auth and headers (`folderDefaults`) move with it.
+  if (out.folderDefaults && typeof out.folderDefaults === "object") {
+    out.folderDefaults = Object.fromEntries(Object.entries(out.folderDefaults).map(([p, d]) => [within(p, path) && path ? `${newPath}${p.slice(path.length)}` : p, d]));
+  }
+  return out;
 }
 
 /**
