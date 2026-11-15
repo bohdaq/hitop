@@ -112,8 +112,13 @@ fn exchange(method: &str, url: &str, headers: Vec<(String, String)>, body: Vec<u
                 continue;
             }
             match (HeaderName::from_bytes(k.as_bytes()), HeaderValue::from_str(v)) {
-                (Ok(name), Ok(value)) => {
+                // A saved request sends the last of two headers with one name (what its snippets
+                // show); `hitop send -H` sends each one given.
+                (Ok(name), Ok(value)) if strict => {
                     header_map.append(name, value);
+                }
+                (Ok(name), Ok(value)) => {
+                    header_map.insert(name, value);
                 }
                 _ if strict => {
                     HeaderName::from_bytes(k.as_bytes()).map_err(|_| anyhow::anyhow!("invalid header name {k:?}"))?;
