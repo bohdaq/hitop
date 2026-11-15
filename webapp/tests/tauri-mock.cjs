@@ -57,6 +57,10 @@ const __vars = ${JSON.stringify(a.variables || {})};
 const __ctx  = ${JSON.stringify(a.context || {})};
 const __ctxUpdates = {};
 let __url    = ${JSON.stringify(a.url)};
+const __logs = [];
+const __show = (v) => { if (typeof v === "string") return v; if (v instanceof Error) return v.name + ": " + v.message; try { const j = JSON.stringify(v, null, 2); return j === undefined ? String(v) : j; } catch (e) { return String(v); } };
+const console = {};
+for (const __level of ["log", "info", "warn", "error", "debug"]) console[__level] = function () { if (__logs.length < 500) __logs.push({ level: __level, text: Array.prototype.map.call(arguments, __show).join(" ") }); };
 let __body   = ${JSON.stringify(a.body)};
 let __headers = ${JSON.stringify(a.headers)};
 const __varUpdates = {};
@@ -77,14 +81,14 @@ function setHeader(name, value) {
 ${usesPostmanApi(a.script)
     ? withShim(`{ vars: __vars, setVar: ${SET_VAR}, globals: __globals, setGlobal: ${SET_GLOBAL}, assert: { ok: function () {} }, request: { get url() { return __url; }, method: __method, get headers() { return __headers; }, get body() { return __body; } }, setUrl: setUrl, setHeader: setHeader, removeHeader: __removeHeader, setBody: setBody, response: null }`, a.script)
     : a.script}
-;JSON.stringify({ url: __url, body: __body, headers: __headers, ctx: __ctxUpdates, vars: __varUpdates, globals: __globalUpdates })`;
+;JSON.stringify({ url: __url, body: __body, headers: __headers, ctx: __ctxUpdates, vars: __varUpdates, globals: __globalUpdates, logs: __logs })`;
   let out;
   try {
     out = JSON.parse(vm.runInNewContext(src, {}, { timeout: 2000 }));
   } catch (e) {
     throw `pre-request script error: ${e.message}`;
   }
-  return { url: typeof out.url === 'string' ? out.url : a.url, headers: out.headers, body: typeof out.body === 'string' ? out.body : a.body, context_updates: out.ctx, variables: out.vars, globals: out.globals };
+  return { url: typeof out.url === 'string' ? out.url : a.url, headers: out.headers, body: typeof out.body === 'string' ? out.body : a.body, context_updates: out.ctx, variables: out.vars, globals: out.globals, logs: out.logs };
 }
 
 // scripting.rs: run_post_request_script.
@@ -116,6 +120,10 @@ function getResponseValue(path) {
     return val;
 }
 function getResponseHeader(name) { return responseHeaders[name.toLowerCase()]; }
+const __logs = [];
+const __show = (v) => { if (typeof v === "string") return v; if (v instanceof Error) return v.name + ": " + v.message; try { const j = JSON.stringify(v, null, 2); return j === undefined ? String(v) : j; } catch (e) { return String(v); } };
+const console = {};
+for (const __level of ["log", "info", "warn", "error", "debug"]) console[__level] = function () { if (__logs.length < 500) __logs.push({ level: __level, text: Array.prototype.map.call(arguments, __show).join(" ") }); };
 const __tests = [];
 function __record(name, pass, detail) { __tests.push({ name: String(name), pass: !!pass, detail: pass ? "" : String(detail) }); }
 const assert = {
@@ -130,17 +138,20 @@ const assert = {
     equal(a, e, name) { __record(name === undefined ? JSON.stringify(a) + " equals " + JSON.stringify(e) : name, JSON.stringify(a) === JSON.stringify(e), "got " + JSON.stringify(a)); },
     ok(c, name, detail) { __record(name === undefined ? "condition is true" : name, c, detail === undefined || detail === "" ? "was false" : detail); },
 };
+let __error = null;
+try {
 ${usesPostmanApi(a.script)
     ? withShim(`{ vars: __vars, setVar: ${SET_VAR}, globals: __globals || undefined, setGlobal: ${SET_GLOBAL}, assert: assert, request: ${JSON.stringify(a.request || { url: '', method: '', headers: [], body: '' })}, response: { code: statusCode, text: responseText, headers: responseHeaders, time: ${a.duration_ms || 0} } }`, a.script)
     : a.script}
-;JSON.stringify({ ctx: __ctxUpdates, tests: __tests, vars: __varUpdates, globals: __globalUpdates })`;
+} catch (__e) { __error = (__e && __e.name && __e.message !== undefined) ? __e.name + ": " + __e.message : String(__e); }
+;JSON.stringify({ ctx: __ctxUpdates, tests: __tests, vars: __varUpdates, globals: __globalUpdates, logs: __logs, error: __error })`;
   let out;
   try {
     out = JSON.parse(vm.runInNewContext(src, {}, { timeout: 2000 }));
   } catch (e) {
     throw `post-request script error: ${e.message}`;
   }
-  return { context_updates: out.ctx, tests: out.tests, variables: out.vars, globals: out.globals };
+  return { context_updates: out.ctx, tests: out.tests, variables: out.vars, globals: out.globals, logs: out.logs, ...(out.error ? { error: out.error } : {}) };
 }
 
 function listTree(dir, base = dir, out = {}) {

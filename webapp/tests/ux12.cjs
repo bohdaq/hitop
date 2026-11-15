@@ -100,7 +100,7 @@ function api() {
   await settle(p); // the IndexedDB write follows the batched save
   await p.reload({ waitUntil: 'networkidle' });
   await settle(p);
-  await p.getByRole('button', { name: 'Raw', exact: true }).click();
+  await p.getByRole('button', { name: 'Source', exact: true }).click();
   check('Raw of a stored JSON body survives a reload', (await p.locator('.response-scroll').innerText()).startsWith('{"rows":[{"id":0,'));
   await p.getByRole('button', { name: 'Pretty', exact: true }).click();
   // IndexedDB full: said once, then the 1.1 way.

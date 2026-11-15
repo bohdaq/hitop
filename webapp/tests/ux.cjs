@@ -98,7 +98,7 @@ function api() {
   await sendAndWait();
   const bodyText = () => p.locator('.response-scroll').innerText();
   check('Pretty shows formatted JSON', (await bodyText()).includes('"name": "needle"'));
-  await p.getByRole('button', { name: 'Raw', exact: true }).click();
+  await p.getByRole('button', { name: 'Source', exact: true }).click();
   check('Raw shows the body as received', (await bodyText()).includes('{"items":[{"id":1,"name":"needle"}'));
   await p.getByRole('button', { name: 'Pretty', exact: true }).click();
   await p.getByLabel('Find in body').fill('NEEDLE');

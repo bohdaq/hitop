@@ -85,7 +85,11 @@ function api() {
   await p.locator('.response-meta').waitFor({ timeout: 10000 });
   const hit = hits.at(-1);
   check('U19 ...and the request goes out with it', hit?.auth === 'Bearer tok-u19' && hit.url.includes('t=tok-u19'), JSON.stringify(hit));
-  check('U6 a sent request checks off the first step', (await steps()).startsWith('x Send a request (done) | - Save') && (await gs.locator('.gs-count').innerText()) === '1/3', await steps());
+  // After the first step the card folds to its next step (2026-11-15 review); it opens on a click.
+  check('U6 a sent request checks off the first step and folds the card', (await gs.locator('.gs-next').innerText().catch(() => '')).includes('Next: Save a request') && (await gs.locator('.gs-count').innerText()) === '1/3');
+  await gs.getByRole('button', { name: 'Show the steps' }).click();
+  await settle(p);
+  check('U6 the folded card opens to all three steps', (await steps()).startsWith('x Send a request (done) | - Save'), await steps());
   // Saving into the sample counts too (owner 2026-11-11: a request saved there wasn't ticked off).
   await store(() => {
     const s = document.querySelector('hitop-app').store;
