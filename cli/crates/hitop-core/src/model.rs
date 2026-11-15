@@ -594,6 +594,22 @@ pub struct RequestResult {
     pub duration_ms: u64,
     /// Where the time went, when the client could tell (src/timing.rs).
     pub timings: Option<Timings>,
+    /// The redirects followed on the way (src/redirects.rs).
+    pub redirects: Vec<Hop>,
+}
+
+/// One redirect answer on the way to the final response.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Hop {
+    pub status: u16,
+    /// The URL that answered with the redirect.
+    pub url: String,
+    /// Where it pointed, resolved against `url`.
+    pub location: String,
+    /// Its `Set-Cookie` lines as sent.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub set_cookies: Vec<String>,
 }
 
 /// The phases of one request, in milliseconds. `dns + connect + wait + download == total`.
@@ -615,3 +631,175 @@ pub struct Timings {
 }
 
 
+
+/// Auth and headers a collection or a folder gives the requests under it (hitop.yaml `headers`
+/// and `folderDefaults`, the web app's collection page). A request without its own `auth`
+/// inherits the nearest one (its folder's, a parent folder's, then the collection's); a
+/// request's `{type: none}` sends no auth. Inherited headers go first; a request header of the
+/// same name replaces them.
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+pub struct Defaults {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub auth: Option<Auth>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub headers: Vec<Header>,
+}
+
+/// A path segment value percent-encoded, `${...}` left for interpolation.
+fn encode_segment(v: &str) -> String {
+    let mut out = String::new();
+    for c in v.chars() {
+        if c.is_ascii_alphanumeric() || "-._~${}".contains(c) {
+            out.push(c);
+        } else {
+            let mut buf = [0u8; 4];
+            for b in c.encode_utf8(&mut buf).bytes() {
+                out.push_str(&format!("%{b:02X}"));
+            }
+        }
+    }
+    out
+}
+
+/// Per-request sending options (`settings` in the JSON model and in a request file).
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct RequestSettings {
+    /// False: answer with the redirect itself instead of following it. Absent means true.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub follow_redirects: Option<bool>,
+    /// A time limit for this request in milliseconds (0 or absent: the run's or none).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub timeout_ms: Option<u64>,
+}
+
+impl Request {
+    /// The request's `settings` (absent or unreadable: the defaults).
+    pub fn settings(&self) -> RequestSettings {
+        self.extra.get("settings").and_then(|v| serde_json::from_value(v.clone()).ok()).unwrap_or_default()
+    }
+
+    /// `:name` path segments filled in from `pathVariables` ([{key, value}]); a name with no value
+    /// stays as it is. Values are percent-encoded, `${variables}` in them kept for interpolation.
+    pub fn url_with_path_variables(&self) -> String {
+        let rows: Vec<(String, String)> = self
+            .extra
+            .get("pathVariables")
+            .and_then(|v| v.as_array())
+            .map(|a| {
+                a.iter()
+                    .filter_map(|r| Some((r.get("key")?.as_str()?.to_string(), r.get("value").and_then(|v| v.as_str()).unwrap_or("").to_string())))
+                    .filter(|(k, v)| !k.is_empty() && !v.is_empty())
+                    .collect()
+            })
+            .unwrap_or_default();
+        if rows.is_empty() {
+            return self.url.clone();
+        }
+        let cut = self.url.find(['?', '#']).unwrap_or(self.url.len());
+        let (head, tail) = self.url.split_at(cut);
+        let mut out = String::new();
+        let mut rest = head;
+        while let Some(at) = rest.find("/:") {
+            out.push_str(&rest[..at + 1]);
+            let after = &rest[at + 2..];
+            let len = after.find(|c: char| !(c.is_ascii_alphanumeric() || c == '_' || c == '-')).unwrap_or(after.len());
+            let name = &after[..len];
+            let ends = after[len..].is_empty() || after[len..].starts_with('/');
+            match rows.iter().find(|(k, _)| k == name).filter(|_| ends && !name.is_empty()) {
+                Some((_, v)) => out.push_str(&encode_segment(v)),
+                None => {
+                    out.push(':');
+                    out.push_str(name);
+                }
+            }
+            rest = &after[len..];
+        }
+        out.push_str(rest);
+        out.push_str(tail);
+        out
+    }
+
+    /// The folder the request lives in (`""` at the top), from `file`.
+    pub fn folder(&self) -> &str {
+        self.file.as_deref().and_then(|f| f.rsplit_once('/')).map_or("", |(dir, _)| dir)
+    }
+}
+
+impl Collection {
+    /// The collection's own headers (`headers`).
+    pub fn headers(&self) -> Vec<Header> {
+        self.extra.get("headers").and_then(|v| serde_json::from_value(v.clone()).ok()).unwrap_or_default()
+    }
+
+    /// Folder defaults by folder path (`folderDefaults`).
+    pub fn folder_defaults(&self) -> std::collections::BTreeMap<String, Defaults> {
+        self.extra.get("folderDefaults").and_then(|v| serde_json::from_value(v.clone()).ok()).unwrap_or_default()
+    }
+
+    /// `request` as it is sent: auth inherited from its folders or the collection when it has
+    /// none, inherited headers in front of its own.
+    pub fn effective(&self, request: &Request) -> Request {
+        let folders = self.folder_defaults();
+        // Outermost first: the collection, then each folder down to the request's.
+        let mut layers: Vec<Defaults> = vec![Defaults { auth: self.auth.clone(), headers: self.headers() }];
+        let folder = request.folder();
+        if !folder.is_empty() {
+            let parts: Vec<&str> = folder.split('/').collect();
+            for i in 1..=parts.len() {
+                if let Some(d) = folders.get(&parts[..i].join("/")) {
+                    layers.push(d.clone());
+                }
+            }
+        }
+        let mut out = request.clone();
+        out.url = request.url_with_path_variables();
+        if out.auth.is_none() {
+            out.auth = layers.iter().rev().find_map(|d| d.auth.clone());
+        }
+        let own: std::collections::HashSet<String> = request.headers.iter().filter(|h| h.enabled && !h.name.is_empty()).map(|h| h.name.to_ascii_lowercase()).collect();
+        let mut inherited: Vec<Header> = vec![];
+        for layer in &layers {
+            for h in layer.headers.iter().filter(|h| h.enabled && !h.name.is_empty()) {
+                inherited.retain(|x| !x.name.eq_ignore_ascii_case(&h.name));
+                inherited.push(h.clone());
+            }
+        }
+        inherited.retain(|h| !own.contains(&h.name.to_ascii_lowercase()));
+        inherited.extend(request.headers.iter().cloned());
+        out.headers = inherited;
+        out
+    }
+}
+
+#[cfg(test)]
+mod defaults_tests {
+    use super::*;
+
+    #[test]
+    fn requests_inherit_the_nearest_auth_and_headers() {
+        let collection: Collection = serde_json::from_value(serde_json::json!({
+            "id": 1, "name": "c",
+            "auth": {"type": "bearer", "token": "col"},
+            "headers": [{"name": "X-App", "value": "1"}, {"name": "Accept", "value": "*/*"}],
+            "folderDefaults": {"orders": {"auth": {"type": "basic", "username": "u", "password": "p"}, "headers": [{"name": "X-App", "value": "2"}]}},
+            "requests": [
+                {"id": 1, "name": "a", "url": "u", "method": "GET", "headers": [], "body": ""},
+                {"id": 2, "name": "b", "url": "u", "method": "GET", "headers": [{"name": "accept", "value": "json"}], "body": "", "file": "orders/new/b"},
+                {"id": 3, "name": "c", "url": "u", "method": "GET", "headers": [], "body": "", "file": "orders/c", "auth": {"type": "none"},
+                 "settings": {"followRedirects": false, "timeoutMs": 500}}
+            ]
+        }))
+        .unwrap();
+        let a = collection.effective(&collection.requests[0]);
+        assert_eq!(a.auth, Some(Auth::Bearer { token: "col".into() }));
+        assert_eq!(a.headers.iter().map(|h| (h.name.as_str(), h.value.as_str())).collect::<Vec<_>>(), [("X-App", "1"), ("Accept", "*/*")]);
+        let b = collection.effective(&collection.requests[1]);
+        assert!(matches!(b.auth, Some(Auth::Basic { .. })), "the folder's auth, from a parent folder");
+        assert_eq!(b.headers.iter().map(|h| (h.name.as_str(), h.value.as_str())).collect::<Vec<_>>(), [("X-App", "2"), ("accept", "json")]);
+        let c = &collection.requests[2];
+        assert_eq!(collection.effective(c).auth, Some(Auth::None), "a request's none wins");
+        assert_eq!(c.settings(), RequestSettings { follow_redirects: Some(false), timeout_ms: Some(500) });
+        assert_eq!(collection.requests[0].settings(), RequestSettings::default());
+    }
+}

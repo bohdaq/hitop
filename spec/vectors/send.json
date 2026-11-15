@@ -44,7 +44,7 @@
     ]
   },
   "scheme": {
-    "rules": "The URL as sent, after variables and the pre-request script, leading and trailing whitespace removed. A URL with a scheme (letters, digits, + . -, then ':', unless it is host:port) is sent as it is. localhost, 127.x.x.x, 0.0.0.0 or [::1] (ASCII case-insensitive), with an optional :port and then nothing or / ? #, get http://. A host with a dot or a :port (ASCII letters, digits, _ and -), then optionally / ? # and no whitespace, gets https://. Anything else is an error: '\"<url>\" isn't a URL. Enter a full URL, such as https://api.example.com/users'.",
+    "rules": "The URL as sent, after variables and the pre-request script, leading and trailing whitespace removed. A URL with a scheme (letters, digits, + . -, then ':', unless it is host:port) is sent as it is. localhost, 127.x.x.x, 0.0.0.0 or [::1] (ASCII case-insensitive), with an optional :port and then nothing or / ? #, get http://. A host with a dot or a :port (ASCII letters, digits, _ and -), then nothing or / ? # and anything (spaces in the path or query are encoded when sent), gets https://. Anything else is an error: '\"<url>\" isn't a URL. Enter a full URL, such as https://api.example.com/users'.",
     "cases": [
       { "url": "https://x.dev/a", "sent": "https://x.dev/a" },
       { "url": "HTTP://X.DEV", "sent": "HTTP://X.DEV" },
@@ -75,14 +75,14 @@
       { "url": "127.0.0.1:", "error": "\"127.0.0.1:\" isn't a URL. Enter a full URL, such as https://api.example.com/users" },
       { "url": "x:1abc", "error": "\"x:1abc\" isn't a URL. Enter a full URL, such as https://api.example.com/users" },
       { "url": "a.b:1:2", "error": "\"a.b:1:2\" isn't a URL. Enter a full URL, such as https://api.example.com/users" },
-      { "url": "a:1/x y", "error": "\"a:1/x y\" isn't a URL. Enter a full URL, such as https://api.example.com/users" },
+      { "url": "a:1/x y", "sent": "https://a:1/x y" },
       { "url": "a..b", "error": "\"a..b\" isn't a URL. Enter a full URL, such as https://api.example.com/users" },
       { "url": "not a url", "error": "\"not a url\" isn't a URL. Enter a full URL, such as https://api.example.com/users" },
       { "url": "users", "error": "\"users\" isn't a URL. Enter a full URL, such as https://api.example.com/users" },
       { "url": "/users", "error": "\"/users\" isn't a URL. Enter a full URL, such as https://api.example.com/users" },
       { "url": "", "error": "\"\" isn't a URL. Enter a full URL, such as https://api.example.com/users" },
       { "url": " host ", "error": "\"host\" isn't a URL. Enter a full URL, such as https://api.example.com/users" },
-      { "url": "api.example.com/a b", "error": "\"api.example.com/a b\" isn't a URL. Enter a full URL, such as https://api.example.com/users" },
+      { "url": "api.example.com/a b", "sent": "https://api.example.com/a b" },
       { "url": "exämple.com", "error": "\"exämple.com\" isn't a URL. Enter a full URL, such as https://api.example.com/users" },
       { "url": "{{base}}/x", "error": "\"{{base}}/x\" isn't a URL. Enter a full URL, such as https://api.example.com/users" }
     ]

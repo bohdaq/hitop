@@ -251,7 +251,11 @@ pub fn run(cmd: RequestsCmd) -> Result<()> {
 
             let source = Source::open(&collection)?;
             let col = &source.collection;
-            let req = find_req(col, &request)?.clone();
+            // Folder and collection auth and headers, inherited.
+            let req = col.effective(find_req(col, &request)?);
+            let settings = req.settings();
+            let timeout = settings.timeout_ms.filter(|ms| *ms > 0).map(std::time::Duration::from_millis);
+            let no_redirects = settings.follow_redirects == Some(false);
             if req.is_websocket() {
                 bail!("'{}' is a WebSocket request: open it with `hitop ws '{}' -c {collection}`", req.name, req.name);
             }
@@ -298,12 +302,12 @@ pub fn run(cmd: RequestsCmd) -> Result<()> {
             let (sent_headers, sent_body) = (headers.clone(), String::from_utf8(body.clone()).unwrap_or_default());
             let workspace = source.workspace();
             let mut jar = super::cookies::open(&workspace, cookies)?;
-            let opts = http::Options { timeout: None, jar: jar.as_mut() };
+            let opts = http::Options { timeout, jar: jar.as_mut(), no_redirects };
             let mut result = http::execute_opts(&req.method, &pre.url, &headers, body.clone(), opts).map_err(masked)?;
             // Digest: the server's 401 challenge answered once.
             let fill = |s: &str| hitop_core::interpolation::interpolate(s, &vars);
             if let Some(h2) = hitop_core::digest_auth::retry_headers(req.auth.as_ref().or(col.auth.as_ref()), &fill, result.status, &result.headers, &req.method, &pre.url, &headers).map_err(masked)? {
-                result = http::execute_opts(&req.method, &pre.url, &h2, body, http::Options { timeout: None, jar: jar.as_mut() }).map_err(masked)?;
+                result = http::execute_opts(&req.method, &pre.url, &h2, body, http::Options { timeout, jar: jar.as_mut(), no_redirects }).map_err(masked)?;
             }
             super::cookies::save(&workspace, jar.as_ref())?;
 
@@ -338,7 +342,8 @@ pub fn run(cmd: RequestsCmd) -> Result<()> {
                 storage::save_contexts(&contexts)?;
             }
 
-            output::print_status(result.status, result.duration_ms);
+            output::print_redirects(&result.redirects);
+    output::print_status(result.status, result.duration_ms);
             if show_headers {
                 output::print_separator();
                 output::print_headers(&result.headers);

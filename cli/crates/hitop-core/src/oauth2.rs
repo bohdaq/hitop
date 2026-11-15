@@ -254,7 +254,7 @@ pub fn browser_sign_in(o: &OAuth2, interpolate: &dyn Fn(&str) -> Result<String>,
         }
     };
     let req = code_request(o, interpolate, &code, &verifier, &redirect)?;
-    let res = crate::http::execute_opts("POST", &req.url, &req.headers, req.body.into_bytes(), crate::http::Options { timeout, jar: None })?;
+    let res = crate::http::execute_opts("POST", &req.url, &req.headers, req.body.into_bytes(), crate::http::Options { timeout, jar: None, ..Default::default() })?;
     parse_token(res.status, &res.body)
 }
 
@@ -263,7 +263,7 @@ pub fn browser_sign_in(o: &OAuth2, interpolate: &dyn Fn(&str) -> Result<String>,
 #[cfg(feature = "native")]
 pub fn fetch_once(auth: Option<&Auth>, variables: &HashMap<String, String>, timeout: Option<std::time::Duration>) -> Result<Option<Auth>> {
     Tokens::interactive(timeout).resolve(auth, &|s| crate::interpolation::interpolate(s, variables), 0, &mut |r| {
-        let res = crate::http::execute_opts("POST", &r.url, &r.headers, r.body.clone().into_bytes(), crate::http::Options { timeout, jar: None })?;
+        let res = crate::http::execute_opts("POST", &r.url, &r.headers, r.body.clone().into_bytes(), crate::http::Options { timeout, jar: None, ..Default::default() })?;
         Ok((res.status, res.body))
     })
 }

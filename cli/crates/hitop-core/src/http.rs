@@ -6,6 +6,7 @@ use reqwest::blocking::Client;
 use reqwest::header::{HeaderMap, HeaderName, HeaderValue};
 
 use crate::cookies::{self, Jar};
+use crate::redirects::{self, Follower, Hop};
 use crate::model::{RequestResult, Timings};
 use crate::timing::{Recorder, TimedConnectLayer, TimedResolver};
 
@@ -42,6 +43,8 @@ fn client() -> &'static Client {
         let recorder = RECORDER.get_or_init(Recorder::default).clone();
         Client::builder()
             .use_rustls_tls()
+            // Redirects are followed by `exchange` (src/redirects.rs), one hop at a time.
+            .redirect(reqwest::redirect::Policy::none())
             .dns_resolver(std::sync::Arc::new(TimedResolver::new(recorder.clone())))
             .connector_layer(TimedConnectLayer::new(recorder))
             .build()
@@ -72,7 +75,7 @@ pub fn execute_with(
     body: &str,
     timeout: Option<Duration>,
 ) -> Result<RequestResult> {
-    execute_opts(method, url, headers, body.as_bytes().to_vec(), Options { timeout, jar: None })
+    execute_opts(method, url, headers, body.as_bytes().to_vec(), Options { timeout, jar: None, ..Default::default() })
 }
 
 /// How [`execute_opts`] and [`send_with`] send a request.
@@ -83,64 +86,73 @@ pub struct Options<'a> {
     /// Cookies: the jar's go out with the request (unless it has a `Cookie`
     /// header already) and the response's `Set-Cookie` lines go in.
     pub jar: Option<&'a mut Jar>,
+    /// Answer with the first response, even a redirect (the request's "Follow redirects" off).
+    pub no_redirects: bool,
 }
 
-/// The jar's `Cookie` header for `url`, when the request has none.
-fn jar_cookie(jar: &Option<&mut Jar>, url: &str, headers: &[(String, String)]) -> Option<String> {
-    let jar = jar.as_ref()?;
-    if headers.iter().any(|(k, v)| k.eq_ignore_ascii_case("cookie") && !v.is_empty()) {
-        return None;
-    }
-    let value = jar.header(&reqwest::Url::parse(url).ok()?, cookies::now_ms());
-    (!value.is_empty()).then_some(value)
+/// One request with its redirects: each hop is sent with redirects off and read by a
+/// [`Follower`], so cookies a hop sets are kept and sent on (src/redirects.rs).
+struct Exchange {
+    resp: reqwest::blocking::Response,
+    hops: Vec<Hop>,
+    start: Instant,
+    headers_at: Instant,
 }
 
-fn jar_store(jar: &mut Option<&mut Jar>, resp: &reqwest::blocking::Response) {
-    if let Some(jar) = jar {
-        let lines: Vec<&str> = resp.headers().get_all(reqwest::header::SET_COOKIE).iter().filter_map(|v| v.to_str().ok()).collect();
-        jar.merge(lines, resp.url(), cookies::now_ms());
+fn exchange(method: &str, url: &str, headers: Vec<(String, String)>, body: Vec<u8>, opts: &mut Options, strict: bool) -> Result<Exchange> {
+    let parsed = reqwest::Url::parse(url)?;
+    let jar = opts.jar.as_deref().cloned().unwrap_or_default();
+    let mut follower = Follower::new(method, parsed, headers, body, jar, !opts.no_redirects);
+    let start = Instant::now();
+    loop {
+        let step = follower.request();
+        let mut header_map = HeaderMap::new();
+        for (k, v) in &step.headers {
+            if k.is_empty() {
+                continue;
+            }
+            match (HeaderName::from_bytes(k.as_bytes()), HeaderValue::from_str(v)) {
+                (Ok(name), Ok(value)) => {
+                    header_map.append(name, value);
+                }
+                _ if strict => {
+                    HeaderName::from_bytes(k.as_bytes()).map_err(|_| anyhow::anyhow!("invalid header name {k:?}"))?;
+                    anyhow::bail!("invalid value for header {k}");
+                }
+                _ => {}
+            }
+        }
+        let m = reqwest::Method::from_bytes(step.method.to_uppercase().as_bytes());
+        let m = match m {
+            Ok(m) => m,
+            Err(_) if strict => anyhow::bail!("invalid method {:?}", step.method),
+            Err(_) => reqwest::Method::GET,
+        };
+        check_url(step.url.as_str())?;
+        let mut req = client().request(m, step.url.clone()).headers(header_map);
+        if let Some(t) = opts.timeout {
+            req = req.timeout(t.saturating_sub(start.elapsed()).max(Duration::from_millis(1)));
+        }
+        if !step.body.is_empty() {
+            req = req.body(step.body);
+        }
+        let resp = req.send()?;
+        let headers_at = Instant::now();
+        let lines = redirects::set_cookie_lines(resp.headers());
+        if let Some(jar) = opts.jar.as_deref_mut() {
+            jar.merge(lines.iter().map(String::as_str), resp.url(), cookies::now_ms());
+        }
+        let again = follower.answer(resp.status().as_u16(), redirects::location(resp.headers()).as_deref(), lines).map_err(|e| anyhow::anyhow!(e))?;
+        if !again {
+            return Ok(Exchange { resp, hops: follower.hops, start, headers_at });
+        }
     }
 }
 
 /// [`execute_with`] for a body of bytes (form and multipart bodies), with a
 /// cookie jar.
 pub fn execute_opts(method: &str, url: &str, headers: &[(String, String)], body: Vec<u8>, mut opts: Options) -> Result<RequestResult> {
-    let mut header_map = HeaderMap::new();
-    for (k, v) in headers {
-        if k.is_empty() {
-            continue;
-        }
-        if let (Ok(name), Ok(value)) = (
-            HeaderName::from_bytes(k.as_bytes()),
-            HeaderValue::from_str(v),
-        ) {
-            header_map.insert(name, value);
-        }
-    }
-    if let Some(cookie) = jar_cookie(&opts.jar, url, headers) {
-        if let Ok(value) = HeaderValue::from_str(&cookie) {
-            header_map.insert(reqwest::header::COOKIE, value);
-        }
-    }
-
-    let method = reqwest::Method::from_bytes(method.to_uppercase().as_bytes())
-        .unwrap_or(reqwest::Method::GET);
-
-    check_url(url)?;
-    let mut req = client().request(method, url).headers(header_map);
-    if let Some(t) = opts.timeout {
-        req = req.timeout(t);
-    }
-
-    if !body.is_empty() {
-        req = req.body(body);
-    }
-
-    let start = Instant::now();
-    let resp = req.send()?;
-    let headers_at = Instant::now();
-    jar_store(&mut opts.jar, &resp);
-
+    let Exchange { resp, hops, start, headers_at } = exchange(method, url, headers.to_vec(), body, &mut opts, false)?;
     let status = resp.status().as_u16();
 
     let mut resp_headers: HashMap<String, String> = HashMap::new();
@@ -165,6 +177,7 @@ pub fn execute_opts(method: &str, url: &str, headers: &[(String, String)], body:
         body,
         duration_ms: done.duration_since(start).as_millis() as u64,
         timings: timings(url, start, headers_at, done),
+        redirects: hops,
     })
 }
 
@@ -183,6 +196,8 @@ pub struct Response {
     /// The response's protocol version ("HTTP/1.1", "HTTP/2", "HTTP/3"); `None` when unknown.
     /// Not in any run report: runs go through [`execute_opts`].
     pub http_version: Option<&'static str>,
+    /// The redirects on the way, first one first (empty when there were none).
+    pub redirects: Vec<Hop>,
 }
 
 /// A protocol version as the apps show it; `None` for one reqwest doesn't name.
@@ -206,31 +221,7 @@ pub fn send(method: &str, url: &str, headers: &[(String, String)], body: Vec<u8>
 
 /// [`send`] with a timeout and a cookie jar.
 pub fn send_with(method: &str, url: &str, headers: &[(String, String)], body: Vec<u8>, mut opts: Options) -> Result<Response> {
-    let mut header_map = HeaderMap::new();
-    for (k, v) in headers {
-        if k.is_empty() {
-            continue;
-        }
-        let name = HeaderName::from_bytes(k.as_bytes()).map_err(|_| anyhow::anyhow!("invalid header name {k:?}"))?;
-        let value = HeaderValue::from_str(v).map_err(|_| anyhow::anyhow!("invalid value for header {k}"))?;
-        header_map.append(name, value);
-    }
-    if let Some(cookie) = jar_cookie(&opts.jar, url, headers) {
-        header_map.insert(reqwest::header::COOKIE, HeaderValue::from_str(&cookie).map_err(|_| anyhow::anyhow!("invalid cookie in the jar"))?);
-    }
-    let method = reqwest::Method::from_bytes(method.to_uppercase().as_bytes()).map_err(|_| anyhow::anyhow!("invalid method {method:?}"))?;
-    check_url(url)?;
-    let mut req = client().request(method, url).headers(header_map);
-    if let Some(t) = opts.timeout {
-        req = req.timeout(t);
-    }
-    if !body.is_empty() {
-        req = req.body(body);
-    }
-    let start = Instant::now();
-    let resp = req.send()?;
-    let headers_at = Instant::now();
-    jar_store(&mut opts.jar, &resp);
+    let Exchange { resp, hops, start, headers_at } = exchange(method, url, headers.to_vec(), body, &mut opts, true)?;
     let status = resp.status();
     let final_url = resp.url().to_string();
     let http_version = version_name(resp.version());
@@ -250,6 +241,7 @@ pub fn send_with(method: &str, url: &str, headers: &[(String, String)], body: Ve
         duration_ms: done.duration_since(start).as_millis() as u64,
         timings: timings(url, start, headers_at, done),
         http_version,
+        redirects: hops,
     })
 }
 
@@ -281,6 +273,45 @@ mod send_tests {
             got
         });
         (url, handle)
+    }
+
+    /// A local server answering `/login` with a 302 that sets a cookie and `/home` with the
+    /// Cookie header it got; each connection is closed after one answer.
+    fn login_server() -> String {
+        let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+        let url = format!("http://{}", listener.local_addr().unwrap());
+        std::thread::spawn(move || {
+            for stream in listener.incoming().take(4) {
+                let mut stream = stream.unwrap();
+                let mut buf = [0u8; 4096];
+                let n = stream.read(&mut buf).unwrap();
+                let text = String::from_utf8_lossy(&buf[..n]).to_string();
+                let answer = if text.starts_with("GET /login") || text.starts_with("POST /login") {
+                    "HTTP/1.1 302 Found\r\nLocation: /home\r\nSet-Cookie: sid=abc; Path=/\r\nContent-Length: 0\r\nConnection: close\r\n\r\n".to_string()
+                } else {
+                    let cookie = text.lines().find_map(|l| l.strip_prefix("cookie: ").or_else(|| l.strip_prefix("Cookie: "))).unwrap_or("").to_string();
+                    format!("HTTP/1.1 200 OK\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{cookie}", cookie.len())
+                };
+                stream.write_all(answer.as_bytes()).unwrap();
+            }
+        });
+        url
+    }
+
+    #[test]
+    fn a_cookie_set_on_a_redirect_is_sent_on_and_kept() {
+        let url = login_server();
+        let mut jar = Jar::default();
+        let r = send_with("POST", &format!("{url}/login"), &[], b"x".to_vec(), Options { jar: Some(&mut jar), ..Default::default() }).unwrap();
+        assert_eq!(r.status, 200);
+        assert_eq!(String::from_utf8_lossy(&r.body), "sid=abc", "the next hop got the cookie");
+        assert_eq!(r.redirects.len(), 1);
+        assert_eq!((r.redirects[0].status, r.redirects[0].location.as_str()), (302, format!("{url}/home").as_str()));
+        assert_eq!(r.redirects[0].set_cookies, ["sid=abc; Path=/"]);
+        assert_eq!(jar.cookies.len(), 1, "the jar kept the hop's cookie");
+        let r = send_with("GET", &format!("{url}/login"), &[], vec![], Options { no_redirects: true, ..Default::default() }).unwrap();
+        assert_eq!(r.status, 302, "not followed when asked");
+        assert!(r.redirects.is_empty());
     }
 
     #[test]

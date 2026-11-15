@@ -254,3 +254,22 @@ fn mark_secret_edits_only_that_environment_file() {
     assert_eq!(file(dir.path(), "environments/dev.yaml"), "variables:\n  token: dev-token\n");
     assert!(mark_secret(dir.path(), "staging", "token").is_err());
 }
+
+#[test]
+fn defaults_settings_and_path_variables_round_trip() {
+    let mut a = req("A", "https://x/users/:id");
+    a.file = Some("orders/a".into());
+    a.extra.insert("settings".into(), serde_json::json!({"followRedirects": false, "timeoutMs": 500}));
+    a.extra.insert("pathVariables".into(), serde_json::json!([{"key": "id", "value": "7"}]));
+    let mut c = col(vec![a]);
+    c.auth = Some(Auth::Bearer { token: "${token}".into() });
+    c.extra.insert("headers".into(), serde_json::json!([{"name": "X-App", "value": "hitop"}]));
+    c.extra.insert("folderDefaults".into(), serde_json::json!({"orders": {"auth": {"type": "none"}, "headers": [{"name": "X-Team", "value": "orders"}]}}));
+    let back = round_trip(&c);
+    assert_eq!(back, c);
+    let r = back.effective(&back.requests[0]);
+    assert_eq!(r.auth, Some(Auth::None), "the folder's none wins over the collection's bearer");
+    assert_eq!(r.headers.iter().map(|h| h.name.as_str()).collect::<Vec<_>>(), ["X-App", "X-Team"]);
+    assert_eq!(r.url, "https://x/users/7", "path variables are filled in");
+    assert_eq!(back.requests[0].settings().follow_redirects, Some(false));
+}

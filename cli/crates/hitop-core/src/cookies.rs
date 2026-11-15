@@ -8,9 +8,8 @@
 //! global storage, a folder's `workspace`) in
 //! `<config>/hitop/cookies/<workspace>.json`.
 //!
-//! Only the final response's `Set-Cookie` lines are stored: cookies set on a
-//! redirect that reqwest follows are not seen (the web app's proxy works the
-//! same way).
+//! Every hop's `Set-Cookie` lines are stored, redirects included (src/redirects.rs follows
+//! them one at a time; hitop-server's proxy does the same for the web app).
 use std::fs;
 use std::path::PathBuf;
 use std::time::{SystemTime, UNIX_EPOCH};

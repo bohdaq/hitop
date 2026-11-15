@@ -41,6 +41,27 @@ pub struct PreRequestCtx {
     pub globals: HashMap<String, String>,
 }
 
+/// One `console.*` line a script printed (the web app's and the desktop's Console tab).
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+pub struct LogLine {
+    /// `log`, `info`, `warn`, `error` or `debug`.
+    pub level: String,
+    pub text: String,
+}
+
+/// `console.log` and friends for scripts: printed lines are kept in `__logs` (at most 500),
+/// objects as indented JSON. Defined before every script, so a script that logs never fails.
+const CONSOLE_JS: &str = r#"
+const __logs = [];
+const __show = (v) => { if (typeof v === "string") return v; if (v instanceof Error) return v.name + ": " + v.message; try { const j = JSON.stringify(v, null, 2); return j === undefined ? String(v) : j; } catch (e) { return String(v); } };
+const console = {};
+for (const __level of ["log", "info", "warn", "error", "debug"]) console[__level] = function () { if (__logs.length < 500) __logs.push({ level: __level, text: Array.prototype.map.call(arguments, __show).join(" ") }); };
+"#;
+
+fn logs(v: &Value) -> Vec<LogLine> {
+    serde_json::from_value(v.clone()).unwrap_or_default()
+}
+
 /// Outputs after running a pre-request script.
 #[derive(Debug, Clone)]
 pub struct PreRequestResult {
@@ -53,6 +74,8 @@ pub struct PreRequestResult {
     pub variables: VariableUpdates,
     /// Globals the script set (`pm.globals.set`, ...), as above.
     pub globals: VariableUpdates,
+    /// What `console.*` printed.
+    pub logs: Vec<LogLine>,
 }
 
 /// Outputs after running a post-request script.
@@ -65,6 +88,11 @@ pub struct PostRequestResult {
     pub variables: VariableUpdates,
     /// Globals the script set.
     pub globals: VariableUpdates,
+    /// What `console.*` printed.
+    pub logs: Vec<LogLine>,
+    /// Why the script stopped, when it threw ([`run_post_request_script_full`]): the tests and
+    /// values it got before that are kept.
+    pub error: Option<String>,
 }
 
 /// Variables set (`Some`) or unset (`None`) by a script.
@@ -162,6 +190,7 @@ pub fn run_pre_request_script(script: &str, ctx: PreRequestCtx) -> Result<PreReq
             context_updates: HashMap::new(),
             variables: HashMap::new(),
             globals: HashMap::new(),
+            logs: vec![],
         });
     }
 
@@ -211,7 +240,7 @@ function __removeHeader(name) {{
     );
 
     let postamble = r#"
-JSON.stringify({ url: __url, body: __body, headers: __headers, ctx: __ctxUpdates, vars: __varUpdates, globals: __globalUpdates })
+JSON.stringify({ url: __url, body: __body, headers: __headers, ctx: __ctxUpdates, vars: __varUpdates, globals: __globalUpdates, logs: __logs })
 "#;
 
     let body = if uses_postman_api(script) {
@@ -224,7 +253,7 @@ JSON.stringify({ url: __url, body: __body, headers: __headers, ctx: __ctxUpdates
     } else {
         script.to_string()
     };
-    let full_script = format!("{}\n{}\n{}", preamble, body, postamble);
+    let full_script = format!("{}\n{}\n{}\n{}", CONSOLE_JS, preamble, body, postamble);
 
     let result = engine
         .eval(Source::from_bytes(full_script.as_bytes()))
@@ -268,6 +297,7 @@ JSON.stringify({ url: __url, body: __body, headers: __headers, ctx: __ctxUpdates
         context_updates: ctx_updates,
         variables: variable_updates(&parsed["vars"]),
         globals: variable_updates(&parsed["globals"]),
+        logs: logs(&parsed["logs"]),
     })
 }
 
@@ -288,7 +318,19 @@ pub fn run_post_request_script(
 
 /// [`run_post_request_script`] that also gives the script the request as
 /// sent (`pm.request`).
+/// A script that throws is an error here (the CLI's runs); see [`run_post_request_script_full`]
+/// for the results it got before.
 pub fn run_post_request_script_with(script: &str, ctx: &PostRequestCtx) -> Result<PostRequestResult> {
+    let out = run_post_request_script_full(script, ctx)?;
+    match &out.error {
+        Some(e) => Err(anyhow!("post-request script error: {}", e)),
+        None => Ok(out),
+    }
+}
+
+/// [`run_post_request_script_with`] that keeps what a throwing script did before it threw (its
+/// tests, values and console lines) and says why it stopped in `error` (the desktop app).
+pub fn run_post_request_script_full(script: &str, ctx: &PostRequestCtx) -> Result<PostRequestResult> {
     let PostRequestCtx { response_body, response_headers, status_code, duration_ms, variables, context, request, globals } = *ctx;
     if script.trim().is_empty() {
         return Ok(PostRequestResult {
@@ -296,6 +338,8 @@ pub fn run_post_request_script_with(script: &str, ctx: &PostRequestCtx) -> Resul
             tests: vec![],
             variables: HashMap::new(),
             globals: HashMap::new(),
+            logs: vec![],
+            error: None,
         });
     }
 
@@ -356,7 +400,7 @@ const assert = {{
         duration = duration_ms,
     );
 
-    let postamble = "JSON.stringify({ ctx: __ctxUpdates, tests: __tests, vars: __varUpdates, globals: __globalUpdates })";
+    let postamble = "JSON.stringify({ ctx: __ctxUpdates, tests: __tests, vars: __varUpdates, globals: __globalUpdates, logs: __logs, error: __error })";
     let body = if uses_postman_api(script) {
         let sent = request.cloned().unwrap_or_default();
         let api = format!(
@@ -372,7 +416,11 @@ const assert = {{
     } else {
         script.to_string()
     };
-    let full_script = format!("{}\n{}\n{}", preamble, body, postamble);
+    // The script runs in a try block: what it did before throwing is kept, the error is reported.
+    let full_script = format!(
+        "{}\n{}\nlet __error = null;\ntry {{\n{}\n}} catch (__e) {{ __error = (__e && __e.name && __e.message !== undefined) ? __e.name + \": \" + __e.message : String(__e); }}\n{}",
+        CONSOLE_JS, preamble, body, postamble
+    );
 
     let result = engine
         .eval(Source::from_bytes(full_script.as_bytes()))
@@ -392,6 +440,8 @@ const assert = {{
         tests,
         variables: variable_updates(&out["vars"]),
         globals: variable_updates(&out["globals"]),
+        logs: logs(&out["logs"]),
+        error: out["error"].as_str().map(str::to_string),
     })
 }
 
@@ -409,6 +459,24 @@ mod tests {
             context: HashMap::new(),
             globals: HashMap::new(),
         }
+    }
+
+    // --- console and scripts that throw ---
+
+    #[test]
+    fn console_lines_and_tests_before_a_throw_are_kept() {
+        let h = HashMap::new();
+        let v = HashMap::new();
+        let c = HashMap::new();
+        let ctx = PostRequestCtx { response_body: "{}", response_headers: &h, status_code: 200, duration_ms: 1, variables: &v, context: &c, request: None, globals: None };
+        let out = run_post_request_script_full("console.log('n', 1, {a: 2});\nassert.status(200);\nfoo.bar();\nassert.status(201);", &ctx).unwrap();
+        assert_eq!(out.logs, vec![LogLine { level: "log".into(), text: "n 1 {\n  \"a\": 2\n}".into() }]);
+        assert_eq!(out.tests.len(), 1, "the test before the throw is kept");
+        assert_eq!(out.error.as_deref(), Some("ReferenceError: foo is not defined"));
+        let err = run_post_request_script_with("foo.bar();", &ctx).unwrap_err();
+        assert_eq!(err.to_string(), "post-request script error: ReferenceError: foo is not defined");
+        let pre = run_pre_request_script("console.warn('pre');", empty_pre_ctx("https://x/")).unwrap();
+        assert_eq!(pre.logs, vec![LogLine { level: "warn".into(), text: "pre".into() }]);
     }
 
     // --- pre-request ---

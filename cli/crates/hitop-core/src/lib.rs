@@ -16,6 +16,7 @@ pub mod oauth2;
 pub mod params;
 pub mod postman;
 pub mod prepare;
+pub mod redirects;
 pub mod report;
 pub mod runner;
 pub mod scripting;

@@ -154,7 +154,8 @@ fn is_host_like(text: &str) -> bool {
         i += 1 + digits(&s[i + 1..]);
     }
     let rest = &text[i..];
-    let shape = rest.is_empty() || (rest.starts_with(['/', '?', '#']) && !rest.chars().any(is_js_whitespace));
+    // Whitespace after the host (a path or query typed with spaces) is fine: it is encoded when sent.
+    let shape = rest.is_empty() || rest.starts_with(['/', '?', '#']);
     // `[\w-]+\.[\w-]` or `[\w-]+:\d`.
     let first = s.iter().take_while(|b| is_word(**b)).count();
     let dotted = s.get(first) == Some(&b'.') && s.get(first + 1).is_some_and(|b| is_word(*b));

@@ -144,17 +144,23 @@ pub fn run_collection_jar(
     let mut results = Vec::new();
     let mut tokens = crate::oauth2::Tokens::interactive(options.timeout);
 
-    for request in &collection.requests {
-        if !is_run_step(request) {
+    for saved in &collection.requests {
+        if !is_run_step(saved) {
             continue;
         }
+        // Folder and collection auth and headers, inherited (model.rs `Collection::effective`).
+        let inherited = collection.effective(saved);
+        let request = &inherited;
+        let settings = request.settings();
+        let timeout = settings.timeout_ms.filter(|ms| *ms > 0).map(std::time::Duration::from_millis).or(options.timeout);
+        let no_redirects = settings.follow_redirects == Some(false);
         let started = Instant::now();
         // OAuth 2.0: a token (from the cache, or the token endpoint now) in place of the preset.
         let oauth = {
             let vars = scopes.merged();
             let now = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map_or(0, |d| d.as_secs());
             tokens.resolve(request.auth.as_ref().or(collection.auth.as_ref()), &|s| crate::interpolation::interpolate(s, &vars), now, &mut |r| {
-                let res = http::execute_opts("POST", &r.url, &r.headers, r.body.clone().into_bytes(), http::Options { timeout: options.timeout, jar: None })?;
+                let res = http::execute_opts("POST", &r.url, &r.headers, r.body.clone().into_bytes(), http::Options { timeout: options.timeout, jar: None, ..Default::default() })?;
                 Ok((res.status, res.body))
             })
         };
@@ -190,13 +196,13 @@ pub fn run_collection_jar(
                     // AWS Signature v4 signs the request as it goes out.
                     crate::aws_sigv4::sign_if_aws(request.auth.as_ref().or(collection.auth.as_ref()), &|s| crate::interpolation::interpolate(s, &variables), &request.method, &pre.url, &mut h, &b)?;
                     sent_parts = (h.clone(), b.clone());
-                    let first = http::execute_opts(&request.method, &pre.url, &h, b.clone(), http::Options { timeout: options.timeout, jar: jar.as_deref_mut() })?;
+                    let first = http::execute_opts(&request.method, &pre.url, &h, b.clone(), http::Options { timeout, jar: jar.as_deref_mut(), no_redirects })?;
                     // Digest: the server's 401 challenge answered once.
                     let fill = |s: &str| crate::interpolation::interpolate(s, &variables);
                     match crate::digest_auth::retry_headers(request.auth.as_ref().or(collection.auth.as_ref()), &fill, first.status, &first.headers, &request.method, &pre.url, &h)? {
                         Some(h2) => {
                             sent_parts = (h2.clone(), b.clone());
-                            http::execute_opts(&request.method, &pre.url, &h2, b, http::Options { timeout: options.timeout, jar: jar.as_deref_mut() })
+                            http::execute_opts(&request.method, &pre.url, &h2, b, http::Options { timeout, jar: jar.as_deref_mut(), no_redirects })
                         }
                         None => Ok(first),
                     }

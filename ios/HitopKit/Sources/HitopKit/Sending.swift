@@ -122,7 +122,8 @@ public enum Sending {
         var i = h
         if at(s, i) == UInt8(ascii: ":") && digits(s, from: i + 1) > 0 { i += 1 + digits(s, from: i + 1) }
         let rest = String(decoding: s[i...], as: UTF8.self)
-        let shape = rest.isEmpty || ("/?#".contains(rest.first!) && !rest.unicodeScalars.contains(where: isJSWhitespace))
+        // Whitespace after the host (a path or query typed with spaces) is fine: it is encoded when sent.
+        let shape = rest.isEmpty || "/?#".contains(rest.first!)
         var first = 0
         while first < s.count && isWord(s[first]) { first += 1 }
         let dotted = at(s, first) == UInt8(ascii: ".") && at(s, first + 1).map(isWord) == true

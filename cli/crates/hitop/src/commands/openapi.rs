@@ -68,7 +68,7 @@ fn is_url(s: &str) -> bool {
 pub fn load(source: &str) -> Result<(String, Option<String>)> {
     if is_url(source) {
         let headers = [("Accept".to_string(), "application/yaml, application/json;q=0.9, */*;q=0.8".to_string())];
-        let opts = http::Options { timeout: Some(Duration::from_secs(60)), jar: None };
+        let opts = http::Options { timeout: Some(Duration::from_secs(60)), jar: None, ..Default::default() };
         let resp = http::send_with("GET", source, &headers, vec![], opts).with_context(|| format!("fetching {source}"))?;
         if resp.status >= 400 {
             bail!("fetching {source}: the server answered {} {}", resp.status, resp.status_text);

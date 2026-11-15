@@ -152,8 +152,10 @@ public enum Scripts {
         if script.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
             return PreRequestResult(url: input.url, headers: input.headers, body: input.body, contextUpdates: [:], variables: [:], globals: [:])
         }
+        // console.* works in every HITOP (the web and desktop show it); here it prints nowhere.
         let preamble = """
 
+        if (typeof console === "undefined") globalThis.console = { log() {}, info() {}, warn() {}, error() {}, debug() {} };
         const __vars = \(JSONValue.strings(input.variables).compact);
         const __ctx  = \(object(input.context).compact);
         const __ctxUpdates = {};
@@ -221,6 +223,7 @@ public enum Scripts {
         let duration = input.durationMs
         let preamble = """
 
+        if (typeof console === "undefined") globalThis.console = { log() {}, info() {}, warn() {}, error() {}, debug() {} };
         const response        = \(parsed.compact);
         const responseText    = \(JSONValue.quote(input.responseBody));
         const responseHeaders = \(JSONValue.strings(input.responseHeaders).compact);

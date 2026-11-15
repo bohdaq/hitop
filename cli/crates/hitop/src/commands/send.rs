@@ -92,6 +92,11 @@ pub struct SendArgs {
     #[arg(long)]
     show_headers: bool,
 
+    /// Answer with a redirect instead of following it (redirects are followed by default,
+    /// each hop printed with the cookies it sets)
+    #[arg(long)]
+    no_follow: bool,
+
     /// Disable syntax highlighting
     #[arg(long)]
     raw: bool,
@@ -186,12 +191,12 @@ pub fn run(args: SendArgs) -> Result<()> {
     hitop_core::aws_sigv4::sign_if_aws(auth.as_ref(), &|s| hitop_core::interpolation::interpolate(s, &variables), &method, &pre.url, &mut headers, &body).map_err(|e| anyhow::anyhow!(masker.mask(&format!("{e:#}"))))?;
     let (headers_sent, body_sent) = (headers.clone(), String::from_utf8(body.clone()).unwrap_or_default());
     let mut jar = cookies::open(&workspace, args.cookies)?;
-    let opts = http::Options { timeout: None, jar: jar.as_mut() };
+    let opts = http::Options { timeout: None, jar: jar.as_mut(), no_redirects: args.no_follow };
     let mut result = http::execute_opts(&method, &pre.url, &headers, body.clone(), opts).map_err(|e| anyhow::anyhow!(masker.mask(&format!("{e:#}"))))?;
     // Digest: the server's 401 challenge answered once.
     let fill = |s: &str| hitop_core::interpolation::interpolate(s, &variables);
     if let Some(h2) = hitop_core::digest_auth::retry_headers(auth.as_ref(), &fill, result.status, &result.headers, &method, &pre.url, &headers).map_err(|e| anyhow::anyhow!(masker.mask(&format!("{e:#}"))))? {
-        result = http::execute_opts(&method, &pre.url, &h2, body, http::Options { timeout: None, jar: jar.as_mut() }).map_err(|e| anyhow::anyhow!(masker.mask(&format!("{e:#}"))))?;
+        result = http::execute_opts(&method, &pre.url, &h2, body, http::Options { timeout: None, jar: jar.as_mut(), no_redirects: args.no_follow }).map_err(|e| anyhow::anyhow!(masker.mask(&format!("{e:#}"))))?;
     }
     cookies::save(&workspace, jar.as_ref())?;
 
@@ -244,6 +249,7 @@ pub fn run(args: SendArgs) -> Result<()> {
     storage::save_history(&history)?;
 
     // Output
+    output::print_redirects(&result.redirects);
     output::print_status(result.status, result.duration_ms);
 
     if args.show_headers {

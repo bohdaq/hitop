@@ -17,6 +17,14 @@ pub fn print_status(code: u16, duration_ms: u64) {
     println!("{} • {}ms", colored_status, duration_ms);
 }
 
+/// The redirects on the way to the response, one line each ("302 https://a/login → https://a/home").
+pub fn print_redirects(hops: &[hitop_core::redirects::Hop]) {
+    for hop in hops {
+        let cookies = if hop.set_cookies.is_empty() { String::new() } else { format!(" (sets {} cookie{})", hop.set_cookies.len(), if hop.set_cookies.len() == 1 { "" } else { "s" }) };
+        println!("{} {} → {}{}", hop.status.to_string().yellow(), hop.url.dimmed(), hop.location, cookies.dimmed());
+    }
+}
+
 pub fn print_headers(headers: &std::collections::HashMap<String, String>) {
     let mut keys: Vec<&String> = headers.keys().collect();
     keys.sort();
