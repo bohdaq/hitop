@@ -49,7 +49,7 @@ write(
 
 // The icons are renders of brand/logo.svg (brand/export.sh); favicon.svg is the master itself.
 // install.sh: `curl -fsSL https://hitop.rws8.tech/install.sh | sh` installs the CLI from GitHub Releases.
-for (const f of ["favicon.svg", "apple-touch-icon.png", "favicon.png", "favicon-16x16.png", "favicon-32x32.png", "social-preview.png", "install.sh"]) {
+for (const f of ["favicon.svg", "apple-touch-icon.png", "favicon.png", "favicon-16x16.png", "favicon-32x32.png", "social-preview.png", "app-screenshot.jpg", "install.sh"]) {
   copyFileSync(join(publicAssets, f), join(dist, f));
 }
 
