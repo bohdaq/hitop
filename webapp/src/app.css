@@ -1329,11 +1329,10 @@ hitop-request > .panes { flex: 1 1 auto; }
 .graphql-panes { grid-template-columns: minmax(0, 1fr); }
 .editor-panel .graphql-panes .code-editor-label { position: static; width: auto; height: auto; overflow: visible; clip: auto; display: block; margin: 0 0 6px; }
 .discard-save { margin-top: 4px; }
-/* The storage card on one line while Get started shows. */
-.side-card.compact { flex-direction: row; align-items: center; gap: 10px; padding: 8px 10px; }
+/* Two short rows (where it is kept, then Import and Export): one row cut the text to "In this bro…". */
+.side-card.compact { gap: 4px; padding: 8px 10px; }
 .side-card.compact .side-card-meta { display: none; }
 .side-card.compact .side-card-line { flex: 1; min-width: 0; }
-.side-card.compact .side-card-line span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .side-card.compact .side-card-actions { flex: none; }
 /* Import: the paste box says what to paste; its label stays for screen readers only. */
 .drop-zone lit-material-textarea::part(label) { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
@@ -1441,7 +1440,7 @@ hitop-app lit-material-tab:focus-visible { outline-offset: -2px; }
 .defaults-auth > * { flex: 1 1 200px; }
 
 /* Pages keep the way back to the open request. */
-.page-back-bar { display: flex; align-items: center; gap: 8px; padding: 8px 20px; border-bottom: 1px solid var(--md-sys-color-outline-variant); }
+.main > .page-back-bar { display: flex; align-items: center; gap: 8px; padding: 6px 20px; margin-bottom: 16px; border-bottom: 1px solid var(--md-sys-color-outline-variant); }
 .back-to-request { display: inline-flex; align-items: center; gap: 6px; min-height: 32px; padding: 0 8px; border: 0; border-radius: 8px; background: none; color: var(--md-sys-color-on-surface-variant); font-size: 13px; cursor: pointer; }
 .back-to-request:hover { color: var(--md-sys-color-on-surface); background: var(--md-sys-color-surface-container); }
 .back-title { max-width: 40ch; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--md-sys-color-on-surface); }
@@ -1480,5 +1479,16 @@ lit-material-dialog::part(content) { padding-bottom: 0; }
 .env-chip-phone.has-env { color: var(--md-sys-color-on-surface); }
 .env-chip-phone.has-env .env-dot { background: var(--hitop-warn); box-shadow: 0 0 0 3px rgb(242 180 92 / 0.18); }
 .env-chip-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-@media (max-width: 899px) { .env-chip-phone { display: inline-flex; } }
+@media (max-width: 899px) {
+  .env-chip-phone { display: inline-flex; flex: 0 1 auto; }
+  /* The drawer's rail has labels: it needs the labelled rail's 80 px, not the icon rail's 56. */
+  .sidebar { grid-template-columns: 88px minmax(0, 1fr); }
+  .rail lit-material-navigation-rail::part(rail) { width: 88px; }
+  .rail lit-material-navigation-rail-item::part(label) { max-width: none; overflow: visible; font-size: 11px; }
+}
+/* On a phone the mark alone names the app, so the environment's name fits beside it. */
+@media (max-width: 480px) {
+  .topbar .brand > span { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+  .env-chip-phone { max-width: 46vw; }
+}
 .tab-strip lit-material-tab[data-preview] { font-style: italic; }

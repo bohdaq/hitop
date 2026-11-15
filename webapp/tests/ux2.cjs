@@ -240,7 +240,11 @@ function server() {
   check('(4) at 1024 the side pane starts folded with a request open', !(await paneShown()));
   const s2 = await box('.request-line .send');
   const m2 = await box('.request-line .more-send');
-  check('(4) at 1024 Send and ⋯ share the URL row; Save is in ⋯', Math.abs(s2.y - m2.y) < 4 && !(await p.locator('.request-line .line-save').isVisible()) && (await p.locator('#line-menu .menu-save').evaluate((el) => getComputedStyle(el).display)) !== 'none');
+  // A saved request keeps its Save icon on the row; only the wide "Save to…" of a new request folds into ⋯.
+  const wideSave = await p.locator('.request-line .save-draft.line-save').count();
+  const iconSave = p.locator('.request-line lit-material-icon-button.line-save');
+  const saveOk = wideSave ? !(await p.locator('.request-line .save-draft.line-save').isVisible()) : (await iconSave.isVisible()) && Math.abs((await box('.request-line lit-material-icon-button.line-save')).y - s2.y) < 12;
+  check('(4) at 1024 Send and ⋯ share the URL row; Save stays as an icon or is in ⋯', Math.abs(s2.y - m2.y) < 4 && saveOk && (await p.locator('#line-menu .menu-save').evaluate((el) => getComputedStyle(el).display)) !== 'none', JSON.stringify({ wideSave }));
   check('(4) at 1024 the body starts above the fold', (await box('.response-scroll')).y < 400, String((await box('.response-scroll')).y));
   await p.setViewportSize({ width: 390, height: 844 });
   await settle(p, 600);
