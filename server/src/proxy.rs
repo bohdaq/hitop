@@ -8,6 +8,11 @@
 //!             ("HTTP/1.0", "HTTP/1.1", "HTTP/2", "HTTP/3"), left out when unknown;
 //!             `"eventStream": true` (body empty, unread) for a GET answered with text/event-stream
 //!             when the request asked for it (`"eventStreams": true`).
+//! `"followRedirects": false` in the request answers with a redirect itself; otherwise each
+//! redirect is followed (at most 10) and listed in `"redirects": [{status, url, location,
+//! setCookies}]` (left out when there were none); cookies a hop sets go to the next hops, and
+//! the web app keeps them in its jar (hitop-core redirects.rs, the same rules as the CLI and the
+//! desktop). Older clients ignore `redirects` and read the final answer as before.
 //! Failures: `{"error": "..."}` with a 4xx/5xx status. Nothing is logged.
 //!
 //! `POST /api/proxy/stream` (Server-Sent Events, chunked streams): the same request, answered
@@ -25,6 +30,7 @@ use base64::Engine;
 use reqwest::blocking::Client;
 use reqwest::header::{HeaderMap, HeaderName, HeaderValue};
 use reqwest::{redirect, Url};
+use hitop_core::redirects::{self, Follower, Hop};
 use rust_web_server::prelude::*;
 use rust_web_server::header::Header;
 use rust_web_server::response::StatusCodeReasonPhrase;
@@ -40,8 +46,9 @@ pub const MAX_RESPONSE_BODY: u64 = 5 * 1024 * 1024;
 const MAX_IN_FLIGHT: usize = 16;
 pub const MAX_STREAMS: usize = 8;
 pub const MAX_STREAM_BODY: u64 = 50 * 1024 * 1024;
+/// The longest a request (all its redirects together) may take.
+pub const TIME_LIMIT: Duration = Duration::from_secs(20);
 pub const STREAM_FOR: Duration = Duration::from_secs(10 * 60);
-const MAX_REDIRECTS: usize = 10;
 /// Sent on every outbound request; an inbound request carrying it came from
 /// this proxy (directly or through a redirect), so it is a loop.
 const LOOP_HEADER: &str = "x-hitop-proxy";
@@ -67,6 +74,9 @@ struct ProxyRequest {
     /// text/event-stream comes back with `eventStream: true` and its body unread. Others get the body.
     #[serde(default)]
     event_streams: bool,
+    /// False: answer with a redirect instead of following it.
+    #[serde(default)]
+    follow_redirects: Option<bool>,
 }
 
 #[derive(Serialize)]
@@ -91,6 +101,9 @@ struct ProxyResponse {
     /// end); the web app opens it again through `/api/proxy/stream` (UX2).
     #[serde(skip_serializing_if = "std::ops::Not::not")]
     event_stream: bool,
+    /// The redirects followed on the way, first one first.
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    redirects: Vec<Hop>,
 }
 
 /// The protocol version as the web app shows it; `None` for one reqwest doesn't name.
@@ -167,16 +180,8 @@ impl Proxy {
         let origins = origins.into();
         let timing = Recorder::default();
         let builder = |total: Option<Duration>| {
-            let deny_redirect = deny.clone();
-            let policy = redirect::Policy::custom(move |attempt| {
-                if attempt.previous().len() >= MAX_REDIRECTS {
-                    attempt.error("too many redirects")
-                } else if let Err(e) = check_url(attempt.url(), &deny_redirect) {
-                    attempt.error(format!("redirect refused: {e}"))
-                } else {
-                    attempt.follow()
-                }
-            });
+            // Redirects are followed in `start`, one hop at a time (hitop-core redirects.rs).
+            let policy = redirect::Policy::none();
             let mut b = Client::builder()
                 .use_rustls_tls()
                 .no_proxy()
@@ -191,7 +196,7 @@ impl Proxy {
             b.build().expect("HTTP client")
         };
         Proxy {
-            client: Arc::new(builder(Some(Duration::from_secs(20)))),
+            client: Arc::new(builder(Some(TIME_LIMIT))),
             stream_client: Arc::new(builder(None)),
             streams: Arc::new(AtomicUsize::new(0)),
             origins,
@@ -249,8 +254,8 @@ impl Proxy {
             return error(s.n503_service_unavailable, "too many streams are open. Try again in a minute.");
         }
         let slot = Slot(self.streams.clone());
-        let upstream = match self.start(&self.stream_client, req) {
-            Ok(r) => r,
+        let upstream = match self.start(&self.stream_client, req, None) {
+            Ok((r, _)) => r,
             Err((status, message)) => return error(status, &message),
         };
         let status = upstream.status();
@@ -266,7 +271,9 @@ impl Proxy {
     }
 
     /// Checks the request and sends it with `client`: the upstream response, body unread.
-    fn start(&self, client: &Client, req: ProxyRequest) -> Result<reqwest::blocking::Response, (&'static StatusCodeReasonPhrase, String)> {
+    /// Redirects are followed here, each hop checked like the first URL; `limit` is the time for
+    /// all of them together.
+    fn start(&self, client: &Client, req: ProxyRequest, limit: Option<Duration>) -> Result<(reqwest::blocking::Response, Vec<Hop>), (&'static StatusCodeReasonPhrase, String)> {
         let s = STATUS_CODE_REASON_PHRASE;
         let bad = |m: String| (s.n400_bad_request, m);
 
@@ -278,19 +285,18 @@ impl Proxy {
             return Err(bad(format!("{method} is not supported")));
         }
 
-        let mut headers = HeaderMap::new();
+        let mut headers = Vec::new();
         for (name, value) in &req.headers {
             if name.trim().is_empty() || DROPPED_HEADERS.contains(&name.trim().to_ascii_lowercase().as_str()) {
                 continue;
             }
-            let name = HeaderName::from_bytes(name.trim().as_bytes()).map_err(|_| bad(format!("invalid header name {name}")))?;
-            let value = HeaderValue::from_str(value).map_err(|_| bad(format!("invalid value for header {name}")))?;
-            headers.append(name, value);
+            HeaderName::from_bytes(name.trim().as_bytes()).map_err(|_| bad(format!("invalid header name {name}")))?;
+            HeaderValue::from_str(value).map_err(|_| bad(format!("invalid value for header {name}")))?;
+            headers.push((name.trim().to_string(), value.clone()));
         }
-        headers.insert(LOOP_HEADER, HeaderValue::from_static("1"));
         // Some APIs refuse requests without one (Wikimedia, GitHub): ours, unless the request has its own.
-        if !headers.contains_key(reqwest::header::USER_AGENT) {
-            headers.insert(reqwest::header::USER_AGENT, HeaderValue::from_static("hitop (+https://hitop.rws8.tech)"));
+        if !headers.iter().any(|(k, _)| k.eq_ignore_ascii_case("user-agent")) {
+            headers.push(("User-Agent".into(), "hitop (+https://hitop.rws8.tech)".into()));
         }
 
         let body = match (req.body, req.body_encoding.as_deref()) {
@@ -304,14 +310,42 @@ impl Proxy {
             return Err((s.n413_payload_too_large, "the request body is over 10 MB".into()));
         }
 
-        let mut builder = client.request(method, url).headers(headers);
-        if let Some(b) = body {
-            builder = builder.body(b);
+        let mut follower = Follower::new(method.as_str(), url, headers, body.unwrap_or_default(), Default::default(), req.follow_redirects != Some(false));
+        let started = Instant::now();
+        loop {
+            let step = follower.request();
+            if !follower.hops.is_empty() {
+                check_url(&step.url, &self.deny).map_err(|e| (s.n403_forbidden, format!("redirect refused: {e}")))?;
+            }
+            let mut map = HeaderMap::new();
+            for (k, v) in &step.headers {
+                if let (Ok(name), Ok(value)) = (HeaderName::from_bytes(k.as_bytes()), HeaderValue::from_str(v)) {
+                    map.append(name, value);
+                }
+            }
+            map.insert(LOOP_HEADER, HeaderValue::from_static("1"));
+            let m = reqwest::Method::from_bytes(step.method.as_bytes()).unwrap_or(reqwest::Method::GET);
+            let mut builder = client.request(m, step.url.clone()).headers(map);
+            if !step.body.is_empty() {
+                builder = builder.body(step.body);
+            }
+            if let Some(left) = limit.map(|l| l.saturating_sub(started.elapsed())) {
+                if left.is_zero() {
+                    return Err((s.n504_gateway_timeout, "the server didn't answer within 20 seconds".into()));
+                }
+                builder = builder.timeout(left);
+            }
+            let response = builder.send().map_err(|e| {
+                let status = if e.is_timeout() { s.n504_gateway_timeout } else { s.n502_bad_gateway };
+                (status, describe(&e))
+            })?;
+            let again = follower
+                .answer(response.status().as_u16(), redirects::location(response.headers()).as_deref(), redirects::set_cookie_lines(response.headers()))
+                .map_err(|e| (s.n502_bad_gateway, e))?;
+            if !again {
+                return Ok((response, follower.hops));
+            }
         }
-        builder.send().map_err(|e| {
-            let status = if e.is_timeout() { s.n504_gateway_timeout } else { s.n502_bad_gateway };
-            (status, describe(&e))
-        })
     }
 
     fn send(&self, req: ProxyRequest) -> Result<ProxyResponse, (&'static StatusCodeReasonPhrase, String)> {
@@ -319,7 +353,7 @@ impl Proxy {
         let started = Instant::now();
         let asked = req.url.clone();
         let unread = req.event_streams && req.method.trim().eq_ignore_ascii_case("GET");
-        let response = self.start(&self.client, req)?;
+        let (response, hops) = self.start(&self.client, req, Some(TIME_LIMIT))?;
         let headers_at = Instant::now();
         let status = response.status();
         let final_url = response.url().to_string();
@@ -338,6 +372,7 @@ impl Proxy {
                 url: final_url,
                 http_version: version,
                 event_stream: true,
+                redirects: hops,
             });
         }
         let mut bytes = Vec::new();
@@ -363,6 +398,7 @@ impl Proxy {
             url: final_url,
             http_version: version,
             event_stream: false,
+            redirects: hops,
         })
     }
 }
@@ -461,6 +497,7 @@ mod tests {
             timings: None,
             http_version: v,
             event_stream: false,
+            redirects: vec![],
         };
         let json = serde_json::to_value(answer(Some("HTTP/2"))).unwrap();
         assert_eq!(json["httpVersion"], "HTTP/2");
