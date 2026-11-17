@@ -1,6 +1,6 @@
 # Browser extension store listings
 
-Texts for the owner to paste when uploading (agents never upload). Targets: **Chrome Web Store**
+Texts for the owner to paste when uploading (agents never upload or tag a release). Targets: **Chrome Web Store**
 (item `mmbpagencfjfgeicmeobbmeocdpeokdk`) and **Firefox Add-ons** (addons.mozilla.org/addon/hitop).
 Not Edge (owner decision 2026-11-10). Firefox ships only with the WebAssembly script runner
 (HITOP Next F1).
@@ -10,7 +10,9 @@ Name: **HITOP**. Summary / short description: the tagline (brand/BRAND.md), as i
 > The API client your terminal, your CI and your AI agent can all drive.
 
 Build: `./build-chrome-store.sh` → `hitop-chrome-store.zip`; `./build-extension.sh` →
-`hitop-firefox-extension.zip`. Manifest version 5.0.0 (`webapp/scripts/package-extension.mjs`).
+`hitop-firefox-extension.zip`. Manifest version: `extensionVersion` in `webapp/package.json`
+(5.0.0 at the A8 switch), written into both manifests by `webapp/scripts/package-extension.mjs`.
+Releases go through CI: see "Releasing an update" at the end.
 
 ## Description (both stores)
 
@@ -57,3 +59,57 @@ Desktop app, CLI and docs: https://hitop.rws8.tech/
   (privacy policy: https://hitop.rws8.tech/privacy.html).
 - With HITOP Cloud turned on (signed in), collections sync to sync.hitop.rws8.tech; shared ones
   are end-to-end encrypted.
+
+## Releasing an update
+
+`.github/workflows/release-extensions.yml` builds both packages from a tag and submits them.
+
+1. **Bump.** Raise the version, which every store requires to be higher than the last one:
+   `cd webapp && npm pkg set extensionVersion=5.0.1`. Commit and push to main.
+2. **Rehearse (optional).** Either push `ext-v5.0.1-rc.1`, which makes a GitHub pre-release with
+   the three zips and submits nothing, or run the workflow by hand from the Actions tab: with
+   "dry run" ticked it only builds, and the zips are the run's artifacts.
+3. **Tag.** `git tag ext-v5.0.1 && git push origin ext-v5.0.1`. The workflow checks that the tag,
+   `extensionVersion` and both built manifests agree, runs `web-ext lint`, and attaches these to
+   the GitHub Release `ext-v5.0.1`:
+   - `hitop-chrome-5.0.1.zip`
+   - `hitop-firefox-5.0.1.zip`
+   - `hitop-firefox-5.0.1-source.zip`, the source code with BUILD.md
+   It then submits both stores:
+   - **Chrome Web Store:** it uploads the zip through the Web Store API and publishes it. That
+     submits the version for review. It goes live after approval, with the item's dashboard
+     settings for visibility and rollout.
+   - **Firefox Add-ons:** `web-ext sign --channel listed` uploads the zip and the source
+     package. Mozilla requires the source package for code that a bundler (Vite) and Rust/wasm
+     produced: reviewers rebuild from BUILD.md and compare. Signing, and the listed update,
+     happen after review.
+4. **Review.** Review usually takes from a few hours to a few days per store. Firefox users
+   keep the old version until the new one is approved. A rejection comes by email from the
+   store: fix it, bump again (a version number can't be reused) and tag again. Watch the
+   Developer Dashboard (Chrome) and the add-on's "Manage Status & Versions" page (AMO).
+
+A store whose credentials aren't set is skipped with a notice, and the job stays green. Upload
+that store's zip from the Release by hand, plus the source zip on AMO. To re-run a submission,
+run the workflow by hand on the tag with "dry run" unticked. Uploading the same version twice is
+refused, so a version a store already took needs a new version.
+
+Credentials (repository Settings → Secrets and variables → Actions):
+
+| Name | Kind | Where it comes from |
+| --- | --- | --- |
+| `CWS_CLIENT_ID`, `CWS_CLIENT_SECRET` | secret | A Google Cloud project with the Chrome Web Store API enabled. APIs & Services → Credentials → OAuth client ID, type "Web application", redirect URI `https://developers.google.com/oauthplayground` |
+| `CWS_REFRESH_TOKEN` | secret | OAuth Playground (gear → use your own credentials), scope `https://www.googleapis.com/auth/chromewebstore`. Sign in as the Google account that owns the item (2-step verification on), then exchange the code |
+| `CWS_PUBLISHER_ID` | variable | Chrome Web Store Developer Dashboard → Publisher → Settings (the API v2 URLs need it) |
+| `CWS_EXTENSION_ID` | variable, optional | Defaults to `mmbpagencfjfgeicmeobbmeocdpeokdk` |
+| `AMO_JWT_ISSUER`, `AMO_JWT_SECRET` | secret | addons.mozilla.org → Tools → Manage API Keys (developer hub). The JWT issuer (`user:…`) and the JWT secret |
+
+The API can't create items, so the first Chrome version and any visibility change go through the
+Dashboard. On AMO the add-on id is the Firefox manifest's gecko id (`hitop@example.com`). If no
+add-on with that id is listed yet, the first listed version needs listing metadata: submit it by
+hand on AMO first.
+
+Open point (web-ext 10.8.0 lint, a warning today): Firefox wants
+`browser_specific_settings.gecko.data_collection_permissions` in the manifest. New add-ons need
+it now, and new versions of existing ones will need it later. The value is the owner's call. It
+might be `{"required": ["none"]}`, or a category that covers requests sent through the
+hitop.rws8.tech proxy. Add it in `webapp/scripts/package-extension.mjs` when it's decided.

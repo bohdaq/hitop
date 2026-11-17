@@ -364,6 +364,14 @@ hitop/
 - Dev server: `npm start` (port 3000)
 - Build: `npm run build`
 - Extension build: `npm run build:extension` (copies manifest_extension.json). Since HITOP Next A8 the repo's `build-*extension*.sh`/`build-chrome-store.sh` ship the web app instead (`webapp`: `npm run build:extension` → `dist-extension/`, then `webapp/scripts/package-extension.mjs chrome|store|firefox <dir>`; scripts run in the manifest's sandboxed page in Chrome; Firefox has no sandboxed pages, so there they run in boa compiled to wasm in a worker: `cli/crates/hitop-scripts-wasm` (own workspace, hitop-core feature `scripting`), `build-wasm.mjs --scripts` → `src/wasm/pkg-scripts/`, `platform/wasm-scripts.js` + `src/scripts-worker.js`, 30 s limit, e2e `tests/firefox.cjs` (Playwright Firefox, `?wasm-scripts`)); `HITOP_EXTENSION_UI=react` builds this React app
+- Extension releases (HITOP_NEXT_UI.md EXT1): the version is `extensionVersion` in `webapp/package.json` (package-extension.mjs writes it into both manifests).
+  Release: `cd webapp && npm pkg set extensionVersion=5.0.1`, commit, push, then push tag `ext-v5.0.1`; `.github/workflows/release-extensions.yml`
+  checks tag = version = both manifests, builds, `web-ext lint`s, attaches `hitop-chrome-<v>.zip`, `hitop-firefox-<v>.zip` and
+  `hitop-firefox-<v>-source.zip` (`scripts/extension-source.mjs`: git archive + BUILD.md, AMO needs it for bundled code) to Release `ext-v<v>`, then
+  submits: Chrome = `scripts/cws-publish.mjs` (Web Store API v2 upload + publish; secrets `CWS_CLIENT_ID`/`CWS_CLIENT_SECRET`/`CWS_REFRESH_TOKEN`, variable
+  `CWS_PUBLISHER_ID`, optional `CWS_EXTENSION_ID`; test `tests/cws-publish.mjs` = fake API, in test:unit), Firefox = `web-ext sign --channel listed`
+  (pinned web-ext, secrets `AMO_JWT_ISSUER`/`AMO_JWT_SECRET`, `--upload-source-code`, `--approval-timeout 0`). Missing secrets skip that store with a notice;
+  `ext-v<v>-rc.N` = pre-release, nothing submitted; manual runs are dry runs (artifacts only). Agents never push `ext-v` tags: the owner releases
 - `services/` are shared with `webapp/` (plain JS, no React): change them with both apps in mind
 - `services/transportService.jsx`: every request goes through `sendRequest()`; public hosts use
   the proxy when `VITE_HITOP_PROXY` is set (webapp build), otherwise fetch
