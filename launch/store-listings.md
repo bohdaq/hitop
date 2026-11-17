@@ -221,6 +221,9 @@ Firefox Add-ons, https://addons.mozilla.org/developers/ → HITOP → **Edit Pro
 - With HITOP Cloud turned on (signed in), collections sync to sync.hitop.rws8.tech; shared ones
   are end-to-end encrypted.
 
+- Chrome "Data usage" form: Authentication information, Website content (both relayed by the
+  proxy) and Personally identifiable information (the account email, HITOP Cloud sign-in only).
+
 ## Releasing an update
 
 `.github/workflows/release-extensions.yml` builds both packages from a tag and submits them.
@@ -270,7 +273,7 @@ add-on with that id is listed yet, the first listed version needs listing metada
 hand on AMO first.
 
 Data collection (Firefox `browser_specific_settings.gecko.data_collection_permissions`, owner decision
-2026-11-17): `{"required": ["authenticationInfo", "websiteContent"]}`, set in
+2026-11-17): `{"required": ["authenticationInfo", "websiteContent"], "optional": ["personallyIdentifyingInfo"]}` (the account email, signed-in people only), set in
 `webapp/scripts/package-extension.mjs`. Requests to public hosts go through the hitop.rws8.tech
 proxy, so their headers, tokens and bodies leave the device (relayed, never stored); Firefox shows
 this at install.

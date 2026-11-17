@@ -67,7 +67,11 @@ if (kind === "firefox") {
         strict_min_version: "115.0",
         // Requests to public hosts go through the hitop.rws8.tech proxy (relayed, not stored):
         // their headers/tokens and bodies leave the device (owner decision 2026-11-17).
-        data_collection_permissions: { required: ["authenticationInfo", "websiteContent"] },
+        data_collection_permissions: {
+          required: ["authenticationInfo", "websiteContent"],
+          // The account email, only for people who sign in to HITOP Cloud.
+          optional: ["personallyIdentifyingInfo"],
+        },
       },
     },
     content_security_policy: { extension_pages: CSP_PAGES },
