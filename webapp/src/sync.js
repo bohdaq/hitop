@@ -305,10 +305,9 @@ export class SyncClient {
     }
     if (path === "/v1/me" && res.status === 200 && json?.devices === true) rememberDevices(server);
     // ST1: a store build never shows the server's plan links (402 messages, `upgradeUrl`).
-    if (p.storeBuild && json) {
-      json = storeSafeAnswer(json, res.status);
-      return { status: res.status, json, text: JSON.stringify(json) };
-    }
+    // Answers with nothing to take out keep their own text.
+    const safe = p.storeBuild && json ? storeSafeAnswer(json, res.status) : json;
+    if (safe !== json) return { status: res.status, json: safe, text: JSON.stringify(safe) };
     return { status: res.status, json, text };
   }
 

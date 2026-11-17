@@ -180,9 +180,14 @@ async function runMode(server, store) {
     check(`${tag} lapsed Team keeps "until it's paid again" and where plans are changed`, lapsed.text.includes("until it's paid again") && lapsed.text.includes('Plans and payment are changed on the web'), lapsed.text.slice(0, 400));
     check(`${tag} the section is "Plan & billing"`, lapsed.text.includes('Plan & billing'));
   }
-  await app('await app.openOrg("general");');
-  await settle(p, 500);
-  if (store) clean('Organization → General', await view('hitop-org'));
+  // Every other section of the lapsed org, as its owner (the test server's own address taken out).
+  const sections = { general: 'General', members: 'Members', tokens: 'Access tokens', runs: 'Runs', security: 'Security' };
+  for (const [section, name] of Object.entries(sections)) {
+    await app('await app.openOrg(a);', section);
+    await settle(p, section === 'security' ? 1500 : 600);
+    const v = await view('hitop-org');
+    if (store) clean(`Organization → ${name}`, { ...v, text: v.text.split(server.url).join('') });
+  }
 
   // New organization: no trial in a store build.
   await app('app.openDialog("new-org");');

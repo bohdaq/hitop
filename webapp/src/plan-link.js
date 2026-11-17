@@ -16,21 +16,28 @@ export function planLink(e) {
 
 // ST1: a server's text without where to change or buy a plan, for the desktop's store builds (no
 // purchase call to action, App Store 3.1.1/3.1.3): the sync server ends a 402 `limit` message with
-// "See or change the plan at <portal>/orgs/<org>/plan", and run notes name that page too.
+// "See or change the plan at <portal>/orgs/<org>/plan", run notes name that page too, and a paid
+// feature on Free (mocks, monitors) says "<feature> come with the Pro, Team, ... plans".
+const PLAN_LIST = "(?:Pro|Team|Business|Enterprise)";
+const COME_WITH = new RegExp(`\\bcome with the ${PLAN_LIST}(?:, ${PLAN_LIST})*(?:,? and ${PLAN_LIST})? plans?\\b`, "gi");
 export function withoutPlanLink(text) {
   return String(text ?? "")
     .replace(/\s*See or change the plan at \S+/gi, "")
+    .replace(COME_WITH, "aren't part of this plan")
     .replace(/,?\s*https?:\/\/[^\s)]*\/(?:plan|pricing|billing|checkout)\b[^\s)]*/gi, "")
     .replace(/\s+([.,;)])/g, "$1")
     .trim();
 }
 
 // ST1: a sync server's JSON answer as a store build may show it: no `upgradeUrl`, and an error's
-// `message` without the plan link. Anything else is returned as is.
+// `message` without the plan link. Anything else (and an answer with nothing to take out) is
+// returned as is, the same object.
 export function storeSafeAnswer(json, status) {
   if (!json || typeof json !== "object" || Array.isArray(json)) return json;
-  const out = { ...json };
+  const message = status >= 400 && typeof json.message === "string" ? withoutPlanLink(json.message) : json.message;
+  if (!("upgradeUrl" in json) && message === json.message) return json;
+  const out = { ...json, message };
+  if (!("message" in json)) delete out.message;
   delete out.upgradeUrl;
-  if (status >= 400 && typeof out.message === "string") out.message = withoutPlanLink(out.message);
   return out;
 }

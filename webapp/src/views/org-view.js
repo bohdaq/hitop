@@ -199,7 +199,7 @@ export class HitopOrg extends LitElement {
           </div>`,
         )}
       </div>
-      <p class="hint">Guest viewers (free on Team, read only) and CI runners are added from a collection's Share dialog, on the People tab.${usage.usage?.guestViewers != null && usage.limits ? ` Guests now: ${usage.usage.guestViewers}.` : ""}</p>
+      <p class="hint">Guest viewers (${storeBuild() ? "" : "free on Team, "}read only) and CI runners are added from a collection's Share dialog, on the People tab.${usage.usage?.guestViewers != null && usage.limits ? ` Guests now: ${usage.usage.guestViewers}.` : ""}</p>
     </section>`;
   }
 
@@ -379,9 +379,9 @@ export class HitopOrg extends LitElement {
     const limit = sec.refused ? limitInfo(sec.refused) : null;
     const base = `/v1/orgs/${enc(org.id)}`;
     return html`<section class="org-card" aria-label="Security and audit">
-      <div class="org-head"><h2>Security &amp; audit</h2><span class="hint">Business</span></div>
+      <div class="org-head"><h2>Security &amp; audit</h2>${storeBuild() ? nothing : html`<span class="hint">Business</span>`}</div>
       ${limit
-        ? html`<lit-material-alert variant="info">${limit.message} Single sign-on, domain claims and the audit export come with Business.</lit-material-alert>`
+        ? html`<lit-material-alert variant="info">${limit.message} ${storeBuild() ? "Single sign-on, domain claims and the audit export aren't part of this plan." : "Single sign-on, domain claims and the audit export come with Business."}</lit-material-alert>`
         : sec.refused
           ? html`<p class="hint">${sec.refused.message}</p>`
           : html`

@@ -21,8 +21,8 @@ their updates continue as before.
 
 - macOS: **HiTop API Client** (id6785294166), today $4.99
 - iOS: **HiTop HTTP Client** (id6785326628), today $2.99. The iOS app is frozen (no new builds
-  planned), so this price change is the only thing to do for it. A price change needs no new build
-  and no review.
+  planned), so this price change is the only thing to do for it. As far as I know a price change
+  needs no new build. Check that in App Store Connect; I couldn't verify it from here.
 
 ## 2. Build the Mac App Store version from main (on the Mac)
 
@@ -94,8 +94,11 @@ Paste into App Review Information → Notes:
 > HITOP is free. Creating an account is free (Sign in → Continue with GitHub or Google). Everything
 > in the app works without an account. With one, HITOP Cloud syncs collections. Paid HITOP Cloud
 > plans for teams are not sold in the app: there is no purchase, price or link to buy in this
-> build. People who already have a plan on their account can use it after signing in (guideline
-> 3.1.3, multiplatform services). Usage meters show the plan's limits.
+> build. People who already have a plan on their account can use it after signing in. Usage
+> meters show the plan's limits.
+
+Don't name a guideline clause in the note unless you have checked its current wording. The rule
+followed here is 3.1.1/3.1.3: no purchase and no call to action for buying outside the app.
 
 If the reviewer asks for a demo account: make one on HITOP Cloud (a GitHub or Google account made
 for review, signed in once in the app), put its sign-in details under "Sign-in required", and tick

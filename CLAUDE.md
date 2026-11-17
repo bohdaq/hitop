@@ -369,7 +369,7 @@ hitop/
   elsewhere; the Organization page's "Plan & usage" (`org-view.js storePlan`: plan name, seats, meters, "This organization's
   plan has ended"), `sectionsFor`/`meters`/`limitFixers` `{store}` wording (org.js), and sync.js `http()` strips `upgradeUrl`
   and the server's "See or change the plan at …" (`plan-link.js storeSafeAnswer`). release-desktop.yml and CI's GitHub control
-  build `--features telemetry,updater,github`. Mock: `TauriMock.storeBuild` (default false); e2e `tests/store-mode.cjs` (Tauri,
+  build `--features telemetry,updater,github`. Mock: `TauriMock.storeBuild` (default false, env `HITOP_STORE_BUILD=1`); e2e `tests/store-mode.cjs` (Tauri,
   sync server with plans). Owner steps: `launch/app-store-free.md`
 - Dev: `cd desktop && npx tauri dev`
 - Build: `cd desktop && PATH="$HOME/.cargo/bin:$PATH" RUSTC="$HOME/.cargo/bin/rustc" npx tauri build`

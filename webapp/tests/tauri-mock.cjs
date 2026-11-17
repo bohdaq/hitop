@@ -206,7 +206,8 @@ class TauriMock {
     this.updater = null;
     // ST1 build_info: a GitHub Release build by default (the suites check today's desktop screens);
     // `storeBuild = true` = a Mac App Store / Microsoft Store build (no purchase call to action).
-    this.storeBuild = false;
+    // HITOP_STORE_BUILD=1 runs any suite as a store build.
+    this.storeBuild = process.env.HITOP_STORE_BUILD === '1';
     // Secret manager settings (commands.rs secret_manager_settings*): the
     // variables the app's environment sets (names), as Rust reports them.
     this.smShell = [];

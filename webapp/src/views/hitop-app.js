@@ -773,7 +773,7 @@ export class HitopApp extends LitElement {
         body = html`<p>They get an email with a link; once they sign in with that address they are members${d.added?.length ? html`. Invited so far: ${d.added.join(", ")}` : ""}.</p>
           <lit-material-textarea id="email" variant="outlined" rows="2" label="Email addresses (comma or space separated)" required autofocus .value=${d.draft ?? ""} ?error=${Boolean(d.error)} error-text=${d.error ?? ""}
             @input=${(e) => (this.dialog = { ...this.dialog, draft: e.target.value })}></lit-material-textarea>
-          ${outside.length ? html`<p class="hint warn-text">${outside.join(", ")} ${outside.length === 1 ? "is" : "are"} outside ${domain}: a guest viewer (read only, free on Team) may fit better, from a collection's Share dialog.</p>` : nothing}
+          ${outside.length ? html`<p class="hint warn-text">${outside.join(", ")} ${outside.length === 1 ? "is" : "are"} outside ${domain}: a guest viewer (read only${storeBuild() ? "" : ", free on Team"}) may fit better, from a collection's Share dialog.</p>` : nothing}
           <lit-material-select id="role" variant="outlined" label="Role" .value=${"member"}>
             <lit-material-select-option value="member">Member: edit and run</lit-material-select-option>
             <lit-material-select-option value="admin">Admin: also invite and manage the plan</lit-material-select-option>
@@ -791,7 +791,7 @@ export class HitopApp extends LitElement {
           <ul class="limit-list">
             <li class="ok-text">${icon("check-circle")} What you have keeps syncing and running</li>
             <li class="ok-text">${icon("check-circle")} Everything local, the CLI and CI keep working</li>
-            <li class="warn-text">${icon("warning-circle")} New ones need a bigger plan or a free slot</li>
+            <li class="warn-text">${icon("warning-circle")} ${storeBuild() ? "New ones need a free slot" : "New ones need a bigger plan or a free slot"}</li>
           </ul>
           <hitop-limit-note bare .limit=${l} .store=${s} .client=${s.library?.client ?? syncClient(s)}></hitop-limit-note>`;
         footer = html`<div slot="actions" class="dialog-actions">

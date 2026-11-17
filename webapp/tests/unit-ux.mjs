@@ -394,6 +394,10 @@ assert.equal(rankItems(more, "auth")[0].key, "col:2");
   assert.deepEqual(storeSafeAnswer({ error: "limit", message: msg, upgradeUrl: "https://x/orgs/o1/plan", max: 3 }, 402), { error: "limit", message: withoutPlanLink(msg), max: 3 });
   assert.deepEqual(storeSafeAnswer({ plan: "team", upgradeUrl: "https://x/orgs/o1/plan" }, 200), { plan: "team" });
   assert.deepEqual(storeSafeAnswer([1], 200), [1]);
+  const plain = { error: "not_found", message: "no such workspace" };
+  assert.equal(storeSafeAnswer(plain, 404), plain, "nothing to take out: the same object (sync.js keeps the server's text)");
+  assert.equal(withoutPlanLink("mock servers come with the Pro, Team, Business and Enterprise plans"), "mock servers aren't part of this plan");
+  assert.equal(withoutPlanLink("monitors come with the Pro, Team, Business and Enterprise plans. See or change the plan at https://x/orgs/o/plan"), "monitors aren't part of this plan.");
   assert.equal(storeSafeAnswer(null, 500), null);
   console.log("unit-ux: ST1 store mode ok");
 }
