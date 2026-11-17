@@ -12,13 +12,16 @@ const PLANS = [
   { plan: "business", price: "$25 / seat / month", items: ["Everything in Team", "SSO for your domain", "Audit export, admin console"], perSeat: true },
 ];
 
-/** The left menu: Security & audit only for owners and admins of a team organization. */
-export function sectionsFor(org) {
+/**
+ * The left menu: Security & audit only for owners and admins of a team organization. `store`: a
+ * desktop store build (ST1), where the plan section is "Plan & usage" (nothing is bought there).
+ */
+export function sectionsFor(org, { store = false } = {}) {
   const admin = org?.role === "owner" || org?.role === "admin";
   return [
     ["general", "General"],
     ["members", "Members"],
-    ["billing", "Plan & billing"],
+    ["billing", store ? "Plan & usage" : "Plan & billing"],
     ["tokens", "Access tokens & MCP"],
     ["runs", "Runs & monitors"],
     ...(admin && !org?.personal ? [["security", "Security & audit"]] : []),
@@ -31,9 +34,10 @@ const bytes = (n) => (n >= GB ? `${(n / GB).toFixed(n >= 10 * GB ? 0 : 1)} GB` :
 
 /**
  * One meter per limited metric of `GET /v1/orgs/:org/usage`: `level` is "ok", "warn" (80% or
- * more) or "full"; a metric without a limit (null) shows its use only.
+ * more) or "full"; a metric without a limit (null) shows its use only. `store` (ST1): notes say
+ * nothing about adding seats.
  */
-export function meters(usage) {
+export function meters(usage, { store = false } = {}) {
   const u = usage?.usage ?? {};
   const l = usage?.limits ?? {};
   const rows = [
@@ -60,7 +64,7 @@ export function meters(usage) {
         percent,
         level,
         text: max == null ? `${fmt(used)} · no limit` : `${fmt(used)} of ${fmt(max)}`,
-        note: level === "full" ? (id === "seats" ? "Full: add a seat to invite someone else" : "Full: new ones are refused until there is room") : level === "warn" ? (lastOne ? "Nearly full: 1 left" : "Nearly full") : "",
+        note: level === "full" ? (id === "seats" ? (store ? "Full: every seat is taken" : "Full: add a seat to invite someone else") : "Full: new ones are refused until there is room") : level === "warn" ? (lastOne ? "Nearly full: 1 left" : "Nearly full") : "",
       };
     });
 }
@@ -134,25 +138,45 @@ export function parseOrgLink(hash) {
 }
 
 /**
- * U50: who can lift a plan limit, as the limit note says it. `org`: the refused org as the
+ * U50: who can lift a plan limit, as the limit note says it. `store` (ST1, desktop store builds):
+ * the same people, worded without upgrading or a page to change the plan on. `org`: the refused org as the
  * account knows it (`GET /v1/orgs`: {id, name, role, personal}), or null when it isn't one of
  * the account's; `members`: `GET /v1/orgs/:org/members` when it could be read, else null; `me`:
  * the signed-in address. Never prints an org id as a name.
  * Returns { canFix, people: [{email, role}], text }.
  */
-export function limitFixers({ org = null, members = null, me = "" } = {}) {
+export function limitFixers({ org = null, members = null, me = "", store = false } = {}) {
+  if (store) return storeFixers({ org, members, me });
   if (org?.personal) return { canFix: true, people: [], text: "It's your personal account's plan: you can change it on Plan & billing." };
   if (org && (org.role === "owner" || org.role === "admin")) return { canFix: true, people: [], text: `You're ${org.role === "owner" ? "an owner" : "an admin"} of ${org.name}: you can change its plan on Plan & billing.` };
   const name = org?.name ? org.name : "the organization";
-  const people = (members?.members ?? [])
-    .filter((m) => (m.role === "owner" || m.role === "admin") && m.email !== me)
-    .sort((a, b) => (a.role === b.role ? a.email.localeCompare(b.email) : a.role === "owner" ? -1 : 1))
-    .map((m) => ({ email: m.email, role: m.role }));
+  const people = owners(members, me);
   if (people.length) {
     const list = people.map((p) => `${p.email} (${p.role})`).join(", ");
     return { canFix: false, people, text: `Only owners and admins change the plan. Ask ${people.length === 1 ? "" : "one of "}${list} to make room or upgrade ${name}.` };
   }
   return { canFix: false, people: [], text: `Only owners and admins change the plan. Ask an owner of ${name} to make room or upgrade.` };
+}
+
+// The owners and admins who can change the plan, owners first; never `me`.
+function owners(members, me) {
+  return (members?.members ?? [])
+    .filter((m) => (m.role === "owner" || m.role === "admin") && m.email !== me)
+    .sort((a, b) => (a.role === b.role ? a.email.localeCompare(b.email) : a.role === "owner" ? -1 : 1))
+    .map((m) => ({ email: m.email, role: m.role }));
+}
+
+// ST1: limitFixers in a store build. Neutral: remove something, or ask an owner to change the plan.
+function storeFixers({ org, members, me }) {
+  if (org?.personal) return { canFix: true, people: [], text: "This is your personal account's limit: remove something you no longer need to make room." };
+  const name = org?.name ? org.name : "the organization";
+  if (org && (org.role === "owner" || org.role === "admin")) return { canFix: true, people: [], text: `You're ${org.role === "owner" ? "an owner" : "an admin"} of ${org.name}: remove something it no longer needs to make room.` };
+  const people = owners(members, me);
+  if (people.length) {
+    const list = people.map((p) => `${p.email} (${p.role})`).join(", ");
+    return { canFix: false, people, text: `Remove something you no longer need, or ask ${people.length === 1 ? "" : "one of "}${list} to change the plan of ${name}.` };
+  }
+  return { canFix: false, people: [], text: `Remove something you no longer need, or ask an owner of ${name} to change its plan.` };
 }
 
 /** A refused create over a plan limit (402 `{error: "limit"}`), as the limit dialog needs it. */

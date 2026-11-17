@@ -43,6 +43,11 @@ telemetry = ["hitop-core/telemetry"]
 # tauri.github.conf.json). Off by default, so the Mac App Store build (store policy) and any
 # store build don't contain it; release-desktop.yml turns it on for the GitHub Release builds.
 updater = ["dep:tauri-plugin-updater", "dep:tauri-plugin-process"]
+# A GitHub Release build (ST1): the web app may show its purchase links (plan cards, "see plans").
+# Off by default, so a plain `tauri build` (Mac App Store, Microsoft Store) is a store build, whose
+# web app shows no purchase call to action (Apple 3.1.1/3.1.3); release-desktop.yml turns it on
+# next to `telemetry` and `updater`. `build_info` (commands.rs) answers which one this is.
+github = []
 
 [profile.release]
 strip = true

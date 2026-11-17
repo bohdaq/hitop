@@ -5,6 +5,7 @@
 import { LitElement, html, nothing } from "lit";
 import { icon } from "../icons.js";
 import { limitFixers } from "../org.js";
+import { planLabel, storeBuild } from "../store-mode.js";
 
 export class HitopLimitNote extends LitElement {
   static properties = { limit: { attribute: false }, store: { attribute: false }, client: { attribute: false }, bare: { type: Boolean }, fixers: { state: true } };
@@ -25,10 +26,11 @@ export class HitopLimitNote extends LitElement {
   async load() {
     const org = this.org;
     const me = this.client?.account?.()?.email ?? "";
-    this.fixers = limitFixers({ org, me });
+    const store = storeBuild();
+    this.fixers = limitFixers({ org, me, store });
     if (!this.fixers.canFix && this.limit?.org && this.client) {
       const members = await this.client.api("GET", `/v1/orgs/${encodeURIComponent(this.limit.org)}/members`).catch(() => null);
-      if (members) this.fixers = limitFixers({ org, members, me });
+      if (members) this.fixers = limitFixers({ org, members, me, store });
     }
   }
 
@@ -43,7 +45,7 @@ export class HitopLimitNote extends LitElement {
             if (this.store.currentOrg !== this.org.id) this.store.setCurrentOrg(this.org.id);
             app.closeDialog();
             app.openOrg("billing");
-          }}>Plan &amp; billing</lit-material-button>`
+          }}>${planLabel()}</lit-material-button>`
         : nothing}
     </div>`;
   }

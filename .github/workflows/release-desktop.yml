@@ -149,9 +149,10 @@ jobs:
           # windows-x86_64 = the NSIS installer; -nsis and -msi keys follow how HITOP was installed.
           includeUpdaterJson: true
           updaterJsonPreferNsis: true
-          # GitHub Release builds carry the opt-in usage ping and self-update; the Mac App Store
-          # build has neither (store policy).
-          args: ${{ matrix.args }} --config src-tauri/tauri.github.conf.json --features telemetry,updater
+          # GitHub Release builds carry the opt-in usage ping and self-update, and `github` turns store
+          # mode off (ST1: their web app keeps its plan links); the Mac App Store build has none of
+          # them (store policy).
+          args: ${{ matrix.args }} --config src-tauri/tauri.github.conf.json --features telemetry,updater,github
       # Tauri notarises the .app inside the disk image, not the .dmg itself: notarise and staple
       # the .dmg too, so Gatekeeper accepts the download as is, and replace the uploaded asset.
       - name: Notarise the disk image (macOS)

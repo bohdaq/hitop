@@ -20,6 +20,7 @@ import { DEFAULT_SERVER, DeviceLimitError, SyncClient } from "../sync.js";
 import { syncClient } from "./sync-view.js";
 import { loadSettings, saveSettings } from "../settings.js";
 import { platform } from "../platform/index.js";
+import { storeBuild } from "../store-mode.js";
 
 const PRIVACY_URL = "https://hitop.rws8.tech/privacy.html";
 const CHANNEL = "hitop-sign-in";
@@ -389,7 +390,7 @@ class HitopSignIn extends LitElement {
     return html`
       <h2 class="signin-title">Remove a device to sign in here</h2>
       <p class="signin-lead">Your ${plan} allows ${e.max} ${e.max === 1 ? "device" : "devices"}, and this account has ${e.keys.length}. Remove one you no longer use; nothing else on the account changes.
-        ${e.upgradeUrl ? html`Or <a href=${e.upgradeUrl} target="_blank" rel="noopener noreferrer">see plans</a>.` : nothing}</p>
+        ${e.upgradeUrl && !storeBuild() ? html`Or <a href=${e.upgradeUrl} target="_blank" rel="noopener noreferrer">see plans</a>.` : nothing}</p>
       <ul class="signin-devices" aria-label="Devices on this account">
         ${e.keys.map((k, i) => html`<li>
           <span class="signin-device-name">${k.name || `Device ${i + 1}`}</span>

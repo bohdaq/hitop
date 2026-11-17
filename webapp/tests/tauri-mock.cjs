@@ -204,6 +204,9 @@ class TauriMock {
     this.telemetry = { enabled: false, asked: true, id: null, lastPing: null };
     // Self-update: null = a build without it (the default, as the Mac App Store's).
     this.updater = null;
+    // ST1 build_info: a GitHub Release build by default (the suites check today's desktop screens);
+    // `storeBuild = true` = a Mac App Store / Microsoft Store build (no purchase call to action).
+    this.storeBuild = false;
     // Secret manager settings (commands.rs secret_manager_settings*): the
     // variables the app's environment sets (names), as Rust reports them.
     this.smShell = [];
@@ -418,6 +421,8 @@ class TauriMock {
         this.keychain.delete(`git/${host}/username`);
         return this.keychain.delete(`git/${host}/token`);
       }
+      case 'build_info':
+        return { store: this.storeBuild, channel: `hitop-build-channel:${this.storeBuild ? 'store' : 'github'}` };
       case 'updater_status':
         if (!this.updater) throw 'this build has no updater';
         return { version: this.updater.version ?? '1.2.0' };

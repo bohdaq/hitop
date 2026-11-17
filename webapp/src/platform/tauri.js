@@ -296,6 +296,8 @@ export function createPlatform() {
   };
   const platform = {
     name: "tauri",
+    // ST1: set by init() from Rust's `build_info`; true until then (no purchase links by default).
+    storeBuild: true,
     onError(fn) {
       report = fn;
     },
@@ -334,6 +336,10 @@ export function createPlatform() {
           // nothing stored, or not readable: start empty
         }
       }
+      // ST1: a store build (Mac App Store, Microsoft Store: Rust without the `github` feature) shows no
+      // purchase call to action. Fails closed: a binary that can't say counts as a store build.
+      const build = await invoke("build_info").catch(() => null);
+      platform.storeBuild = build?.store !== false;
       // The Settings page: secret managers, and the usage ping where the build has it (not the Mac App Store one).
       // Self-update, in the GitHub Release builds only (null elsewhere): Settings → Updates and the bar.
       const updates = await desktopUpdates(invoke);

@@ -40,7 +40,7 @@ export function actions(app, shortcuts = {}) {
     ["shortcuts", "Keyboard shortcuts", () => app.openDialog("shortcuts"), { shortcut: shortcuts.help }],
     ["account", app.account() ? "Account & devices" : "Sign in to HITOP Cloud", () => app.go("sync"), { keywords: ["login", "sync"] }],
     // UX2: signed out, ">org" still finds the way to organizations (Sign in first).
-    ...(app.account() ? [] : [["org", "Organization: sign in to manage one", () => app.openSignIn(null, "Sign in to manage your organization"), { keywords: ["organization", "team", "billing", "members"] }]]),
+    ...(app.account() ? [] : [["org", "Organization: sign in to manage one", () => app.openSignIn(null, "Sign in to manage your organization"), { keywords: ["organization", "team", "members", ...(app.storeBuild?.() ? [] : ["billing"])] }]]),
   ];
   return list.map(([id, label, run, opts = {}]) => ({ id: `action:${id}`, label, section: SECTIONS.actions, run, ...opts }));
 }

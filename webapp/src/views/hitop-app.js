@@ -37,6 +37,7 @@ import { orgLabel } from "../orgs.js";
 import { agentPanel, runAi } from "./ai-view.js";
 import "./org-view.js";
 import { limitInfo, parseOrgLink, sectionsFor, usageWarnings } from "../org.js";
+import { planLabel, storeBuild } from "../store-mode.js";
 import { asksForEvents } from "../features.js";
 import { isCurl, parseCurl } from "../curl.js";
 import { gettingStartedSteps, hideGettingStarted, importedIds, SAMPLE_NAME, savedOnce, showGettingStarted } from "../getting-started.js";
@@ -176,7 +177,7 @@ export class HitopApp extends LitElement {
       this.orgLink = link;
       // UX2 (10): signed out, the link asks to sign in first and continues to its section.
       if (!this.sync().account()) {
-        const label = sectionsFor(null).find(([k]) => k === link.section)?.[1] ?? "the organization";
+        const label = sectionsFor(null, { store: storeBuild() }).find(([k]) => k === link.section)?.[1] ?? "the organization";
         this.openSignIn(() => (this.closeDialog(), this.applyOrgLink()), `Sign in to open ${label}`);
         return;
       }
@@ -752,11 +753,13 @@ export class HitopApp extends LitElement {
         headline = "New organization";
         body = html`<p>A shared space for your team's collections, environments and runs. Your personal space stays private. You own it; invite people next.</p>
           <lit-material-text-field id="name" variant="outlined" label="Organization name" required autofocus ?error=${Boolean(d.error)} error-text=${d.error ?? ""}></lit-material-text-field>
-          <fieldset class="org-start">
+          ${storeBuild()
+            ? nothing
+            : html`<fieldset class="org-start">
             <legend>Start on</legend>
             <label class="org-choice"><input type="radio" name="org-start" value="trial" checked /> <span><b>Team trial</b>, free for 14 days, no card: unlimited shared collections, 5 free guest viewers, mocks and monitors.</span></label>
             <label class="org-choice"><input type="radio" name="org-start" value="free" /> <span><b>Free</b>: 3 members, 3 shared collections, 100 MB.</span></label>
-          </fieldset>`;
+          </fieldset>`}`;
         footer = actions("Create and invite people");
         break;
       case "org-invite": {
@@ -776,7 +779,7 @@ export class HitopApp extends LitElement {
             <lit-material-select-option value="admin">Admin: also invite and manage the plan</lit-material-select-option>
           </lit-material-select>
           ${seatsMax != null
-            ? html`<p class=${`hint tabular ${seatsUsed + pending.length > seatsMax ? "warn-text" : ""}`} role="status">Seats after these invites: ${seatsUsed + pending.length} of ${seatsMax}${seatsUsed + pending.length > seatsMax ? ". Add seats on Plan & billing first." : ""}</p>`
+            ? html`<p class=${`hint tabular ${seatsUsed + pending.length > seatsMax ? "warn-text" : ""}`} role="status">Seats after these invites: ${seatsUsed + pending.length} of ${seatsMax}${seatsUsed + pending.length > seatsMax ? (storeBuild() ? ". That is more seats than the plan has." : ". Add seats on Plan & billing first.") : ""}</p>`
             : nothing}`;
         footer = actions(pending.length > 1 ? `Send ${pending.length} invites` : "Invite");
         break;
@@ -794,8 +797,8 @@ export class HitopApp extends LitElement {
         footer = html`<div slot="actions" class="dialog-actions">
           <lit-material-button variant="text" @click=${() => this.closeDialog()}>Close</lit-material-button>
           ${d.admin
-            ? html`<lit-material-button variant="filled" @click=${() => (this.closeDialog(), this.openOrg("billing"))}>Plan &amp; billing</lit-material-button>`
-            : html`<lit-material-button variant="filled" @click=${() => (this.closeDialog(), this.openOrg("members"))}>See who can upgrade</lit-material-button>`}
+            ? html`<lit-material-button variant="filled" @click=${() => (this.closeDialog(), this.openOrg("billing"))}>${planLabel()}</lit-material-button>`
+            : html`<lit-material-button variant="filled" @click=${() => (this.closeDialog(), this.openOrg("members"))}>${storeBuild() ? "See members" : "See who can upgrade"}</lit-material-button>`}
         </div>`;
         break;
       }
@@ -1081,7 +1084,7 @@ export class HitopApp extends LitElement {
     const label = all.map((m) => `${m.label}: ${m.text}${m.level === "full" ? ", full" : ", nearly full"}`).join("; ");
     // DD3: a device limit is about your own devices: the chip opens Account → Devices.
     const devices = warn.id === "devices";
-    return html`<button type="button" class=${`usage-chip ${warn.level}`} aria-label=${`Plan usage: ${label}`} title=${`${label}. ${devices ? "Open your devices" : "Open Plan & billing"}`} @click=${() => (devices ? this.openDevices() : this.openOrg("billing"))}>
+    return html`<button type="button" class=${`usage-chip ${warn.level}`} aria-label=${`Plan usage: ${label}`} title=${`${label}. ${devices ? "Open your devices" : `Open ${planLabel()}`}`} @click=${() => (devices ? this.openDevices() : this.openOrg("billing"))}>
       ${icon("warning-circle")}<span class="mono">${warn.text}</span><span class="usage-chip-what">${warn.label.toLowerCase()}</span>${all.length > 1 ? html`<span class="mono usage-chip-more">+${all.length - 1}</span>` : nothing}
     </button>`;
   }
@@ -1147,7 +1150,8 @@ export class HitopApp extends LitElement {
     const client = s.library?.client ?? syncClient(s);
     try {
       if (d.kind === "new-org") {
-        const trial = this.querySelector('#dialog input[name="org-start"]:checked')?.value === "trial";
+        // ST1: a store build offers no trial (the choice isn't shown there).
+        const trial = !storeBuild() && this.querySelector('#dialog input[name="org-start"]:checked')?.value === "trial";
         const org = await client.api("POST", "/v1/orgs", { name: this.field("name") });
         let note = "";
         if (trial) {
@@ -1224,8 +1228,14 @@ export class HitopApp extends LitElement {
     this.openDialog("limit", { limit, admin });
   }
 
-  /** The current org's plan page on the portal. */
+  /** ST1: a desktop store build (Mac App Store, Microsoft Store): no purchase call to action anywhere. */
+  storeBuild() {
+    return storeBuild();
+  }
+
+  /** The current org's plan page on the portal (web only; null in a store build). */
   planUrl() {
+    if (storeBuild()) return null;
     const org = this.store.currentOrg;
     return org ? `${PORTAL_URL}orgs/${encodeURIComponent(org)}/plan` : PORTAL_URL;
   }
@@ -1775,7 +1785,7 @@ export class HitopApp extends LitElement {
       ${org && !org.personal && ["owner", "admin"].includes(org.role)
         ? html`<lit-material-list-item interactive @click=${() => this.openDialog("org-invite")}>${icon("plus")} Invite to ${org.name}…</lit-material-list-item>`
         : nothing}
-      ${this.store.orgs?.length ? html`<lit-material-list-item interactive @click=${() => this.openOrg("billing")}>${icon("users-three")} Plan & billing</lit-material-list-item>` : nothing}
+      ${this.store.orgs?.length ? html`<lit-material-list-item interactive @click=${() => this.openOrg("billing")}>${icon("users-three")} ${planLabel()}</lit-material-list-item>` : nothing}
       <lit-material-list-item interactive @click=${() => this.signOut()}>${icon("sign-out")} Sign out</lit-material-list-item>
     </lit-material-menu>`;
   }

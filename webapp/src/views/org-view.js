@@ -4,14 +4,16 @@
 // (cloud/portal/src/pages/*.js), through the app's own session (sync.js SyncClient).
 //
 // Purchases: the web app opens Stripe Checkout and the billing portal. The desktop build never
-// shows a purchase link (App Store rule, as before: hitop-app.js PORTAL_URL); it shows the plan
-// and usage and says where to change them.
+// shows a purchase link (App Store rule, as before: hitop-app.js PORTAL_URL); the GitHub Release
+// builds show the plan and usage and say where to change them, the store builds (ST1, store-mode.js)
+// only the plan's name, usage and a neutral line when it has ended.
 import { LitElement, html, nothing } from "lit";
 import { styleMap } from "lit/directives/style-map.js";
 import { confirm } from "@lit-material/confirm";
 import { icon } from "../icons.js";
 import { IS_TAURI, platform } from "../platform/index.js";
 import { syncClient } from "./sync-view.js";
+import { storeBuild } from "../store-mode.js";
 import { limitInfo, meters, planCards, PLAN_NAMES, sectionsFor } from "../org.js";
 
 const enc = encodeURIComponent;
@@ -222,6 +224,7 @@ export class HitopOrg extends LitElement {
     const canBuy = !IS_TAURI && billing?.enabled && admin && !billing.subscribed;
     // DD4: seats count only while a per-seat plan is in force (a lapsed Team is Free, whatever it paid for).
     const perSeat = ["team", "business"].includes(usage.planInForce);
+    if (storeBuild()) return this.storePlan({ org, usage, billing, perSeat });
     return html`<section class="org-card" aria-label="Plan and billing">
         <div class="org-head">
           <h2>Plan &amp; billing</h2>
@@ -277,9 +280,39 @@ export class HitopOrg extends LitElement {
       </section>`;
   }
 
+  /**
+   * ST1: the plan section of a store build (Mac App Store, Microsoft Store): the plan's name, seats
+   * and usage, and a neutral line when it has ended. Nothing to buy, no price, no link, and no word
+   * about changing it anywhere else (App Store 3.1.1/3.1.3).
+   */
+  storePlan({ org, usage, billing, perSeat }) {
+    const ended = usage.planInForce !== usage.plan;
+    return html`<section class="org-card" aria-label="Plan and usage">
+        <div class="org-head">
+          <h2>Plan &amp; usage</h2>
+          <span class="status-chip info">${PLAN_NAMES[usage.planInForce] ?? usage.planInForce}${billing?.seats && perSeat ? ` · ${billing.seats} seats` : ""}</span>
+        </div>
+        ${ended
+          ? html`<lit-material-alert variant="warning">${org.personal ? "Your account's plan has ended" : "This organization's plan has ended"}: Free limits apply. Nothing is deleted; over-limit collections become read-only.</lit-material-alert>`
+          : nothing}
+        ${billing?.trial?.endsAt ? html`<p class="hint">This plan runs until ${new Date(billing.trial.endsAt * 1000).toLocaleDateString()}.</p>` : nothing}
+        <h3>Usage</h3>
+        <div class="org-meters">
+          ${meters(usage, { store: true }).map(
+            (m) => html`<div class="org-meter">
+              <div class="org-meter-top"><span>${m.label}</span><span class="tabular">${m.text}</span></div>
+              <div role="meter" aria-label=${m.label} aria-valuenow=${m.used} aria-valuemin="0" aria-valuemax=${m.max ?? m.used} class=${`org-meter-bar ${m.level}`}><span style=${styleMap({ width: `${m.percent}%` })}></span></div>
+              ${m.note ? html`<span class=${`hint ${m.level}`}>${m.note}</span>` : nothing}
+              ${m.id === "devices" ? html`<button type="button" class="link-button" @click=${() => this.app.openDevices()}>See your devices</button>` : nothing}
+            </div>`,
+          )}
+        </div>
+      </section>`;
+  }
+
   /** Stripe Checkout or the billing portal, in this browser tab's place (web only). */
   async openBilling(kind, org, card) {
-    if (IS_TAURI) return;
+    if (IS_TAURI || storeBuild()) return;
     const base = `/v1/orgs/${enc(org.id)}/billing`;
     const r = await this.act(() => (kind === "portal" ? this.client.api("GET", `${base}/portal`) : this.client.api("POST", `${base}/checkout`, { plan: card.plan, period: card.period, ...(card.perSeat ? { seats: Math.max(1, this.data.usage.usage?.seats ?? 1) } : {}) })));
     if (r?.url && /^https:\/\//.test(r.url)) window.open(r.url, "_blank", "noopener");
@@ -412,7 +445,7 @@ export class HitopOrg extends LitElement {
       </lit-material-empty-state></div>`;
     }
     const d = this.data;
-    const sections = sectionsFor(d?.org);
+    const sections = sectionsFor(d?.org, { store: storeBuild() });
     const body = !d
       ? html`<div class="skeleton block" aria-busy="true"></div>`
       : this.section === "members"

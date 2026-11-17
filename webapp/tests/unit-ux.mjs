@@ -369,6 +369,33 @@ assert.equal(rankItems(more, "auth")[0].key, "col:2");
   assert.equal(limitFixers({ org: null }).text, "Only owners and admins change the plan. Ask an owner of the organization to make room or upgrade.", "an org that isn't mine: never its id");
   assert.equal(limitFixers({ org: { ...acme, role: "admin" } }).canFix, true);
   assert.equal(limitFixers({ org: { personal: true, role: "owner" } }).text, "It's your personal account's plan: you can change it on Plan & billing.");
+  // ST1: a store build names the same people, without upgrading, billing or a page to buy on.
+  const sales = /pay|price|upgrade|checkout|pricing|plans|trial|buy|billing|\$|€/i;
+  const sf = limitFixers({ org: acme, members, me: "me@x.test", store: true });
+  assert.deepEqual(sf.people.map((p) => p.email), ["ada@x.test", "zed@x.test"]);
+  assert.equal(sf.text, "Remove something you no longer need, or ask one of ada@x.test (owner), zed@x.test (admin) to change the plan of Acme.");
+  for (const x of [sf, limitFixers({ org: acme, store: true }), limitFixers({ org: null, store: true }), limitFixers({ org: { ...acme, role: "owner" }, store: true }), limitFixers({ org: { personal: true, role: "owner" }, store: true })]) {
+    assert.doesNotMatch(x.text, sales, x.text);
+  }
+  assert.equal(meters(free(3, 3), { store: true }).find((m) => m.id === "seats").note, "Full: every seat is taken");
+  assert.equal(meters(free(3, 3)).find((m) => m.id === "seats").note, "Full: add a seat to invite someone else");
+}
+
+// ST1: store builds' plan section label and the server's plan links taken out.
+{
+  const { sectionsFor } = await import("../src/org.js");
+  const { withoutPlanLink, storeSafeAnswer } = await import("../src/plan-link.js");
+  assert.equal(sectionsFor({ role: "owner" }, { store: true }).find(([k]) => k === "billing")[1], "Plan & usage");
+  assert.equal(sectionsFor({ role: "owner" }).find(([k]) => k === "billing")[1], "Plan & billing");
+  const msg = "plan limit: the free plan of the organization Acme allows 3 shared collections; nothing was changed. See or change the plan at https://cloud.hitop.rws8.tech/orgs/o1/plan";
+  assert.equal(withoutPlanLink(msg), "plan limit: the free plan of the organization Acme allows 3 shared collections; nothing was changed.");
+  assert.equal(withoutPlanLink("the free plan keeps status rows only: the sealed report was not stored (run history needs Pro or above, https://cloud.hitop.rws8.tech/orgs/o1/plan)"), "the free plan keeps status rows only: the sealed report was not stored (run history needs Pro or above)");
+  assert.equal(withoutPlanLink("Not found"), "Not found");
+  assert.deepEqual(storeSafeAnswer({ error: "limit", message: msg, upgradeUrl: "https://x/orgs/o1/plan", max: 3 }, 402), { error: "limit", message: withoutPlanLink(msg), max: 3 });
+  assert.deepEqual(storeSafeAnswer({ plan: "team", upgradeUrl: "https://x/orgs/o1/plan" }, 200), { plan: "team" });
+  assert.deepEqual(storeSafeAnswer([1], 200), [1]);
+  assert.equal(storeSafeAnswer(null, 500), null);
+  console.log("unit-ux: ST1 store mode ok");
 }
 
 // U19: secrets a request uses with no value on this device.

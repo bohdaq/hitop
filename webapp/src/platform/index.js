@@ -5,6 +5,8 @@
 //
 // An adapter has:
 //   name                     "web" | "tauri"
+//   storeBuild               true only in the desktop's store builds (Mac App Store, Microsoft Store; ST1):
+//                            no prices, purchase buttons, plan links or "buy on the web" text anywhere
 //   init()                   async; loads what `storage` then reads synchronously
 //   storage                  load*/save* for collections, tabs, history, contexts, environments
 //   responses                null, or large response bodies by tab id (IndexedDB, response-store.js):

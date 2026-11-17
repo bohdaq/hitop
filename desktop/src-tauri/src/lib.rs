@@ -40,6 +40,7 @@ pub fn run() {
             commands::telemetry_status,
             commands::telemetry_set,
             updates::updater_status,
+            commands::build_info,
             commands::ws_connect,
             commands::ws_send,
             commands::ws_close,

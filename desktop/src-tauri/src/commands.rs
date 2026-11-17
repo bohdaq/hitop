@@ -530,6 +530,23 @@ pub fn write_file(path: String, data: String) -> Result<(), String> {
     std::fs::write(&path, bytes).map_err(|e| format!("writing {path}: {e}"))
 }
 
+// ── Store or GitHub build (ST1) ──────────────────────────────────────────────
+
+/// Which build this is, as `desktop/scripts/check-store-binary.sh` greps it: a store build (Mac App
+/// Store, Microsoft Store: no Cargo feature `github`) or a GitHub Release build. Only one of the two
+/// strings is compiled in.
+#[cfg(feature = "github")]
+const CHANNEL: &str = "hitop-build-channel:github";
+#[cfg(not(feature = "github"))]
+const CHANNEL: &str = "hitop-build-channel:store";
+
+/// `{store, channel}`: in a store build the web app shows no purchase call to action
+/// (webapp `platform().storeBuild`).
+#[tauri::command]
+pub fn build_info() -> Value {
+    serde_json::json!({ "store": !cfg!(feature = "github"), "channel": CHANNEL })
+}
+
 // ── Usage ping (feature `telemetry`; absent from Mac App Store builds) ────────
 
 /// The desktop's usage ping setting and exactly what a ping sends; an error

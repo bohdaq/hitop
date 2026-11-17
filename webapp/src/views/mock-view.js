@@ -3,6 +3,7 @@
 import { LitElement, html, nothing } from "lit";
 import { icon } from "../icons.js";
 import { limitInfo } from "../org.js";
+import { storeBuild } from "../store-mode.js";
 import "./limit-note.js";
 
 class HitopMock extends LitElement {
@@ -41,7 +42,7 @@ class HitopMock extends LitElement {
       if (method === "PUT") await this.store.library.flush();
       const r = await this.api.call(method, this.path, undefined, { allow: [402] });
       if (r.status === 402) {
-        this.error = `${r.json?.message ?? "Mock servers need a paid plan."}`;
+        this.error = `${r.json?.message ?? (storeBuild() ? "Mock servers aren't part of this plan." : "Mock servers need a paid plan.")}`;
         this.limit = limitInfo({ status: 402, body: r.json, message: r.json?.message });
       }
       else this.mock = method === "PUT" ? r.json : null;

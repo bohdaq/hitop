@@ -588,8 +588,9 @@ jobs:
           cargo build --locked
           ../scripts/check-store-binary.sh store target/debug/hitop-desktop "store configuration"
           # Control: the GitHub Release configuration (tauri.github.conf.json, --features
-          # telemetry,updater) has the ping, the updater plugin, its endpoint and public key.
-          TAURI_CONFIG="$(cat tauri.github.conf.json)" cargo build --locked --features telemetry,updater
+          # telemetry,updater,github) has the ping, the updater plugin, its endpoint and public key, and the
+          # GitHub channel (store mode off).
+          TAURI_CONFIG="$(cat tauri.github.conf.json)" cargo build --locked --features telemetry,updater,github
           ../scripts/check-store-binary.sh github target/debug/hitop-desktop "GitHub configuration"
       - name: Microsoft Store package layout (make-layout.mjs; manifest rendered in both identity modes, XML-checked)
         run: |
@@ -650,4 +651,4 @@ jobs:
           cargo clippy --locked -- -D warnings
       - name: clippy with the GitHub Release features (usage ping, self-update)
         working-directory: desktop/src-tauri
-        run: cargo clippy --locked --features telemetry,updater -- -D warnings
+        run: cargo clippy --locked --features telemetry,updater,github -- -D warnings

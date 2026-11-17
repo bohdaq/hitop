@@ -357,6 +357,8 @@ function browserWebSocket(url, { protocols = [] } = {}, h) {
 export function createPlatform() {
   return {
     name: "web",
+    // ST1: only the desktop store builds hide purchase links; the web app and extensions keep them.
+    storeBuild: false,
     // Large response bodies across reloads (IndexedDB), or null without it.
     responses: null,
     async init() {

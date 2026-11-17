@@ -1,5 +1,5 @@
 #!/bin/sh
-# Store builds (Mac App Store, Microsoft Store) carry no usage ping and no self-update: the desktop crate
+# Store builds (Mac App Store, Microsoft Store) carry no usage ping and no self-update, and are in store mode: the desktop crate
 # without the `telemetry` and `updater` features, and no update endpoint or key. This greps a built
 # binary for the strings those bring in. One list for every caller: CI job `desktop` (the MAS
 # configuration on Linux, and the GitHub configuration as the control) and release-msstore.yml (the exe
@@ -9,6 +9,9 @@
 #   desktop/scripts/check-store-binary.sh github <binary> [label]   fails if any is missing (the control)
 #
 # A store check also needs a string every build has (the bundle id), so a wrong file can't pass.
+# Store mode (ST1): `build_info` (commands.rs) compiles in exactly one channel string, so a store
+# binary must have the store one (its web app then shows no purchase call to action) and a GitHub
+# binary the github one (a workflow that forgot `--features github` fails here, not in the store).
 set -eu
 mode=${1:?usage: check-store-binary.sh store|github <binary> [label]}
 bin=${2:?usage: check-store-binary.sh store|github <binary> [label]}
@@ -41,8 +44,10 @@ case "$mode" in
       if has "$s"; then echo "$label contains '$s' (usage ping or updater in a store build)" >&2; found=1; fi
     done < "${TMPDIR:-/tmp}/hitop-store-strings.$$"
     rm -f "${TMPDIR:-/tmp}/hitop-store-strings.$$"
+    has 'hitop-build-channel:store' || { echo "$label lacks 'hitop-build-channel:store' (store mode off: built with the github feature?)" >&2; found=1; }
+    if has 'hitop-build-channel:github'; then echo "$label contains 'hitop-build-channel:github' (a GitHub build, not a store build)" >&2; found=1; fi
     test "$found" = 0 || exit 1
-    echo "$label: no usage ping or updater code, endpoint or key"
+    echo "$label: no usage ping or updater code, endpoint or key; store mode on"
     ;;
   github)
     missing=0
@@ -51,8 +56,10 @@ case "$mode" in
       if ! has "$s"; then echo "control: $label lacks '$s'" >&2; missing=1; fi
     done < "${TMPDIR:-/tmp}/hitop-store-strings.$$"
     rm -f "${TMPDIR:-/tmp}/hitop-store-strings.$$"
+    has 'hitop-build-channel:github' || { echo "control: $label lacks 'hitop-build-channel:github' (built without --features github: store mode)" >&2; missing=1; }
+    if has 'hitop-build-channel:store'; then echo "control: $label contains 'hitop-build-channel:store'" >&2; missing=1; fi
     test "$missing" = 0 || exit 1
-    echo "$label: usage ping, updater, endpoint and key present (control)"
+    echo "$label: usage ping, updater, endpoint, key and GitHub channel present (control)"
     ;;
   *)
     echo "usage: check-store-binary.sh store|github <binary> [label]" >&2

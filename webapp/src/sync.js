@@ -26,6 +26,7 @@
 //   hitop_sync_files:<ws>  { path: text } for collections kept in app storage
 import { loadFormat } from "./wasm/format.js";
 import { platform } from "./platform/index.js";
+import { storeSafeAnswer } from "./plan-link.js";
 import { requestFiles } from "./git.js";
 
 export const DEFAULT_SERVER = "https://sync.hitop.rws8.tech";
@@ -303,6 +304,11 @@ export class SyncClient {
       json = null;
     }
     if (path === "/v1/me" && res.status === 200 && json?.devices === true) rememberDevices(server);
+    // ST1: a store build never shows the server's plan links (402 messages, `upgradeUrl`).
+    if (p.storeBuild && json) {
+      json = storeSafeAnswer(json, res.status);
+      return { status: res.status, json, text: JSON.stringify(json) };
+    }
     return { status: res.status, json, text };
   }
 

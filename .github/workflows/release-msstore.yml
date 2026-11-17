@@ -81,7 +81,7 @@ jobs:
       - working-directory: webapp
         run: npm ci
       # tauri.conf.json as is (the store configuration: no updater endpoint or key) and no Cargo
-      # features (no `telemetry`, no `updater`), like the Mac App Store build. --no-bundle: the MSIX
+      # features (no `telemetry`, no `updater`, no `github`: store mode, no purchase call to action), like the Mac App Store build. --no-bundle: the MSIX
       # is made below; Tauri has no MSIX target.
       - name: Build the store exe
         working-directory: desktop
