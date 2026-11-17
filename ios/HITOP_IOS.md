@@ -19,8 +19,8 @@ Activity/Siri).
 
 | # | Scope | Status |
 | --- | --- | --- |
-| I0 | Project: XcodeGen `ios/HITOP/project.yml` (bundle id of the live app, so it ships as an update), iOS 26 target, design tokens + glass components, Geist bundled (OFL), CI job on a macOS runner: build, unit tests, UI tests on the iOS 26 simulator, screenshots | planned |
-| I1 | Collections tab, request editor (params, headers, body, auth, scripts, tests), Send, response sheet (status, timing, body with folding, headers, tests, cookies), environments and variables (peek), history | planned |
+| I0 | Project: XcodeGen `ios/HITOP/project.yml` (bundle id of the live app, so it ships as an update), iOS 26 target, design tokens + glass components, Geist bundled (OFL), CI job on a macOS runner: build, unit tests, UI tests on the iOS 26 simulator, screenshots | done (branch `ios-i0-i1`) |
+| I1 | Collections tab, request editor (params, headers, body, auth, scripts, tests), Send, response sheet (status, timing, body with folding, headers, tests, cookies), environments and variables (peek), history | done (branch `ios-i0-i1`) |
 | I2 | HITOP Cloud sign-in and sync (library + shared collections via the sync API; key handling through hitop-sync-crypto rules, ported or via a Rust xcframework of hitop-wasm's core) | planned |
 | I3 | Collection runner + run report, Live Activity, widgets, App Intents | planned |
 | I4 | WebSocket, SSE, GraphQL schema, gRPC | planned |
@@ -29,3 +29,92 @@ Activity/Siri).
 
 Owner tasks: none until I6, apart from opening the CI-built simulator builds or TestFlight if wanted.
 Agents can't run Xcode here (Linux bastion): every tranche is built and tested by the macOS CI job.
+
+## I0 + I1: what landed (2026-11-18, branch `ios-i0-i1`)
+
+CI: `.github/workflows/ios.yml`, green run RUN_URL (artifact `screenshots`: the five iPhone screens + iPad).
+
+**Project (I0)**
+- `ios/HITOP/project.yml` (XcodeGen 2.46.0, pinned by sha256 in CI): project `HITOPApp`, targets `HITOP` (app),
+  `HITOPTests`, `HITOPUITests`; iOS/iPadOS 26.0, Swift 6 language mode, strict concurrency complete; HitopKit as a local
+  package. Bundle id `hitop.rws8.tech.HiTop` (the live app's, from `ios/HiTop/HiTop.xcodeproj`), version 2.0.0 (1),
+  display name HITOP, team XD7JHZ5DB3. Info.plist keeps the old app's ATS setting (arbitrary loads: an API client) and adds
+  local networking + its usage text.
+- Folders are `App/`, `UnitTests/`, `UITests/` and the project is `HITOPApp.xcodeproj` because macOS file systems are
+  case-insensitive: `ios/HITOP` and `ios/HiTop` are one folder on a Mac, so nothing may be named `HiTop*` in it. The old
+  app's files stay where they are (the old project still opens).
+- Fonts: Geist and Geist Mono 1.9.2 (Regular, Medium, SemiBold, Bold / Regular, Medium, SemiBold) from the `geist` npm
+  package, SIL OFL 1.1, `App/Resources/Fonts/OFL-Geist.txt`; listed in About → Acknowledgements (with the license text).
+- Icon: the companion's 1024 AppIcon set (light, dark, tinted renders of `brand/png/logo-1024.png`).
+- Design system (`App/UI/Theme.swift`, `Components.swift`): colour tokens of the drafts, Geist type styles that scale with
+  Dynamic Type (`Font.custom(_:size:relativeTo:)`, nav bar titles through UIFontMetrics), real Liquid Glass (system glass
+  tab bar with `Tab(role: .search)`, toolbars, `.buttonStyle(.glass)`, `.glassProminent` Send tinted with the accent,
+  `GlassEffectContainer` for the Save + Send bar, `.glassEffect` in `hitopGlass`), method tag, variable chip, code view
+  (JSON highlighting with `${var}` chips), status pill, timing bar, segment/capsule tabs. Reduce Transparency swaps glass
+  for a solid surface; Increase Contrast strengthens card and glass edges.
+- `App/Core` is Foundation + HitopKit only (no SwiftUI), so it and its unit tests also build and run on Linux (a scratch
+  SwiftPM package pointing at `App/Core` and `UnitTests`); `App/UI` is the SwiftUI layer.
+
+**Core client (I1)**
+- Tabs: Collections, History, Environments, Runs (placeholder until I3) + the search tab.
+- Collections: collections with folders (stored `folders` + `file` paths like the web app); new request added at once as
+  "Untitled" and named from its URL until saved under a name ("POST /v2/orders", web app FV1 rules, `AutoName`); rename,
+  delete, move (sheet listing every collection/folder), duplicate, pin with swipe actions and context menus; folder rename,
+  delete, new folder; filter chips All / Pinned / Recent.
+- Request editor: method picker, URL with `${var}` chips (tap a chip to peek its value and scope; secrets masked with
+  Show), Params (the URL's query + disabled rows), Headers, Body (JSON with validation, Format that keeps `${var}`, helper
+  keys; Raw; Form/Multipart rows; GraphQL query + variables + operation name), Auth (from collection, none, bearer, basic,
+  API key header/query), Tests and Pre-request scripts (JavaScriptCore + pm-shim.js via HitopKit). Unsaved state in the
+  title area and the Save button; edits survive navigation (one editor per request while the app runs).
+- Send: HitopKit `Runner` (variables, auth, GraphQL/form bodies, send rules, scripts, masking) on a URLSession client that
+  also keeps headers in order, the raw body, cookies and URLSessionTaskMetrics. Script-set variables are kept per
+  collection for the session (as the web app). WebSocket/gRPC requests show and edit but say they send in a later version.
+- Response sheet (detents medium / 86 % / large): status, time, size, sent URL, timing bar (DNS, TLS + connect, waiting,
+  download), Body (pretty JSON with folding: small objects on one line, long bodies fold top-level containers; Raw; image
+  preview), Headers, Tests (pass/fail with details), Cookies. Errors are a headline + next step (`ExplainedError`, the web
+  app's `explainError` rules + URLSession texts + missing variables) with the raw text under Details.
+- Environments: list, pick the active one (also from the pill on Collections and the request card), add/rename/delete,
+  variables with a Secret switch; secret values only in the Keychain (`ios/<env id>/<name>`, globals `ios/global/<name>`),
+  shown masked; Globals.
+- History: every send with its response (body ≤ 100 kB, tests), grouped by day; open as a new request in My requests.
+- Storage: `Application Support/hitop-library/` = `collections/<id>.json` (`{formatVersion, updatedAt, collection}`, the
+  web app's JSON model, unknown keys kept), `environments.json`, `globals.json`, `history.json` (100), `state.json`
+  (active env, pins, legacy import flag). One file per collection so I2 sync can push/pull them one by one.
+- Old app migration: on first launch `LegacyImport` reads the old app's `Application Support/hitop/collections.json`,
+  `history.json` and `contexts.json` (script values become collection variables where unset) once; the old files are left
+  untouched. The old app had no Keychain or UserDefaults data.
+- iPad: NavigationSplitView with three columns (sidebar with collections + History/Environments/Runs, request, response);
+  ⌘↩ send, ⌘S save, ⌘K search, ⌘N new request.
+- No purchase UI or prices anywhere. VoiceOver labels and values on rows, chips, tabs and the timing bar; 44 pt targets;
+  Dynamic Type through the type styles.
+
+**Tests**
+- Unit (`UnitTests/`): web-app JSON round trip with unknown keys, file store, history cap, legacy import (old shapes,
+  once only, files kept), auto-name, `${var}` segments, explainError, JSON folding/format/validation, variable order,
+  AppModel (new request + autoname + save, rename/move/pin/duplicate/delete, folders, collections, secrets only in the
+  vault, environment switching, send + history + open as new, missing variable error, WebSocket refusal, params, format,
+  search).
+- UI (`UITests/`, launch argument `-UITestSeed` = shop-api sample + `StubURLProtocol` in the app process, no network):
+  create a request, send, save, find it in History and open it as a new request; Create order → 201, JSON body, 4/4
+  tests in the Tests tab, cookies, switch to Production (other host), no environment → explained error; Environments tab
+  switch + masked secrets; screenshots.
+- CI also runs HitopKit's `swift test` on macOS (JavaScriptCore); ci.yml keeps the Linux job.
+
+**Judgement calls**
+- Method colours: the web app's (`--hitop-method-*`: GET #5EC79B, POST #F2B45C, PUT #6CA8FF, PATCH #C69CFF, DELETE #FF8A8A,
+  other #A99CFF) as the plan says; the drafts' brighter shades only for WS #7CC7FF, SSE #F5D76E, GQL #FF8AD8 (no web token).
+- The five iPhone screenshots are Collections, Request, Response, History and Environments: the drafts' Run and Apple
+  Intelligence screens are I3/I5.
+- Draft elements that need later tranches are left out rather than faked: organization switcher (shown as an About
+  button), "synced 2 min ago" and the 13/13 run badge, Synced/Shared filter chips (All / Pinned / Recent instead),
+  Explain with Apple Intelligence, the HTTP/2 label, "from OpenAPI createOrder".
+- The response shows Body/Headers/Tests/Cookies as tabs; the draft shows the tests list under the body.
+- `HitopKit`: public initialisers for `OutgoingRequest`, `HTTPResponse`, `HTTPError`, `Param`, and `StepResult` now
+  carries the script-set variable/global updates (additive; the companion and the CLI compatibility test are unchanged).
+
+**Deferred**
+- Sync (I2), runs (I3), WebSocket/SSE/gRPC/GraphQL schema (I4), Apple Intelligence + full accessibility audit (I5).
+- Import/export (Postman, OpenAPI, folders), code snippets, request examples, cookie jar across sends (each Send uses
+  its own session, like a run), file fields in multipart bodies (text rows only), response search.
+- Not checked on a device: Keychain on hardware, the old app → new app upgrade with real data (unit-tested with fixture
+  files of the old shapes), App Store submission (I6).

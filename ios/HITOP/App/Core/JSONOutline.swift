@@ -130,7 +130,7 @@ enum JSONOutline {
     /// What starts folded: in a long body, the top-level objects and arrays that don't fit on one
     /// line (the drafts' `▸ "items": [ 2 items ]`).
     static func defaultFolds(_ value: JSONValue) -> Set<String> {
-        guard case let .object(o) = value, lines(value, folded: []).count > 16 else { return [] }
+        guard case let .object(o) = value, lines(value, folded: []).count > 12 else { return [] }
         var out: Set<String> = []
         for (k, child) in o {
             let container: Bool

@@ -63,8 +63,10 @@ struct ResponseContent: View {
             HStack(spacing: 10) {
                 StatusPill(status: outcome.status, size: style == .sheet ? 15 : 14)
                 Text("\(outcome.durationMs) ms").font(Typo.mono(14, .medium)).foregroundStyle(Theme.codeText)
+                    .fixedSize()
                     .accessibilityLabel("\(outcome.durationMs) milliseconds")
                 Text(ByteText.text(outcome.size)).font(Typo.mono(14, .medium)).foregroundStyle(Theme.textMuted)
+                    .fixedSize()
                 Spacer()
                 if style == .column, !outcome.tests.isEmpty {
                     Text("\(passed)/\(outcome.tests.count) tests")
@@ -245,6 +247,7 @@ struct JSONTreeView: View {
 
     var body: some View {
         let lines = value.lines(folded: folded)
+        ScrollView(.horizontal, showsIndicators: false) {
         VStack(alignment: .leading, spacing: 0) {
             ForEach(lines.prefix(4000)) { line in
                 HStack(alignment: .firstTextBaseline, spacing: 0) {
@@ -263,9 +266,11 @@ struct JSONTreeView: View {
                     }
                     Text(String(repeating: "  ", count: line.depth)).font(Typo.mono(size))
                     Text(Self.attributed(line.tokens, size: size))
+                        .fixedSize()
                 }
                 .padding(.vertical, size * 0.22)
             }
+        }
         }
         .textSelection(.enabled)
         .frame(maxWidth: .infinity, alignment: .leading)

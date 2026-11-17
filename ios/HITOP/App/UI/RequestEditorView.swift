@@ -226,7 +226,7 @@ struct URLField: View {
 
     var body: some View {
         Group {
-            if editing || url.isEmpty {
+            if editing || focused || url.isEmpty {
                 TextField("https://api.example.com/users", text: $url, axis: singleLine ? .horizontal : .vertical)
                     .font(Typo.mono(size, .medium))
                     .foregroundStyle(Theme.text)
@@ -236,7 +236,7 @@ struct URLField: View {
                     .focused($focused)
                     .submitLabel(.done)
                     .onSubmit { editing = false }
-                    .onChange(of: focused) { _, f in if !f { editing = false } }
+                    .onChange(of: focused) { _, f in editing = f }
                     .accessibilityLabel("URL")
                     .accessibilityIdentifier("url")
             } else {

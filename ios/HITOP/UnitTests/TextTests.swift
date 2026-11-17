@@ -52,7 +52,7 @@ final class TextTests: XCTestCase {
         XCTAssertTrue(folded.contains { $0.text == #"  "customer": { 4 keys }"# })
         XCTAssertEqual(folded.count, 6)
         XCTAssertNil(JSONOutline.parse("plain text"))
-        XCTAssertEqual(JSONOutline.defaultFolds(v), [], "a short body starts open")
+        XCTAssertEqual(JSONOutline.defaultFolds(JSONOutline.parse(#"{"a": {"b": 1}}"#)!), [], "a short body starts open")
         let long = try XCTUnwrap(JSONOutline.parse(#"{"a": {"b": 1, "c": 2, "d": 3, "e": 4, "f": 5, "g": 6, "h": 7, "i": 8, "j": 9}, "k": [{"x": 1}, {"y": 2}, {"z": 3}, {"w": 4}], "t": {"amount": 1}}"#))
         XCTAssertEqual(JSONOutline.defaultFolds(long), ["$.a", "$.k"])
     }
