@@ -34,12 +34,14 @@ jobs:
             test "$tag" = "$version" || { echo "tag $GITHUB_REF_NAME, tauri.conf.json $version"; exit 1; }
             echo "prerelease=false" >> "$GITHUB_OUTPUT"
           fi
+      # Never "Latest" here: the installed apps read releases/latest/download/latest.json, so a
+      # release becomes Latest only once the updater job has checked its files.
       - name: Create the release
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          flags=""
-          [ "${{ steps.v.outputs.prerelease }}" = true ] && flags="--prerelease"
+          flags="--latest=false"
+          [ "${{ steps.v.outputs.prerelease }}" = true ] && flags="$flags --prerelease"
           gh release view "$GITHUB_REF_NAME" >/dev/null 2>&1 || gh release create "$GITHUB_REF_NAME" $flags \
             --title "HITOP desktop ${GITHUB_REF_NAME#desktop-v}" --notes-file .github/release-desktop-notes.md
 
@@ -234,3 +236,20 @@ jobs:
           check windows-x86_64-msi '\.msi$'
           check linux-x86_64 '\.AppImage$'
           check linux-x86_64-appimage '\.AppImage$'
+      # "Latest" is repo-wide (CLI releases share this repo; release-cli.yml never takes it): the
+      # checked desktop release becomes Latest, so the endpoint the apps read now serves its file.
+      - name: Make it the latest release, then read the apps' endpoint
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          tag="$GITHUB_REF_NAME"
+          gh release edit "$tag" -R "$GITHUB_REPOSITORY" --latest
+          endpoint=$(jq -r '.plugins.updater.endpoints[0]' desktop/src-tauri/tauri.github.conf.json)
+          for i in 1 2 3 4 5 6; do
+            got=$(curl -fsSL "$endpoint" | jq -r .version || true)
+            [ "$got" = "${tag#desktop-v}" ] && { echo "$endpoint serves $got"; exit 0; }
+            sleep 10
+          done
+          echo "::error::$endpoint serves version '$got', not ${tag#desktop-v}"
+          exit 1

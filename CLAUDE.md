@@ -355,7 +355,7 @@ hitop/
   `https://github.com/bohdaq/hitop/releases/latest/download/latest.json`, requireSignedVersion}, `createUpdaterArtifacts: true`.
   release-desktop.yml builds `--features telemetry,updater`, signs with secrets `TAURI_SIGNING_PRIVATE_KEY` + `TAURI_SIGNING_PRIVATE_KEY_PASSWORD` (a release
   fails without them; an rc builds without updater files), tauri-action uploads `.sig` + `latest.json`, job `updater` checks them with
-  minisign against the pubkey. Web app: `platform/tauri-updater.js` (bar, Settings → Updates, `hitop_updates` {auto}; check at start +
+  minisign against the pubkey and only then makes the release "Latest" (created `--latest=false`; CLI releases never take Latest). Web app: `platform/tauri-updater.js` (bar, Settings → Updates, `hitop_updates` {auto}; check at start +
   every 24 h); check-no-telemetry fails if it reaches dist/; CI greps the MAS binary for the plugin, endpoint and key. e2e `tests/updater.cjs`
 - Dev: `cd desktop && npx tauri dev`
 - Build: `cd desktop && PATH="$HOME/.cargo/bin:$PATH" RUSTC="$HOME/.cargo/bin/rustc" npx tauri build`

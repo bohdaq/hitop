@@ -187,8 +187,10 @@ jobs:
       - env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          flags=""
-          [ "${{ needs.check.outputs.prerelease }}" = true ] && flags="--prerelease"
+          # Never "Latest": the desktop apps update from releases/latest/download/latest.json
+          # (release-desktop.yml), and "Latest" is one release for the whole repo.
+          flags="--latest=false"
+          [ "${{ needs.check.outputs.prerelease }}" = true ] && flags="$flags --prerelease"
           gh release create "$GITHUB_REF_NAME" $flags --title "hitop CLI ${{ needs.check.outputs.version }}" \
             --notes "Install with \`cargo install hitop\`, \`cargo binstall hitop\`, \`docker run ghcr.io/bohdaq/hitop:${{ needs.check.outputs.version }}\`, or download a binary below. Linux builds are static (musl)." \
             assets/*
