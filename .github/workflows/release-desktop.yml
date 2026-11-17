@@ -118,6 +118,20 @@ jobs:
           prerelease: ${{ needs.check.outputs.prerelease == 'true' }}
           # GitHub Release builds carry the opt-in usage ping; the Mac App Store build doesn't.
           args: ${{ matrix.args }} --config src-tauri/tauri.github.conf.json --features telemetry
+      # Tauri notarises the .app inside the disk image, not the .dmg itself: notarise and staple
+      # the .dmg too, so Gatekeeper accepts the download as is, and replace the uploaded asset.
+      - name: Notarise the disk image (macOS)
+        if: runner.os == 'macOS' && env.HITOP_SIGNED == '1'
+        env:
+          APPLE_API_KEY: ${{ secrets.APPLE_API_KEY }}
+          APPLE_API_ISSUER: ${{ secrets.APPLE_API_ISSUER }}
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          dmg=$(ls desktop/src-tauri/target/universal-apple-darwin/release/bundle/dmg/*.dmg | head -1)
+          xcrun notarytool submit "$dmg" --key "$APPLE_API_KEY_PATH" --key-id "$APPLE_API_KEY" \
+            --issuer "$APPLE_API_ISSUER" --wait --timeout 30m
+          xcrun stapler staple "$dmg"
+          gh release upload "$GITHUB_REF_NAME" "$dmg" --clobber
       - name: Check the Developer ID signature and notarisation (macOS)
         if: runner.os == 'macOS' && env.HITOP_SIGNED == '1'
         run: |
