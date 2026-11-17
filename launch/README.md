@@ -11,6 +11,7 @@ comparison pages and guides, and the demo GIF recorded (`vhs site/demo/demo.tape
 | `reddit-webdev.md` | r/webdev | Lead with the Postman migration and the web app. Check the subreddit's self-promotion rules first. |
 | `this-week-in-rust.md` | PR to rust-lang/this-week-in-rust | One line under "Project/Tooling Updates" in the next draft issue. |
 | `product-hunt.md` | producthunt.com | Tagline, description, first comment, gallery list. |
+| `microsoft-store.md` | partner.microsoft.com | Owner steps for the Microsoft Store (MSIX) build: account, name reservation, identity variables, upload, listing, manual checks on Windows. |
 
 Facts to keep true when editing: no account; MIT (sync server AGPL, not launched); the CLI and
 the free desktop builds have an anonymous weekly usage ping that is off unless turned on, and

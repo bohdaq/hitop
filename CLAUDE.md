@@ -114,6 +114,8 @@ hitop/
 │       ├── tauri.conf.json     # Bundle ID: tech.rws8.hitop, category: Developer Tools; React frontend (../dist)
 │       ├── tauri.webapp.conf.json # the switch: frontend = webapp/dist-tauri (npm run build:webapp / dev:webapp)
 │       ├── Entitlements.mas.plist          # Mac App Store entitlements
+│   ├── msstore/                # Microsoft Store MSIX: AppxManifest.xml template, make-layout.mjs (+ test), priconfig.xml, Assets/ (brand/export.sh)
+│   ├── scripts/check-store-binary.sh # store builds have no usage ping or updater (CI desktop job, release-msstore.yml)
 │       └── Entitlements.mas.inherit.plist  # MAS child process entitlements
 ├── webapp/                     # hitop.rws8.tech/app/: Lit + lit-material, reuses frontend/src/services
 │   ├── src/store.js            # all app logic (port of frontend/src/App.jsx), same localStorage keys; folders, zip
@@ -347,7 +349,8 @@ hitop/
   fetch, pull, push); fetch/pull/push read the token from the keychain (`git/<host>/token`); `git_token_status|set|delete {path}`.
   Pull = fetch + fast-forward or merge, never rebase. MAS sandbox: no SSH agent, credential helpers or ~/.gitconfig (HTTPS token, identity in the panel)
 - Cargo feature `telemetry` (not default): the usage ping. `release-desktop.yml` builds with `--features telemetry`;
-  the MAS build (plain `tauri build`) must not; CI builds both and greps the binary for the endpoint
+  the MAS build (plain `tauri build`) and the Microsoft Store build must not; CI builds both and greps the binary for the endpoint
+  (`desktop/scripts/check-store-binary.sh store|github <bin>`: the one string list, also run on the exe inside the MSIX)
 - Cargo feature `updater` (not default, SU1): self-update of the GitHub Release builds (macOS, Windows NSIS/MSI, Linux AppImage;
   never MAS or a store build) = tauri-plugin-updater ≥ 2.14.1 + tauri-plugin-process, `src/updates.rs` (`updater_status` → `{version}`,
   an error without the feature, without `plugins.updater` or on a .deb/.rpm), permissions in `capabilities/updater/` (build.rs includes
@@ -365,6 +368,30 @@ hitop/
   inside the sandbox (`APP_SANDBOX_CONTAINER_ID`) read_folder/write_folder/git first resolve the folder's security-scoped
   bookmark (`<app data>/folder-bookmarks.json`) or save one; `folder_forget {path}` drops it. CI job `desktop-macos` compiles it
 - Icons from `brand/logo.svg`: `brand/export.sh --tauri` (Tauri's `icon` generator on `brand/png/logo-1024.png`)
+
+#### Microsoft Store (MS1)
+- Owner decision: Windows people get HITOP from the Microsoft Store, which signs the MSIX itself (no code-signing certificate);
+  the GitHub .exe/.msi stay unsigned with self-update. Store build = MAS rules: tauri.conf.json as is, no `telemetry`, no `updater`
+- `.github/workflows/release-msstore.yml` (own workflow, so release-desktop.yml's release, latest.json and `updater` job are untouched):
+  `desktop-v*` tags + workflow_dispatch, windows-2022, x64 only (x64 runs emulated on Windows on Arm; arm64 = a second leg + a bundle).
+  `npx tauri build --no-bundle` (Tauri has no MSIX target; its Store page only covers code-signed EXE/MSI) → `desktop/scripts/check-store-binary.sh store`
+  on the exe → `desktop/msstore/make-layout.mjs` (Node, tested on Linux by `make-layout.test.mjs` in CI job desktop: 4-part version
+  `1.3.0` → `1.3.0.0`, fourth part reserved by the Store; identity; XML-escaped AppxManifest.xml from the template; exe as `hitop.exe`;
+  a VCLibs dependency only if the exe imports the VC runtime) → `makepri new` with `desktop/msstore/priconfig.xml` (no `<packaging>`:
+  one resources.pri) → `makeappx pack` (newest SDK on the runner; validates the manifest) → unpack and grep again → run artifact only
+  (never a release asset: the store package is unsigned, for Partner Center only)
+- Identity: repository variables `MSSTORE_IDENTITY_NAME`, `MSSTORE_PUBLISHER` (CN=…), `MSSTORE_PUBLISHER_DISPLAY_NAME` (all or none) →
+  `hitop-<v>-x64-store.msix`, DisplayName "HITOP" (= reserved name). None → `hitop-<v>-x64-TEST-ONLY.msix`, identity `tech.rws8.hitop.test`
+  / `CN=HITOP Test Package`, signed in the job with a throwaway self-signed cert (`.cer` + README-TEST-ONLY.txt in the artifact)
+- Optional job `submit`: msstore CLI (pinned v0.4.4) `publish --noCommit` = draft only, on non-rc tags or a manual run with `submit`; needs
+  secrets `MSSTORE_TENANT_ID`/`_CLIENT_ID`/`_CLIENT_SECRET`/`_SELLER_ID` + variable `MSSTORE_PRODUCT_ID`, else a notice. Never run yet
+- Manifest: full trust (`runFullTrust` + `internetClient`), MinVersion 10.0.19041.0 (WebView2 must already be on the machine: MSIX can't
+  bootstrap it). Images: `desktop/msstore/Assets/`, rendered by `brand/export.sh` (checked by `brand/check.sh`)
+- Inside MSIX: AppData writes are virtualized per package, so `%APPDATA%\hitop` (hitop-core storage, cookie jar, globals, history) and Tauri's
+  app data start as a copy of what's there and then diverge from the CLI/GitHub build, and go away on uninstall (same isolation as MAS);
+  folder collections anywhere else, the keychain (Credential Manager), Git, network (full trust: no network isolation, localhost works),
+  child processes (op/az/aws) work as in the GitHub build; no deep link or loopback sign-in on desktop (paste the code). Unverified on
+  Windows: owner checklist in `launch/microsoft-store.md`
 
 ### Frontend (`frontend/`)
 - Build tool: Vite 6 (migrated from CRA — zero vulnerabilities)

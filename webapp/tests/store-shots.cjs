@@ -4,12 +4,16 @@
 //   npm run build
 //   cp -r dist ../deploy/out/www/app        (served by ../hitop-server on BASE, as the e2e suites do)
 //   BASE=http://localhost:7889 node tests/store-shots.cjs [out dir]   (default ../launch/store-assets/)
+// SCALE=2 renders the same 1280×800 layout at 2560×1600: the Microsoft Store wants desktop screenshots
+// of at least 1366×768 (launch/microsoft-store.md), so its set is
+//   SCALE=2 BASE=... node tests/store-shots.cjs ../launch/store-assets/msstore
 const { chromium } = require("playwright");
 const fs = require("fs");
 const path = require("path");
 
 const BASE = process.env.BASE || "http://localhost:7889";
 const out = path.resolve(process.argv[2] || path.join(__dirname, "../../launch/store-assets"));
+const SCALE = Number(process.env.SCALE || 1);
 const NOW = new Date("2026-11-16T10:42:00Z");
 
 // --- seed: the shop-api workspace --------------------------------------------------------
@@ -131,7 +135,7 @@ async function proxy(route) {
 async function main() {
   fs.mkdirSync(out, { recursive: true });
   const browser = await chromium.launch();
-  const ctx = await browser.newContext({ viewport: { width: 1280, height: 800 }, deviceScaleFactor: 1, colorScheme: "dark", locale: "en-US", timezoneId: "UTC" });
+  const ctx = await browser.newContext({ viewport: { width: 1280, height: 800 }, deviceScaleFactor: SCALE, colorScheme: "dark", locale: "en-US", timezoneId: "UTC" });
   // Only the app's own files: the proxy is mocked, everything else (sync server, fonts) refused.
   await ctx.route("**/*", (route) => {
     const u = new URL(route.request().url());

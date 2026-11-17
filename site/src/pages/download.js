@@ -16,7 +16,7 @@ const RELEASES = `${GITHUB}/releases`;
 
 const DESKTOP = [
   ["desktop", "macOS", "Apple silicon and Intel, macOS 12 or later", "dmg", "universal\\.dmg$"],
-  ["desktop", "Windows", "Windows 10 or later, installer", "exe", "-setup\\.exe$"],
+  ["desktop", "Windows", "Windows 10 or later, installer. Microsoft Store: coming soon", "exe", "-setup\\.exe$"],
   ["desktop", "Linux AppImage", "Runs on most distributions", "AppImage", "\\.AppImage$"],
   ["desktop", "Debian and Ubuntu", "Install with apt", "deb", "\\.deb$"],
   ["desktop", "Fedora and openSUSE", "Install with dnf or zypper", "rpm", "\\.rpm$"],

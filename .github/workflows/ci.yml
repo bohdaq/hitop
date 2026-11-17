@@ -563,7 +563,7 @@ jobs:
       - name: Tauri's Linux libraries
         run: |
           sudo apt-get update
-          sudo apt-get install -y libwebkit2gtk-4.1-dev libgtk-3-dev librsvg2-dev libayatana-appindicator3-dev
+          sudo apt-get install -y libwebkit2gtk-4.1-dev libgtk-3-dev librsvg2-dev libayatana-appindicator3-dev libxml2-utils
       - name: Web app for the desktop (webapp, npm run build:tauri; the default frontend since HITOP Next T5)
         working-directory: webapp
         run: npm ci && npm run build:tauri
@@ -576,28 +576,25 @@ jobs:
       - name: Desktop with the React frontend
         working-directory: desktop/src-tauri
         run: TAURI_CONFIG="$(cat tauri.react.conf.json)" cargo check --locked
-      - name: Mac App Store configuration has no usage ping and no updater (no telemetry or updater feature)
+      - name: Store configuration has no usage ping and no updater (no telemetry or updater feature)
         working-directory: desktop/src-tauri
         env:
           CARGO_PROFILE_DEV_DEBUG: "0"
         run: |
-          # The MAS build is a plain `tauri build`: the desktop crate without `telemetry` and
-          # `updater` (store policy: no self-update), with tauri.conf.json (no update endpoint or key).
+          # Store builds (the MAS build is a plain `tauri build`; release-msstore.yml builds the Microsoft
+          # Store exe the same way) are the desktop crate without `telemetry` and `updater` (store policy:
+          # no self-update), with tauri.conf.json (no update endpoint or key). The string list is
+          # desktop/scripts/check-store-binary.sh, which release-msstore.yml runs on the exe in the MSIX.
           cargo build --locked
-          bin=target/debug/hitop-desktop
-          for s in 'hitop.rws8.tech/api/ping' '/api/ping' 'HITOP_TELEMETRY_URL' 'telemetry.json' \
-            'tauri-plugin-updater' 'plugin:updater' 'minisign' 'releases/latest/download/latest.json'; do
-            if grep -q -a -F "$s" "$bin"; then echo "MAS build contains '$s'"; exit 1; fi
-          done
+          ../scripts/check-store-binary.sh store target/debug/hitop-desktop "store configuration"
           # Control: the GitHub Release configuration (tauri.github.conf.json, --features
           # telemetry,updater) has the ping, the updater plugin, its endpoint and public key.
           TAURI_CONFIG="$(cat tauri.github.conf.json)" cargo build --locked --features telemetry,updater
-          pubkey=$(jq -r .plugins.updater.pubkey tauri.github.conf.json)
-          for s in 'hitop.rws8.tech/api/ping' 'telemetry.json' 'tauri-plugin-updater' 'plugin:updater' 'minisign' \
-            'releases/latest/download/latest.json' "$pubkey"; do
-            grep -q -a -F "$s" "$bin" || { echo "control: GitHub build lacks '$s'"; exit 1; }
-          done
-          echo "MAS configuration: no ping or updater code, endpoint or key; GitHub build: present"
+          ../scripts/check-store-binary.sh github target/debug/hitop-desktop "GitHub configuration"
+      - name: Microsoft Store package layout (make-layout.mjs; manifest rendered in both identity modes, XML-checked)
+        run: |
+          HITOP_MSIX_KEEP="$RUNNER_TEMP/manifest" node --test desktop/msstore/make-layout.test.mjs
+          xmllint --noout "$RUNNER_TEMP/manifest.test.xml" "$RUNNER_TEMP/manifest.store.xml" desktop/msstore/priconfig.xml
 
   hitopkit:
     # ROADMAP T26: HitopKit, the iOS companion's Swift package (format reader, variables,
