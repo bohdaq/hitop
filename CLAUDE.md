@@ -387,8 +387,11 @@ hitop/
   secrets `MSSTORE_TENANT_ID`/`_CLIENT_ID`/`_CLIENT_SECRET`/`_SELLER_ID` + variable `MSSTORE_PRODUCT_ID`, else a notice. Never run yet
 - Manifest: full trust (`runFullTrust` + `internetClient`), MinVersion 10.0.19041.0 (WebView2 must already be on the machine: MSIX can't
   bootstrap it). Images: `desktop/msstore/Assets/`, rendered by `brand/export.sh` (checked by `brand/check.sh`)
-- Inside MSIX: AppData writes are virtualized per package, so `%APPDATA%\hitop` (hitop-core storage, cookie jar, globals, history) and Tauri's
-  app data start as a copy of what's there and then diverge from the CLI/GitHub build, and go away on uninstall (same isolation as MAS);
+- Inside MSIX (light container, docs "Understanding how packaged desktop apps run", 1903+): a file the app *creates* under AppData
+  (hitop-core's `%APPDATA%\hitop`: collections, history, globals, cookie jar; Tauri/WebView2 data under `%LOCALAPPDATA%\tech.rws8.hitop`)
+  goes to a private per-package copy that only it sees and uninstall deletes; a file that already existed (CLI or GitHub build ran
+  first) is read and written in place (`fs::write` rewrites in place), so it stays shared with the CLI. Kept on purpose (no
+  `unvirtualizedResources` restricted capability + `desktop6:FileSystemWriteVirtualization`, which would need Store approval);
   folder collections anywhere else, the keychain (Credential Manager), Git, network (full trust: no network isolation, localhost works),
   child processes (op/az/aws) work as in the GitHub build; no deep link or loopback sign-in on desktop (paste the code). Unverified on
   Windows: owner checklist in `launch/microsoft-store.md`

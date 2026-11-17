@@ -110,6 +110,8 @@ jobs:
           MSSTORE_PUBLISHER_DISPLAY_NAME: ${{ vars.MSSTORE_PUBLISHER_DISPLAY_NAME }}
         run: |
           node desktop/msstore/make-layout.mjs --exe "${{ steps.exe.outputs.path }}" --out "$RUNNER_TEMP/layout" --arch x64
+          test -s "$RUNNER_TEMP/layout/AppxManifest.xml" || { echo "::error::make-layout.mjs wrote no AppxManifest.xml"; exit 1; }
+          grep -q '^file=' "$GITHUB_OUTPUT" || { echo "::error::make-layout.mjs set no outputs"; exit 1; }
           if grep -q '^mode=test$' "$GITHUB_OUTPUT"; then
             echo "::warning::No MSSTORE_IDENTITY_NAME/MSSTORE_PUBLISHER/MSSTORE_PUBLISHER_DISPLAY_NAME variables: this is a TEST-ONLY package (placeholder identity, self-signed). Partner Center won't take it."
           fi
@@ -174,6 +176,8 @@ jobs:
             1. In an administrator PowerShell, trust the certificate for this machine:
                  Import-Certificate -FilePath .\hitop-TEST-ONLY.cer -CertStoreLocation Cert:\LocalMachine\TrustedPeople
             2. Install:  Add-AppxPackage .\$env:FILE
+               (if it names a missing Microsoft.VCLibs.140.00.UWPDesktop dependency, install
+               https://aka.ms/Microsoft.VCLibs.x64.14.00.Desktop.appx first; the Store does that itself)
             3. Afterwards remove both: Remove-AppxPackage (Get-AppxPackage tech.rws8.hitop.test).PackageFullName
                and the certificate from Local Machine > Trusted People (certlm.msc).
 
@@ -239,7 +243,7 @@ jobs:
           name: hitop-msstore-${{ needs.package.outputs.version }}-x64
           path: msstore
       - if: steps.creds.outputs.skip == 'false'
-        uses: microsoft/setup-msstore-cli@cc9910a8d59f2eb55cbb83df0a3800cf3b5300e0 # v1.4
+        uses: microsoft/microsoft-store-apppublisher@cc9910a8d59f2eb55cbb83df0a3800cf3b5300e0 # v1.4 (was setup-msstore-cli)
         with:
           version: v0.4.4
       - name: Upload to a draft submission
@@ -255,6 +259,8 @@ jobs:
         run: |
           msstore reconfigure --tenantId $env:TENANT --sellerId $env:SELLER --clientId $env:CLIENT --clientSecret $env:SECRET
           if ($LASTEXITCODE -ne 0) { throw "msstore reconfigure failed" }
-          msstore publish msstore -i "msstore\$env:FILE" -id $env:PRODUCT --noCommit
+          # The .msix itself is the "project": msstore's MSIXProjectPublisher takes a .msix/.msixupload path.
+          # publish replaces a pending draft with one made from the last published submission.
+          msstore publish "msstore\$env:FILE" -id $env:PRODUCT --noCommit
           if ($LASTEXITCODE -ne 0) { throw "msstore publish failed" }
           Write-Output "::notice::$env:FILE is in a draft submission: review and submit it in Partner Center"

@@ -116,8 +116,9 @@ Partner Center: Account settings → User management → Azure AD applications, 
 Job `submit` then runs Microsoft's `msstore publish … --noCommit` on every non-rc tag, and on a manual
 run with "submit" ticked. The package goes into a **draft** submission; you review it and press Submit
 in Partner Center. Without the secrets the job prints a notice and does nothing. The submission API
-works only after the first submission was made by hand (step 5). Nobody has run this job yet, so watch
-its first run.
+works only after the first submission was made by hand (step 5). `msstore publish` replaces a pending
+draft with a fresh one made from the last published submission, so don't leave half-done listing
+edits in a draft when you push a tag. Nobody has run this job yet, so watch its first run.
 
 ## Manual checks on Windows (agents can't run Windows)
 
@@ -127,9 +128,16 @@ Install the test package or the Store build, then check:
    Alt+Tab, at 100 % and 200 % display scaling. Settings has no Updates section and no usage ping
    section, there's no update bar, and the first run asks no usage ping question.
 2. **App data**: create a collection, environment and history in app storage. Quit and restart: it's all
-   there. With the GitHub build's data already on the machine (`%APPDATA%\hitop`), the Store app starts
-   with a copy of it, but from then on each keeps its own. Uninstalling the Store app deletes the Store
-   app's copy (MSIX file-system virtualization).
+   there. MSIX keeps AppData in a light container (Windows 10 1903 and later): a file the Store app
+   *creates* under `%APPDATA%` or `%LOCALAPPDATA%` goes to its private copy, which only it sees and which
+   uninstalling deletes; a file that *already existed* (made by the CLI or the GitHub build) is read and
+   written in place, so it stays shared. Check both on a machine that has the CLI:
+   - Fresh machine: install the Store app first, save a collection, then run `hitop requests` with the
+     CLI. Expected: the CLI doesn't see it (`collections.json` was created privately).
+   - CLI or GitHub build used first: the Store app shows the same collections, cookies and globals, and
+     edits made in one show in the other.
+   - Run the GitHub build and the Store app at the same time: both start, and neither breaks the
+     other's files.
 3. **Folder collections**: open a folder in Documents, on another drive and on a network share; edit,
    save, restart, reopen. Also check a folder the CLI uses (`hitop run <folder>` sees the app's edits).
 4. **Keychain**: save a secret variable and a Git token, restart, and check they're still there. They
