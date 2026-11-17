@@ -9,6 +9,13 @@ public struct OutgoingRequest: Sendable {
     public var url: String
     public var headers: [(String, String)]
     public var body: Data
+
+    public init(method: String, url: String, headers: [(String, String)], body: Data) {
+        self.method = method
+        self.url = url
+        self.headers = headers
+        self.body = body
+    }
 }
 
 public struct HTTPResponse: Sendable {
@@ -18,10 +25,18 @@ public struct HTTPResponse: Sendable {
     public var body: String
     /// Until the response arrived (the whole body, see `URLSessionHTTPClient`).
     public var durationMs: Int
+
+    public init(status: Int, headers: [String: String], body: String, durationMs: Int) {
+        self.status = status
+        self.headers = headers
+        self.body = body
+        self.durationMs = durationMs
+    }
 }
 
 public struct HTTPError: Error, CustomStringConvertible, LocalizedError, Sendable {
     public let description: String
+    public init(description: String) { self.description = description }
     public var errorDescription: String? { description }
 }
 

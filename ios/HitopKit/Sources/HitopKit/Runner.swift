@@ -18,6 +18,12 @@ public struct StepResult: Sendable {
     /// The request's path under `requests/` and the file's extension.
     public var path: String
     public var fileExtension: String
+    /// Variables the request's scripts set (a value) or unset (nil), in
+    /// order applied; not masked (an editor keeps them for later
+    /// sends: `pm.environment.set`, `pm.collectionVariables.set`).
+    public var variableUpdates: VariableUpdates = [:]
+    /// The same for the globals scope (`pm.globals.set`).
+    public var globalUpdates: VariableUpdates = [:]
 
     /// Sent, answered below 400, and every assertion passed.
     public var passed: Bool {
@@ -98,6 +104,8 @@ public struct Runner: Sendable {
                 step.url = pre.url
                 for (k, v) in pre.contextUpdates { context[k] = v }
                 scopes.apply(pre.variables, pre.globals)
+                step.variableUpdates.merge(pre.variables) { _, new in new }
+                step.globalUpdates.merge(pre.globals) { _, new in new }
                 let variables = scopes.merged
                 let (headers, body) = try FormBody.outgoing(request, headers: pre.headers, body: pre.body, variables)
                 for part in [pre.url] + headers.flatMap({ [$0.0, $0.1] }) + [String(decoding: body, as: UTF8.self)] {
@@ -115,6 +123,8 @@ public struct Runner: Sendable {
                                 durationMs: response.durationMs, variables: variables, context: context, request: sent, globals: scopes.globals), engine: engine)
                             for (k, v) in out.contextUpdates { context[k] = v }
                             scopes.apply(out.variables, out.globals)
+                            step.variableUpdates.merge(out.variables) { _, new in new }
+                            step.globalUpdates.merge(out.globals) { _, new in new }
                             step.tests = out.tests
                         } catch {
                             step.tests = [TestResult(name: "post-request script", pass: false, detail: "\(error)")]

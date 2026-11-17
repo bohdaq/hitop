@@ -22,6 +22,11 @@ public struct Header: Codable, Hashable, Sendable {
 public struct Param: Codable, Hashable, Sendable {
     public var key: String
     public var value: String
+
+    public init(key: String, value: String) {
+        self.key = key
+        self.value = value
+    }
 }
 
 public struct FormField: Codable, Hashable, Sendable {

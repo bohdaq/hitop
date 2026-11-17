@@ -1,0 +1,334 @@
+import SwiftUI
+import UIKit
+
+enum ResponseTab: Hashable { case body, headers, tests, cookies }
+
+/// The iPhone response sheet.
+struct ResponseSheet: View {
+    var editor: RequestEditor
+    @Environment(\.dismiss) private var dismiss
+
+    var body: some View {
+        ScrollView {
+            ResponsePanel(editor: editor, style: .sheet, close: { dismiss() })
+                .padding(.horizontal, 16)
+                .padding(.top, 18)
+                .padding(.bottom, 24)
+        }
+        .background(Color(hex: 0x16161C).ignoresSafeArea())
+    }
+}
+
+/// Status, timing, then Body / Headers / Tests / Cookies; or the error explained.
+struct ResponsePanel: View {
+    enum Style { case sheet, column }
+    var editor: RequestEditor
+    var style: Style
+    var close: (() -> Void)?
+
+    var body: some View {
+        Group {
+            if editor.isSending {
+                VStack(spacing: 14) {
+                    ProgressView().controlSize(.large)
+                    Text("Sending \(editor.draft.method) \(AutoName.urlWhere(editor.draft.url))").font(Typo.caption).foregroundStyle(Theme.textMuted)
+                    Button("Cancel") { editor.cancel() }.buttonStyle(.glass)
+                }
+                .frame(maxWidth: .infinity, minHeight: 220)
+            } else if let outcome = editor.outcome {
+                switch outcome {
+                case let .success(o): ResponseContent(outcome: o, style: style, close: close)
+                case let .failure(f): ErrorCard(failure: f, close: close)
+                }
+            } else {
+                ContentUnavailableView("No response yet", systemImage: "paperplane",
+                                       description: Text("Send the request to see its status, timing, body, headers, tests and cookies here."))
+                    .frame(minHeight: 260)
+            }
+        }
+    }
+}
+
+struct ResponseContent: View {
+    var outcome: SendOutcome
+    var style: ResponsePanel.Style
+    var close: (() -> Void)?
+    @State private var tab: ResponseTab = .body
+    @State private var raw = false
+
+    private var passed: Int { outcome.tests.filter(\.pass).count }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 14) {
+            HStack(spacing: 10) {
+                StatusPill(status: outcome.status, size: style == .sheet ? 15 : 14)
+                Text("\(outcome.durationMs) ms").font(Typo.mono(14, .medium)).foregroundStyle(Theme.codeText)
+                    .accessibilityLabel("\(outcome.durationMs) milliseconds")
+                Text(ByteText.text(outcome.size)).font(Typo.mono(14, .medium)).foregroundStyle(Theme.textMuted)
+                Spacer()
+                if style == .column, !outcome.tests.isEmpty {
+                    Text("\(passed)/\(outcome.tests.count) tests")
+                        .font(Typo.geist(12, .semibold))
+                        .foregroundStyle(passed == outcome.tests.count ? Theme.success : Theme.danger)
+                        .padding(.horizontal, 9).padding(.vertical, 4)
+                        .background(RoundedRectangle(cornerRadius: 10).fill((passed == outcome.tests.count ? Theme.success : Theme.danger).opacity(0.12)))
+                }
+                ShareLink(item: outcome.text) {
+                    Image(systemName: "square.and.arrow.up").font(.system(size: 16, weight: .medium)).foregroundStyle(Theme.text)
+                        .frame(width: 40, height: 40)
+                }
+                .buttonStyle(.glass)
+                .buttonBorderShape(.circle)
+                .accessibilityLabel("Share the response body")
+                if let close {
+                    Button(action: close) {
+                        Image(systemName: "xmark").font(.system(size: 14, weight: .semibold)).foregroundStyle(Theme.text).frame(width: 40, height: 40)
+                    }
+                    .buttonStyle(.glass)
+                    .buttonBorderShape(.circle)
+                    .accessibilityLabel("Close")
+                    .accessibilityIdentifier("close-response")
+                }
+            }
+            Text("\(outcome.sentURL)")
+                .font(Typo.mono(11.5))
+                .foregroundStyle(Theme.textFaint)
+                .lineLimit(1)
+                .truncationMode(.middle)
+                .accessibilityLabel("Sent to \(outcome.sentURL)")
+                .accessibilityIdentifier("sent-url")
+            if let timing = outcome.timing, timing.total > 0 {
+                TimingBar(timing: timing, showLabels: style == .sheet, height: style == .sheet ? 8 : 6)
+            }
+            CapsuleTabs(items: [
+                (ResponseTab.body, "Body", nil),
+                (.headers, "Headers", "\(outcome.headers.count)"),
+                (.tests, "Tests", outcome.tests.isEmpty ? nil : "\(passed)/\(outcome.tests.count)"),
+                (.cookies, "Cookies", outcome.cookies.isEmpty ? nil : "\(outcome.cookies.count)"),
+            ], selection: $tab)
+            switch tab {
+            case .body: bodyView
+            case .headers: headersView
+            case .tests: TestsList(tests: outcome.tests)
+            case .cookies: cookiesView
+            }
+            ForEach(outcome.notes, id: \.self) { n in
+                Label(n, systemImage: "info.circle").font(Typo.caption).foregroundStyle(Theme.textMuted)
+            }
+        }
+    }
+
+    @ViewBuilder
+    private var bodyView: some View {
+        if outcome.isImage, let image = UIImage(data: outcome.body) {
+            Image(uiImage: image)
+                .resizable()
+                .scaledToFit()
+                .frame(maxWidth: .infinity, maxHeight: 360)
+                .padding(14)
+                .card(radius: 18, fill: Theme.sheetCode)
+                .accessibilityLabel("Image response, \(Int(image.size.width)) by \(Int(image.size.height))")
+        } else if let json = JSONOutline.box(outcome.text) {
+            HStack {
+                Picker("View", selection: $raw) {
+                    Text("Pretty").tag(false)
+                    Text("Raw").tag(true)
+                }
+                .pickerStyle(.segmented)
+                .frame(width: 160)
+                Spacer()
+                Button {
+                    UIPasteboard.general.string = outcome.text
+                } label: { Label("Copy", systemImage: "doc.on.doc").font(Typo.caption) }
+                .frame(minHeight: 44)
+            }
+            if raw {
+                CodeBlock(text: outcome.text, json: false, fill: Theme.sheetCode)
+            } else {
+                JSONTreeView(value: json, size: style == .sheet ? 13.5 : 13)
+            }
+        } else if outcome.text.isEmpty {
+            Text("No body").font(Typo.caption).foregroundStyle(Theme.textMuted).frame(maxWidth: .infinity, minHeight: 80)
+        } else {
+            CodeBlock(text: String(outcome.text.prefix(200_000)), json: false, fill: Theme.sheetCode)
+        }
+    }
+
+    private var headersView: some View {
+        VStack(spacing: 0) {
+            ForEach(Array(outcome.headers.enumerated()), id: \.offset) { i, h in
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(h.first ?? "").font(Typo.mono(12.5, .semibold)).foregroundStyle(Theme.codeKey)
+                    Text(h.last ?? "").font(Typo.mono(13)).foregroundStyle(Theme.codeText).textSelection(.enabled)
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(.horizontal, 14).padding(.vertical, 9)
+                .accessibilityElement(children: .combine)
+                if i < outcome.headers.count - 1 { Divider().overlay(Theme.separator) }
+            }
+        }
+        .card(radius: 18)
+    }
+
+    @ViewBuilder
+    private var cookiesView: some View {
+        if outcome.cookies.isEmpty {
+            Text("The response set no cookies.").font(Typo.caption).foregroundStyle(Theme.textMuted).frame(maxWidth: .infinity, minHeight: 80)
+        } else {
+            VStack(spacing: 0) {
+                ForEach(outcome.cookies) { c in
+                    VStack(alignment: .leading, spacing: 3) {
+                        HStack {
+                            Text(c.name).font(Typo.mono(13, .semibold)).foregroundStyle(Theme.codeKey)
+                            Spacer()
+                            Text([c.secure ? "Secure" : nil, c.httpOnly ? "HttpOnly" : nil].compactMap { $0 }.joined(separator: " · "))
+                                .font(Typo.caption).foregroundStyle(Theme.textMuted)
+                        }
+                        Text(c.value).font(Typo.mono(13)).foregroundStyle(Theme.codeText).textSelection(.enabled)
+                        Text("\(c.domain)\(c.path)").font(Typo.caption).foregroundStyle(Theme.textMuted)
+                    }
+                    .padding(.horizontal, 14).padding(.vertical, 9)
+                    .accessibilityElement(children: .combine)
+                }
+            }
+            .card(radius: 18)
+        }
+    }
+}
+
+struct TestsList: View {
+    var tests: [TestOutcome]
+
+    var body: some View {
+        if tests.isEmpty {
+            Text("No tests. Add pm.test(…) in the request's Tests tab.")
+                .font(Typo.caption).foregroundStyle(Theme.textMuted).frame(maxWidth: .infinity, minHeight: 80)
+        } else {
+            VStack(spacing: 0) {
+                ForEach(Array(tests.enumerated()), id: \.offset) { i, t in
+                    VStack(alignment: .leading, spacing: 2) {
+                        HStack(spacing: 10) {
+                            Image(systemName: t.pass ? "checkmark" : "xmark")
+                                .font(.system(size: 13, weight: .bold))
+                                .foregroundStyle(t.pass ? Theme.success : Theme.danger)
+                            Text(t.name).font(Typo.geist(14, relativeTo: .body)).foregroundStyle(Theme.text)
+                            Spacer()
+                        }
+                        if !t.pass, !t.detail.isEmpty {
+                            Text(t.detail).font(Typo.caption).foregroundStyle(Color(hex: 0xE8C2C2)).padding(.leading, 23)
+                        }
+                    }
+                    .frame(minHeight: 42)
+                    .padding(.horizontal, 14)
+                    .accessibilityElement(children: .combine)
+                    .accessibilityLabel("\(t.pass ? "Passed" : "Failed"): \(t.name)")
+                    .accessibilityIdentifier("test-\(t.pass ? "pass" : "fail")-\(t.name)")
+                    if i < tests.count - 1 { Divider().overlay(Theme.separator) }
+                }
+            }
+            .card(radius: 18)
+        }
+    }
+}
+
+/// A JSON body with fold points (tap ▾ / ▸).
+struct JSONTreeView: View {
+    var value: JSONValueBox
+    var size: CGFloat
+    @State private var folded: Set<String> = []
+
+    init(value: JSONValueBox, size: CGFloat) {
+        self.value = value
+        self.size = size
+    }
+
+    var body: some View {
+        let lines = value.lines(folded: folded)
+        VStack(alignment: .leading, spacing: 0) {
+            ForEach(lines.prefix(4000)) { line in
+                HStack(alignment: .firstTextBaseline, spacing: 0) {
+                    if let fold = line.fold {
+                        Button {
+                            if folded.contains(fold) { folded.remove(fold) } else { folded.insert(fold) }
+                        } label: {
+                            Text(line.folded ? "▸" : "▾").font(Typo.mono(size)).foregroundStyle(Theme.codeMuted)
+                                .frame(width: 16, alignment: .leading)
+                                .contentShape(Rectangle())
+                        }
+                        .buttonStyle(.plain)
+                        .accessibilityLabel(line.folded ? "Expand" : "Collapse")
+                    } else {
+                        Color.clear.frame(width: 16, height: 1)
+                    }
+                    Text(String(repeating: "  ", count: line.depth)).font(Typo.mono(size))
+                    Text(Self.attributed(line.tokens, size: size))
+                }
+                .padding(.vertical, size * 0.22)
+            }
+        }
+        .textSelection(.enabled)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(14)
+        .card(radius: 18, fill: Theme.sheetCode)
+        .accessibilityIdentifier("json-body")
+    }
+
+    static func attributed(_ tokens: [JSONOutline.Token], size: CGFloat) -> AttributedString {
+        var out = AttributedString()
+        for t in tokens {
+            var a = AttributedString(t.text)
+            a.font = Typo.mono(size)
+            a.foregroundColor = switch t.role {
+            case .punct: Theme.codeText
+            case .key: Theme.codeKey
+            case .string: Theme.codeString
+            case .number: Theme.codeNumber
+            case .literal: Theme.codeLiteral
+            case .summary: Theme.codeMuted
+            }
+            out += a
+        }
+        return out
+    }
+}
+
+/// An error as a headline, a next step and the raw text under Details (the web app's error card).
+struct ErrorCard: View {
+    var failure: SendFailure
+    var close: (() -> Void)?
+    @State private var details = false
+
+    var body: some View {
+        let e = failure.explained
+        VStack(alignment: .leading, spacing: 10) {
+            HStack {
+                Image(systemName: "exclamationmark.triangle.fill").foregroundStyle(Theme.danger)
+                Text(e.headline).font(Typo.geist(17, .semibold, relativeTo: .headline)).foregroundStyle(Theme.text)
+                    .accessibilityIdentifier("error-headline")
+                Spacer()
+                if let close {
+                    Button(action: close) {
+                        Image(systemName: "xmark").font(.system(size: 14, weight: .semibold)).foregroundStyle(Theme.text).frame(width: 40, height: 40)
+                    }
+                    .buttonStyle(.glass)
+                    .buttonBorderShape(.circle)
+                    .accessibilityLabel("Close")
+                    .accessibilityIdentifier("close-response")
+                }
+            }
+            if !e.next.isEmpty {
+                Text(e.next).font(Typo.body).foregroundStyle(Color(hex: 0xE8C2C2))
+            }
+            DisclosureGroup("Details", isExpanded: $details) {
+                Text(e.raw).font(Typo.mono(12.5)).foregroundStyle(Theme.textSoft).textSelection(.enabled)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(.top, 6)
+            }
+            .font(Typo.caption)
+            .tint(Theme.textMuted)
+        }
+        .padding(14)
+        .background(RoundedRectangle(cornerRadius: 18, style: .continuous).fill(Theme.danger.opacity(0.10)))
+        .overlay(RoundedRectangle(cornerRadius: 18, style: .continuous).stroke(Theme.danger.opacity(0.28)))
+    }
+}
