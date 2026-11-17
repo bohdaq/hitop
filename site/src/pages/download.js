@@ -64,11 +64,11 @@ export function render() {
         The .deb and .rpm packages update when you install the new package.
       </p>
       <details class="unsigned-note">
-        <summary>Your system warns the first time you open it</summary>
+        <summary>Windows warns the first time you open it</summary>
         <p>
-          These builds aren't signed with a paid certificate yet. On macOS, if it says the app is
-          damaged, run <code>xattr -dr com.apple.quarantine /Applications/HITOP.app</code> once. On
-          Windows, choose More info, then Run anyway.
+          The macOS build is signed and notarised by Apple. The Windows build isn't signed with a
+          paid certificate yet: if SmartScreen says "Windows protected your PC", choose More info,
+          then Run anyway.
         </p>
       </details>
 
