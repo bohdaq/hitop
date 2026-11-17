@@ -81,9 +81,36 @@ jobs:
       # tauri.github.conf.json). The Mac App Store build (tauri.conf.json) uses it too since HITOP Next T5.
       - working-directory: webapp
         run: npm ci
+      # Developer ID signing and notarisation (macOS, only when the secrets are set: forks and
+      # older setups keep the ad-hoc signature). The identity replaces tauri.github.conf.json's
+      # "-"; Tauri imports APPLE_CERTIFICATE into a temporary keychain, signs with the hardened
+      # runtime and notarises with the App Store Connect API key, then staples the ticket.
+      - name: Developer ID signing (macOS)
+        if: runner.os == 'macOS'
+        env:
+          APPLE_SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
+          APPLE_API_KEY_P8: ${{ secrets.APPLE_API_KEY_P8 }}
+        run: |
+          if [ -z "$APPLE_SIGNING_IDENTITY" ] || [ -z "$APPLE_API_KEY_P8" ]; then
+            echo "No Developer ID secrets: ad-hoc signed build"
+            exit 0
+          fi
+          key="$RUNNER_TEMP/AuthKey.p8"
+          printf '%s\n' "$APPLE_API_KEY_P8" > "$key"
+          chmod 600 "$key"
+          echo "APPLE_API_KEY_PATH=$key" >> "$GITHUB_ENV"
+          echo "HITOP_SIGNED=1" >> "$GITHUB_ENV"
+          conf=desktop/src-tauri/tauri.github.conf.json
+          jq --arg id "$APPLE_SIGNING_IDENTITY" '.bundle.macOS.signingIdentity = $id' "$conf" > "$conf.tmp"
+          mv "$conf.tmp" "$conf"
       - uses: tauri-apps/tauri-action@v0
         env:
           GITHUB_TOKEN: ${{ github.token }}
+          APPLE_CERTIFICATE: ${{ runner.os == 'macOS' && secrets.APPLE_CERTIFICATE || '' }}
+          APPLE_CERTIFICATE_PASSWORD: ${{ runner.os == 'macOS' && secrets.APPLE_CERTIFICATE_PASSWORD || '' }}
+          APPLE_SIGNING_IDENTITY: ${{ runner.os == 'macOS' && secrets.APPLE_SIGNING_IDENTITY || '' }}
+          APPLE_API_KEY: ${{ runner.os == 'macOS' && secrets.APPLE_API_KEY || '' }}
+          APPLE_API_ISSUER: ${{ runner.os == 'macOS' && secrets.APPLE_API_ISSUER || '' }}
         with:
           projectPath: desktop
           tagName: ${{ github.ref_name }}
@@ -91,3 +118,13 @@ jobs:
           prerelease: ${{ needs.check.outputs.prerelease == 'true' }}
           # GitHub Release builds carry the opt-in usage ping; the Mac App Store build doesn't.
           args: ${{ matrix.args }} --config src-tauri/tauri.github.conf.json --features telemetry
+      - name: Check the Developer ID signature and notarisation (macOS)
+        if: runner.os == 'macOS' && env.HITOP_SIGNED == '1'
+        run: |
+          app=$(ls -d desktop/src-tauri/target/universal-apple-darwin/release/bundle/macos/*.app | head -1)
+          codesign --verify --deep --strict --verbose=2 "$app"
+          codesign -dvv "$app" 2>&1 | grep -E "Authority=Developer ID Application|TeamIdentifier"
+          spctl --assess --type execute --verbose=4 "$app"
+          xcrun stapler validate "$app"
+          dmg=$(ls desktop/src-tauri/target/universal-apple-darwin/release/bundle/dmg/*.dmg | head -1)
+          spctl --assess --type open --context context:primary-signature --verbose=4 "$dmg"
