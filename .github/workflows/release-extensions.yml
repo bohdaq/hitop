@@ -80,19 +80,17 @@ jobs:
       - uses: taiki-e/install-action@v2
         with:
           tool: wasm-bindgen@0.2.126
-      # No build cache: a release builds from scratch, as the AMO reviewers will.
-      - name: Build the extension pages
-        working-directory: webapp
-        run: npm ci --no-audit --no-fund && npm run build:extension
-      - name: Package Chrome Web Store and Firefox
+      # The release is built from the AMO source package itself, at the fixed paths its BUILD.md
+      # gives reviewers (scripts/build-extension-release.sh), with no build cache.
+      - name: Build and package Chrome Web Store and Firefox
         env:
           VERSION: ${{ steps.v.outputs.version }}
         run: |
           pkg="$RUNNER_TEMP/pkg"
           out="$RUNNER_TEMP/out"
           mkdir -p "$out"
-          node webapp/scripts/package-extension.mjs store "$pkg/chrome"
-          node webapp/scripts/package-extension.mjs firefox "$pkg/firefox"
+          node webapp/scripts/extension-source.mjs "$out/hitop-firefox-$VERSION-source.zip"
+          bash webapp/scripts/build-extension-release.sh "$out/hitop-firefox-$VERSION-source.zip" "$pkg"
           for b in chrome firefox; do
             got=$(jq -r .version "$pkg/$b/manifest.json")
             test "$got" = "$VERSION" || { echo "::error::$b manifest.json has version $got, expected $VERSION"; exit 1; }
@@ -100,7 +98,6 @@ jobs:
           echo "Firefox add-on id: $(jq -r .browser_specific_settings.gecko.id "$pkg/firefox/manifest.json")"
           (cd "$pkg/chrome" && zip -X -r "$out/hitop-chrome-$VERSION.zip" . -x '*.DS_Store')
           (cd "$pkg/firefox" && zip -X -r "$out/hitop-firefox-$VERSION.zip" . -x '*.DS_Store')
-          node webapp/scripts/extension-source.mjs "$out/hitop-firefox-$VERSION-source.zip"
           ls -l "$out"
       # The zip that is released and submitted, not the folder it was made from.
       - name: web-ext lint (Firefox)

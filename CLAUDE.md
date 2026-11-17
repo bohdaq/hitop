@@ -371,7 +371,7 @@ hitop/
   submits: Chrome = `scripts/cws-publish.mjs` (Web Store API v2 upload + publish; secrets `CWS_CLIENT_ID`/`CWS_CLIENT_SECRET`/`CWS_REFRESH_TOKEN`, variable
   `CWS_PUBLISHER_ID`, optional `CWS_EXTENSION_ID`; test `tests/cws-publish.mjs` = fake API, in test:unit), Firefox = `web-ext sign --channel listed`
   (pinned web-ext, secrets `AMO_JWT_ISSUER`/`AMO_JWT_SECRET`, `--upload-source-code`, `--approval-timeout 0`). Missing secrets skip that store with a notice;
-  `ext-v<v>-rc.N` = pre-release, nothing submitted; manual runs are dry runs (artifacts only). Agents never push `ext-v` tags: the owner releases
+  `ext-v<v>-rc.N` = pre-release, nothing submitted; a manual run builds and packages only (artifacts), except on an `ext-v` tag with dry run off (re-submits). Agents never push `ext-v` tags: the owner releases
 - `services/` are shared with `webapp/` (plain JS, no React): change them with both apps in mind
 - `services/transportService.jsx`: every request goes through `sendRequest()`; public hosts use
   the proxy when `VITE_HITOP_PROXY` is set (webapp build), otherwise fetch

@@ -69,21 +69,23 @@ cargo install wasm-bindgen-cli --version 0.2.126 --locked
 
 ## Build
 
-From the folder this README is in:
+The build must run at the same paths as the release build: rustc writes source paths (the
+checkout and the cargo home) into the WebAssembly, and Vite names files by content hash. The
+script below unpacks this archive into /tmp/hitop-ext-src, uses /tmp/hitop-ext-cargo as the
+cargo home, and builds there. It is the same script the release workflow ran.
 
 \`\`\`sh
 # cli/rust-toolchain.toml says "stable"; this pins the exact compiler this version was built with.
 export RUSTUP_TOOLCHAIN=${rustVersion}
-cd webapp
-npm ci
-npm run build:extension          # Rust → wasm (cargo --locked), then vite build → dist-extension/
-node scripts/package-extension.mjs firefox ../hitop-firefox
+unzip -q hitop-firefox-${extVersion}-source.zip -d /tmp/hitop-unpack     # or wherever this README is
+bash /tmp/hitop-unpack/webapp/scripts/build-extension-release.sh hitop-firefox-${extVersion}-source.zip /tmp/hitop-out
 \`\`\`
 
-\`hitop-firefox/\` now holds the add-on: manifest.json, background.js, icons/ and app/ (the
-bundled web app). It matches the submitted package file for file: the WebAssembly build maps
-source paths to fixed names (\`--remap-path-prefix\` in build-wasm.mjs), so the folder you build
-in doesn't change the output. Your Rust compiler must match the one above.
+\`/tmp/hitop-out/firefox/\` now holds the add-on: manifest.json, background.js, icons/ and app/ (the
+bundled web app). It should match the submitted package file for file
+(\`diff -r /tmp/hitop-out/firefox <unzipped submission>\`). The script runs \`npm ci\`,
+\`npm run build:extension\` (Rust → wasm with \`cargo --locked\`, then \`vite build\` → dist-extension/)
+and \`node scripts/package-extension.mjs firefox\`.
 
 Where the bundled code comes from: \`webapp/src/\` (the app), \`frontend/src/services/\` and
 \`frontend/src/utils/\` (request logic shared with the older React app), \`shared/pm-shim.js\`,
