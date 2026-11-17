@@ -55,3 +55,8 @@ opt-level = "z"
 lto = true
 codegen-units = 1
 panic = "abort"
+
+# Proc macros and build scripts are never stripped: on some Macs `strip = true` wipes the metadata
+# rustc needs inside a proc-macro dylib ("can't find crate for `zerofrom_derive`").
+[profile.release.build-override]
+strip = false
