@@ -287,10 +287,11 @@ struct TimingBar: View {
     var height: CGFloat = 8
 
     private var parts: [(String, Double, Color)] {
-        let connect = (timing.connect ?? 0)
+        let connect: Double = timing.connect ?? 0
+        let secure: Double = (timing.tls ?? 0) + connect
         let raw: [(String, Double?, Color)] = [
             ("DNS", timing.dns, Theme.info),
-            ("TLS", (timing.tls ?? 0) + connect == 0 ? nil : (timing.tls ?? 0) + connect, Theme.violet),
+            ("TLS", secure == 0 ? nil : secure, Theme.violet),
             ("Waiting", timing.waiting, Theme.warning),
             ("Download", timing.download, Theme.success),
         ]
@@ -298,12 +299,15 @@ struct TimingBar: View {
     }
 
     var body: some View {
-        let total = max(parts.map(\.1).reduce(0, +), 1)
+        let segments = parts
+        let total: Double = max(segments.map(\.1).reduce(0, +), 1)
         VStack(spacing: 6) {
             GeometryReader { geo in
+                let usable: CGFloat = geo.size.width - CGFloat(segments.count - 1) * 2
                 HStack(spacing: 2) {
-                    ForEach(parts, id: \.0) { p in
-                        Rectangle().fill(p.2).frame(width: max(2, (geo.size.width - CGFloat(parts.count - 1) * 2) * p.1 / total))
+                    ForEach(segments, id: \.0) { p in
+                        let w: CGFloat = max(2, usable * CGFloat(p.1 / total))
+                        Rectangle().fill(p.2).frame(width: w)
                     }
                 }
             }
