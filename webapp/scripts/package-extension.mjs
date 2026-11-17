@@ -61,7 +61,15 @@ if (kind === "firefox") {
     action: { default_icon: { 48: "icons/icon-48.png" }, default_title: "HITOP" },
     host_permissions: ["<all_urls>"],
     background: { scripts: ["background.js"] },
-    browser_specific_settings: { gecko: { id: "hitop@example.com", strict_min_version: "115.0" } },
+    browser_specific_settings: {
+      gecko: {
+        id: "hitop@example.com",
+        strict_min_version: "115.0",
+        // Requests to public hosts go through the hitop.rws8.tech proxy (relayed, not stored):
+        // their headers/tokens and bodies leave the device (owner decision 2026-11-17).
+        data_collection_permissions: { required: ["authenticationInfo", "websiteContent"] },
+      },
+    },
     content_security_policy: { extension_pages: CSP_PAGES },
   };
 } else {

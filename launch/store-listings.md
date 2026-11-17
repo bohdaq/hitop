@@ -108,8 +108,8 @@ Dashboard. On AMO the add-on id is the Firefox manifest's gecko id (`hitop@examp
 add-on with that id is listed yet, the first listed version needs listing metadata: submit it by
 hand on AMO first.
 
-Open point (web-ext 10.8.0 lint, a warning today): Firefox wants
-`browser_specific_settings.gecko.data_collection_permissions` in the manifest. New add-ons need
-it now, and new versions of existing ones will need it later. The value is the owner's call. It
-might be `{"required": ["none"]}`, or a category that covers requests sent through the
-hitop.rws8.tech proxy. Add it in `webapp/scripts/package-extension.mjs` when it's decided.
+Data collection (Firefox `browser_specific_settings.gecko.data_collection_permissions`, owner decision
+2026-11-17): `{"required": ["authenticationInfo", "websiteContent"]}`, set in
+`webapp/scripts/package-extension.mjs`. Requests to public hosts go through the hitop.rws8.tech
+proxy, so their headers, tokens and bodies leave the device (relayed, never stored); Firefox shows
+this at install.
