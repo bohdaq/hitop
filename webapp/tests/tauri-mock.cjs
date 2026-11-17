@@ -18,6 +18,11 @@
 //             server (`grpcServer`: the hitop.test.Greeter service of
 //             hitop-core's tests/fixtures/grpc, reflection on or off), as
 //             commands.rs answers: errors before calling, events on the channel
+//   updater   self-update (desktop/src-tauri/src/updates.rs, feature `updater`;
+//             tauri-plugin-updater and tauri-plugin-process): `updater = null`
+//             (the default) is a build without it, as the Mac App Store's;
+//             a test sets `updater = { version, available, checkError,
+//             installError }` and reads `checks`, `installs`, `restarts`
 //   cookies   hitop-core's jar (cookies.rs, same rules as features.js) in
 //             <config>/cookies/global.json
 //   git       the `git` command runs hitop-git itself (cli/crates/hitop-git,
@@ -197,6 +202,8 @@ class TauriMock {
     this.grpcCalls = [];
     this.grpcCancelled = [];
     this.telemetry = { enabled: false, asked: true, id: null, lastPing: null };
+    // Self-update: null = a build without it (the default, as the Mac App Store's).
+    this.updater = null;
     // Secret manager settings (commands.rs secret_manager_settings*): the
     // variables the app's environment sets (names), as Rust reports them.
     this.smShell = [];
@@ -411,6 +418,39 @@ class TauriMock {
         this.keychain.delete(`git/${host}/username`);
         return this.keychain.delete(`git/${host}/token`);
       }
+      case 'updater_status':
+        if (!this.updater) throw 'this build has no updater';
+        return { version: this.updater.version ?? '1.2.0' };
+      case 'plugin:updater|check': {
+        const u = this.updater;
+        if (!u) throw 'updater.check not allowed. Plugin not found';
+        u.checks = (u.checks ?? 0) + 1;
+        if (u.checkError) throw u.checkError;
+        if (!u.available) return null;
+        const rid = 40 + u.checks;
+        u.rids = [...(u.rids ?? []), rid];
+        return { rid, currentVersion: u.version ?? '1.2.0', version: u.available, date: '2026-11-20T10:00:00Z', body: 'notes', rawJson: {} };
+      }
+      case 'plugin:updater|download_and_install': {
+        const u = this.updater;
+        if (!u?.rids?.includes(args.rid)) throw 'resource id not found';
+        (u.installs ??= []).push(args.rid);
+        const cb = Number(String(args.onEvent).replace('__CHANNEL__:', ''));
+        let index = 0;
+        const emit = (message) => this.deliver?.(cb, { message, index: index++ });
+        await emit({ event: 'Started', data: { contentLength: 4 * 1024 * 1024 } });
+        for (let i = 0; i < 4; i++) {
+          await new Promise((r) => setTimeout(r, 50));
+          await emit({ event: 'Progress', data: { chunkLength: 1024 * 1024 } });
+          if (u.installError && i === 1) throw u.installError;
+        }
+        await emit({ event: 'Finished' });
+        return null;
+      }
+      case 'plugin:process|restart':
+        if (!this.updater) throw 'process.restart not allowed. Plugin not found';
+        this.updater.restarts = (this.updater.restarts ?? 0) + 1;
+        return null;
       default:
         throw `unknown command ${cmd}`;
     }

@@ -201,16 +201,18 @@ class HitopSettings extends LitElement {
 customElements.define("hitop-settings", HitopSettings);
 
 // `telemetry`: { status(), set(on) } and `managers`: { load(), save(settings,
-// secrets) } from the adapter. Returns the desktop's sections of the Settings
-// page (the usage ping part only when this build has the ping) and the ping's status.
-export async function settingsSections(telemetry, managers) {
+// secrets) } from the adapter; `updates`: tauri-updater.js desktopUpdates() (null
+// in builds that don't update themselves). Returns the desktop's sections of the
+// Settings page (the usage ping part only when this build has the ping, Updates
+// only when it updates itself) and the ping's status.
+export async function settingsSections(telemetry, managers, updates = null) {
   let status = null;
   try {
     status = await telemetry.status();
   } catch {
     telemetry = null;
   }
-  const sections = () => html`<hitop-settings class="desktop-settings" .telemetry=${telemetry} .managers=${managers}></hitop-settings>`;
+  const sections = () => html`${updates ? updates.section() : nothing}<hitop-settings class="desktop-settings" .telemetry=${telemetry} .managers=${managers}></hitop-settings>`;
   return { sections, status };
 }
 

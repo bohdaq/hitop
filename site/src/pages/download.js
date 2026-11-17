@@ -57,6 +57,12 @@ export function render() {
           </li>`,
         )}
       </ul>
+      <p>
+        The macOS, Windows and AppImage builds update themselves: HITOP checks for a new version at
+        startup and once a day and asks before installing it (Settings, Updates). Versions up to
+        1.2.0 can't: download the newest version once by hand, and from then on it updates itself.
+        The .deb and .rpm packages update when you install the new package.
+      </p>
       <details class="unsigned-note">
         <summary>Your system warns the first time you open it</summary>
         <p>

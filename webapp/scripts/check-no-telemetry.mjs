@@ -3,6 +3,7 @@
 // no telemetry path. As a control, the desktop build (dist-tauri/) does have
 // the Settings page that drives the Rust side. Run after `npm run build` and
 // `npm run build:tauri`:  node scripts/check-no-telemetry.mjs
+// It also checks that the web build has no self-update (the desktop's GitHub builds only).
 import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -40,4 +41,11 @@ if (CODE.test(adapter) || PING.test(adapter) || /tauri-settings/.test(adapter)) 
 // The desktop's JavaScript doesn't know the endpoint either: Rust sends the ping.
 if (has(tauri, PING).length) fail("dist-tauri has the ping endpoint; only Rust may send pings");
 if (!has(tauri, /telemetry_status/).length) fail("control failed: dist-tauri has no Settings page (telemetry_status)");
-console.log("check-no-telemetry: the web build and web adapter have no usage ping; dist-tauri has the Settings page");
+// Self-update is the desktop's GitHub Release builds' alone (platform/tauri-updater.js,
+// Rust feature `updater`): the web build has no update check, bar or Settings section.
+const UPDATER = /plugin:updater|plugin:process|updater_status|hitop-update|hitop_updates|Check for updates|Restart to update/;
+const updater = has(web, UPDATER);
+if (updater.length) fail(`the web build has the desktop updater: ${updater.map((f) => path.relative(root, f)).join(", ")}`);
+if (UPDATER.test(adapter) || /tauri-updater/.test(adapter)) fail("src/platform/web.js has an updater path");
+if (!has(tauri, /plugin:updater\|check/).length || !has(tauri, /updater_status/).length) fail("control failed: dist-tauri has no updater (plugin:updater|check, updater_status)");
+console.log("check-no-telemetry: the web build and web adapter have no usage ping and no updater; dist-tauri has the Settings page and the updater");

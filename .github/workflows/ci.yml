@@ -576,23 +576,28 @@ jobs:
       - name: Desktop with the React frontend
         working-directory: desktop/src-tauri
         run: TAURI_CONFIG="$(cat tauri.react.conf.json)" cargo check --locked
-      - name: Mac App Store configuration has no usage ping (no telemetry feature)
+      - name: Mac App Store configuration has no usage ping and no updater (no telemetry or updater feature)
         working-directory: desktop/src-tauri
         env:
           CARGO_PROFILE_DEV_DEBUG: "0"
         run: |
-          # The MAS build is a plain `tauri build`: the desktop crate without `telemetry`.
+          # The MAS build is a plain `tauri build`: the desktop crate without `telemetry` and
+          # `updater` (store policy: no self-update), with tauri.conf.json (no update endpoint or key).
           cargo build --locked
           bin=target/debug/hitop-desktop
-          for s in 'hitop.rws8.tech/api/ping' '/api/ping' 'HITOP_TELEMETRY_URL' 'telemetry.json'; do
+          for s in 'hitop.rws8.tech/api/ping' '/api/ping' 'HITOP_TELEMETRY_URL' 'telemetry.json' \
+            'tauri-plugin-updater' 'plugin:updater' 'minisign' 'releases/latest/download/latest.json'; do
             if grep -q -a -F "$s" "$bin"; then echo "MAS build contains '$s'"; exit 1; fi
           done
-          # Control: the GitHub Release configuration (--features telemetry) has them.
-          cargo build --locked --features telemetry
-          for s in 'hitop.rws8.tech/api/ping' 'telemetry.json'; do
-            grep -q -a -F "$s" "$bin" || { echo "control: telemetry build lacks '$s'"; exit 1; }
+          # Control: the GitHub Release configuration (tauri.github.conf.json, --features
+          # telemetry,updater) has the ping, the updater plugin, its endpoint and public key.
+          TAURI_CONFIG="$(cat tauri.github.conf.json)" cargo build --locked --features telemetry,updater
+          pubkey=$(jq -r .plugins.updater.pubkey tauri.github.conf.json)
+          for s in 'hitop.rws8.tech/api/ping' 'telemetry.json' 'tauri-plugin-updater' 'plugin:updater' 'minisign' \
+            'releases/latest/download/latest.json' "$pubkey"; do
+            grep -q -a -F "$s" "$bin" || { echo "control: GitHub build lacks '$s'"; exit 1; }
           done
-          echo "MAS configuration: no ping code or endpoint; telemetry build: present"
+          echo "MAS configuration: no ping or updater code, endpoint or key; GitHub build: present"
 
   hitopkit:
     # ROADMAP T26: HitopKit, the iOS companion's Swift package (format reader, variables,
@@ -646,3 +651,6 @@ jobs:
         run: |
           cargo check --locked
           cargo clippy --locked -- -D warnings
+      - name: clippy with the GitHub Release features (usage ping, self-update)
+        working-directory: desktop/src-tauri
+        run: cargo clippy --locked --features telemetry,updater -- -D warnings

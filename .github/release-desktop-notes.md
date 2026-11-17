@@ -16,5 +16,11 @@ xattr -dr com.apple.quarantine /Applications/HITOP.app
 **Linux**: `.AppImage` (`chmod +x` then run it), `.deb` (`sudo apt install ./HITOP_*.deb`) or
 `.rpm`.
 
+**Updates**: these builds update themselves on macOS, on Windows and as the Linux AppImage.
+HITOP checks GitHub Releases at startup and once a day, asks before it installs a new version and
+checks its signature first; turn the checks off or check now in Settings → Updates. Versions up to
+1.2.0 can't update themselves: download the newest version once by hand, and from then on it
+updates itself. The `.deb` and `.rpm` packages update when you install the new package.
+
 Checksums are on each asset's page. Report problems at
 https://github.com/bohdaq/hitop/issues.

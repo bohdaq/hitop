@@ -4,6 +4,11 @@ name: Release desktop
 # signed), Windows and Linux and attaches it to a GitHub Release. Tags with a suffix
 # (desktop-v0.2.0-rc.1) make a pre-release and skip the version check: use them as dry runs.
 # Mac App Store builds are separate: the owner builds them on a Mac with tauri.conf.json as is.
+# Self-update (feature `updater`, GitHub builds only): Tauri signs the update bundles with the
+# TAURI_SIGNING_PRIVATE_KEY secret (+ _PASSWORD), tauri-action uploads their .sig files and
+# latest.json, and the app reads releases/latest/download/latest.json (pre-releases never count
+# as latest). The `updater` job checks a release's latest.json and signatures against the public
+# key in tauri.github.conf.json.
 on:
   push:
     tags: ["desktop-v*"]
@@ -103,9 +108,31 @@ jobs:
           conf=desktop/src-tauri/tauri.github.conf.json
           jq --arg id "$APPLE_SIGNING_IDENTITY" '.bundle.macOS.signingIdentity = $id' "$conf" > "$conf.tmp"
           mv "$conf.tmp" "$conf"
+      # Update signatures: a release needs the key (the updater job checks it); a pre-release
+      # without it is built without updater files, so dry runs work before the secret exists.
+      - name: Update signing key
+        shell: bash
+        env:
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          PRERELEASE: ${{ needs.check.outputs.prerelease }}
+        run: |
+          if [ -n "$TAURI_SIGNING_PRIVATE_KEY" ]; then
+            echo "Update bundles are signed"
+            exit 0
+          fi
+          if [ "$PRERELEASE" != true ]; then
+            echo "::error::TAURI_SIGNING_PRIVATE_KEY is not set: a release must carry signed updates"
+            exit 1
+          fi
+          echo "::warning::No TAURI_SIGNING_PRIVATE_KEY: this pre-release has no updater files"
+          conf=desktop/src-tauri/tauri.github.conf.json
+          jq '.bundle.createUpdaterArtifacts = false' "$conf" > "$conf.tmp"
+          mv "$conf.tmp" "$conf"
       - uses: tauri-apps/tauri-action@v0
         env:
           GITHUB_TOKEN: ${{ github.token }}
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
           APPLE_CERTIFICATE: ${{ runner.os == 'macOS' && secrets.APPLE_CERTIFICATE || '' }}
           APPLE_CERTIFICATE_PASSWORD: ${{ runner.os == 'macOS' && secrets.APPLE_CERTIFICATE_PASSWORD || '' }}
           APPLE_SIGNING_IDENTITY: ${{ runner.os == 'macOS' && secrets.APPLE_SIGNING_IDENTITY || '' }}
@@ -116,8 +143,13 @@ jobs:
           tagName: ${{ github.ref_name }}
           releaseName: HITOP desktop ${{ github.ref_name }}
           prerelease: ${{ needs.check.outputs.prerelease == 'true' }}
-          # GitHub Release builds carry the opt-in usage ping; the Mac App Store build doesn't.
-          args: ${{ matrix.args }} --config src-tauri/tauri.github.conf.json --features telemetry
+          # latest.json for the updater (each leg merges its platforms into the release's file):
+          # windows-x86_64 = the NSIS installer; -nsis and -msi keys follow how HITOP was installed.
+          includeUpdaterJson: true
+          updaterJsonPreferNsis: true
+          # GitHub Release builds carry the opt-in usage ping and self-update; the Mac App Store
+          # build has neither (store policy).
+          args: ${{ matrix.args }} --config src-tauri/tauri.github.conf.json --features telemetry,updater
       # Tauri notarises the .app inside the disk image, not the .dmg itself: notarise and staple
       # the .dmg too, so Gatekeeper accepts the download as is, and replace the uploaded asset.
       - name: Notarise the disk image (macOS)
@@ -142,3 +174,63 @@ jobs:
           xcrun stapler validate "$app"
           dmg=$(ls desktop/src-tauri/target/universal-apple-darwin/release/bundle/dmg/*.dmg | head -1)
           spctl --assess --type open --context context:primary-signature --verbose=4 "$dmg"
+
+  # A release that can't update its users is broken: latest.json must name every platform, each
+  # URL must be an asset of this release with its .sig, and every signature must verify with the
+  # public key the apps carry (tauri.github.conf.json). The three build legs each merge their
+  # platforms into latest.json; if two raced and one was lost, re-run that leg, then this job.
+  updater:
+    name: Updater files (latest.json, signatures)
+    needs: [check, build]
+    if: needs.check.outputs.prerelease != 'true'
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - name: latest.json and .sig files, verified with the app's public key
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          tag="$GITHUB_REF_NAME"
+          version="${tag#desktop-v}"
+          pub="$GITHUB_WORKSPACE/desktop/src-tauri/tauri.github.conf.json"
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq minisign
+          dir="$RUNNER_TEMP/updater"
+          mkdir -p "$dir"
+          cd "$dir"
+          jq -r '.plugins.updater.pubkey' "$pub" | base64 -d > updater.pub
+          gh release download "$tag" -R "$GITHUB_REPOSITORY" -p latest.json -p '*.sig' \
+            || { echo "::error::$tag has no latest.json or .sig files"; exit 1; }
+          test -s latest.json || { echo "::error::$tag has no latest.json"; exit 1; }
+          jq -e --arg v "$version" '.version == $v' latest.json >/dev/null \
+            || { echo "::error::latest.json version $(jq -r .version latest.json), tag $tag"; exit 1; }
+          check() {
+            key="$1" pattern="$2"
+            url=$(jq -r --arg k "$key" '.platforms[$k].url // empty' latest.json)
+            sig=$(jq -r --arg k "$key" '.platforms[$k].signature // empty' latest.json)
+            if [ -z "$url" ] || [ -z "$sig" ]; then echo "::error::latest.json has no $key"; exit 1; fi
+            case "$url" in
+              "https://github.com/$GITHUB_REPOSITORY/releases/download/$tag/"*) ;;
+              *) echo "::error::$key points outside $tag: $url"; exit 1 ;;
+            esac
+            asset="${url##*/}"
+            if ! printf '%s\n' "$asset" | grep -Eq -e "$pattern"; then echo "::error::$key is $asset, expected $pattern"; exit 1; fi
+            if [ ! -s "$asset.sig" ]; then echo "::error::$tag has no $asset.sig"; exit 1; fi
+            if [ "$(cat "$asset.sig")" != "$sig" ]; then echo "::error::$key's signature differs from $asset.sig"; exit 1; fi
+            [ -f "$asset" ] || gh release download "$tag" -R "$GITHUB_REPOSITORY" -p "$asset"
+            base64 -d "$asset.sig" > "$asset.minisig"
+            minisign -V -q -p updater.pub -x "$asset.minisig" -m "$asset" \
+              || { echo "::error::$asset's signature doesn't verify with the public key in tauri.github.conf.json"; exit 1; }
+            # requireSignedVersion: the apps refuse a signature that doesn't name this version.
+            grep '^trusted comment:' "$asset.minisig" | tr '\t' '\n' | grep -qx "version:$version" \
+              || { echo "::error::$asset's signature doesn't name version $version"; exit 1; }
+            echo "$key: $asset, signature verified"
+          }
+          check darwin-aarch64 '\.app\.tar\.gz$'
+          check darwin-x86_64 '\.app\.tar\.gz$'
+          check windows-x86_64 '-setup\.exe$'
+          check windows-x86_64-nsis '-setup\.exe$'
+          check windows-x86_64-msi '\.msi$'
+          check linux-x86_64 '\.AppImage$'
+          check linux-x86_64-appimage '\.AppImage$'

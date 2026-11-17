@@ -1,0 +1,10 @@
+{
+  "$schema": "../../gen/schemas/desktop-schema.json",
+  "identifier": "updater",
+  "description": "Self-update (GitHub Release builds only, Cargo feature `updater`): check, download and install a signed update, then relaunch. build.rs leaves this file out of builds without the feature (the Mac App Store build), which don't contain these plugins.",
+  "windows": ["main"],
+  "permissions": [
+    "updater:default",
+    "process:allow-restart"
+  ]
+}

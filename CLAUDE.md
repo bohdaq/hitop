@@ -348,6 +348,15 @@ hitop/
   Pull = fetch + fast-forward or merge, never rebase. MAS sandbox: no SSH agent, credential helpers or ~/.gitconfig (HTTPS token, identity in the panel)
 - Cargo feature `telemetry` (not default): the usage ping. `release-desktop.yml` builds with `--features telemetry`;
   the MAS build (plain `tauri build`) must not; CI builds both and greps the binary for the endpoint
+- Cargo feature `updater` (not default, SU1): self-update of the GitHub Release builds (macOS, Windows NSIS/MSI, Linux AppImage;
+  never MAS or a store build) = tauri-plugin-updater ≥ 2.14.1 + tauri-plugin-process, `src/updates.rs` (`updater_status` → `{version}`,
+  an error without the feature, without `plugins.updater` or on a .deb/.rpm), permissions in `capabilities/updater/` (build.rs includes
+  them only with the feature). tauri.github.conf.json: `plugins.updater` {pubkey (owner's minisign key 0B76B9F0063FA64B), endpoints
+  `https://github.com/bohdaq/hitop/releases/latest/download/latest.json`, requireSignedVersion}, `createUpdaterArtifacts: true`.
+  release-desktop.yml builds `--features telemetry,updater`, signs with secrets `TAURI_SIGNING_PRIVATE_KEY` + `TAURI_SIGNING_PRIVATE_KEY_PASSWORD` (a release
+  fails without them; an rc builds without updater files), tauri-action uploads `.sig` + `latest.json`, job `updater` checks them with
+  minisign against the pubkey. Web app: `platform/tauri-updater.js` (bar, Settings → Updates, `hitop_updates` {auto}; check at start +
+  every 24 h); check-no-telemetry fails if it reaches dist/; CI greps the MAS binary for the plugin, endpoint and key. e2e `tests/updater.cjs`
 - Dev: `cd desktop && npx tauri dev`
 - Build: `cd desktop && PATH="$HOME/.cargo/bin:$PATH" RUSTC="$HOME/.cargo/bin/rustc" npx tauri build`
 - All Tauri commands are in `src-tauri/src/commands.rs`

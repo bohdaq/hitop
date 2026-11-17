@@ -1,6 +1,7 @@
 mod bookmarks;
 mod commands;
 mod git;
+mod updates;
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
@@ -38,6 +39,7 @@ pub fn run() {
             commands::write_file,
             commands::telemetry_status,
             commands::telemetry_set,
+            updates::updater_status,
             commands::ws_connect,
             commands::ws_send,
             commands::ws_close,
@@ -54,10 +56,13 @@ pub fn run() {
         .manage(commands::Sockets::default())
         .manage(commands::GrpcCalls::default())
         .manage(commands::HttpCalls::default())
-        .setup(|_app| {
+        .setup(|app| {
             // The usage ping, when the user turned it on (off by default).
             #[cfg(feature = "telemetry")]
-            commands::ping_in_background(_app.package_info().version.to_string());
+            commands::ping_in_background(app.package_info().version.to_string());
+            // Self-update (feature `updater`, GitHub Release builds only).
+            let updates = updates::init(app);
+            tauri::Manager::manage(app, updates);
             Ok(())
         })
         .run(tauri::generate_context!())

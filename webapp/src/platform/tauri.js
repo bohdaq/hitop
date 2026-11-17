@@ -9,6 +9,7 @@ import storageService from "../../../frontend/src/services/storageService.jsx";
 import { localSaves } from "./local-storage.js";
 import { historyFromRust, historyToRust } from "./history.js";
 import { askOnce, settingsSections } from "./tauri-settings.js";
+import { desktopUpdates } from "./tauri-updater.js";
 import { gitApi, gitPages } from "./tauri-git.js";
 import { openResponseStore } from "./response-store.js";
 
@@ -268,14 +269,19 @@ export function createPlatform() {
   let folderIds = new Set();
 
   // Writes when the JSON changed; storage errors are reported once each.
+  // `pending` lets an update wait for them before its installer may quit the app.
+  const pending = new Set();
   const write = (kind, cmd, args) => {
     const json = JSON.stringify(args);
     if (last[kind] === json) return;
     last[kind] = json;
-    invoke(cmd, args).catch((e) => {
-      last[kind] = null;
-      report(`Couldn't save ${kind}: ${e}`);
-    });
+    const call = invoke(cmd, args)
+      .catch((e) => {
+        last[kind] = null;
+        report(`Couldn't save ${kind}: ${e}`);
+      })
+      .finally(() => pending.delete(call));
+    pending.add(call);
   };
 
   const telemetry = {
@@ -329,11 +335,16 @@ export function createPlatform() {
         }
       }
       // The Settings page: secret managers, and the usage ping where the build has it (not the Mac App Store one).
-      const settings = await settingsSections(telemetry, managers);
+      // Self-update, in the GitHub Release builds only (null elsewhere): Settings → Updates and the bar.
+      const updates = await desktopUpdates(invoke);
+      const settings = await settingsSections(telemetry, managers, updates);
       // The Git panel for collection folders; the desktop's sections of the Settings page.
       platform.pages = gitPages(platform.git);
       platform.settingsSections = settings.sections;
-      platform.onStart = () => askOnce(telemetry, settings.status);
+      platform.onStart = (app) => {
+        askOnce(telemetry, settings.status);
+        updates?.start(app, () => Promise.all([...pending]));
+      };
       cache.collections = collections?.length ? collections : null;
       cache.history = historyFromRust(history);
       cache.contexts = contexts && typeof contexts === "object" ? contexts : {};

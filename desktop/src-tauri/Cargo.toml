@@ -23,6 +23,10 @@ serde_json = "1"
 hitop-core = { path = "../../cli/crates/hitop-core" }
 # The Git panel (status, commit, branches, pull/push, conflicts) over vendored libgit2.
 hitop-git = { path = "../../cli/crates/hitop-git" }
+# Self-update (feature `updater`, GitHub Release builds only): the official updater plugin and the
+# process plugin for the relaunch. 2.14.1 is the first updater on zip 9 (no zip 4 advisories).
+tauri-plugin-updater = { version = "2.14.1", optional = true }
+tauri-plugin-process = { version = "2", optional = true }
 
 # Mac App Store build: security-scoped bookmarks so the sandboxed app can reopen
 # collection folders on the next launch (src/bookmarks.rs). Same versions Tauri uses.
@@ -35,6 +39,10 @@ objc2-foundation = { version = "0.3", default-features = false, features = ["std
 # the Mac App Store build (a plain `tauri build`) doesn't contain it;
 # release-desktop.yml turns it on for the GitHub Release builds.
 telemetry = ["hitop-core/telemetry"]
+# Self-update from GitHub Releases (tauri-plugin-updater; endpoint and public key in
+# tauri.github.conf.json). Off by default, so the Mac App Store build (store policy) and any
+# store build don't contain it; release-desktop.yml turns it on for the GitHub Release builds.
+updater = ["dep:tauri-plugin-updater", "dep:tauri-plugin-process"]
 
 [profile.release]
 strip = true
