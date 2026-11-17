@@ -19,8 +19,8 @@ final class FlowTests: XCTestCase {
         url.tap()
         url.typeText("https://stub.example/echo?x=1")
         app.el("send").tap()
+        waitForResponse(app)
         let status = app.el("status")
-        wait(status)
         XCTAssertEqual(status.label, "Status 200 OK")
         XCTAssertTrue(app.el("sent-url").label.contains("https://stub.example/echo?x=1"))
         app.el("close-response").tap()
@@ -56,7 +56,7 @@ final class FlowTests: XCTestCase {
         XCTAssertEqual(app.el("json-validity").label, "Valid")
 
         app.el("send").tap()
-        wait(app.el("status"))
+        waitForResponse(app)
         XCTAssertEqual(app.el("status").label, "Status 201 Created")
         XCTAssertTrue(app.el("sent-url").label.contains("https://staging.shop.example/v2/orders"))
         XCTAssertTrue(app.el("json-body").exists)
@@ -78,7 +78,7 @@ final class FlowTests: XCTestCase {
         production.tap()
         XCTAssertTrue(app.el("environment-menu").label.contains("Production"))
         app.el("send").tap()
-        wait(app.el("status"))
+        waitForResponse(app)
         XCTAssertTrue(app.el("sent-url").label.contains("https://api.shop.example/v2/orders"), app.el("sent-url").label)
         app.el("close-response").tap()
 

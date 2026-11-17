@@ -74,7 +74,8 @@ enum Seed {
         ]
     }
 
-    static let secrets: [(String, String, String)] = [("env-staging", "token", "tok_staging_8f2"), ("env-staging", "password", "hunter2")]
+    static let secrets: [(String, String, String)] = [("env-staging", "token", "tok_staging_8f2"), ("env-staging", "password", "hunter2"),
+                                                       ("env-production", "token", "tok_live_5Yq")]
 
     static func history(now: Date = Date(timeIntervalSince1970: 1_794_912_120)) -> [HistoryEntry] {
         let ms = UInt64(now.timeIntervalSince1970 * 1000)

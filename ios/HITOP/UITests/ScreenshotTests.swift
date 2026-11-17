@@ -29,7 +29,7 @@ final class ScreenshotTests: XCTestCase {
         shot(app, "02-request")
 
         app.el("send").tap()
-        wait(app.el("status"))
+        waitForResponse(app)
         sleep(1)
         shot(app, "03-response")
         app.el("close-response").tap()
@@ -54,7 +54,7 @@ final class ScreenshotTests: XCTestCase {
         create.tap()
         wait(app.el("send"))
         app.el("send").tap()
-        wait(app.el("status"))
+        waitForResponse(app)
         sleep(1)
         shot(app, "01-ipad")
     }

@@ -29,8 +29,8 @@ enum Theme {
     static let danger = Color(hex: 0xFF8A8A)
     static let info = Color(hex: 0x7CC7FF)
     static let violet = Color(hex: 0xC4A7FF)
-    static let logoGradient = LinearGradient(colors: [Color(hex: 0x667EEA), Color(hex: 0x764BA2)], startPoint: .topLeading, endPoint: .bottomTrailing)
-    static let sendGradient = LinearGradient(colors: [accent, accentDeep], startPoint: .top, endPoint: .bottom)
+    static var logoGradient: LinearGradient { LinearGradient(colors: [Color(hex: 0x667EEA), Color(hex: 0x764BA2)], startPoint: .topLeading, endPoint: .bottomTrailing) }
+    static var sendGradient: LinearGradient { LinearGradient(colors: [accent, accentDeep], startPoint: .top, endPoint: .bottom) }
 
     // Code colours (drafts).
     static let codeText = Color(hex: 0xD6D6DE)

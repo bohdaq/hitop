@@ -106,6 +106,7 @@ jobs:
           fi
 
       - name: iPad screenshots (${{ env.PAD_NAME }})
+        if: success() || failure()
         working-directory: ios/HITOP
         run: |
           set -o pipefail
@@ -128,17 +129,24 @@ jobs:
             out="$RUNNER_TEMP/export-$r"
             xcrun xcresulttool export attachments --path "$RUNNER_TEMP/$r.xcresult" --output-path "$out" || continue
             python3 - "$out" "$RUNNER_TEMP/shots" "$r" <<'PY'
-          import json, os, shutil, sys
+          import json, os, re, shutil, sys
           src, dst, device = sys.argv[1:]
           for test in json.load(open(os.path.join(src, "manifest.json"))):
               for a in test.get("attachments", []):
                   name = a.get("suggestedHumanReadableName") or a["exportedFileName"]
                   base = name.split("_0_")[0].rsplit(".", 1)[0]
                   ext = os.path.splitext(a["exportedFileName"])[1] or ".png"
-                  shutil.copy(os.path.join(src, a["exportedFileName"]), os.path.join(dst, f"{device}-{base}{ext}"))
+                  if base[:2].isdigit():
+                      out = f"{device}-{base}{ext}"
+                  else:
+                      # XCTest's own screenshots (failures): kept under failures/, names made safe.
+                      test_name = re.sub(r"[^A-Za-z0-9_-]+", "-", test.get("testIdentifier", "test"))
+                      os.makedirs(os.path.join(dst, "failures"), exist_ok=True)
+                      out = os.path.join("failures", f"{device}-{test_name}-{re.sub(r'[^A-Za-z0-9_-]+', '-', base)}{ext}")
+                  shutil.copy(os.path.join(src, a["exportedFileName"]), os.path.join(dst, out))
           PY
           done
-          ls -la "$RUNNER_TEMP/shots"
+          ls -laR "$RUNNER_TEMP/shots"
 
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         if: always()
