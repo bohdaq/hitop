@@ -1,0 +1,172 @@
+# HITOP for iOS 26 (ios/HITOP, plan ios/HITOP_IOS.md): XcodeGen project, build, unit and UI tests
+# on iOS 26 simulators, screenshots from the UI tests (artifact "screenshots"), and HitopKit's
+# swift test on macOS (JavaScriptCore; ci.yml's hitopkit job runs it on Linux).
+name: iOS
+
+on:
+  push:
+    paths:
+      - "ios/**"
+      - ".github/workflows/ios.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ios-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  XCODEGEN_VERSION: "2.46.0"
+  XCODEGEN_SHA256: 4d9e34b62172d645eed6457cac13fc222569974098ef4ee9c3368bedf0196806
+
+jobs:
+  app:
+    name: HITOP app (build, unit + UI tests, screenshots)
+    runs-on: macos-26
+    timeout-minutes: 75
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Xcode 26 (newest installed)
+        run: |
+          ls -d /Applications/Xcode*.app
+          xcode=$(ls -d /Applications/Xcode_26*.app 2>/dev/null | sort -V | tail -1)
+          if [ -z "$xcode" ]; then xcode=/Applications/Xcode.app; fi
+          sudo xcode-select -s "$xcode"
+          xcodebuild -version
+          xcrun simctl list runtimes
+
+      - name: XcodeGen ${{ env.XCODEGEN_VERSION }} (checksum pinned)
+        run: |
+          curl -sSfL -o "$RUNNER_TEMP/xcodegen.zip" "https://github.com/yonaskolb/XcodeGen/releases/download/$XCODEGEN_VERSION/xcodegen.zip"
+          echo "$XCODEGEN_SHA256  $RUNNER_TEMP/xcodegen.zip" | shasum -a 256 -c -
+          unzip -q "$RUNNER_TEMP/xcodegen.zip" -d "$RUNNER_TEMP"
+          echo "$RUNNER_TEMP/xcodegen/bin" >> "$GITHUB_PATH"
+
+      - name: Generate the project
+        working-directory: ios/HITOP
+        run: |
+          xcodegen --version
+          xcodegen generate
+          ls
+
+      - name: Pick iOS 26 simulators
+        run: |
+          python3 - <<'PY' >> "$GITHUB_ENV"
+          import json, subprocess
+          data = json.loads(subprocess.check_output(["xcrun", "simctl", "list", "devices", "available", "-j"]))
+          def pick(prefs, family):
+              found = []
+              for runtime, devices in data["devices"].items():
+                  if "iOS-26" not in runtime:
+                      continue
+                  for d in devices:
+                      if d["name"].startswith(family):
+                          found.append((runtime, d))
+              found.sort(key=lambda x: x[0], reverse=True)
+              for p in prefs:
+                  for runtime, d in found:
+                      if d["name"] == p:
+                          return d
+              return found[0][1]
+          phone = pick(["iPhone 17 Pro", "iPhone 17", "iPhone 16 Pro"], "iPhone")
+          pad = pick(["iPad Air 11-inch (M3)", "iPad Air 11-inch (M2)", "iPad Pro 11-inch (M4)"], "iPad")
+          print(f"PHONE_ID={phone['udid']}")
+          print(f"PHONE_NAME={phone['name']}")
+          print(f"PAD_ID={pad['udid']}")
+          print(f"PAD_NAME={pad['name']}")
+          PY
+          cat "$GITHUB_ENV"
+
+      - name: Build for testing
+        working-directory: ios/HITOP
+        run: |
+          set -o pipefail
+          xcodebuild build-for-testing -project HITOPApp.xcodeproj -scheme HITOP \
+            -destination "id=$PHONE_ID" -derivedDataPath "$RUNNER_TEMP/dd" \
+            CODE_SIGNING_ALLOWED=NO 2>&1 | tee "$RUNNER_TEMP/build.log" | grep -E "error:|warning: .*HITOP|BUILD (SUCCEEDED|FAILED)" || true
+          if grep -q "BUILD FAILED\|TEST BUILD FAILED\|\*\* TEST BUILD FAILED" "$RUNNER_TEMP/build.log"; then
+            { echo '### Build errors'; echo '```'; grep -E "error:" "$RUNNER_TEMP/build.log" | sort -u | head -80; echo '```'; } >> "$GITHUB_STEP_SUMMARY"
+            exit 1
+          fi
+
+      - name: Unit and UI tests (${{ env.PHONE_NAME }})
+        working-directory: ios/HITOP
+        run: |
+          set -o pipefail
+          xcodebuild test-without-building -project HITOPApp.xcodeproj -scheme HITOP \
+            -destination "id=$PHONE_ID" -derivedDataPath "$RUNNER_TEMP/dd" \
+            -resultBundlePath "$RUNNER_TEMP/phone.xcresult" 2>&1 | tee "$RUNNER_TEMP/test-phone.log" \
+            | grep -E "Test Case|error:|failed|TEST (SUCCEEDED|FAILED)|Executed" || true
+          if ! grep -q "TEST EXECUTE SUCCEEDED\|TEST SUCCEEDED" "$RUNNER_TEMP/test-phone.log"; then
+            { echo '### iPhone test failures'; echo '```'; grep -E "error:|failed" "$RUNNER_TEMP/test-phone.log" | head -80; echo '```'; } >> "$GITHUB_STEP_SUMMARY"
+            exit 1
+          fi
+
+      - name: iPad screenshots (${{ env.PAD_NAME }})
+        working-directory: ios/HITOP
+        run: |
+          set -o pipefail
+          xcodebuild test-without-building -project HITOPApp.xcodeproj -scheme HITOP \
+            -destination "id=$PAD_ID" -derivedDataPath "$RUNNER_TEMP/dd" \
+            -only-testing:HITOPUITests/ScreenshotTests \
+            -resultBundlePath "$RUNNER_TEMP/pad.xcresult" 2>&1 | tee "$RUNNER_TEMP/test-pad.log" \
+            | grep -E "Test Case|error:|failed|TEST (SUCCEEDED|FAILED)|Executed" || true
+          if ! grep -q "TEST EXECUTE SUCCEEDED\|TEST SUCCEEDED" "$RUNNER_TEMP/test-pad.log"; then
+            { echo '### iPad test failures'; echo '```'; grep -E "error:|failed" "$RUNNER_TEMP/test-pad.log" | head -80; echo '```'; } >> "$GITHUB_STEP_SUMMARY"
+            exit 1
+          fi
+
+      - name: Export screenshots
+        if: always()
+        run: |
+          mkdir -p "$RUNNER_TEMP/shots"
+          for r in phone pad; do
+            [ -d "$RUNNER_TEMP/$r.xcresult" ] || continue
+            out="$RUNNER_TEMP/export-$r"
+            xcrun xcresulttool export attachments --path "$RUNNER_TEMP/$r.xcresult" --output-path "$out" || continue
+            python3 - "$out" "$RUNNER_TEMP/shots" "$r" <<'PY'
+          import json, os, shutil, sys
+          src, dst, device = sys.argv[1:]
+          for test in json.load(open(os.path.join(src, "manifest.json"))):
+              for a in test.get("attachments", []):
+                  name = a.get("suggestedHumanReadableName") or a["exportedFileName"]
+                  base = name.split("_0_")[0].rsplit(".", 1)[0]
+                  ext = os.path.splitext(a["exportedFileName"])[1] or ".png"
+                  shutil.copy(os.path.join(src, a["exportedFileName"]), os.path.join(dst, f"{device}-{base}{ext}"))
+          PY
+          done
+          ls -la "$RUNNER_TEMP/shots"
+
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        if: always()
+        with:
+          name: screenshots
+          path: ${{ runner.temp }}/shots
+          if-no-files-found: warn
+
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        if: failure()
+        with:
+          name: logs
+          path: |
+            ${{ runner.temp }}/*.log
+            ${{ runner.temp }}/*.xcresult
+          if-no-files-found: ignore
+
+  hitopkit:
+    name: HitopKit swift test (macOS, JavaScriptCore)
+    runs-on: macos-26
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Xcode 26
+        run: |
+          xcode=$(ls -d /Applications/Xcode_26*.app 2>/dev/null | sort -V | tail -1)
+          if [ -n "$xcode" ]; then sudo xcode-select -s "$xcode"; fi
+          swift --version
+      - name: swift test
+        working-directory: ios/HitopKit
+        run: swift test

@@ -1,0 +1,81 @@
+# XcodeGen spec for HITOP for iOS 26 (ios/HITOP_IOS.md). It replaces the live App Store app
+# (ios/HiTop, App Store id6785326628) and ships as its update: same bundle id
+# hitop.rws8.tech.HiTop, version above the live 1.0 (1).
+#   brew install xcodegen && cd ios/HITOP && xcodegen generate && open HITOPApp.xcodeproj
+# The .xcodeproj is generated (git-ignored); this file is the source. CI: .github/workflows/ios.yml.
+#
+# macOS file systems are case-insensitive: this folder (ios/HITOP) and the old app's (ios/HiTop)
+# are the same folder on a Mac. Nothing in here may case-fold onto the old tree's names
+# (HiTop/, HiTopTests/, HiTopUITests/, HiTop.xcodeproj), hence App/, UnitTests/, UITests/ and the
+# project name HITOPApp.
+name: HITOPApp
+options:
+  bundleIdPrefix: hitop.rws8.tech
+  deploymentTarget:
+    iOS: "26.0"
+  createIntermediateGroups: true
+packages:
+  HitopKit:
+    path: ../HitopKit
+settings:
+  base:
+    DEVELOPMENT_TEAM: XD7JHZ5DB3
+    SWIFT_VERSION: "6.0"
+    SWIFT_STRICT_CONCURRENCY: complete
+    SWIFT_APPROACHABLE_CONCURRENCY: NO
+    MARKETING_VERSION: "2.0.0"
+    CURRENT_PROJECT_VERSION: "1"
+    TARGETED_DEVICE_FAMILY: "1,2"
+    ENABLE_USER_SCRIPT_SANDBOXING: YES
+targets:
+  HITOP:
+    type: application
+    platform: iOS
+    sources:
+      - path: App
+    dependencies:
+      - package: HitopKit
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: hitop.rws8.tech.HiTop
+        PRODUCT_NAME: HITOP
+        PRODUCT_MODULE_NAME: HITOP
+        INFOPLIST_FILE: App/Info.plist
+        ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
+        CODE_SIGN_STYLE: Automatic
+  HITOPTests:
+    type: bundle.unit-test
+    platform: iOS
+    sources:
+      - path: UnitTests
+    dependencies:
+      - target: HITOP
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: hitop.rws8.tech.HiTopTests
+        GENERATE_INFOPLIST_FILE: YES
+  HITOPUITests:
+    type: bundle.ui-testing
+    platform: iOS
+    sources:
+      - path: UITests
+    dependencies:
+      - target: HITOP
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: hitop.rws8.tech.HiTopUITests
+        GENERATE_INFOPLIST_FILE: YES
+        TEST_TARGET_NAME: HITOP
+schemes:
+  HITOP:
+    build:
+      targets:
+        HITOP: all
+        HITOPTests: [test]
+        HITOPUITests: [test]
+    test:
+      config: Debug
+      gatherCoverageData: false
+      targets:
+        - HITOPTests
+        - HITOPUITests
