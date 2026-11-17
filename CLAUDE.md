@@ -356,10 +356,21 @@ hitop/
   an error without the feature, without `plugins.updater` or on a .deb/.rpm), permissions in `capabilities/updater/` (build.rs includes
   them only with the feature). tauri.github.conf.json: `plugins.updater` {pubkey (owner's minisign key 0B76B9F0063FA64B), endpoints
   `https://github.com/bohdaq/hitop/releases/latest/download/latest.json`, requireSignedVersion}, `createUpdaterArtifacts: true`.
-  release-desktop.yml builds `--features telemetry,updater`, signs with secrets `TAURI_SIGNING_PRIVATE_KEY` + `TAURI_SIGNING_PRIVATE_KEY_PASSWORD` (a release
+  release-desktop.yml builds `--features telemetry,updater,github` (ST1 store mode off), signs with secrets `TAURI_SIGNING_PRIVATE_KEY` + `TAURI_SIGNING_PRIVATE_KEY_PASSWORD` (a release
   fails without them; an rc builds without updater files), tauri-action uploads `.sig` + `latest.json`, job `updater` checks them with
   minisign against the pubkey and only then makes the release "Latest" (created `--latest=false`; CLI releases never take Latest). Web app: `platform/tauri-updater.js` (bar, Settings → Updates, `hitop_updates` {auto}; check at start +
   every 24 h); check-no-telemetry fails if it reaches dist/; CI greps the MAS binary for the plugin, endpoint and key. e2e `tests/updater.cjs`
+- Store mode (ST1, owner 2026-11-17 "No purchase in the app", Apple 3.1.1/3.1.3; same for the Microsoft Store): Cargo feature
+  `github` (not default) = a GitHub Release build; without it (plain `tauri build`: MAS, Microsoft Store, and `tauri dev`
+  unless `--features github`) the build is a store build. Rust `build_info` → `{store, channel}` (commands.rs; exactly one of
+  `hitop-build-channel:store|github` is compiled in, which check-store-binary.sh requires/forbids); web app `platform().storeBuild`
+  (tauri.js from `build_info`, fails closed to true; web.js false), `src/store-mode.js` `storeBuild()`/`planLabel()`. In a store
+  build: no price, Pay/Choose/Upgrade/trial/seat button, pricing/checkout/billing/portal link, "see plans", or text about buying
+  elsewhere; the Organization page's "Plan & usage" (`org-view.js storePlan`: plan name, seats, meters, "This organization's
+  plan has ended"), `sectionsFor`/`meters`/`limitFixers` `{store}` wording (org.js), and sync.js `http()` strips `upgradeUrl`
+  and the server's "See or change the plan at …" (`plan-link.js storeSafeAnswer`). release-desktop.yml and CI's GitHub control
+  build `--features telemetry,updater,github`. Mock: `TauriMock.storeBuild` (default false); e2e `tests/store-mode.cjs` (Tauri,
+  sync server with plans). Owner steps: `launch/app-store-free.md`
 - Dev: `cd desktop && npx tauri dev`
 - Build: `cd desktop && PATH="$HOME/.cargo/bin:$PATH" RUSTC="$HOME/.cargo/bin/rustc" npx tauri build`
 - All Tauri commands are in `src-tauri/src/commands.rs`
@@ -528,7 +539,7 @@ hitop/
 - hitop-server bridges (2026-11-06): `POST /api/proxy/stream` (SSE/chunked passthrough, 8 at once), `GET /api/ws` (wsbridge.rs: first frame {url, headers, protocols}, 16 at once) and `POST /api/grpc/{list,describe,call}` (grpcbridge.rs, reflection only, NDJSON events); all check Origin and dial an address checked by `guard::checked_addr` (hitop-core `websocket::Target.connect_to`, `grpc::Target.connect_to`); a default User-Agent on proxied requests; `HITOP_BRIDGE_ALLOW_PRIVATE=1` = tests only
 - Build all: `./deploy/build.sh`; server tests: `cd server && cargo test`
 - Old URLs must keep working: `/privacy.html` (App Store privacy URL), `/pricing.html`, `/app.html`, `/terms/*.html` (301 to `/guides/<name>/` in hitop-server)
-- App Store (listing names until the owner renames them to HITOP, ROADMAP section 6): macOS "HiTop API Client" id6785294166 ($4.99, macOS 12+), iOS "HiTop HTTP Client" id6785326628 ($2.99, iOS 17+)
+- App Store (listing names until the owner renames them to HITOP, ROADMAP section 6): macOS "HiTop API Client" id6785294166 ($4.99, macOS 12+), iOS "HiTop HTTP Client" id6785326628 ($2.99, iOS 17+); both to become Free (ST1, owner steps in `launch/app-store-free.md`)
 
 ### Sync server (`sync-server/`)
 - T24: migration 2 (`users.runner_of`, `invites`); `PUT .../members/:user {role}`, `POST/GET/DELETE .../invites`, `POST /v1/invites/accept`,

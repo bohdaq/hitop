@@ -75,8 +75,8 @@ install.
 
 ## 6. Listing, properties, age rating
 
-- **Pricing and availability**: your call. The Mac App Store version is paid ($4.99) and the GitHub
-  builds are free. "Free" is the simplest choice here, because the GitHub `.exe` stays free anyway.
+- **Pricing and availability**: **Free** (owner decision 2026-11-17, ST1: the store apps are free and
+  sell nothing in the app; launch/app-store-free.md). The store build shows no purchase call to action.
 - **Properties**: category **Developer tools** (subcategory none). Privacy policy URL
   `https://hitop.rws8.tech/privacy.html`. Website `https://hitop.rws8.tech`. Support contact
   `https://github.com/bohdaq/hitop/issues`.
