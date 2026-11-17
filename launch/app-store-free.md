@@ -32,29 +32,29 @@ already names your "3rd Party Mac Developer Application" identity and `Entitleme
 no self-update and is in store mode. The web app is built first by `beforeBuildCommand`. It needs
 the wasm32 target and wasm-bindgen-cli 0.2.126.
 
-```sh
-cd ~/path/to/hitop            # your clone
-git checkout main && git pull
-rustup target add wasm32-unknown-unknown                       # once
-cargo install wasm-bindgen-cli --version 0.2.126 --locked      # once
-(cd webapp && npm ci)
-cd desktop && npm ci
-PATH="$HOME/.cargo/bin:$PATH" RUSTC="$HOME/.cargo/bin/rustc" npx tauri build
-```
-
-Optional: check the binary before you package it. The script fails on a GitHub-style build:
+One-time setup on the Mac: rustup's Rust (not Homebrew's), plus
 
 ```sh
-desktop/scripts/check-store-binary.sh store desktop/src-tauri/target/release/bundle/macos/HITOP.app/Contents/MacOS/<the executable>
+rustup target add wasm32-unknown-unknown aarch64-apple-darwin x86_64-apple-darwin
+cargo install wasm-bindgen-cli --version 0.2.126 --locked
 ```
 
-It must print `... no usage ping or updater code, endpoint or key; store mode on`.
+and the Mac App Store provisioning profile for `tech.rws8.hitop` (developer.apple.com → Profiles →
+Mac App Store Connect, Mac App Distribution certificate; re-save it there when it shows Invalid, e.g.
+after the App ID gains a capability). Then, every release:
 
-Then **package, sign and upload as you did for 1.0**. The repo only records the outline: sign with
-your MAS identity and `Entitlements.mas.plist`, then upload the `.pkg` with **Transporter**. The
-installer-signing and `.pkg` command you use isn't written down anywhere in the repo, so it isn't
-repeated here. Raise the version first if App Store Connect already has 1.3.0. The version lives in
-`tauri.conf.json`, `Cargo.toml` and `package.json` in desktop/. Ask me to bump it on main.
+```sh
+cd ~/git/hitop && git pull && (cd webapp && npm ci) && (cd desktop && npm ci)
+desktop/scripts/build-mas.sh 1.3.2      # the build number: higher than every earlier upload
+```
+
+It builds a universal (Apple silicon + Intel) store-mode app into `~/hitop-mas-target`, checks the
+binary, puts the profile in, clears the quarantine flag, signs with `Entitlements.mas.plist` (which
+carries the application identifier TestFlight wants) and writes `desktop/HITOP.pkg`. Drag that into
+**Transporter** and Deliver. Lessons from the first run (2026-11-18): Homebrew's rustc and an editor's
+rust-analyzer in `src-tauri/target` break proc macros (hence the own target dir); `strip = true`
+stripped proc macros on that Mac (fixed: `[profile.release.build-override] strip = false`); a failed
+upload still uses up its build number.
 
 Before you submit, open the build once and sign in to an account with a Team plan. On the
 Organization page the section is now **Plan & usage**: the plan's name, seats and meters, nothing to
