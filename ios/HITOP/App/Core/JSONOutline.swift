@@ -59,7 +59,7 @@ enum JSONOutline {
             default: return
             }
             let (open, close) = isObject ? ("{", "}") : ("[", "]")
-            if path != "$", let inline = inlineTokens(v), (lead + inline + tail).map(\.text).joined().count + depth * 2 <= 52 {
+            if path != "$", let inline = inlineTokens(v), (lead + inline + tail).map(\.text).joined().count + depth * 2 <= inlineWidth {
                 add(depth, lead + inline + tail)
                 return
             }
@@ -96,6 +96,9 @@ enum JSONOutline {
 
     /// A small container of scalars as one line (`{ "amount": 6480, "currency": "EUR" }`), as
     /// the drafts show it; nil for anything else.
+    /// Characters a one-line container may take (a phone sheet at 13.5 pt).
+    static let inlineWidth = 44
+
     static func inlineTokens(_ v: JSONValue) -> [Token]? {
         func scalar(_ v: JSONValue) -> Token? {
             switch v {
@@ -139,7 +142,10 @@ enum JSONOutline {
             case let .array(c): container = !c.isEmpty
             default: container = false
             }
-            if container, inlineTokens(child) == nil { out.insert("$.\(k)") }
+            guard container else { continue }
+            let lead = JSONValue.quote(k) + ": "
+            let fits = inlineTokens(child).map { (lead + $0.map(\.text).joined() + ",").count + 2 <= inlineWidth } ?? false
+            if !fits { out.insert("$.\(k)") }
         }
         return out
     }

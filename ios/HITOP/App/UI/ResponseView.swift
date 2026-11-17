@@ -247,7 +247,6 @@ struct JSONTreeView: View {
 
     var body: some View {
         let lines = value.lines(folded: folded)
-        ScrollView(.horizontal, showsIndicators: false) {
         VStack(alignment: .leading, spacing: 0) {
             ForEach(lines.prefix(4000)) { line in
                 HStack(alignment: .firstTextBaseline, spacing: 0) {
@@ -266,11 +265,11 @@ struct JSONTreeView: View {
                     }
                     Text(String(repeating: "  ", count: line.depth)).font(Typo.mono(size))
                     Text(Self.attributed(line.tokens, size: size))
-                        .fixedSize()
+                        .lineLimit(1)
+                        .truncationMode(.tail)
                 }
                 .padding(.vertical, size * 0.22)
             }
-        }
         }
         .textSelection(.enabled)
         .frame(maxWidth: .infinity, alignment: .leading)

@@ -39,11 +39,11 @@ final class TextTests: XCTestCase {
     }
 
     func testJSONOutlineFolds() throws {
-        let v = try XCTUnwrap(JSONOutline.parse(#"{"id": "a", "total": {"amount": 6480, "currency": "EUR"}, "items": [{"sku": "A"}, {"sku": "B"}], "customer": {"id": "c", "name": "Ada", "tier": "gold", "since": 2020}}"#))
+        let v = try XCTUnwrap(JSONOutline.parse(#"{"id": "a", "total": {"amount": 6480, "cur": "EUR"}, "items": [{"sku": "A"}, {"sku": "B"}], "customer": {"id": "c", "name": "Ada", "tier": "gold", "since": 2020}}"#))
         let open = JSONOutline.lines(v, folded: [])
         XCTAssertEqual(open.first?.text, "{")
         XCTAssertEqual(open.first?.fold, "$")
-        XCTAssertTrue(open.contains { $0.text == #"  "total": { "amount": 6480, "currency": "EUR" },"# && $0.fold == nil }, "small objects on one line")
+        XCTAssertTrue(open.contains { $0.text == #"  "total": { "amount": 6480, "cur": "EUR" },"# && $0.fold == nil }, "small objects on one line")
         XCTAssertTrue(open.contains { $0.text == #"  "items": ["# && $0.fold == "$.items" })
         XCTAssertTrue(open.contains { $0.text == #"    { "sku": "A" },"# })
         XCTAssertEqual(open.last?.text, "}")

@@ -46,7 +46,6 @@ final class ScreenshotTests: XCTestCase {
 
     @MainActor
     private func pad() {
-        XCUIDevice.shared.orientation = .landscapeLeft
         let app = XCUIApplication.seeded()
         app.launchArguments += ["-UITestLandscape"]
         app.launch()
