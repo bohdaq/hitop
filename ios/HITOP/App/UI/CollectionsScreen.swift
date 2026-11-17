@@ -151,6 +151,7 @@ struct EnvironmentMenu: View {
                     .foregroundStyle(compact ? Theme.textTab : Theme.text)
                     .lineLimit(1)
             }
+            .fixedSize()
             .padding(.horizontal, compact ? 9 : 12)
             .frame(minHeight: compact ? 24 : 36)
             .background {
@@ -214,6 +215,7 @@ struct CollectionsScreen: View {
         }
         .listStyle(.insetGrouped)
         .listSectionSpacing(12)
+        .environment(\.defaultMinListRowHeight, 26)
         .scrollContentBackground(.hidden)
         .background(ScreenBackground())
         .navigationTitle("Collections")
@@ -384,11 +386,11 @@ struct CollectionsScreen: View {
                     .foregroundStyle(Theme.chevron)
                     .rotationEffect(.degrees(open ? 90 : 0))
             }
-            .frame(minHeight: 30)
+            .frame(minHeight: 26)
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
-        .listRowInsets(EdgeInsets(top: 4, leading: 62 + CGFloat(depth(folder)) * 14, bottom: 4, trailing: 16))
+        .listRowInsets(EdgeInsets(top: 2, leading: 62 + CGFloat(depth(folder)) * 14, bottom: 0, trailing: 16))
         .listRowSeparator(.hidden, edges: .bottom)
         .accessibilityLabel("Folder \(name), \(count) requests")
         .accessibilityValue(open ? "expanded" : "collapsed")

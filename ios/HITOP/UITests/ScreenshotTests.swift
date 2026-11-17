@@ -46,9 +46,10 @@ final class ScreenshotTests: XCTestCase {
 
     @MainActor
     private func pad() {
-        XCUIDevice.shared.orientation = .landscapeLeft
         let app = XCUIApplication.seeded()
         app.launch()
+        XCUIDevice.shared.orientation = .landscapeLeft
+        sleep(2)
         let create = app.el("request-Create order")
         wait(create)
         create.tap()

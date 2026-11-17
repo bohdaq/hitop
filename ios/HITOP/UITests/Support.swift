@@ -47,7 +47,6 @@ extension XCTestCase {
     /// The URL field (a text view when it grows to several lines).
     @MainActor
     func urlField(_ app: XCUIApplication) -> XCUIElement {
-        let view = app.textViews["url"]
-        return view.exists ? view : app.textFields["url"]
+        app.el("url")
     }
 }

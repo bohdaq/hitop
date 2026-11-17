@@ -39,17 +39,22 @@ final class TextTests: XCTestCase {
     }
 
     func testJSONOutlineFolds() throws {
-        let v = try XCTUnwrap(JSONOutline.parse(#"{"id": "a", "items": [1, 2], "customer": {"x": true, "y": null, "z": 1.5}}"#))
+        let v = try XCTUnwrap(JSONOutline.parse(#"{"id": "a", "total": {"amount": 6480, "currency": "EUR"}, "items": [{"sku": "A"}, {"sku": "B"}], "customer": {"id": "c", "name": "Ada", "tier": "gold", "since": 2020}}"#))
         let open = JSONOutline.lines(v, folded: [])
         XCTAssertEqual(open.first?.text, "{")
         XCTAssertEqual(open.first?.fold, "$")
+        XCTAssertTrue(open.contains { $0.text == #"  "total": { "amount": 6480, "currency": "EUR" },"# && $0.fold == nil }, "small objects on one line")
         XCTAssertTrue(open.contains { $0.text == #"  "items": ["# && $0.fold == "$.items" })
+        XCTAssertTrue(open.contains { $0.text == #"    { "sku": "A" },"# })
         XCTAssertEqual(open.last?.text, "}")
         let folded = JSONOutline.lines(v, folded: ["$.items", "$.customer"])
         XCTAssertTrue(folded.contains { $0.text == #"  "items": [ 2 items ],"# && $0.folded })
-        XCTAssertTrue(folded.contains { $0.text == #"  "customer": { 3 keys }"# })
-        XCTAssertEqual(folded.count, 5)
+        XCTAssertTrue(folded.contains { $0.text == #"  "customer": { 4 keys }"# })
+        XCTAssertEqual(folded.count, 6)
         XCTAssertNil(JSONOutline.parse("plain text"))
+        XCTAssertEqual(JSONOutline.defaultFolds(v), [], "a short body starts open")
+        let long = try XCTUnwrap(JSONOutline.parse(#"{"a": {"b": 1, "c": 2, "d": 3, "e": 4, "f": 5, "g": 6, "h": 7, "i": 8, "j": 9}, "k": [{"x": 1}, {"y": 2}, {"z": 3}, {"w": 4}], "t": {"amount": 1}}"#))
+        XCTAssertEqual(JSONOutline.defaultFolds(long), ["$.a", "$.k"])
     }
 
     func testJSONValidateAndFormatKeepVariables() {

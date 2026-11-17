@@ -272,6 +272,8 @@ struct StatusPill: View {
         let text = HTTPStatusText.text(status)
         Text(text.isEmpty ? "\(status)" : "\(status) \(text)")
             .font(Typo.mono(size, .bold, relativeTo: .headline))
+            .lineLimit(1)
+            .fixedSize()
             .foregroundStyle(Theme.status(status))
             .padding(.horizontal, 12)
             .padding(.vertical, 6)

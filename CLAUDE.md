@@ -173,6 +173,7 @@ hitop/
 │   └── THREAT_MODEL.md, README.md (self-host guide), Dockerfile
 ├── ios/
 │   ├── HiTop/                  # the live App Store iOS app (listed as "HiTop HTTP Client", shown as HITOP; editor, own JSON storage); frozen but for names
+│   ├── HITOP/                  # HITOP for iOS 26 (ios/HITOP_IOS.md), its replacement: XcodeGen project.yml, App/Core (Foundation only), App/UI (SwiftUI), UnitTests, UITests
 │   ├── HitopKit/               # Swift package (MIT): format v1 reader (Yams 6.2.2), variables, secrets, scripts, URLSession runner, report.json
 │   └── HitopCompanion/         # SwiftUI companion (T26): XcodeGen project.yml, app + App Intents, WidgetKit widget, Shared/ (app group)
 ├── spec/collection-format.md   # collection folder format v1, stable since 1.0 (CC BY 4.0); section 7 = compatibility promise
@@ -530,6 +531,13 @@ hitop/
 - Scripts: JavaScriptCore on Apple platforms (`defaultScriptEngine`); none on Linux (scripts reported as not run, `notes`)
 - Secrets: env var, given values, then `SecretStore` (`KeychainSecretStore` service `hitop`, `MemorySecretStore` in tests);
   `${secret:...}` references fail the request (no secret managers on iOS); WebSocket/gRPC left out of runs
+- HITOP for iOS 26 (`ios/HITOP`, plan + status `ios/HITOP_IOS.md`): ships as the update of the live app (bundle id `hitop.rws8.tech.HiTop`, 2.0.0);
+  XcodeGen project `HITOPApp` (folders App/, UnitTests/, UITests/: never `HiTop*`, macOS folds `ios/HITOP` onto `ios/HiTop`), Swift 6 strict,
+  iOS 26 only. `App/Core` is Foundation + HitopKit only (models in the web app's JSON shape with unknown keys kept, `FileLibraryStore` under
+  Application Support/hitop-library = one file per collection, `LegacyImport` reads the old app's Application Support/hitop once, `Sender` = HitopKit
+  `Runner` on URLSession + metrics, Keychain secrets `ios/<env>/<name>`); its unit tests also build on Linux (a scratch SwiftPM package pointing at
+  App/Core + UnitTests). Launch argument `-UITestSeed` = the shop-api sample + `StubURLProtocol` (no network). CI `.github/workflows/ios.yml`
+  (macos-26, newest Xcode 26, XcodeGen pinned by sha256): build, unit + UI tests on an iPhone 17 Pro simulator, iPad screenshots, artifact `screenshots`
 - The app (no editing) is generated with `xcodegen` on a Mac; bundle ids `hitop.rws8.tech.HitopCompanion` (+ `.Widget`),
   app group `group.hitop.rws8.tech.companion`; Swift 5 language mode for the app targets, Swift 6 for HitopKit
 

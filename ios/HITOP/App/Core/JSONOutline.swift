@@ -59,6 +59,10 @@ enum JSONOutline {
             default: return
             }
             let (open, close) = isObject ? ("{", "}") : ("[", "]")
+            if path != "$", let inline = inlineTokens(v), (lead + inline + tail).map(\.text).joined().count + depth * 2 <= 52 {
+                add(depth, lead + inline + tail)
+                return
+            }
             if count == 0 {
                 add(depth, lead + [Token(text: open + close, role: .punct)] + tail)
                 return
@@ -89,6 +93,56 @@ enum JSONOutline {
 
     /// The parsed body for views that don't import HitopKit.
     static func box(_ text: String) -> JSONValueBox? { parse(text).map(JSONValueBox.init) }
+
+    /// A small container of scalars as one line (`{ "amount": 6480, "currency": "EUR" }`), as
+    /// the drafts show it; nil for anything else.
+    static func inlineTokens(_ v: JSONValue) -> [Token]? {
+        func scalar(_ v: JSONValue) -> Token? {
+            switch v {
+            case .null: Token(text: "null", role: .literal)
+            case let .bool(b): Token(text: b ? "true" : "false", role: .literal)
+            case let .number(n): Token(text: n, role: .number)
+            case let .string(s): Token(text: JSONValue.quote(s), role: .string)
+            default: nil
+            }
+        }
+        var out: [Token] = []
+        switch v {
+        case let .object(o) where !o.isEmpty && o.count <= 3:
+            out.append(Token(text: "{ ", role: .punct))
+            for (i, (k, child)) in o.enumerated() {
+                guard let s = scalar(child) else { return nil }
+                out += [Token(text: JSONValue.quote(k), role: .key), Token(text: ": ", role: .punct), s]
+                out.append(Token(text: i < o.count - 1 ? ", " : " }", role: .punct))
+            }
+        case let .array(a) where !a.isEmpty && a.count <= 3:
+            out.append(Token(text: "[", role: .punct))
+            for (i, child) in a.enumerated() {
+                guard let s = scalar(child) else { return nil }
+                out.append(s)
+                out.append(Token(text: i < a.count - 1 ? ", " : "]", role: .punct))
+            }
+        default: return nil
+        }
+        return out
+    }
+
+    /// What starts folded: in a long body, the top-level objects and arrays that don't fit on one
+    /// line (the drafts' `▸ "items": [ 2 items ]`).
+    static func defaultFolds(_ value: JSONValue) -> Set<String> {
+        guard case let .object(o) = value, lines(value, folded: []).count > 16 else { return [] }
+        var out: Set<String> = []
+        for (k, child) in o {
+            let container: Bool
+            switch child {
+            case let .object(c): container = !c.isEmpty
+            case let .array(c): container = !c.isEmpty
+            default: container = false
+            }
+            if container, inlineTokens(child) == nil { out.insert("$.\(k)") }
+        }
+        return out
+    }
 
     /// Pretty-printed JSON, or nil when the text isn't JSON.
     static func pretty(_ text: String) -> String? { parse(text)?.pretty }
@@ -140,4 +194,5 @@ struct JSONValueBox: Sendable {
     let value: JSONValue
 
     func lines(folded: Set<String>) -> [JSONOutline.Line] { JSONOutline.lines(value, folded: folded) }
+    var defaultFolds: Set<String> { JSONOutline.defaultFolds(value) }
 }

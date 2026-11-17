@@ -8,7 +8,7 @@ struct RequestScreen: View {
     @Environment(AppModel.self) private var model
     @Environment(\.dismiss) private var dismiss
     @State private var showResponse = false
-    @State private var detent: PresentationDetent = .large
+    @State private var detent: PresentationDetent = .fraction(0.86)
     @State private var naming: NameTarget?
     @State private var moving: UInt64?
     @State private var deleting: NameTarget?
@@ -92,7 +92,7 @@ struct RequestScreen: View {
         }
         .sheet(isPresented: $showResponse) {
             ResponseSheet(editor: editor)
-                .presentationDetents([.medium, .large], selection: $detent)
+                .presentationDetents([.medium, .fraction(0.86), .large], selection: $detent)
                 .presentationDragIndicator(.visible)
                 .presentationBackgroundInteraction(.enabled(upThrough: .medium))
         }
@@ -199,6 +199,7 @@ struct MethodPicker: View {
                 Text(label).font(Typo.mono(13, .semibold))
                 Image(systemName: "chevron.down").font(.system(size: 9, weight: .bold))
             }
+            .fixedSize()
             .foregroundStyle(Theme.method(label))
             .padding(.horizontal, 10)
             .frame(height: height)

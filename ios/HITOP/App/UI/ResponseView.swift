@@ -240,6 +240,7 @@ struct JSONTreeView: View {
     init(value: JSONValueBox, size: CGFloat) {
         self.value = value
         self.size = size
+        _folded = State(initialValue: value.defaultFolds)
     }
 
     var body: some View {
