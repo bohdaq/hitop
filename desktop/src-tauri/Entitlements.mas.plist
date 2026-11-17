@@ -2,6 +2,11 @@
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
+    <!-- App Store / TestFlight: the signature must carry the identifier the provisioning profile has -->
+    <key>com.apple.application-identifier</key>
+    <string>XD7JHZ5DB3.tech.rws8.hitop</string>
+    <key>com.apple.developer.team-identifier</key>
+    <string>XD7JHZ5DB3</string>
     <!-- Required for Mac App Store -->
     <key>com.apple.security.app-sandbox</key>
     <true/>
