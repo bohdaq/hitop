@@ -1,7 +1,7 @@
 {
   "name": "hitop-webapp",
   "private": true,
-  "extensionVersion": "5.0.0",
+  "extensionVersion": "5.1.0",
   "type": "module",
   "scripts": {
     "wasm": "node scripts/build-wasm.mjs",
