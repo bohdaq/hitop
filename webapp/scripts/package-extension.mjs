@@ -23,7 +23,15 @@ if (!fs.existsSync(path.join(dist, "sandbox.html"))) {
 }
 
 const DESCRIPTION = "The API client your terminal, your CI and your AI agent can all drive.";
-const VERSION = "5.0.0";
+// The one source of truth for the extensions' version: "extensionVersion" in webapp/package.json
+// (bump: cd webapp && npm pkg set extensionVersion=5.0.1). release-extensions.yml checks the
+// ext-v<version> tag against it and against both manifests.
+const VERSION = JSON.parse(fs.readFileSync(path.join(root, "webapp/package.json"), "utf8")).extensionVersion;
+// Chrome and Firefox both take one to four dot-separated integers, no suffix.
+if (!/^\d+(\.\d+){0,3}$/.test(VERSION ?? "")) {
+  console.error(`webapp/package.json extensionVersion must be like 5.0.1 (found: ${VERSION})`);
+  process.exit(2);
+}
 // Extension pages: own files only, plus WebAssembly (hitop-wasm). Scripts run in the sandbox.
 const CSP_PAGES = "script-src 'self' 'wasm-unsafe-eval'; object-src 'self'";
 // The sandboxed script runner may evaluate scripts; it has no extension APIs and its own origin.

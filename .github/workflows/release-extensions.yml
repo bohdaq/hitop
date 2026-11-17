@@ -1,0 +1,213 @@
+name: Release extensions
+
+# A tag like ext-v5.0.1 builds the browser extensions from the web app (webapp/, HITOP Next A8),
+# attaches the Chrome Web Store zip, the Firefox zip and the Firefox source package to a GitHub
+# Release, then submits them: Chrome Web Store API v2 (scripts/cws-publish.mjs) and
+# addons.mozilla.org (web-ext sign --channel listed, with the source package AMO needs for bundled
+# code). Both stores review the version before users get it.
+# The version lives in webapp/package.json "extensionVersion" (bump: cd webapp && npm pkg set
+# extensionVersion=5.0.1); the tag must match it and both built manifests.
+# Tags with a suffix (ext-v5.0.1-rc.1) make a pre-release and submit nothing. A manual run builds
+# and packages only (workflow artifacts), unless it runs on an ext-v tag with dry_run off.
+# A store whose secrets are missing is skipped with a notice. Release steps: launch/store-listings.md.
+on:
+  push:
+    tags: ["ext-v*"]
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: Build and package only (no GitHub Release, no store submission)
+        type: boolean
+        default: true
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release-extensions-${{ github.ref }}
+  cancel-in-progress: false
+
+env:
+  WEB_EXT_VERSION: 10.8.0
+
+jobs:
+  build:
+    name: Build and package
+    runs-on: ubuntu-24.04
+    outputs:
+      version: ${{ steps.v.outputs.version }}
+      release: ${{ steps.v.outputs.release }}
+      prerelease: ${{ steps.v.outputs.prerelease }}
+      submit: ${{ steps.v.outputs.submit }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Tag and version
+        id: v
+        env:
+          DRY_RUN: ${{ github.event_name == 'workflow_dispatch' && inputs.dry_run }}
+        run: |
+          version=$(jq -r .extensionVersion webapp/package.json)
+          echo "$version" | grep -Eq '^[0-9]+(\.[0-9]+){0,3}$' || { echo "::error::webapp/package.json extensionVersion '$version' is not like 5.0.1"; exit 1; }
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          release=false prerelease=false submit=false
+          if [ "$GITHUB_REF_TYPE" = tag ] && [ "${GITHUB_REF_NAME#ext-v}" != "$GITHUB_REF_NAME" ]; then
+            tag="${GITHUB_REF_NAME#ext-v}"
+            base="${tag%%-*}"
+            test "$base" = "$version" || { echo "::error::tag $GITHUB_REF_NAME, webapp/package.json extensionVersion $version"; exit 1; }
+            if [ "$DRY_RUN" = true ]; then
+              echo "::notice::Dry run: build and package only"
+            else
+              release=true
+              if [ "$tag" != "$base" ]; then
+                prerelease=true
+                echo "::notice::$GITHUB_REF_NAME is a pre-release: nothing is submitted to the stores"
+              else
+                submit=true
+              fi
+            fi
+          else
+            echo "::notice::Not an ext-v tag ($GITHUB_REF_NAME): build and package only"
+          fi
+          echo "release=$release" >> "$GITHUB_OUTPUT"
+          echo "prerelease=$prerelease" >> "$GITHUB_OUTPUT"
+          echo "submit=$submit" >> "$GITHUB_OUTPUT"
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: wasm32-unknown-unknown
+      - uses: taiki-e/install-action@v2
+        with:
+          tool: wasm-bindgen@0.2.126
+      # No build cache: a release builds from scratch, as the AMO reviewers will.
+      - name: Build the extension pages
+        working-directory: webapp
+        run: npm ci --no-audit --no-fund && npm run build:extension
+      - name: Package Chrome Web Store and Firefox
+        env:
+          VERSION: ${{ steps.v.outputs.version }}
+        run: |
+          pkg="$RUNNER_TEMP/pkg"
+          out="$RUNNER_TEMP/out"
+          mkdir -p "$out"
+          node webapp/scripts/package-extension.mjs store "$pkg/chrome"
+          node webapp/scripts/package-extension.mjs firefox "$pkg/firefox"
+          for b in chrome firefox; do
+            got=$(jq -r .version "$pkg/$b/manifest.json")
+            test "$got" = "$VERSION" || { echo "::error::$b manifest.json has version $got, expected $VERSION"; exit 1; }
+          done
+          echo "Firefox add-on id: $(jq -r .browser_specific_settings.gecko.id "$pkg/firefox/manifest.json")"
+          (cd "$pkg/chrome" && zip -X -r "$out/hitop-chrome-$VERSION.zip" . -x '*.DS_Store')
+          (cd "$pkg/firefox" && zip -X -r "$out/hitop-firefox-$VERSION.zip" . -x '*.DS_Store')
+          node webapp/scripts/extension-source.mjs "$out/hitop-firefox-$VERSION-source.zip"
+          ls -l "$out"
+      - name: web-ext lint (Firefox)
+        run: npx --yes "web-ext@$WEB_EXT_VERSION" lint --source-dir "$RUNNER_TEMP/pkg/firefox"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: extensions
+          path: ${{ runner.temp }}/out/*.zip
+          if-no-files-found: error
+
+  release:
+    name: GitHub Release
+    needs: build
+    if: needs.build.outputs.release == 'true'
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: extensions
+          path: out
+      - name: Create the release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          VERSION: ${{ needs.build.outputs.version }}
+          PRERELEASE: ${{ needs.build.outputs.prerelease }}
+        run: |
+          flags=""
+          [ "$PRERELEASE" = true ] && flags="--prerelease"
+          notes="HITOP browser extension $VERSION, built from the web app.
+
+          - hitop-chrome-$VERSION.zip: the Chrome Web Store package
+          - hitop-firefox-$VERSION.zip: the Firefox package (unsigned; addons.mozilla.org signs the listed version)
+          - hitop-firefox-$VERSION-source.zip: the source package for addons.mozilla.org reviewers (BUILD.md inside)
+
+          Users get the update from each store after its review."
+          if gh release view "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            gh release upload "$GITHUB_REF_NAME" out/*.zip --clobber --repo "$GITHUB_REPOSITORY"
+          else
+            # shellcheck disable=SC2086
+            gh release create "$GITHUB_REF_NAME" out/*.zip $flags --repo "$GITHUB_REPOSITORY" --verify-tag \
+              --title "HITOP extension ${GITHUB_REF_NAME#ext-v}" --notes "$notes"
+          fi
+
+  chrome:
+    name: Chrome Web Store
+    needs: build
+    if: needs.build.outputs.submit == 'true'
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          sparse-checkout: webapp/scripts
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - uses: actions/download-artifact@v4
+        with:
+          name: extensions
+          path: out
+      # Upload, then submit for review. No secrets: a notice and the job passes.
+      - name: Upload and publish
+        env:
+          CWS_CLIENT_ID: ${{ secrets.CWS_CLIENT_ID }}
+          CWS_CLIENT_SECRET: ${{ secrets.CWS_CLIENT_SECRET }}
+          CWS_REFRESH_TOKEN: ${{ secrets.CWS_REFRESH_TOKEN }}
+          CWS_PUBLISHER_ID: ${{ vars.CWS_PUBLISHER_ID }}
+          CWS_EXTENSION_ID: ${{ vars.CWS_EXTENSION_ID || 'mmbpagencfjfgeicmeobbmeocdpeokdk' }}
+          VERSION: ${{ needs.build.outputs.version }}
+        run: node webapp/scripts/cws-publish.mjs "out/hitop-chrome-$VERSION.zip" --version "$VERSION"
+
+  firefox:
+    name: Firefox Add-ons
+    needs: build
+    if: needs.build.outputs.submit == 'true'
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - uses: actions/download-artifact@v4
+        with:
+          name: extensions
+          path: out
+      # Submits the listed version with its source package and returns: the signed file appears
+      # on addons.mozilla.org after review. The add-on id is the manifest's gecko id.
+      - name: Sign (listed channel)
+        env:
+          WEB_EXT_API_KEY: ${{ secrets.AMO_JWT_ISSUER }}
+          WEB_EXT_API_SECRET: ${{ secrets.AMO_JWT_SECRET }}
+          VERSION: ${{ needs.build.outputs.version }}
+        run: |
+          if [ -z "$WEB_EXT_API_KEY" ] || [ -z "$WEB_EXT_API_SECRET" ]; then
+            echo "::notice title=Firefox Add-ons::AMO_JWT_ISSUER or AMO_JWT_SECRET not set: skipping addons.mozilla.org. Upload hitop-firefox-$VERSION.zip and its source package by hand."
+            exit 0
+          fi
+          src="$RUNNER_TEMP/firefox"
+          mkdir -p "$src"
+          unzip -q "out/hitop-firefox-$VERSION.zip" -d "$src"
+          echo "Add-on id: $(jq -r .browser_specific_settings.gecko.id "$src/manifest.json")"
+          jq -n --arg v "$VERSION" '{version: {approval_notes: ("HITOP \($v) is the HITOP web app bundled by Vite, with two Rust crates compiled to WebAssembly. The attached source package (hitop-firefox-\($v)-source.zip) has BUILD.md with the tool versions and the commands that rebuild this package.")}}' \
+            > "$RUNNER_TEMP/amo-metadata.json"
+          npx --yes "web-ext@$WEB_EXT_VERSION" sign \
+            --source-dir "$src" \
+            --artifacts-dir "$RUNNER_TEMP/web-ext-artifacts" \
+            --channel listed \
+            --upload-source-code "out/hitop-firefox-$VERSION-source.zip" \
+            --amo-metadata "$RUNNER_TEMP/amo-metadata.json" \
+            --approval-timeout 0
+          echo "addons.mozilla.org: version $VERSION submitted for review." >> "$GITHUB_STEP_SUMMARY"
