@@ -367,7 +367,7 @@ hitop/
 - Extension releases (HITOP_NEXT_UI.md EXT1): the version is `extensionVersion` in `webapp/package.json` (package-extension.mjs writes it into both manifests).
   Release: `cd webapp && npm pkg set extensionVersion=5.0.1`, commit, push, then push tag `ext-v5.0.1`; `.github/workflows/release-extensions.yml`
   checks tag = version = both manifests, builds, `web-ext lint`s, attaches `hitop-chrome-<v>.zip`, `hitop-firefox-<v>.zip` and
-  `hitop-firefox-<v>-source.zip` (`scripts/extension-source.mjs`: git archive + BUILD.md, AMO needs it for bundled code) to Release `ext-v<v>`, then
+  `hitop-firefox-<v>-source.zip` (`scripts/extension-source.mjs`: git archive + BUILD.md, AMO needs it for bundled code; the release itself is built from that zip by `scripts/build-extension-release.sh` at fixed paths `/tmp/hitop-ext-src` + `CARGO_HOME=/tmp/hitop-ext-cargo`, because rustc writes source paths into the wasm, so reviewers get the same bytes) to Release `ext-v<v>`, then
   submits: Chrome = `scripts/cws-publish.mjs` (Web Store API v2 upload + publish; secrets `CWS_CLIENT_ID`/`CWS_CLIENT_SECRET`/`CWS_REFRESH_TOKEN`, variable
   `CWS_PUBLISHER_ID`, optional `CWS_EXTENSION_ID`; test `tests/cws-publish.mjs` = fake API, in test:unit), Firefox = `web-ext sign --channel listed`
   (pinned web-ext, secrets `AMO_JWT_ISSUER`/`AMO_JWT_SECRET`, `--upload-source-code`, `--approval-timeout 0`). Missing secrets skip that store with a notice;
