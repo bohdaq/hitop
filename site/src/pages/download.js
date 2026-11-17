@@ -3,13 +3,13 @@
 import { html } from "lit";
 import { unsafeHTML } from "lit/directives/unsafe-html.js";
 import { icon } from "../icons.js";
-import { footer, GITHUB, header, MAC_APP } from "../shell.js";
+import { CHROME, FIREFOX, footer, GITHUB, header, MAC_APP } from "../shell.js";
 
 export const meta = {
   path: "/download/",
-  title: "Download HITOP for macOS, Windows, Linux and the command line",
+  title: "Download HITOP for macOS, Windows, Linux, Chrome, Firefox and the command line",
   description:
-    "Free HITOP desktop builds for macOS, Windows and Linux, and the hitop CLI as a binary, a crate or a Docker image.",
+    "Free HITOP desktop builds for macOS, Windows and Linux, the Chrome and Firefox extensions, and the hitop CLI as a binary, a crate or a Docker image.",
 };
 
 const RELEASES = `${GITHUB}/releases`;
@@ -38,7 +38,8 @@ export function render() {
       <p class="lead">
         The quickest way in needs no download: <a href="/app/">open the web app</a>. For CI and the
         terminal, install the <a href="#cli"><code>hitop</code> command line tool</a>. The desktop app
-        for macOS, Windows and Linux is free below; your collections stay on your device.
+        for macOS, Windows and Linux and the <a href="#extensions">Chrome and Firefox extensions</a>
+        are free below; your collections stay on your device.
       </p>
       <p class="install">
         <a class="button-filled" href="/app/">${unsafeHTML(icon("browser"))} Open the web app</a>
@@ -71,6 +72,22 @@ export function render() {
           then Run anyway.
         </p>
       </details>
+
+      <h2 id="extensions">Browser extensions</h2>
+      <p>
+        The HITOP web app in a browser tab, one click from the toolbar. Free, no account needed, and the
+        stores update it for you.
+      </p>
+      <ul class="downloads">
+        <li>
+          <a class="text-link" href=${CHROME}>Chrome Web Store ${unsafeHTML(icon("arrow-right"))}</a>
+          <span>Chrome, Edge, Brave and other Chromium browsers</span>
+        </li>
+        <li>
+          <a class="text-link" href=${FIREFOX}>Firefox Add-ons ${unsafeHTML(icon("arrow-right"))}</a>
+          <span>Firefox 115 or later</span>
+        </li>
+      </ul>
 
       <h2 id="cli">Command line</h2>
       <p>Install with one line on Linux and macOS (the release binary, its SHA-256 checked, into <code>~/.local/bin</code>; <code>HITOP_VERSION</code> and <code>HITOP_INSTALL_DIR</code> change it), with Cargo, as a prebuilt binary, or run it from the Docker image:</p>
