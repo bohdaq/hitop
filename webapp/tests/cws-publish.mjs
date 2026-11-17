@@ -84,10 +84,11 @@ await test("uploads, then submits for review", async () => {
   assert.doesNotMatch(r.out, /access-1|refresh-1|secret-1/);
 });
 
+// An older submission still in review (5.0.0) must not count as the uploaded package's version.
 await test("polls fetchStatus while the upload is in progress", async () => {
   plan = {
     upload: { itemId: "x", uploadState: "IN_PROGRESS" },
-    statuses: [{ lastAsyncUploadState: "IN_PROGRESS" }, { lastAsyncUploadState: "SUCCEEDED", submittedItemRevisionStatus: { distributionChannels: [{ crxVersion: "5.0.1" }] } }],
+    statuses: [{ lastAsyncUploadState: "IN_PROGRESS" }, { lastAsyncUploadState: "SUCCEEDED", submittedItemRevisionStatus: { state: "PENDING_REVIEW", distributionChannels: [{ crxVersion: "5.0.0" }] } }],
     publish: { state: "PUBLISHED", warningInfo: { warnings: [{ reason: "W1", description: "a warning" }] } },
   };
   const r = await run([zip, "--version", "5.0.1"], creds);

@@ -37,7 +37,18 @@ and the target with: rustup target add wasm32-unknown-unknown`);
   process.exit(1);
 }
 
-const env = { ...process.env, CARGO_PROFILE_RELEASE_DEBUG: "0" };
+// Panic locations carry source paths: map the checkout and the cargo home to fixed names, so the
+// .wasm (and the hashed file names after it) don't depend on where the build ran. AMO reviewers
+// rebuild the Firefox extension and compare it file by file (scripts/extension-source.mjs).
+const repo = join(here, "../..");
+const cargoHome = process.env.CARGO_HOME || join(homedir(), ".cargo");
+// CARGO_ENCODED_RUSTFLAGS (0x1f-separated) keeps paths with spaces whole; it replaces RUSTFLAGS, so those come along.
+const flags = process.env.CARGO_ENCODED_RUSTFLAGS
+  ? process.env.CARGO_ENCODED_RUSTFLAGS.split("\x1f")
+  : (process.env.RUSTFLAGS ?? "").split(/\s+/).filter(Boolean);
+flags.push(`--remap-path-prefix=${repo}=/hitop`, `--remap-path-prefix=${cargoHome}=/cargo`);
+const env = { ...process.env, CARGO_PROFILE_RELEASE_DEBUG: "0", CARGO_ENCODED_RUSTFLAGS: flags.join("\x1f") };
+delete env.RUSTFLAGS;
 const cargoPath = tool("cargo");
 const build = (dir, file, dest, label) => {
   // cwd inside cli/ so cli/rust-toolchain.toml picks the toolchain.

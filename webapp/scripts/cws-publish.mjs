@@ -98,12 +98,12 @@ const upload = await call(
   "upload",
 );
 let state = upload.uploadState;
-let crxVersion = upload.crxVersion;
+const crxVersion = upload.crxVersion;
 for (let i = 0; (state === "IN_PROGRESS" || state === "UPLOAD_IN_PROGRESS") && i < POLL_TRIES; i++) {
   await new Promise((r) => setTimeout(r, POLL_MS));
   const status = await call(`${API}/v2/${item}:fetchStatus`, { headers: auth }, "fetchStatus");
+  // Only the upload state: the revision statuses describe what was submitted or published before.
   state = status.lastAsyncUploadState;
-  crxVersion = status.submittedItemRevisionStatus?.distributionChannels?.[0]?.crxVersion ?? crxVersion;
 }
 if (state !== "SUCCEEDED") fail(`upload ended in state ${state ?? "(none)"}: ${JSON.stringify(upload)}`);
 if (crxVersion && crxVersion !== version) fail(`the store read version ${crxVersion} from the package, expected ${version}`);

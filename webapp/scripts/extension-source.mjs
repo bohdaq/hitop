@@ -40,6 +40,7 @@ const commit = version("git", ["rev-parse", "HEAD"]);
 // cli/ for cli/rust-toolchain.toml, as build-wasm.mjs runs cargo.
 const rustc = version(tool("rustc"), ["--version"], join(root, "cli"));
 const cargo = version(tool("cargo"), ["--version"], join(root, "cli"));
+const rustVersion = rustc.split(" ")[1] ?? "stable";
 const bindgen = version(tool("wasm-bindgen"), ["--version"]);
 const npm = version("npm", ["--version"]);
 
@@ -62,8 +63,7 @@ WebAssembly. This archive is commit ${commit} of https://github.com/bohdaq/hitop
 # Node.js 22 or later, with npm: https://nodejs.org/en/download
 curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y
 . "$HOME/.cargo/env"
-rustup toolchain install ${rustc.split(" ")[1] ?? "stable"} --target wasm32-unknown-unknown
-rustup default ${rustc.split(" ")[1] ?? "stable"}
+rustup toolchain install ${rustVersion} --target wasm32-unknown-unknown
 cargo install wasm-bindgen-cli --version 0.2.126 --locked
 \`\`\`
 
@@ -72,6 +72,8 @@ cargo install wasm-bindgen-cli --version 0.2.126 --locked
 From the folder this README is in:
 
 \`\`\`sh
+# cli/rust-toolchain.toml says "stable"; this pins the exact compiler this version was built with.
+export RUSTUP_TOOLCHAIN=${rustVersion}
 cd webapp
 npm ci
 npm run build:extension          # Rust → wasm (cargo --locked), then vite build → dist-extension/
@@ -79,7 +81,9 @@ node scripts/package-extension.mjs firefox ../hitop-firefox
 \`\`\`
 
 \`hitop-firefox/\` now holds the add-on: manifest.json, background.js, icons/ and app/ (the
-bundled web app). It matches the submitted package file for file.
+bundled web app). It matches the submitted package file for file: the WebAssembly build maps
+source paths to fixed names (\`--remap-path-prefix\` in build-wasm.mjs), so the folder you build
+in doesn't change the output. Your Rust compiler must match the one above.
 
 Where the bundled code comes from: \`webapp/src/\` (the app), \`frontend/src/services/\` and
 \`frontend/src/utils/\` (request logic shared with the older React app), \`shared/pm-shim.js\`,

@@ -102,8 +102,14 @@ jobs:
           (cd "$pkg/firefox" && zip -X -r "$out/hitop-firefox-$VERSION.zip" . -x '*.DS_Store')
           node webapp/scripts/extension-source.mjs "$out/hitop-firefox-$VERSION-source.zip"
           ls -l "$out"
+      # The zip that is released and submitted, not the folder it was made from.
       - name: web-ext lint (Firefox)
-        run: npx --yes "web-ext@$WEB_EXT_VERSION" lint --source-dir "$RUNNER_TEMP/pkg/firefox"
+        env:
+          VERSION: ${{ steps.v.outputs.version }}
+        run: |
+          mkdir -p "$RUNNER_TEMP/lint"
+          unzip -q "$RUNNER_TEMP/out/hitop-firefox-$VERSION.zip" -d "$RUNNER_TEMP/lint"
+          npx --yes "web-ext@$WEB_EXT_VERSION" lint --source-dir "$RUNNER_TEMP/lint"
       - uses: actions/upload-artifact@v4
         with:
           name: extensions
