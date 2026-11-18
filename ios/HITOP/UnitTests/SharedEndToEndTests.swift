@@ -171,7 +171,9 @@ extension CloudEndToEndTests {
         // Grace's key for epoch 1, as her device holds it (her session and device secret from the
         // CLI's key file), before she is removed.
         let secret = try grace.json("sync-key.json")
-        let account = try grace.json("config/hitop/sync/account.json")
+        // The CLI's config folder: XDG_CONFIG_HOME on Linux, Application Support on macOS.
+        let mac = "Library/Application Support/hitop/sync/account.json"
+        let account = try grace.json(FileManager.default.fileExists(atPath: home.appendingPathComponent(mac).path) ? mac : "config/hitop/sync/account.json")
         let graceKey = try XCTUnwrap(account["keyId"]?.string)
         let asGrace = CloudRequest(method: "GET", url: URL(string: "\(server)/v1/workspaces/\(ws)/wraps?keyId=\(graceKey)")!,
                                    headers: ["Authorization": "Bearer \(secret["session"]?.string ?? "")", "X-Hitop-Device": graceKey], body: nil)

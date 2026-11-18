@@ -117,8 +117,8 @@ struct HITOPApp: App {
 /// this process) before the app's first sync, then shows the app.
 struct ScenarioGate: View {
     var scenario: String
-    @Environment(HitopCloud.self) private var cloud
-    @Environment(SharedSync.self) private var shared
+    @SwiftUI.Environment(HitopCloud.self) private var cloud
+    @SwiftUI.Environment(SharedSync.self) private var shared
     @State private var ready = false
     @State private var failure: String?
 
