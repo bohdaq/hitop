@@ -53,8 +53,8 @@ struct PadRoot: View {
                         .frame(width: 28, height: 28).background(Circle().fill(Theme.logoGradient))
                     Text("HITOP").font(Typo.geist(18, .bold))
                     Spacer()
-                    Button { nav.showAbout = true } label: { Image(systemName: "info.circle") }
-                        .buttonStyle(.plain).foregroundStyle(Theme.textMuted).accessibilityLabel("About HITOP")
+                    Button { nav.showAccount = true } label: { Image(systemName: "person.crop.circle") }
+                        .buttonStyle(.plain).foregroundStyle(Theme.textMuted).accessibilityLabel("Account").accessibilityIdentifier("account-pill")
                 }
                 .listRowBackground(Color.clear)
                 Button { nav.padSearch = true } label: {
@@ -75,7 +75,7 @@ struct PadRoot: View {
                 .accessibilityLabel("Search")
                 .accessibilityIdentifier("pad-search")
             }
-            ForEach(model.collections) { c in
+            ForEach(model.visibleCollections) { c in
                 Section {
                     ForEach(c.requests) { r in
                         HStack(spacing: 10) {

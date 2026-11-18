@@ -179,6 +179,30 @@ jobs:
             ${{ runner.temp }}/*.xcresult
           if-no-files-found: ignore
 
+  core:
+    name: App/Core swift test + end-to-end against a real sync server
+    runs-on: macos-26
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Xcode 26
+        run: |
+          xcode=$(ls -d /Applications/Xcode_26*.app 2>/dev/null | sort -V | tail -1)
+          if [ -n "$xcode" ]; then sudo xcode-select -s "$xcode"; fi
+          swift --version
+      - name: Build hitop-sync-server
+        working-directory: sync-server
+        env:
+          CARGO_PROFILE_DEV_DEBUG: "0"
+        run: |
+          rustup show active-toolchain || rustup default stable
+          cargo build --locked --bin hitop-sync-server
+      - name: swift test (App/Core + UnitTests, CloudEndToEndTests required)
+        env:
+          HITOP_SYNC_SERVER_BIN: ${{ github.workspace }}/sync-server/target/debug/hitop-sync-server
+          HITOP_E2E_REQUIRED: "1"
+        run: ios/HITOP/scripts/core-tests.sh
+
   hitopkit:
     name: HitopKit swift test (macOS, JavaScriptCore)
     runs-on: macos-26

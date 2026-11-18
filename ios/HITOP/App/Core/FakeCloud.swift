@@ -161,6 +161,8 @@ final class FakeCloud: CloudTransport, @unchecked Sendable {
             let query = Dictionary((URLComponents(url: request.url, resolvingAgainstBaseURL: false)?.queryItems ?? []).map { ($0.name, $0.value ?? "") }) { a, _ in a }
             log.append("\(request.method) \(path)\(query.isEmpty ? "" : "?" + query.keys.sorted().map { "\($0)=\(query[$0]!)" }.joined(separator: "&"))")
             lastHeaders = request.headers
+            let lower = Dictionary(request.headers.map { ($0.key.lowercased(), $0.value) }) { a, _ in a }
+            func header(_ name: String) -> String? { lower[name] }
             let body = request.body.flatMap { try? JSONDecoder().decode(JSONAny.self, from: $0) }
             if let body, body.object == nil { return fail(400, "bad_request", "invalid JSON body") }
             let parts = path.split(separator: "/").map(String.init)
@@ -175,10 +177,10 @@ final class FakeCloud: CloudTransport, @unchecked Sendable {
                 }
                 return got
             }
-            let user: String? = request.headers["Authorization"].flatMap { a in
+            let user: String? = header("authorization").flatMap { a in
                 a.hasPrefix("Bearer ") ? sessions[String(a.dropFirst(7))] : nil
             }
-            if let user, let device = request.headers["X-Hitop-Device"], let i = users[user]?.devices.firstIndex(where: { $0.id == device }) {
+            if let user, let device = header("x-hitop-device"), let i = users[user]?.devices.firstIndex(where: { $0.id == device }) {
                 users[user]!.devices[i].lastUsedAt = now
             }
             if false {
@@ -221,7 +223,7 @@ final class FakeCloud: CloudTransport, @unchecked Sendable {
             guard let uid = user, users[uid] != nil else { return fail(401, "unauthorized", "sign in first") }
             if false {
             } else if at("POST /v1/auth/logout") != nil {
-                sessions = sessions.filter { $0.value != uid || "Bearer \($0.key)" != request.headers["Authorization"] }
+                sessions = sessions.filter { $0.value != uid || "Bearer \($0.key)" != header("authorization") }
                 return reply(200, .object([:]))
             } else if at("GET /v1/me") != nil {
                 let u = users[uid]!
@@ -247,14 +249,14 @@ final class FakeCloud: CloudTransport, @unchecked Sendable {
                 return reply(200, .object(["id": .string(id), "name": .string(name)]))
             } else if let a = at("DELETE /v1/me/keys/:"), case let id = a[0] {
                 guard let i = users[uid]!.devices.firstIndex(where: { $0.id == id }) else { return fail(404, "not_found", "no such device") }
-                if request.headers["X-Hitop-Device"] == id { return fail(409, "this_device", "this is the device you are using: sign out here instead") }
+                if header("x-hitop-device") == id { return fail(409, "this_device", "this is the device you are using: sign out here instead") }
                 if users[uid]!.devices[i].workspaces > 0 && query["force"] != "true" {
                     return fail(409, "key_in_use", "this device key holds workspace keys; remove it with force=true (its workspaces then rotate their key)")
                 }
                 users[uid]!.devices.remove(at: i)
                 return CloudResponse(status: 204, body: Data())
             } else if at("GET /v1/me/devices") != nil {
-                let me = request.headers["X-Hitop-Device"]
+                let me = header("x-hitop-device")
                 let list: [JSONAny] = users[uid]!.devices.map { d in
                     .object(["id": .string(d.id), "name": .string(d.name), "createdAt": .number(Double(d.createdAt)),
                              "lastUsedAt": d.lastUsedAt.map { .number(Double($0)) } ?? .null, "workspaces": .number(Double(d.workspaces)),

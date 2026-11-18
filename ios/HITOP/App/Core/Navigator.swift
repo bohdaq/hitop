@@ -19,6 +19,8 @@ final class Navigator {
     var environmentsPath: [Route] = []
     var searchText = ""
     var showAbout = false
+    /// The Account screen (HITOP Cloud), from the organization pill.
+    var showAccount = false
     /// iPad: what the middle column shows.
     var padPage: AppTab = .collections
     var padRequest: UInt64?

@@ -2,7 +2,11 @@ import SwiftUI
 
 struct RootView: View {
     @Environment(\.horizontalSizeClass) private var sizeClass
+    @Environment(\.scenePhase) private var scenePhase
     @Environment(Navigator.self) private var nav
+    @Environment(AppModel.self) private var model
+    @Environment(HitopCloud.self) private var cloud
+    @Environment(LibrarySync.self) private var sync
 
     var body: some View {
         @Bindable var nav = nav
@@ -14,8 +18,24 @@ struct RootView: View {
             }
         }
         .sheet(isPresented: $nav.showAbout) { AboutView() }
+        .sheet(isPresented: $nav.showAccount) { AccountView() }
         .onAppear { nav.isPad = sizeClass == .regular }
         .onChange(of: sizeClass) { _, c in nav.isPad = c == .regular }
+        // HITOP Cloud: pull on launch and whenever the app comes to the foreground.
+        .task {
+            applyScope()
+            await sync.sync()
+            if cloud.signedIn { _ = try? await cloud.loadOrgs() }
+        }
+        .onChange(of: scenePhase) { _, phase in
+            if phase == .active { Task { await sync.sync() } }
+        }
+        .onChange(of: cloud.settings) { applyScope() }
+    }
+
+    /// Collections shows the current organization's collections (the web app's `visibleCollections`).
+    private func applyScope() {
+        model.orgScope = cloud.signedIn && !cloud.settings.orgs.isEmpty ? OrgScope(current: cloud.settings.org, personal: cloud.personalOrg?.id) : nil
     }
 }
 

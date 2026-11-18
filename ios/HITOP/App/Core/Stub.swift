@@ -61,6 +61,12 @@ final class StubURLProtocol: URLProtocol {
         let method = request.httpMethod ?? "GET"
         let path = request.url?.path ?? "/"
         let host = request.url?.host ?? ""
+        if host == FakeCloud.host, let url = request.url {
+            // HITOP Cloud in UI tests: the in-memory sync server.
+            let body = bodyText(request)
+            let r = FakeCloud.shared.handle(CloudRequest(method: method, url: url, headers: request.allHTTPHeaderFields ?? [:], body: body.isEmpty ? nil : Data(body.utf8)))
+            return Answer(status: r.status, headers: ["Content-Type": "application/json"], body: r.body)
+        }
         if host.hasPrefix("unreachable") {
             return Answer(status: 503, headers: ["Content-Type": "text/plain"], body: Data("upstream unavailable".utf8))
         }

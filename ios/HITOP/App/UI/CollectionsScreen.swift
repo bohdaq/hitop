@@ -168,6 +168,8 @@ struct EnvironmentMenu: View {
 struct CollectionsScreen: View {
     @Environment(AppModel.self) private var model
     @Environment(Navigator.self) private var nav
+    @Environment(LibrarySync.self) private var sync
+    @Environment(HitopCloud.self) private var cloud
     @State private var filter: Filter = .all
     @State private var expanded: Set<UInt64> = []
     @State private var openFolders: Set<String> = []
@@ -205,9 +207,23 @@ struct CollectionsScreen: View {
             .listRowBackground(Color.clear)
             .listRowSeparator(.hidden)
 
+            if let notice = sync.notices.first {
+                Section {
+                    HStack(alignment: .top, spacing: 10) {
+                        Image(systemName: "arrow.triangle.2.circlepath.icloud").foregroundStyle(Theme.accent)
+                        Text(notice).font(Typo.caption).foregroundStyle(Theme.textSoft).accessibilityIdentifier("sync-notice")
+                        Spacer(minLength: 0)
+                        Button { sync.dismissNotice(notice) } label: { Image(systemName: "xmark").font(.system(size: 12, weight: .bold)) }
+                            .buttonStyle(.plain).foregroundStyle(Theme.textMuted).frame(width: 44, height: 44)
+                            .accessibilityLabel("Dismiss")
+                    }
+                }
+                .listRowBackground(Theme.surface)
+            }
+
             switch filter {
             case .all:
-                ForEach(model.collections) { c in collectionSection(c) }
+                ForEach(model.visibleCollections) { c in collectionSection(c) }
             case .pinned:
                 flatSection("Pinned", pinned, empty: "Pin a request or collection with a swipe or a long press.")
             case .recent:
@@ -219,19 +235,13 @@ struct CollectionsScreen: View {
         .environment(\.defaultMinListRowHeight, 26)
         .scrollContentBackground(.hidden)
         .background(ScreenBackground())
+        .refreshable {
+            await sync.sync()
+            _ = try? await cloud.loadOrgs()
+        }
         .navigationTitle("Collections")
         .toolbar {
-            ToolbarItem(placement: .topBarLeading) {
-                Button { nav.showAbout = true } label: {
-                    HStack(spacing: 8) {
-                        Text("H").font(Typo.geist(11, .bold)).foregroundStyle(.white)
-                            .frame(width: 24, height: 24).background(Circle().fill(Theme.logoGradient))
-                        Text("HITOP").font(Typo.geist(14, .medium)).foregroundStyle(Theme.text)
-                    }
-                    .padding(.horizontal, 4)
-                }
-                .accessibilityLabel("About HITOP")
-            }
+            ToolbarItem(placement: .topBarLeading) { AccountPill() }
             ToolbarItem(placement: .topBarTrailing) { EnvironmentMenu() }
             ToolbarSpacer(.fixed, placement: .topBarTrailing)
             ToolbarItem(placement: .topBarTrailing) {
@@ -252,7 +262,7 @@ struct CollectionsScreen: View {
             guard !didSetUp else { return }
             didSetUp = true
             // The first collection starts open, with its first folders (as the drafts show).
-            if let first = model.collections.first {
+            if let first = model.visibleCollections.first {
                 expanded.insert(first.id)
                 if let folder = first.allFolders.first(where: { f in first.requests.filter { $0.folder == f }.count > 2 }) {
                     openFolders.insert("\(first.id)/\(folder)")
@@ -333,8 +343,7 @@ struct CollectionsScreen: View {
                 CollectionIcon(name: c.name)
                 VStack(alignment: .leading, spacing: 2) {
                     Text(c.name).font(Typo.title).foregroundStyle(Theme.text)
-                    Text("\(c.requests.count) \(c.requests.count == 1 ? "request" : "requests") · on this device")
-                        .font(Typo.caption).foregroundStyle(Theme.textMuted)
+                    SyncLine(collection: c)
                 }
                 Spacer()
                 if model.isPinned(collection: c.id) {
@@ -350,7 +359,7 @@ struct CollectionsScreen: View {
         }
         .buttonStyle(.plain)
         .listRowInsets(EdgeInsets(top: 8, leading: 16, bottom: 8, trailing: 16))
-        .accessibilityLabel("\(c.name), \(c.requests.count) requests")
+        .accessibilityLabel("\(c.name), \(SyncLine.describe(c, sync))")
         .accessibilityValue(open ? "expanded" : "collapsed")
         .accessibilityHint(open ? "Collapses the collection" : "Shows its requests")
         .accessibilityIdentifier("collection-\(c.name)")
@@ -359,6 +368,9 @@ struct CollectionsScreen: View {
             Button("New folder", systemImage: "folder.badge.plus") { naming = .newFolder(c.id, "") }
             Button("Rename", systemImage: "pencil") { naming = .collection(c.id) }
             Button(model.isPinned(collection: c.id) ? "Unpin" : "Pin", systemImage: "pin") { model.togglePin(collection: c.id) }
+            if cloud.signedIn && sync.isLocalOnly(c.id) {
+                Button("Save to HITOP Cloud", systemImage: "icloud.and.arrow.up") { Task { await sync.upload(c.id) } }
+            }
             Button("Delete", systemImage: "trash", role: .destructive) { deleting = .collection(c.id) }
         }
         .swipeActions(edge: .trailing) {

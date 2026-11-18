@@ -536,6 +536,16 @@ final class LibrarySync {
 
     // MARK: - Badges
 
+    /// "just now", "2 min ago", "3 h ago", "4 days ago" (the cards' "synced 2 min ago").
+    nonisolated static func ago(_ date: Date, now: Date = Date()) -> String {
+        let s = Int(now.timeIntervalSince(date))
+        if s < 60 { return "just now" }
+        if s < 3600 { return "\(s / 60) min ago" }
+        if s < 86400 { return "\(s / 3600) h ago" }
+        let d = s / 86400
+        return d == 1 ? "yesterday" : "\(d) days ago"
+    }
+
     func refreshBadges() {
         var out: [UInt64: Badge] = [:]
         let on = cloud.signedIn && state.account == cloud.accountKey
