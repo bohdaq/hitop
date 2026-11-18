@@ -4,8 +4,11 @@ import Foundation
 /// (host `cloud.hitop.test`), the UI tests' HITOP Cloud. It answers what the app uses with the
 /// shapes and rules of sync-server (`auth.rs` sessions, `oidc.rs` start/finish with the
 /// verifier, `devices.rs`, `limits.rs` 402 `devices`, `library.rs` versions, cursor, 409 with
-/// `current`, tombstones, `deny_unknown_fields` bodies, `orgs.rs`). The end-to-end test checks the
-/// same client against the real server.
+/// `current`, tombstones, `deny_unknown_fields` bodies, `orgs.rs`) and, for shared collections
+/// (I2b), `workspaces.rs`/`teams.rs`/`blobs.rs`: wraps for exactly every device of every member,
+/// a format 2 wrap naming one of the caller's own keys, roles (viewer 403, non-member 404),
+/// removal only with the next epoch's wraps, `stale_epoch`, version + version vector 409s,
+/// invites, and `teamenvs.rs`. The end-to-end test checks the same client against the real server.
 final class FakeCloud: CloudTransport, @unchecked Sendable {
     static let host = "cloud.hitop.test"
     static let server = "https://\(host)"
@@ -40,6 +43,16 @@ final class FakeCloud: CloudTransport, @unchecked Sendable {
 
     private let lock = NSLock()
     private var users: [String: User] = [:]
+    fileprivate var spaces: [String: FakeWorkspace] = [:]
+    fileprivate var invites: [FakeInvite] = []
+    /// Team environments of org-acme (`GET /v1/orgs/org-acme/environments` items).
+    var teamEnvironments: [JSONAny] = []
+    /// Invites get this token (UI tests type the code), else a random one.
+    var fixedInviteToken: String?
+    /// Blob writes from this address are answered but held back until someone else writes to the
+    /// same workspace: the UI tests' "changed by someone else meanwhile".
+    var holdWritesFrom: String?
+    fileprivate var held: [(ws: String, id: String, blob: FakeBlob)] = []
     private var sessions: [String: String] = [:]
     private var flows: [String: (challenge: String, email: String)] = [:]
     private var counter = 0
@@ -277,6 +290,8 @@ final class FakeCloud: CloudTransport, @unchecked Sendable {
                                            "upgradeUrl": .string("https://cloud.hitop.rws8.tech/orgs/\(o)/plan"),
                                            "usage": .object(["seats": .number(1), "guests": .number(0), "workspaces": .number(2), "storageBytes": .number(48_234_496),
                                                              "devices": .number(Double(users[uid]!.devices.count)), "runners": .number(0), "invitesPerDay": .number(0), "writesToday": .number(3)])]))
+            } else if let r = workspaceRoute(uid, request.method, parts, query, body) {
+                return r
             } else if at("GET /v1/library") != nil {
                 return library(uid, since: query["since"].flatMap { Int($0) })
             } else if let a = at("PUT /v1/library/:/:"), case let (kind, id) = (a[0], a[1]) {
@@ -368,3 +383,376 @@ final class FakeCloud: CloudTransport, @unchecked Sendable {
         return reply(200, .object(["items": .array(items.map(itemJSON)), "cursor": .number(Double(cursor)), "secretsStored": .bool(secretsStored), "git": .array([])]))
     }
 }
+
+// MARK: - Shared workspaces (sync-server workspaces.rs, teams.rs, blobs.rs, teamenvs.rs)
+
+fileprivate struct FakeBlob {
+    var version: Int
+    var vv: [String: Int]
+    var epoch: Int
+    var deleted: Bool
+    var content: String
+    var seq: Int
+}
+
+fileprivate struct FakeWorkspace {
+    var id: String
+    var epoch = 1
+    var seq = 0
+    var org: String
+    /// user id → role, in the order added.
+    var members: [(String, String)] = []
+    /// epoch → key id → wrapped (base64url).
+    var wraps: [Int: [String: String]] = [:]
+    var blobs: [String: FakeBlob] = [:]
+
+    func role(_ uid: String) -> String? { members.first { $0.0 == uid }?.1 }
+}
+
+fileprivate struct FakeInvite {
+    var id: String
+    var workspace: String
+    var token: String
+    var email: String
+    var role: String
+    var acceptedBy: String?
+}
+
+extension FakeCloud {
+    // Test setup and checks.
+
+    /// Workspace ids, in no order.
+    func workspaceIDs() -> [String] { locked { Array(spaces.keys) } }
+
+    /// The role of `email` in `ws` (nil: not a member).
+    func role(_ ws: String, _ email: String) -> String? {
+        locked { users.values.first { $0.email == email }.flatMap { spaces[ws]?.role($0.id) } }
+    }
+
+    func epoch(_ ws: String) -> Int { locked { spaces[ws]?.epoch ?? 0 } }
+
+    /// The stored envelopes of `ws` (tests check the server never sees plaintext).
+    func envelopes(_ ws: String) -> [String] { locked { spaces[ws]?.blobs.values.map(\.content) ?? [] } }
+
+    /// A malicious server: stores `wrapped` as `keyId`'s wrap of `epoch` (no checks).
+    func replaceWrap(_ ws: String, keyId: String, epoch: Int, wrapped: String) {
+        locked { spaces[ws]?.wraps[epoch, default: [:]][keyId] = wrapped }
+    }
+
+    /// The device key ids of `email`.
+    func deviceKeys(_ email: String) -> [String] { locked { users.values.first { $0.email == email }?.devices.map(\.id) ?? [] } }
+
+    func devicePublicKey(_ email: String) -> String? { locked { users.values.first { $0.email == email }?.devices.first?.publicKey } }
+
+    fileprivate func deviceIDs(_ uid: String) -> [String] { users[uid]?.devices.map(\.id) ?? [] }
+
+    /// The sender key id a format 2 wrap names (nil: format 1), or "" for a malformed one.
+    fileprivate func wrapSender(_ b64: String) -> String? {
+        guard let b = CloudCrypto.unbase64url(b64) else { return "" }
+        if b.count == 80 { return nil }
+        guard b.count >= 88, b[0] == 2 else { return "" }
+        let len = Int(b[5]) << 8 | Int(b[6])
+        guard len > 0, len <= 128, b.count == 7 + len + 80 else { return "" }
+        return String(bytes: b[7..<(7 + len)], encoding: .utf8) ?? ""
+    }
+
+    /// `exact_wraps`: one well-formed wrap for each device of `members`, made by `uid`.
+    fileprivate func exactWraps(_ uid: String, _ members: [String], _ wraps: JSONAny?) -> Result<[String: String], CloudResponse> {
+        var given: [String: String] = [:]
+        for w in wraps?.array ?? [] {
+            guard let o = w.object, Set(o.keys) == ["keyId", "wrapped"], let id = o["keyId"]?.string, let x = o["wrapped"]?.string else {
+                return .failure(fail(400, "bad_request", "invalid JSON body"))
+            }
+            if let bad = checkWrap(uid, id, x) { return .failure(bad) }
+            if given[id] != nil { return .failure(fail(400, "bad_request", "two wrapped keys for \(id)")) }
+            given[id] = x
+        }
+        let expected = Set(members.flatMap(deviceIDs))
+        guard Set(given.keys) == expected else {
+            return .failure(fail(400, "wraps_mismatch", "the workspace key must be wrapped for every device key of every member, and nothing else",
+                                 ["missing": .array(expected.subtracting(given.keys).sorted().map(JSONAny.string)),
+                                  "unexpected": .array(Set(given.keys).subtracting(expected).sorted().map(JSONAny.string))]))
+        }
+        return .success(given)
+    }
+
+    fileprivate func checkWrap(_ uid: String, _ keyId: String, _ wrapped: String) -> CloudResponse? {
+        switch wrapSender(wrapped) {
+        case nil: return nil
+        case ""?: return fail(400, "bad_request", "wrapped key for \(keyId): not a format 1 or format 2 wrap")
+        case let sender?:
+            return deviceIDs(uid).contains(sender) ? nil : fail(400, "bad_request", "the wrapped key for \(keyId) names \(sender) as its sender, which is not one of your device keys")
+        }
+    }
+
+    fileprivate func memberJSON(_ ws: FakeWorkspace, _ uid: String, _ role: String) -> JSONAny {
+        let u = users[uid]!
+        let keys: [JSONAny] = u.devices.map { d in
+            .object(["id": .string(d.id), "name": .string(d.name), "publicKey": .string(d.publicKey),
+                     "hasKey": .bool(ws.wraps[ws.epoch]?[d.id] != nil), "legacyEpochs": .array([])])
+        }
+        return .object(["userId": .string(uid), "email": .string(u.email), "role": .string(role), "runner": .bool(false), "keys": .array(keys)])
+    }
+
+    fileprivate func orgJSON(_ id: String) -> JSONAny {
+        if id == "org-acme" { return .object(["id": .string(id), "name": .string("Acme"), "personal": .bool(false)]) }
+        let owner = users[String(id.dropFirst("personal-".count))]?.email ?? id
+        return .object(["id": .string(id), "name": .string(owner), "personal": .bool(true)])
+    }
+
+    fileprivate func blobJSON(_ id: String, _ b: FakeBlob, content: Bool) -> JSONAny {
+        var o: [String: JSONAny] = ["id": .string(id), "version": .number(Double(b.version)), "vv": .object(b.vv.mapValues { .number(Double($0)) }),
+                                    "epoch": .number(Double(b.epoch)), "deleted": .bool(b.deleted), "seq": .number(Double(b.seq))]
+        if content { o["content"] = .string(b.content) } else { o["size"] = .number(Double(CloudCrypto.unbase64url(b.content)?.count ?? 0)) }
+        return .object(o)
+    }
+
+    /// The workspace routes (called with the lock held); nil: not one of them.
+    fileprivate func workspaceRoute(_ uid: String, _ method: String, _ parts: [String], _ query: [String: String], _ body: JSONAny?) -> CloudResponse? {
+        func at(_ pattern: String) -> [String]? {
+            let p = pattern.split(separator: " ", maxSplits: 1)
+            let want = p[1].split(separator: "/").map(String.init)
+            guard String(p[0]) == method, want.count == parts.count else { return nil }
+            var got: [String] = []
+            for (w, s) in zip(want, parts) {
+                if w == ":" { got.append(s) } else if w != s { return nil }
+            }
+            return got
+        }
+        let b = body?.object ?? [:]
+        func keys(_ allowed: Set<String>, required: Set<String> = []) -> CloudResponse? {
+            Set(b.keys).isSubset(of: allowed) && required.isSubset(of: Set(b.keys)) ? nil : fail(400, "bad_request", "invalid JSON body")
+        }
+        /// The workspace as `uid` sees it, at least `role`.
+        func space(_ id: String, _ need: String = "viewer") -> Result<FakeWorkspace, CloudResponse> {
+            guard let ws = spaces[id], let r = ws.role(uid) else { return .failure(fail(404, "not_found", "no such workspace")) }
+            let rank = ["viewer": 0, "editor": 1, "owner": 2]
+            if rank[r]! < rank[need]! { return .failure(fail(403, "forbidden", "this needs the \(need) role")) }
+            return .success(ws)
+        }
+        if at("GET /v1/workspaces") != nil {
+            let list: [JSONAny] = spaces.values.filter { $0.role(uid) != nil }.sorted { $0.id < $1.id }.map { ws in
+                .object(["id": .string(ws.id), "role": .string(ws.role(uid)!), "epoch": .number(Double(ws.epoch)), "seq": .number(Double(ws.seq)), "org": orgJSON(ws.org)])
+            }
+            return reply(200, .object(["workspaces": .array(list)]))
+        }
+        if at("POST /v1/workspaces") != nil {
+            if let bad = keys(["id", "wraps", "org"], required: ["id", "wraps"]) { return bad }
+            guard let id = b["id"]?.string, id.count == 32, id.allSatisfy({ $0.isHexDigit && !$0.isUppercase }) else {
+                return fail(400, "bad_request", "id must be 32 lower-case hex digits (random, from the client)")
+            }
+            if spaces[id] != nil { return fail(409, "exists", "a workspace with this id exists") }
+            let org = b["org"]?.string ?? "personal-\(uid)"
+            guard org == "personal-\(uid)" || org == "org-acme" else { return fail(403, "forbidden", "not a member of that organization") }
+            switch exactWraps(uid, [uid], b["wraps"]) {
+            case let .failure(r): return r
+            case let .success(w):
+                spaces[id] = FakeWorkspace(id: id, org: org, members: [(uid, "owner")], wraps: [1: w])
+                return reply(201, .object(["id": .string(id), "epoch": .number(1)]))
+            }
+        }
+        if let a = at("GET /v1/workspaces/:") {
+            switch space(a[0]) {
+            case let .failure(r): return r
+            case let .success(ws):
+                return reply(200, .object(["id": .string(ws.id), "epoch": .number(Double(ws.epoch)), "seq": .number(Double(ws.seq)), "bytes": .number(0),
+                                           "role": .string(ws.role(uid)!), "members": .array(ws.members.map { memberJSON(ws, $0.0, $0.1) }), "rotationRequested": .null]))
+            }
+        }
+        if let a = at("GET /v1/workspaces/:/wraps") {
+            switch space(a[0]) {
+            case let .failure(r): return r
+            case let .success(ws):
+                guard let key = query["keyId"], deviceIDs(uid).contains(key) else { return fail(404, "not_found", "keyId is not one of your device keys") }
+                let list: [JSONAny] = ws.wraps.keys.sorted().compactMap { e in ws.wraps[e]?[key].map { .object(["epoch": .number(Double(e)), "wrapped": .string($0)]) } }
+                return reply(200, .object(["epoch": .number(Double(ws.epoch)), "wraps": .array(list)]))
+            }
+        }
+        if let a = at("POST /v1/workspaces/:/wraps") {
+            if let bad = keys(["epoch", "wraps"], required: ["epoch", "wraps"]) { return bad }
+            switch space(a[0]) {
+            case let .failure(r): return r
+            case var .success(ws):
+                guard let e = b["epoch"]?.int, e >= 1, e <= ws.epoch else { return fail(400, "bad_request", "no such epoch") }
+                var stored = 0
+                for w in b["wraps"]?.array ?? [] {
+                    guard let id = w["keyId"]?.string, let x = w["wrapped"]?.string else { return fail(400, "bad_request", "invalid JSON body") }
+                    if let bad = checkWrap(uid, id, x) { return bad }
+                    guard let owner = ws.members.first(where: { deviceIDs($0.0).contains(id) }) else { return fail(400, "bad_request", "\(id) is not a device key of a member") }
+                    if ws.role(uid) == "viewer" && owner.0 != uid { return fail(403, "forbidden", "viewers can only add keys for their own devices") }
+                    if ws.wraps[e]?[id] == nil {
+                        ws.wraps[e, default: [:]][id] = x
+                        stored += 1
+                    }
+                }
+                spaces[ws.id] = ws
+                return reply(200, .object(["epoch": .number(Double(e)), "added": .number(Double(b["wraps"]?.array?.count ?? 0)), "stored": .number(Double(stored))]))
+            }
+        }
+        if let a = at("POST /v1/workspaces/:/members") {
+            if let bad = keys(["email", "role", "wraps"], required: ["email", "role", "wraps"]) { return bad }
+            switch space(a[0], "owner") {
+            case let .failure(r): return r
+            case var .success(ws):
+                guard let email = b["email"]?.string?.lowercased(), let role = b["role"]?.string, ["owner", "editor", "viewer"].contains(role) else { return fail(400, "bad_request", "role must be owner, editor or viewer") }
+                guard let new = users.values.first(where: { $0.email == email })?.id else { return fail(404, "not_found", "no account with this address (they sign in once first)") }
+                if ws.role(new) != nil { return fail(409, "already_member", "already a member") }
+                switch exactWraps(uid, [new], b["wraps"]) {
+                case let .failure(r): return r
+                case let .success(w):
+                    if w.isEmpty { return fail(400, "bad_request", "that account has no device key yet") }
+                    ws.members.append((new, role))
+                    for (k, v) in w { ws.wraps[ws.epoch, default: [:]][k] = v }
+                    spaces[ws.id] = ws
+                    invites.removeAll { $0.workspace == ws.id && $0.acceptedBy == new }
+                    return reply(201, .object(["userId": .string(new), "role": .string(role), "epoch": .number(Double(ws.epoch))]))
+                }
+            }
+        }
+        if let a = at("DELETE /v1/workspaces/:/members/:") {
+            guard keys(["epoch", "wraps"], required: ["epoch", "wraps"]) == nil else {
+                return fail(400, "bad_request", "removing a member needs the rotated key: {\"epoch\": current + 1, \"wraps\": [...]}")
+            }
+            switch space(a[0], "owner") {
+            case let .failure(r): return r
+            case var .success(ws):
+                let gone = a[1]
+                guard let role = ws.role(gone) else { return fail(404, "not_found", "not a member") }
+                if role == "owner" && ws.members.filter({ $0.1 == "owner" }).count <= 1 { return fail(400, "bad_request", "a workspace keeps at least one owner") }
+                guard b["epoch"]?.int == ws.epoch + 1 else { return fail(409, "stale_epoch", "the next epoch is \(ws.epoch + 1)", ["epoch": .number(Double(ws.epoch))]) }
+                ws.members.removeAll { $0.0 == gone }
+                let theirs = Set(deviceIDs(gone))
+                for e in ws.wraps.keys { ws.wraps[e] = ws.wraps[e]?.filter { !theirs.contains($0.key) } }
+                switch exactWraps(uid, ws.members.map(\.0), b["wraps"]) {
+                case let .failure(r): return r
+                case let .success(w):
+                    ws.epoch += 1
+                    ws.wraps[ws.epoch] = w
+                    spaces[ws.id] = ws
+                    return reply(200, .object(["removed": .string(gone), "epoch": .number(Double(ws.epoch))]))
+                }
+            }
+        }
+        if let a = at("PUT /v1/workspaces/:/members/:") {
+            if let bad = keys(["role"], required: ["role"]) { return bad }
+            switch space(a[0], "owner") {
+            case let .failure(r): return r
+            case var .success(ws):
+                guard let role = b["role"]?.string, let i = ws.members.firstIndex(where: { $0.0 == a[1] }) else { return fail(404, "not_found", "not a member") }
+                ws.members[i].1 = role
+                spaces[ws.id] = ws
+                return reply(200, .object(["userId": .string(a[1]), "role": .string(role)]))
+            }
+        }
+        if let a = at("POST /v1/workspaces/:/invites") {
+            if let bad = keys(["email", "role"], required: ["role"]) { return bad }
+            switch space(a[0], "owner") {
+            case let .failure(r): return r
+            case let .success(ws):
+                let token = fixedInviteToken ?? CloudCrypto.base64url(CloudCrypto.randomBytes(24))
+                let email = b["email"]?.string?.lowercased() ?? ""
+                let inv = FakeInvite(id: "inv\(next())", workspace: ws.id, token: token, email: email, role: b["role"]?.string ?? "editor")
+                invites.append(inv)
+                return reply(201, .object(["id": .string(inv.id), "token": .string(token), "link": .string("\(Self.server)/invite#\(token)"),
+                                           "mailed": .bool(!email.isEmpty), "expiresAt": .number(Double(now + 7 * 86400))]))
+            }
+        }
+        if let a = at("GET /v1/workspaces/:/invites") {
+            switch space(a[0], "owner") {
+            case let .failure(r): return r
+            case let .success(ws):
+                let list: [JSONAny] = invites.filter { $0.workspace == ws.id }.map { i in
+                    let acc: JSONAny = i.acceptedBy.flatMap { u in users[u] }.map { u in
+                        .object(["userId": .string(u.id), "email": .string(u.email),
+                                 "keys": .array(u.devices.map { .object(["id": .string($0.id), "name": .string($0.name), "publicKey": .string($0.publicKey)]) })])
+                    } ?? .null
+                    return .object(["id": .string(i.id), "email": .string(i.email), "role": .string(i.role), "createdAt": .number(0), "expiresAt": .number(0), "accepted": acc])
+                }
+                return reply(200, .object(["invites": .array(list)]))
+            }
+        }
+        if at("POST /v1/invites/accept") != nil {
+            if let bad = keys(["token"], required: ["token"]) { return bad }
+            let token = String((b["token"]?.string ?? "").split(separator: ".").first ?? "")
+            guard let i = invites.firstIndex(where: { $0.token == token }) else { return fail(404, "invalid_invite", "this invite is invalid or expired") }
+            let inv = invites[i]
+            if !inv.email.isEmpty && inv.email != users[uid]!.email { return fail(403, "forbidden", "this invite is for another address; sign in with the address it was sent to") }
+            if let by = inv.acceptedBy, by != uid { return fail(409, "already_accepted", "someone else accepted this invite") }
+            if spaces[inv.workspace]?.role(uid) != nil { return fail(409, "already_member", "already a member") }
+            if users[uid]!.devices.isEmpty { return fail(400, "bad_request", "register a device key first (POST /v1/me/keys)") }
+            invites[i].acceptedBy = uid
+            return reply(200, .object(["workspaceId": .string(inv.workspace), "role": .string(inv.role)]))
+        }
+        if let a = at("GET /v1/workspaces/:/changes") {
+            switch space(a[0]) {
+            case let .failure(r): return r
+            case let .success(ws):
+                let since = Int(query["since"] ?? "0") ?? 0
+                let list = ws.blobs.filter { $0.value.seq > since }.sorted { $0.value.seq < $1.value.seq }.map { blobJSON($0.key, $0.value, content: false) }
+                return reply(200, .object(["seq": .number(Double(ws.seq)), "epoch": .number(Double(ws.epoch)), "changes": .array(list), "more": .bool(false)]))
+            }
+        }
+        if let a = at("GET /v1/workspaces/:/blobs/:") {
+            switch space(a[0]) {
+            case let .failure(r): return r
+            case let .success(ws):
+                guard let blob = ws.blobs[a[1]] else { return fail(404, "not_found", "no such blob") }
+                return reply(200, blobJSON(a[1], blob, content: true))
+            }
+        }
+        if let a = at("PUT /v1/workspaces/:/blobs/:") {
+            if let bad = keys(["version", "vv", "epoch", "content", "deleted"], required: ["version", "vv", "epoch"]) { return bad }
+            let deleted = b["deleted"]?.bool ?? false
+            let content = b["content"]?.string
+            if deleted == (content != nil) { return fail(400, "bad_request", "content is required (or \"deleted\": true)") }
+            guard let version = b["version"]?.int, let epoch = b["epoch"]?.int, let vvo = b["vv"]?.object, !vvo.isEmpty else { return fail(400, "bad_request", "invalid JSON body") }
+            let vv = vvo.compactMapValues(\.int)
+            if let c = content {
+                guard let bytes = CloudCrypto.unbase64url(c), bytes.count >= 45, bytes[0] == 1,
+                      Int(bytes[1]) << 24 | Int(bytes[2]) << 16 | Int(bytes[3]) << 8 | Int(bytes[4]) == epoch else {
+                    return fail(400, "bad_request", "content is not a format 1 blob envelope for this epoch")
+                }
+            }
+            if holdWritesFrom != users[uid]?.email {
+                for h in held where h.ws == a[0] {
+                    guard var w = spaces[h.ws] else { continue }
+                    w.seq += 1
+                    var blob = h.blob
+                    blob.seq = w.seq
+                    w.blobs[h.id] = blob
+                    spaces[h.ws] = w
+                }
+                held.removeAll { $0.ws == a[0] }
+            }
+            switch space(a[0], "editor") {
+            case let .failure(r): return r
+            case var .success(ws):
+                if epoch != ws.epoch { return fail(409, "stale_epoch", "write with the current key epoch \(ws.epoch)", ["epoch": .number(Double(ws.epoch))]) }
+                let cur = ws.blobs[a[1]]
+                let expected = (cur?.version ?? 0) + 1
+                let base = cur?.vv ?? [:]
+                let descends = base.allSatisfy { (vv[$0.key] ?? 0) >= $0.value } && vv.contains { $0.value > (base[$0.key] ?? 0) }
+                if version != expected || !descends {
+                    return fail(409, "conflict", version != expected ? "expected version \(expected)" : "the version vector doesn't descend from the stored one",
+                                ["current": cur.map { blobJSON(a[1], $0, content: false) } ?? .null])
+                }
+                if holdWritesFrom != nil && holdWritesFrom == users[uid]?.email {
+                    held.append((ws.id, a[1], FakeBlob(version: version, vv: vv, epoch: epoch, deleted: deleted, content: content ?? "", seq: 0)))
+                    return reply(200, .object(["version": .number(Double(version)), "seq": .number(Double(ws.seq + 1))]))
+                }
+                ws.seq += 1
+                ws.blobs[a[1]] = FakeBlob(version: version, vv: vv, epoch: epoch, deleted: deleted, content: content ?? "", seq: ws.seq)
+                spaces[ws.id] = ws
+                return reply(200, .object(["version": .number(Double(version)), "seq": .number(Double(ws.seq))]))
+            }
+        }
+        if let a = at("GET /v1/orgs/:/environments") {
+            if a[0].hasPrefix("personal-") { return fail(400, "bad_request", "a personal organization has no team environments: your own are in your library") }
+            return reply(200, .object(["environments": .array(a[0] == "org-acme" ? teamEnvironments : [])]))
+        }
+        return nil
+    }
+}
+
+/// FakeCloud answers a refused request as a `Result` failure.
+extension CloudResponse: Error {}

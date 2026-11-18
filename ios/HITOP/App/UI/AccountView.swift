@@ -190,6 +190,8 @@ struct AccountView: View {
             }
             .listRowBackground(Theme.surface)
 
+            SharedAccountSection()
+
             Section {
                 if let devices {
                     ForEach(devices) { d in deviceRow(d) }

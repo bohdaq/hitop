@@ -9,6 +9,9 @@ struct HITOPApp: App {
     @State private var cloud: HitopCloud
     @State private var sync: LibrarySync
     @State private var cloudUI: CloudUI
+    @State private var shared: SharedSync
+    /// UI tests of shared collections: the scenario prepared before the first sync.
+    private let scenario: String?
 
     init() {
         let args = ProcessInfo.processInfo.arguments
@@ -17,6 +20,7 @@ struct HITOPApp: App {
         let cloud: HitopCloud
         let web: WebSignIn
         let syncState: LibrarySyncStateStore
+        let sharedStore: SharedSyncStore
         if uiTest {
             // UI tests and screenshots: a fresh library, the shop-api sample, secrets in memory and
             // every request answered in-process by StubURLProtocol (no network), HITOP Cloud
@@ -39,6 +43,7 @@ struct HITOPApp: App {
                                keyMaker: X25519KeyMaker(), deviceName: DeviceInfo.name)
             web = StubWebSignIn()
             syncState = MemoryLibrarySyncStateStore()
+            sharedStore = MemorySharedSyncStore()
         } else {
             let root = FileLibraryStore.defaultRoot()
             model = AppModel(store: FileLibraryStore(root: root), vault: KeychainVault())
@@ -47,11 +52,14 @@ struct HITOPApp: App {
                                settingsStore: FileCloudSettingsStore(root: root), keyMaker: X25519KeyMaker(), deviceName: DeviceInfo.name)
             web = SystemWebSignIn()
             syncState = FileLibrarySyncStateStore(root: root)
+            sharedStore = FileSharedSyncStore(root: root)
         }
+        scenario = uiTest ? ["-UITestSharedInvite", "-UITestSharedJoined"].first { args.contains($0) } : nil
         _model = State(initialValue: model)
         _cloud = State(initialValue: cloud)
         _sync = State(initialValue: LibrarySync(cloud: cloud, model: model, stateStore: syncState, deviceLabel: DeviceInfo.label))
         _cloudUI = State(initialValue: CloudUI(web: web))
+        _shared = State(initialValue: SharedSync(cloud: cloud, model: model, store: sharedStore))
         Self.styleNavigationBars()
     }
 
@@ -71,8 +79,15 @@ struct HITOPApp: App {
 
     var body: some Scene {
         WindowGroup {
-            RootView()
+            Group {
+                if let scenario {
+                    ScenarioGate(scenario: scenario)
+                } else {
+                    RootView()
+                }
+            }
                 .environment(model)
+                .environment(shared)
                 .environment(nav)
                 .environment(cloud)
                 .environment(sync)
@@ -93,6 +108,43 @@ struct HITOPApp: App {
                     .keyboardShortcut("n", modifiers: .command)
                 Button("Search") { nav.showSearch() }
                     .keyboardShortcut("k", modifiers: .command)
+            }
+        }
+    }
+}
+
+/// UI tests of shared collections: prepares `SharedScenario` (Ada signed in here, Grace's phone in
+/// this process) before the app's first sync, then shows the app.
+struct ScenarioGate: View {
+    var scenario: String
+    @Environment(HitopCloud.self) private var cloud
+    @Environment(SharedSync.self) private var shared
+    @State private var ready = false
+    @State private var failure: String?
+
+    var body: some View {
+        Group {
+            if ready {
+                RootView()
+            } else {
+                VStack(spacing: 12) {
+                    ProgressView()
+                    Text(failure ?? "Preparing…").font(Typo.caption).foregroundStyle(Theme.textMuted).accessibilityIdentifier("scenario-status")
+                }
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                .background(Theme.ground.ignoresSafeArea())
+            }
+        }
+        .task {
+            do {
+                if scenario == "-UITestSharedInvite" {
+                    try await SharedScenario.invite(app: cloud, fake: FakeCloud.shared)
+                } else {
+                    try await SharedScenario.joined(app: cloud, shared: shared, fake: FakeCloud.shared)
+                }
+                ready = true
+            } catch {
+                failure = "Scenario failed: \(error.localizedDescription)"
             }
         }
     }

@@ -9,6 +9,9 @@ struct PadRoot: View {
     @State private var naming: NameTarget?
     @State private var moving: UInt64?
     @State private var deleting: NameTarget?
+    @State private var sharing: ShareTarget?
+    @Environment(SharedSync.self) private var shared
+    @Environment(HitopCloud.self) private var cloud
 
     var body: some View {
         @Bindable var nav = nav
@@ -22,6 +25,7 @@ struct PadRoot: View {
             detail
         }
         .navigationSplitViewStyle(.balanced)
+        .sheet(item: $sharing) { t in ShareSheet(collectionID: t.id) }
         .sheet(isPresented: $nav.padSearch) {
             NavigationStack {
                 SearchScreen()
@@ -97,12 +101,22 @@ struct PadRoot: View {
                         }
                     }
                 } header: {
-                    Text(c.name.uppercased()).font(Typo.label).tracking(0.9).foregroundStyle(Theme.textFaint)
-                        .contextMenu {
+                    HStack(spacing: 6) {
+                        Text(c.name.uppercased()).font(Typo.label).tracking(0.9).foregroundStyle(Theme.textFaint)
+                        if let b = shared.badge(c.id) {
+                            Image(systemName: "person.2.fill").font(.system(size: 9)).foregroundStyle(Theme.accentText).accessibilityLabel(b)
+                        }
+                    }
+                    .contextMenu {
+                        if !model.isReadOnly(c.id) {
                             Button("New request", systemImage: "plus") { nav.open(request: model.newRequest(in: c.id).id) }
                             Button("Rename", systemImage: "pencil") { naming = .collection(c.id) }
-                            Button("Delete", systemImage: "trash", role: .destructive) { deleting = .collection(c.id) }
                         }
+                        if cloud.signedIn {
+                            Button(model.isShared(c.id) ? "People and sharing" : "Share…", systemImage: "person.2") { sharing = ShareTarget(id: c.id) }
+                        }
+                        Button("Delete", systemImage: "trash", role: .destructive) { deleting = .collection(c.id) }
+                    }
                 }
             }
             Section {
@@ -178,13 +192,15 @@ struct PadRequestColumn: View {
     @Bindable var editor: RequestEditor
     @Environment(AppModel.self) private var model
 
+    private var readOnly: Bool { model.isReadOnly(editor.collectionID) }
+
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 12) {
                 HStack(spacing: 10) {
                     HStack(spacing: 10) {
-                        MethodPicker(editor: editor, height: 30)
-                        URLField(url: $editor.draft.url, context: model.context(for: editor.collectionID), size: 14.5, singleLine: true)
+                        MethodPicker(editor: editor, height: 30).disabled(readOnly)
+                        URLField(url: $editor.draft.url, context: model.context(for: editor.collectionID), size: 14.5, singleLine: true).disabled(readOnly)
                         EnvironmentMenu(compact: true)
                     }
                     .padding(.leading, 8)
@@ -208,11 +224,15 @@ struct PadRequestColumn: View {
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
             ToolbarItem(placement: .primaryAction) {
-                Button { editor.save() } label: {
-                    Label(editor.isDirty ? "Save" : "Saved", systemImage: editor.isDirty ? "square.and.arrow.down.fill" : "checkmark")
+                if readOnly {
+                    Label("View only", systemImage: "eye").labelStyle(.titleAndIcon).accessibilityIdentifier("view-only")
+                } else {
+                    Button { editor.save() } label: {
+                        Label(editor.isDirty ? "Save" : "Saved", systemImage: editor.isDirty ? "square.and.arrow.down.fill" : "checkmark")
+                    }
+                    .disabled(!editor.isDirty)
+                    .accessibilityIdentifier("save")
                 }
-                .disabled(!editor.isDirty)
-                .accessibilityIdentifier("save")
             }
         }
     }

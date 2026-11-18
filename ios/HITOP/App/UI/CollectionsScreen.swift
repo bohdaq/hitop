@@ -51,7 +51,7 @@ struct LibraryActions: ViewModifier {
 
     private var deleteTitle: String {
         switch deleting {
-        case let .collection(id)?: "Delete \(model.collection(id)?.name ?? "the collection") and its requests?"
+        case let .collection(id)?: model.isShared(id) ? "Remove \(model.collection(id)?.name ?? "the collection") from this device? It stays shared for the others." : "Delete \(model.collection(id)?.name ?? "the collection") and its requests?"
         case let .folder(_, path)?: "Delete the folder \(path) and its requests?"
         default: "Delete?"
         }
@@ -141,7 +141,7 @@ struct EnvironmentMenu: View {
             Picker("Environment", selection: Binding(get: { model.state.activeEnvironmentID ?? "" },
                                                      set: { model.setActiveEnvironment($0.isEmpty ? nil : $0) })) {
                 Text("No environment").tag("")
-                ForEach(model.environments) { e in Text(e.name).tag(e.id) }
+                ForEach(model.environments) { e in Text(e.extras["team"] == nil ? e.name : "\(e.name) (team)").tag(e.id) }
             }
         } label: {
             HStack(spacing: 6) {
@@ -169,7 +169,9 @@ struct CollectionsScreen: View {
     @Environment(AppModel.self) private var model
     @Environment(Navigator.self) private var nav
     @Environment(LibrarySync.self) private var sync
+    @Environment(SharedSync.self) private var shared
     @Environment(HitopCloud.self) private var cloud
+    @State private var sharing: ShareTarget?
     @State private var filter: Filter = .all
     @State private var expanded: Set<UInt64> = []
     @State private var openFolders: Set<String> = []
@@ -221,6 +223,20 @@ struct CollectionsScreen: View {
                 .listRowBackground(Theme.surface)
             }
 
+            if let notice = shared.notices.first {
+                Section {
+                    HStack(alignment: .top, spacing: 10) {
+                        Image(systemName: "person.2").foregroundStyle(Theme.accent)
+                        Text(notice).font(Typo.caption).foregroundStyle(Theme.textSoft).accessibilityIdentifier("shared-notice")
+                        Spacer(minLength: 0)
+                        Button { shared.dismissNotice(notice) } label: { Image(systemName: "xmark").font(.system(size: 12, weight: .bold)) }
+                            .buttonStyle(.plain).foregroundStyle(Theme.textMuted).frame(width: 44, height: 44)
+                            .accessibilityLabel("Dismiss")
+                    }
+                }
+                .listRowBackground(Theme.surface)
+            }
+
             switch filter {
             case .all:
                 ForEach(model.visibleCollections) { c in collectionSection(c) }
@@ -238,7 +254,9 @@ struct CollectionsScreen: View {
         .refreshable {
             await sync.sync()
             _ = try? await cloud.loadOrgs()
+            await shared.syncAll()
         }
+        .sheet(item: $sharing) { t in ShareSheet(collectionID: t.id) }
         .navigationTitle("Collections")
         .toolbar {
             ToolbarItem(placement: .topBarLeading) { AccountPill() }
@@ -343,7 +361,12 @@ struct CollectionsScreen: View {
                 CollectionIcon(name: c.name)
                 VStack(alignment: .leading, spacing: 2) {
                     Text(c.name).font(Typo.title).foregroundStyle(Theme.text)
-                    SyncLine(collection: c)
+                    if model.isShared(c.id) {
+                        SharedSyncLine(collection: c)
+                        SharedBadge(collectionID: c.id, name: c.name)
+                    } else {
+                        SyncLine(collection: c)
+                    }
                 }
                 Spacer()
                 if model.isPinned(collection: c.id) {
@@ -359,23 +382,33 @@ struct CollectionsScreen: View {
         }
         .buttonStyle(.plain)
         .listRowInsets(EdgeInsets(top: 8, leading: 16, bottom: 8, trailing: 16))
-        .accessibilityLabel("\(c.name), \(SyncLine.describe(c, sync))")
+        .accessibilityLabel(model.isShared(c.id) ? "\(c.name), \(SharedSyncLine.describe(c, shared)), \(SharedBadge.describe(c.id, shared, model))" : "\(c.name), \(SyncLine.describe(c, sync))")
         .accessibilityValue(open ? "expanded" : "collapsed")
         .accessibilityHint(open ? "Collapses the collection" : "Shows its requests")
         .accessibilityIdentifier("collection-\(c.name)")
         .contextMenu {
-            Button("New request", systemImage: "plus") { newRequest(c.id) }
-            Button("New folder", systemImage: "folder.badge.plus") { naming = .newFolder(c.id, "") }
-            Button("Rename", systemImage: "pencil") { naming = .collection(c.id) }
+            if !model.isReadOnly(c.id) {
+                Button("New request", systemImage: "plus") { newRequest(c.id) }
+                Button("New folder", systemImage: "folder.badge.plus") { naming = .newFolder(c.id, "") }
+                Button("Rename", systemImage: "pencil") { naming = .collection(c.id) }
+            }
             Button(model.isPinned(collection: c.id) ? "Unpin" : "Pin", systemImage: "pin") { model.togglePin(collection: c.id) }
-            if cloud.signedIn && sync.isLocalOnly(c.id) {
+            if cloud.signedIn {
+                Button(model.isShared(c.id) ? "People and sharing" : "Share…", systemImage: "person.2") { sharing = ShareTarget(id: c.id) }
+            }
+            if cloud.signedIn && sync.isLocalOnly(c.id) && !model.isShared(c.id) {
                 Button("Save to HITOP Cloud", systemImage: "icloud.and.arrow.up") { Task { await sync.upload(c.id) } }
             }
             Button("Delete", systemImage: "trash", role: .destructive) { deleting = .collection(c.id) }
         }
         .swipeActions(edge: .trailing) {
             Button("Delete", systemImage: "trash", role: .destructive) { deleting = .collection(c.id) }
-            Button("Rename", systemImage: "pencil") { naming = .collection(c.id) }.tint(Theme.accentDeep)
+            if !model.isReadOnly(c.id) {
+                Button("Rename", systemImage: "pencil") { naming = .collection(c.id) }.tint(Theme.accentDeep)
+            }
+            if cloud.signedIn {
+                Button(model.isShared(c.id) ? "People" : "Share", systemImage: "person.2") { sharing = ShareTarget(id: c.id) }.tint(Theme.info)
+            }
         }
         .swipeActions(edge: .leading) {
             Button(model.isPinned(collection: c.id) ? "Unpin" : "Pin", systemImage: "pin") { model.togglePin(collection: c.id) }.tint(Theme.warning)

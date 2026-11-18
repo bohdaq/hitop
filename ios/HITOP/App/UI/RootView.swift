@@ -7,6 +7,7 @@ struct RootView: View {
     @Environment(AppModel.self) private var model
     @Environment(HitopCloud.self) private var cloud
     @Environment(LibrarySync.self) private var sync
+    @Environment(SharedSync.self) private var shared
 
     var body: some View {
         @Bindable var nav = nav
@@ -26,16 +27,27 @@ struct RootView: View {
             applyScope()
             await sync.sync()
             if cloud.signedIn { _ = try? await cloud.loadOrgs() }
+            applyScope()
+            await shared.syncAll()
         }
         .onChange(of: scenePhase) { _, phase in
-            if phase == .active { Task { await sync.sync() } }
+            if phase == .active {
+                Task {
+                    await sync.sync()
+                    await shared.syncAll()
+                }
+            }
         }
-        .onChange(of: cloud.settings) { applyScope() }
+        .onChange(of: cloud.settings) { old, new in
+            applyScope()
+            if old.org != new.org || old.orgs != new.orgs { Task { await shared.loadTeamEnvironments() } }
+        }
     }
 
     /// Collections shows the current organization's collections (the web app's `visibleCollections`).
     private func applyScope() {
         model.orgScope = cloud.signedIn && !cloud.settings.orgs.isEmpty ? OrgScope(current: cloud.settings.org, personal: cloud.personalOrg?.id) : nil
+        shared.applyRoles()
     }
 }
 

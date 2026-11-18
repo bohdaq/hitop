@@ -90,10 +90,8 @@ protocol DeviceKeyMaker: Sendable {
     func make() -> DeviceKey
 }
 
-/// Random bytes standing in for a key pair: tests and the stubbed UI tests (the server only stores
-/// the public key; shared workspaces, which use it, are I2b). The app uses `X25519KeyMaker`.
+/// A fresh X25519 key pair from hitop-sync-crypto (SyncCore): tests and the stubbed UI tests, so
+/// shared workspaces work with it. The app uses `X25519KeyMaker` (CryptoKit, the same kind of key).
 struct RandomKeyMaker: DeviceKeyMaker {
-    func make() -> DeviceKey {
-        DeviceKey(secret: CloudCrypto.base64url(CloudCrypto.randomBytes(32)), publicKey: CloudCrypto.base64url(CloudCrypto.randomBytes(32)))
-    }
+    func make() -> DeviceKey { SyncCore.keygen() }
 }

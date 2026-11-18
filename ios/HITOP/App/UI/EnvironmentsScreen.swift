@@ -10,7 +10,7 @@ struct EnvironmentsScreen: View {
         List {
             Section {
                 ForEach(model.environments) { e in row(e) }
-                    .onDelete { idx in idx.map { model.environments[$0].id }.forEach(model.deleteEnvironment) }
+                    .onDelete { idx in idx.map { model.environments[$0] }.filter { $0.extras["team"] == nil }.map(\.id).forEach(model.deleteEnvironment) }
                 Button { model.setActiveEnvironment(nil) } label: {
                     HStack(spacing: 12) {
                         Image(systemName: model.state.activeEnvironmentID == nil ? "checkmark.circle.fill" : "circle")
@@ -95,7 +95,7 @@ struct EnvironmentsScreen: View {
                     EnvironmentDot(name: e.name)
                     VStack(alignment: .leading, spacing: 2) {
                         Text(e.name).font(Typo.row).foregroundStyle(Theme.textRow)
-                        Text(count(e)).font(Typo.caption).foregroundStyle(Theme.textMuted)
+                        Text(count(e) + (e.extras["team"] != nil ? " · team" : "")).font(Typo.caption).foregroundStyle(Theme.textMuted)
                     }
                     Spacer()
                     if active {
@@ -113,7 +113,9 @@ struct EnvironmentsScreen: View {
         }
         .contextMenu {
             Button("Use this environment", systemImage: "checkmark") { model.setActiveEnvironment(e.id) }
-            Button("Delete", systemImage: "trash", role: .destructive) { model.deleteEnvironment(e.id) }
+            if e.extras["team"] == nil {
+                Button("Delete", systemImage: "trash", role: .destructive) { model.deleteEnvironment(e.id) }
+            }
         }
     }
 }
@@ -136,6 +138,10 @@ struct EnvironmentDetail: View {
     }
 
     private var env: SavedEnvironment? { id == model.globals.id ? model.globals : model.environments.first { $0.id == id } }
+
+    /// A team environment (the organization's, I2b): read here, edited in the web app; only secret
+    /// values can be entered (they stay in this device's Keychain).
+    private var team: Bool { env?.extras["team"] != nil }
 
     var body: some View {
         if let env {
@@ -166,23 +172,33 @@ struct EnvironmentDetail: View {
                             .contentShape(Rectangle())
                         }
                         .buttonStyle(.plain)
+                        .disabled(team && !secret)
                         .accessibilityIdentifier("variable-\(name)")
                         .swipeActions {
-                            Button("Delete", systemImage: "trash", role: .destructive) { model.removeVariable(env, name: name) }
+                            if !team {
+                                Button("Delete", systemImage: "trash", role: .destructive) { model.removeVariable(env, name: name) }
+                            }
                         }
                     }
                 } header: {
                     Text("VARIABLES").font(Typo.label).tracking(0.9).foregroundStyle(Theme.textFaint)
+                } footer: {
+                    if team {
+                        Text("A team environment of your organization: change it in the web app. Secret values you enter stay in this device's Keychain.")
+                            .font(Typo.caption).foregroundStyle(Theme.textMuted)
+                    }
                 }
                 .listRowBackground(Theme.surface)
                 .listRowSeparatorTint(Theme.separator)
                 Section {
-                    Button {
-                        editing = VariableDraft(original: nil, name: "", value: "", secret: false)
-                    } label: {
-                        Label("Add variable", systemImage: "plus").font(Typo.row).frame(minHeight: 44)
+                    if !team {
+                        Button {
+                            editing = VariableDraft(original: nil, name: "", value: "", secret: false)
+                        } label: {
+                            Label("Add variable", systemImage: "plus").font(Typo.row).frame(minHeight: 44)
+                        }
+                        .accessibilityIdentifier("add-variable")
                     }
-                    .accessibilityIdentifier("add-variable")
                     if id != model.globals.id, model.state.activeEnvironmentID != id {
                         Button { model.setActiveEnvironment(id) } label: {
                             Label("Use this environment", systemImage: "checkmark.circle").font(Typo.row).frame(minHeight: 44)
@@ -196,7 +212,7 @@ struct EnvironmentDetail: View {
             .background(Theme.ground.ignoresSafeArea())
             .navigationTitle(env.name)
             .toolbar {
-                if id != model.globals.id {
+                if id != model.globals.id && !team {
                     ToolbarItem(placement: .topBarTrailing) {
                         Button("Rename") { newName = env.name; renaming = true }
                     }

@@ -21,6 +21,8 @@ struct RequestScreen: View {
         }
     }
 
+    private var readOnly: Bool { model.isReadOnly(model.collectionOf(request: id)?.id) }
+
     private func content(_ editor: RequestEditor) -> some View {
         ScrollView {
             RequestEditorView(editor: editor, wide: false)
@@ -36,7 +38,7 @@ struct RequestScreen: View {
             ToolbarItem(placement: .principal) {
                 VStack(spacing: 1) {
                     Text(editor.draft.name).font(Typo.title).foregroundStyle(Theme.text).lineLimit(1)
-                    Text(editor.isDirty ? "Unsaved changes" : editor.breadcrumb)
+                    Text(readOnly ? "View only · \(editor.breadcrumb)" : editor.isDirty ? "Unsaved changes" : editor.breadcrumb)
                         .font(Typo.geist(12, relativeTo: .caption))
                         .foregroundStyle(editor.isDirty ? Theme.warning : Theme.textMuted)
                         .lineLimit(1)
@@ -45,16 +47,20 @@ struct RequestScreen: View {
             }
             ToolbarItem(placement: .topBarTrailing) {
                 Menu {
-                    Button("Rename", systemImage: "pencil") { naming = .request(id) }
-                    Button("Duplicate", systemImage: "plus.square.on.square") { model.duplicateRequest(id) }
-                    Button("Move to…", systemImage: "folder") { moving = id }
+                    if !readOnly {
+                        Button("Rename", systemImage: "pencil") { naming = .request(id) }
+                        Button("Duplicate", systemImage: "plus.square.on.square") { model.duplicateRequest(id) }
+                        Button("Move to…", systemImage: "folder") { moving = id }
+                    }
                     Button(model.isPinned(request: id) ? "Unpin" : "Pin", systemImage: "pin") { model.togglePin(request: id) }
                     if editor.isDirty {
                         Button("Discard changes", systemImage: "arrow.uturn.backward") { editor.revert() }
                     }
-                    Button("Delete", systemImage: "trash", role: .destructive) {
-                        model.deleteRequest(id)
-                        dismiss()
+                    if !readOnly {
+                        Button("Delete", systemImage: "trash", role: .destructive) {
+                            model.deleteRequest(id)
+                            dismiss()
+                        }
                     }
                 } label: {
                     Image(systemName: "ellipsis")
@@ -65,19 +71,29 @@ struct RequestScreen: View {
         .safeAreaInset(edge: .bottom) {
             GlassEffectContainer(spacing: 10) {
                 HStack(spacing: 10) {
-                    Button { editor.save() } label: {
-                        Image(systemName: editor.isDirty ? "square.and.arrow.down.fill" : "square.and.arrow.down")
-                            .font(.system(size: 21, weight: .medium))
-                            .foregroundStyle(editor.isDirty ? Theme.accentText : Theme.text)
-                            .frame(width: 50, height: 50)
-                            .overlay(alignment: .topTrailing) {
-                                if editor.isDirty { Circle().fill(Theme.warning).frame(width: 9, height: 9).offset(x: -6, y: 6) }
-                            }
+                    if readOnly {
+                        Label("View only", systemImage: "eye")
+                            .font(Typo.geist(13, .semibold))
+                            .foregroundStyle(Theme.textSoft)
+                            .padding(.horizontal, 14)
+                            .frame(height: 50)
+                            .glassEffect(.regular, in: Capsule())
+                            .accessibilityIdentifier("view-only")
+                    } else {
+                        Button { editor.save() } label: {
+                            Image(systemName: editor.isDirty ? "square.and.arrow.down.fill" : "square.and.arrow.down")
+                                .font(.system(size: 21, weight: .medium))
+                                .foregroundStyle(editor.isDirty ? Theme.accentText : Theme.text)
+                                .frame(width: 50, height: 50)
+                                .overlay(alignment: .topTrailing) {
+                                    if editor.isDirty { Circle().fill(Theme.warning).frame(width: 9, height: 9).offset(x: -6, y: 6) }
+                                }
+                        }
+                        .buttonStyle(.glass)
+                        .buttonBorderShape(.circle)
+                        .accessibilityLabel(editor.isDirty ? "Save, unsaved changes" : "Saved")
+                        .accessibilityIdentifier("save")
                     }
-                    .buttonStyle(.glass)
-                    .buttonBorderShape(.circle)
-                    .accessibilityLabel(editor.isDirty ? "Save, unsaved changes" : "Saved")
-                    .accessibilityIdentifier("save")
                     SendButton(sending: editor.isSending) {
                         editor.send()
                         showResponse = true
@@ -108,6 +124,9 @@ struct RequestEditorView: View {
 
     private var tabs: [EditorTab] { wide ? [.params, .headers, .body, .auth, .scripts, .tests] : [.params, .headers, .body, .auth, .tests] }
 
+    /// A viewer's shared collection: everything shows, nothing edits (Send still works).
+    private var readOnly: Bool { model.isReadOnly(model.collectionOf(request: editor.id)?.id) }
+
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
             if !wide { requestCard }
@@ -122,6 +141,7 @@ struct RequestEditorView: View {
                 case .tests: ScriptsEditor(editor: editor, pre: !wide ? nil : false)
                 }
             }
+            .disabled(readOnly)
             .animation(nil, value: tab)
         }
         .onAppear {
@@ -169,11 +189,11 @@ struct RequestEditorView: View {
     private var requestCard: some View {
         VStack(alignment: .leading, spacing: 10) {
             HStack(spacing: 8) {
-                MethodPicker(editor: editor)
+                MethodPicker(editor: editor).disabled(readOnly)
                 EnvironmentMenu(compact: true)
                 Spacer()
             }
-            URLField(url: $editor.draft.url, context: context)
+            URLField(url: $editor.draft.url, context: context).disabled(readOnly)
         }
         .padding(.horizontal, 14)
         .padding(.vertical, 12)

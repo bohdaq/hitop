@@ -22,6 +22,9 @@ import Observation
 ///   the round and retries later, a refused item (402 full, 413 too large) stays on this device.
 /// - the first link uploads this device's collections, except an untouched sample or an empty
 ///   My requests; linking another account later uploads none of them (they stay on this device).
+/// - shared collections (I2b, `SharedSync`) are never the library's: the library is readable by
+///   the server, a shared collection is end-to-end encrypted. `model.isShared` keeps them out of
+///   every push, badge and first link.
 @MainActor
 @Observable
 final class LibrarySync {
@@ -206,7 +209,7 @@ final class LibrarySync {
     func desired() -> [String: Item] {
         var out: [String: Item] = [:]
         let localOnly = Set(state.localOnly)
-        for c in model.collections where !localOnly.contains(String(c.id)) {
+        for c in model.collections where !localOnly.contains(String(c.id)) && !model.isShared(c.id) {
             let it = collectionItem(c)
             out[it.key] = it
         }
@@ -228,12 +231,14 @@ final class LibrarySync {
                 guard let cid = UInt64(id) ?? (it["data"]?["id"]?.int).map({ UInt64($0) }) else { continue }
                 if deleted {
                     // Only a collection this device holds from the library goes.
-                    if state.known[key] != nil, model.collection(cid) != nil { model.applyRemoteRemoval(collection: cid) }
+                    if state.known[key] != nil, model.collection(cid) != nil, !model.isShared(cid) { model.applyRemoteRemoval(collection: cid) }
                     state.known.removeValue(forKey: key)
                     continue
                 }
                 guard let data = it["data"], var c = try? data.decode(SavedCollection.self) else { continue }
                 c.id = cid
+                // A collection shared here since stays the shared one.
+                if model.isShared(cid) { continue }
                 model.applyRemote(collection: c)
                 state.localOnly.removeAll { $0 == id }
                 state.refused.removeValue(forKey: key)
@@ -549,7 +554,7 @@ final class LibrarySync {
     func refreshBadges() {
         var out: [UInt64: Badge] = [:]
         let on = cloud.signedIn && state.account == cloud.accountKey
-        for c in model.collections {
+        for c in model.collections where !model.isShared(c.id) {
             let key = "collection/\(c.id)"
             if !on || state.localOnly.contains(String(c.id)) {
                 out[c.id] = .local

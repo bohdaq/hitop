@@ -9,8 +9,10 @@ struct OrgScope: Hashable, Sendable {
     /// The personal organization's id (a collection may name it in `org`).
     var personal: String?
 
-    func contains(_ c: SavedCollection) -> Bool {
-        let o = c.org
+    /// `org`: the collection's organization when it isn't its own `org` (a shared collection's
+    /// workspace's).
+    func contains(_ c: SavedCollection, org: String?? = nil) -> Bool {
+        let o = org ?? c.org
         if current == nil || current == personal { return o == nil || o == personal }
         return o == current
     }
@@ -39,6 +41,22 @@ final class AppModel {
     /// HITOP Cloud organizations: which one the Collections tab shows. nil = every collection
     /// (signed out, or a server without organizations).
     var orgScope: OrgScope?
+
+    /// Shared collections (I2b, `SharedSync`): collection id → this account's role in its workspace
+    /// (owner, editor or viewer). A viewer's collection is read-only here: every change is refused.
+    var sharedRoles: [UInt64: String] = [:]
+    /// A shared collection's organization (its workspace's, when it is one of the account's team
+    /// organizations; nil = shown with the personal ones).
+    var sharedOrgs: [UInt64: String?] = [:]
+    /// Called after a change to a shared collection made here (SharedSync pushes a moment later).
+    @ObservationIgnored var onSharedChange: (@MainActor (UInt64) -> Void)?
+    /// Called when a collection is deleted here (a shared one stops syncing on this device).
+    @ObservationIgnored var onCollectionDeleted: (@MainActor (UInt64) -> Void)?
+
+    func isShared(_ collectionID: UInt64?) -> Bool { collectionID.map { sharedRoles[$0] != nil } ?? false }
+
+    /// A collection this account may only read (a viewer of its shared workspace).
+    func isReadOnly(_ collectionID: UInt64?) -> Bool { collectionID.map { sharedRoles[$0] == "viewer" } ?? false }
 
     @ObservationIgnored let store: LibraryStore
     @ObservationIgnored let vault: SecretVault
@@ -129,6 +147,7 @@ final class AppModel {
     private func persist(_ c: SavedCollection) {
         do { try store.saveCollection(c) } catch { saveError = "Couldn't save \(c.name): \(error.localizedDescription)" }
         changed()
+        if !applyingCloud, sharedRoles[c.id] != nil { onSharedChange?(c.id) }
     }
 
     private func persistEnvironments() {
@@ -186,6 +205,22 @@ final class AppModel {
         }
     }
 
+    /// The team environments of organization `org` (`TeamEnvironments`), in place of the ones
+    /// this device had for it.
+    func applyTeam(environments list: [SavedEnvironment], org: String) {
+        let isOrg = { (e: SavedEnvironment) in e.extras["team"] == .string(org) }
+        let before = environments.filter(isOrg)
+        guard before != list else { return }
+        fromCloud {
+            environments = environments.filter { !isOrg($0) } + list
+            persistEnvironments()
+            if let a = state.activeEnvironmentID, before.contains(where: { $0.id == a }), !list.contains(where: { $0.id == a }) {
+                state.activeEnvironmentID = nil
+                persistState()
+            }
+        }
+    }
+
     /// A conflict copy ("shop-api (this iPhone)"): a new collection, synced like any other.
     func addCollectionCopy(_ c: SavedCollection) {
         collections.append(c)
@@ -196,7 +231,7 @@ final class AppModel {
     /// The collections of the organization the Collections tab shows (every one when signed out).
     var visibleCollections: [SavedCollection] {
         guard let scope = orgScope else { return collections }
-        return collections.filter { scope.contains($0) }
+        return collections.filter { c in sharedOrgs[c.id].map { scope.contains(c, org: .some($0)) } ?? scope.contains(c) }
     }
 
     private func persistHistory() {
@@ -208,7 +243,7 @@ final class AppModel {
     }
 
     private func update(collection id: UInt64, _ change: (inout SavedCollection) -> Void) {
-        guard let i = collections.firstIndex(where: { $0.id == id }) else { return }
+        guard !isReadOnly(id), let i = collections.firstIndex(where: { $0.id == id }) else { return }
         change(&collections[i])
         persist(collections[i])
     }
@@ -228,7 +263,7 @@ final class AppModel {
 
     /// "My requests" (of the organization shown), made when missing.
     func myRequests() -> SavedCollection {
-        if let c = visibleCollections.first(where: { $0.name == AutoName.myRequests || $0.name == "Default" }) { return c }
+        if let c = visibleCollections.first(where: { ($0.name == AutoName.myRequests || $0.name == "Default") && !isShared($0.id) }) { return c }
         var c = SavedCollection(name: AutoName.myRequests)
         c.org = orgScope?.newCollectionOrg
         collections.append(c)
@@ -255,6 +290,9 @@ final class AppModel {
     }
 
     func deleteCollection(_ id: UInt64) {
+        onCollectionDeleted?(id)
+        sharedRoles[id] = nil
+        sharedOrgs[id] = nil
         collections.removeAll { $0.id == id }
         do { try store.deleteCollection(id: id) } catch { saveError = error.localizedDescription }
         state.pinnedCollections.removeAll { $0 == id }
@@ -328,7 +366,8 @@ final class AppModel {
     /// A new "Untitled" request, added at once (FV1), in `collectionID` (else My requests).
     @discardableResult
     func newRequest(in collectionID: UInt64? = nil, folder: String = "", from template: SavedRequest? = nil) -> SavedRequest {
-        let target = collection(collectionID) ?? myRequests()
+        // A viewer's shared collection takes nothing: the request goes to My requests.
+        let target = collection(collectionID).flatMap { isReadOnly($0.id) ? nil : $0 } ?? myRequests()
         var r = template ?? SavedRequest()
         r.id = IDs.next()
         if template == nil { r.name = AutoName.untitled }
@@ -339,6 +378,7 @@ final class AppModel {
 
     /// Saves an edited request in place (keeps its folder).
     func save(_ request: SavedRequest) {
+        if let c = collectionOf(request: request.id), isReadOnly(c.id) { return }
         guard let c = collectionOf(request: request.id) else {
             update(collection: myRequests().id) { $0.requests.append(request) }
             return
@@ -384,9 +424,15 @@ final class AppModel {
         return copy
     }
 
+    /// A request kept next to another's version of it (a shared collection's "Keep both").
+    func addRequestCopy(_ r: SavedRequest, to collectionID: UInt64) {
+        update(collection: collectionID) { $0.requests.append(r) }
+    }
+
     /// Moves a request to another collection and/or folder (at the end).
     func moveRequest(_ id: UInt64, to collectionID: UInt64, folder: String = "") {
-        guard var r = request(id), let from = collectionOf(request: id), collection(collectionID) != nil else { return }
+        guard var r = request(id), let from = collectionOf(request: id), collection(collectionID) != nil,
+              !isReadOnly(from.id), !isReadOnly(collectionID) else { return }
         update(collection: from.id) { $0.requests.removeAll { $0.id == id } }
         r.file = folder.isEmpty ? nil : "\(folder)/\(Self.fileName(r.name))"
         update(collection: collectionID) { c in
@@ -398,7 +444,7 @@ final class AppModel {
 
     /// Every place a request can go: (collection, folder) pairs.
     var moveTargets: [(collection: SavedCollection, folder: String)] {
-        collections.flatMap { c in [(c, "")] + c.allFolders.map { (c, $0) } }
+        collections.filter { !isReadOnly($0.id) }.flatMap { c in [(c, "")] + c.allFolders.map { (c, $0) } }
     }
 
     // MARK: - Environments, globals, secrets
