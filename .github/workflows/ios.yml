@@ -110,7 +110,7 @@ jobs:
             exit 1
           fi
 
-      - name: iPad tests and screenshots (${{ env.PAD_NAME }})
+      - name: iPad screenshots (${{ env.PAD_NAME }})
         if: success() || failure()
         working-directory: ios/HITOP
         run: |
@@ -120,7 +120,7 @@ jobs:
           xcrun simctl bootstatus "$PAD_ID" -b
           xcodebuild test-without-building -project HITOPApp.xcodeproj -scheme HITOP \
             -destination "id=$PAD_ID" -derivedDataPath "$RUNNER_TEMP/dd" \
-            -only-testing:HITOPUITests/ScreenshotTests -only-testing:HITOPUITests/PadTests -retry-tests-on-failure -test-iterations 2 \
+            -only-testing:HITOPUITests/ScreenshotTests -retry-tests-on-failure -test-iterations 2 \
             -resultBundlePath "$RUNNER_TEMP/pad.xcresult" 2>&1 | tee "$RUNNER_TEMP/test-pad.log" \
             | grep -E "Test Case|error:|failed|TEST (SUCCEEDED|FAILED)|Executed" || true
           if ! grep -q "TEST EXECUTE SUCCEEDED\|TEST SUCCEEDED" "$RUNNER_TEMP/test-pad.log"; then

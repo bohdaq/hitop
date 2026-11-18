@@ -52,18 +52,16 @@ struct HITOPApp: App {
         .commands {
             // Menu commands come before the focused view (a focused sidebar list would take ⌘↩ itself).
             CommandMenu("Request") {
-                Button("Send") { editor?.send() }
+                Button("Send") { nav.sendCurrent(model) }
                     .keyboardShortcut(.return, modifiers: .command)
-                Button("Save") { editor?.save() }
+                Button("Save") { nav.saveCurrent(model) }
                     .keyboardShortcut("s", modifiers: .command)
                 Divider()
-                Button("New Request") { nav.open(request: model.newRequest().id) }
+                Button("New Request") { nav.newRequest(model) }
                     .keyboardShortcut("n", modifiers: .command)
                 Button("Search") { nav.showSearch() }
                     .keyboardShortcut("k", modifiers: .command)
             }
         }
     }
-
-    private var editor: RequestEditor? { nav.currentRequest.flatMap { model.editor(for: $0) } }
 }

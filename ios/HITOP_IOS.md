@@ -99,10 +99,12 @@ CI: `.github/workflows/ios.yml`, green run https://github.com/bohdaq/hitop/actio
   create a request, send, save, find it in History and open it as a new request; Create order → 201, JSON body, 4/4
   tests in the Tests tab (the sample's timing check is "Responds under 1 s", not the draft's 300 ms: cold CI runners
   are slower), cookies, switch to Production (other host), no environment → explained error; Environments tab
-  switch + masked secrets; variable peek (tap the `${baseUrl}` chip → its value); iPad: ⌘↩ send, ⌘S save, ⌘K search,
-  ⌘N new request (a "Request" menu of scene commands, so a focused sidebar list can't swallow ⌘↩; they also work on an
-  iPhone with a keyboard; the test presses a shortcut twice when the simulator drops the first key command after launch);
-  screenshots.
+  switch + masked secrets; variable peek (tap the `${baseUrl}` chip → its value); screenshots.
+- Keyboard shortcuts (⌘↩ send, ⌘S save, ⌘N new request, ⌘K search) are scene commands (a "Request" menu, so a focused
+  sidebar list can't swallow ⌘↩; they also work on an iPhone with a keyboard) calling `Navigator.sendCurrent`,
+  `saveCurrent`, `newRequest`, `showSearch`; `ShortcutTests` checks those actions on both layouts. Synthetic key presses
+  (`typeKey`) on the CI iPad simulator dropped key commands at random over several runs, so there is no key-press UI
+  test; check the keys on a device or a local simulator with a hardware keyboard.
 - CI retries a failed UI test once (`-retry-tests-on-failure -test-iterations 2`): simulator app launches sometimes time out
   on the hosted runners. CI also runs HitopKit's `swift test` on macOS (JavaScriptCore). `ci.yml` (hitopkit on Linux, brand) runs only on main and
   pull requests, so it hasn't run on this branch; locally HitopKit's Linux tests pass with the CLI compatibility test
@@ -143,8 +145,5 @@ CI: `.github/workflows/ios.yml`, green run https://github.com/bohdaq/hitop/actio
   its own session, like a run), file fields in multipart bodies (text rows only), response search.
 - Targets: rows, chips, tab buttons and toolbar buttons are 44 pt; the JSON fold rows are one line of code tall (the
   whole line toggles).
-- Keyboard: ⌘↩ right after clicking a sidebar row goes to the focused row (the iPad focus system handles Return before
-  key commands); it works once the request column has focus. Moving focus to the editor on selection is left for the I5
-  keyboard pass.
 - Not checked on a device: Keychain on hardware, the old app → new app upgrade with real data (unit-tested with fixture
   files of the old shapes), App Store submission (I6).
