@@ -153,7 +153,7 @@ CI: `.github/workflows/ios.yml`, green run https://github.com/bohdaq/hitop/actio
 
 ## I2: what landed (2026-11-18, branch `ios-i2`)
 
-CI: `.github/workflows/ios.yml`, green run CI_RUN_LINK (artifact `screenshots`: 06–11 are I2's).
+CI: `.github/workflows/ios.yml`, green run https://github.com/bohdaq/hitop/actions/runs/44300568654 (commit f6ede7b; jobs `app`, `core` with the real-server end-to-end test, `hitopkit`; artifact `screenshots`: 06–11 are I2's). UI test fixes on the way: List cells below the fold need a scroll before XCUITest sees them, the rename alert's field is found through the alert, and the sync status carries its id on the text only.
 
 **Server change (needs a sync-server deploy)**
 - sync-server `oidc.rs` `return_to` now also takes exactly `hitop://sign-in` (no port, path, query, user info or
@@ -221,7 +221,7 @@ CI: `.github/workflows/ios.yml`, green run CI_RUN_LINK (artifact `screenshots`: 
 
 **Account screen (`AccountView`)** opens from the organization pill on Collections (the drafts' pill; on iPad the
 person icon in the sidebar header). Signed out: what HITOP Cloud does + Sign in. Signed in: email, server, sync status +
-Sync now, notices, Organization (personal + teams from `GET /v1/orgs`; picking one filters Collections the way the web
+Sync now, notices, Devices (right under the account), Organization (personal + teams from `GET /v1/orgs`; picking one filters Collections the way the web
 app's `visibleCollections` does: a collection's `org`, none = personal; new collections get `org`), Plan & usage
 (`GET /v1/orgs/:org/usage`: plan name and meters with the web app's store wording), Devices (`GET /v1/me/devices`: this
 device, last use; rename, remove with force for one holding shared keys), Sign out, About HITOP (moved here from the pill).
