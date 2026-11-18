@@ -13,7 +13,7 @@ Yaak is a fast desktop API client by the author of Insomnia, with REST, GraphQL,
 
 | | HITOP | Yaak |
 | --- | --- | --- |
-| **Price** | Free: CLI, web app, desktop builds on GitHub, also at work. Mac App Store app $4.99 and iOS $2.99, paid once; [HITOP Cloud](/pricing.html) (optional): free for 3 people, Pro $6 a month, Team $10 per seat a month (billed yearly) | Free for personal use; at work Individual $79 per year or $399 once, Business $149 per user per year |
+| **Price** | Free: CLI, web app, desktop builds on GitHub, also at work. Mac App Store and iOS apps free; [HITOP Cloud](/pricing.html) (optional): free for 3 people, Pro $6 a month, Team $10 per seat a month (billed yearly) | Free for personal use; at work Individual $79 per year or $399 once, Business $149 per user per year |
 | **License** | MIT, binaries included | Source MIT; licensing applies to the prebuilt binaries |
 | **Account** | None for the apps and the CLI; HITOP Cloud is a sign-in (email, Google or GitHub) | None for the trial; a purchased license is tied to a Yaak account |
 | **Files for Git** | The collection folder is the source: `hitop.yaml`, one YAML file per request, `environments/`. With HITOP Cloud, the web app saves a collection to a GitHub repository on every change | Directory sync mirrors a workspace to YAML files, one per resource (`yaak.<id>.yaml`), with Git actions in the app; environments are left out unless marked sharable |

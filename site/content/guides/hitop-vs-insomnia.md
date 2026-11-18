@@ -13,7 +13,7 @@ Insomnia, by Kong, is a desktop client for APIs with three storage options (Loca
 
 | | HITOP | Insomnia |
 | --- | --- | --- |
-| **Price** | Free: CLI, web app, desktop builds on GitHub. Mac App Store app $4.99 and iOS $2.99, paid once; [HITOP Cloud](/pricing.html) (optional): free for 3 people, Pro $6 a month, Team $10 per seat a month (billed yearly) | Essentials $0; Pro $12 and Enterprise $45 per user per month |
+| **Price** | Free: CLI, web app, desktop builds on GitHub. Mac App Store and iOS apps free; [HITOP Cloud](/pricing.html) (optional): free for 3 people, Pro $6 a month, Team $10 per seat a month (billed yearly) | Essentials $0; Pro $12 and Enterprise $45 per user per month |
 | **License** | MIT | Apache-2.0 |
 | **Account** | None for the apps and the CLI; HITOP Cloud is a sign-in (email, Google or GitHub) | The local Scratch Pad works without one; the project says accounts are needed for most capabilities |
 | **Storage** | A folder of YAML files, one per request, or local app storage. Signed in to HITOP Cloud: a cloud library on every device, saving to a GitHub repository on every change, and end to end encrypted shared collections | Local Vault, Git Sync (free for up to 3 users) and Cloud Sync (optionally end to end encrypted), in any combination |

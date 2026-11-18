@@ -35,7 +35,7 @@ const FAQ = [
   ["Why do API calls fail in other browser tools?", "Browsers block a page from reading another site's response unless that site sends CORS headers, and most APIs don't. The HITOP web app avoids this by sending requests to public addresses through its proxy at hitop.rws8.tech."],
   ["Does the proxy keep my requests?", "No. It makes the request and returns the response, without storing or logging headers or bodies. The privacy policy has the details. For secrets you'd rather not pass through any server, use the Mac or iOS app, the CLI or an extension: they send requests from your device."],
   ["Can I test localhost?", "Yes. The web app sends requests to localhost straight from your browser, so your local API must allow the origin https://hitop.rws8.tech in its CORS headers. For other machines on your network, use the Mac app, the CLI or an extension: browsers block a public page from calling them."],
-  ["Is it really free?", "The web app, the Chrome and Firefox extensions and the CLI are free and MIT licensed. The Mac app is $4.99 and the iOS app is $2.99, each paid once."],
+  ["Is it really free?", "The web app, the Chrome and Firefox extensions and the CLI are free and MIT licensed. The Mac and iOS apps are free on the App Store too. Only HITOP Cloud, the optional hosted sync for teams, has paid plans."],
   ["Can I bring my Postman collections?", "Yes. Import Postman v2.1 collections, and export back to Postman v2.1 or HITOP JSON."],
   ["Where is my data stored?", "On your device: browser storage for the web app and extensions, files for the Mac app and CLI, app storage on iOS. Nothing is synced to a server unless you turn on hitop sync, which encrypts it on your device first."],
   ["Does it work offline?", "The Mac app, the iOS app and the CLI work with no internet connection, which is handy for local and air gapped services."],
@@ -183,8 +183,8 @@ export function structuredData() {
       author: { "@id": "https://hitop.rws8.tech/#organization" },
       offers: [
         { "@type": "Offer", name: "Web app, extensions and CLI", price: "0", priceCurrency: "USD" },
-        { "@type": "Offer", name: "macOS app", price: "4.99", priceCurrency: "USD", url: MAC_APP },
-        { "@type": "Offer", name: "iOS app", price: "2.99", priceCurrency: "USD", url: IOS_APP },
+        { "@type": "Offer", name: "macOS app", price: "0", priceCurrency: "USD", url: MAC_APP },
+        { "@type": "Offer", name: "iOS app", price: "0", priceCurrency: "USD", url: IOS_APP },
       ],
     },
     {

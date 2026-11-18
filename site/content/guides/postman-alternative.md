@@ -22,7 +22,7 @@ A longer comparison with sources is in [HITOP vs Postman](/guides/hitop-vs-postm
 | **Works offline** | Mac, iOS and CLI apps | Partial |
 | **Installation** | Web app (no install), extensions, Mac, iOS, CLI | Desktop or web app with an account |
 | **License** | MIT (web, extensions, CLI) | Proprietary |
-| **Cost** | Free (web, extensions, CLI); Mac $4.99, iOS $2.99 once; HITOP Cloud free for 3 people, Pro $6 a month, Team $10 per seat | Free for 1 user, Solo $9 per month, Team $19 per user per month (billed annually), Enterprise by quote (checked 2026-11-01) |
+| **Cost** | Free (web, extensions, CLI); Mac and iOS apps free; HITOP Cloud free for 3 people, Pro $6 a month, Team $10 per seat | Free for 1 user, Solo $9 per month, Team $19 per user per month (billed annually), Enterprise by quote (checked 2026-11-01) |
 | **Collections** | Yes | Yes |
 | **Variables** | Yes | Yes |
 | **Scripts before and after** | Yes | Yes |

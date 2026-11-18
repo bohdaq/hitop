@@ -17,10 +17,11 @@ export const PLATFORMS = [
   {
     icon: "desktop",
     name: "macOS",
-    price: "$4.99",
-    note: "One time · macOS 12 or later",
+    price: "Free",
+    note: "Mac App Store · macOS 12 or later",
     points: ["Native app, requests sent by macOS itself", "Reaches localhost and your private network", "Collections saved as files on your Mac"],
     action: [MAC_APP, "Get the Mac app"],
+    badge: "Download HITOP on the Mac App Store",
   },
   {
     icon: "download-simple",
@@ -33,10 +34,11 @@ export const PLATFORMS = [
   {
     icon: "device-mobile",
     name: "iPhone and iPad",
-    price: "$2.99",
-    note: "One time · iOS 17 or later",
+    price: "Free",
+    note: "App Store · iOS 17 or later",
     points: ["Check an API from your phone in seconds", "Requests sent by iOS itself, no proxy", "Collections stored on the device"],
     action: [IOS_APP, "Get the iOS app"],
+    badge: "Download HITOP on the App Store",
   },
   {
     icon: "terminal-window",
@@ -66,7 +68,9 @@ export function platformCards() {
             <ul>
               ${p.points.map((point) => html`<li>${unsafeHTML(icon("check"))}<span>${point}</span></li>`)}
             </ul>
-            <a class="text-link" href=${p.action[0]}>${p.action[1]} ${unsafeHTML(icon("arrow-right"))}</a>
+            ${p.badge
+              ? html`<a class="store-badge" href=${p.action[0]}><img src="/badges/app-store.svg" alt=${p.badge} width="120" height="40" loading="lazy" /></a>`
+              : html`<a class="text-link" href=${p.action[0]}>${p.action[1]} ${unsafeHTML(icon("arrow-right"))}</a>`}
           </article>`,
       )}
     </div>

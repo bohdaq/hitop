@@ -54,6 +54,9 @@ for (const f of ["favicon.svg", "apple-touch-icon.png", "favicon.png", "favicon-
 }
 
 copyFileSync(join(publicAssets, "favicon.ico"), join(dist, "favicon.ico"));
+// Apple's official "Download on the App Store" badge (developer.apple.com, unaltered).
+mkdirSync(join(dist, "badges"), { recursive: true });
+copyFileSync(join(publicAssets, "badges", "app-store.svg"), join(dist, "badges", "app-store.svg"));
 // IndexNow key file (Bing, Yandex…): proves ownership when changed pages are announced.
 write("2c32426256ab5e82b6a7fa63c90848c0.txt", "2c32426256ab5e82b6a7fa63c90848c0\n");
 

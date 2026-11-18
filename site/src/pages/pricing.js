@@ -1,5 +1,5 @@
 // /pricing.html: the same URL as the old site, so existing links keep working. The apps and the
-// CLI stay free (or paid once); HITOP Cloud (spec/CLOUD_SERVICE.md section 3 and 8) is the only
+// CLI stay free; HITOP Cloud (spec/CLOUD_SERVICE.md section 3 and 8) is the only
 // subscription. Prices are the owner's (Q4), set in Stripe; Stripe's checkout shows the final ones.
 import { html } from "lit";
 import { unsafeHTML } from "lit/directives/unsafe-html.js";
@@ -11,7 +11,7 @@ export const meta = {
   path: "/pricing.html",
   title: "HITOP pricing: free apps and CLI, HITOP Cloud from $6 a month",
   description:
-    "The HITOP web app, extensions, CLI and self hosted sync server are free. The Mac app is $4.99 and the iOS app $2.99, paid once. HITOP Cloud, the hosted end to end encrypted team service, is free for 3 people, Pro $6 a month, Team $10 per seat.",
+    "The HITOP web app, extensions, CLI, Mac and iOS apps and the self hosted sync server are free. HITOP Cloud, the hosted end to end encrypted team service, is free for 3 people, Pro $6 a month, Team $10 per seat.",
 };
 
 export const PORTAL = "https://cloud.hitop.rws8.tech/";
@@ -56,7 +56,7 @@ const TIERS = [
 ];
 
 const FAQ = [
-  ["Is there a subscription?", "Only for HITOP Cloud, the hosted team service. The web app, the extensions, the CLI and the self hosted sync server stay free, and the Mac and iOS apps are paid once with free updates."],
+  ["Is there a subscription?", "Only for HITOP Cloud, the hosted team service. The web app, the extensions, the CLI and the self hosted sync server and the Mac and iOS apps stay free."],
   ["Can HITOP Cloud read my collections?", "No. Collections are encrypted on your devices before they are sent, and the server never holds a key that opens them. The security page says what the server does see, and that no outside firm has reviewed the encryption yet."],
   ["Do you run monitors for me?", "No. Run your collections in your CI or with hitop schedule; HITOP Cloud keeps the encrypted run history and sends alerts when a run starts or stops failing. Running your collection on our machines would need a key we are built never to hold."],
   ["What counts as a seat?", "Every person in the organization or in one of its workspaces, viewers included. Team includes 5 guest viewers for free, so you can show a collection to a stakeholder. Runner credentials never count."],

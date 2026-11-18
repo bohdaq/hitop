@@ -50,4 +50,4 @@ Create collections that serve as living documentation for your APIs. Share them 
 
 ## Getting started with HITOP
 
-The HITOP web app, extensions and CLI are free and open source under the MIT License. The Mac app costs $4.99 and the iOS app $2.99, each paid once, with no subscription. Open the web app at hitop.rws8.tech/app/ and start testing your APIs immediately.
+The HITOP web app, extensions and CLI are free and open source under the MIT License. The Mac and iOS apps are free on the App Store too. Open the web app at hitop.rws8.tech/app/ and start testing your APIs immediately.

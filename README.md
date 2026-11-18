@@ -12,8 +12,14 @@ No account, MIT licensed.
   [GitHub Releases](https://github.com/bohdaq/hitop/releases), `ghcr.io/bohdaq/hitop`)
 - **Web app**: [hitop.rws8.tech/app](https://hitop.rws8.tech/app/), nothing to install
 - **Desktop**: free builds for macOS, Windows and Linux on
-  [GitHub Releases](https://github.com/bohdaq/hitop/releases), or the
-  [Mac App Store](https://apps.apple.com/app/hitop-api-client/id6785294166) app
+  [GitHub Releases](https://github.com/bohdaq/hitop/releases)
+- **App Store** (free): Mac and iPhone/iPad
+- **Browser extensions** (free): [Chrome Web Store](https://chromewebstore.google.com/detail/mmbpagencfjfgeicmeobbmeocdpeokdk), [Firefox Add-ons](https://addons.mozilla.org/addon/hitop/)
+
+<p>
+  <a href="https://apps.apple.com/app/hitop-api-client/id6785294166"><img src="site/public-assets/badges/app-store.svg" alt="Download HITOP on the Mac App Store" height="40"></a>
+  <a href="https://apps.apple.com/app/hitop-http-client/id6785326628"><img src="site/public-assets/badges/app-store.svg" alt="Download HITOP for iPhone and iPad on the App Store" height="40"></a>
+</p>
 
 ## From a Postman export to a green CI run
 

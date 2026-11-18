@@ -15,7 +15,7 @@ If your team uses Postman's monitors, mock servers or published documentation, H
 
 | | HITOP | Postman |
 | --- | --- | --- |
-| **Price** | Free: CLI, web app, desktop builds on GitHub. Mac App Store app $4.99 and iOS $2.99, paid once; [HITOP Cloud](/pricing.html) (optional): free for 3 people, Pro $6 a month, Team $10 per seat a month (billed yearly) | Free plan for 1 user; Solo $9 per month; Team $19 per user per month (both billed annually); Enterprise by quote |
+| **Price** | Free: CLI, web app, desktop builds on GitHub. Mac App Store and iOS apps free; [HITOP Cloud](/pricing.html) (optional): free for 3 people, Pro $6 a month, Team $10 per seat a month (billed yearly) | Free plan for 1 user; Solo $9 per month; Team $19 per user per month (both billed annually); Enterprise by quote |
 | **Account** | None for the apps and the CLI; HITOP Cloud is a sign-in (email, Google or GitHub) | The free plan starts at a sign up page; the Postman CLI can also set up a local project without an account |
 | **License** | MIT (CLI, core library, desktop, web app) | Postman's own terms; Newman, the older runner, is Apache-2.0 |
 | **Where collections live** | A folder of YAML files, one file per request, or local app storage. Signed in to HITOP Cloud: your cloud library on every device, a GitHub repository saved on every change, or an end to end encrypted shared collection | Postman Cloud workspaces; Native Git keeps collections, environments and specs as files under `postman/` in a local Git repository and syncs to Postman Cloud |

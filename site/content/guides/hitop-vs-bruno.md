@@ -13,7 +13,7 @@ Bruno and HITOP share the main idea: collections are files in a folder, so Git i
 
 | | HITOP | Bruno |
 | --- | --- | --- |
-| **Price** | Free: CLI, web app, desktop builds on GitHub. Mac App Store app $4.99 and iOS $2.99, paid once; [HITOP Cloud](/pricing.html) (optional): free for 3 people, Pro $6 a month, Team $10 per seat a month (billed yearly) | Open Source edition $0; Pro $6 and Ultimate $11 per user per month, billed annually |
+| **Price** | Free: CLI, web app, desktop builds on GitHub. Mac App Store and iOS apps free; [HITOP Cloud](/pricing.html) (optional): free for 3 people, Pro $6 a month, Team $10 per seat a month (billed yearly) | Open Source edition $0; Pro $6 and Ultimate $11 per user per month, billed annually |
 | **License** | MIT | MIT |
 | **Account and cloud** | No account needed. HITOP Cloud is optional: a cloud library on every device, saving to GitHub, end to end encrypted shared collections | No cloud sync: the project says Bruno is offline only, with no plans to add it |
 | **File format** | YAML: `hitop.yaml`, one file per request under `requests/`, `environments/*.yaml` ([spec](https://github.com/bohdaq/hitop/blob/main/spec/collection-format.md), CC BY 4.0) | Bru (`.bru` files, `bruno.json`) or, from Bruno 3.0, YAML with `opencollection.yml` |

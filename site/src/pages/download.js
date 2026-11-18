@@ -3,7 +3,7 @@
 import { html } from "lit";
 import { unsafeHTML } from "lit/directives/unsafe-html.js";
 import { icon } from "../icons.js";
-import { CHROME, FIREFOX, footer, GITHUB, header, MAC_APP } from "../shell.js";
+import { CHROME, FIREFOX, footer, GITHUB, header, IOS_APP, MAC_APP } from "../shell.js";
 
 export const meta = {
   path: "/download/",
@@ -46,8 +46,15 @@ export function render() {
         <a class="text-link" href="#cli">Install the CLI ${unsafeHTML(icon("arrow-right"))}</a>
       </p>
 
+      <h2 id="stores">App Store</h2>
+      <p>Free on the App Store for Mac, iPhone and iPad, updated by the store.</p>
+      <p class="store-badges">
+        <a class="store-badge" href=${MAC_APP}><img src="/badges/app-store.svg" alt="Download HITOP on the Mac App Store" width="120" height="40" /></a>
+        <a class="store-badge" href=${IOS_APP}><img src="/badges/app-store.svg" alt="Download HITOP for iPhone and iPad on the App Store" width="120" height="40" /></a>
+      </p>
+
       <h2 id="desktop">Desktop app</h2>
-      <p data-release-note="desktop">From <a href=${`${RELEASES}?q=desktop-v&expanded=true`}>GitHub Releases</a>. On a Mac, the <a href=${MAC_APP}>Mac App Store version</a> is signed and updates itself.</p>
+      <p data-release-note="desktop">From <a href=${`${RELEASES}?q=desktop-v&expanded=true`}>GitHub Releases</a>. On a Mac, you can also get the free <a href=${MAC_APP}>Mac App Store version</a>.</p>
       <ul class="downloads">
         ${DESKTOP.map(
           ([kind, name, note, label, pattern]) => html`<li>
