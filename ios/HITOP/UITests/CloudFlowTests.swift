@@ -115,17 +115,27 @@ final class CloudFlowTests: XCTestCase {
         waitLabel(shop, contains: "synced")
 
         // Renamed here while another browser changed it: theirs stays, ours is a copy.
-        shop.press(forDuration: 1.2)
+        // Folded first, so every card (the copy comes last) is on screen: List cells below the
+        // fold aren't in the hierarchy.
+        if shop.value as? String == "expanded" { shop.tap() }
+        shop.swipeLeft()
         let rename = app.buttons["Rename"].firstMatch
         wait(rename)
         rename.tap()
         let field = app.alerts.textFields.firstMatch
         wait(field)
-        field.typeText(" v2")
+        // Replace the whole name (the field may come with its text selected or not).
+        field.tap()
+        let old = (field.value as? String) ?? ""
+        field.typeText(String(repeating: XCUIKeyboardKey.delete.rawValue, count: old.count + 2))
+        field.typeText("shop-api v2")
         app.alerts.buttons["Save"].firstMatch.tap()
 
         let copy = app.el("collection-shop-api v2 (this iPhone)")
-        wait(copy, 25)
+        let deadline = Date().addingTimeInterval(30)
+        while !copy.exists && Date() < deadline { RunLoop.current.run(until: Date().addingTimeInterval(0.5)) }
+        let cards = app.descendants(matching: .any).matching(NSPredicate(format: "identifier BEGINSWITH 'collection-'")).allElementsBoundByIndex.map(\.identifier)
+        XCTAssertTrue(copy.exists, "no conflict copy; cards: \(cards)")
         wait(app.el("collection-shop-api (edited)"))
         let notice = app.el("sync-notice")
         wait(notice)

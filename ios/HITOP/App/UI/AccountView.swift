@@ -274,11 +274,10 @@ struct AccountView: View {
             color = Theme.textMuted
         }
         return Label {
-            Text(text).font(Typo.caption).foregroundStyle(color).lineLimit(3)
+            Text(text).font(Typo.caption).foregroundStyle(color).lineLimit(3).accessibilityIdentifier("sync-status")
         } icon: {
-            Image(systemName: s.error == nil ? "checkmark.icloud" : "exclamationmark.icloud").foregroundStyle(color)
+            Image(systemName: s.error == nil ? "checkmark.icloud" : "exclamationmark.icloud").foregroundStyle(color).accessibilityHidden(true)
         }
-        .accessibilityIdentifier("sync-status")
     }
 
     private func header(_ s: String) -> some View {
