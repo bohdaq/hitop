@@ -21,7 +21,7 @@ Activity/Siri).
 | --- | --- | --- |
 | I0 | Project: XcodeGen `ios/HITOP/project.yml` (bundle id of the live app, so it ships as an update), iOS 26 target, design tokens + glass components, Geist bundled (OFL), CI job on a macOS runner: build, unit tests, UI tests on the iOS 26 simulator, screenshots | done (main 5d79794, 2026-11-18) |
 | I1 | Collections tab, request editor (params, headers, body, auth, scripts, tests), Send, response sheet (status, timing, body with folding, headers, tests, cookies), environments and variables (peek), history | done (main 5d79794, 2026-11-18) |
-| I2 | HITOP Cloud sign-in (Apple, Google, GitHub) and personal library sync (collections, environments, globals), Account screen (devices, organization, plan usage) | done (branch `ios-i2`, 2026-11-18; needs the sync-server deploy below) |
+| I2 | HITOP Cloud sign-in (Apple, Google, GitHub) and personal library sync (collections, environments, globals), Account screen (devices, organization, plan usage) | done; sync server deployed 2026-11-18 (branch `ios-i2`, 2026-11-18; needs the sync-server deploy below) |
 | I2b | Shared end-to-end encrypted collections (workspaces): key handling through hitop-sync-crypto rules, ported or via a Rust xcframework of hitop-wasm's core; team environments | planned |
 | I3 | Collection runner + run report, Live Activity, widgets, App Intents | planned |
 | I4 | WebSocket, SSE, GraphQL schema, gRPC | planned |
