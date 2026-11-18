@@ -88,6 +88,8 @@ struct Sender: Sendable {
         case let .bearer(t)?: .bearer(token: t)
         case let .basic(u, p)?: .basic(username: u, password: p)
         case let .apiKey(k, v, q)?: .apiKey(key: k, value: v, location: q ? .query : .header)
+        // OAuth 2, AWS Signature, Digest... (set in the web or desktop app): not sent from here yet.
+        case .other?: Auth.none
         }
     }
 

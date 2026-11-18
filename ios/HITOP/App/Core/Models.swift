@@ -56,6 +56,17 @@ extension KeyedDecodingContainer where K == AnyKey {
         (try? decodeIfPresent(T.self, forKey: AnyKey(key))) ?? nil
     }
 
+    /// A field this app models. A value of another type than the app expects (written by a newer
+    /// app, or by hand) is put in `kept` and written back as it came, never replaced by `fallback`:
+    /// a collection edited here goes to every device through sync.
+    func typed<T: Decodable>(_ key: String, _ fallback: T, kept: inout [String: JSONAny]) -> T {
+        let k = AnyKey(key)
+        guard contains(k) else { return fallback }
+        if let v = try? decode(T.self, forKey: k) { return v }
+        if let raw = try? decode(JSONAny.self, forKey: k), raw != .null { kept[key] = raw }
+        return fallback
+    }
+
     /// Every key not in `known`.
     func extras(_ known: Set<String>) -> [String: JSONAny] {
         var out: [String: JSONAny] = [:]
@@ -169,6 +180,9 @@ enum AuthSpec: Codable, Hashable, Sendable {
     case bearer(token: String)
     case basic(username: String, password: String)
     case apiKey(key: String, value: String, inQuery: Bool)
+    /// A type this version doesn't edit or send (the web app's oauth2, awsv4, digest...): kept as it
+    /// came, so a collection edited here and synced keeps it everywhere else.
+    case other(type: String, fields: [String: JSONAny])
 
     var kind: String {
         switch self {
@@ -176,16 +190,18 @@ enum AuthSpec: Codable, Hashable, Sendable {
         case .bearer: "bearer"
         case .basic: "basic"
         case .apiKey: "apikey"
+        case let .other(type, _): type
         }
     }
 
     init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: AnyKey.self)
         switch c.value("type", "none") {
+        case "none": self = .none
         case "bearer": self = .bearer(token: c.value("token", ""))
         case "basic": self = .basic(username: c.value("username", ""), password: c.value("password", ""))
         case "apikey": self = .apiKey(key: c.value("key", ""), value: c.value("value", ""), inQuery: c.value("in", "header") == "query")
-        default: self = .none
+        case let type: self = .other(type: type, fields: c.extras(["type"]))
         }
     }
 
@@ -193,6 +209,7 @@ enum AuthSpec: Codable, Hashable, Sendable {
         var c = encoder.container(keyedBy: AnyKey.self)
         try c.put("type", kind)
         switch self {
+        case let .other(_, fields): try c.putExtras(fields, skipping: ["type"])
         case .none: break
         case let .bearer(t): try c.put("token", t)
         case let .basic(u, p):
@@ -278,46 +295,51 @@ struct SavedRequest: Codable, Hashable, Sendable, Identifiable {
         id = c.value("id", UInt64(0))
         if id == 0, let s: String = c.optional("id") { id = derivedID(s) }
         if id == 0 { id = IDs.next() }
-        name = c.value("name", "Untitled")
-        url = c.value("url", "")
-        method = c.value("method", "GET").uppercased()
-        headers = c.value("headers", [KeyValue]()).filter { !($0.name.isEmpty && $0.value.isEmpty) }
-        body = c.value("body", "")
-        preRequestScript = c.value("preRequestScript", "")
-        postRequestScript = c.value("postRequestScript", "")
-        auth = c.optional("auth")
-        bodyMode = c.value("bodyMode", "raw")
-        bodyType = c.optional("bodyType")
-        formFields = c.value("formFields", [FormRow]())
-        disabledParams = c.value("disabledParams", [ParamRow]())
-        let g: [String: String] = c.value("graphql", [:])
+        var kept: [String: JSONAny] = [:]
+        name = c.typed("name", "Untitled", kept: &kept)
+        url = c.typed("url", "", kept: &kept)
+        method = c.typed("method", "GET", kept: &kept).uppercased()
+        headers = c.typed("headers", [KeyValue](), kept: &kept).filter { !($0.name.isEmpty && $0.value.isEmpty) }
+        body = c.typed("body", "", kept: &kept)
+        preRequestScript = c.typed("preRequestScript", "", kept: &kept)
+        postRequestScript = c.typed("postRequestScript", "", kept: &kept)
+        auth = c.typed("auth", AuthSpec?.none, kept: &kept)
+        bodyMode = c.typed("bodyMode", "raw", kept: &kept)
+        bodyType = c.typed("bodyType", String?.none, kept: &kept)
+        formFields = c.typed("formFields", [FormRow](), kept: &kept)
+        disabledParams = c.typed("disabledParams", [ParamRow](), kept: &kept)
+        let g: [String: String] = c.typed("graphql", [:], kept: &kept)
         graphqlVariables = g["variables"] ?? ""
         graphqlOperationName = g["operationName"] ?? ""
-        file = c.optional("file")
-        extras = c.extras(Self.known)
+        file = c.typed("file", String?.none, kept: &kept)
+        extras = c.extras(Self.known).merging(kept) { a, _ in a }
     }
 
     func encode(to encoder: Encoder) throws {
         var c = encoder.container(keyedBy: AnyKey.self)
+        // A field kept raw (`typed`) is written from `extras`, as it came.
+        func put<T: Encodable>(_ key: String, _ value: T) throws {
+            if extras[key] == nil { try c.put(key, value) }
+        }
         try c.put("id", id)
-        try c.put("name", name)
-        try c.put("url", url)
-        try c.put("method", method)
-        try c.put("headers", headers)
-        try c.put("body", body)
-        try c.put("preRequestScript", preRequestScript)
-        try c.put("postRequestScript", postRequestScript)
-        if let auth { try c.put("auth", auth) }
-        try c.put("bodyMode", bodyMode)
-        if let bodyType { try c.put("bodyType", bodyType) }
-        if !formFields.isEmpty { try c.put("formFields", formFields) }
-        if !disabledParams.isEmpty { try c.put("disabledParams", disabledParams) }
+        try put("name", name)
+        try put("url", url)
+        try put("method", method)
+        try put("headers", headers)
+        try put("body", body)
+        try put("preRequestScript", preRequestScript)
+        try put("postRequestScript", postRequestScript)
+        if let auth { try put("auth", auth) }
+        try put("bodyMode", bodyMode)
+        if let bodyType { try put("bodyType", bodyType) }
+        if !formFields.isEmpty { try put("formFields", formFields) }
+        if !disabledParams.isEmpty { try put("disabledParams", disabledParams) }
         var g: [String: String] = [:]
         if !graphqlVariables.isEmpty { g["variables"] = graphqlVariables }
         if !graphqlOperationName.isEmpty { g["operationName"] = graphqlOperationName }
-        if !g.isEmpty { try c.put("graphql", g) }
-        if let file, !file.isEmpty { try c.put("file", file) }
-        try c.putExtras(extras, skipping: Self.known)
+        if !g.isEmpty { try put("graphql", g) }
+        if let file, !file.isEmpty { try put("file", file) }
+        try c.putExtras(extras, skipping: ["id"])
     }
 
     /// The folder the request is in ("" at the top): its `file` without the last part.
@@ -409,23 +431,37 @@ struct SavedCollection: Codable, Hashable, Sendable, Identifiable {
         id = c.value("id", UInt64(0))
         if id == 0, let s: String = c.optional("id") { id = derivedID(s) }
         if id == 0 { id = IDs.next() }
-        name = c.value("name", "Collection")
-        requests = c.value("requests", [SavedRequest]())
-        variables = c.value("variables", [String: String]())
-        auth = c.optional("auth")
-        folders = c.value("folders", [String]())
-        extras = c.extras(Self.known)
+        var kept: [String: JSONAny] = [:]
+        name = c.typed("name", "Collection", kept: &kept)
+        requests = c.typed("requests", [SavedRequest](), kept: &kept)
+        variables = c.typed("variables", [String: String](), kept: &kept)
+        auth = c.typed("auth", AuthSpec?.none, kept: &kept)
+        folders = c.typed("folders", [String](), kept: &kept)
+        extras = c.extras(Self.known).merging(kept) { a, _ in a }
     }
 
     func encode(to encoder: Encoder) throws {
         var c = encoder.container(keyedBy: AnyKey.self)
+        func put<T: Encodable>(_ key: String, _ value: T) throws {
+            if extras[key] == nil { try c.put(key, value) }
+        }
         try c.put("id", id)
-        try c.put("name", name)
-        try c.put("requests", requests)
-        try c.put("variables", variables)
-        if let auth { try c.put("auth", auth) }
-        if !folders.isEmpty { try c.put("folders", folders) }
-        try c.putExtras(extras, skipping: Self.known)
+        try put("name", name)
+        try put("requests", requests)
+        try put("variables", variables)
+        if let auth { try put("auth", auth) }
+        if !folders.isEmpty { try put("folders", folders) }
+        try c.putExtras(extras, skipping: ["id"])
+    }
+
+    /// The organization a HITOP Cloud collection is filed under (`org`, set by the web app's org
+    /// switcher); nil = the person's own (personal) library.
+    var org: String? {
+        get {
+            if case let .string(o)? = extras["org"], !o.isEmpty { return o }
+            return nil
+        }
+        set { extras["org"] = newValue.map(JSONAny.string) }
     }
 
     /// Every folder: the stored ones, then any a request is in, parents before children.
@@ -450,6 +486,8 @@ struct SavedEnvironment: Codable, Hashable, Sendable, Identifiable {
     /// Names of the secret variables.
     var secrets: [String]
     var extras: [String: JSONAny]
+    /// The id came as a number (older web app data): written back as one.
+    var numericID = false
 
     init(id: String = String(IDs.next()), name: String, variables: [String: String] = [:], secrets: [String] = [], extras: [String: JSONAny] = [:]) {
         self.id = id
@@ -463,20 +501,31 @@ struct SavedEnvironment: Codable, Hashable, Sendable, Identifiable {
 
     init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: AnyKey.self)
-        if let s: String = c.optional("id") { id = s } else if let n: UInt64 = c.optional("id") { id = String(n) } else { id = String(IDs.next()) }
-        name = c.value("name", "Environment")
-        variables = c.value("variables", [String: String]())
-        secrets = c.value("secrets", [String]())
-        extras = c.extras(Self.known)
+        if let s: String = c.optional("id") {
+            id = s
+        } else if let n: UInt64 = c.optional("id") {
+            id = String(n)
+            numericID = true
+        } else {
+            id = String(IDs.next())
+        }
+        var kept: [String: JSONAny] = [:]
+        name = c.typed("name", "Environment", kept: &kept)
+        variables = c.typed("variables", [String: String](), kept: &kept)
+        secrets = c.typed("secrets", [String](), kept: &kept)
+        extras = c.extras(Self.known).merging(kept) { a, _ in a }
     }
 
     func encode(to encoder: Encoder) throws {
         var c = encoder.container(keyedBy: AnyKey.self)
-        try c.put("id", id)
-        try c.put("name", name)
-        try c.put("variables", variables)
-        if !secrets.isEmpty { try c.put("secrets", secrets) }
-        try c.putExtras(extras, skipping: Self.known)
+        func put<T: Encodable>(_ key: String, _ value: T) throws {
+            if extras[key] == nil { try c.put(key, value) }
+        }
+        if numericID, let n = UInt64(id) { try c.put("id", n) } else { try c.put("id", id) }
+        try put("name", name)
+        try put("variables", variables)
+        if !secrets.isEmpty { try put("secrets", secrets) }
+        try c.putExtras(extras, skipping: ["id"])
     }
 }
 

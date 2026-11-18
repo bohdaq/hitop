@@ -1,6 +1,24 @@
 import Foundation
 import Observation
 
+/// Which HITOP Cloud organization's collections show (the web app's `visibleCollections`): a
+/// collection's `org`, none = the personal one.
+struct OrgScope: Hashable, Sendable {
+    /// The organization shown; nil = personal.
+    var current: String?
+    /// The personal organization's id (a collection may name it in `org`).
+    var personal: String?
+
+    func contains(_ c: SavedCollection) -> Bool {
+        let o = c.org
+        if current == nil || current == personal { return o == nil || o == personal }
+        return o == current
+    }
+
+    /// The `org` a collection made now gets.
+    var newCollectionOrg: String? { current == personal ? nil : current }
+}
+
 /// The app's state and every change to it. Views read it and call its methods; it saves through
 /// a `LibraryStore` and a `SecretVault`. Foundation + Observation only (tested on Linux too).
 @MainActor
@@ -18,9 +36,22 @@ final class AppModel {
     /// The last save error, for a banner.
     var saveError: String?
 
+    /// HITOP Cloud organizations: which one the Collections tab shows. nil = every collection
+    /// (signed out, or a server without organizations).
+    var orgScope: OrgScope?
+
     @ObservationIgnored let store: LibraryStore
     @ObservationIgnored let vault: SecretVault
     @ObservationIgnored let sender: Sender
+    /// Called after every change the personal library syncs (collections, environments, globals,
+    /// the active environment): LibrarySync pushes a moment later.
+    @ObservationIgnored var onLibraryChange: (@MainActor () -> Void)?
+    /// Changes coming from HITOP Cloud don't call `onLibraryChange`.
+    @ObservationIgnored private var applyingCloud = false
+
+    private func changed() {
+        if !applyingCloud { onLibraryChange?() }
+    }
 
     init(store: LibraryStore, vault: SecretVault, sender: Sender = Sender()) {
         self.store = store
@@ -97,14 +128,75 @@ final class AppModel {
 
     private func persist(_ c: SavedCollection) {
         do { try store.saveCollection(c) } catch { saveError = "Couldn't save \(c.name): \(error.localizedDescription)" }
+        changed()
     }
 
     private func persistEnvironments() {
         do { try store.saveEnvironments(environments) } catch { saveError = "Couldn't save the environments: \(error.localizedDescription)" }
+        changed()
     }
 
     private func persistGlobals() {
         do { try store.saveGlobals(globals) } catch { saveError = "Couldn't save the globals: \(error.localizedDescription)" }
+        changed()
+    }
+
+    // MARK: - HITOP Cloud (LibrarySync)
+
+    /// A change from HITOP Cloud: saved here without pushing it back.
+    private func fromCloud(_ change: () -> Void) {
+        applyingCloud = true
+        defer { applyingCloud = false }
+        change()
+    }
+
+    /// Another device's collection (new or changed).
+    func applyRemote(collection c: SavedCollection) {
+        fromCloud {
+            if let i = collections.firstIndex(where: { $0.id == c.id }) { collections[i] = c } else { collections.append(c) }
+            persist(c)
+            sortCollections()
+        }
+        for (id, e) in editors where c.requests.contains(where: { $0.id == id }) && !e.isDirty { e.adopt(request(id)!) }
+    }
+
+    /// A collection another device deleted (or one replaced by a conflict).
+    func applyRemoteRemoval(collection id: UInt64) {
+        fromCloud {
+            collections.removeAll { $0.id == id }
+            do { try store.deleteCollection(id: id) } catch { saveError = error.localizedDescription }
+        }
+    }
+
+    func applyRemote(environments list: [SavedEnvironment], active: String?) {
+        fromCloud {
+            environments = list
+            persistEnvironments()
+            if state.activeEnvironmentID != active {
+                state.activeEnvironmentID = active
+                persistState()
+            }
+        }
+    }
+
+    func applyRemote(globals g: SavedEnvironment) {
+        fromCloud {
+            globals = g
+            persistGlobals()
+        }
+    }
+
+    /// A conflict copy ("shop-api (this iPhone)"): a new collection, synced like any other.
+    func addCollectionCopy(_ c: SavedCollection) {
+        collections.append(c)
+        persist(c)
+        sortCollections()
+    }
+
+    /// The collections of the organization the Collections tab shows (every one when signed out).
+    var visibleCollections: [SavedCollection] {
+        guard let scope = orgScope else { return collections }
+        return collections.filter { scope.contains($0) }
     }
 
     private func persistHistory() {
@@ -134,10 +226,11 @@ final class AppModel {
 
     var activeEnvironment: SavedEnvironment? { environments.first { $0.id == state.activeEnvironmentID } }
 
-    /// "My requests", made when missing.
+    /// "My requests" (of the organization shown), made when missing.
     func myRequests() -> SavedCollection {
-        if let c = collections.first(where: { $0.name == AutoName.myRequests || $0.name == "Default" }) { return c }
-        let c = SavedCollection(name: AutoName.myRequests)
+        if let c = visibleCollections.first(where: { $0.name == AutoName.myRequests || $0.name == "Default" }) { return c }
+        var c = SavedCollection(name: AutoName.myRequests)
+        c.org = orgScope?.newCollectionOrg
         collections.append(c)
         persist(c)
         return c
@@ -147,7 +240,8 @@ final class AppModel {
 
     @discardableResult
     func addCollection(name: String) -> SavedCollection {
-        let c = SavedCollection(name: name.isEmpty ? "New collection" : name)
+        var c = SavedCollection(name: name.isEmpty ? "New collection" : name)
+        c.org = orgScope?.newCollectionOrg
         collections.append(c)
         persist(c)
         sortCollections()
@@ -167,6 +261,7 @@ final class AppModel {
         state.collectionOrder.removeAll { $0 == id }
         persistState()
         if collections.isEmpty { _ = myRequests() }
+        changed()
     }
 
     func isPinned(collection id: UInt64) -> Bool { state.pinnedCollections.contains(id) }
@@ -311,6 +406,7 @@ final class AppModel {
     func setActiveEnvironment(_ id: String?) {
         state.activeEnvironmentID = id
         persistState()
+        changed()
     }
 
     @discardableResult

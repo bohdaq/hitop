@@ -522,7 +522,12 @@ struct AuthEditor: View {
     @Bindable var editor: RequestEditor
     var collectionAuth: AuthSpec?
 
-    private enum Kind: String, CaseIterable { case inherit = "From collection", none = "None", bearer = "Bearer token", basic = "Basic", apiKey = "API key" }
+    private enum Kind: String, CaseIterable { case inherit = "From collection", none = "None", bearer = "Bearer token", basic = "Basic", apiKey = "API key", other = "Set in another app" }
+
+    private var isOther: Bool {
+        if case .other? = editor.draft.auth { return true }
+        return false
+    }
 
     private var kind: Binding<Kind> {
         Binding(get: {
@@ -532,9 +537,11 @@ struct AuthEditor: View {
             case .bearer?: .bearer
             case .basic?: .basic
             case .apiKey?: .apiKey
+            case .other?: .other
             }
         }, set: { k in
             switch k {
+            case .other: break
             case .inherit: editor.draft.auth = nil
             case .none: editor.draft.auth = AuthSpec.none
             case .bearer: editor.draft.auth = .bearer(token: "")
@@ -547,7 +554,7 @@ struct AuthEditor: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
             Picker("Auth", selection: kind) {
-                ForEach(Kind.allCases, id: \.self) { Text($0.rawValue).tag($0) }
+                ForEach(Kind.allCases.filter { $0 != .other || isOther }, id: \.self) { Text($0.rawValue).tag($0) }
             }
             .pickerStyle(.menu)
             .accessibilityIdentifier("auth-kind")
@@ -557,6 +564,8 @@ struct AuthEditor: View {
                     note(collectionAuth.map { "The collection's \($0.kind == "apikey" ? "API key" : $0.kind) auth applies." } ?? "The collection has no auth.")
                 case .none?:
                     note("No Authorization is sent, even when the collection has auth.")
+                case let .other(type, _)?:
+                    note("\(type) auth, set in the web or desktop app. It is kept as it is; this version sends the request without it.")
                 case let .bearer(token)?:
                     field("Token", token) { editor.draft.auth = .bearer(token: $0) }
                 case let .basic(u, p)?:
