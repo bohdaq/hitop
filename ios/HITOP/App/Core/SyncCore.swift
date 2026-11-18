@@ -106,9 +106,21 @@ enum SyncCore {
         var keys: [Int: String]
         var current: Int
         var notices: [String]
+        /// The same notices with what they are about (kind, sender device, fingerprint), for
+        /// wording them for people (`SharedSync.describe`).
+        var details: [KeyNotice] = []
         var newPins: [String: String]
         var memory: JSONAny
         var legacy: Bool
+    }
+
+    /// A hitop-sync-crypto `Notice` (serde: `kind` + camelCase fields) with its text.
+    struct KeyNotice: Equatable, Hashable, Sendable {
+        var kind: String
+        var epoch: Int?
+        var senderKeyId: String?
+        var fingerprint: String?
+        var message: String
     }
 
     /// hitop-sync-crypto `accept_wraps`: the keys this device may use, or `KeyRefusal`.
@@ -126,7 +138,12 @@ enum SyncCore {
         }
         var keys: [Int: String] = [:]
         for (e, k) in r["keys"]?.object ?? [:] { if let n = Int(e), let s = k.string { keys[n] = s } }
-        return Keyring(keys: keys, current: r["current"]?.int ?? 0, notices: (r["notices"]?.array ?? []).compactMap { $0["message"]?.string },
+        let list = r["notices"]?.array ?? []
+        let details = list.map { n in
+            KeyNotice(kind: n["kind"]?.string ?? "", epoch: n["epoch"]?.int, senderKeyId: n["senderKeyId"]?.string,
+                      fingerprint: n["fingerprint"]?.string, message: n["message"]?.string ?? "")
+        }
+        return Keyring(keys: keys, current: r["current"]?.int ?? 0, notices: list.compactMap { $0["message"]?.string }, details: details,
                        newPins: (r["newPins"]?.object ?? [:]).compactMapValues(\.string), memory: r["memory"] ?? .object([:]), legacy: r["legacy"]?.bool ?? false)
     }
 

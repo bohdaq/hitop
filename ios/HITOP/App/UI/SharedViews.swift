@@ -632,7 +632,7 @@ struct SharedAccountSection: View {
             Button { joining = true } label: { Label("Join with invite code…", systemImage: "person.badge.plus").foregroundStyle(Theme.text) }
                 .frame(minHeight: 44)
                 .accessibilityIdentifier("join-invite")
-            ForEach(shared.notices, id: \.self) { n in Text(n).font(Typo.caption).foregroundStyle(Theme.textSoft) }
+            ForEach(shared.notices, id: \.self) { n in NoticeText(notice: n) }
             if let error { Text(error).font(Typo.caption).foregroundStyle(Theme.warning) }
         } header: {
             Text("SHARED COLLECTIONS").font(Typo.label).tracking(0.9).foregroundStyle(Theme.textFaint)
@@ -660,5 +660,20 @@ struct SharedAccountSection: View {
             .accessibilityIdentifier("trust-sender")
         }
         .padding(.vertical, 4)
+    }
+}
+
+/// A shared-collection notice: the headline, its secondary text (a fingerprint) under it.
+struct NoticeText: View {
+    var notice: SharedNotice
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 2) {
+            Text(notice.text).font(Typo.caption).foregroundStyle(Theme.textSoft)
+            if let d = notice.detail {
+                Text(d).font(Typo.mono(11)).foregroundStyle(Theme.textMuted).accessibilityIdentifier("shared-notice-detail")
+            }
+        }
+        .accessibilityElement(children: .combine)
     }
 }

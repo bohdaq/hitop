@@ -17,6 +17,7 @@ final class Navigator {
     var collectionsPath: [Route] = []
     var historyPath: [Route] = []
     var environmentsPath: [Route] = []
+    var runsPath: [RunRoute] = []
     var searchText = ""
     var showAbout = false
     /// The Account screen (HITOP Cloud), from the organization pill.
@@ -25,6 +26,9 @@ final class Navigator {
     var padPage: AppTab = .collections
     var padRequest: UInt64?
     var padSearch = false
+
+    /// The run sheet of a collection (Collections, Runs, an intent or a widget's link).
+    var runSheet: RunTarget?
 
     /// Set by RootView: the three-column layout is showing.
     var isPad = false
@@ -57,6 +61,27 @@ final class Navigator {
     /// ⌘N: a new request, opened in the editor.
     func newRequest(_ model: AppModel) {
         open(request: model.newRequest().id)
+    }
+
+    /// Opens the run sheet of a collection (`showLast`: on its last run).
+    func run(collection id: UInt64, showLast: Bool = false) {
+        runSheet = RunTarget(id: id, showLast: showLast)
+    }
+
+    /// hitop://runs (the failing widget) and hitop://run/<collection id> (the last-run widget, the
+    /// Live Activity).
+    func open(url: URL) {
+        guard url.scheme == "hitop" else { return }
+        switch url.host {
+        case "runs":
+            tab = .runs
+            padPage = .runs
+        case "run":
+            tab = .runs
+            padPage = .runs
+            if let id = UInt64(url.lastPathComponent) { run(collection: id, showLast: true) }
+        default: break
+        }
     }
 
     /// Opens a request in the editor (Collections tab on iPhone, middle column on iPad).

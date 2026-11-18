@@ -107,6 +107,13 @@ final class SharedSyncTests: XCTestCase {
         XCTAssertEqual(grace.model.collection(gid)?.name, "Shop API")
         XCTAssertEqual(grace.model.collection(gid)?.requests.map(\.name), ["List orders", "Create order"])
         XCTAssertEqual(grace.model.sharedRoles[gid], "editor")
+        // The invite's device was trusted: said with its name, the fingerprint as secondary text,
+        // never an internal key id.
+        let trusted = try XCTUnwrap(grace.shared.notices.first { $0.text.hasPrefix("Trusted ") }, "\(grace.shared.notices)")
+        XCTAssertEqual(trusted.text, "Trusted HITOP on iPhone — the device your invite code named")
+        XCTAssertEqual(trusted.detail, "Fingerprint \(ada.shared.fingerprint!)")
+        let adaKey = try XCTUnwrap(ada.cloud.settings.account?.keyId)
+        for n in grace.shared.notices { XCTAssertFalse(n.text.contains(adaKey) || (n.detail ?? "").contains(adaKey), n.text) }
         // The server never saw the collection's text.
         for e in fake.envelopes(ws) { XCTAssertFalse(String(decoding: CloudCrypto.unbase64url(e) ?? [], as: UTF8.self).contains("orders")) }
         // Joining with no edits pushes nothing.

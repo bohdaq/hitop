@@ -199,6 +199,17 @@ struct InviteCode: Hashable, Sendable {
     }
 }
 
+/// Something about shared collections the person should know: a headline and secondary text.
+struct SharedNotice: Hashable, Sendable {
+    var text: String
+    var detail: String?
+
+    init(_ text: String, detail: String? = nil) {
+        self.text = text
+        self.detail = detail
+    }
+}
+
 @MainActor
 @Observable
 final class SharedSync {
@@ -215,7 +226,7 @@ final class SharedSync {
     /// The workspaces of the signed-in account, as last listed.
     private(set) var workspaces: [SharedWorkspace] = []
     /// What the person should know (warnings from accepting keys, a removal), newest first.
-    private(set) var notices: [String] = []
+    private(set) var notices: [SharedNotice] = []
     /// A workspace key came from a device this one hasn't trusted: the Account screen asks to
     /// compare its fingerprint (`trustSender`).
     var pendingTrust: SyncCore.KeyRefusal?
@@ -388,10 +399,17 @@ final class SharedSync {
         let headers = wraps.map { (try? SyncCore.wrapHeader($0.wrapped)) ?? SyncCore.WrapHeader(legacy: true) }
         // The member list only when a sender isn't trusted: its fingerprint, or the inviter's.
         var listed: [String: String] = [:]
+        var names: [String: String] = [:]
         if headers.contains(where: { !$0.legacy && state.pins[$0.sender ?? ""] == nil }) {
             let info = try await json("GET", "/v1/workspaces/\(ws)")
             for m in info["members"]?.array ?? [] {
-                for k in m["keys"]?.array ?? [] { if let id = k["id"]?.string, let pk = k["publicKey"]?.string { listed[id] = pk } }
+                for k in m["keys"]?.array ?? [] {
+                    if let id = k["id"]?.string, let pk = k["publicKey"]?.string { listed[id] = pk }
+                    if let id = k["id"]?.string {
+                        let name = k["name"]?.string ?? ""
+                        names[id] = name.isEmpty ? (m["email"]?.string).map { "a device of \($0)" } : name
+                    }
+                }
             }
         }
         do {
@@ -400,7 +418,10 @@ final class SharedSync {
             state.memory[ws] = ring.memory
             for (id, pk) in ring.newPins { state.pins[id] = pk }
             save()
-            for n in ring.notices where !notices.contains(n) { notices.insert(n, at: 0) }
+            for d in ring.details {
+                let n = Self.describe(d, names: names)
+                if !notices.contains(n) { notices.insert(n, at: 0) }
+            }
             return Keys(epoch: ring.current, keys: ring.keys, legacy: headers.contains { $0.legacy })
         } catch let e as SyncCore.KeyRefusal {
             if e.kind == "untrustedSender", e.fingerprint != nil { pendingTrust = e }
@@ -681,7 +702,7 @@ final class SharedSync {
             } else if !l.gone {
                 state.links[id]?.gone = true
                 let name = UInt64(id).flatMap { model.collection($0)?.name } ?? "A shared collection"
-                notices.insert("You're no longer a member of “\(name)”: its copy stays on this device and no longer syncs.", at: 0)
+                notices.insert(SharedNotice("You're no longer a member of “\(name)”: its copy stays on this device and no longer syncs."), at: 0)
             }
         }
         save()
@@ -870,7 +891,7 @@ final class SharedSync {
         for (e, key) in k.keys.sorted(by: { $0.key < $1.key }) where e != k.epoch {
             _ = try await api("POST", "/v1/workspaces/\(ws)/wraps", .object(["epoch": .number(Double(e)), "wraps": try wraps(for: keys, ws, epoch: e, key: key, head: k.epoch)]))
         }
-        do { _ = try await resealShares(ws) } catch { notices.insert("Shared environment values not handed to them: \(error.localizedDescription)", at: 0) }
+        do { _ = try await resealShares(ws) } catch { notices.insert(SharedNotice("Shared environment values not handed to them: \(error.localizedDescription)"), at: 0) }
     }
 
     /// Hands the workspace key to members' new devices whose keys are trusted here.
@@ -911,7 +932,7 @@ final class SharedSync {
                                          "vv": .object(vv), "text": b["text"] ?? .null])
             _ = try await put(ws, push, epoch: next, key: k.keys[next] ?? key)
         }
-        do { try await rekeyShares(ws) } catch { notices.insert("Shared environment values not re-keyed: \(error.localizedDescription)", at: 0) }
+        do { try await rekeyShares(ws) } catch { notices.insert(SharedNotice("Shared environment values not re-keyed: \(error.localizedDescription)"), at: 0) }
         _ = try? await syncNow(id)
         return next
     }
@@ -1003,7 +1024,7 @@ final class SharedSync {
     private func rekeyShares(_ ws: String) async throws {
         let (opened, closed) = try await openShares(ws)
         guard !opened.isEmpty else {
-            if closed > 0 { notices.insert("\(closed) shared environment value set(s) couldn't be re-keyed from this device: ask whoever shared them to open the collection.", at: 0) }
+            if closed > 0 { notices.insert(SharedNotice("\(closed) shared environment value set(s) couldn't be re-keyed from this device: ask whoever shared them to open the collection."), at: 0) }
             return
         }
         let info = try await json("GET", "/v1/workspaces/\(ws)")
@@ -1049,5 +1070,31 @@ final class SharedSync {
         model.applyTeam(environments: list, org: org.id)
     }
 
-    func dismissNotice(_ text: String) { notices.removeAll { $0 == text } }
+    func dismissNotice(_ notice: SharedNotice) { notices.removeAll { $0 == notice } }
+
+    /// A key notice in words for people: the device's name (never its internal key id), the
+    /// fingerprint as secondary text.
+    static func describe(_ n: SyncCore.KeyNotice, names: [String: String]) -> SharedNotice {
+        let device = n.senderKeyId.flatMap { names[$0] }.flatMap { $0.isEmpty ? nil : $0 } ?? "a device"
+        let Device = device.prefix(1).uppercased() + device.dropFirst()
+        let fp = n.fingerprint.map { "Fingerprint \($0)" }
+        switch n.kind {
+        case "senderPinned":
+            return SharedNotice("Trusted \(device) — the device your invite code named", detail: fp)
+        case "senderKeyChanged":
+            return SharedNotice("Security warning: \(device) has a different key on the server now. Keys from it are refused; if its owner replaced it, they add the new device.", detail: fp)
+        case "knownKeyFromUntrusted":
+            return SharedNotice("\(Device) sent a key you already had. Compare its fingerprint and trust it, or its next key will be refused.", detail: fp)
+        case "untrustedIgnored":
+            return SharedNotice("An older key from \(device), which you haven't trusted, wasn't used.", detail: fp)
+        case "legacyAccepted":
+            return SharedNotice("This collection's key came from an older HITOP that didn't sign it. It's in use; the owner's next sync replaces it with a signed one.")
+        case "legacyIgnored":
+            return SharedNotice("An older key that wasn't signed wasn't used: files still under it can't be read until the owner syncs.")
+        default:
+            var text = n.message
+            if let id = n.senderKeyId, !id.isEmpty { text = text.replacingOccurrences(of: "device \(id)", with: device) }
+            return SharedNotice(text, detail: fp)
+        }
+    }
 }

@@ -26,6 +26,7 @@ if [ -z "$lib" ]; then
   lib=$("$here/scripts/build-sync-ffi.sh" host)
 fi
 export HITOP_SYNC_VECTORS=${HITOP_SYNC_VECTORS:-"$repo/cli/crates/hitop-sync-crypto/vectors"}
+export HITOP_RUN_REPORT_DIR=${HITOP_RUN_REPORT_DIR:-"$repo/spec/compat/v1/run-report"}
 mkdir -p "$work/Sources" "$work/Tests" "$work/Sources/CHitopSync"
 ln -sfn "$here/App/Core" "$work/Sources/HITOP"
 ln -sfn "$here/UnitTests" "$work/Tests/HITOPTests"

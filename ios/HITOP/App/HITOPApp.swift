@@ -5,22 +5,27 @@ import UIKit
 @main
 struct HITOPApp: App {
     @State private var model: AppModel
-    @State private var nav = Navigator()
+    @State private var nav: Navigator
     @State private var cloud: HitopCloud
     @State private var sync: LibrarySync
     @State private var cloudUI: CloudUI
     @State private var shared: SharedSync
+    @State private var runs: RunCenter
+    private let system: SystemBridge
     /// UI tests of shared collections: the scenario prepared before the first sync.
     private let scenario: String?
 
     init() {
         let args = ProcessInfo.processInfo.arguments
+        let nav = Navigator()
+        _nav = State(initialValue: nav)
         let uiTest = args.contains("-UITestSeed")
         let model: AppModel
         let cloud: HitopCloud
         let web: WebSignIn
         let syncState: LibrarySyncStateStore
         let sharedStore: SharedSyncStore
+        let runStore: RunStore
         if uiTest {
             // UI tests and screenshots: a fresh library, the shop-api sample, secrets in memory and
             // every request answered in-process by StubURLProtocol (no network), HITOP Cloud
@@ -44,6 +49,7 @@ struct HITOPApp: App {
             web = StubWebSignIn()
             syncState = MemoryLibrarySyncStateStore()
             sharedStore = MemorySharedSyncStore()
+            runStore = FileRunStore(root: root)
         } else {
             let root = FileLibraryStore.defaultRoot()
             model = AppModel(store: FileLibraryStore(root: root), vault: KeychainVault())
@@ -53,6 +59,7 @@ struct HITOPApp: App {
             web = SystemWebSignIn()
             syncState = FileLibrarySyncStateStore(root: root)
             sharedStore = FileSharedSyncStore(root: root)
+            runStore = FileRunStore(root: root)
         }
         scenario = uiTest ? ["-UITestSharedInvite", "-UITestSharedJoined"].first { args.contains($0) } : nil
         _model = State(initialValue: model)
@@ -60,6 +67,12 @@ struct HITOPApp: App {
         _sync = State(initialValue: LibrarySync(cloud: cloud, model: model, stateStore: syncState, deviceLabel: DeviceInfo.label))
         _cloudUI = State(initialValue: CloudUI(web: web))
         _shared = State(initialValue: SharedSync(cloud: cloud, model: model, store: sharedStore))
+        let runs = RunCenter(model: model, store: runStore)
+        _runs = State(initialValue: runs)
+        system = SystemBridge(model: model, runs: runs)
+        // UI tests: no Live Activity over the screenshots, no snapshot for the real widgets.
+        system.liveActivities = !uiTest
+        IntentBridge.services = IntentBridge.Services(model: model, runs: runs, system: system, nav: nav)
         Self.styleNavigationBars()
     }
 
@@ -82,6 +95,8 @@ struct HITOPApp: App {
             Group {
                 if let scenario {
                     ScenarioGate(scenario: scenario)
+                } else if ProcessInfo.processInfo.arguments.contains("-UITestWidgetGallery") {
+                    WidgetGallery()
                 } else {
                     RootView()
                 }
@@ -92,6 +107,8 @@ struct HITOPApp: App {
                 .environment(cloud)
                 .environment(sync)
                 .environment(cloudUI)
+                .environment(runs)
+                .onOpenURL { nav.open(url: $0) }
                 .preferredColorScheme(.dark)
                 .tint(Theme.accent)
                 .font(Typo.body)

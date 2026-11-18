@@ -112,6 +112,8 @@ struct PadRoot: View {
                             Button("New request", systemImage: "plus") { nav.open(request: model.newRequest(in: c.id).id) }
                             Button("Rename", systemImage: "pencil") { naming = .collection(c.id) }
                         }
+                        Button("Run collection", systemImage: "play.circle") { nav.run(collection: c.id) }
+                            .disabled(Sender.runnable(c).isEmpty)
                         if cloud.signedIn {
                             Button(model.isShared(c.id) ? "People and sharing" : "Share…", systemImage: "person.2") { sharing = ShareTarget(id: c.id) }
                         }

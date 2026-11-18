@@ -545,13 +545,16 @@ final class AppModel {
     }
 
     /// The variables a request in `collectionID` sees.
-    func context(for collectionID: UInt64?) -> VariableContext {
+    func context(for collectionID: UInt64?) -> VariableContext { context(for: collectionID, environment: activeEnvironment) }
+
+    /// The variables a request in `collectionID` sees with environment `environment`.
+    func context(for collectionID: UInt64?, environment: SavedEnvironment?) -> VariableContext {
         var ctx = VariableContext()
         ctx.globals = globals.variables.merging(scriptGlobals) { _, s in s }
         for n in globals.secrets { ctx.globalSecrets[n] = vault.value(environment: globalsVaultID, name: n) ?? "" }
         let c = collection(collectionID)
         ctx.collection = c?.variables ?? [:]
-        if let env = activeEnvironment {
+        if let env = environment {
             ctx.environmentName = env.name
             ctx.environment = env.variables
             for n in env.secrets {

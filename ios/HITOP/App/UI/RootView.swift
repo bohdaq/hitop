@@ -20,6 +20,7 @@ struct RootView: View {
         }
         .sheet(isPresented: $nav.showAbout) { AboutView() }
         .sheet(isPresented: $nav.showAccount) { AccountView() }
+        .sheet(item: $nav.runSheet) { RunSheet(target: $0) }
         .onAppear { nav.isPad = sizeClass == .regular }
         .onChange(of: sizeClass) { _, c in nav.isPad = c == .regular }
         // HITOP Cloud: pull on launch and whenever the app comes to the foreground.
@@ -29,8 +30,11 @@ struct RootView: View {
             if cloud.signedIn { _ = try? await cloud.loadOrgs() }
             applyScope()
             await shared.syncAll()
+            IntentBridge.services?.system.refreshWidgets()
         }
         .onChange(of: scenePhase) { _, phase in
+            // Widgets and intents see what changed here (pins, environment, sends) when the app leaves.
+            if phase == .background { IntentBridge.services?.system.refreshWidgets() }
             if phase == .active {
                 Task {
                     await sync.sync()
@@ -92,7 +96,7 @@ struct PhoneRoot: View {
                 }
             }
             Tab("Runs", systemImage: "play", value: AppTab.runs) {
-                NavigationStack { RunsScreen() }
+                NavigationStack(path: $nav.runsPath) { RunsScreen() }
             }
             Tab(value: AppTab.search, role: .search) {
                 NavigationStack {

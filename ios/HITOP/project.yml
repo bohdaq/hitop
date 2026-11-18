@@ -36,18 +36,54 @@ targets:
     platform: iOS
     sources:
       - path: App
+      # Live Activity attributes, widget views, entities and the widget's intents: also in HITOPWidgets.
+      - path: Shared
     dependencies:
       - package: HitopKit
       - framework: Vendor/HitopSyncFFI.xcframework
         embed: false
+      - target: HITOPWidgets
+        embed: true
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: hitop.rws8.tech.HiTop
         PRODUCT_NAME: HITOP
         PRODUCT_MODULE_NAME: HITOP
         INFOPLIST_FILE: App/Info.plist
+        # App group group.hitop.rws8.tech.HiTop (the widget snapshot): register it for both
+        # bundle ids in the developer portal before a signed build (ios/HITOP_IOS.md I3).
+        CODE_SIGN_ENTITLEMENTS: App/HITOP.entitlements
         ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
         CODE_SIGN_STYLE: Automatic
+  # Widgets, the collection run Live Activity + Dynamic Island, the Control Center control. It
+  # reads the snapshot the app writes into the app group and runs nothing itself (its buttons'
+  # intents are LiveActivityIntents, performed in the app). Not HitopKit, not App/Core: only the
+  # self-contained App/Core/WidgetData.swift.
+  HITOPWidgets:
+    type: app-extension
+    platform: iOS
+    sources:
+      - path: Widgets
+      - path: Shared
+      - path: App/Core/WidgetData.swift
+      - path: App/Resources/Fonts
+        buildPhase: resources
+    dependencies:
+      - sdk: WidgetKit.framework
+      - sdk: SwiftUI.framework
+      - sdk: ActivityKit.framework
+      - sdk: AppIntents.framework
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: hitop.rws8.tech.HiTop.Widgets
+        PRODUCT_NAME: HITOPWidgets
+        PRODUCT_MODULE_NAME: HITOPWidgets
+        INFOPLIST_FILE: Widgets/Info.plist
+        CODE_SIGN_ENTITLEMENTS: Widgets/HITOPWidgets.entitlements
+        CODE_SIGN_STYLE: Automatic
+        SKIP_INSTALL: YES
+        APPLICATION_EXTENSION_API_ONLY: YES
+        ASSETCATALOG_COMPILER_GENERATE_SWIFT_ASSET_SYMBOL_EXTENSIONS: NO
   HITOPTests:
     type: bundle.unit-test
     platform: iOS
@@ -55,6 +91,10 @@ targets:
       - path: UnitTests
       # The published hitop sync test vectors (SyncCoreTests), as a folder in the test bundle.
       - path: ../../cli/crates/hitop-sync-crypto/vectors
+        type: folder
+        buildPhase: resources
+      # spec/compat/v1/run-report/report.json (RunsTests: the report reader).
+      - path: ../../spec/compat/v1/run-report
         type: folder
         buildPhase: resources
     dependencies:

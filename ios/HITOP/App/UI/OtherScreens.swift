@@ -1,18 +1,5 @@
 import SwiftUI
 
-/// Collection runs come in I3 (runner, report, Live Activity).
-struct RunsScreen: View {
-    var body: some View {
-        ContentUnavailableView {
-            Label("Collection runs", systemImage: "play.circle")
-        } description: {
-            Text("Running a whole collection with its tests arrives in a coming update. Until then, `hitop run` and the desktop app run collections.")
-        }
-        .background(ScreenBackground())
-        .navigationTitle("Runs")
-    }
-}
-
 struct SearchScreen: View {
     @Environment(AppModel.self) private var model
     @Environment(Navigator.self) private var nav

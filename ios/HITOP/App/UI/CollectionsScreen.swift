@@ -227,7 +227,7 @@ struct CollectionsScreen: View {
                 Section {
                     HStack(alignment: .top, spacing: 10) {
                         Image(systemName: "person.2").foregroundStyle(Theme.accent)
-                        Text(notice).font(Typo.caption).foregroundStyle(Theme.textSoft).accessibilityIdentifier("shared-notice")
+                        NoticeText(notice: notice).accessibilityIdentifier("shared-notice")
                         Spacer(minLength: 0)
                         Button { shared.dismissNotice(notice) } label: { Image(systemName: "xmark").font(.system(size: 12, weight: .bold)) }
                             .buttonStyle(.plain).foregroundStyle(Theme.textMuted).frame(width: 44, height: 44)
@@ -392,6 +392,8 @@ struct CollectionsScreen: View {
                 Button("New folder", systemImage: "folder.badge.plus") { naming = .newFolder(c.id, "") }
                 Button("Rename", systemImage: "pencil") { naming = .collection(c.id) }
             }
+            Button("Run collection", systemImage: "play.circle") { nav.run(collection: c.id) }
+                .disabled(Sender.runnable(c).isEmpty)
             Button(model.isPinned(collection: c.id) ? "Unpin" : "Pin", systemImage: "pin") { model.togglePin(collection: c.id) }
             if cloud.signedIn {
                 Button(model.isShared(c.id) ? "People and sharing" : "Share…", systemImage: "person.2") { sharing = ShareTarget(id: c.id) }
@@ -412,6 +414,9 @@ struct CollectionsScreen: View {
         }
         .swipeActions(edge: .leading) {
             Button(model.isPinned(collection: c.id) ? "Unpin" : "Pin", systemImage: "pin") { model.togglePin(collection: c.id) }.tint(Theme.warning)
+            if !Sender.runnable(c).isEmpty {
+                Button("Run", systemImage: "play.fill") { nav.run(collection: c.id) }.tint(Theme.success)
+            }
         }
     }
 

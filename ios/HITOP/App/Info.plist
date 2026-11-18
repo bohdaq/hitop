@@ -68,6 +68,19 @@
 	</dict>
 	<key>NSLocalNetworkUsageDescription</key>
 	<string>HITOP sends the requests you write, including to servers on your local network.</string>
+	<key>NSSupportsLiveActivities</key>
+	<true/>
+	<key>CFBundleURLTypes</key>
+	<array>
+		<dict>
+			<key>CFBundleURLName</key>
+			<string>hitop.rws8.tech.HiTop</string>
+			<key>CFBundleURLSchemes</key>
+			<array>
+				<string>hitop</string>
+			</array>
+		</dict>
+	</array>
 	<key>ITSAppUsesNonExemptEncryption</key>
 	<false/>
 </dict>
