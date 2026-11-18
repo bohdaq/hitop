@@ -173,7 +173,7 @@ hitop/
 │   └── THREAT_MODEL.md, README.md (self-host guide), Dockerfile
 ├── ios/
 │   ├── HiTop/                  # the live App Store iOS app (listed as "HiTop HTTP Client", shown as HITOP; editor, own JSON storage); frozen but for names
-│   ├── HITOP/                  # HITOP for iOS 26 (ios/HITOP_IOS.md), its replacement: XcodeGen project.yml, App/Core (Foundation only), App/UI (SwiftUI), UnitTests, UITests
+│   ├── HITOP/                  # HITOP for iOS 26 (ios/HITOP_IOS.md), its replacement: XcodeGen project.yml, App/Core (Foundation only), App/UI (SwiftUI), UnitTests, UITests, SyncFFI (Rust: hitop-core sync + hitop-sync-crypto, C ABI)
 │   ├── HitopKit/               # Swift package (MIT): format v1 reader (Yams 6.2.2), variables, secrets, scripts, URLSession runner, report.json
 │   └── HitopCompanion/         # SwiftUI companion (T26): XcodeGen project.yml, app + App Intents, WidgetKit widget, Shared/ (app group)
 ├── spec/collection-format.md   # collection folder format v1, stable since 1.0 (CC BY 4.0); section 7 = compatibility promise
@@ -544,6 +544,15 @@ hitop/
   (library.js: items, secrets in `secrets` + Keychain, `known` fingerprints = the offline queue in hitop-library/library-sync.json, "(this iPhone)" copies, first-link
   rules), `FakeCloud.swift` (sync-server shapes; unit tests + UI tests via StubURLProtocol host cloud.hitop.test). Linux/macOS Core tests: `ios/HITOP/scripts/core-tests.sh`
   (`HITOP_SYNC_SERVER_BIN` runs `CloudEndToEndTests` against a real server; CI job `core` requires it). Models keep unknown auth types and mistyped fields (`typed`)
+- HITOP iOS I2b (shared collections, ios/HITOP_IOS.md "I2b"): `ios/HITOP/SyncFFI` (Rust staticlib, own workspace + lock seeded from hitop-wasm's, MIT) =
+  hitop-core `sync`/`format::files` + hitop-sync-crypto behind one C call `hitop_sync_call(op, argsJSON)` (module `CHitopSync`; Core `SyncCore.swift`; no
+  crypto in Swift); `scripts/build-sync-ffi.sh xcframework` (→ git-ignored `Vendor/HitopSyncFFI.xcframework`, needed before `xcodegen generate`, also on the
+  owner's Mac) / `host` (core-tests.sh links it). A hitop-core or hitop-sync-crypto dependency change needs `cargo update -p` in SyncFFI too (`--locked`).
+  Core `SharedSync.swift` = sync.js SyncClient (keys only via `accept_wraps`, own key pinned from the local secret, invites `<token>.<fingerprint>`,
+  removal rotates + re-seals + re-keys env shares; local files = stored folder with only hitop.yaml/requests replaced); shared collections never in
+  `LibrarySync`; viewer = AppModel refuses changes (`isReadOnly`); team environments read-only (`team: <org>`). `FakeCloud` enforces workspaces.rs rules;
+  `SharedScenario` (Grace's phone in-process, fixed key) feeds `-UITestSharedInvite`/`-UITestSharedJoined`; CI `core` builds the hitop CLI (`HITOP_BIN`) for
+  `SharedEndToEndTests` (Core ↔ CLI)
 - The app (no editing) is generated with `xcodegen` on a Mac; bundle ids `hitop.rws8.tech.HitopCompanion` (+ `.Widget`),
   app group `group.hitop.rws8.tech.companion`; Swift 5 language mode for the app targets, Swift 6 for HitopKit
 

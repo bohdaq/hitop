@@ -22,7 +22,7 @@ Activity/Siri).
 | I0 | Project: XcodeGen `ios/HITOP/project.yml` (bundle id of the live app, so it ships as an update), iOS 26 target, design tokens + glass components, Geist bundled (OFL), CI job on a macOS runner: build, unit tests, UI tests on the iOS 26 simulator, screenshots | done (main 5d79794, 2026-11-18) |
 | I1 | Collections tab, request editor (params, headers, body, auth, scripts, tests), Send, response sheet (status, timing, body with folding, headers, tests, cookies), environments and variables (peek), history | done (main 5d79794, 2026-11-18) |
 | I2 | HITOP Cloud sign-in (Apple, Google, GitHub) and personal library sync (collections, environments, globals), Account screen (devices, organization, plan usage) | done; sync server deployed 2026-11-18 (branch `ios-i2`, 2026-11-18; needs the sync-server deploy below) |
-| I2b | Shared end-to-end encrypted collections (workspaces): key handling through hitop-sync-crypto rules, ported or via a Rust xcframework of hitop-wasm's core; team environments | planned |
+| I2b | Shared end-to-end encrypted collections (workspaces) with hitop-sync-crypto's rules through a Rust C-ABI library of hitop-core's sync plan + hitop-sync-crypto (`ios/HITOP/SyncFFI`); team environments | done (branch `ios-i2b`, 2026-11-18; no server change) |
 | I3 | Collection runner + run report, Live Activity, widgets, App Intents | planned |
 | I4 | WebSocket, SSE, GraphQL schema, gRPC | planned |
 | I5 | Apple Intelligence features, iPad three columns + keyboard, accessibility pass (VoiceOver, Dynamic Type, Reduce Transparency) | planned |
@@ -247,10 +247,128 @@ device, last use; rename, remove with force for one holding shared keys), Sign o
   09-synced-collections, 10-conflict-copy, 11-device-limit.
 
 **Deferred to I2b and later**
-- Shared end-to-end encrypted collections (workspaces, wraps, pins, invites) and team environments: I2b. The device key is
-  already the hitop-sync-crypto kind.
+- Shared end-to-end encrypted collections (workspaces, wraps, pins, invites) and team environments: I2b (done, below).
 - Company SSO and passwords in the sign-in sheet; Sign in with Apple through the native sheet (needs a server endpoint
   for the identity token); the Settings → Privacy switch to keep this device out of the library; per-request version
   history; Git sync status.
 - Environments aren't filtered by organization (the web app's "Available in every organization" switch).
 - Not checked on a device: ASWebAuthenticationSession against the hosted server (needs the deploy), Keychain on hardware.
+
+## I2b: what landed (2026-11-18, branch `ios-i2b`)
+CI: `.github/workflows/ios.yml`, green run https://github.com/bohdaq/hitop/actions/runs/44347026003 (commit 7e9448f; the `core` job needed a re-run: it twice got no macOS runner within 15 minutes) (jobs `app`, `core` with the CLI end-to-end test, `hitopkit`;
+artifact `screenshots`: 12–16 are I2b's).
+
+**Crypto approach: (b), the real Rust behind a C ABI** (`ios/HITOP/SyncFFI`, crate `hitop-sync-ffi`, MIT, own workspace
+like hitop-wasm, lock seeded from hitop-wasm's). One function, `hitop_sync_call(op, argsJSON) -> {"ok"|"error"}`
+(module `CHitopSync`, `include/hitop_sync.h`), a thin copy of hitop-wasm's `sync.rs` glue over hitop-sync-crypto
+(format 2 wraps, `accept_wraps`, blobs, key commitments, shared environment values) and hitop-core (`sync::plan`,
+`pushed`, `resolve`, `is_synced_path`, `format::files` `read_files`/`to_files`/`plan_sync`). Panics are caught at the
+boundary. Why not a Swift port: App/Core must build and test on Linux (CryptoKit's HPKE doesn't exist there), XChaCha20
+would be hand-written, and the plan needs hitop-core's YAML key-by-key merge and the folder format writer, which
+HitopKit doesn't have (it only reads); a port would be a second implementation to keep in step forever. With the FFI
+the app runs the same bytes as the CLI and the web app, and nothing cryptographic is written in Swift.
+- Build: `ios/HITOP/scripts/build-sync-ffi.sh xcframework` (macOS, rustup targets `aarch64-apple-ios` +
+  `aarch64-apple-ios-sim`, `SIM_ARCHS="arm64 x86_64"` for an Intel simulator slice) → `ios/HITOP/Vendor/HitopSyncFFI.xcframework`
+  (libraries only, git-ignored), linked by project.yml; the module map comes through `SWIFT_INCLUDE_PATHS`
+  (`SyncFFI/include`), so the app and its unit tests see one `CHitopSync`. `build-sync-ffi.sh host` builds the Linux/macOS
+  static library that `scripts/core-tests.sh` links (a SwiftPM system library target). CI time: about 2 minutes for the
+  two iOS slices, 1 for the host library. **Owner's Mac build (I6) needs Rust (rustup) and this script before
+  `xcodegen generate`.** A dependency change in hitop-core or hitop-sync-crypto needs `cargo update -p <crate>` in
+  SyncFFI too (CI builds `--locked`).
+- Verified: `UnitTests/SyncCoreTests.swift` runs the published `vectors/v1.json` (blobs both ways with the vector nonces,
+  AAD, every blob and wrap failure, format 1 wraps and info) and `v2.json` (format 2 info, open with the pinned sender,
+  sender/head, all 10 wrap failures, key commitments) through the same `SyncCore` ops the app calls, in the simulator
+  (vectors bundled as a folder resource) and on Linux/macOS (`HITOP_SYNC_VECTORS`); `accept_wraps` cases ported from
+  hitop-sync-crypto's tests_v2.rs (pinned sender accepted and remembered, forged sender, untrusted sender with and without
+  a fingerprint, invite fingerprint pins only the inviter, swapped key for a known epoch, hidden rotation/replay/missing
+  key, legacy only with a notice and never once strict, changed key announced); I2's CryptoKit device keys are
+  hitop-sync-crypto keys (same public key, wraps open both ways; macOS and simulator); blobs bound to workspace, blob,
+  version; the plan (pull, conflict never pushed, resolve, key-by-key hitop.yaml merge, paths outside a folder skipped);
+  a collection round-trips through its files unchanged and `.yml` keeps its extension. SyncFFI's own `cargo test`.
+
+**Shared collections (Core `SharedSync.swift`, sync.js `SyncClient` item for item)**
+- A shared collection is an ordinary collection in the app (editing, sending, history as before) plus a link to its
+  workspace. Its folder files are kept in `hitop-library/shared/<ws>.json`; `localFiles` = those files with only
+  `hitop.yaml` and `requests/**` replaced by `to_files` of the collection as edited here (through `plan_sync`, so a CLI
+  user's `.yml` stays), so `environments/*`, `globals.yaml` and `comments/**` (which the app doesn't edit) are never
+  deleted for everyone. `hitop-library/shared-sync.json`: pins (key id → public key), the `WorkspaceMemory` per workspace,
+  links (role, organization), the plan state, shared-value versions. Workspace keys are never stored.
+- Keys only through `accept_wraps`: this device's own key is pinned from its local secret (never from `/v1/me`), the
+  member list is fetched only when a sender isn't pinned, new pins from an invite fingerprint are kept, notices shown.
+  A refused key is a `KeyRefusal` (forged/keyChanged/rollback are "Security warning: …"); an untrusted sender with a
+  fingerprint becomes the Account screen's trust prompt (`trustSender` re-checks the server's key still has that
+  fingerprint and refuses a changed one). Owners upgrade format 1 wraps of trusted devices as sync.js does.
+- Sync: pull on launch, foreground, pull to refresh; push 1 s after a change to a shared collection; `stale_epoch`
+  re-reads the keys; 409 retries (5 rounds). Conflicts: Keep mine / Take theirs (hitop-core `resolve`) and, for a request
+  file both sides still have, Keep both = theirs plus mine as "<name> (mine)" in `<file>-mine` (as the server's Git sync
+  answers "both"), with "View both" showing mine, theirs and the base, as the web app's conflict view.
+- Share: a new workspace (random id, epoch 1 wrapped for every device of the account, each trusted here first; other own
+  devices are listed with their fingerprints to trust) in the collection's organization; strict memory. Invite by email
+  (or code only) → `<token>.<this device's fingerprint>` with Copy/Send. Members with roles and every device's
+  fingerprint and trust state (Trust after comparing); an accepted invite's devices are trusted then added (wraps for
+  every epoch this device holds, shared environment values resealed). Remove (owner): next epoch's key for the remaining
+  trusted devices in the same call, the removed devices unpinned, every file sealed again under the new epoch, shared
+  environment values re-keyed (sync.js `rekeyShares`; values this device can't open are reported, not skipped silently).
+  New devices of members get the key on `syncAll` (owners/editors).
+- Join: Account → "Join with invite code…" → the trust prompt shows the code's fingerprint ("They match, accept"; a
+  bare token says the key's sender will be shown instead) → `POST /v1/invites/accept`, memory strict with the expected
+  sender → "Tell the owner this device's fingerprint" while polling `/v1/workspaces`; once added, the collection opens by
+  itself. Workspaces the account is in but hasn't opened here are listed with "Open here".
+- Viewer: AppModel refuses every change to a viewer's collection (save, rename, move in or out, duplicate, delete
+  request, folders; a new request asked for there goes to My requests; not a move target); the editor shows "View only",
+  no Save, fields disabled, Send works; sync only pulls.
+- Never in the personal library: `LibrarySync` leaves linked collections out of every push, badge and pull (a collection
+  shared from the library leaves it: its library item is deleted); a removed member's copy stays on the device marked
+  "No longer shared" and still never goes to the library. Another account signing in marks the old account's links gone.
+- Organizations: a shared collection shows in its workspace's team organization (the web app's `orgOf`), others with
+  the personal ones; the card says "Shared with Acme" (or "Shared"), "View only", "1 conflict", and "N requests · synced
+  …".
+- Team environments: `GET /v1/orgs/:org/environments` of the current team organization on launch, foreground and org
+  switch (`team: <org>`, secret names without values; each member's values stay in the Keychain); in the environment
+  pill as "<name> (team)", read-only on the Environments screen except secret values, never in the personal library.
+- This device's fingerprint is on the Account screen ("Others compare it before they share a collection's key").
+- Store mode: no plan, price or upgrade link; server refusals (402 limits) go through `StoreText.withoutPlanLink`.
+
+**No server change.** Every call is one the web app and the CLI already make (workspaces, wraps, members, invites,
+blobs, env-shares, org environments).
+
+**Tests**
+- Unit (Linux and simulator): `SyncCoreTests` (above); `SharedSyncTests` with two phones on `FakeCloud`: share → invite
+  code with the fingerprint → accept → an untrusted key refused, trusted, added → join (nothing pushed after joining, the
+  server never sees the text) → edits both ways → conflict (keep both, keep mine) → remove → epoch 2, every envelope
+  under it, the old key opens none, the removed phone gets 404 and keeps a "No longer shared" copy outside its library;
+  never in the library (and leaves it); viewer read-only; a bare invite → trust prompt → trustSender → join; damaged codes;
+  a forged wrap refused as a security warning; team environments. `FakeCloud` now enforces the workspace rules: exact
+  wraps for every member device, a format 2 wrap's sender = one of the caller's keys, roles (viewer 403, non-member 404),
+  removal only with epoch + 1 and its wraps, `stale_epoch`, version + version-vector 409s, invites, deny-unknown bodies.
+  `SharedScenarioTests` runs the UI tests' scenarios first.
+- End-to-end (`UnitTests/SharedEndToEndTests.swift`, CI job `core`, which now also builds the hitop CLI as `HITOP_BIN`):
+  the app's Core (Ada) and the hitop CLI (Grace) against the real sync server: share, invite with the fingerprint, CLI
+  accept, trust + add, CLI link (key accepted from the code's device), nothing to push on either side, edits both ways,
+  a conflict on the CLI (theirs) and on the phone (mine), Grace's epoch-1 key (from her CLI's key file and wraps) opens
+  none of the files after the removal (all at epoch 2), her CLI pull fails.
+- UI (`UITests/SharedFlowTests.swift`, `SharedScenario`: Grace's phone runs in the app process against `FakeCloud.shared`
+  with her device key fixed, so the code is known): join by code with the trust prompt (fingerprint checked) → opens by
+  itself → "Shared with Acme" badge; a viewer's read-only editor; a conflict (the fake holds Grace's write until Ada
+  writes) shown and resolved by "Take theirs"; the Share sheet's members. Screenshots 12-shared-collections,
+  13-join-trust, 14-conflict, 15-share-members, 16-viewer.
+
+**Judgement calls**
+- "Keep both" is offered for request files only (hitop.yaml, environments and globals merge key by key, and a copy of
+  them makes no sense), as the server's Git sync does; the web app's shared conflicts have Keep mine / Take theirs and
+  "View both" — the app has all three.
+- Shared collections live in the app's collection list (so the editor, runner and history need nothing new) instead of a
+  separate store; the workspace's files are the source of truth for what the app doesn't model.
+- A joined collection takes hitop.yaml's id; if a local, unshared collection already has that id (the owner's other
+  device that still has the library copy), the shared one replaces it.
+- The Share sheet is the one place for people, invites, removal and conflicts (the collection's context menu or swipe
+  "People"/"Share…"); the Account screen has the fingerprint, Join and "Open here".
+- The join sheet polls `/v1/workspaces` every second for two minutes after accepting (the web app waits for a reload).
+
+**Deferred**
+- Shared environment values aren't used in sends here yet (opened, resealed for new devices and re-keyed on removal, but
+  not merged into variables); creating env shares; folder environments (`environments/*` of a shared collection) aren't
+  shown or edited (kept intact); comments aren't shown (kept intact); runner credentials, audit log, alerts, role change
+  UI (the Core has `setRole`), deleting a workspace, editing team environments (read and pick only).
+- Company SSO, passwords and recovery phrases (I2 deferred list).
+- Not checked on a device: the hosted server with real invites, Keychain on hardware.
