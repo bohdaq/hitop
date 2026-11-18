@@ -23,6 +23,20 @@ final class Navigator {
     var padRequest: UInt64?
     var padSearch = false
 
+    /// Set by RootView: the three-column layout is showing.
+    var isPad = false
+
+    /// The request the editor shows (iPad middle column, or the top of the iPhone Collections stack).
+    var currentRequest: UInt64? {
+        if isPad { return padPage == .collections ? padRequest : nil }
+        if tab == .collections, case let .request(id)? = collectionsPath.last { return id }
+        return nil
+    }
+
+    func showSearch() {
+        if isPad { padSearch = true } else { tab = .search }
+    }
+
     /// Opens a request in the editor (Collections tab on iPhone, middle column on iPad).
     func open(request id: UInt64) {
         tab = .collections
@@ -46,6 +60,8 @@ struct RootView: View {
             }
         }
         .sheet(isPresented: $nav.showAbout) { AboutView() }
+        .onAppear { nav.isPad = sizeClass == .regular }
+        .onChange(of: sizeClass) { _, c in nav.isPad = c == .regular }
     }
 }
 

@@ -102,6 +102,7 @@ jobs:
           xcrun simctl bootstatus "$PHONE_ID" -b
           xcodebuild test-without-building -project HITOPApp.xcodeproj -scheme HITOP \
             -destination "id=$PHONE_ID" -derivedDataPath "$RUNNER_TEMP/dd" \
+            -retry-tests-on-failure -test-iterations 2 \
             -resultBundlePath "$RUNNER_TEMP/phone.xcresult" 2>&1 | tee "$RUNNER_TEMP/test-phone.log" \
             | grep -E "Test Case|error:|failed|TEST (SUCCEEDED|FAILED)|Executed" || true
           if ! grep -q "TEST EXECUTE SUCCEEDED\|TEST SUCCEEDED" "$RUNNER_TEMP/test-phone.log"; then

@@ -76,14 +76,12 @@ struct RequestScreen: View {
                     }
                     .buttonStyle(.glass)
                     .buttonBorderShape(.circle)
-                    .keyboardShortcut("s", modifiers: .command)
                     .accessibilityLabel(editor.isDirty ? "Save, unsaved changes" : "Saved")
                     .accessibilityIdentifier("save")
                     SendButton(sending: editor.isSending) {
                         editor.send()
                         showResponse = true
                     }
-                    .keyboardShortcut(.return, modifiers: .command)
                     .disabled(!editor.canSend && !editor.isSending)
                 }
             }

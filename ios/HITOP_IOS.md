@@ -100,10 +100,11 @@ CI: `.github/workflows/ios.yml`, green run https://github.com/bohdaq/hitop/actio
   tests in the Tests tab (the sample's timing check is "Responds under 1 s", not the draft's 300 ms: cold CI runners
   are slower), cookies, switch to Production (other host), no environment → explained error; Environments tab
   switch + masked secrets; variable peek (tap the `${baseUrl}` chip → its value); iPad: ⌘↩ send, ⌘S save, ⌘K search,
-  ⌘N new request (on toolbar items: shortcuts on list rows or inside scroll views don't reach the key commands; the
-  test presses a shortcut twice when the simulator drops the first key command after launch);
+  ⌘N new request (a "Request" menu of scene commands, so a focused sidebar list can't swallow ⌘↩; they also work on an
+  iPhone with a keyboard; the test presses a shortcut twice when the simulator drops the first key command after launch);
   screenshots.
-- CI also runs HitopKit's `swift test` on macOS (JavaScriptCore). `ci.yml` (hitopkit on Linux, brand) runs only on main and
+- CI retries a failed UI test once (`-retry-tests-on-failure -test-iterations 2`): simulator app launches sometimes time out
+  on the hosted runners. CI also runs HitopKit's `swift test` on macOS (JavaScriptCore). `ci.yml` (hitopkit on Linux, brand) runs only on main and
   pull requests, so it hasn't run on this branch; locally HitopKit's Linux tests pass with the CLI compatibility test
   skipped (no `hitop` binary built here).
 

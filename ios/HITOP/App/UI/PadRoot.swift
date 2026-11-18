@@ -117,12 +117,10 @@ struct PadRoot: View {
         .toolbar {
             ToolbarItem(placement: .primaryAction) {
                 Button { nav.padSearch = true } label: { Image(systemName: "magnifyingglass") }
-                    .keyboardShortcut("k", modifiers: .command)
                     .accessibilityLabel("Search")
             }
             ToolbarItem(placement: .primaryAction) {
                 Button { newRequest() } label: { Image(systemName: "plus") }
-                    .keyboardShortcut("n", modifiers: .command)
                     .accessibilityLabel("New request")
                     .accessibilityIdentifier("pad-new-request")
             }
@@ -196,7 +194,6 @@ struct PadRequestColumn: View {
                     .overlay(Capsule().stroke(Color.white.opacity(0.12)))
                     SendButton(shortcut: "⌘↩", sending: editor.isSending, height: 52) { editor.send() }
                         .fixedSize()
-                        .keyboardShortcut(.return, modifiers: .command)
                         .disabled(!editor.canSend && !editor.isSending)
                 }
                 RequestEditorView(editor: editor, wide: true)
@@ -211,16 +208,9 @@ struct PadRequestColumn: View {
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
             ToolbarItem(placement: .primaryAction) {
-                Button { editor.send() } label: { Label("Send", systemImage: "paperplane") }
-                    .keyboardShortcut(.return, modifiers: .command)
-                    .disabled(!editor.canSend)
-                    .accessibilityLabel("Send (⌘↩)")
-            }
-            ToolbarItem(placement: .primaryAction) {
                 Button { editor.save() } label: {
                     Label(editor.isDirty ? "Save" : "Saved", systemImage: editor.isDirty ? "square.and.arrow.down.fill" : "checkmark")
                 }
-                .keyboardShortcut("s", modifiers: .command)
                 .disabled(!editor.isDirty)
                 .accessibilityIdentifier("save")
             }
