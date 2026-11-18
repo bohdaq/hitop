@@ -51,6 +51,9 @@ final class ScreenshotTests: XCTestCase {
         app.launch()
         sleep(2)
         let create = app.el("request-Create order")
+        if !create.waitForExistence(timeout: 5), app.buttons["Show Sidebar"].exists {
+            app.buttons["Show Sidebar"].tap()
+        }
         wait(create)
         create.tap()
         wait(app.el("send"))

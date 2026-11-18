@@ -72,7 +72,8 @@ jobs:
                           return d
               return found[0][1]
           phone = pick(["iPhone 17 Pro", "iPhone 17", "iPhone 16 Pro"], "iPhone")
-          pad = pick(["iPad Air 11-inch (M3)", "iPad Air 11-inch (M2)", "iPad Pro 11-inch (M4)"], "iPad")
+          # The largest iPad: the runner's simulators don't rotate, so the iPad shot is portrait.
+          pad = pick(["iPad Pro 13-inch (M5)", "iPad Pro 13-inch (M4)", "iPad Air 13-inch (M3)", "iPad Air 13-inch (M2)", "iPad Air 11-inch (M3)"], "iPad")
           print(f"PHONE_ID={phone['udid']}")
           print(f"PHONE_NAME={phone['name']}")
           print(f"PAD_ID={pad['udid']}")
