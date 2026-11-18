@@ -32,7 +32,7 @@ Agents can't run Xcode here (Linux bastion): every tranche is built and tested b
 
 ## I0 + I1: what landed (2026-11-18, branch `ios-i0-i1`)
 
-CI: `.github/workflows/ios.yml`, green run RUN_URL (artifact `screenshots`: the five iPhone screens + iPad).
+CI: `.github/workflows/ios.yml`, green run https://github.com/bohdaq/hitop/actions/runs/44214809023 (artifact `screenshots`: the five iPhone screens + iPad).
 
 **Project (I0)**
 - `ios/HITOP/project.yml` (XcodeGen 2.46.0, pinned by sha256 in CI): project `HITOPApp`, targets `HITOP` (app),
@@ -113,7 +113,9 @@ CI: `.github/workflows/ios.yml`, green run RUN_URL (artifact `screenshots`: the 
 - History and Environments have no draft; they use the same cards, labels and type.
 - iPad: three columns (sidebar, request with the URL capsule and Send ⌘↩, response). Differs: shot in portrait on the
   13-inch iPad, because the runner's headless simulators don't rotate (neither `XCUIDevice.orientation` nor the app's
-  `requestGeometryUpdate`), and the sidebar lists every request flat per collection (folders only on iPhone).
+  `requestGeometryUpdate`), so the sidebar shows as an overlay over the dimmed request column instead of tiling; in
+  landscape on a device it tiles as in the draft (not verified here). The sidebar lists every request flat per collection
+  (folders only on iPhone).
 
 **Judgement calls**
 - Method colours: the web app's (`--hitop-method-*`: GET #5EC79B, POST #F2B45C, PUT #6CA8FF, PATCH #C69CFF, DELETE #FF8A8A,
