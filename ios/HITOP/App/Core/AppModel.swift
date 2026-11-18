@@ -221,6 +221,21 @@ final class AppModel {
         }
     }
 
+    /// Takes out the team environments of every organization but `org` (another one is shown now,
+    /// or none: signed out, personal).
+    func dropTeamEnvironments(except org: String?) {
+        let other = { (e: SavedEnvironment) in e.extras["team"].map { $0 != .null && $0 != org.map(JSONAny.string) } ?? false }
+        guard environments.contains(where: other) else { return }
+        fromCloud {
+            if let a = state.activeEnvironmentID, environments.contains(where: { $0.id == a && other($0) }) {
+                state.activeEnvironmentID = nil
+                persistState()
+            }
+            environments.removeAll(where: other)
+            persistEnvironments()
+        }
+    }
+
     /// A conflict copy ("shop-api (this iPhone)"): a new collection, synced like any other.
     func addCollectionCopy(_ c: SavedCollection) {
         collections.append(c)
@@ -387,7 +402,13 @@ final class AppModel {
             guard let i = c.requests.firstIndex(where: { $0.id == request.id }) else { return }
             var r = request
             let folder = c.requests[i].folder
-            r.file = folder.isEmpty ? (c.requests[i].file == nil ? nil : Self.fileName(r.name)) : "\(folder)/\(Self.fileName(r.name))"
+            // The file follows the name only when the name changed: a file named by hand (another
+            // client, a shared collection) keeps its name through edits.
+            if c.requests[i].name == r.name {
+                r.file = c.requests[i].file
+            } else {
+                r.file = folder.isEmpty ? (c.requests[i].file == nil ? nil : Self.fileName(r.name)) : "\(folder)/\(Self.fileName(r.name))"
+            }
             c.requests[i] = r
         }
     }

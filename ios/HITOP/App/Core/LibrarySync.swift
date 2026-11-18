@@ -503,6 +503,13 @@ final class LibrarySync {
             return
         }
         guard let cid = UInt64(item.id) else { return }
+        // A collection shared since (its library copy being deleted) is the workspace's: the
+        // library's version never replaces it.
+        if model.isShared(cid) {
+            state.known.removeValue(forKey: key)
+            save()
+            return
+        }
         let mine = item.data.isNull ? nil : model.collection(cid)
         model.applyRemoteRemoval(collection: cid)
         if !theirsDeleted, let data = current["data"], var theirs = try? data.decode(SavedCollection.self) {

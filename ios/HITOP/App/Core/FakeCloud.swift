@@ -49,6 +49,8 @@ final class FakeCloud: CloudTransport, @unchecked Sendable {
     var teamEnvironments: [JSONAny] = []
     /// Invites get this token (UI tests type the code), else a random one.
     var fixedInviteToken: String?
+    /// Creating a workspace answers the plan limit (402, with the plan link).
+    var sharingLimit = false
     /// Blob writes from this address are answered but held back until someone else writes to the
     /// same workspace: the UI tests' "changed by someone else meanwhile".
     var holdWritesFrom: String?
@@ -542,6 +544,10 @@ extension FakeCloud {
                 return fail(400, "bad_request", "id must be 32 lower-case hex digits (random, from the client)")
             }
             if spaces[id] != nil { return fail(409, "exists", "a workspace with this id exists") }
+            if sharingLimit {
+                return fail(402, "limit", "plan limit: the free plan of your personal account allows 0 shared collections; nothing changed. See or change the plan at https://cloud.hitop.rws8.tech/orgs/personal-\(uid)/plan",
+                            ["limit": .string("workspaces"), "upgradeUrl": .string("https://cloud.hitop.rws8.tech/orgs/personal-\(uid)/plan")])
+            }
             let org = b["org"]?.string ?? "personal-\(uid)"
             guard org == "personal-\(uid)" || org == "org-acme" else { return fail(403, "forbidden", "not a member of that organization") }
             switch exactWraps(uid, [uid], b["wraps"]) {

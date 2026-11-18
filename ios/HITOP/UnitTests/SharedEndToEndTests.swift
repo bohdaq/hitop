@@ -129,6 +129,20 @@ extension CloudEndToEndTests {
         XCTAssertEqual(quiet.pushed, [])
         XCTAssertTrue(try grace.ok(["sync", "push", "-c", folder.path]).contains("Up to date"))
 
+        // A request Grace writes by hand (no id, her own file name): the phone takes it and sends
+        // nothing back; her file keeps its bytes.
+        let hand = "name: Hand made\nmethod: GET\nurl: https://hand.example.test\n"
+        let handFile = folder.appendingPathComponent("requests/hand.yaml")
+        try hand.write(to: handFile, atomically: true, encoding: .utf8)
+        _ = try grace.ok(["sync", "push", "-c", folder.path])
+        try await shared.syncNow(c.id)
+        XCTAssertNotNil(ada.model.collection(c.id)?.requests.first { $0.name == "Hand made" })
+        let calm = try await shared.syncNow(c.id)
+        XCTAssertEqual(calm.pushed, [], "opening a teammate's file rewrites nothing")
+        _ = try grace.ok(["sync", "pull", "-c", folder.path])
+        XCTAssertEqual(try String(contentsOf: handFile, encoding: .utf8), hand)
+        XCTAssertTrue(try grace.ok(["sync", "push", "-c", folder.path]).contains("Up to date"))
+
         // Grace's edit reaches the phone; the phone's reaches her.
         try edit(listFile, "url: https://internal.example.test/orders", "url: https://internal.example.test/v2/orders")
         XCTAssertTrue(try grace.ok(["sync", "push", "-c", folder.path]).contains("pushed"))

@@ -12,6 +12,8 @@ on:
       - "cli/crates/hitop-core/**"
       - "cli/crates/hitop-sync-crypto/**"
       - "cli/crates/hitop/src/commands/sync/**"
+      # hitop-core takes its dependencies from the cli workspace.
+      - "cli/Cargo.toml"
   workflow_dispatch:
 
 permissions:

@@ -319,12 +319,20 @@ the app runs the same bytes as the CLI and the web app, and nothing cryptographi
   no Save, fields disabled, Send works; sync only pulls.
 - Never in the personal library: `LibrarySync` leaves linked collections out of every push, badge and pull (a collection
   shared from the library leaves it: its library item is deleted); a removed member's copy stays on the device marked
-  "No longer shared" and still never goes to the library. Another account signing in marks the old account's links gone.
+  "No longer shared" and still never goes to the library. Another account signing in marks the old account's links gone;
+  a link syncs again once the account is a member again (re-added, or signed in again). As in the web app's
+  library.js, sharing deletes the collection's library item and the library never changes a shared collection (a 409
+  on that delete doesn't bring the library's copy back).
+- Files other clients wrote keep their bytes: `localFiles` reads the stored files into the app's model and writes them
+  back (`base`), and replaces a file only where the collection as it is now writes it differently, so opening a CLI
+  user's id-less or `.yml` request rewrites nothing. A request's file now follows its name only when the name changes
+  (AppModel `save`, also for unshared collections: before, saving renamed a hand-named file).
 - Organizations: a shared collection shows in its workspace's team organization (the web app's `orgOf`), others with
   the personal ones; the card says "Shared with Acme" (or "Shared"), "View only", "1 conflict", and "N requests · synced
   …".
 - Team environments: `GET /v1/orgs/:org/environments` of the current team organization on launch, foreground and org
-  switch (`team: <org>`, secret names without values; each member's values stay in the Keychain); in the environment
+  switch (`team: <org>`, secret names without values; each member's values stay in the Keychain; other organizations'
+  are taken out of the pill); in the environment
   pill as "<name> (team)", read-only on the Environments screen except secret values, never in the personal library.
 - This device's fingerprint is on the Account screen ("Others compare it before they share a collection's key").
 - Store mode: no plan, price or upgrade link; server refusals (402 limits) go through `StoreText.withoutPlanLink`.
@@ -337,7 +345,9 @@ blobs, env-shares, org environments).
   code with the fingerprint → accept → an untrusted key refused, trusted, added → join (nothing pushed after joining, the
   server never sees the text) → edits both ways → conflict (keep both, keep mine) → remove → epoch 2, every envelope
   under it, the old key opens none, the removed phone gets 404 and keeps a "No longer shared" copy outside its library;
-  never in the library (and leaves it); viewer read-only; a bare invite → trust prompt → trustSender → join; damaged codes;
+  never in the library (and leaves it); a hand-written `.yml` request keeps its bytes through a pull, a second sync and an
+  edit; a 402 limit reads without the plan link; a re-added member syncs again; a library 409 never replaces a shared
+  collection; only the current organization's team environments; viewer read-only; a bare invite → trust prompt → trustSender → join; damaged codes;
   a forged wrap refused as a security warning; team environments. `FakeCloud` now enforces the workspace rules: exact
   wraps for every member device, a format 2 wrap's sender = one of the caller's keys, roles (viewer 403, non-member 404),
   removal only with epoch + 1 and its wraps, `stale_epoch`, version + version-vector 409s, invites, deny-unknown bodies.
@@ -345,6 +355,7 @@ blobs, env-shares, org environments).
 - End-to-end (`UnitTests/SharedEndToEndTests.swift`, CI job `core`, which now also builds the hitop CLI as `HITOP_BIN`):
   the app's Core (Ada) and the hitop CLI (Grace) against the real sync server: share, invite with the fingerprint, CLI
   accept, trust + add, CLI link (key accepted from the code's device), nothing to push on either side, edits both ways,
+  a hand-written id-less request from the CLI taken by the phone with nothing sent back and its bytes kept,
   a conflict on the CLI (theirs) and on the phone (mine), Grace's epoch-1 key (from her CLI's key file and wraps) opens
   none of the files after the removal (all at epoch 2), her CLI pull fails.
 - UI (`UITests/SharedFlowTests.swift`, `SharedScenario`: Grace's phone runs in the app process against `FakeCloud.shared`

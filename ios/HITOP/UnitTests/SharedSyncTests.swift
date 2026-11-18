@@ -309,4 +309,95 @@ final class SharedSyncTests: XCTestCase {
         XCTAssertNil(ada.model.environments.first { $0.id == "team-staging" })
         XCTAssertNil(ada.model.state.activeEnvironmentID)
     }
+
+    // MARK: Files other clients wrote, limits, re-added members
+
+    func testFilesAnotherClientWroteKeepTheirBytes() async throws {
+        let (aid, gid, ws) = try await shareWithGrace()
+        // Grace's CLI-like edit: a hand-written request without an id, as .yml.
+        var files = grace.shared.store.files(ws)
+        let hand = "name: Hand made\nmethod: GET\nurl: https://hand.example.test\n"
+        files["requests/hand.yml"] = hand
+        try grace.shared.applyFiles(gid, files)
+        let pushed = try await grace.shared.syncNow(gid)
+        XCTAssertEqual(pushed.pushed, ["requests/hand.yml"])
+        // Ada pulls it and has nothing to send back, twice.
+        try await ada.shared.syncNow(aid)
+        XCTAssertNotNil(request(ada, aid, "Hand made"))
+        let again = try await ada.shared.syncNow(aid)
+        XCTAssertEqual(again.pushed, [])
+        XCTAssertEqual(ada.shared.store.files(ws)["requests/hand.yml"], hand)
+        XCTAssertNil(ada.shared.store.files(ws)["requests/hand.yaml"])
+        // Ada edits it: written back where it was.
+        var r = try XCTUnwrap(request(ada, aid, "Hand made"))
+        r.url = "https://hand.example.test/v2"
+        ada.model.save(r)
+        let edited = try await ada.shared.syncNow(aid)
+        XCTAssertEqual(edited.pushed, ["requests/hand.yml"])
+        try await grace.shared.syncNow(gid)
+        XCTAssertEqual(request(grace, gid, "Hand made")?.url, "https://hand.example.test/v2")
+    }
+
+    func testALimitReadsNeutrally() async throws {
+        let c = shop(on: ada)
+        try await ada.signIn()
+        fake.sharingLimit = true
+        do {
+            try await ada.shared.share(c.id)
+            XCTFail("over the limit")
+        } catch {
+            let text = error.localizedDescription
+            XCTAssertTrue(text.contains("allows 0 shared collections"), text)
+            for word in ["See or change the plan", "http", "upgrade", "pricing"] { XCTAssertFalse(text.contains(word), text) }
+        }
+        XCTAssertNil(ada.shared.link(c.id))
+    }
+
+    func testAReAddedMemberSyncsAgain() async throws {
+        let (aid, gid, ws) = try await shareWithGrace()
+        let info = try await ada.shared.members(aid)
+        let graceID = try XCTUnwrap(info.members.first { $0.email == grace.email }?.userId)
+        try await ada.shared.removeMember(aid, userId: graceID)
+        try await grace.shared.refreshWorkspaces()
+        XCTAssertEqual(grace.shared.badge(gid), "No longer shared")
+        // Invited and added again.
+        let code = try await ada.shared.invite(aid, email: grace.email, role: "editor").code
+        _ = try await grace.shared.accept(try InviteCode.parse(code))
+        let m = try await ada.shared.members(aid)
+        // Her devices were unpinned when she was removed: compared and trusted again.
+        ada.shared.trust(try XCTUnwrap(m.invites.first { $0.acceptedBy != nil }?.acceptedBy?.keys))
+        let m2 = try await ada.shared.members(aid)
+        let keys = try XCTUnwrap(m2.invites.first { $0.acceptedBy != nil }?.acceptedBy?.keys)
+        try await ada.shared.addMember(aid, email: grace.email, role: "editor", keys: keys)
+        try await grace.shared.refreshWorkspaces()
+        XCTAssertEqual(grace.shared.badge(gid), "Shared")
+        XCTAssertEqual(grace.shared.link(gid)?.workspace, ws)
+        try await grace.shared.syncNow(gid)
+        XCTAssertEqual(grace.model.collection(gid)?.name, "Shop API")
+    }
+
+    func testOnlyTheCurrentOrganizationsTeamEnvironments() async throws {
+        try await ada.signIn()
+        fake.teamEnvironments = [.object(["id": .string("team-a"), "version": .number(1), "data": .object(["name": .string("Acme staging"), "variables": .object([:])])])]
+        try await ada.cloud.loadOrgs()
+        ada.cloud.selectOrg("org-acme")
+        await ada.shared.loadTeamEnvironments()
+        XCTAssertNotNil(ada.model.environments.first { $0.id == "team-a" })
+        ada.model.setActiveEnvironment("team-a")
+        ada.cloud.selectOrg(ada.cloud.personalOrg?.id)
+        await ada.shared.loadTeamEnvironments()
+        XCTAssertNil(ada.model.environments.first { $0.id == "team-a" })
+        XCTAssertNil(ada.model.state.activeEnvironmentID)
+    }
+
+    func testALibraryConflictNeverReplacesASharedCollection() async throws {
+        let (aid, _, _) = try await shareWithGrace()
+        // The library answers 409 on the delete that follows sharing: the shared one stays.
+        let before = ada.model.collection(aid)
+        ada.library.conflict(LibrarySync.Item(kind: "collection", id: String(aid), data: .null, secrets: [:]),
+                             current: .object(["kind": .string("collection"), "id": .string(String(aid)), "version": .number(9), "deleted": .bool(false),
+                                               "data": .object(["id": .number(Double(aid)), "name": .string("Library copy"), "requests": .array([])])]))
+        XCTAssertEqual(ada.model.collection(aid), before)
+        XCTAssertFalse(ada.model.collections.contains { $0.name.contains("(this iPhone)") })
+    }
 }

@@ -444,14 +444,26 @@ final class SharedSync {
     /// The workspace's files with this device's edits: the stored folder, with hitop.yaml and
     /// requests/ as the collection now is here. environments/, globals.yaml and comments/ stay
     /// as they came (this app doesn't edit them; leaving them out would delete them for everyone).
+    ///
+    /// Only what changed here is rewritten: the stored files are read into the app's model and
+    /// written back (`base`), and a file is replaced only where the collection as it is now writes
+    /// it differently. A file another client wrote (by hand, without ids, as `.yml`) keeps its
+    /// bytes until someone edits that request here.
     func localFiles(_ id: UInt64) throws -> [String: String] {
         let l = try live(id)
         var files = store.files(l.workspace)
         guard l.role != "viewer", let c = model.collection(id) else { return files }
         let own = try SyncCore.toFiles(c).filter { Self.isCollectionFile($0.key) }
-        let p = try SyncCore.planFolder(existing: files.keys.filter(Self.isCollectionFile).sorted(), files: own)
-        for (k, v) in p.write { files[k] = v }
-        for r in p.remove { files[r] = nil }
+        let base: [String: String] = files["hitop.yaml"] == nil ? [:]
+            : try SyncCore.toFiles(SyncCore.readFiles(files, name: c.name)).filter { Self.isCollectionFile($0.key) }
+        /// The stored file for a written path (an existing `.yml` keeps its extension).
+        func stored(_ p: String) -> String {
+            guard p.hasSuffix(".yaml") else { return p }
+            let yml = String(p.dropLast(5)) + ".yml"
+            return files[p] == nil && files[yml] != nil ? yml : p
+        }
+        for (p, text) in own where base[p] != text { files[stored(p)] = text }
+        for p in base.keys where own[p] == nil { files[stored(p)] = nil }
         return files
     }
 
@@ -658,13 +670,15 @@ final class SharedSync {
                                    orgName: o?["name"]?.string, orgPersonal: o?["personal"]?.bool ?? false)
         }
         let byID = Dictionary(workspaces.map { ($0.id, $0) }) { a, _ in a }
-        for (id, l) in state.links where !l.gone {
+        for (id, l) in state.links {
             if let w = byID[l.workspace] {
+                // A member again (re-added, or this account signed in again): it syncs again.
+                state.links[id]?.gone = false
                 state.links[id]?.role = w.role
                 state.links[id]?.org = w.org
                 state.links[id]?.orgName = w.orgName
                 state.links[id]?.orgPersonal = w.orgPersonal
-            } else {
+            } else if !l.gone {
                 state.links[id]?.gone = true
                 let name = UInt64(id).flatMap { model.collection($0)?.name } ?? "A shared collection"
                 notices.insert("You're no longer a member of “\(name)”: its copy stays on this device and no longer syncs.", at: 0)
@@ -1017,6 +1031,9 @@ final class SharedSync {
     /// values never there: each member keeps theirs in this device's Keychain), shown in the
     /// environment pill. Read here; edited in the web app.
     func loadTeamEnvironments() async {
+        // Only the current organization's team environments are in the pill.
+        let current = cloud.signedIn ? cloud.currentOrg.flatMap { $0.personal ? nil : $0.id } : nil
+        model.dropTeamEnvironments(except: current)
         guard cloud.signedIn, let org = cloud.currentOrg, !org.personal else { return }
         guard let r = try? await api("GET", "/v1/orgs/\(org.id)/environments", allow: [400, 403, 404]), r.status == 200, let j = r.json else { return }
         let list: [SavedEnvironment] = (j["environments"]?.array ?? []).compactMap { e in
