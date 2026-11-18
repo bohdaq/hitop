@@ -255,7 +255,7 @@ device, last use; rename, remove with force for one holding shared keys), Sign o
 - Not checked on a device: ASWebAuthenticationSession against the hosted server (needs the deploy), Keychain on hardware.
 
 ## I2b: what landed (2026-11-18, branch `ios-i2b`)
-CI: `.github/workflows/ios.yml`, green run https://github.com/bohdaq/hitop/actions/runs/44347026003 (commit 7e9448f; the `core` job needed a re-run: it twice got no macOS runner within 15 minutes) (jobs `app`, `core` with the CLI end-to-end test, `hitopkit`;
+CI: `.github/workflows/ios.yml`, green run https://github.com/bohdaq/hitop/actions/runs/44359787869 (commit 1c4b8f3; earlier runs had jobs cancelled when no macOS runner came within 15 minutes, re-run) (jobs `app`, `core` with the CLI end-to-end test, `hitopkit`;
 artifact `screenshots`: 12–16 are I2b's).
 
 **Crypto approach: (b), the real Rust behind a C ABI** (`ios/HITOP/SyncFFI`, crate `hitop-sync-ffi`, MIT, own workspace
