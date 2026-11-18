@@ -32,7 +32,7 @@ Agents can't run Xcode here (Linux bastion): every tranche is built and tested b
 
 ## I0 + I1: what landed (2026-11-18, branch `ios-i0-i1`)
 
-CI: `.github/workflows/ios.yml`, green run https://github.com/bohdaq/hitop/actions/runs/44214809023 (artifact `screenshots`: the five iPhone screens + iPad).
+CI: `.github/workflows/ios.yml`, green run https://github.com/bohdaq/hitop/actions/runs/44276302604 (commit 19d346d) (artifact `screenshots`: the five iPhone screens + iPad).
 
 **Project (I0)**
 - `ios/HITOP/project.yml` (XcodeGen 2.46.0, pinned by sha256 in CI): project `HITOPApp`, targets `HITOP` (app),
@@ -145,5 +145,7 @@ CI: `.github/workflows/ios.yml`, green run https://github.com/bohdaq/hitop/actio
   its own session, like a run), file fields in multipart bodies (text rows only), response search.
 - Targets: rows, chips, tab buttons and toolbar buttons are 44 pt; the JSON fold rows are one line of code tall (the
   whole line toggles).
+- Known nit: in the iPhone response sheet the size label can truncate ("285…") next to a wide status pill; give it
+  priority over the spacer in I5.
 - Not checked on a device: Keychain on hardware, the old app → new app upgrade with real data (unit-tested with fixture
   files of the old shapes), App Store submission (I6).
