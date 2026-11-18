@@ -72,8 +72,8 @@ jobs:
                           return d
               return found[0][1]
           phone = pick(["iPhone 17 Pro", "iPhone 17", "iPhone 16 Pro"], "iPhone")
-          # The largest iPad: the runner's simulators don't rotate, so the iPad shot is portrait.
-          pad = pick(["iPad Pro 13-inch (M5)", "iPad Pro 13-inch (M4)", "iPad Air 13-inch (M3)", "iPad Air 13-inch (M2)", "iPad Air 11-inch (M3)"], "iPad")
+          # 11-inch: 1180 x 820 points in landscape, the drafts' iPad size.
+          pad = pick(["iPad Air 11-inch (M3)", "iPad Air 11-inch (M2)", "iPad Pro 11-inch (M4)"], "iPad")
           print(f"PHONE_ID={phone['udid']}")
           print(f"PHONE_NAME={phone['name']}")
           print(f"PAD_ID={pad['udid']}")
@@ -109,7 +109,7 @@ jobs:
             exit 1
           fi
 
-      - name: iPad screenshots (${{ env.PAD_NAME }})
+      - name: iPad tests and screenshots (${{ env.PAD_NAME }})
         if: success() || failure()
         working-directory: ios/HITOP
         run: |
@@ -119,7 +119,7 @@ jobs:
           xcrun simctl bootstatus "$PAD_ID" -b
           xcodebuild test-without-building -project HITOPApp.xcodeproj -scheme HITOP \
             -destination "id=$PAD_ID" -derivedDataPath "$RUNNER_TEMP/dd" \
-            -only-testing:HITOPUITests/ScreenshotTests -retry-tests-on-failure -test-iterations 2 \
+            -only-testing:HITOPUITests/ScreenshotTests -only-testing:HITOPUITests/PadTests -retry-tests-on-failure -test-iterations 2 \
             -resultBundlePath "$RUNNER_TEMP/pad.xcresult" 2>&1 | tee "$RUNNER_TEMP/test-pad.log" \
             | grep -E "Test Case|error:|failed|TEST (SUCCEEDED|FAILED)|Executed" || true
           if ! grep -q "TEST EXECUTE SUCCEEDED\|TEST SUCCEEDED" "$RUNNER_TEMP/test-pad.log"; then

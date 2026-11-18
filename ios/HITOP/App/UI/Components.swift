@@ -2,46 +2,7 @@ import SwiftUI
 
 // MARK: - Glass
 
-/// Liquid Glass on a shape (`.glassEffect`), or a solid surface when Reduce Transparency is on;
-/// a stronger edge with Increase Contrast.
-struct HitopGlass<S: Shape>: ViewModifier {
-    var shape: S
-    var tint: Color?
-    var interactive = false
-    @Environment(\.accessibilityReduceTransparency) private var reduceTransparency
-    @Environment(\.colorSchemeContrast) private var contrast
-
-    func body(content: Content) -> some View {
-        if reduceTransparency {
-            content
-                .background(shape.fill(tint.map { $0.opacity(0.35) } ?? Theme.surfaceRaised))
-                .overlay(shape.hitopEdge(Color.white.opacity(contrast == .increased ? 0.45 : 0.14), lineWidth: 1))
-        } else {
-            content
-                .glassEffect(glass, in: shape)
-                .overlay(contrast == .increased ? shape.hitopEdge(Color.white.opacity(0.45), lineWidth: 1) : nil)
-        }
-    }
-
-    private var glass: Glass {
-        var g = Glass.regular
-        if let tint { g = g.tint(tint) }
-        if interactive { g = g.interactive() }
-        return g
-    }
-}
-
-private extension Shape {
-    func hitopEdge(_ color: Color, lineWidth: CGFloat) -> some View {
-        stroke(color, lineWidth: lineWidth)
-    }
-}
-
 extension View {
-    func hitopGlass<S: Shape>(in shape: S, tint: Color? = nil, interactive: Bool = false) -> some View {
-        modifier(HitopGlass(shape: shape, tint: tint, interactive: interactive))
-    }
-
     /// A card: surface fill and hairline, stronger with Increase Contrast.
     func card(radius: CGFloat = 22, fill: Color = Theme.surface) -> some View {
         modifier(CardModifier(radius: radius, fill: fill))

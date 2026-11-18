@@ -46,29 +46,23 @@ final class ScreenshotTests: XCTestCase {
 
     @MainActor
     private func pad() {
+        XCUIDevice.shared.orientation = .landscapeLeft
         let app = XCUIApplication.seeded()
-        app.launchArguments += ["-UITestLandscape"]
         app.launch()
-        sleep(2)
-        // The runner's simulators stay in portrait, where the split view hides the sidebar until asked.
         let create = app.el("request-Create order")
-        let showSidebar = app.buttons["Show Sidebar"]
-        if !create.waitForExistence(timeout: 5), showSidebar.exists { showSidebar.tap() }
         wait(create)
         create.tap()
-        sleep(1)
-        if app.buttons["Hide Sidebar"].exists, !app.el("send").isHittable { app.buttons["Hide Sidebar"].tap() }
         let send = app.el("send")
         wait(send)
         send.tap()
-        // The first tap can land while the sidebar overlay is still closing.
-        if !app.el("status").waitForExistence(timeout: 5) { send.tap() }
         waitForResponse(app)
-        if showSidebar.exists {
-            showSidebar.tap()
-            sleep(1)
-        }
         sleep(1)
         shot(app, "01-ipad")
+        for (name, image) in [("01-ipad-screen", XCUIScreen.main.screenshot()), ("01-ipad-window", app.windows.firstMatch.screenshot())] {
+            let a = XCTAttachment(screenshot: image)
+            a.name = name
+            a.lifetime = .keepAlways
+            add(a)
+        }
     }
 }

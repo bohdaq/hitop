@@ -16,7 +16,7 @@ final class StubURLProtocol: URLProtocol {
     /// Fixed timing for the stubbed host, so screenshots show the timing bar the drafts show.
     static func timing(for url: URL) -> TimingPhases? {
         guard enabled else { return nil }
-        return TimingPhases(dns: 11, connect: 9, tls: 20, waiting: 82, download: 29)
+        return TimingPhases(dns: 11, connect: nil, tls: 20, waiting: 82, download: 29)
     }
 
     nonisolated(unsafe) static var enabled = false

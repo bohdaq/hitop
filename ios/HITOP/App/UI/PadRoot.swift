@@ -31,11 +31,6 @@ struct PadRoot: View {
             .onChange(of: nav.padRequest) { nav.padSearch = false }
         }
         .modifier(LibraryActions(naming: $naming, moving: $moving, deleting: $deleting))
-        .background {
-            // ⌘N and ⌘K from anywhere.
-            Button("New request") { newRequest() }.keyboardShortcut("n", modifiers: .command).hidden()
-            Button("Search") { nav.padSearch = true }.keyboardShortcut("k", modifiers: .command).hidden()
-        }
         .onAppear {
             if nav.padRequest == nil, let first = model.collections.first?.requests.first { nav.padRequest = first.id }
         }
@@ -76,8 +71,10 @@ struct PadRoot: View {
                     .background(RoundedRectangle(cornerRadius: 11, style: .continuous).fill(Color.white.opacity(0.07)))
                 }
                 .buttonStyle(.plain)
+                .keyboardShortcut("k", modifiers: .command)
                 .listRowBackground(Color.clear)
                 .accessibilityLabel("Search")
+                .accessibilityIdentifier("pad-search")
             }
             ForEach(model.collections) { c in
                 Section {
@@ -120,7 +117,10 @@ struct PadRoot: View {
         .background(Theme.ground)
         .toolbar {
             ToolbarItem(placement: .primaryAction) {
-                Button { newRequest() } label: { Image(systemName: "plus") }.accessibilityLabel("New request")
+                Button { newRequest() } label: { Image(systemName: "plus") }
+                    .keyboardShortcut("n", modifiers: .command)
+                    .accessibilityLabel("New request")
+                    .accessibilityIdentifier("pad-new-request")
             }
         }
     }

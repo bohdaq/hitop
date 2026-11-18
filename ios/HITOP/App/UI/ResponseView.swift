@@ -15,7 +15,6 @@ struct ResponseSheet: View {
                 .padding(.top, 18)
                 .padding(.bottom, 24)
         }
-        .background(Color(hex: 0x16161C).ignoresSafeArea())
     }
 }
 
@@ -77,14 +76,14 @@ struct ResponseContent: View {
                 }
                 ShareLink(item: outcome.text) {
                     Image(systemName: "square.and.arrow.up").font(.system(size: 16, weight: .medium)).foregroundStyle(Theme.text)
-                        .frame(width: 40, height: 40)
+                        .frame(width: 44, height: 44)
                 }
                 .buttonStyle(.glass)
                 .buttonBorderShape(.circle)
                 .accessibilityLabel("Share the response body")
                 if let close {
                     Button(action: close) {
-                        Image(systemName: "xmark").font(.system(size: 14, weight: .semibold)).foregroundStyle(Theme.text).frame(width: 40, height: 40)
+                        Image(systemName: "xmark").font(.system(size: 14, weight: .semibold)).foregroundStyle(Theme.text).frame(width: 44, height: 44)
                     }
                     .buttonStyle(.glass)
                     .buttonBorderShape(.circle)
@@ -267,8 +266,14 @@ struct JSONTreeView: View {
                     Text(Self.attributed(line.tokens, size: size))
                         .lineLimit(1)
                         .truncationMode(.tail)
+                    Spacer(minLength: 0)
                 }
                 .padding(.vertical, size * 0.22)
+                .contentShape(Rectangle())
+                .onTapGesture {
+                    guard let fold = line.fold else { return }
+                    if folded.contains(fold) { folded.remove(fold) } else { folded.insert(fold) }
+                }
             }
         }
         .textSelection(.enabled)
@@ -313,7 +318,7 @@ struct ErrorCard: View {
                 Spacer()
                 if let close {
                     Button(action: close) {
-                        Image(systemName: "xmark").font(.system(size: 14, weight: .semibold)).foregroundStyle(Theme.text).frame(width: 40, height: 40)
+                        Image(systemName: "xmark").font(.system(size: 14, weight: .semibold)).foregroundStyle(Theme.text).frame(width: 44, height: 44)
                     }
                     .buttonStyle(.glass)
                     .buttonBorderShape(.circle)

@@ -157,6 +157,7 @@ struct EnvironmentMenu: View {
             .background {
                 if compact { RoundedRectangle(cornerRadius: 8, style: .continuous).fill(Theme.fill) }
             }
+            .frame(minHeight: 44)
             .contentShape(Rectangle())
         }
         .accessibilityLabel("Environment: \(model.activeEnvironment?.name ?? "none")")
@@ -386,11 +387,11 @@ struct CollectionsScreen: View {
                     .foregroundStyle(Theme.chevron)
                     .rotationEffect(.degrees(open ? 90 : 0))
             }
-            .frame(minHeight: 26)
+            .frame(minHeight: 44)
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
-        .listRowInsets(EdgeInsets(top: 2, leading: 62 + CGFloat(depth(folder)) * 14, bottom: 0, trailing: 16))
+        .listRowInsets(EdgeInsets(top: 0, leading: 62 + CGFloat(depth(folder)) * 14, bottom: 0, trailing: 16))
         .listRowSeparator(.hidden, edges: .bottom)
         .accessibilityLabel("Folder \(name), \(count) requests")
         .accessibilityValue(open ? "expanded" : "collapsed")

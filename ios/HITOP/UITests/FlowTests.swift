@@ -55,6 +55,15 @@ final class FlowTests: XCTestCase {
         wait(app.el("body-preview"))
         XCTAssertEqual(app.el("json-validity").label, "Valid")
 
+        // Peek: a tap on the ${baseUrl} chip shows its value and where it comes from.
+        app.el("url-display").coordinate(withNormalizedOffset: CGVector(dx: 0.04, dy: 0.5)).tap()
+        let peek = app.el("peek-value")
+        wait(peek)
+        XCTAssertEqual(peek.label, "https://staging.shop.example")
+        // Dismissed with a tap outside it (on the title).
+        app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.09)).tap()
+        XCTAssertTrue(app.el("peek-value").waitForNonExistence(timeout: 5))
+
         app.el("send").tap()
         waitForResponse(app)
         XCTAssertEqual(app.el("status").label, "Status 201 Created")

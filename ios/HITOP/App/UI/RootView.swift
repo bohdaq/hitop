@@ -1,5 +1,4 @@
 import SwiftUI
-import UIKit
 
 enum AppTab: Hashable { case collections, history, environments, runs, search }
 
@@ -47,13 +46,6 @@ struct RootView: View {
             }
         }
         .sheet(isPresented: $nav.showAbout) { AboutView() }
-        .onAppear {
-            // Screenshots: the iPad layout of the drafts is landscape.
-            guard ProcessInfo.processInfo.arguments.contains("-UITestLandscape") else { return }
-            for case let scene as UIWindowScene in UIApplication.shared.connectedScenes {
-                scene.requestGeometryUpdate(.iOS(interfaceOrientations: .landscapeRight)) { _ in }
-            }
-        }
     }
 }
 

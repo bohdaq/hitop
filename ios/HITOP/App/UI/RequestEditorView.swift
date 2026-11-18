@@ -220,6 +220,7 @@ struct URLField: View {
     var singleLine = false
     @State private var editing = false
     @State private var peek: PeekName?
+    @State private var peekedAt = Date.distantPast
     @FocusState private var focused: Bool
 
     struct PeekName: Identifiable { var id: String }
@@ -245,13 +246,22 @@ struct URLField: View {
                     .tint(Theme.accentText)
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .contentShape(Rectangle())
-                    .onTapGesture {
-                        editing = true
-                        focused = true
-                    }
                     .environment(\.openURL, OpenURLAction { link in
-                        if link.scheme == "hitop-var" { peek = PeekName(id: link.host(percentEncoded: false) ?? "") }
+                        if link.scheme == "hitop-var",
+                           let name = URLComponents(url: link, resolvingAgainstBaseURL: false)?.queryItems?.first(where: { $0.name == "name" })?.value {
+                            peekedAt = Date()
+                            peek = PeekName(id: name)
+                        }
                         return .handled
+                    })
+                    .simultaneousGesture(TapGesture().onEnded {
+                        // A tap on a chip opens the peek (the link above); anywhere else edits.
+                        DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) {
+                            if Date().timeIntervalSince(peekedAt) > 0.5 {
+                                editing = true
+                                focused = true
+                            }
+                        }
                     })
                     .accessibilityLabel("URL \(url)")
                     .accessibilityHint("Double-tap to edit")
@@ -282,7 +292,8 @@ struct URLField: View {
                 a.foregroundColor = context.source(name).map { $0.missing ? Theme.danger : Theme.accentText } ?? Theme.danger
                 var comps = URLComponents()
                 comps.scheme = "hitop-var"
-                comps.host = name
+                comps.path = "peek"
+                comps.queryItems = [URLQueryItem(name: "name", value: name)]
                 a.link = comps.url
                 out += a
             case let .text(t):
@@ -362,7 +373,11 @@ struct ParamsEditor: View {
     }
 
     private func binding<T>(_ i: Int, _ kp: WritableKeyPath<RequestEditor.ParamItem, T>) -> Binding<T> {
-        Binding(get: { editor.params[i][keyPath: kp] }, set: { v in
+        let fallback = editor.params.indices.contains(i) ? editor.params[i][keyPath: kp] : RequestEditor.ParamItem(id: i, key: "", value: "", enabled: true)[keyPath: kp]
+        return Binding(get: {
+            let rows = editor.params
+            return rows.indices.contains(i) ? rows[i][keyPath: kp] : fallback
+        }, set: { v in
             var all = editor.params
             guard i < all.count else { return }
             all[i][keyPath: kp] = v

@@ -69,7 +69,7 @@ ios/*/DerivedData/
 ios/*/.build/
 ios/*/.swiftpm/
 ios/HitopCompanion/*.xcodeproj/
-ios/HITOP/*.xcodeproj/
+ios/HITOP/HITOPApp.xcodeproj/
 *.xcuserstate
 xcuserdata/
 *.xccheckout
