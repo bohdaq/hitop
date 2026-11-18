@@ -36,11 +36,6 @@ struct PadRoot: View {
             Button("New request") { newRequest() }.keyboardShortcut("n", modifiers: .command).hidden()
             Button("Search") { nav.padSearch = true }.keyboardShortcut("k", modifiers: .command).hidden()
         }
-        .task {
-            // Three columns, also in portrait (the system collapses the sidebar there by default).
-            try? await Task.sleep(for: .milliseconds(300))
-            visibility = .all
-        }
         .onAppear {
             if nav.padRequest == nil, let first = model.collections.first?.requests.first { nav.padRequest = first.id }
         }

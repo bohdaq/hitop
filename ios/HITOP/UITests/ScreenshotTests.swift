@@ -50,15 +50,22 @@ final class ScreenshotTests: XCTestCase {
         app.launchArguments += ["-UITestLandscape"]
         app.launch()
         sleep(2)
+        // The runner's simulators stay in portrait, where the split view hides the sidebar until asked.
         let create = app.el("request-Create order")
-        if !create.waitForExistence(timeout: 5), app.buttons["Show Sidebar"].exists {
-            app.buttons["Show Sidebar"].tap()
-        }
+        let showSidebar = app.buttons["Show Sidebar"]
+        if !create.waitForExistence(timeout: 5), showSidebar.exists { showSidebar.tap() }
         wait(create)
         create.tap()
-        wait(app.el("send"))
-        app.el("send").tap()
+        sleep(1)
+        if app.buttons["Hide Sidebar"].exists, !app.el("send").isHittable { app.buttons["Hide Sidebar"].tap() }
+        let send = app.el("send")
+        wait(send)
+        send.tap()
         waitForResponse(app)
+        if showSidebar.exists {
+            showSidebar.tap()
+            sleep(1)
+        }
         sleep(1)
         shot(app, "01-ipad")
     }

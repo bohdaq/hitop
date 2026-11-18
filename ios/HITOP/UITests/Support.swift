@@ -41,6 +41,7 @@ extension XCTestCase {
             }
             RunLoop.current.run(until: Date().addingTimeInterval(0.3))
         }
+        shot(app, "no-response")
         XCTFail("no response", file: file, line: line)
     }
 
