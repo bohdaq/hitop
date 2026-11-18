@@ -96,6 +96,9 @@ jobs:
         working-directory: ios/HITOP
         run: |
           set -o pipefail
+          # Booted first: a cold simulator can time out the app launch.
+          xcrun simctl boot "$PHONE_ID" || true
+          xcrun simctl bootstatus "$PHONE_ID" -b
           xcodebuild test-without-building -project HITOPApp.xcodeproj -scheme HITOP \
             -destination "id=$PHONE_ID" -derivedDataPath "$RUNNER_TEMP/dd" \
             -resultBundlePath "$RUNNER_TEMP/phone.xcresult" 2>&1 | tee "$RUNNER_TEMP/test-phone.log" \
@@ -110,9 +113,12 @@ jobs:
         working-directory: ios/HITOP
         run: |
           set -o pipefail
+          xcrun simctl shutdown "$PHONE_ID" || true
+          xcrun simctl boot "$PAD_ID" || true
+          xcrun simctl bootstatus "$PAD_ID" -b
           xcodebuild test-without-building -project HITOPApp.xcodeproj -scheme HITOP \
             -destination "id=$PAD_ID" -derivedDataPath "$RUNNER_TEMP/dd" \
-            -only-testing:HITOPUITests/ScreenshotTests \
+            -only-testing:HITOPUITests/ScreenshotTests -retry-tests-on-failure -test-iterations 2 \
             -resultBundlePath "$RUNNER_TEMP/pad.xcresult" 2>&1 | tee "$RUNNER_TEMP/test-pad.log" \
             | grep -E "Test Case|error:|failed|TEST (SUCCEEDED|FAILED)|Executed" || true
           if ! grep -q "TEST EXECUTE SUCCEEDED\|TEST SUCCEEDED" "$RUNNER_TEMP/test-pad.log"; then
