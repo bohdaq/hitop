@@ -593,7 +593,9 @@ struct JoinSheet: View {
 /// workspaces waiting to be opened here, a key from a device not trusted yet.
 struct SharedAccountSection: View {
     @Environment(SharedSync.self) private var shared
-    @State private var joining = false
+    /// The Join sheet, presented by the Account screen itself (a sheet on a List section closes
+    /// when the section is redrawn).
+    @Binding var joining: Bool
     @State private var error: String?
     @State private var busy = false
 
@@ -636,7 +638,6 @@ struct SharedAccountSection: View {
             Text("SHARED COLLECTIONS").font(Typo.label).tracking(0.9).foregroundStyle(Theme.textFaint)
         }
         .listRowBackground(Theme.surface)
-        .sheet(isPresented: $joining) { JoinSheet() }
         .task { try? await shared.refreshWorkspaces() }
     }
 

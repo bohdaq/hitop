@@ -82,6 +82,7 @@ struct AccountView: View {
     @State private var confirmSignOut = false
     @State private var about = false
     @State private var busy = false
+    @State private var joining = false
 
     var body: some View {
         @Bindable var ui = ui
@@ -103,6 +104,7 @@ struct AccountView: View {
             .task(id: cloud.accountKey) { await reload() }
             .sheet(isPresented: $ui.showSignIn) { SignInSheet() }
             .sheet(isPresented: $about) { AboutView() }
+            .sheet(isPresented: $joining) { JoinSheet() }
             .alert("Rename device", isPresented: Binding(get: { renaming != nil }, set: { if !$0 { renaming = nil } })) {
                 TextField("Name", text: $newName).accessibilityIdentifier("device-name-field")
                 Button("Cancel", role: .cancel) { renaming = nil }
@@ -190,8 +192,6 @@ struct AccountView: View {
             }
             .listRowBackground(Theme.surface)
 
-            SharedAccountSection()
-
             Section {
                 if let devices {
                     ForEach(devices) { d in deviceRow(d) }
@@ -247,6 +247,8 @@ struct AccountView: View {
                 }
                 .listRowBackground(Theme.surface)
             }
+
+            SharedAccountSection(joining: $joining)
 
             Section {
                 Button(role: .destructive) { confirmSignOut = true } label: {
