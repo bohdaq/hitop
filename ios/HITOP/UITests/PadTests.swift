@@ -23,7 +23,8 @@ final class PadTests: XCTestCase {
         create.tap()
         wait(app.el("send"))
 
-        // ⌘↩ sends.
+        // ⌘↩ sends once the request column has focus (a focused sidebar row takes Return itself: I5).
+        app.el("tab-Body").tap()
         press(app, XCUIKeyboardKey.return.rawValue, "⌘↩", until: app.el("status"))
 
         // ⌘S saves an edit (the method).

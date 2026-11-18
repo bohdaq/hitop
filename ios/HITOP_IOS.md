@@ -143,5 +143,8 @@ CI: `.github/workflows/ios.yml`, green run https://github.com/bohdaq/hitop/actio
   its own session, like a run), file fields in multipart bodies (text rows only), response search.
 - Targets: rows, chips, tab buttons and toolbar buttons are 44 pt; the JSON fold rows are one line of code tall (the
   whole line toggles).
+- Keyboard: ⌘↩ right after clicking a sidebar row goes to the focused row (the iPad focus system handles Return before
+  key commands); it works once the request column has focus. Moving focus to the editor on selection is left for the I5
+  keyboard pass.
 - Not checked on a device: Keychain on hardware, the old app → new app upgrade with real data (unit-tested with fixture
   files of the old shapes), App Store submission (I6).
