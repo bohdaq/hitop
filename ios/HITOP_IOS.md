@@ -100,6 +100,21 @@ CI: `.github/workflows/ios.yml`, green run RUN_URL (artifact `screenshots`: the 
   switch + masked secrets; screenshots.
 - CI also runs HitopKit's `swift test` on macOS (JavaScriptCore); ci.yml keeps the Linux job.
 
+**Screenshots against the drafts** (CI artifact `screenshots`, iPhone 17 Pro and iPad Pro 13-inch, iOS 26.5 simulators)
+- Collections: same header (identity pill, environment pill, + button), large Geist title, search field, filter chips,
+  shop-api card with the gradient icon, folder labels and method-coloured rows, glass tab bar + separate search button.
+- Request editor: same back/More glass buttons, title + breadcrumb, request card (method pill, environment chip, URL with
+  `${baseUrl}` chip), five segment tabs with Body selected, JSON badge + Valid, highlighted body with the `${customerId}`
+  chip, helper keys + Format, glass Save + accent Send at the bottom.
+- Response sheet: status pill, time, size, timing bar with DNS/TLS/Waiting/Download, capsule tabs with Tests 4/4, folded
+  JSON body. Differs: the sent URL line and Pretty/Raw + Copy are extra; small objects such as `total` fold instead of
+  showing on one line when they don't fit the phone width; the tests list is the Tests tab, not under the body; Share
+  instead of Explain (I5).
+- History and Environments have no draft; they use the same cards, labels and type.
+- iPad: three columns (sidebar, request with the URL capsule and Send ⌘↩, response). Differs: shot in portrait on the
+  13-inch iPad, because the runner's headless simulators don't rotate (neither `XCUIDevice.orientation` nor the app's
+  `requestGeometryUpdate`), and the sidebar lists every request flat per collection (folders only on iPhone).
+
 **Judgement calls**
 - Method colours: the web app's (`--hitop-method-*`: GET #5EC79B, POST #F2B45C, PUT #6CA8FF, PATCH #C69CFF, DELETE #FF8A8A,
   other #A99CFF) as the plan says; the drafts' brighter shades only for WS #7CC7FF, SSE #F5D76E, GQL #FF8AD8 (no web token).

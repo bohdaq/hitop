@@ -61,6 +61,8 @@ final class ScreenshotTests: XCTestCase {
         let send = app.el("send")
         wait(send)
         send.tap()
+        // The first tap can land while the sidebar overlay is still closing.
+        if !app.el("status").waitForExistence(timeout: 5) { send.tap() }
         waitForResponse(app)
         if showSidebar.exists {
             showSidebar.tap()
