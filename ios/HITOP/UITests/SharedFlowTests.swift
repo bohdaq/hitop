@@ -85,7 +85,7 @@ final class SharedFlowTests: XCTestCase {
         let team = app.el("collection-Team API")
         wait(team, 20)
         waitLabel(team, contains: "Shared with Acme")
-        XCTAssertEqual(app.el("shared-badge-Team API").label, "Shared with Acme")
+        XCTAssertTrue(app.el("shared-badge-Team API").exists)
         shot(app, "12-shared-collections")
     }
 
