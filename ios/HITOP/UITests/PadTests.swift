@@ -1,6 +1,6 @@
 import XCTest
 
-/// iPad: the keyboard shortcuts of the three-column layout (⌘K, ⌘N, ⌘↩, ⌘S).
+/// iPad: the keyboard shortcuts of the three-column layout (⌘↩, ⌘S, ⌘K, ⌘N).
 final class PadTests: XCTestCase {
     @MainActor
     func testKeyboardShortcuts() {
@@ -8,22 +8,13 @@ final class PadTests: XCTestCase {
         XCUIDevice.shared.orientation = .landscapeLeft
         let app = XCUIApplication.seeded()
         app.launch()
+        // A tap first: key commands reach the app once its window has taken focus.
         let create = app.el("request-Create order")
         wait(create)
-
-        // ⌘K opens search.
-        app.typeKey("k", modifierFlags: .command)
-        let close = app.buttons["Close"]
-        XCTAssertTrue(close.waitForExistence(timeout: 5), "⌘K")
-        if close.exists { close.tap() }
-
-        // ⌘N opens a new request.
-        app.typeKey("n", modifierFlags: .command)
-        XCTAssertTrue(app.staticTexts["Untitled"].waitForExistence(timeout: 5), "⌘N")
-
-        // ⌘↩ sends.
         create.tap()
         wait(app.el("send"))
+
+        // ⌘↩ sends.
         app.typeKey(.return, modifierFlags: .command)
         XCTAssertTrue(app.el("status").waitForExistence(timeout: 10), "⌘↩")
 
@@ -36,5 +27,15 @@ final class PadTests: XCTestCase {
         app.typeKey("s", modifierFlags: .command)
         let saved = expectation(for: NSPredicate(format: "label == 'Saved'"), evaluatedWith: app.el("save"))
         XCTAssertEqual(XCTWaiter.wait(for: [saved], timeout: 5), .completed, "⌘S")
+
+        // ⌘K opens search.
+        app.typeKey("k", modifierFlags: .command)
+        let close = app.buttons["Close"]
+        XCTAssertTrue(close.waitForExistence(timeout: 5), "⌘K")
+        if close.exists { close.tap() }
+
+        // ⌘N opens a new request.
+        app.typeKey("n", modifierFlags: .command)
+        XCTAssertTrue(app.staticTexts["Untitled"].waitForExistence(timeout: 5), "⌘N")
     }
 }

@@ -97,29 +97,31 @@ CI: `.github/workflows/ios.yml`, green run https://github.com/bohdaq/hitop/actio
   search).
 - UI (`UITests/`, launch argument `-UITestSeed` = shop-api sample + `StubURLProtocol` in the app process, no network):
   create a request, send, save, find it in History and open it as a new request; Create order → 201, JSON body, 4/4
-  tests in the Tests tab, cookies, switch to Production (other host), no environment → explained error; Environments tab
+  tests in the Tests tab (the sample's timing check is "Responds under 1 s", not the draft's 300 ms: cold CI runners
+  are slower), cookies, switch to Production (other host), no environment → explained error; Environments tab
   switch + masked secrets; variable peek (tap the `${baseUrl}` chip → its value); iPad: ⌘↩ send, ⌘S save, ⌘K search,
-  ⌘N new request; screenshots.
+  ⌘N new request (on toolbar items: shortcuts on list rows or inside scroll views don't reach the key commands);
+  screenshots.
 - CI also runs HitopKit's `swift test` on macOS (JavaScriptCore). `ci.yml` (hitopkit on Linux, brand) runs only on main and
   pull requests, so it hasn't run on this branch; locally HitopKit's Linux tests pass with the CLI compatibility test
   skipped (no `hitop` binary built here).
 
-**Screenshots against the drafts** (CI artifact `screenshots`, iPhone 17 Pro and iPad Pro 13-inch, iOS 26.5 simulators)
+**Screenshots against the drafts** (CI artifact `screenshots`, iPhone 17 Pro and iPad Air 11-inch (M3) simulators, Xcode 26.6)
 - Collections: same header (identity pill, environment pill, + button), large Geist title, search field, filter chips,
   shop-api card with the gradient icon, folder labels and method-coloured rows, glass tab bar + separate search button.
 - Request editor: same back/More glass buttons, title + breadcrumb, request card (method pill, environment chip, URL with
   `${baseUrl}` chip), five segment tabs with Body selected, JSON badge + Valid, highlighted body with the `${customerId}`
   chip, helper keys + Format, glass Save + accent Send at the bottom.
-- Response sheet: status pill, time, size, timing bar with DNS/TLS/Waiting/Download, capsule tabs with Tests 4/4, folded
-  JSON body. Differs: the sent URL line and Pretty/Raw + Copy are extra; small objects such as `total` fold instead of
+- Response sheet: the system glass sheet (the request shows through), status pill, time, size, timing bar with
+  DNS/TLS/Waiting/Download, capsule tabs with Tests 4/4, folded JSON body. Differs: the sent URL line and Pretty/Raw + Copy are extra; small objects such as `total` fold instead of
   showing on one line when they don't fit the phone width; the tests list is the Tests tab, not under the body; Share
   instead of Explain (I5).
 - History and Environments have no draft; they use the same cards, labels and type.
-- iPad: three columns (sidebar, request with the URL capsule and Send ⌘↩, response). Differs: shot in portrait on the
-  13-inch iPad, because the runner's headless simulators don't rotate (neither `XCUIDevice.orientation` nor the app's
-  `requestGeometryUpdate`), so the sidebar shows as an overlay over the dimmed request column instead of tiling; in
-  landscape on a device it tiles as in the draft (not verified here). The sidebar lists every request flat per collection
-  (folders only on iPhone).
+- iPad (11-inch, landscape 1180 × 820 like the draft): three tiled columns, sidebar with the HITOP header and ⌘K
+  search, request column with the URL capsule and Send ⌘↩, response column with status, timing bar, 4/4 tests and the
+  folded body. Differs: the sidebar lists every request flat per collection (folders only on iPhone) and keeps History,
+  Environments and Runs below the collections; the response column has no Explain button (I5). CI captures the iPad
+  with `XCUIScreen` (an app capture of a rotated iPad comes back clipped) and turns it upright with `sips`.
 
 **Judgement calls**
 - Method colours: the web app's (`--hitop-method-*`: GET #5EC79B, POST #F2B45C, PUT #6CA8FF, PATCH #C69CFF, DELETE #FF8A8A,
