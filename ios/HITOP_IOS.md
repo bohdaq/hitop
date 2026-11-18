@@ -49,9 +49,10 @@ CI: `.github/workflows/ios.yml`, green run https://github.com/bohdaq/hitop/actio
 - Design system (`App/UI/Theme.swift`, `Components.swift`): colour tokens of the drafts, Geist type styles that scale with
   Dynamic Type (`Font.custom(_:size:relativeTo:)`, nav bar titles through UIFontMetrics), real Liquid Glass (system glass
   tab bar with `Tab(role: .search)`, toolbars, `.buttonStyle(.glass)`, `.glassProminent` Send tinted with the accent,
-  `GlassEffectContainer` for the Save + Send bar, `.glassEffect` in `hitopGlass`), method tag, variable chip, code view
-  (JSON highlighting with `${var}` chips), status pill, timing bar, segment/capsule tabs. Reduce Transparency swaps glass
-  for a solid surface; Increase Contrast strengthens card and glass edges.
+  `GlassEffectContainer` for the Save + Send bar, the system's glass sheet for the response), method tag, variable chip,
+  code view (JSON highlighting with `${var}` chips), status pill, timing bar, segment/capsule tabs. Every glass surface is
+  a system one, so Reduce Transparency and Increase Contrast apply to it as the system does it; the app's own cards draw a
+  stronger edge with Increase Contrast. No hand-made blur anywhere.
 - `App/Core` is Foundation + HitopKit only (no SwiftUI), so it and its unit tests also build and run on Linux (a scratch
   SwiftPM package pointing at `App/Core` and `UnitTests`); `App/UI` is the SwiftUI layer.
 
@@ -97,8 +98,11 @@ CI: `.github/workflows/ios.yml`, green run https://github.com/bohdaq/hitop/actio
 - UI (`UITests/`, launch argument `-UITestSeed` = shop-api sample + `StubURLProtocol` in the app process, no network):
   create a request, send, save, find it in History and open it as a new request; Create order → 201, JSON body, 4/4
   tests in the Tests tab, cookies, switch to Production (other host), no environment → explained error; Environments tab
-  switch + masked secrets; screenshots.
-- CI also runs HitopKit's `swift test` on macOS (JavaScriptCore); ci.yml keeps the Linux job.
+  switch + masked secrets; variable peek (tap the `${baseUrl}` chip → its value); iPad: ⌘↩ send, ⌘S save, ⌘K search,
+  ⌘N new request; screenshots.
+- CI also runs HitopKit's `swift test` on macOS (JavaScriptCore). `ci.yml` (hitopkit on Linux, brand) runs only on main and
+  pull requests, so it hasn't run on this branch; locally HitopKit's Linux tests pass with the CLI compatibility test
+  skipped (no `hitop` binary built here).
 
 **Screenshots against the drafts** (CI artifact `screenshots`, iPhone 17 Pro and iPad Pro 13-inch, iOS 26.5 simulators)
 - Collections: same header (identity pill, environment pill, + button), large Geist title, search field, filter chips,
@@ -133,5 +137,7 @@ CI: `.github/workflows/ios.yml`, green run https://github.com/bohdaq/hitop/actio
 - Sync (I2), runs (I3), WebSocket/SSE/gRPC/GraphQL schema (I4), Apple Intelligence + full accessibility audit (I5).
 - Import/export (Postman, OpenAPI, folders), code snippets, request examples, cookie jar across sends (each Send uses
   its own session, like a run), file fields in multipart bodies (text rows only), response search.
+- Targets: rows, chips, tab buttons and toolbar buttons are 44 pt; the JSON fold rows are one line of code tall (the
+  whole line toggles).
 - Not checked on a device: Keychain on hardware, the old app → new app upgrade with real data (unit-tested with fixture
   files of the old shapes), App Store submission (I6).

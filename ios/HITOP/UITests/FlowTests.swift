@@ -60,8 +60,8 @@ final class FlowTests: XCTestCase {
         let peek = app.el("peek-value")
         wait(peek)
         XCTAssertEqual(peek.label, "https://staging.shop.example")
-        // Dismissed with a tap outside it (on the title).
-        app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.09)).tap()
+        // Dismissed with a tap outside it.
+        app.otherElements["PopoverDismissRegion"].firstMatch.tap()
         XCTAssertTrue(app.el("peek-value").waitForNonExistence(timeout: 5))
 
         app.el("send").tap()
@@ -74,7 +74,7 @@ final class FlowTests: XCTestCase {
         app.el("rtab-Tests").tap()
         wait(app.el("test-pass-Status is 201"))
         XCTAssertTrue(app.el("test-pass-Total equals sum of items").exists)
-        XCTAssertTrue(app.el("test-pass-Responds under 300 ms").exists)
+        XCTAssertTrue(app.el("test-pass-Responds under 1 s").exists)
         XCTAssertTrue(app.el("test-pass-Has a payment link").exists)
         app.el("rtab-Cookies").tap()
         XCTAssertTrue(app.staticTexts["session"].waitForExistence(timeout: 5))

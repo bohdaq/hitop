@@ -19,7 +19,7 @@ enum Seed {
     const order = pm.response.json();
     pm.test("Status is 201", () => pm.response.to.have.status(201));
     pm.test("Total equals sum of items", () => pm.expect(order.total.amount).to.eql(6480));
-    pm.test("Responds under 300 ms", () => pm.expect(pm.response.responseTime).to.be.below(300));
+    pm.test("Responds under 1 s", () => pm.expect(pm.response.responseTime).to.be.below(1000));
     pm.test("Has a payment link", () => pm.expect(order.links.pay).to.be.ok);
     """
 

@@ -57,12 +57,11 @@ final class ScreenshotTests: XCTestCase {
         send.tap()
         waitForResponse(app)
         sleep(1)
-        shot(app, "01-ipad")
-        for (name, image) in [("01-ipad-screen", XCUIScreen.main.screenshot()), ("01-ipad-window", app.windows.firstMatch.screenshot())] {
-            let a = XCTAttachment(screenshot: image)
-            a.name = name
-            a.lifetime = .keepAlways
-            add(a)
-        }
+        // The whole screen: an app capture of a rotated iPad comes back clipped. Its pixels are in the
+        // panel's portrait orientation; CI's export step turns it upright.
+        let a = XCTAttachment(screenshot: XCUIScreen.main.screenshot())
+        a.name = "01-ipad"
+        a.lifetime = .keepAlways
+        add(a)
     }
 }

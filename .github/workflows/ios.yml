@@ -153,6 +153,13 @@ jobs:
                   shutil.copy(os.path.join(src, a["exportedFileName"]), os.path.join(dst, out))
           PY
           done
+          # The iPad screen capture comes in the panel's portrait orientation: turn it upright.
+          for f in "$RUNNER_TEMP"/shots/pad-0*.png; do
+            [ -f "$f" ] || continue
+            w=$(sips -g pixelWidth "$f" | awk '/pixelWidth/ {print $2}')
+            h=$(sips -g pixelHeight "$f" | awk '/pixelHeight/ {print $2}')
+            if [ "$h" -gt "$w" ]; then sips -r 270 "$f" >/dev/null; fi
+          done
           ls -laR "$RUNNER_TEMP/shots"
 
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
