@@ -190,6 +190,19 @@ struct AccountView: View {
             }
             .listRowBackground(Theme.surface)
 
+            Section {
+                if let devices {
+                    ForEach(devices) { d in deviceRow(d) }
+                } else if let loadError {
+                    Text(loadError).font(Typo.caption).foregroundStyle(Theme.warning)
+                } else {
+                    ProgressView().frame(maxWidth: .infinity, minHeight: 44)
+                }
+            } header: {
+                header("Devices")
+            }
+            .listRowBackground(Theme.surface)
+
             if cloud.settings.orgs.count > 1 {
                 Section {
                     ForEach(cloud.settings.orgs) { org in
@@ -232,19 +245,6 @@ struct AccountView: View {
                 }
                 .listRowBackground(Theme.surface)
             }
-
-            Section {
-                if let devices {
-                    ForEach(devices) { d in deviceRow(d) }
-                } else if let loadError {
-                    Text(loadError).font(Typo.caption).foregroundStyle(Theme.warning)
-                } else {
-                    ProgressView().frame(maxWidth: .infinity, minHeight: 44)
-                }
-            } header: {
-                header("Devices")
-            }
-            .listRowBackground(Theme.surface)
 
             Section {
                 Button(role: .destructive) { confirmSignOut = true } label: {

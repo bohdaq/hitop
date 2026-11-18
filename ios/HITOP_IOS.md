@@ -21,7 +21,8 @@ Activity/Siri).
 | --- | --- | --- |
 | I0 | Project: XcodeGen `ios/HITOP/project.yml` (bundle id of the live app, so it ships as an update), iOS 26 target, design tokens + glass components, Geist bundled (OFL), CI job on a macOS runner: build, unit tests, UI tests on the iOS 26 simulator, screenshots | done (main 5d79794, 2026-11-18) |
 | I1 | Collections tab, request editor (params, headers, body, auth, scripts, tests), Send, response sheet (status, timing, body with folding, headers, tests, cookies), environments and variables (peek), history | done (main 5d79794, 2026-11-18) |
-| I2 | HITOP Cloud sign-in and sync (library + shared collections via the sync API; key handling through hitop-sync-crypto rules, ported or via a Rust xcframework of hitop-wasm's core) | planned |
+| I2 | HITOP Cloud sign-in (Apple, Google, GitHub) and personal library sync (collections, environments, globals), Account screen (devices, organization, plan usage) | done (branch `ios-i2`, 2026-11-18; needs the sync-server deploy below) |
+| I2b | Shared end-to-end encrypted collections (workspaces): key handling through hitop-sync-crypto rules, ported or via a Rust xcframework of hitop-wasm's core; team environments | planned |
 | I3 | Collection runner + run report, Live Activity, widgets, App Intents | planned |
 | I4 | WebSocket, SSE, GraphQL schema, gRPC | planned |
 | I5 | Apple Intelligence features, iPad three columns + keyboard, accessibility pass (VoiceOver, Dynamic Type, Reduce Transparency) | planned |
@@ -149,3 +150,107 @@ CI: `.github/workflows/ios.yml`, green run https://github.com/bohdaq/hitop/actio
   priority over the spacer in I5.
 - Not checked on a device: Keychain on hardware, the old app → new app upgrade with real data (unit-tested with fixture
   files of the old shapes), App Store submission (I6).
+
+## I2: what landed (2026-11-18, branch `ios-i2`)
+
+CI: `.github/workflows/ios.yml`, green run CI_RUN_LINK (artifact `screenshots`: 06–11 are I2's).
+
+**Server change (needs a sync-server deploy)**
+- sync-server `oidc.rs` `return_to` now also takes exactly `hitop://sign-in` (no port, path, query, user info or
+  fragment), and `hand_off` puts the one-time code in its query (`hitop://sign-in?sso=<code>`), as for the CLI's loopback
+  listener. Additive: loopback and web origins are unchanged; tests in `tests/oauth.rs` (Google, GitHub, refusals),
+  `tests/apple.rs`, `tests/sso.rs`. The code is useless without the starting app's verifier, so another app claiming
+  the scheme gets nothing. Until the server is deployed the app falls back by itself (below).
+- Sign in with Apple stays the web flow: `HITOP_SYNC_APPLE_APP_IDS` is only an audience for Apple's server-to-server
+  notifications; no endpoint takes a native identity token, and adding one (with its own nonce) wasn't worth it for I2.
+
+**Sign-in (Core `Cloud.swift` `HitopCloud`, UI `AccountView.swift` `SignInSheet`)**
+- Continue with Apple / Google / GitHub, only the ones `GET /v1/auth/methods` offers. `POST /v1/auth/<kind>/start
+  {challenge, returnTo: "hitop://sign-in"}` → the provider page in ASWebAuthenticationSession (callback scheme `hitop`,
+  shares Safari's cookies) → `hitop://sign-in?sso=<code>` → `POST .../finish {code, verifier}`. A server that refuses the
+  return address (400 naming returnTo, any server not yet deployed) gets a start without it and the paste step (its page
+  shows the code), as the web app does. Verifier = 64 hex chars, challenge = base64url(SHA-256) (`CloudCrypto`, plain Swift
+  so Core stays Linux-buildable). No mailed-code UI (the web app has none either); Core keeps `startEmailSignIn` for the
+  end-to-end test. Company SSO is not in the sheet (I2b or later; the sheet says to use the web or desktop app).
+- Server setting: "Your own server…" in the sheet, default https://sync.hitop.rws8.tech, https only (http for localhost).
+- After sign-in (`completeSignIn`, as `sync.js`): `GET /v1/me`; the device kept from before (same account and server,
+  its key still listed) is reused, otherwise a new X25519 key pair (CryptoKit, raw 32 bytes base64url = hitop-sync-crypto's
+  encoding, so I2b can use it) is registered with `POST /v1/me/keys {name: "HITOP on iPhone", publicKey}`.
+- Kept: `hitop-library/cloud.json` (server, account {server, email, userId, keyId, deviceName}, the device after sign-out,
+  current organization, organizations); Keychain `ios/cloud/<host>` = {session, secret}. An account whose session is gone
+  from the Keychain is signed out at launch.
+- `X-Hitop-Device: <keyId>` on every request of the account's session (a native app has no CORS, so unlike the web app
+  it doesn't wait for `/v1/me` `devices: true`).
+- Device limit (402 `limit: devices` on `POST /v1/me/keys`): "Remove a device to sign in here", the account's devices
+  with Remove (`DELETE /v1/me/keys/:id` with the new session; 409 `key_in_use` = "holds keys to shared collections"),
+  then the sign-in again. Store mode: "This account allows N devices", no plan name, no link.
+- Sign out: `POST /v1/auth/logout`, the session leaves the Keychain, the device key stays (signing in again = same
+  device). A 401 during sync does the same and says to sign in again.
+- Store mode everywhere: error texts go through `StoreText.withoutPlanLink` (the web app's `withoutPlanLink`),
+  `upgradeUrl` is never read; no price, plan offer, upgrade or billing link (UI tests assert it on the Account screen and
+  the device-limit step).
+
+**Personal library sync (Core `LibrarySync.swift`, the web app's `library.js` item for item)**
+- Items: `collection/<id>` (the web app's JSON; this app keeps every key it doesn't model, now also unknown auth types
+  such as oauth2/awsv4/digest, and fields of an unexpected type, so an edit here never strips what the web app wrote),
+  `environments/all` `{environments, activeEnvironmentId}`, `globals/all` `{variables, secrets}`. Team environments
+  (`team`) aren't the library's.
+- Secrets (judgement call, the web app's rule): values travel in the item's `secrets` (`{envId: {name: value}}`, globals
+  `{name: value}`), never in `data` (secret variables are "" there). The server seals them under its host key or, without
+  one, doesn't keep them (`secretsStored: false`, then they stay in the Keychain and the Account screen says so). Not
+  sending them would wipe other devices' values: `library.rs` replaces the sealed blob on every PUT. On the device they
+  stay in the Keychain only; an item that comes back without a value keeps the Keychain's.
+- Pull on launch, on coming to the foreground, pull to refresh on Collections, Sync now on the Account screen; push 1 s
+  after a save (any collection, environment, globals or active-environment change), only items whose fingerprint differs
+  from what the library last took (`known`), each with `baseVersion`.
+- 409: the server's item is kept and this device's collection stays as "<name> (this iPhone)" ("(this iPad)" on iPad), a
+  new collection that syncs like any other; a notice on Collections and the Account screen. A delete meeting an edit
+  brings theirs back; environments/globals take theirs.
+- Tombstones: a pull removes a collection only when this device had it from the library; a local delete sends
+  `DELETE ...?baseVersion=`.
+- Offline first: the queue is the difference between the files and `known` (`hitop-library/library-sync.json`: account,
+  cursor, known versions + fingerprints, localOnly, refused), so it survives a relaunch. A transport error, 5xx or 429
+  stops the round and retries after 15 s; a 402 (storage full), 413 (over 5 MB) or other refusal leaves that item on the
+  device, marked, until it changes.
+- First link: this device's collections go up except an untouched sample (`Sample: JSONPlaceholder` as the web app
+  adds it) and an empty My requests / Default; an empty local My requests goes away when the library brings one. Linking a
+  different account later uploads nothing from here (those stay "on this iPhone"). A kept-local collection has "Save to
+  HITOP Cloud" in its menu.
+- Cards: "13 requests · synced 2 min ago", "waiting to sync", "saving…", "not in HITOP Cloud" or "on this iPhone" (also
+  the card's VoiceOver label).
+
+**Account screen (`AccountView`)** opens from the organization pill on Collections (the drafts' pill; on iPad the
+person icon in the sidebar header). Signed out: what HITOP Cloud does + Sign in. Signed in: email, server, sync status +
+Sync now, notices, Organization (personal + teams from `GET /v1/orgs`; picking one filters Collections the way the web
+app's `visibleCollections` does: a collection's `org`, none = personal; new collections get `org`), Plan & usage
+(`GET /v1/orgs/:org/usage`: plan name and meters with the web app's store wording), Devices (`GET /v1/me/devices`: this
+device, last use; rename, remove with force for one holding shared keys), Sign out, About HITOP (moved here from the pill).
+
+**Tests**
+- Unit (`UnitTests/CloudTests.swift`, `LibrarySyncTests.swift`, also on Linux through `ios/HITOP/scripts/core-tests.sh`):
+  SHA-256 vectors and the challenge, codes from the return address, server addresses, store-mode text, methods, sign-in +
+  device registration + `X-Hitop-Device`, sign-out keeping the device, the paste fallback, device limit (remove, key in
+  use, retry), devices rename/remove, organizations + neutral meters, ended session; library: first-link rules, pull and
+  push with unknown keys kept, tombstones both ways, conflict copy, delete-vs-edit, offline across a relaunch, 503 stop +
+  402 refusal, 401, environments/globals with secrets apart, no host key, numeric environment ids, organizations; a
+  round trip of a web-shaped collection (awsv4/digest/oauth2 auth, GraphQL variables object, WebSocket, examples, openapi).
+  `FakeCloud` (Core) answers with sync-server's shapes and rules (deny-unknown bodies, verifier check, versions, cursor,
+  409 `current`, tombstones, 402 body).
+- End-to-end (`UnitTests/CloudEndToEndTests.swift`, macOS/Linux only, CI job `core`): builds `hitop-sync-server`, starts
+  it (SQLite, mail to the log, a host key), signs in by mailed code, pushes from one device's Core, reads it back through
+  `GET /v1/library`, a second device pulls it (secret included), a conflict copy, a tombstone, devices (this device via
+  `X-Hitop-Device`), sign-out/in keeping the device, organizations + usage. Required in CI (`HITOP_E2E_REQUIRED`).
+- UI (`UITests/CloudFlowTests.swift`, StubURLProtocol → `FakeCloud.shared` at cloud.hitop.test, `StubWebSignIn` approving at
+  once): sign in (only offered providers), Account screen, synced cards, sign out back to "on this iPhone"; a conflict copy
+  (`-UITestCloudConflict`: the fake changes the collection on its first update); the device-limit step
+  (`-UITestCloudDeviceLimit`); no purchase words. Screenshots 06-account-signed-out, 07-sign-in, 08-account,
+  09-synced-collections, 10-conflict-copy, 11-device-limit.
+
+**Deferred to I2b and later**
+- Shared end-to-end encrypted collections (workspaces, wraps, pins, invites) and team environments: I2b. The device key is
+  already the hitop-sync-crypto kind.
+- Company SSO and passwords in the sign-in sheet; Sign in with Apple through the native sheet (needs a server endpoint
+  for the identity token); the Settings → Privacy switch to keep this device out of the library; per-request version
+  history; Git sync status.
+- Environments aren't filtered by organization (the web app's "Available in every organization" switch).
+- Not checked on a device: ASWebAuthenticationSession against the hosted server (needs the deploy), Keychain on hardware.

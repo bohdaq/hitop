@@ -538,6 +538,12 @@ hitop/
   `Runner` on URLSession + metrics, Keychain secrets `ios/<env>/<name>`); its unit tests also build on Linux (a scratch SwiftPM package pointing at
   App/Core + UnitTests). Launch argument `-UITestSeed` = the shop-api sample + `StubURLProtocol` (no network). CI `.github/workflows/ios.yml`
   (macos-26, newest Xcode 26, XcodeGen pinned by sha256): build, unit + UI tests on an iPhone 17 Pro simulator, iPad screenshots, artifact `screenshots`
+- HITOP iOS I2 (HITOP Cloud, ios/HITOP_IOS.md "I2"): Core `Cloud.swift` `HitopCloud` (sync.js SyncClient: `/v1/auth/methods`, `<kind>/start` with
+  `returnTo: hitop://sign-in` → ASWebAuthenticationSession → `?sso=` code → finish, paste fallback when a server refuses it; device X25519 key = CryptoKit raw
+  bytes base64url; `X-Hitop-Device` always; 402 devices → `DeviceLimit`; sign-out keeps the key; `StoreText.withoutPlanLink`, never `upgradeUrl`), `LibrarySync.swift`
+  (library.js: items, secrets in `secrets` + Keychain, `known` fingerprints = the offline queue in hitop-library/library-sync.json, "(this iPhone)" copies, first-link
+  rules), `FakeCloud.swift` (sync-server shapes; unit tests + UI tests via StubURLProtocol host cloud.hitop.test). Linux/macOS Core tests: `ios/HITOP/scripts/core-tests.sh`
+  (`HITOP_SYNC_SERVER_BIN` runs `CloudEndToEndTests` against a real server; CI job `core` requires it). Models keep unknown auth types and mistyped fields (`typed`)
 - The app (no editing) is generated with `xcodegen` on a Mac; bundle ids `hitop.rws8.tech.HitopCompanion` (+ `.Widget`),
   app group `group.hitop.rws8.tech.companion`; Swift 5 language mode for the app targets, Swift 6 for HitopKit
 
@@ -575,7 +581,7 @@ hitop/
 - HITOP Cloud C1b (built 2026-11-03, not deployed; spec/CLOUD_SERVICE.md C1b, THREAT_MODEL "Passwords"): migration 6 `password_credentials` (kdf JSON, server Argon2id
   PHC hash of the client's authKey, peppered flag), `password_tokens` (signup/reset/notice, SHA-256 of the mailed code), `server_secrets` (made-up params HMAC key);
   `/v1/auth/password/{params,signup,verify,login,forgot,reset}`, `POST /v1/me/password {currentAuthKey?, kdf, authKey, bundle?}`, `GET /v1/auth/methods`,
-  `/v1/auth/{google,github}/{start,finish}` + `GET .../callback` (handoff code as SSO; GitHub: primary verified address; issuers `https://accounts.google.com`,
+  `/v1/auth/{google,github}/{start,finish}` + `GET .../callback` (handoff code as SSO; `returnTo` = loopback, an allowed web origin or exactly `hitop://sign-in` (iOS, code in the query, oidc.rs `is_app`, since I2); GitHub: primary verified address; issuers `https://accounts.google.com`,
   `https://github.com` in oidc_identities). `/v1/me` adds `password`, `bundles` (`recovery` = phrase only, for 1.2). Env `HITOP_SYNC_PASSWORDS`, `HITOP_SYNC_PASSWORD_PEPPER[_FILE]`,
   `HITOP_SYNC_GOOGLE_CLIENT_ID/SECRET[_FILE]` (+ `_ISSUER` test hook), `HITOP_SYNC_GITHUB_CLIENT_ID/SECRET[_FILE]` (+ `_URL`, `_API_URL`). A password sign-in on a new device
   adopts the bundle's device (no new key, no trust step); only that device keeps `password` (bundleKey) in its secret and re-seals while the server's bundle
