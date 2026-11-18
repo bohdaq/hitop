@@ -1,0 +1,4 @@
+module CHitopSync {
+    header "hitop_sync.h"
+    export *
+}

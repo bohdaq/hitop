@@ -1,0 +1,37 @@
+[package]
+name = "hitop-sync-ffi"
+version = "0.1.0"
+edition = "2021"
+description = "hitop sync for the HITOP iOS app: hitop-core's sync plan and folder format and hitop-sync-crypto behind one C function (JSON in, JSON out)"
+authors = ["Bohdan Tsap <bohdaq@gmail.com>"]
+license = "MIT"
+repository = "https://github.com/bohdaq/hitop"
+publish = false
+
+# Its own workspace (like cli/crates/hitop-wasm): own Cargo.lock and target dir, so the CLI
+# workspace and `cargo publish` never see it. The lock started as hitop-wasm's, so both build the
+# same versions of hitop-core's and hitop-sync-crypto's dependencies; a dependency change there
+# needs `cargo update -p <crate>` here too (CI builds `--locked`).
+[workspace]
+
+[lib]
+# staticlib: the iOS app (xcframework, scripts/build-sync-ffi.sh) and the Linux/macOS SwiftPM
+# tests (scripts/core-tests.sh) link it; rlib: `cargo test`.
+crate-type = ["staticlib", "rlib"]
+
+[dependencies]
+hitop-core = { path = "../../../cli/crates/hitop-core", default-features = false }
+hitop-sync-crypto = { path = "../../../cli/crates/hitop-sync-crypto", features = ["serde"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+base64 = "0.22"
+
+[profile.release]
+opt-level = "s"
+panic = "unwind"
+strip = "debuginfo"
+
+[profile.dev.package.argon2]
+opt-level = 3
+[profile.dev.package.blake2]
+opt-level = 3

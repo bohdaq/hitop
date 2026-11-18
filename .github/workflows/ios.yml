@@ -8,6 +8,9 @@ on:
     paths:
       - "ios/**"
       - ".github/workflows/ios.yml"
+      # SyncFFI builds these into the app.
+      - "cli/crates/hitop-core/**"
+      - "cli/crates/hitop-sync-crypto/**"
   workflow_dispatch:
 
 permissions:
@@ -44,6 +47,14 @@ jobs:
           echo "$XCODEGEN_SHA256  $RUNNER_TEMP/xcodegen.zip" | shasum -a 256 -c -
           unzip -q "$RUNNER_TEMP/xcodegen.zip" -d "$RUNNER_TEMP"
           echo "$RUNNER_TEMP/xcodegen/bin" >> "$GITHUB_PATH"
+
+      - name: SyncFFI xcframework (Rust, device + simulator)
+        env:
+          CARGO_TARGET_DIR: ${{ runner.temp }}/ffi-target
+        run: |
+          rustup show active-toolchain || rustup default stable
+          ios/HITOP/scripts/build-sync-ffi.sh xcframework
+          ls -R ios/HITOP/Vendor | head -20
 
       - name: Generate the project
         working-directory: ios/HITOP
@@ -182,7 +193,7 @@ jobs:
   core:
     name: App/Core swift test + end-to-end against a real sync server
     runs-on: macos-26
-    timeout-minutes: 40
+    timeout-minutes: 60
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - name: Xcode 26
