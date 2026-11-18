@@ -28,6 +28,19 @@ final class CloudFlowTests: XCTestCase {
         XCTFail("\(element) label \"\(element.exists ? element.label : "missing")\" doesn't contain \"\(text)\"", file: file, line: line)
     }
 
+    /// Scrolls the Account screen until `element` is there (List cells below the fold aren't in
+    /// the hierarchy until they scroll in).
+    @MainActor
+    private func scrollTo(_ app: XCUIApplication, _ element: XCUIElement, file: StaticString = #filePath, line: UInt = #line) {
+        let deadline = Date().addingTimeInterval(25)
+        while Date() < deadline {
+            if element.exists && element.isHittable { return }
+            app.swipeUp(velocity: .slow)
+            RunLoop.current.run(until: Date().addingTimeInterval(0.4))
+        }
+        XCTAssertTrue(element.exists, "missing \(element)", file: file, line: line)
+    }
+
     @MainActor
     private func signIn(_ app: XCUIApplication) {
         app.el("account-pill").tap()
@@ -63,11 +76,12 @@ final class CloudFlowTests: XCTestCase {
         let email = app.el("account-email")
         wait(email, 20)
         XCTAssertEqual(email.label, "ada@example.com")
-        wait(app.el("device-HITOP on iPhone"))
         waitLabel(app.el("sync-status"), contains: "Synced")
         wait(app.el("plan-name"))
         assertNothingToBuy(app)
         shot(app, "08-account")
+        scrollTo(app, app.el("device-HITOP on iPhone"))
+        assertNothingToBuy(app)
         app.el("account-done").tap()
 
         // The cards: synced, and the empty-of-nothing collections went up too (the seed has none empty).
@@ -79,7 +93,8 @@ final class CloudFlowTests: XCTestCase {
         // Sign out: the collections stay, on this iPhone.
         app.el("account-pill").tap()
         let out = app.el("sign-out")
-        wait(out)
+        wait(app.el("account-email"))
+        scrollTo(app, out)
         out.tap()
         let confirm = app.el("confirm-sign-out")
         wait(confirm)
@@ -104,10 +119,10 @@ final class CloudFlowTests: XCTestCase {
         let rename = app.buttons["Rename"].firstMatch
         wait(rename)
         rename.tap()
-        let field = app.el("name-field")
+        let field = app.alerts.textFields.firstMatch
         wait(field)
         field.typeText(" v2")
-        app.buttons["Save"].firstMatch.tap()
+        app.alerts.buttons["Save"].firstMatch.tap()
 
         let copy = app.el("collection-shop-api v2 (this iPhone)")
         wait(copy, 25)
@@ -134,8 +149,8 @@ final class CloudFlowTests: XCTestCase {
 
         let email = app.el("account-email")
         wait(email, 20)
-        wait(app.el("device-Work laptop"))
-        wait(app.el("device-HITOP on iPhone"))
+        scrollTo(app, app.el("device-Work laptop"))
+        scrollTo(app, app.el("device-HITOP on iPhone"))
         XCTAssertFalse(app.el("device-Old iPad").exists)
         assertNothingToBuy(app)
     }
