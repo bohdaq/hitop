@@ -11,7 +11,8 @@
 //!    provider's JWKS, `iss`, `aud`/`azp`, `exp`, `iat`, `nonce`), checks the address is verified,
 //!    in an allowed domain and (optionally) in an allowed group, and finds or links the account.
 //! 3. It hands the browser a one-time code: by redirecting to `returnTo` (a loopback address of
-//!    the CLI, or an allowed web origin), or on a page to paste into hitop. The client trades
+//!    the CLI, an allowed web origin, or the iOS app's `hitop://sign-in`), or on a page to paste
+//!    into hitop. The client trades
 //!    `{code, verifier}` for a session at `POST /v1/auth/sso/finish`.
 //!
 //! The code only ever travels through the browser that signed in, and finishing also needs the
@@ -458,16 +459,18 @@ pub fn info(state: &State, request: &Request, _: &PathParams) -> ApiResult {
 
 /// Where the browser may be sent with the one-time code: the CLI's loopback listener
 /// (`http://127.0.0.1:<port>/...`, `http://localhost:<port>/...`) or a page of an allowed web
-/// origin (`HITOP_SYNC_ALLOWED_ORIGINS`, the web app).
+/// origin (`HITOP_SYNC_ALLOWED_ORIGINS`, the web app), or the iOS app (`hitop://sign-in`, which
+/// ASWebAuthenticationSession hands back to the app that started the flow). The code is useless
+/// without the starter's verifier, so another app claiming the scheme gets nothing.
 pub(crate) fn return_to(state: &State, value: &str) -> Result<Url, ApiError> {
-    let bad = || ApiError::bad("returnTo must be http://127.0.0.1:<port>/... or a page of an allowed web origin");
+    let bad = || ApiError::bad("returnTo must be http://127.0.0.1:<port>/..., a page of an allowed web origin or hitop://sign-in");
     let url = Url::parse(value).map_err(|_| bad())?;
     if url.fragment().is_some() || !url.username().is_empty() || url.password().is_some() {
         return Err(bad());
     }
     let loopback = url.scheme() == "http" && matches!(url.host_str(), Some("127.0.0.1" | "localhost" | "[::1]")) && url.port().is_some();
     let origin = url.origin().ascii_serialization();
-    if loopback || state.config.cors_origins.contains(&origin) {
+    if loopback || is_app(&url) || state.config.cors_origins.contains(&origin) {
         Ok(url)
     } else {
         Err(bad())
@@ -476,6 +479,14 @@ pub(crate) fn return_to(state: &State, value: &str) -> Result<Url, ApiError> {
 
 fn is_loopback(url: &Url) -> bool {
     url.scheme() == "http" && matches!(url.host_str(), Some("127.0.0.1" | "localhost" | "[::1]"))
+}
+
+/// The URL scheme of the iOS app's sign-in return (ASWebAuthenticationSession's callback).
+pub const APP_SCHEME: &str = "hitop";
+
+/// The iOS app's return address: `hitop://sign-in` exactly (no port, path or query of its own).
+fn is_app(url: &Url) -> bool {
+    url.scheme() == APP_SCHEME && url.host_str() == Some("sign-in") && url.port().is_none() && matches!(url.path(), "" | "/") && url.query().is_none()
 }
 
 #[derive(Deserialize)]
@@ -867,7 +878,8 @@ pub(crate) fn hand_off(state: &State, flows: &Flows, kind: &str, user: &User, fl
         k => format!("Signed in with {}", provider_name(k)),
     };
     match flow.return_to {
-        Some(mut to) if is_loopback(&to) => {
+        // The CLI's listener and the iOS app read the code from the query.
+        Some(mut to) if is_loopback(&to) || is_app(&to) => {
             to.query_pairs_mut().append_pair("sso", &handoff);
             redirect(to.as_str())
         }

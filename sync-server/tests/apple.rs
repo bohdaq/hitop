@@ -149,6 +149,13 @@ fn signs_up_with_a_form_post_and_a_signed_client_secret() {
     let f = start(&s, None);
     assert_eq!(sign_in(&s, &idp, claims(&idp, "a-1", "abc123@privaterelay.appleid.com", &f.nonce), &f).json["user"]["id"], relay);
     assert_eq!(identities(&s), vec!["a-1", "a-2"]);
+    // The iOS app (ASWebAuthenticationSession): the code comes back in hitop://sign-in's query.
+    let f = start(&s, Some("hitop://sign-in"));
+    idp.next(idp.sign(&claims(&idp, "a-1", "abc123@privaterelay.appleid.com", &f.nonce)), "");
+    let r = callback(&s, &[("code", idp::GOOD_CODE), ("state", &f.state)]);
+    assert!(r.header("location").unwrap().starts_with("hitop://sign-in?sso="), "{:?}", r.header("location"));
+    let ok = s.call("POST", "/v1/auth/apple/finish", None, Some(json!({ "code": sso_code(&r).unwrap(), "verifier": f.verifier })));
+    assert_eq!(ok.json["user"]["id"], relay);
 }
 
 #[test]

@@ -94,7 +94,7 @@ fn signs_in_hands_the_code_to_the_starting_client_only_and_links_by_subject() {
 fn the_code_goes_only_to_loopback_allowed_origins_or_a_page() {
     let idp = MockIdp::start();
     let s = server("sso-return", &idp, |_| {});
-    for bad in ["https://evil.example/", "http://127.0.0.1/no-port", "http://192.168.1.2:8080/", "https://app.test.example.evil/", "http://u:p@127.0.0.1:1/", "https://app.test.example/#x"] {
+    for bad in ["https://evil.example/", "http://127.0.0.1/no-port", "http://192.168.1.2:8080/", "https://app.test.example.evil/", "http://u:p@127.0.0.1:1/", "https://app.test.example/#x", "hitop://evil", "hitop://sign-in/x", "otherapp://sign-in"] {
         let r = s.call("POST", "/v1/auth/sso/start", None, Some(json!({ "challenge": b64(&[1; 32]), "returnTo": bad })));
         assert_eq!(r.status, 400, "{bad}");
     }

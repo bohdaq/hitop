@@ -148,6 +148,40 @@ fn google_and_github_never_get_around_sso_only_domains() {
 }
 
 #[test]
+fn the_ios_app_gets_the_code_at_hitop_sign_in() {
+    // iOS: ASWebAuthenticationSession returns `hitop://sign-in?sso=<code>` to the app that started.
+    let idp = MockIdp::start();
+    let s = google_server("oauth-ios", &idp, |_| {});
+    let f = start(&s, "google", Some("hitop://sign-in"));
+    idp.next(idp.sign(&idp.claims("g-ios", "ios@gmail.test", &f.nonce)), &f.pkce);
+    let r = callback(&s, "google", idp::GOOD_CODE, &f);
+    assert_eq!(r.status, 302);
+    assert!(r.header("location").unwrap().starts_with("hitop://sign-in?sso="), "{:?}", r.header("location"));
+    // Whoever catches the redirect without the verifier gets nothing.
+    let stolen = s.call("POST", "/v1/auth/google/finish", None, Some(json!({ "code": sso_code(&r).unwrap(), "verifier": "not-the-verifier" })));
+    assert_eq!(stolen.status, 401);
+    let f = start(&s, "google", Some("hitop://sign-in"));
+    idp.next(idp.sign(&idp.claims("g-ios", "ios@gmail.test", &f.nonce)), &f.pkce);
+    let ok = finish(&s, "google", &callback(&s, "google", idp::GOOD_CODE, &f), &f);
+    assert_eq!((ok.status, ok.json["user"]["email"].as_str()), (200, Some("ios@gmail.test")), "{}", ok.json);
+
+    // GitHub the same way.
+    let gh = MockGithub::start();
+    let s = Server::with("oauth-ios-github", |c| c.github = Some(gh.config()));
+    let f = start(&s, "github", Some("hitop://sign-in"));
+    gh.next(2001, json!([{ "email": "gh@x.test", "primary": true, "verified": true }]), &f.pkce);
+    let r = callback(&s, "github", gh::GOOD_CODE, &f);
+    assert!(r.header("location").unwrap().starts_with("hitop://sign-in?sso="), "{:?}", r.header("location"));
+    assert_eq!(finish(&s, "github", &r, &f).json["user"]["email"], "gh@x.test");
+
+    // Only that address: other schemes, hosts, paths, queries, ports and user info are refused.
+    for bad in ["hitop://evil", "hitop://sign-in/x", "hitop://sign-in?x=1", "hitop://sign-in:1", "hitop://u@sign-in", "hitopx://sign-in", "myapp://sign-in", "hitop:sign-in", "hitop://sign-in#sso=x"] {
+        let r = s.call("POST", "/v1/auth/github/start", None, Some(json!({ "challenge": b64(&[1; 32]), "returnTo": bad })));
+        assert_eq!(r.status, 400, "{bad}");
+    }
+}
+
+#[test]
 fn github_takes_only_the_primary_verified_address() {
     let gh = MockGithub::start();
     let s = Server::with("oauth-github", |c| c.github = Some(gh.config()));
