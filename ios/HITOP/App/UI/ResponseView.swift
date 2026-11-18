@@ -59,14 +59,16 @@ struct ResponseContent: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
-            HStack(spacing: 10) {
+            HStack(spacing: 8) {
                 StatusPill(status: outcome.status, size: style == .sheet ? 15 : 14)
                 Text("\(outcome.durationMs) ms").font(Typo.mono(14, .medium)).foregroundStyle(Theme.codeText)
                     .fixedSize()
                     .accessibilityLabel("\(outcome.durationMs) milliseconds")
                 Text(ByteText.text(outcome.size)).font(Typo.mono(14, .medium)).foregroundStyle(Theme.textMuted)
-                    .fixedSize()
-                Spacer()
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.7)
+                // The iOS 26 sheet floats inset from the screen edges: nothing in this row may push it wider.
+                Spacer(minLength: 0)
                 if style == .column, !outcome.tests.isEmpty {
                     Text("\(passed)/\(outcome.tests.count) tests")
                         .font(Typo.geist(12, .semibold))

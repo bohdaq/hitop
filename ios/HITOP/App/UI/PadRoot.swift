@@ -71,7 +71,6 @@ struct PadRoot: View {
                     .background(RoundedRectangle(cornerRadius: 11, style: .continuous).fill(Color.white.opacity(0.07)))
                 }
                 .buttonStyle(.plain)
-                .keyboardShortcut("k", modifiers: .command)
                 .listRowBackground(Color.clear)
                 .accessibilityLabel("Search")
                 .accessibilityIdentifier("pad-search")
@@ -116,6 +115,11 @@ struct PadRoot: View {
         .scrollContentBackground(.hidden)
         .background(Theme.ground)
         .toolbar {
+            ToolbarItem(placement: .primaryAction) {
+                Button { nav.padSearch = true } label: { Image(systemName: "magnifyingglass") }
+                    .keyboardShortcut("k", modifiers: .command)
+                    .accessibilityLabel("Search")
+            }
             ToolbarItem(placement: .primaryAction) {
                 Button { newRequest() } label: { Image(systemName: "plus") }
                     .keyboardShortcut("n", modifiers: .command)
@@ -206,6 +210,12 @@ struct PadRequestColumn: View {
         .navigationTitle(editor.draft.name)
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
+            ToolbarItem(placement: .primaryAction) {
+                Button { editor.send() } label: { Label("Send", systemImage: "paperplane") }
+                    .keyboardShortcut(.return, modifiers: .command)
+                    .disabled(!editor.canSend)
+                    .accessibilityLabel("Send (⌘↩)")
+            }
             ToolbarItem(placement: .primaryAction) {
                 Button { editor.save() } label: {
                     Label(editor.isDirty ? "Save" : "Saved", systemImage: editor.isDirty ? "square.and.arrow.down.fill" : "checkmark")
