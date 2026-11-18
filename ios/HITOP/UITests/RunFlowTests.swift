@@ -39,7 +39,10 @@ final class RunFlowTests: XCTestCase {
         shot(app, "19-run-report")
 
         // The run is in the Runs tab's history.
-        app.el("run-close").tap()
+        app.navigationBars.buttons.element(boundBy: 0).tap()
+        let close = app.el("run-close")
+        wait(close)
+        close.tap()
         let row = app.el("run-shop-api")
         wait(row)
         shot(app, "20-runs")
