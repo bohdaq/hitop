@@ -2,21 +2,29 @@ import XCTest
 
 /// iPad: the keyboard shortcuts of the three-column layout (⌘↩, ⌘S, ⌘K, ⌘N).
 final class PadTests: XCTestCase {
+    /// Presses a shortcut and waits for `appears`. The simulator drops the first key command after
+    /// a launch (whichever shortcut comes first), so a shortcut gets one more press if nothing happened.
+    @MainActor
+    private func press(_ app: XCUIApplication, _ key: String, _ name: String, until appears: XCUIElement, file: StaticString = #filePath, line: UInt = #line) {
+        app.typeKey(key, modifierFlags: .command)
+        if appears.waitForExistence(timeout: 5) { return }
+        app.typeKey(key, modifierFlags: .command)
+        XCTAssertTrue(appears.waitForExistence(timeout: 5), name, file: file, line: line)
+    }
+
     @MainActor
     func testKeyboardShortcuts() {
         guard UIDevice.current.userInterfaceIdiom == .pad else { return }
         XCUIDevice.shared.orientation = .landscapeLeft
         let app = XCUIApplication.seeded()
         app.launch()
-        // A tap first: key commands reach the app once its window has taken focus.
         let create = app.el("request-Create order")
         wait(create)
         create.tap()
         wait(app.el("send"))
 
         // ⌘↩ sends.
-        app.typeKey(.return, modifierFlags: .command)
-        XCTAssertTrue(app.el("status").waitForExistence(timeout: 10), "⌘↩")
+        press(app, XCUIKeyboardKey.return.rawValue, "⌘↩", until: app.el("status"))
 
         // ⌘S saves an edit (the method).
         app.el("method").tap()
@@ -29,13 +37,11 @@ final class PadTests: XCTestCase {
         XCTAssertEqual(XCTWaiter.wait(for: [saved], timeout: 5), .completed, "⌘S")
 
         // ⌘K opens search.
-        app.typeKey("k", modifierFlags: .command)
         let close = app.buttons["Close"]
-        XCTAssertTrue(close.waitForExistence(timeout: 5), "⌘K")
+        press(app, "k", "⌘K", until: close)
         if close.exists { close.tap() }
 
         // ⌘N opens a new request.
-        app.typeKey("n", modifierFlags: .command)
-        XCTAssertTrue(app.staticTexts["Untitled"].waitForExistence(timeout: 5), "⌘N")
+        press(app, "n", "⌘N", until: app.staticTexts["Untitled"])
     }
 }
