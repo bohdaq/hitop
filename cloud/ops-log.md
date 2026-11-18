@@ -406,3 +406,13 @@ and on hitop.rws8.tech/cloud/healthz. -->
 - Drop-in `/etc/systemd/system/hitop-sync.service.d/50-apple.conf` holds every Apple setting (`LoadCredential=apple-signin.p8:/etc/hitop-sync/apple-signin.p8`, `HITOP_SYNC_APPLE_PRIVATE_KEY_FILE=%d/apple-signin.p8`, client id `tech.rws8.hitop.signin`, team, key id, `HITOP_SYNC_APPLE_APP_IDS=tech.rws8.hitop`), not the env file: one-off `systemd-run` commands that load only the env file keep working. The .p8 is `/etc/hitop-sync/apple-signin.p8` (root, 0600). To turn Apple off: remove the drop-in, daemon-reload, restart.
 - Site + web app + portal via deploy/deploy.sh. Verified live: `/v1/auth/methods` apple true; Apple's authorize page opens for our URL (Services ID, return URL, form_post accepted); a bogus code through the front proxy's `POST /v1/auth/apple/callback` gets `invalid_grant` from Apple (signed client secret accepted); both bundles carry the Apple button.
 - 2026-11-13 00:33 UTC: the owner signed in with Apple (Share My Email): `sso_linked` to the existing account, `signin` method apple. The App ID's server-to-server notification URL is set to /v1/auth/apple/notifications.
+
+## 2026-11-18 Sync server 330da5b: devices (schema 18) and the iOS sign-in returnTo
+
+- Pre-deploy dump /root/pre-deploy-20261118-134910 (sync.pgdump + manifest). Sync server built at 330da5b
+  (`--release --locked --features postgres`): DD3 devices (migration 18: `device_keys.last_used_at`,
+  `sessions.device_key_id`, `/v1/me/devices`) and 4b19053 `hitop://sign-in` as a sign-in `returnTo` (iOS app I2).
+  `install.sh`: binary + env backed up, restarted, healthz schema 18, 0 over a limit, no panic in the journal.
+- Verified live: `/v1/auth/methods` unchanged (apple, github, google, email code, passkey, password);
+  `POST /v1/auth/github/start` with `returnTo: hitop://sign-in` returns the GitHub authorize URL, `hitop://evil` is
+  refused with the returnTo message. Rollback: `/usr/local/bin/hitop-sync-server.bak-<ts>` (migration 18 is additive).
