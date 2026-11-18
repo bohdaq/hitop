@@ -23,12 +23,12 @@ Activity/Siri).
 | I1 | Collections tab, request editor (params, headers, body, auth, scripts, tests), Send, response sheet (status, timing, body with folding, headers, tests, cookies), environments and variables (peek), history | done (main 5d79794, 2026-11-18) |
 | I2 | HITOP Cloud sign-in (Apple, Google, GitHub) and personal library sync (collections, environments, globals), Account screen (devices, organization, plan usage) | done; sync server deployed 2026-11-18 (branch `ios-i2`, 2026-11-18; needs the sync-server deploy below) |
 | I2b | Shared end-to-end encrypted collections (workspaces) with hitop-sync-crypto's rules through a Rust C-ABI library of hitop-core's sync plan + hitop-sync-crypto (`ios/HITOP/SyncFFI`); team environments | done (branch `ios-i2b`, 2026-11-18; no server change) |
-| I3 | Collection runner + run report, Live Activity, widgets, App Intents | planned |
+| I3 | Collection runner + run report, Live Activity, widgets, App Intents | done (branch `ios-i3`, 2026-11-18; no server change) |
 | I4 | WebSocket, SSE, GraphQL schema, gRPC | planned |
 | I5 | Apple Intelligence features, iPad three columns + keyboard, accessibility pass (VoiceOver, Dynamic Type, Reduce Transparency) | planned |
 | I6 | App Store: screenshots, listing text, review notes, price → Free, submit (owner on a Mac) | planned |
 
-Owner tasks: none until I6, apart from opening the CI-built simulator builds or TestFlight if wanted.
+Owner tasks: none until I6 (I3 adds the app group to register, see "I3: what landed"), apart from opening the CI-built simulator builds or TestFlight if wanted.
 Agents can't run Xcode here (Linux bastion): every tranche is built and tested by the macOS CI job.
 
 ## I0 + I1: what landed (2026-11-18, branch `ios-i0-i1`)
@@ -383,3 +383,84 @@ blobs, env-shares, org environments).
   UI (the Core has `setRole`), deleting a workspace, editing team environments (read and pick only).
 - Company SSO, passwords and recovery phrases (I2 deferred list).
 - Not checked on a device: the hosted server with real invites, Keychain on hardware.
+
+## I3: what landed (2026-11-18, branch `ios-i3`)
+CI: `.github/workflows/ios.yml`, green run CI_RUN_LINK (jobs `app`, `core`, `hitopkit`; artifact `screenshots`: 17–21 are I3's).
+
+**Runner (Core `Runs.swift`, Linux-tested)**
+- `Sender.run(collection, context, bail, iterations, onStep)`: HitopKit's `Runner` on the app's URLSession client (the
+  same `kitRequest`/`kitAuth`, variables, environment, secrets, scripts/tests and masking as `Sender.send`), one HitopKit
+  `ReportBuilder` across iterations, WebSocket/gRPC left out as `hitop run` leaves them out, `bailed` as the CLI's.
+  Script-set values of earlier sends don't carry into a run (a run starts afresh). `RunCenter` (@MainActor) runs one at a
+  time, feeds live progress (done/total, passed, failed, the request done last, elapsed) from the runner through an
+  `AsyncStream`, keeps the history and sends `RunEvent`s (started/progress/finished) to the UI layer.
+- History: `hitop-library/runs.json` (`FileRunStore`, the last 30), each `RunRecord` = counts, first failure and
+  `reportJSON` = HitopKit's `Report.jsonText` verbatim (report.json, reportVersion 1, spec/run-report.md; masked by the
+  runner). `RunReport` is only a reader (Decodable) for the screens; it also reads `spec/compat/v1/run-report/report.json`.
+- Viewers of a shared collection can run it (a run changes nothing in the collection).
+
+**Screens**
+- Run sheet (drafts' "Collection run"): options (environment, stop at the first failure, 1–20 iterations, the Live Activity
+  switch), the ring with live progress and each request as it finishes, then passed/total, checks, p95, total time, up
+  to three failure cards, every request; Report, Share `report.json` (ShareLink of the file), Run again. Opened from the
+  Runs tab (Run a collection), a collection's context menu ("Run collection") and leading swipe ("Run"), the iPad
+  sidebar's collection menu, an intent, the last-run widget and the Live Activity (`hitop://run/<id>`).
+- Runs tab: the run going on, recent runs (swipe to delete, Clear), Run a collection. Report: summary (requests, tests,
+  bail), one section per iteration, each request with status and time; failed ones open with their failure line and every
+  test (failures with their message), URL as sent (masked), platform notes.
+
+**System (extension `HITOPWidgets`, bundle id `hitop.rws8.tech.HiTop.Widgets`, folder `ios/HITOP/Widgets`; shared code in `ios/HITOP/Shared`)**
+- Data: the app writes `widget-snapshot.json` (Core `WidgetData.swift`, self-contained, also compiled into the extension)
+  into the app group `group.hitop.rws8.tech.HiTop` after every run and intent send, at launch and when the app goes to the
+  background, then reloads widgets, controls and App Shortcut parameters (`SystemBridge`). Names, methods, counts and
+  statuses only: no response, variable value or secret. Without an app group (unsigned build) it goes to the app's own
+  Application Support/hitop-shared, so intents still work and the widgets show their empty state.
+- Widgets: Last run (small: passed/total, how long ago, environment), Failing collections (small), Pinned requests
+  (medium: the first three pins with their last status and a Send button = `Button(intent: SendRequestIntent)`).
+- Live Activity + Dynamic Island (ActivityKit, `RunActivityAttributes`): name, environment, the request done last,
+  n/total, passed/failed, elapsed, progress bar; compact (count + bar), minimal, expanded; ends with the result and stays
+  15 minutes. A refused activity never stops a run; off in UI tests.
+- App Intents: Run collection (`CollectionEntity`, optional `EnvironmentEntity`), Send request (`RequestEntity`), Switch
+  environment, Last run result (returns passed as a Bool for Shortcuts), Run last collection; `HITOPShortcuts` phrases
+  (all with the app name) for Siri/Shortcuts/Spotlight; a Control Center control (`ControlWidgetButton` → Run last
+  collection). Entity queries read the snapshot, so they answer in either process.
+- Where intents run (judgement call, from Apple's `LiveActivityIntent` page: "the system launches your app process without
+  opening the app, performs the intent"): Run collection, Send request and Run last collection are `LiveActivityIntent`s,
+  so the widget button and the control run them in the app's process, where the collections, the runner and the Keychain
+  are; the extension compiles them (its views need the types) with an `IntentBridge` stub that only says "Open HITOP".
+  Switch environment and Last run result are app-only. **No Keychain access group is needed**: the extension never reads
+  a secret.
+
+**Trust notices in words (I2b review)**: `SyncCore.Keyring.details` keeps hitop-sync-crypto's notice kind, sender key
+id and fingerprint (the FFI already returned them; no Rust change); `SharedSync.describe` words them with the device's
+name from the member list ("Trusted Grace's Mac — the device your invite code named", "Fingerprint …" as secondary
+text, `SharedNotice {text, detail}`), never a key id (falls back to "a device").
+
+**Tests**
+- Unit (`UnitTests/RunsTests.swift`, Linux too): shop-api in Staging = 12 run, 11 passed (Cancel order 409, the WebSocket
+  request left out), events, report.json keys and HitopKit's text, the spec's run report read, no seed secret in the
+  history file or report, bail (7 requests, bailed), 2 iterations (24), no environment, a viewer runs, history cap +
+  reload + delete + clear, one run at a time, the widget snapshot (pins with last status, last run, failing, no secret
+  or host in the file), key notices never show a key id; `SharedSyncTests` checks the join's "Trusted HITOP on iPhone —
+  …" notice. Assertion counts only where JavaScriptCore runs scripts (macOS/simulator), notes on Linux.
+- UI (`UITests/RunFlowTests.swift`): Runs tab → Run shop-api → 11 of 12 → failure card → Report with Cancel order's
+  "HTTP 409" open → Share button → history row → report again; collection menu → Run collection with "Stop at the first
+  failure" → 6 of 7, no purchase words; the widget gallery. Screenshots 17-run-options, 18-run-result, 19-run-report,
+  20-runs, 21-widgets (the widgets, Live Activity part way and at its end, compact Dynamic Island drawn by the app with
+  the extension's views, `-UITestWidgetGallery`: XCUITest can't see the extension). The extension itself is built (and
+  embedded) by every CI build.
+
+**Owner steps (before a signed build / I6)**
+- Developer portal: register the app group `group.hitop.rws8.tech.HiTop`, enable App Groups for `hitop.rws8.tech.HiTop`
+  and the new `hitop.rws8.tech.HiTop.Widgets` (Xcode's automatic signing creates the extension's id). No Keychain
+  sharing group needed.
+- On a device: add the widgets, run a collection with the Lock Screen visible, try "Run shop-api in HITOP" with Siri.
+
+**Deferred**
+- The HTML report (HitopKit has no `to_html`; the CLI's `hitop run --reporter html` has it), data files (`--data`),
+  JUnit export, scheduled runs, cancelling a run part way.
+- Spotlight indexing of entities (`IndexedEntity`): App Shortcuts show in Spotlight, entities don't yet.
+- Widget configuration (pick which collection the last-run widget shows; it shows the newest run).
+- Not checked on a device: the widget button and the control running in the app's process (the simulator CI can't
+  tap a Home Screen widget), Live Activity start from a background intent, App Shortcut phrases with Siri, the app group
+  on a signed build.

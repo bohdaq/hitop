@@ -243,7 +243,7 @@ struct RunSheet: View {
                     color: run.progress.failed > 0 ? Theme.warning : Theme.success, label: "of \(run.progress.total)")
             Text("\(run.environmentName ?? "No environment") · \(run.progress.current ?? "starting…")").font(Typo.caption).foregroundStyle(Theme.textMuted)
                 .accessibilityIdentifier("run-progress")
-            stepList(run.steps.map { ($0.id, $0.method, $0.name, $0.passed, $0.status, $0.durationMs) })
+            stepList(run.steps)
         }
     }
 
@@ -270,7 +270,7 @@ struct RunSheet: View {
                 ForEach(Array(report.requests.enumerated().filter { !$0.element.passed }.prefix(3)), id: \.offset) { _, f in
                     FailureCard(request: f)
                 }
-                stepList(report.requests.enumerated().map { ($0.offset, $0.element.method, $0.element.name, $0.element.passed, $0.element.status, $0.element.responseTimeMs ?? $0.element.durationMs) })
+                stepList(report.requests.enumerated().map { RunStepRow(id: $0.offset, name: $0.element.name, method: $0.element.method, passed: $0.element.passed, status: $0.element.status, durationMs: $0.element.responseTimeMs ?? $0.element.durationMs) })
             }
         }
     }
@@ -287,23 +287,23 @@ struct RunSheet: View {
         .accessibilityElement(children: .combine)
     }
 
-    private func stepList(_ rows: [(Int, String, String, Bool, Int?, Int)]) -> some View {
+    private func stepList(_ rows: [RunStepRow]) -> some View {
         VStack(spacing: 0) {
-            ForEach(rows, id: \.0) { row in
+            ForEach(rows) { row in
                 HStack(spacing: 10) {
-                    Image(systemName: row.3 ? "checkmark" : "xmark").font(.system(size: 13, weight: .bold))
-                        .foregroundStyle(row.3 ? Theme.success : Theme.danger).frame(width: 16)
-                    Text(row.1).font(Typo.tag).foregroundStyle(Theme.method(row.1)).frame(width: 52, alignment: .leading)
-                    Text(row.2).font(Typo.row).foregroundStyle(Theme.textRow).lineLimit(1)
+                    Image(systemName: row.passed ? "checkmark" : "xmark").font(.system(size: 13, weight: .bold))
+                        .foregroundStyle(row.passed ? Theme.success : Theme.danger).frame(width: 16)
+                    Text(row.method).font(Typo.tag).foregroundStyle(Theme.method(row.method)).frame(width: 52, alignment: .leading)
+                    Text(row.name).font(Typo.row).foregroundStyle(Theme.textRow).lineLimit(1)
                     Spacer(minLength: 4)
-                    if let s = row.4, !row.3 { Text("\(s)").font(Typo.mono(12.5, .semibold)).foregroundStyle(Theme.status(s)) }
-                    Text("\(row.5) ms").font(Typo.mono(12.5)).foregroundStyle(Theme.textMuted)
+                    if let s = row.status, !row.passed { Text("\(s)").font(Typo.mono(12.5, .semibold)).foregroundStyle(Theme.status(s)) }
+                    Text("\(row.durationMs) ms").font(Typo.mono(12.5)).foregroundStyle(Theme.textMuted)
                 }
                 .frame(minHeight: 42)
                 .padding(.horizontal, 14)
                 .accessibilityElement(children: .combine)
-                .accessibilityIdentifier("run-step-\(row.2)")
-                if row.0 != rows.last?.0 { Divider().overlay(Theme.separator) }
+                .accessibilityIdentifier("run-step-\(row.name)")
+                if row.id != rows.last?.id { Divider().overlay(Theme.separator) }
             }
         }
         .card(radius: 18)

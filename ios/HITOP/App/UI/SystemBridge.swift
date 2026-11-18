@@ -46,7 +46,9 @@ final class SystemBridge {
             guard let activity, Date().timeIntervalSince(lastUpdate) > 0.25 || run.progress.done == run.progress.total else { return }
             lastUpdate = Date()
             let content = ActivityContent(state: Self.state(run, finished: false), staleDate: nil)
-            Task { await activity.update(content) }
+            // ActivityKit's Activity isn't Sendable; it is only ever used from here, one call at a time.
+            nonisolated(unsafe) let a = activity
+            Task { await a.update(content) }
         case let .finished(run, record):
             if let activity {
                 var final = Self.state(run, finished: true)
@@ -56,7 +58,8 @@ final class SystemBridge {
                 final.total = record.requestsTotal
                 final.elapsedMs = record.durationMs
                 let content = ActivityContent(state: final, staleDate: nil)
-                Task { await activity.end(content, dismissalPolicy: .after(Date().addingTimeInterval(15 * 60))) }
+                nonisolated(unsafe) let a = activity
+                Task { await a.end(content, dismissalPolicy: .after(Date().addingTimeInterval(15 * 60))) }
                 self.activity = nil
             }
             refreshWidgets()
