@@ -70,9 +70,15 @@ final class SharedFlowTests: XCTestCase {
         XCTAssertEqual(fp.label, Self.graceFingerprint)
         shot(app, "13-join-trust")
         app.el("trust-accept").tap()
-        wait(app.el("join-status"), 20)
-        // Grace adds Ada; the collection opens here by itself.
-        wait(app.el("join-opened"), 60)
+        // Accepted ("waiting for the owner", often only a moment), then Grace adds Ada and the
+        // collection opens here by itself.
+        let opened = app.el("join-opened")
+        let deadline = Date().addingTimeInterval(60)
+        while !opened.exists && Date() < deadline {
+            if app.el("join-error").exists { XCTFail("join refused: \(app.el("join-error").label)"); return }
+            RunLoop.current.run(until: Date().addingTimeInterval(0.3))
+        }
+        XCTAssertTrue(opened.exists, "the collection didn't open")
         app.el("join-done").tap()
         app.el("account-done").tap()
 
