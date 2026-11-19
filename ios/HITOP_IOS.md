@@ -466,7 +466,7 @@ text, `SharedNotice {text, detail}`), never a key id (falls back to "a device").
   on a signed build.
 
 ## I4: what landed (2026-11-19, branch `ios-i4`)
-CI: `.github/workflows/ios.yml`, green run CI_RUN_LINK (jobs `app`, `core` with the new end-to-end test, `hitopkit`;
+CI: `.github/workflows/ios.yml`, green run https://github.com/bohdaq/hitop/actions/runs/44447832335 (jobs `app`, `core` with the new end-to-end test, `hitopkit`;
 artifact `screenshots`: 22–29 are I4's).
 
 **gRPC approach: (a), hitop-core's client through SyncFFI** (the I2b library; feature `grpc`, on by default). Five more
