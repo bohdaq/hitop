@@ -561,7 +561,7 @@ body); Connect, sending messages, Call, Load services/schema and Stop work.
 gRPC — a minute or two more.)
 
 ## I5: what landed (2026-11-19, branch `ios-i5`)
-CI: `.github/workflows/ios.yml`, green run CI_RUN_LINK (jobs `app`, `core`, `hitopkit`; artifact `screenshots`: 30–37 are I5's, `pad-30`/`pad-31` the iPad Explain).
+CI: `.github/workflows/ios.yml`, green run https://github.com/bohdaq/hitop/actions/runs/44548590227 (jobs `app`, `core`, `hitopkit`; artifact `screenshots`: 30–37 are I5's, `pad-30`/`pad-31` the iPad Explain).
 
 **Apple Intelligence (on-device Foundation Models only; nothing leaves the device, every screen says so)**
 - Core `Intelligence.swift` (Foundation only, Linux-tested): `ModelInput` decides what the model may see: secret values
