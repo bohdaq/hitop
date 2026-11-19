@@ -385,7 +385,7 @@ blobs, env-shares, org environments).
 - Not checked on a device: the hosted server with real invites, Keychain on hardware.
 
 ## I3: what landed (2026-11-18, branch `ios-i3`)
-CI: `.github/workflows/ios.yml`, green run CI_RUN_LINK (jobs `app`, `core`, `hitopkit`; artifact `screenshots`: 17–21 are I3's).
+CI: `.github/workflows/ios.yml`, green run https://github.com/bohdaq/hitop/actions/runs/44376726447 (commit 24d354f; the first run of that commit had its jobs cancelled when no macOS runner came within 15 minutes, re-run) (jobs `app`, `core`, `hitopkit`; artifact `screenshots`: 17–21 are I3's).
 
 **Runner (Core `Runs.swift`, Linux-tested)**
 - `Sender.run(collection, context, bail, iterations, onStep)`: HitopKit's `Runner` on the app's URLSession client (the
