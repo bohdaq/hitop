@@ -553,6 +553,12 @@ hitop/
   `LibrarySync`; viewer = AppModel refuses changes (`isReadOnly`); team environments read-only (`team: <org>`). `FakeCloud` enforces workspaces.rs rules;
   `SharedScenario` (Grace's phone in-process, fixed key) feeds `-UITestSharedInvite`/`-UITestSharedJoined`; CI `core` builds the hitop CLI (`HITOP_BIN`) for
   `SharedEndToEndTests` (Core ↔ CLI)
+- HITOP iOS I3 (runs + system, ios/HITOP_IOS.md "I3"): Core `Runs.swift` (`Sender.run` = HitopKit `Runner` + one `ReportBuilder`, `RunCenter` live progress +
+  history `hitop-library/runs.json` (30) with report.json text verbatim, `RunReport` reader), `WidgetData.swift` (self-contained snapshot in app group
+  `group.hitop.rws8.tech.HiTop`, also compiled into the extension); extension `HITOPWidgets` (`ios/HITOP/Widgets`, bundle id `hitop.rws8.tech.HiTop.Widgets`:
+  last run, failing, pinned with `Button(intent:)` Send, Live Activity + Dynamic Island, Control Center control); `ios/HITOP/Shared` = files in both targets
+  (ActivityAttributes, widget views, entities, the two LiveActivityIntents the extension starts: performed in the app, extension `IntentBridge` is a stub);
+  app-only intents + `HITOPShortcuts` in App/UI/AppIntents.swift. `-UITestWidgetGallery` draws the extension's views in the app for screenshots
 - The app (no editing) is generated with `xcodegen` on a Mac; bundle ids `hitop.rws8.tech.HitopCompanion` (+ `.Widget`),
   app group `group.hitop.rws8.tech.companion`; Swift 5 language mode for the app targets, Swift 6 for HitopKit
 
