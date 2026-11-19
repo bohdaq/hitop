@@ -494,6 +494,7 @@ struct KeyValueRow: View {
             .textInputAutocapitalization(.never)
             Button(role: .destructive, action: onDelete) {
                 Image(systemName: "minus.circle.fill").foregroundStyle(Theme.danger).frame(width: 44, height: 44)
+                    .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
             .accessibilityLabel("Remove \(key.isEmpty ? "row" : key)")

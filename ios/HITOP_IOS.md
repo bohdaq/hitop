@@ -599,7 +599,7 @@ splits into two rows, label/field rows (auth, gRPC) stack, method tags grow with
 runs `performAccessibilityAudit()` on collections, the request's tabs, the response's tabs, Explain, history, environments,
 runs (options, result, report), account, WebSocket/SSE/gRPC, request from text, the widget gallery, and at Accessibility XL
 text; every issue is collected and reported at once (attachment `accessibility-audit`). Fixed from its findings: 44 pt
-targets for the WebSocket message/subprotocol remove buttons, Clear, Copy/Share, the URL display and the message fields;
+targets for the param/header/form row and WebSocket message/subprotocol remove buttons, Clear, Copy/Share, the URL display and the message fields;
 the Live Activity's subtitle and count no longer clip; `codeMuted` was 3.1:1 (now 4.6:1). Accepted kinds, each with its
 reason in the test (judgement calls, since the audit misreads this app): **contrast** (it samples pixels under Liquid Glass
 and the accent glow and flagged even 13:1 text; the unit test `ContrastTests` checks every text token on every background
