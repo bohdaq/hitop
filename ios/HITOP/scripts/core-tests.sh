@@ -29,6 +29,8 @@ if [ -z "$lib" ]; then
 fi
 export HITOP_SYNC_VECTORS=${HITOP_SYNC_VECTORS:-"$repo/cli/crates/hitop-sync-crypto/vectors"}
 export HITOP_RUN_REPORT_DIR=${HITOP_RUN_REPORT_DIR:-"$repo/spec/compat/v1/run-report"}
+# I5: CurlTests reads every curl.sh of hitop-core's snippet goldens.
+export HITOP_SNIPPET_GOLDENS=${HITOP_SNIPPET_GOLDENS:-"$repo/cli/crates/hitop-core/tests/golden/snippets"}
 mkdir -p "$work/Sources" "$work/Tests" "$work/Sources/CHitopSync"
 ln -sfn "$here/App/Core" "$work/Sources/HITOP"
 ln -sfn "$here/UnitTests" "$work/Tests/HITOPTests"

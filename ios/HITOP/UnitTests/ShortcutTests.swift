@@ -59,6 +59,24 @@ final class ShortcutTests: XCTestCase {
         XCTAssertTrue(nav.padSearch, "⌘K on iPad: the search sheet")
     }
 
+    /// I5: ⇧⌘N (a request from text or curl) and ⇧⌘E (explain the response, iPad).
+    func testFromTextAndExplain() async {
+        nav.newRequestFromText()
+        XCTAssertTrue(nav.showRequestFromText)
+        nav.isPad = true
+        nav.open(request: 1104)
+        nav.explainCurrent(model)
+        XCTAssertNil(nav.explaining, "no response yet: nothing to explain")
+        nav.sendCurrent(model)
+        await model.editor(for: 1104)!.waitForSend()
+        nav.explainCurrent(model)
+        XCTAssertEqual(nav.explaining?.id, 1104)
+        nav.explaining = nil
+        nav.isPad = false
+        nav.explainCurrent(model)
+        XCTAssertNil(nav.explaining, "iPhone: the response sheet's button explains")
+    }
+
     func testNothingOpenIsHarmless() {
         nav.sendCurrent(model)
         nav.saveCurrent(model)

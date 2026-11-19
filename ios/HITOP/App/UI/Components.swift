@@ -1,4 +1,12 @@
 import SwiftUI
+import UIKit
+
+// MARK: - Motion
+
+extension Animation {
+    /// The app's one animation (folding sections, the run ring): none with Reduce Motion.
+    static var hitop: Animation? { UIAccessibility.isReduceMotionEnabled ? nil : .snappy }
+}
 
 // MARK: - Glass
 

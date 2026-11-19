@@ -175,7 +175,7 @@ jobs:
           PY
           done
           # The iPad screen capture comes in the panel's portrait orientation: turn it upright.
-          for f in "$RUNNER_TEMP"/shots/pad-0*.png; do
+          for f in "$RUNNER_TEMP"/shots/pad-[0-9]*.png; do
             [ -f "$f" ] || continue
             w=$(sips -g pixelWidth "$f" | awk '/pixelWidth/ {print $2}')
             h=$(sips -g pixelHeight "$f" | awk '/pixelHeight/ {print $2}')

@@ -1,4 +1,5 @@
 import SwiftUI
+import UIKit
 
 /// HITOP dark (ios/HITOP_IOS.md "Look"): graphite ground, surfaces, accent, logo gradient,
 /// Geist / Geist Mono, method colours. Dark only, like the web app.
@@ -16,12 +17,13 @@ enum Theme {
     static let text = Color(hex: 0xEDEDF2)
     static let textRow = Color(hex: 0xE4E4EA)
     static let textSoft = Color(hex: 0xC7C7D1)
-    static let textTab = Color(hex: 0xB4B4C0)
-    static let textMuted = Color(hex: 0x9A9AA8)
-    static let textFaint = Color(hex: 0x8D8D9B)
-    static let chevron = Color(hex: 0x5C5C6A)
+    // Increase Contrast lifts the quieter text and the hairlines (I5).
+    static let textTab = Color(hex: 0xB4B4C0, high: 0xD6D6DE)
+    static let textMuted = Color(hex: 0x9A9AA8, high: 0xC7C7D1)
+    static let textFaint = Color(hex: 0x8D8D9B, high: 0xB4B4C0)
+    static let chevron = Color(hex: 0x5C5C6A, high: 0x9A9AA8)
     static let hairline = Color.white.opacity(0.06)
-    static let separator = Color.white.opacity(0.05)
+    static let separator = Color(hex: 0xFFFFFF, opacity: 0.05, highOpacity: 0.22)
     static let fill = Color.white.opacity(0.06)
     static let fillStrong = Color.white.opacity(0.14)
     static let success = Color(hex: 0x5EE6A0)
@@ -38,7 +40,7 @@ enum Theme {
     static let codeString = Color(hex: 0xF2C98A)
     static let codeNumber = Color(hex: 0xFF9F9F)
     static let codeLiteral = Color(hex: 0xC4A7FF)
-    static let codeMuted = Color(hex: 0x6E6E7C)
+    static let codeMuted = Color(hex: 0x6E6E7C, high: 0x9A9AA8)
     static let chipFill = accent.opacity(0.18)
 
     /// Method colours: the web app's (`site/src/theme.css` `--hitop-method-*`) for HTTP methods,
@@ -83,6 +85,23 @@ enum Theme {
 extension Color {
     init(hex: UInt32, opacity: Double = 1) {
         self.init(.sRGB, red: Double((hex >> 16) & 0xFF) / 255, green: Double((hex >> 8) & 0xFF) / 255, blue: Double(hex & 0xFF) / 255, opacity: opacity)
+    }
+
+    /// A colour that becomes `high` with Increase Contrast.
+    init(hex: UInt32, high: UInt32) {
+        self.init(uiColor: Self.contrasted(hex, 1, high, 1))
+    }
+
+    /// A translucent colour that becomes more opaque with Increase Contrast.
+    init(hex: UInt32, opacity: Double, highOpacity: Double) {
+        self.init(uiColor: Self.contrasted(hex, opacity, hex, highOpacity))
+    }
+
+    private static func contrasted(_ hex: UInt32, _ opacity: Double, _ high: UInt32, _ highOpacity: Double) -> UIColor {
+        func ui(_ h: UInt32, _ a: Double) -> UIColor {
+            UIColor(red: CGFloat((h >> 16) & 0xFF) / 255, green: CGFloat((h >> 8) & 0xFF) / 255, blue: CGFloat(h & 0xFF) / 255, alpha: CGFloat(a))
+        }
+        return UIColor { traits in traits.accessibilityContrast == .high ? ui(high, highOpacity) : ui(hex, opacity) }
     }
 }
 

@@ -35,6 +35,7 @@ struct PadRoot: View {
             .onChange(of: nav.padRequest) { nav.padSearch = false }
         }
         .modifier(LibraryActions(naming: $naming, moving: $moving, deleting: $deleting))
+        .modifier(ExplainHost())
         .onAppear {
             if nav.padRequest == nil, let first = model.collections.first?.requests.first { nav.padRequest = first.id }
         }
@@ -75,8 +76,10 @@ struct PadRoot: View {
                     .background(RoundedRectangle(cornerRadius: 11, style: .continuous).fill(Color.white.opacity(0.07)))
                 }
                 .buttonStyle(.plain)
+                .hoverEffect(.highlight)
                 .listRowBackground(Color.clear)
                 .accessibilityLabel("Search")
+                .accessibilityHint("Command K")
                 .accessibilityIdentifier("pad-search")
             }
             ForEach(model.visibleCollections) { c in
@@ -136,9 +139,18 @@ struct PadRoot: View {
                     .accessibilityLabel("Search")
             }
             ToolbarItem(placement: .primaryAction) {
-                Button { newRequest() } label: { Image(systemName: "plus") }
-                    .accessibilityLabel("New request")
-                    .accessibilityIdentifier("pad-new-request")
+                Menu {
+                    Button("New request", systemImage: "plus") { newRequest() }
+                    Button("New request from text or curl…", systemImage: "text.badge.plus") { nav.newRequestFromText() }
+                        .accessibilityIdentifier("new-from-text")
+                } label: {
+                    Image(systemName: "plus")
+                } primaryAction: {
+                    newRequest()
+                }
+                .accessibilityLabel("New request")
+                .accessibilityHint("Hold for a request from text or curl")
+                .accessibilityIdentifier("pad-new-request")
             }
         }
     }
@@ -148,10 +160,12 @@ struct PadRoot: View {
             Label(title, systemImage: icon)
                 .font(Typo.geist(14))
                 .foregroundStyle(nav.padPage == page ? Color.white : Theme.textSoft)
-                .frame(maxWidth: .infinity, minHeight: 36, alignment: .leading)
+                .frame(maxWidth: .infinity, minHeight: 44, alignment: .leading)
                 .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
+        .hoverEffect(.highlight)
+        .accessibilityIdentifier("pad-page-\(title)")
         .listRowBackground(nav.padPage == page ? RoundedRectangle(cornerRadius: 11).fill(Theme.accent.opacity(0.16)) : nil)
         .accessibilityAddTraits(nav.padPage == page ? .isSelected : [])
     }

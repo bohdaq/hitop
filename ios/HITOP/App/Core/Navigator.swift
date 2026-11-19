@@ -3,6 +3,11 @@ import Observation
 
 enum AppTab: Hashable { case collections, history, environments, runs, search }
 
+/// The request whose response is being explained.
+struct ExplainTarget: Identifiable, Hashable, Sendable {
+    var id: UInt64
+}
+
 enum Route: Hashable {
     case request(UInt64)
     case history(UInt64)
@@ -33,6 +38,11 @@ final class Navigator {
     /// Set by RootView: the three-column layout is showing.
     var isPad = false
 
+    /// I5: "New request from text or curl" (Collections +, the iPad sidebar, ⇧⌘N).
+    var showRequestFromText = false
+    /// I5: the "Explain response" sheet of an open request (the response's button; ⇧⌘E on iPad).
+    var explaining: ExplainTarget?
+
     /// The request the editor shows (iPad middle column, or the top of the iPhone Collections stack).
     var currentRequest: UInt64? {
         if isPad { return padPage == .collections ? padRequest : nil }
@@ -61,6 +71,18 @@ final class Navigator {
     /// ⌘N: a new request, opened in the editor.
     func newRequest(_ model: AppModel) {
         open(request: model.newRequest().id)
+    }
+
+    /// ⇧⌘N: a request from plain text or a curl command.
+    func newRequestFromText() {
+        showRequestFromText = true
+    }
+
+    /// ⇧⌘E: explains the open request's response (iPad: the response column is on screen; on
+    /// iPhone the response sheet's own button does it).
+    func explainCurrent(_ model: AppModel) {
+        guard isPad, let id = currentRequest, case .success? = model.editor(for: id)?.outcome else { return }
+        explaining = ExplainTarget(id: id)
     }
 
     /// Opens the run sheet of a collection (`showLast`: on its last run).

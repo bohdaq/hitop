@@ -59,8 +59,26 @@ final class ScreenshotTests: XCTestCase {
         sleep(1)
         // The whole screen: an app capture of a rotated iPad comes back clipped. Its pixels are in the
         // panel's portrait orientation; CI's export step turns it upright.
+        screen("01-ipad")
+
+        // I5: the response column's Explain response (the drafts' iPad page), then its sheet.
+        let explain = app.el("explain-response")
+        wait(explain)
+        for _ in 0..<6 where !explain.isHittable { app.el("json-body").swipeUp(velocity: .slow) }
+        XCTAssertTrue(explain.isEnabled)
+        screen("30-ipad-explain-button")
+        explain.tap()
+        wait(app.el("explain-text"))
+        app.el("suggest-test").tap()
+        wait(app.el("suggested-test"))
+        sleep(1)
+        screen("31-ipad-explain")
+    }
+
+    @MainActor
+    private func screen(_ name: String) {
         let a = XCTAttachment(screenshot: XCUIScreen.main.screenshot())
-        a.name = "01-ipad"
+        a.name = name
         a.lifetime = .keepAlways
         add(a)
     }

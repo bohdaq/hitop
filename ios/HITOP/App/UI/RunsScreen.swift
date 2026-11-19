@@ -150,7 +150,8 @@ struct RunSheet: View {
                 .padding(.bottom, 100)
             }
             .background(RunBackground(passed: record.map(\.passed)))
-            .safeAreaInset(edge: .bottom) { bottomBar }
+            // I5: the scroll edge effect under the bar, so the list never shows through it.
+            .safeAreaBar(edge: .bottom) { bottomBar }
             .navigationTitle(title)
             .navigationBarTitleDisplayMode(.inline)
             .navigationDestination(for: RunRoute.self) { route in
@@ -364,7 +365,7 @@ struct RunRing: View {
             Circle().stroke(Color.white.opacity(0.08), lineWidth: 12)
             Circle().trim(from: 0, to: max(0.001, fraction)).stroke(color, style: StrokeStyle(lineWidth: 12, lineCap: .round))
                 .rotationEffect(.degrees(-90))
-                .animation(.snappy, value: fraction)
+                .animation(Animation.hitop, value: fraction)
             VStack(spacing: 4) {
                 (Text("\(done)") + Text("/\(total)").foregroundStyle(Theme.textFaint)).font(Typo.geist(40, .bold, relativeTo: .largeTitle))
                 Text(label).font(Typo.geist(13)).foregroundStyle(Theme.textMuted)
@@ -507,7 +508,7 @@ struct RunReportView: View {
         let isOpen = open.contains(key)
         return VStack(alignment: .leading, spacing: 8) {
             Button {
-                withAnimation(.snappy) { if isOpen { open.remove(key) } else { open.insert(key) } }
+                withAnimation(Animation.hitop) { if isOpen { open.remove(key) } else { open.insert(key) } }
             } label: {
                 HStack(spacing: 10) {
                     Image(systemName: r.passed ? "checkmark" : "xmark").font(.system(size: 13, weight: .bold))

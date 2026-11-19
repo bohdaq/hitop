@@ -97,6 +97,10 @@ targets:
       - path: ../../spec/compat/v1/run-report
         type: folder
         buildPhase: resources
+      # hitop-core's snippet goldens (CurlTests: every curl.sh reads back, I5).
+      - path: ../../cli/crates/hitop-core/tests/golden/snippets
+        type: folder
+        buildPhase: resources
     dependencies:
       - target: HITOP
     settings:

@@ -15,6 +15,8 @@ struct ResponseSheet: View {
                 .padding(.top, 18)
                 .padding(.bottom, 24)
         }
+        // Explain opens over the response sheet (a sheet can only present from the top one).
+        .modifier(ExplainHost())
     }
 }
 
@@ -42,7 +44,7 @@ struct ResponsePanel: View {
                 .frame(maxWidth: .infinity, minHeight: 220)
             } else if let outcome = editor.outcome {
                 switch outcome {
-                case let .success(o): ResponseContent(outcome: o, style: style, close: close)
+                case let .success(o): ResponseContent(outcome: o, style: style, close: close, requestID: editor.id)
                 case let .failure(f): ErrorCard(failure: f, close: close)
                 }
             } else {
@@ -58,13 +60,17 @@ struct ResponseContent: View {
     var outcome: SendOutcome
     var style: ResponsePanel.Style
     var close: (() -> Void)?
+    /// The request it answers (Explain needs it).
+    var requestID: UInt64?
     @State private var tab: ResponseTab
     @State private var raw = false
+    @Environment(Intelligence.self) private var ai
 
-    init(outcome: SendOutcome, style: ResponsePanel.Style, close: (() -> Void)?) {
+    init(outcome: SendOutcome, style: ResponsePanel.Style, close: (() -> Void)?, requestID: UInt64? = nil) {
         self.outcome = outcome
         self.style = style
         self.close = close
+        self.requestID = requestID
         // An event stream opens on its events.
         _tab = State(initialValue: outcome.events != nil ? .events : .body)
     }
@@ -91,6 +97,7 @@ struct ResponseContent: View {
                 Text(ByteText.text(outcome.size)).font(Typo.mono(14, .medium)).foregroundStyle(Theme.textMuted)
                     .lineLimit(1)
                     .minimumScaleFactor(0.7)
+                    .layoutPriority(1)
                 // The iOS 26 sheet floats inset from the screen edges: nothing in this row may push it wider.
                 Spacer(minLength: 0)
                 if style == .column, !outcome.tests.isEmpty {
@@ -100,13 +107,13 @@ struct ResponseContent: View {
                         .padding(.horizontal, 9).padding(.vertical, 4)
                         .background(RoundedRectangle(cornerRadius: 10).fill((passed == outcome.tests.count ? Theme.success : Theme.danger).opacity(0.12)))
                 }
-                ShareLink(item: outcome.text) {
-                    Image(systemName: "square.and.arrow.up").font(.system(size: 16, weight: .medium)).foregroundStyle(Theme.text)
-                        .frame(width: 44, height: 44)
+                if explainInHeader, let requestID {
+                    // The drafts: Explain takes Share's place in the sheet's header; Share moves
+                    // to the body's tools.
+                    ExplainButton(requestID: requestID)
+                } else {
+                    shareButton
                 }
-                .buttonStyle(.glass)
-                .buttonBorderShape(.circle)
-                .accessibilityLabel("Share the response body")
                 if let close {
                     Button(action: close) {
                         Image(systemName: "xmark").font(.system(size: 14, weight: .semibold)).foregroundStyle(Theme.text).frame(width: 44, height: 44)
@@ -143,6 +150,51 @@ struct ResponseContent: View {
             ForEach(outcome.notes, id: \.self) { n in
                 Label(n, systemImage: "info.circle").font(Typo.caption).foregroundStyle(Theme.textMuted)
             }
+            if style == .column, let requestID {
+                ExplainWideButton(requestID: requestID).padding(.top, 4)
+            }
+        }
+    }
+
+    /// iPhone sheet: Explain in the header when Apple Intelligence is on (else Share stays there).
+    private var explainInHeader: Bool { style == .sheet && ai.availability.isAvailable }
+
+    private var shareButton: some View {
+        ShareLink(item: outcome.text) {
+            Image(systemName: "square.and.arrow.up").font(.system(size: 16, weight: .medium)).foregroundStyle(Theme.text)
+                .frame(width: 44, height: 44)
+        }
+        .buttonStyle(.glass)
+        .buttonBorderShape(.circle)
+        .accessibilityLabel("Share the response body")
+        .accessibilityIdentifier("share-response")
+    }
+
+    /// Pretty/Raw (JSON), Copy, and Share when Explain took its place in the header.
+    private func bodyTools(json: Bool) -> some View {
+        HStack {
+            if json {
+                Picker("View", selection: $raw) {
+                    Text("Pretty").tag(false)
+                    Text("Raw").tag(true)
+                }
+                .pickerStyle(.segmented)
+                .frame(width: 160)
+            }
+            Spacer()
+            Button {
+                UIPasteboard.general.string = outcome.text
+            } label: { Label("Copy", systemImage: "doc.on.doc").font(Typo.caption) }
+            .frame(minHeight: 44)
+            .hoverEffect(.highlight)
+            .accessibilityLabel("Copy the response body")
+            if explainInHeader {
+                ShareLink(item: outcome.text) { Label("Share", systemImage: "square.and.arrow.up").font(Typo.caption) }
+                    .frame(minHeight: 44)
+                    .hoverEffect(.highlight)
+                    .accessibilityLabel("Share the response body")
+                    .accessibilityIdentifier("share-response")
+            }
         }
     }
 
@@ -157,19 +209,7 @@ struct ResponseContent: View {
                 .card(radius: 18, fill: Theme.sheetCode)
                 .accessibilityLabel("Image response, \(Int(image.size.width)) by \(Int(image.size.height))")
         } else if let json = JSONOutline.box(outcome.text) {
-            HStack {
-                Picker("View", selection: $raw) {
-                    Text("Pretty").tag(false)
-                    Text("Raw").tag(true)
-                }
-                .pickerStyle(.segmented)
-                .frame(width: 160)
-                Spacer()
-                Button {
-                    UIPasteboard.general.string = outcome.text
-                } label: { Label("Copy", systemImage: "doc.on.doc").font(Typo.caption) }
-                .frame(minHeight: 44)
-            }
+            bodyTools(json: true)
             if raw {
                 CodeBlock(text: outcome.text, json: false, fill: Theme.sheetCode)
             } else {
@@ -178,6 +218,7 @@ struct ResponseContent: View {
         } else if outcome.text.isEmpty {
             Text("No body").font(Typo.caption).foregroundStyle(Theme.textMuted).frame(maxWidth: .infinity, minHeight: 80)
         } else {
+            bodyTools(json: false)
             CodeBlock(text: String(outcome.text.prefix(200_000)), json: false, fill: Theme.sheetCode)
         }
     }

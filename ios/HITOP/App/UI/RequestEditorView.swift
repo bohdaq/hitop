@@ -1,4 +1,5 @@
 import SwiftUI
+import UIKit
 
 enum EditorTab: String, Hashable {
     case params = "Params", headers = "Headers", body = "Body", auth = "Auth", scripts = "Scripts", tests = "Tests"
@@ -16,6 +17,7 @@ struct RequestScreen: View {
     @State private var naming: NameTarget?
     @State private var moving: UInt64?
     @State private var deleting: NameTarget?
+    @State private var keyboardUp = false
 
     var body: some View {
         if let editor = model.editor(for: id) {
@@ -72,7 +74,51 @@ struct RequestScreen: View {
                 .accessibilityLabel("More")
             }
         }
-        .safeAreaInset(edge: .bottom) {
+        // I5 (I4 review): the floating Save + Send bar covered the field being typed in (GraphQL
+        // variables, the body, scripts) when the keyboard was up. It steps aside while the keyboard
+        // shows; the keyboard's own bar has Done, Save and Send instead.
+        .onReceive(NotificationCenter.default.publisher(for: UIResponder.keyboardWillShowNotification)) { _ in keyboardUp = true }
+        .onReceive(NotificationCenter.default.publisher(for: UIResponder.keyboardWillHideNotification)) { _ in keyboardUp = false }
+        .toolbar {
+            ToolbarItemGroup(placement: .keyboard) {
+                Button("Done") { Self.endEditing() }
+                    .accessibilityIdentifier("keyboard-done")
+                Spacer()
+                if !readOnly {
+                    Button(editor.isDirty ? "Save" : "Saved") { editor.save() }
+                        .disabled(!editor.isDirty)
+                        .accessibilityIdentifier("save")
+                }
+                Button {
+                    Self.endEditing()
+                    let opens = !(editor.draft.isWebSocket && editor.socket.status != .closed) && !editor.isStreaming
+                    editor.primaryAction()
+                    if opens { showResponse = true }
+                } label: {
+                    Label(editor.sendTitle, systemImage: editor.sendIcon).labelStyle(.titleAndIcon).font(Typo.geist(15, .semibold))
+                }
+                .disabled(!editor.sendEnabled)
+                .accessibilityLabel(editor.sendTitle)
+                .accessibilityIdentifier("send")
+            }
+        }
+        .safeAreaBar(edge: .bottom) {
+            if !keyboardUp { bottomBar(editor) }
+        }
+        .sheet(isPresented: $showResponse) {
+            ResponseSheet(editor: editor)
+                .presentationDetents([.medium, .fraction(0.86), .large], selection: $detent)
+                .presentationDragIndicator(.visible)
+                .presentationBackgroundInteraction(.enabled(upThrough: .medium))
+        }
+        .modifier(LibraryActions(naming: $naming, moving: $moving, deleting: $deleting))
+    }
+
+    static func endEditing() {
+        UIApplication.shared.sendAction(#selector(UIResponder.resignFirstResponder), to: nil, from: nil, for: nil)
+    }
+
+    private func bottomBar(_ editor: RequestEditor) -> some View {
             GlassEffectContainer(spacing: 10) {
                 HStack(spacing: 10) {
                     if readOnly {
@@ -108,14 +154,6 @@ struct RequestScreen: View {
             }
             .padding(.horizontal, 16)
             .padding(.bottom, 8)
-        }
-        .sheet(isPresented: $showResponse) {
-            ResponseSheet(editor: editor)
-                .presentationDetents([.medium, .fraction(0.86), .large], selection: $detent)
-                .presentationDragIndicator(.visible)
-                .presentationBackgroundInteraction(.enabled(upThrough: .medium))
-        }
-        .modifier(LibraryActions(naming: $naming, moving: $moving, deleting: $deleting))
     }
 }
 

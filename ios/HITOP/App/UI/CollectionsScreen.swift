@@ -265,6 +265,8 @@ struct CollectionsScreen: View {
             ToolbarItem(placement: .topBarTrailing) {
                 Menu {
                     Button("New request", systemImage: "plus") { newRequest(nil) }
+                    Button("New request from text or curl…", systemImage: "text.badge.plus") { nav.newRequestFromText() }
+                        .accessibilityIdentifier("new-from-text")
                     Button("New collection", systemImage: "folder.badge.plus") { naming = .newCollection }
                 } label: {
                     Image(systemName: "plus").font(.system(size: 17, weight: .semibold))
@@ -355,7 +357,7 @@ struct CollectionsScreen: View {
     private func collectionHeader(_ c: SavedCollection) -> some View {
         let open = expanded.contains(c.id)
         return Button {
-            withAnimation(.snappy) { if open { expanded.remove(c.id) } else { expanded.insert(c.id) } }
+            withAnimation(Animation.hitop) { if open { expanded.remove(c.id) } else { expanded.insert(c.id) } }
         } label: {
             HStack(spacing: 12) {
                 CollectionIcon(name: c.name)
@@ -426,7 +428,7 @@ struct CollectionsScreen: View {
         let count = c.requests.filter { $0.folder == folder || $0.folder.hasPrefix(folder + "/") }.count
         let name = String(folder.split(separator: "/").last ?? "")
         return Button {
-            withAnimation(.snappy) { if open { openFolders.remove(key) } else { openFolders.insert(key) } }
+            withAnimation(Animation.hitop) { if open { openFolders.remove(key) } else { openFolders.insert(key) } }
         } label: {
             HStack(spacing: 6) {
                 Text(name.uppercased()).font(Typo.label).tracking(0.9).foregroundStyle(Theme.textFaint)
