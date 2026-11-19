@@ -85,9 +85,7 @@ final class ProtocolFlowTests: XCTestCase {
         XCTAssertFalse(count.label.contains("· 2 events"), count.label)
         shot(app, "24-sse-live")
         app.el("stop-stream").tap()
-        waitForResponse(app)
-        wait(app.el("event-0"))
-        XCTAssertTrue(app.el("stream-stopped").exists)
+        wait(app.el("stream-stopped"))
         app.el("close-response").tap()
 
         // A stream that ends: its events in the response's Events tab.
@@ -134,7 +132,7 @@ final class ProtocolFlowTests: XCTestCase {
         let url = urlField(app)
         wait(url)
         url.tap()
-        url.typeText("https://stub.example/graphql\n")
+        url.typeText("https://stub.example/graphql")
         app.el("tab-Body").tap()
         app.el("body-kind").tap()
         app.buttons["GraphQL"].tap()

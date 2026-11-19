@@ -24,7 +24,7 @@ Activity/Siri).
 | I2 | HITOP Cloud sign-in (Apple, Google, GitHub) and personal library sync (collections, environments, globals), Account screen (devices, organization, plan usage) | done; sync server deployed 2026-11-18 (branch `ios-i2`, 2026-11-18; needs the sync-server deploy below) |
 | I2b | Shared end-to-end encrypted collections (workspaces) with hitop-sync-crypto's rules through a Rust C-ABI library of hitop-core's sync plan + hitop-sync-crypto (`ios/HITOP/SyncFFI`); team environments | done (branch `ios-i2b`, 2026-11-18; no server change) |
 | I3 | Collection runner + run report, Live Activity, widgets, App Intents | done (branch `ios-i3`, 2026-11-18; no server change) |
-| I4 | WebSocket, SSE, GraphQL schema, gRPC | planned |
+| I4 | WebSocket, SSE, GraphQL schema, gRPC | done (branch `ios-i4`, 2026-11-19; no server change) |
 | I5 | Apple Intelligence features, iPad three columns + keyboard, accessibility pass (VoiceOver, Dynamic Type, Reduce Transparency) | planned |
 | I6 | App Store: screenshots, listing text, review notes, price → Free, submit (owner on a Mac) | planned |
 
@@ -464,3 +464,98 @@ text, `SharedNotice {text, detail}`), never a key id (falls back to "a device").
 - Not checked on a device: the widget button and the control running in the app's process (the simulator CI can't
   tap a Home Screen widget), Live Activity start from a background intent, App Shortcut phrases with Siri, the app group
   on a signed build.
+
+## I4: what landed (2026-11-19, branch `ios-i4`)
+CI: `.github/workflows/ios.yml`, green run CI_RUN_LINK (jobs `app`, `core` with the new end-to-end test, `hitopkit`;
+artifact `screenshots`: 22–29 are I4's).
+
+**gRPC approach: (a), hitop-core's client through SyncFFI** (the I2b library; feature `grpc`, on by default). Five more
+operations behind the same `hitop_sync_call`: `grpcList`, `grpcDescribe` (template as pretty JSON *text*, so the field
+order survives Swift), `grpcStart` → `{id}`, `grpcNext {id, waitMs}` → `{events, done}`, `grpcCancel` (SyncFFI
+`src/grpc.rs`). Each call runs on its own thread and current-thread tokio runtime; Cancel drops the runtime, which stops a
+server stream that never ends. It is exactly the code of `hitop grpc` and the desktop's `grpc_*` commands (tonic 0.14.6 +
+prost-reflect over rustls/ring, reflection v1 → v1alpha, unary + server streaming via one code path, client/bidi refused,
+metadata rules, `-bin` values, int64 as JSON strings), so nothing gRPC is written twice; grpc-swift 2 would have meant a
+second reflection client, dynamic messages and JSON mapping in Swift to keep in step with hitop-core. It built for iOS
+device + simulator first time (no Apple frameworks needed: native libs `-liconv -lSystem -lc -lm`), and the simulator unit
+test calls it (`GrpcFFITests`). **Size** (manual CI job `size`, Release, generic iOS device): HITOP binary 22.1 MB with
+gRPC vs 14.9 MB without (+7.2 MB; HITOP.app 24.6 MB vs 17.6 MB). Linux measure of the same split: prost-reflect, rustls,
+h2, tokio, tonic, protox-parse, ring; boa/reqwest are linked out. Fat LTO would save ~10 % of that (not turned on: CI
+time). The Swift side: Core `Grpc.swift` (`GrpcClient` protocol; `FFIGrpcClient` calls the blocking C ops on a queue of
+its own, never the cooperative pool). SyncFFI's lock took the new crates at the cli lock's versions (tonic 0.14.6, prost
+0.14.4, hyper, h2, rustls, ring…); only wasm-bindgen's family (never built for iOS) differs.
+
+**Saved shapes (Core `Protocols.swift`)**: `kind`, `websocket {subprotocols, messages [{name, content}]}` and `grpc
+{service, method, message, protos, importPaths, plaintext}` live in the request's `extras` as JSON, read and written by
+typed accessors, so unknown keys in `websocket`, a message row or `grpc` are kept; empty fields are left out as
+hitop-core and the web app write them. Method menu (`setMode`, the web app's `methodSelect`): HTTP methods, then
+Server-Sent Events (GET + `Accept: text/event-stream`, any other Accept row replaced; SSE → GET takes it out, another
+method keeps it), WebSocket, gRPC (set `kind`, everything else kept). Tags WS / SSE / GRPC / GQL.
+
+**WebSocket (Core `WebSocket.swift`)**: `WebSocketTargets.make` = hitop-core `websocket::target` (URL, enabled headers,
+auth via HitopKit's `AuthApply`, now public, the collection's when the request has none; an API key `in: query` goes in
+the URL; subprotocols; `${var}` filled, a missing one is an error naming it; http(s) → ws(s)). URLSessionWebSocketTask
+(`URLSessionWebSocketTransport`: headers and `Sec-WebSocket-Protocol` on the opening request, the server's pick from the
+delegate, text and binary, close code + reason). `SocketSession` per open request (memory only, 500 lines): status,
+timestamped log (sent, received, binary as size + base64, errors, Connecting/Connected/Closed lines), secrets masked
+as `••••` in the log. Saved messages are sent with variables filled at send time. Screens: the request's Messages tab
+(saved messages with Send, add/delete, subprotocols), Params/Headers/Auth as for HTTP; Send says Connect/Disconnect and
+the sheet (iPad: the right column) is the connection: status, saved-message chips, composer, log.
+
+**Server-Sent Events (Core `SSE.swift`)**: the web app's `parseEvents` rules (blank line ends an event, `data:` lines
+joined with \n, `event:` default "message", `id:`, comments and data-less events dropped) and a `Reader` that takes bytes
+split anywhere (UTF-8 too). The editor's Send passes a `StreamControl`: `MeteredClient` reads the body with
+`URLSession.bytes`; an answer with Content-Type text/event-stream goes event by event to the screen (live view: status,
+"Live · N events", Stop, events with time, event name, id, data) until it ends or Stop; the response then has an Events
+tab (first) with "Stopped" when stopped, and scripts/tests run on what came. A stream that came back whole (no Accept)
+also gets its events (UX2 (8)). Runs and intents have no Stop: an `Accept: text/event-stream` request there ends at
+the time limit instead of hanging. Linux (no `bytes`) reads whole bodies.
+
+**GraphQL (Core `GraphQL.swift`)**: Load schema = introspection through the normal send path (`AppModel.introspect`: the
+request's URL, headers, auth and variables, POST, operation IntrospectionQuery, no scripts, kept out of the history and
+script values), as the web app's `fetchSchema`; errors worded as graphql-schema.js (`errors[].message`, "the answer has
+no __schema (is introspection turned off?)"). `GraphQLSchema` (types, fields with args and type refs `[Product!]!`,
+enums, input fields); the query editor knows its cursor (`TextEditor(text:selection:)`) and a suggestion bar shows the
+fields of the type at the cursor (selection sets by `{`/`}`, the field before `{`, operation root, `fragment … on T`,
+`... on T`, strings/comments/argument lists skipped), tap = insert. Browse = a searchable schema browser (types →
+fields → their types). The body is still built by HitopKit (as before).
+
+**Read-only (viewer of a shared collection)**: the request's own fields don't edit (messages, subprotocols, gRPC fields,
+body); Connect, sending messages, Call, Load services/schema and Stop work.
+
+**No server change.**
+
+**Tests**
+- Unit (Linux too, `UnitTests/ProtocolTests.swift`): saved shapes with unknown keys, method menu rules, the SSE parser and
+  split reader, an event stream through the editor (live on macOS/simulator) and Stop on a stream that never ends, WS
+  targets (scheme, auth, API key in the query, missing variable), a session against the in-process echo (subprotocol,
+  echo, binary, masking, close 4001, toggle), a refused connection, a viewer connecting and calling, gRPC metadata and
+  events, schema + template + streaming call + Cancel against the canned Greeter, no reflection, introspection kept out of
+  history, schema errors, suggestions at many cursor places. `GrpcFFITests` runs the FFI in the simulator.
+- End-to-end (`UnitTests/ProtocolEndToEndTests.swift`, CI job `core`, required): `cargo build -p hitop --example
+  test_servers` (new, `cli/crates/hitop/examples/test_servers.rs`: the CLI's ws echo server, hitop-core's Greeter with
+  reflection v1, v1alpha and none, and a small HTTP server with `/events`, `/live`, `/handshakes`); gRPC through the FFI
+  (list v1/v1alpha, no reflection, describe, unary with metadata from headers+auth, int64, streaming, NOT_FOUND +
+  trailer, bidi refused, bad JSON, Cancel), the request screen's Load/Template/Call; SSE from a real server (events split
+  across writes, live, Stop); URLSessionWebSocketTask against the echo server (macOS: handshake headers incl. auth,
+  subprotocol, text, binary, close code, refused). SyncFFI `cargo test` has the same gRPC test (`HITOP_TEST_GRPC`).
+- UI (`UITests/ProtocolFlowTests.swift`, seeded "realtime" collection: Live prices, Order feed, Price ticks, Say hello,
+  Stream hellos, Legacy service): connect, saved message, typed message, binary, disconnect; live events + Stop, a
+  finished stream's Events tab; Load services, Call, 3 messages + OK, no-reflection note; GraphQL Load schema,
+  suggestions while typing, Browse; the method menu switching kinds. Screenshots 22-websocket-request,
+  23-websocket-log, 24-sse-live, 25-sse-events, 26-grpc-request, 27-grpc-call, 28-graphql-suggestions, 29-graphql-schema.
+
+**Judgement calls**
+- The live parts take the response's place (sheet on iPhone, column on iPad): the request screen stays the request.
+- `.proto` files aren't read on iPhone/iPad (no folder of files to point at): reflection only; a server without it gets
+  "This server has no reflection service…" and the fields can still be typed by hand. Saved `protos`/`importPaths` are kept.
+- Connections, streams and calls aren't in the History (the web app keeps no history of them either).
+- The seed's realtime collection is separate, so the shop-api numbers of I3's runs and widgets don't change.
+
+**Deferred**
+- `.proto` files, client/bidi streaming (refused as in the CLI), gRPC deadlines setting (none, as the desktop's default),
+  the web app's GraphQL lint/hover; a WebSocket message editor with JSON formatting; sending binary frames.
+- Not checked on a device: URLSessionWebSocketTask and gRPC over TLS against real servers (CI covers plaintext and ws://).
+
+**Owner steps**: none. (The owner's Mac build already runs `scripts/build-sync-ffi.sh xcframework`; it now also builds
+gRPC — a minute or two more.)

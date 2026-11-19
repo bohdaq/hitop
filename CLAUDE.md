@@ -559,6 +559,13 @@ hitop/
   last run, failing, pinned with `Button(intent:)` Send, Live Activity + Dynamic Island, Control Center control); `ios/HITOP/Shared` = files in both targets
   (ActivityAttributes, widget views, entities, the two LiveActivityIntents the extension starts: performed in the app, extension `IntentBridge` is a stub);
   app-only intents + `HITOPShortcuts` in App/UI/AppIntents.swift. `-UITestWidgetGallery` draws the extension's views in the app for screenshots
+- HITOP iOS I4 (protocols, ios/HITOP_IOS.md "I4"): gRPC = hitop-core's client through SyncFFI (feature `grpc`, default; ops `grpcList`/`grpcDescribe`/
+  `grpcStart`/`grpcNext`/`grpcCancel`, one thread + current-thread runtime per call; +7.2 MB app binary; reflection only, no .proto on iOS); Core `Protocols.swift`
+  (`kind`/`websocket`/`grpc` kept in `extras` as JSON, `setMode` = the web app's method menu incl. SSE), `WebSocket.swift` (targets = hitop-core's rules via HitopKit
+  `AuthApply` (now public), URLSessionWebSocketTask, `SocketSession` log), `SSE.swift` (web app `parseEvents`, `StreamControl`: the editor's Send reads
+  text/event-stream live with `URLSession.bytes`, Stop), `GraphQL.swift` (introspection via `AppModel.introspect`, schema, cursor suggestions), `Grpc.swift`
+  (`FFIGrpcClient`, `GrpcSession`); UI fakes `EchoWebSocketTransport`/`FakeGrpcClient` + StubURLProtocol streams/GraphQL under `-UITestSeed` (collection
+  "realtime"); end-to-end `ProtocolEndToEndTests` with `HITOP_TEST_SERVERS_BIN` = `cargo build -p hitop --example test_servers` (ws echo, Greeter, SSE)
 - The app (no editing) is generated with `xcodegen` on a Mac; bundle ids `hitop.rws8.tech.HitopCompanion` (+ `.Widget`),
   app group `group.hitop.rws8.tech.companion`; Swift 5 language mode for the app targets, Swift 6 for HitopKit
 
