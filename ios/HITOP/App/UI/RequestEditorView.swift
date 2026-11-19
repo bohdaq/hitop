@@ -172,7 +172,8 @@ struct RequestEditorView: View {
             tab = defaultTab
         }
         .onChange(of: editor.draft.kind) { _, _ in
-            if !tabs.contains(tab) { tab = defaultTab }
+            // A request that changes kind opens on its own first tab (Messages, Call, or Body/Params).
+            tab = defaultTab
         }
     }
 

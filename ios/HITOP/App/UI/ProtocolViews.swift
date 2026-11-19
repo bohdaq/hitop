@@ -368,7 +368,6 @@ struct LiveEventsView: View {
                 .font(Typo.caption).foregroundStyle(Theme.textMuted)
             EventsList(events: editor.liveEvents)
         }
-        .accessibilityIdentifier("events-live")
     }
 }
 
@@ -723,7 +722,6 @@ struct GraphQLQueryEditor: View {
                         }
                     }
                 }
-                .accessibilityIdentifier("gql-suggestions")
             }
             ZStack(alignment: .topLeading) {
                 if editor.draft.body.isEmpty {
