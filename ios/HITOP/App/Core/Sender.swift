@@ -42,6 +42,11 @@ struct SendOutcome: Sendable {
     /// Notes from the runner (a script not run...).
     var notes: [String]
     var sentURL: String
+    /// Server-Sent Events: the response was an event stream (read live from the editor's Send, or
+    /// from the whole body); nil otherwise.
+    var events: [SSEEvent]? = nil
+    /// The stream was stopped with Stop (the body is what came until then).
+    var stopped = false
     var contentType: String { headers.first { $0.first?.lowercased() == "content-type" }?.last ?? "" }
     var size: Int { body.count }
     var isImage: Bool { contentType.lowercased().hasPrefix("image/") }
@@ -106,13 +111,17 @@ struct Sender: Sendable {
                        path: r.file ?? "request")
     }
 
-    func send(_ request: SavedRequest, collection: SavedCollection?, context: VariableContext) async -> SendResult {
+    /// Sends an HTTP request. `stream` (the editor's Send only): an answer with Content-Type
+    /// text/event-stream is read live, its events handed over as they arrive, until it ends or
+    /// Stop. WebSocket and gRPC requests aren't sent here (the editor connects or calls them;
+    /// intents and runs leave them out).
+    func send(_ request: SavedRequest, collection: SavedCollection?, context: VariableContext, stream: StreamControl? = nil) async -> SendResult {
         if let kind = request.kind, kind == "websocket" || kind == "grpc" {
-            let what = kind == "grpc" ? "gRPC" : "WebSocket"
-            return SendResult(outcome: .failure(SendFailure(message: "\(what) requests open in a later version of HITOP for iPhone and iPad. Send them from the web app, the desktop app or the CLI for now.")),
+            let what = kind == "grpc" ? "A gRPC request is called" : "A WebSocket request is connected"
+            return SendResult(outcome: .failure(SendFailure(message: "\(what) from its request screen in HITOP, not sent from here.")),
                               variableUpdates: [:], globalUpdates: [:])
         }
-        let client = MeteredClient(configuration: configuration())
+        let client = MeteredClient(configuration: configuration(), stream: stream)
         let kit = Self.kitRequest(request)
         // Collection, environment, script-set values (as run values), secrets: the CLI's order.
         let kitCollection = HitopKit.Collection(id: collection?.id ?? 0, name: collection?.name ?? "", requests: [kit],
@@ -142,7 +151,8 @@ struct Sender: Sendable {
                                   headers: raw?.headers.map { [$0.0, masker.mask($0.1)] } ?? response.headers.map { [$0.key, $0.value] },
                                   body: raw?.body ?? Data(response.body.utf8),
                                   text: response.body, durationMs: response.durationMs, timing: raw?.timing,
-                                  tests: tests, cookies: raw?.cookies ?? [], notes: step.notes, sentURL: step.url)
+                                  tests: tests, cookies: raw?.cookies ?? [], notes: step.notes, sentURL: step.url,
+                                  events: raw?.events, stopped: raw?.stopped ?? false)
         return SendResult(outcome: .success(outcome), variableUpdates: step.variableUpdates, globalUpdates: step.globalUpdates)
     }
 }
@@ -153,6 +163,9 @@ struct RawExchange: Sendable {
     var body: Data
     var timing: TimingPhases?
     var cookies: [CookieRow]
+    /// The events of an event stream (read live or from the whole body).
+    var events: [SSEEvent]?
+    var stopped = false
 }
 
 /// A HitopKit `HTTPClient` on a given URLSession configuration that also keeps the raw body,
@@ -164,8 +177,12 @@ final class MeteredClient: HTTPClient, @unchecked Sendable {
 
     var last: RawExchange? { lock.withLock { _last } }
 
-    init(configuration: URLSessionConfiguration) {
+    /// The editor's hold on a live event stream (nil: runs, intents).
+    let stream: StreamControl?
+
+    init(configuration: URLSessionConfiguration, stream: StreamControl? = nil) {
         session = URLSession(configuration: configuration)
+        self.stream = stream
     }
 
     deinit { session.finishTasksAndInvalidate() }
@@ -184,15 +201,24 @@ final class MeteredClient: HTTPClient, @unchecked Sendable {
         req.httpMethod = !method.isEmpty && Self.validHeader(method, "") ? method : "GET"
         for (k, v) in r.headers where Self.validHeader(k, v) { req.setValue(v, forHTTPHeaderField: k) }
         if !r.body.isEmpty { req.httpBody = r.body }
-        if let timeout { req.timeoutInterval = timeout }
+        let asksForEvents = r.headers.contains { $0.0.lowercased() == "accept" && SSE.isEventStream(contentType: $0.1) }
+        if let timeout { req.timeoutInterval = asksForEvents ? max(timeout, 3600) : timeout }
         let start = Date()
         let data: Data
         let response: URLResponse
         var timing: TimingPhases?
+        var events: [SSEEvent]?
+        var stopped = false
         do {
             #if canImport(Darwin)
             let metrics = MetricsDelegate()
-            (data, response) = try await session.data(for: req, delegate: metrics)
+            if stream != nil || asksForEvents {
+                // Read as it arrives: an event stream may never end. Without the editor's Stop (a
+                // run, an intent) it ends after the time limit.
+                (data, response, events, stopped) = try await streamed(req, metrics: metrics, limit: stream == nil ? (timeout ?? 60) : nil)
+            } else {
+                (data, response) = try await session.data(for: req, delegate: metrics)
+            }
             timing = metrics.phases
             #else
             (data, response) = try await session.data(for: req)
@@ -217,13 +243,76 @@ final class MeteredClient: HTTPClient, @unchecked Sendable {
         let cookies = HTTPCookie.cookies(withResponseHeaderFields: fields, for: url).map {
             CookieRow(name: $0.name, value: $0.value, domain: $0.domain, path: $0.path, expires: $0.expiresDate, secure: $0.isSecure, httpOnly: $0.isHTTPOnly)
         }
-        let exchange = RawExchange(headers: ordered, body: data, timing: timing, cookies: cookies)
+        // UX2 (8): an event stream that came back whole: its events from the body.
+        if events == nil, SSE.isEventStream(contentType: lower["content-type"] ?? "") { events = SSE.events(inBody: data) }
+        let exchange = RawExchange(headers: ordered, body: data, timing: timing, cookies: cookies, events: events, stopped: stopped)
         lock.withLock { _last = exchange }
         return HTTPResponse(status: http.statusCode, headers: lower, body: String(decoding: data, as: UTF8.self), durationMs: ms)
     }
 }
 
 #if canImport(Darwin)
+extension MeteredClient {
+    /// The body read as it arrives. An event stream (Content-Type text/event-stream) goes to the
+    /// editor's `stream` event by event and ends at its end, at Stop, or after `limit` seconds.
+    func streamed(_ req: URLRequest, metrics: MetricsDelegate, limit: TimeInterval?) async throws -> (Data, URLResponse, [SSEEvent]?, Bool) {
+        let (bytes, response) = try await session.bytes(for: req, delegate: metrics)
+        let type = (response as? HTTPURLResponse)?.value(forHTTPHeaderField: "Content-Type") ?? ""
+        let isStream = SSE.isEventStream(contentType: type)
+        var data = Data()
+        var chunk = Data()
+        var reader = SSE.Reader()
+        var events: [SSEEvent] = []
+        var stopped = false
+        let deadline = limit.map { Date().addingTimeInterval($0) }
+        if isStream, let stream, let http = response as? HTTPURLResponse {
+            let headers = http.allHeaderFields.map { [String(describing: $0.key), String(describing: $0.value)] }
+            stream.onOpen(http.statusCode, headers)
+        }
+        func flush() {
+            guard !chunk.isEmpty else { return }
+            if let stream { stream.feed(chunk) } else { events += reader.feed(chunk) }
+            chunk.removeAll(keepingCapacity: true)
+        }
+        // Stop and the time limit are also checked between bytes by a watcher: a quiet stream
+        // sends none.
+        let dataTask = bytes.task
+        let watcher = Task { [stream] in
+            while !Task.isCancelled {
+                try? await Task.sleep(for: .milliseconds(150))
+                if stream?.isStopped == true || deadline.map({ Date() > $0 }) == true {
+                    dataTask.cancel()
+                    return
+                }
+            }
+        }
+        defer { watcher.cancel() }
+        do {
+            for try await byte in bytes {
+                data.append(byte)
+                guard isStream else { continue }
+                chunk.append(byte)
+                if byte == 0x0A { flush() }
+                if stream?.isStopped == true || deadline.map({ Date() > $0 }) == true {
+                    stopped = true
+                    dataTask.cancel()
+                    break
+                }
+            }
+        } catch {
+            guard stream?.isStopped == true || deadline.map({ Date() > $0 }) == true else { throw error }
+            stopped = true
+        }
+        if isStream {
+            flush()
+            if let stream { return (data, response, stream.events, stopped) }
+            if !stopped { events += reader.finish() }
+            return (data, response, events, stopped)
+        }
+        return (data, response, nil, false)
+    }
+}
+
 /// Collects the task's metrics (DNS, connect, TLS, waiting, download).
 final class MetricsDelegate: NSObject, URLSessionTaskDelegate, @unchecked Sendable {
     private let lock = NSLock()

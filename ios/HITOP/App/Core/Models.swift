@@ -348,13 +348,6 @@ struct SavedRequest: Codable, Hashable, Sendable, Identifiable {
         return String(file[..<slash])
     }
 
-    /// WebSocket and gRPC requests come from the web app and the CLI; this version shows them but
-    /// sends only HTTP (WebSocket, SSE and gRPC are I4).
-    var kind: String? {
-        if case let .string(k)? = extras["kind"] { return k }
-        return nil
-    }
-
     var bodyKind: BodyKind {
         get {
             switch bodyMode {

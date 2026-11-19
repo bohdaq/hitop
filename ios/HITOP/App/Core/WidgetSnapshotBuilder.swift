@@ -39,7 +39,7 @@ extension WidgetSnapshot {
         switch r.kind {
         case "websocket": "WS"
         case "grpc": "GRPC"
-        default: r.bodyType == "graphql" ? "GQL" : r.method.uppercased()
+        default: r.bodyType == "graphql" ? "GQL" : r.mode == .sse ? "SSE" : r.method.uppercased()
         }
     }
 }

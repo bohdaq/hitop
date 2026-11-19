@@ -63,7 +63,33 @@ enum Seed {
             r(1303, "GET", "GET /status/418", "https://httpbin.org/status/418", ""),
             r(1304, "GET", "GET /image/png", "https://httpbin.org/image/png", ""),
         ])
-        return [shop, hooks, mine]
+        return [shop, hooks, mine, realtime()]
+    }
+
+    /// I4: a WebSocket, two event streams and two gRPC calls (StubURLProtocol, the in-app echo
+    /// socket and the canned Greeter answer them).
+    static func realtime() -> SavedCollection {
+        var prices = SavedRequest(id: 1401, name: "Live prices", url: "wss://stream.shop.example/v2/prices?market=${market}",
+                                  headers: [KeyValue("X-Client", "hitop")], file: "live-prices")
+        prices.kind = SavedRequest.websocketKind
+        prices.websocket = WebSocketFields(subprotocols: ["prices.v2", "prices.v1"], messages: [
+            WSSavedMessage(name: "subscribe", content: #"{"op": "subscribe", "symbol": "${symbol}"}"#),
+            WSSavedMessage(name: "ping", content: "ping"),
+            WSSavedMessage(name: "binary", content: "bin"),
+        ])
+        let events = KeyValue("Accept", "text/event-stream")
+        let feed = SavedRequest(id: 1402, name: "Order feed", url: "${baseUrl}/v2/orders/stream", headers: [events], file: "order-feed")
+        let ticks = SavedRequest(id: 1403, name: "Price ticks", url: "${baseUrl}/v2/prices/live", headers: [events], file: "price-ticks")
+        var hello = SavedRequest(id: 1404, name: "Say hello", url: "grpc.shop.example:443", headers: [KeyValue("x-tenant", "acme")], file: "say-hello")
+        hello.kind = SavedRequest.grpcKind
+        hello.grpc = GrpcFields(service: "hitop.test.Greeter", method: "SayHello", message: "{\n  \"name\": \"${customer}\"\n}")
+        var stream = SavedRequest(id: 1405, name: "Stream hellos", url: "grpc.shop.example:443", file: "stream-hellos")
+        stream.kind = SavedRequest.grpcKind
+        stream.grpc = GrpcFields(service: "hitop.test.Greeter", method: "StreamHellos", message: "{\n  \"name\": \"Ada\",\n  \"times\": 3\n}")
+        var noReflection = SavedRequest(id: 1406, name: "Legacy service", url: "noreflect.shop.example:443", file: "legacy-service")
+        noReflection.kind = SavedRequest.grpcKind
+        return SavedCollection(id: 1004, name: "realtime", requests: [prices, feed, ticks, hello, stream, noReflection],
+                               variables: ["market": "eu", "symbol": "TEE-0193", "customer": "Ada"], auth: .bearer(token: "${token}"))
     }
 
     static func environments() -> [SavedEnvironment] {

@@ -1,12 +1,12 @@
 import Foundation
 
 /// Auth presets applied to a prepared request (hitop-core `auth.rs`).
-enum AuthApply {
+public enum AuthApply {
     /// Adds the auth's header or query parameter. Bearer and basic don't
     /// replace an `Authorization` header set by hand; an API key header
     /// doesn't replace a header of its name; an API key in the query replaces
     /// the parameter of its name.
-    static func apply(_ auth: Auth?, url: String, headers: [(String, String)], _ interpolate: (String) throws -> String) throws -> (String, [(String, String)]) {
+    public static func apply(_ auth: Auth?, url: String, headers: [(String, String)], _ interpolate: (String) throws -> String) throws -> (String, [(String, String)]) {
         let has = { (name: String) in headers.contains { $0.0.lowercased() == name.lowercased() && !$0.1.isEmpty } }
         var headers = headers
         switch auth {

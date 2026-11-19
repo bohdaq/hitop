@@ -6,6 +6,8 @@
 #
 #   ios/HITOP/scripts/core-tests.sh [swift test arguments]
 #   HITOP_SYNC_SERVER_BIN=sync-server/target/debug/hitop-sync-server ios/HITOP/scripts/core-tests.sh --filter CloudEndToEndTests
+#   HITOP_TEST_SERVERS_BIN=cli/target/debug/examples/test_servers ios/HITOP/scripts/core-tests.sh --filter ProtocolEndToEndTests
+#     (I4: WebSocket, SSE and gRPC servers; build with `cargo build -p hitop --example test_servers` in cli/)
 #
 # HITOP_CORE_PKG: the scratch folder to use (kept, so builds are incremental); default a temp
 # folder, removed afterwards. HITOP_SYNC_FFI_LIB: a folder that already has libhitop_sync_ffi.a

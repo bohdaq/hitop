@@ -71,10 +71,18 @@ final class AppModel {
         if !applyingCloud { onLibraryChange?() }
     }
 
-    init(store: LibraryStore, vault: SecretVault, sender: Sender = Sender()) {
+    /// WebSocket connections (URLSessionWebSocketTask; an in-process echo in UI tests).
+    @ObservationIgnored let webSockets: WebSocketTransport
+    /// gRPC calls (hitop-core through SyncFFI; a canned Greeter in UI tests).
+    @ObservationIgnored let grpcClient: GrpcClient
+
+    init(store: LibraryStore, vault: SecretVault, sender: Sender = Sender(), webSockets: WebSocketTransport = DefaultTransports.webSocket,
+         grpcClient: GrpcClient = FFIGrpcClient()) {
         self.store = store
         self.vault = vault
         self.sender = sender
+        self.webSockets = webSockets
+        self.grpcClient = grpcClient
     }
 
     // MARK: - Loading
@@ -571,10 +579,10 @@ final class AppModel {
     // MARK: - Sending and history
 
     /// Sends `request` (as edited) and records it in the history.
-    func send(_ request: SavedRequest, collectionID: UInt64?) async -> Result<SendOutcome, SendFailure> {
+    func send(_ request: SavedRequest, collectionID: UInt64?, stream: StreamControl? = nil) async -> Result<SendOutcome, SendFailure> {
         let ctx = context(for: collectionID)
         let col = collection(collectionID)
-        let result = await sender.send(request, collection: col, context: ctx)
+        let result = await sender.send(request, collection: col, context: ctx, stream: stream)
         if let id = collectionID {
             var values = scriptValues[id] ?? [:]
             for (k, v) in result.variableUpdates { values[k] = v }
@@ -583,6 +591,18 @@ final class AppModel {
         for (k, v) in result.globalUpdates { scriptGlobals[k] = v }
         record(request, collectionName: col?.name, result.outcome)
         return result.outcome
+    }
+
+    /// A GraphQL introspection request (I4): sent with the request's variables and auth, but kept
+    /// out of the history and of the script-set values (it runs no scripts).
+    func introspect(_ request: SavedRequest, collectionID: UInt64?) async -> Result<SendOutcome, SendFailure> {
+        await sender.send(request, collection: collection(collectionID), context: context(for: collectionID)).outcome
+    }
+
+    /// Secret values a request in `collectionID` can use (masked in WebSocket logs).
+    func secretValues(for collectionID: UInt64?) -> [String] {
+        let ctx = context(for: collectionID)
+        return Array(ctx.environmentSecrets.values) + Array(ctx.globalSecrets.values)
     }
 
     func record(_ request: SavedRequest, collectionName: String?, _ outcome: Result<SendOutcome, SendFailure>) {

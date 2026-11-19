@@ -210,9 +210,9 @@ struct PadRequestColumn: View {
                     .frame(minHeight: 52)
                     .background(Capsule().fill(Theme.surface))
                     .overlay(Capsule().stroke(Color.white.opacity(0.12)))
-                    SendButton(shortcut: "⌘↩", sending: editor.isSending, height: 52) { editor.send() }
+                    SendButton(title: editor.sendTitle, icon: editor.sendIcon, shortcut: "⌘↩", sending: editor.sendBusy, height: 52) { editor.primaryAction() }
                         .fixedSize()
-                        .disabled(!editor.canSend && !editor.isSending)
+                        .disabled(!editor.sendEnabled)
                 }
                 RequestEditorView(editor: editor, wide: true)
             }

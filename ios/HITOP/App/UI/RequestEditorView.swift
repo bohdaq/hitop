@@ -1,6 +1,10 @@
 import SwiftUI
 
-enum EditorTab: String, Hashable { case params = "Params", headers = "Headers", body = "Body", auth = "Auth", scripts = "Scripts", tests = "Tests" }
+enum EditorTab: String, Hashable {
+    case params = "Params", headers = "Headers", body = "Body", auth = "Auth", scripts = "Scripts", tests = "Tests"
+    /// I4: a WebSocket request's saved messages and subprotocols; a gRPC request's call.
+    case messages = "Messages", call = "Call"
+}
 
 /// The iPhone request screen: editor, Save + Send at the bottom, the response as a sheet.
 struct RequestScreen: View {
@@ -94,11 +98,12 @@ struct RequestScreen: View {
                         .accessibilityLabel(editor.isDirty ? "Save, unsaved changes" : "Saved")
                         .accessibilityIdentifier("save")
                     }
-                    SendButton(sending: editor.isSending) {
-                        editor.send()
-                        showResponse = true
+                    SendButton(title: editor.sendTitle, icon: editor.sendIcon, sending: editor.sendBusy) {
+                        let opens = !(editor.draft.isWebSocket && editor.socket.status != .closed) && !editor.isStreaming
+                        editor.primaryAction()
+                        if opens { showResponse = true }
                     }
-                    .disabled(!editor.canSend && !editor.isSending)
+                    .disabled(!editor.sendEnabled)
                 }
             }
             .padding(.horizontal, 16)
@@ -122,7 +127,17 @@ struct RequestEditorView: View {
     @State private var tab: EditorTab = .params
     @State private var didPickTab = false
 
-    private var tabs: [EditorTab] { wide ? [.params, .headers, .body, .auth, .scripts, .tests] : [.params, .headers, .body, .auth, .tests] }
+    private var tabs: [EditorTab] {
+        if editor.draft.isWebSocket { return [.messages, .params, .headers, .auth] }
+        if editor.draft.isGrpc { return [.call, .headers, .auth] }
+        return wide ? [.params, .headers, .body, .auth, .scripts, .tests] : [.params, .headers, .body, .auth, .tests]
+    }
+
+    private var defaultTab: EditorTab {
+        if editor.draft.isWebSocket { return .messages }
+        if editor.draft.isGrpc { return .call }
+        return editor.draft.bodyKind != .none ? .body : .params
+    }
 
     /// A viewer's shared collection: everything shows, nothing edits (Send still works).
     private var readOnly: Bool { model.isReadOnly(model.collectionOf(request: editor.id)?.id) }
@@ -131,23 +146,33 @@ struct RequestEditorView: View {
         VStack(alignment: .leading, spacing: 12) {
             if !wide { requestCard }
             tabBar
-            Group {
-                switch tab {
-                case .params: ParamsEditor(editor: editor)
-                case .headers: HeadersEditor(editor: editor)
-                case .body: BodyEditor(editor: editor, context: context)
-                case .auth: AuthEditor(editor: editor, collectionAuth: model.collectionOf(request: editor.id)?.auth)
-                case .scripts: ScriptsEditor(editor: editor, pre: true)
-                case .tests: ScriptsEditor(editor: editor, pre: !wide ? nil : false)
+            switch tab {
+            // Their own fields are read-only for a viewer; connecting, sending and loading the
+            // schema still work.
+            case .messages: WebSocketFieldsEditor(editor: editor, readOnly: readOnly)
+            case .call: GrpcFieldsEditor(editor: editor, readOnly: readOnly)
+            default:
+                Group {
+                    switch tab {
+                    case .params: ParamsEditor(editor: editor)
+                    case .headers: HeadersEditor(editor: editor, metadata: editor.draft.isGrpc)
+                    case .body: BodyEditor(editor: editor, context: context, readOnly: readOnly)
+                    case .auth: AuthEditor(editor: editor, collectionAuth: model.collectionOf(request: editor.id)?.auth)
+                    case .scripts: ScriptsEditor(editor: editor, pre: true)
+                    default: ScriptsEditor(editor: editor, pre: !wide ? nil : false)
+                    }
                 }
+                .disabled(readOnly && tab != .body)
             }
-            .disabled(readOnly)
-            .animation(nil, value: tab)
         }
+        .animation(nil, value: tab)
         .onAppear {
             guard !didPickTab else { return }
             didPickTab = true
-            tab = editor.draft.bodyKind != .none ? .body : .params
+            tab = defaultTab
+        }
+        .onChange(of: editor.draft.kind) { _, _ in
+            if !tabs.contains(tab) { tab = defaultTab }
         }
     }
 
@@ -157,6 +182,7 @@ struct RequestEditorView: View {
     private var tabBar: some View {
         let items = tabs.map { t -> (EditorTab, String) in
             switch t {
+            case .headers where editor.draft.isGrpc: (t, "Metadata")
             case .headers where wide && !editor.draft.headers.isEmpty: (t, "Headers \(editor.draft.headers.count)")
             default: (t, t.rawValue)
             }
@@ -209,9 +235,7 @@ struct MethodPicker: View {
     var body: some View {
         let label = methodLabel(editor.draft)
         Menu {
-            Picker("Method", selection: $editor.draft.method) {
-                ForEach(Self.methods, id: \.self) { m in Text(m).tag(m) }
-            }
+            MethodMenuItems(editor: editor)
         } label: {
             HStack(spacing: 4) {
                 Text(label).font(Typo.mono(13, .semibold))
@@ -225,7 +249,7 @@ struct MethodPicker: View {
             .frame(minHeight: 44)
             .contentShape(Rectangle())
         }
-        .accessibilityLabel("Method \(editor.draft.method)")
+        .accessibilityLabel("Method \(label == "WS" ? "WebSocket" : label == "GRPC" ? "gRPC" : label == "SSE" ? "Server-Sent Events" : editor.draft.method)")
         .accessibilityIdentifier("method")
     }
 }
@@ -406,6 +430,8 @@ struct ParamsEditor: View {
 
 struct HeadersEditor: View {
     @Bindable var editor: RequestEditor
+    /// A gRPC request's headers are its metadata.
+    var metadata = false
 
     var body: some View {
         VStack(spacing: 0) {
@@ -416,7 +442,8 @@ struct HeadersEditor: View {
                 Divider().overlay(Theme.separator)
             }
             if editor.draft.headers.isEmpty {
-                Text("No headers. Content-Type is added for JSON, form and GraphQL bodies when you send.")
+                Text(metadata ? "No metadata. Each header is sent as gRPC metadata (a name ending in -bin takes a base64 value); the auth too."
+                     : "No headers. Content-Type is added for JSON, form and GraphQL bodies when you send.")
                     .font(Typo.caption).foregroundStyle(Theme.textMuted).padding(14).frame(maxWidth: .infinity, alignment: .leading)
             }
         }
@@ -429,6 +456,8 @@ struct HeadersEditor: View {
 struct BodyEditor: View {
     @Bindable var editor: RequestEditor
     var context: VariableContext
+    /// A viewer: the body doesn't change, but the GraphQL schema still loads.
+    var readOnly = false
     @State private var editing = false
 
     var body: some View {
@@ -453,6 +482,7 @@ struct BodyEditor: View {
                 }
                 .accessibilityLabel("Body type \(kind.label)")
                 .accessibilityIdentifier("body-kind")
+                .disabled(readOnly)
                 if kind == .json {
                     let check = editor.jsonCheck
                     Text(check.valid ? "Valid" : "Not valid JSON")
@@ -474,25 +504,28 @@ struct BodyEditor: View {
                     CodeEditor(text: $editor.draft.body, placeholder: kind == .json ? "{ }" : "Body", minHeight: 220, identifier: "body-editor")
                 } else {
                     CodeBlock(text: editor.draft.body, json: kind == .json, placeholder: "Tap to write the body")
-                        .onTapGesture { editing = true }
+                        .onTapGesture { if !readOnly { editing = true } }
                         .accessibilityAddTraits(.isButton)
                         .accessibilityHint("Double-tap to edit")
                         .accessibilityIdentifier("body-preview")
                 }
-                if kind == .json { symbolRow }
+                if kind == .json { symbolRow.disabled(readOnly) }
             case .form, .multipart:
-                FormRowsEditor(rows: $editor.draft.formFields)
+                FormRowsEditor(rows: $editor.draft.formFields).disabled(readOnly)
             case .graphql:
+                GraphQLSchemaBar(editor: editor)
                 Text("QUERY").font(Typo.label).tracking(0.9).foregroundStyle(Theme.textFaint)
-                CodeEditor(text: $editor.draft.body, placeholder: "query { … }", minHeight: 160, identifier: "graphql-query")
+                GraphQLQueryEditor(editor: editor).disabled(readOnly)
                 Text("VARIABLES").font(Typo.label).tracking(0.9).foregroundStyle(Theme.textFaint)
                 CodeEditor(text: $editor.draft.graphqlVariables, placeholder: "{ \"id\": 1 }", minHeight: 90, identifier: "graphql-variables")
+                    .disabled(readOnly)
                 TextField("Operation name (optional)", text: $editor.draft.graphqlOperationName)
                     .font(Typo.mono(14))
                     .textInputAutocapitalization(.never)
                     .autocorrectionDisabled()
                     .padding(12)
                     .card(radius: 14)
+                    .disabled(readOnly)
             }
         }
     }

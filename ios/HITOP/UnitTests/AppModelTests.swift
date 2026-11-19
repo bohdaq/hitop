@@ -12,7 +12,8 @@ final class AppModelTests: XCTestCase {
     override func setUp() async throws {
         store = MemoryLibraryStore()
         vault = MemoryVault()
-        model = AppModel(store: store, vault: vault, sender: Sender(configuration: StubURLProtocol.configuration))
+        model = AppModel(store: store, vault: vault, sender: Sender(configuration: StubURLProtocol.configuration),
+                         webSockets: EchoWebSocketTransport(), grpcClient: FakeGrpcClient())
         StubURLProtocol.enabled = true
         model.load()
         model.seed()
@@ -21,7 +22,7 @@ final class AppModelTests: XCTestCase {
     func shop() -> SavedCollection { model.collections.first { $0.name == "shop-api" }! }
 
     func testSeedLooksLikeTheDrafts() {
-        XCTAssertEqual(model.collections.map(\.name), ["shop-api", "webhooks", "My requests"])
+        XCTAssertEqual(model.collections.map(\.name), ["shop-api", "webhooks", "My requests", "realtime"])
         XCTAssertEqual(shop().requests.count, 13)
         XCTAssertEqual(shop().allFolders, ["auth", "orders", "catalog", "customers"])
         XCTAssertEqual(model.activeEnvironment?.name, "Staging")
@@ -157,12 +158,14 @@ final class AppModelTests: XCTestCase {
         XCTAssertNotNil(model.history[0].error)
     }
 
-    func testWebSocketIsNotSentYet() async {
+    func testSendConnectsAWebSocketRequest() async throws {
         let editor = RequestEditor(request: model.request(1107)!, model: model)
         editor.send()
         await editor.waitForSend()
-        guard case let .failure(f)? = editor.outcome else { return XCTFail("expected a failure") }
-        XCTAssertTrue(f.message.contains("WebSocket"))
+        XCTAssertNil(editor.outcome, "nothing is sent over HTTP")
+        for _ in 0..<100 where editor.socket.status != .open { try await Task.sleep(for: .milliseconds(20)) }
+        XCTAssertEqual(editor.socket.status, .open)
+        XCTAssertEqual(model.history.count, Seed.history().count, "connections aren't in the history")
     }
 
     func testParamsEditTheURL() {

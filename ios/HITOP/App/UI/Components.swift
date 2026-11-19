@@ -47,6 +47,7 @@ struct GlassCircleButton: View {
 /// The "accent prominent" Send button: glassProminent tinted with the accent, label on accent.
 struct SendButton: View {
     var title = "Send"
+    var icon = "paperplane.fill"
     var shortcut: String?
     var sending = false
     var height: CGFloat = 62
@@ -58,7 +59,7 @@ struct SendButton: View {
                 if sending {
                     ProgressView().tint(Theme.onAccent)
                 } else {
-                    Image(systemName: "paperplane.fill").font(.system(size: 18, weight: .semibold))
+                    Image(systemName: icon).font(.system(size: 18, weight: .semibold))
                 }
                 Text(sending ? "Sending" : title).font(Typo.geist(height > 56 ? 18 : 16, .bold, relativeTo: .headline))
                 if let shortcut {
@@ -73,7 +74,7 @@ struct SendButton: View {
         .buttonBorderShape(.capsule)
         .tint(Theme.accent)
         .controlSize(.large)
-        .accessibilityLabel(sending ? "Sending" : "Send")
+        .accessibilityLabel(sending ? "Sending" : title)
         .accessibilityIdentifier("send")
     }
 }
@@ -85,7 +86,7 @@ func methodLabel(_ r: SavedRequest) -> String {
     switch r.kind {
     case "websocket": return "WS"
     case "grpc": return "GRPC"
-    default: return r.bodyType == "graphql" ? "GQL" : r.method.uppercased()
+    default: return r.bodyType == "graphql" ? "GQL" : r.mode == .sse ? "SSE" : r.method.uppercased()
     }
 }
 

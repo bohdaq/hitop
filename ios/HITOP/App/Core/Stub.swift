@@ -24,16 +24,38 @@ final class StubURLProtocol: URLProtocol {
     override class func canInit(with request: URLRequest) -> Bool { true }
     override class func canonicalRequest(for request: URLRequest) -> URLRequest { request }
 
+    /// The live event stream's ticks (`/v2/prices/live`), until the client stops loading.
+    private var ticker: Timer?
+    private var ticks = 0
+
     override func startLoading() {
         let answer = Self.answer(for: request)
         let url = request.url ?? URL(string: "https://stub.invalid/")!
         let response = HTTPURLResponse(url: url, statusCode: answer.status, httpVersion: "HTTP/2", headerFields: answer.headers)!
         client?.urlProtocol(self, didReceive: response, cacheStoragePolicy: .notAllowed)
         client?.urlProtocol(self, didLoad: answer.body)
+        if url.path == "/v2/prices/live" {
+            // Never ends: a tick every 0.4 s until Stop (stopLoading).
+            // The timer runs on this loading thread's run loop, where the client is called.
+            nonisolated(unsafe) let me = self
+            let t = Timer(timeInterval: 0.4, repeats: true) { _ in
+                me.ticks += 1
+                let price = 2190 + me.ticks * 5
+                me.client?.urlProtocol(me, didLoad: Data("event: tick\nid: \(me.ticks + 2)\ndata: {\"sku\":\"TEE-0193\",\"price\":\(price)}\n\n".utf8))
+            }
+            RunLoop.current.add(t, forMode: .common)
+            ticker = t
+            return
+        }
         client?.urlProtocolDidFinishLoading(self)
     }
 
-    override func stopLoading() {}
+    override func stopLoading() {
+        ticker?.invalidate()
+        ticker = nil
+    }
+
+    static let eventStreamHeaders = ["Content-Type": "text/event-stream", "Cache-Control": "no-store", "Server": "shop-api"]
 
     private static func json(_ status: Int, _ text: String, extra: [String: String] = [:]) -> Answer {
         var headers = ["Content-Type": "application/json; charset=utf-8", "Date": "Tue, 17 Nov 2026 10:42:00 GMT",
@@ -84,6 +106,39 @@ final class StubURLProtocol: URLProtocol {
         case ("GET", "/echo"), ("POST", "/echo"):
             let env = request.value(forHTTPHeaderField: "X-Env") ?? ""
             return json(200, "{\"method\":\"\(method)\",\"path\":\"\(path)\",\"env\":\"\(env)\",\"ok\":true}")
+        case ("GET", "/v2/orders/stream"):
+            return Answer(status: 200, headers: eventStreamHeaders, body: Data("""
+            : order events for shop-api
+            event: order.created
+            id: 1
+            data: {"id":"ord_8KQ2mZ41","status":"pending_payment","total":6480}
+
+            event: order.paid
+            id: 2
+            data: {"id":"ord_8KQ2mZ41","status":"paid"}
+
+            event: order.shipped
+            id: 3
+            data: {"id":"ord_8KQ2mZ41","carrier":"DHL",
+            data: "tracking":"JD0146 0001 2345"}
+
+
+            """.utf8))
+        case ("GET", "/v2/prices/live"):
+            return Answer(status: 200, headers: eventStreamHeaders, body: Data("""
+            event: tick
+            id: 1
+            data: {"sku":"TEE-0193","price":2190}
+
+            event: tick
+            id: 2
+            data: {"sku":"CAP-0007","price":1290}
+
+
+            """.utf8))
+        case ("POST", "/graphql"):
+            if bodyText(request).contains("__schema") { return json(200, StubGraphQL.introspection) }
+            return json(200, #"{"data":{"products":[{"sku":"TEE-0193","name":"HITOP tee","price":2190},{"sku":"CAP-0007","name":"HITOP cap","price":1290}]}}"#)
         case (_, let p) where p.hasPrefix("/v2/orders/"):
             if method == "DELETE" { return json(409, #"{"error":"order already paid"}"#) }
             return json(200, #"{"id":"ord_8KQ2mZ41","status":"pending_payment"}"#)

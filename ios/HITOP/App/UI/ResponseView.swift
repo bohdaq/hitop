@@ -1,7 +1,7 @@
 import SwiftUI
 import UIKit
 
-enum ResponseTab: Hashable { case body, headers, tests, cookies }
+enum ResponseTab: Hashable { case events, body, headers, tests, cookies }
 
 /// The iPhone response sheet.
 struct ResponseSheet: View {
@@ -27,7 +27,13 @@ struct ResponsePanel: View {
 
     var body: some View {
         Group {
-            if editor.isSending {
+            if editor.draft.isWebSocket {
+                SocketPanel(editor: editor, close: close)
+            } else if editor.draft.isGrpc {
+                GrpcPanel(editor: editor, close: close)
+            } else if editor.isStreaming {
+                LiveEventsView(editor: editor, close: close)
+            } else if editor.isSending {
                 VStack(spacing: 14) {
                     ProgressView().controlSize(.large)
                     Text("Sending \(editor.draft.method) \(AutoName.urlWhere(editor.draft.url))").font(Typo.caption).foregroundStyle(Theme.textMuted)
@@ -52,8 +58,26 @@ struct ResponseContent: View {
     var outcome: SendOutcome
     var style: ResponsePanel.Style
     var close: (() -> Void)?
-    @State private var tab: ResponseTab = .body
+    @State private var tab: ResponseTab
     @State private var raw = false
+
+    init(outcome: SendOutcome, style: ResponsePanel.Style, close: (() -> Void)?) {
+        self.outcome = outcome
+        self.style = style
+        self.close = close
+        // An event stream opens on its events.
+        _tab = State(initialValue: outcome.events != nil ? .events : .body)
+    }
+
+    private var tabItems: [(ResponseTab, String, String?)] {
+        var items: [(ResponseTab, String, String?)] = []
+        if let events = outcome.events { items.append((.events, "Events", "\(events.count)")) }
+        items.append((.body, "Body", nil))
+        items.append((.headers, "Headers", "\(outcome.headers.count)"))
+        items.append((.tests, "Tests", outcome.tests.isEmpty ? nil : "\(passed)/\(outcome.tests.count)"))
+        items.append((.cookies, "Cookies", outcome.cookies.isEmpty ? nil : "\(outcome.cookies.count)"))
+        return items
+    }
 
     private var passed: Int { outcome.tests.filter(\.pass).count }
 
@@ -103,13 +127,14 @@ struct ResponseContent: View {
             if let timing = outcome.timing, timing.total > 0 {
                 TimingBar(timing: timing, showLabels: style == .sheet, height: style == .sheet ? 8 : 6)
             }
-            CapsuleTabs(items: [
-                (ResponseTab.body, "Body", nil),
-                (.headers, "Headers", "\(outcome.headers.count)"),
-                (.tests, "Tests", outcome.tests.isEmpty ? nil : "\(passed)/\(outcome.tests.count)"),
-                (.cookies, "Cookies", outcome.cookies.isEmpty ? nil : "\(outcome.cookies.count)"),
-            ], selection: $tab)
+            CapsuleTabs(items: tabItems, selection: $tab)
             switch tab {
+            case .events:
+                if outcome.stopped {
+                    Label("Stopped: the stream is what came until Stop.", systemImage: "stop.circle").font(Typo.caption).foregroundStyle(Theme.textMuted)
+                        .accessibilityIdentifier("stream-stopped")
+                }
+                EventsList(events: outcome.events ?? [])
             case .body: bodyView
             case .headers: headersView
             case .tests: TestsList(tests: outcome.tests)
