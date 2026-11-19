@@ -326,7 +326,7 @@ struct URLField: View {
                 Text(attributed)
                     .lineLimit(singleLine ? 1 : nil)
                     .tint(Theme.accentText)
-                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .frame(maxWidth: .infinity, minHeight: 44, alignment: .leading)
                     .contentShape(Rectangle())
                     .environment(\.openURL, OpenURLAction { link in
                         if link.scheme == "hitop-var",

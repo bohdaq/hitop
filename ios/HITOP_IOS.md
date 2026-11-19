@@ -598,9 +598,17 @@ applied by the system). Dynamic Type at accessibility sizes: segment tabs scroll
 splits into two rows, label/field rows (auth, gRPC) stack, method tags grow with the text. `UITests/AccessibilityTests.swift`
 runs `performAccessibilityAudit()` on collections, the request's tabs, the response's tabs, Explain, history, environments,
 runs (options, result, report), account, WebSocket/SSE/gRPC, request from text, the widget gallery, and at Accessibility XL
-text; every issue is collected and reported at once. Accepted (with the reason in the test): contrast/element issues of
-system-drawn chrome (no element, keyboard, tab bar, status bar), the one-line JSON fold rows, middle-truncated sent URL and
-long request/history names (full text is the label).
+text; every issue is collected and reported at once (attachment `accessibility-audit`). Fixed from its findings: 44 pt
+targets for the WebSocket message/subprotocol remove buttons, Clear, Copy/Share, the URL display and the message fields;
+the Live Activity's subtitle and count no longer clip; `codeMuted` was 3.1:1 (now 4.6:1). Accepted kinds, each with its
+reason in the test (judgement calls, since the audit misreads this app): **contrast** (it samples pixels under Liquid Glass
+and the accent glow and flagged even 13:1 text; the unit test `ContrastTests` checks every text token on every background
+against WCAG AA, normal and with Increase Contrast, instead), **dynamicType** (it only recognises system text styles; all
+text is Geist through `Font.custom(relativeTo:)`, which scales: screenshots 35–37), **textClipped** (single-line URLs, log
+and JSON lines, widget lines by design with the whole text as the label, and text cut by a scroll view or a sheet's medium
+detent; clipping at large sizes is judged from the screenshots), the JSON fold rows, the widget gallery's drawn buttons and
+the timing bar for hit regions, identifiers shown as content (gRPC service, URLs) for descriptions, and system-drawn
+elements.
 
 **I4 review polish**: the floating Save + Send bar steps aside while the keyboard is up (GraphQL variables, body, scripts,
 any field); the keyboard's bar has Done, Save and Send instead (`IntelligenceFlowTests` checks the variables box stays above

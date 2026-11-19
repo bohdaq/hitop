@@ -196,12 +196,12 @@ struct ResponseContent: View {
             if !stacked { Spacer() }
             Button {
                 UIPasteboard.general.string = outcome.text
-            } label: { Label("Copy", systemImage: "doc.on.doc").font(Typo.caption) }
+            } label: { Label("Copy", systemImage: "doc.on.doc").font(Typo.caption).frame(minHeight: 44).contentShape(Rectangle()) }
             .frame(minHeight: 44)
             .hoverEffect(.highlight)
             .accessibilityLabel("Copy the response body")
             if explainInHeader {
-                ShareLink(item: outcome.text) { Label("Share", systemImage: "square.and.arrow.up").font(Typo.caption) }
+                ShareLink(item: outcome.text) { Label("Share", systemImage: "square.and.arrow.up").font(Typo.caption).frame(minHeight: 44).contentShape(Rectangle()) }
                     .frame(minHeight: 44)
                     .hoverEffect(.highlight)
                     .accessibilityLabel("Share the response body")

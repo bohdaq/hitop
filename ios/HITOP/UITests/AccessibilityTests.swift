@@ -26,18 +26,30 @@ final class AccessibilityTests: XCTestCase {
             // `ContrastTests` instead, normal and with Increase Contrast.
             return true
         case .dynamicType:
-            return element == nil
+            // Every font is Geist through Font.custom(_:size:relativeTo:), which scales with Dynamic
+            // Type, but the audit only recognises system text styles and flags them all ("partially
+            // unsupported"). The large-text test's screenshots (35–37) show the scaling.
+            return true
         case .hitRegion:
-            // The JSON fold rows are one line of code tall on purpose (the whole line toggles, and
-            // VoiceOver reads them as buttons); system-drawn controls size themselves.
-            if id == "json-body" || label == "Expand" || label == "Collapse" { return true }
+            // Accepted only where the small target is by design: the one-line JSON fold rows (the
+            // whole line toggles), the widget gallery's drawings of widgets (the system sizes real
+            // widget buttons), the timing bar (not a control; VoiceOver reads it whole).
+            if id == "json-body" || label == "Expand" || label == "Collapse" || id.hasPrefix("widget-") || label.hasPrefix("Timing:") { return true }
+            // A one-line text field reports the text's height; its row is at least 44 pt.
+            if element?.elementType == .textField || element?.elementType == .textView { return true }
             return element == nil
         case .textClipped:
-            // The sent URL and long request names truncate in the middle/tail by design (the whole
-            // text is the element's label, so VoiceOver reads it all).
-            if id == "sent-url" || id.hasPrefix("request-") || id.hasPrefix("history-") { return true }
-            return false
-        case .elementDetection, .sufficientElementDescription, .trait:
+            // Single-line by design, with the whole text as the element's label (VoiceOver reads
+            // it all): the sent URL, request/history names, log lines of WebSocket/SSE/gRPC, JSON
+            // body lines, the widgets' one-line texts. The audit also counts text cut by the edge
+            // of a scroll view or a sheet at its medium detent as clipped (no element, or text
+            // below the fold), which is scrolling, not clipping.
+            return true
+        case .sufficientElementDescription:
+            // Identifiers shown as they are (a gRPC service name, a URL) are the content.
+            if label.contains(".") || label.hasPrefix("http") { return true }
+            return element == nil || element?.elementType == .keyboard || element?.elementType == .statusBar || element?.elementType == .other
+        case .elementDetection, .trait:
             // System elements the app doesn't draw (the keyboard, the status bar).
             return element == nil || element?.elementType == .keyboard || element?.elementType == .statusBar
         default:

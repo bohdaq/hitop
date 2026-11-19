@@ -88,7 +88,7 @@ struct WebSocketFieldsEditor: View {
                             if !readOnly {
                                 Button(role: .destructive) {
                                     editor.draft.websocket.messages.remove(at: i)
-                                } label: { Image(systemName: "minus.circle") }
+                                } label: { Image(systemName: "minus.circle").frame(width: 44, height: 44).contentShape(Rectangle()) }
                                 .frame(width: 44, height: 44)
                                 .accessibilityLabel("Delete \(m.name)")
                             }
@@ -100,6 +100,7 @@ struct WebSocketFieldsEditor: View {
                             .autocorrectionDisabled()
                             .lineLimit(1...6)
                             .disabled(readOnly)
+                            .frame(minHeight: 44)
                             .accessibilityIdentifier("ws-saved-content-\(i)")
                     }
                     .padding(.horizontal, 14).padding(.vertical, 10)
@@ -132,7 +133,7 @@ struct WebSocketFieldsEditor: View {
                         .autocorrectionDisabled()
                         .disabled(readOnly)
                         if !readOnly {
-                            Button(role: .destructive) { editor.draft.websocket.subprotocols.remove(at: i) } label: { Image(systemName: "minus.circle") }
+                            Button(role: .destructive) { editor.draft.websocket.subprotocols.remove(at: i) } label: { Image(systemName: "minus.circle").frame(width: 44, height: 44).contentShape(Rectangle()) }
                                 .frame(width: 44, height: 44)
                                 .accessibilityLabel("Remove subprotocol")
                         }
@@ -230,6 +231,7 @@ struct SocketPanel: View {
                     .lineLimit(1...4)
                     .padding(.horizontal, 12).padding(.vertical, 10)
                     .card(radius: 16, fill: Theme.codeGround)
+                    .frame(minHeight: 44)
                     .accessibilityIdentifier("ws-composer")
                 Button {
                     let text = s.draft
@@ -250,7 +252,7 @@ struct SocketPanel: View {
             HStack {
                 Text("\(s.log.count) in the log").font(Typo.caption).foregroundStyle(Theme.textMuted)
                 Spacer()
-                if !s.log.isEmpty { Button("Clear") { s.clear() }.font(Typo.caption) }
+                if !s.log.isEmpty { Button { s.clear() } label: { Text("Clear").frame(minWidth: 44, minHeight: 44).contentShape(Rectangle()) }.font(Typo.caption) }
             }
             if s.log.isEmpty {
                 Text("Connect to open the socket; what you send and what arrives is listed here with its time.")
@@ -554,7 +556,7 @@ struct GrpcPanel: View {
                     .font(Typo.caption).foregroundStyle(Theme.textMuted)
                     .accessibilityIdentifier("grpc-count")
                 Spacer()
-                if !g.log.isEmpty { Button("Clear") { g.clear() }.font(Typo.caption) }
+                if !g.log.isEmpty { Button { g.clear() } label: { Text("Clear").frame(minWidth: 44, minHeight: 44).contentShape(Rectangle()) }.font(Typo.caption) }
             }
             if g.log.isEmpty {
                 Text("Call the method: the response headers, each message and the final status are listed here.")
