@@ -451,7 +451,7 @@ text, `SharedNotice {text, detail}`), never a key id (falls back to "a device").
   embedded) by every CI build.
 
 **Owner steps (before a signed build / I6)**
-- Developer portal: register the app group `group.hitop.rws8.tech.HiTop`, enable App Groups for `hitop.rws8.tech.HiTop`
+- Developer portal (app group registered by the owner 2026-11-19): register the app group `group.hitop.rws8.tech.HiTop`, enable App Groups for `hitop.rws8.tech.HiTop`
   and the new `hitop.rws8.tech.HiTop.Widgets` (Xcode's automatic signing creates the extension's id). No Keychain
   sharing group needed.
 - On a device: add the widgets, run a collection with the Lock Screen visible, try "Run shop-api in HITOP" with Siri.
