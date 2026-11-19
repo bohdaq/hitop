@@ -21,7 +21,7 @@ final class ProtocolTests: XCTestCase {
     func decode(_ json: String) throws -> SavedRequest { try JSONDecoder().decode(SavedRequest.self, from: Data(json.utf8)) }
     func encode(_ r: SavedRequest) throws -> JSONAny { try JSONAny.from(r) }
 
-    func until(_ what: String, timeout: TimeInterval = 5, _ cond: () -> Bool) async {
+    func until(_ what: String, timeout: TimeInterval = 5, _ cond: @escaping () -> Bool) async {
         let end = Date().addingTimeInterval(timeout)
         while !cond() && Date() < end { try? await Task.sleep(for: .milliseconds(20)) }
         let ok = cond()

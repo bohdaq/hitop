@@ -45,7 +45,7 @@ final class ProtocolEndToEndTests: XCTestCase {
         addresses = try JSONDecoder().decode([String: String].self, from: line)
     }
 
-    func until(_ what: String, timeout: TimeInterval = 10, _ cond: () -> Bool) async {
+    func until(_ what: String, timeout: TimeInterval = 10, _ cond: @escaping () -> Bool) async {
         let end = Date().addingTimeInterval(timeout)
         while !cond() && Date() < end { try? await Task.sleep(for: .milliseconds(25)) }
         let ok = cond()
