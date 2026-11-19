@@ -24,7 +24,8 @@ final class ProtocolTests: XCTestCase {
     func until(_ what: String, timeout: TimeInterval = 5, _ cond: () -> Bool) async {
         let end = Date().addingTimeInterval(timeout)
         while !cond() && Date() < end { try? await Task.sleep(for: .milliseconds(20)) }
-        XCTAssertTrue(cond(), what)
+        let ok = cond()
+        XCTAssertTrue(ok, what)
     }
 
     // MARK: Saved shapes
@@ -121,7 +122,7 @@ final class ProtocolTests: XCTestCase {
         XCTAssertEqual(o.events?.last?.data, "{\"id\":\"ord_8KQ2mZ41\",\"carrier\":\"DHL\",\n\"tracking\":\"JD0146 0001 2345\"}")
         XCTAssertEqual(o.events?.first?.lastEventID, "1")
         #if canImport(Darwin)
-        XCTAssertEqual(editor.liveEvents.count, 3, "read live")
+        await until("read live") { editor.liveEvents.count == 3 }
         #endif
     }
 

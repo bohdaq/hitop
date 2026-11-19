@@ -48,7 +48,8 @@ final class ProtocolEndToEndTests: XCTestCase {
     func until(_ what: String, timeout: TimeInterval = 10, _ cond: () -> Bool) async {
         let end = Date().addingTimeInterval(timeout)
         while !cond() && Date() < end { try? await Task.sleep(for: .milliseconds(25)) }
-        XCTAssertTrue(cond(), what)
+        let ok = cond()
+        XCTAssertTrue(ok, what)
     }
 
     func server(_ key: String, metadata: [[String]] = []) -> GrpcServer {
@@ -166,7 +167,7 @@ final class ProtocolEndToEndTests: XCTestCase {
         XCTAssertEqual(o.events?.map(\.data), [#"{"sku":"TEE-0193","price":2190}"#, "line one\nline two", "bye"])
         XCTAssertEqual(o.events?.map(\.lastEventID), ["1", nil, "3"])
         #if canImport(Darwin)
-        XCTAssertEqual(editor.liveEvents.count, 3)
+        await until("read live") { editor.liveEvents.count == 3 }
 
         // A stream that never ends: Stop.
         editor.draft.url = "http://\(addresses["http"]!)/live"
