@@ -644,7 +644,13 @@ async function launchOff(options) {
       await D(bob).getByRole('button', { name: 'Sign in', exact: true }).click();
     }
     await bob.page.locator('header.topbar .account-button').waitFor({ timeout: 30000 }).catch(() => {});
-    check('Sign in with SSO', (await toastText(bob)).includes('alice@corp.test'), await toastText(bob));
+    // The toast can land a moment after the account button: wait for it rather than read it once.
+    await bob.page.waitForFunction(() => {
+      const el = document.querySelector('#toast');
+      return !!el && [el.message, el.textContent, el.shadowRoot?.textContent].filter(Boolean).join(' ').includes('alice@corp.test');
+    }, null, { timeout: 10000 }).catch(() => {});
+    const ssoToast = await toastText(bob);
+    check('Sign in with SSO', ssoToast.includes('alice@corp.test'), ssoToast);
     sso.stop();
   } else {
     console.log('[sync] HITOP_SYNC_TEST_KEYCLOAK not set: the SSO sign-in with Keycloak is skipped');

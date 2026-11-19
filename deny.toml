@@ -56,4 +56,11 @@ ignore = [
   { id = "RUSTSEC-2025-0081", reason = "unic-char-property: via Tauri's urlpattern" },
   { id = "RUSTSEC-2025-0098", reason = "unic-ucd-version: via Tauri's urlpattern" },
   { id = "RUSTSEC-2025-0100", reason = "unic-ucd-ident: via Tauri's urlpattern" },
+  # cli: chrono (unmaintained, no known vulnerability) comes only through rmcp and schemars for
+  # the MCP server's timestamps and JSON schemas; neither has a release without it yet.
+  { id = "RUSTSEC-2026-0543", reason = "chrono unmaintained: via rmcp + schemars, no release without it" },
+  # sync-server: rsa 0.10.0-rc.19 through webauthn-rs (crypto-glue pins the rc). webauthn only
+  # verifies RSA signatures with public keys; the Marvin timing attack needs private-key
+  # decryption, which the server never does.
+  { id = "RUSTSEC-2023-0071", reason = "rsa via webauthn-rs: public-key signature checks only, no private-key decryption" },
 ]
