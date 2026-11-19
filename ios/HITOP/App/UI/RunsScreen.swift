@@ -39,7 +39,7 @@ struct RunsScreen: View {
                         .swipeActions { Button("Delete", systemImage: "trash", role: .destructive) { runs.delete(r.id) } }
                 }
             } header: {
-                Text("RECENT RUNS").font(Typo.label).tracking(0.9).foregroundStyle(Theme.textFaint)
+                Text("RECENT RUNS").font(Typo.label).tracking(0.9).foregroundStyle(Theme.textFaint).accessibilityAddTraits(.isHeader)
             }
             .listRowBackground(Theme.surface)
 
@@ -64,7 +64,7 @@ struct RunsScreen: View {
                     .accessibilityIdentifier("run-collection-\(c.name)")
                 }
             } header: {
-                Text("RUN A COLLECTION").font(Typo.label).tracking(0.9).foregroundStyle(Theme.textFaint)
+                Text("RUN A COLLECTION").font(Typo.label).tracking(0.9).foregroundStyle(Theme.textFaint).accessibilityAddTraits(.isHeader)
             }
             .listRowBackground(Theme.surface)
         }
@@ -294,7 +294,7 @@ struct RunSheet: View {
                 HStack(spacing: 10) {
                     Image(systemName: row.passed ? "checkmark" : "xmark").font(.system(size: 13, weight: .bold))
                         .foregroundStyle(row.passed ? Theme.success : Theme.danger).frame(width: 16)
-                    Text(row.method).font(Typo.tag).foregroundStyle(Theme.method(row.method)).frame(width: 52, alignment: .leading)
+                    MethodTag(method: row.method)
                     Text(row.name).font(Typo.row).foregroundStyle(Theme.textRow).lineLimit(1)
                     Spacer(minLength: 4)
                     if let s = row.status, !row.passed { Text("\(s)").font(Typo.mono(12.5, .semibold)).foregroundStyle(Theme.status(s)) }
@@ -480,7 +480,7 @@ struct RunReportView: View {
                                 requestRow(r, key: "\(it.iteration)/\(i)")
                             }
                         } header: {
-                            Text(c.iterations.count > 1 ? "ITERATION \(it.iteration)" : "REQUESTS").font(Typo.label).tracking(0.9).foregroundStyle(Theme.textFaint)
+                            Text(c.iterations.count > 1 ? "ITERATION \(it.iteration)" : "REQUESTS").font(Typo.label).tracking(0.9).foregroundStyle(Theme.textFaint).accessibilityAddTraits(.isHeader)
                         }
                         .listRowBackground(Theme.surface)
                     }
@@ -513,7 +513,7 @@ struct RunReportView: View {
                 HStack(spacing: 10) {
                     Image(systemName: r.passed ? "checkmark" : "xmark").font(.system(size: 13, weight: .bold))
                         .foregroundStyle(r.passed ? Theme.success : Theme.danger).frame(width: 16)
-                    Text(r.method).font(Typo.tag).foregroundStyle(Theme.method(r.method)).frame(width: 52, alignment: .leading)
+                    MethodTag(method: r.method)
                     Text(r.name).font(Typo.row).foregroundStyle(Theme.textRow).lineLimit(1)
                     Spacer(minLength: 4)
                     if let s = r.status { Text("\(s)").font(Typo.mono(12.5, .semibold)).foregroundStyle(Theme.status(s)) }

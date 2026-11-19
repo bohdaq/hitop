@@ -40,7 +40,8 @@ enum Theme {
     static let codeString = Color(hex: 0xF2C98A)
     static let codeNumber = Color(hex: 0xFF9F9F)
     static let codeLiteral = Color(hex: 0xC4A7FF)
-    static let codeMuted = Color(hex: 0x6E6E7C, high: 0x9A9AA8)
+    // I5: 0x6E6E7C was 3.1:1 on the code ground; now WCAG AA (ContrastTests).
+    static let codeMuted = Color(hex: 0x8A8A96, high: 0xB4B4C0)
     static let chipFill = accent.opacity(0.18)
 
     /// Method colours: the web app's (`site/src/theme.css` `--hitop-method-*`) for HTTP methods,

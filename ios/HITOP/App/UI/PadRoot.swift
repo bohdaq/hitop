@@ -105,7 +105,7 @@ struct PadRoot: View {
                     }
                 } header: {
                     HStack(spacing: 6) {
-                        Text(c.name.uppercased()).font(Typo.label).tracking(0.9).foregroundStyle(Theme.textFaint)
+                        Text(c.name.uppercased()).font(Typo.label).tracking(0.9).foregroundStyle(Theme.textFaint).accessibilityAddTraits(.isHeader)
                         if let b = shared.badge(c.id) {
                             Image(systemName: "person.2.fill").font(.system(size: 9)).foregroundStyle(Theme.accentText).accessibilityLabel(b)
                         }

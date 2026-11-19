@@ -242,6 +242,7 @@ struct RequestEditorView: View {
                     .buttonStyle(.plain)
                     .accessibilityAddTraits(on ? .isSelected : [])
                     .accessibilityIdentifier("tab-\(item.0.rawValue)")
+                    .hoverEffect(.highlight)
                 }
                 Spacer()
             }
@@ -553,9 +554,9 @@ struct BodyEditor: View {
                 FormRowsEditor(rows: $editor.draft.formFields).disabled(readOnly)
             case .graphql:
                 GraphQLSchemaBar(editor: editor)
-                Text("QUERY").font(Typo.label).tracking(0.9).foregroundStyle(Theme.textFaint)
+                Text("QUERY").font(Typo.label).tracking(0.9).foregroundStyle(Theme.textFaint).accessibilityAddTraits(.isHeader)
                 GraphQLQueryEditor(editor: editor).disabled(readOnly)
-                Text("VARIABLES").font(Typo.label).tracking(0.9).foregroundStyle(Theme.textFaint)
+                Text("VARIABLES").font(Typo.label).tracking(0.9).foregroundStyle(Theme.textFaint).accessibilityAddTraits(.isHeader)
                 CodeEditor(text: $editor.draft.graphqlVariables, placeholder: "{ \"id\": 1 }", minHeight: 90, identifier: "graphql-variables")
                     .disabled(readOnly)
                 TextField("Operation name (optional)", text: $editor.draft.graphqlOperationName)
@@ -687,8 +688,7 @@ struct AuthEditor: View {
     }
 
     private func field(_ label: String, _ value: String, secure: Bool = false, set: @escaping (String) -> Void) -> some View {
-        HStack {
-            Text(label).font(Typo.geist(14, .medium)).foregroundStyle(Theme.textSoft).frame(width: 90, alignment: .leading)
+        LabeledRow(label: label, width: 90) {
             Group {
                 if secure && !value.hasPrefix("${") {
                     SecureField(label, text: Binding(get: { value }, set: set))

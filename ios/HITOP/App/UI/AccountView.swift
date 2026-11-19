@@ -285,7 +285,7 @@ struct AccountView: View {
     }
 
     private func header(_ s: String) -> some View {
-        Text(s.uppercased()).font(Typo.label).tracking(0.9).foregroundStyle(Theme.textFaint)
+        Text(s.uppercased()).font(Typo.label).tracking(0.9).foregroundStyle(Theme.textFaint).accessibilityAddTraits(.isHeader)
     }
 
     private func meter(_ m: UsageMeter) -> some View {

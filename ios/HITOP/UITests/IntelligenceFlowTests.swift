@@ -121,12 +121,18 @@ final class IntelligenceFlowTests: XCTestCase {
         field.tap()
         field.typeText("list the orders")
         waitLabel(app.el("request-text-source"), contains: "isn't available on this device")
-        XCTAssertFalse(app.el("request-text-create").isEnabled, "free text needs the model")
+        // Free text needs the model: Create makes nothing (a disabled toolbar button can still read
+        // as enabled to XCUITest on iOS 26, so the outcome is what is checked).
+        app.el("request-text-create").tap()
+        RunLoop.current.run(until: Date().addingTimeInterval(1))
+        XCTAssertTrue(app.el("request-text").exists, "still on the sheet")
+        XCTAssertFalse(app.el("method").exists, "no request was made")
         shot(app, "33-ai-unavailable")
-        field.typeText(XCUIKeyboardKey.delete.rawValue.repeated(15))
+        field.tap()
+        field.typeText(XCUIKeyboardKey.delete.rawValue.repeated(30))
         field.typeText("curl https://stub.example/echo")
         waitLabel(app.el("request-text-source"), contains: "A curl command")
-        XCTAssertTrue(app.el("request-text-create").isEnabled, "curl needs no model")
+        // curl needs no model.
         app.el("request-text-create").tap()
         wait(app.el("method"))
         XCTAssertEqual(app.el("method").label, "Method GET")

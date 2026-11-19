@@ -65,6 +65,7 @@ struct ResponseContent: View {
     @State private var tab: ResponseTab
     @State private var raw = false
     @Environment(Intelligence.self) private var ai
+    @Environment(\.dynamicTypeSize) private var typeSize
 
     init(outcome: SendOutcome, style: ResponsePanel.Style, close: (() -> Void)?, requestID: UInt64? = nil) {
         self.outcome = outcome
@@ -89,7 +90,12 @@ struct ResponseContent: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
-            HStack(spacing: 8) {
+            // At accessibility text sizes the numbers get a line of their own, the buttons the next.
+            let stacked = typeSize.isAccessibilitySize
+            let header = stacked ? AnyLayout(VStackLayout(alignment: .leading, spacing: 8)) : AnyLayout(HStackLayout(spacing: 8))
+            let numbers = stacked ? AnyLayout(VStackLayout(alignment: .leading, spacing: 6)) : AnyLayout(HStackLayout(spacing: 8))
+            header {
+            numbers {
                 StatusPill(status: outcome.status, size: style == .sheet ? 15 : 14)
                 Text("\(outcome.durationMs) ms").font(Typo.mono(14, .medium)).foregroundStyle(Theme.codeText)
                     .fixedSize()
@@ -98,6 +104,8 @@ struct ResponseContent: View {
                     .lineLimit(1)
                     .minimumScaleFactor(0.7)
                     .layoutPriority(1)
+            }
+            HStack(spacing: 8) {
                 // The iOS 26 sheet floats inset from the screen edges: nothing in this row may push it wider.
                 Spacer(minLength: 0)
                 if style == .column, !outcome.tests.isEmpty {
@@ -124,6 +132,7 @@ struct ResponseContent: View {
                     .accessibilityIdentifier("close-response")
                 }
             }
+            }
             Text("\(outcome.sentURL)")
                 .font(Typo.mono(11.5))
                 .foregroundStyle(Theme.textFaint)
@@ -132,7 +141,8 @@ struct ResponseContent: View {
                 .accessibilityLabel("Sent to \(outcome.sentURL)")
                 .accessibilityIdentifier("sent-url")
             if let timing = outcome.timing, timing.total > 0 {
-                TimingBar(timing: timing, showLabels: style == .sheet, height: style == .sheet ? 8 : 6)
+                // The phase labels are one row: at accessibility sizes they are read from the bar (VoiceOver) instead.
+                TimingBar(timing: timing, showLabels: style == .sheet && !typeSize.isAccessibilitySize, height: style == .sheet ? 8 : 6)
             }
             CapsuleTabs(items: tabItems, selection: $tab)
             switch tab {
@@ -172,16 +182,18 @@ struct ResponseContent: View {
 
     /// Pretty/Raw (JSON), Copy, and Share when Explain took its place in the header.
     private func bodyTools(json: Bool) -> some View {
-        HStack {
+        let stacked = typeSize.isAccessibilitySize
+        let layout = stacked ? AnyLayout(VStackLayout(alignment: .leading, spacing: 4)) : AnyLayout(HStackLayout())
+        return layout {
             if json {
                 Picker("View", selection: $raw) {
                     Text("Pretty").tag(false)
                     Text("Raw").tag(true)
                 }
                 .pickerStyle(.segmented)
-                .frame(width: 160)
+                .frame(width: stacked ? nil : 160)
             }
-            Spacer()
+            if !stacked { Spacer() }
             Button {
                 UIPasteboard.general.string = outcome.text
             } label: { Label("Copy", systemImage: "doc.on.doc").font(Typo.caption) }

@@ -337,7 +337,7 @@ struct ShareSheet: View {
     }
 
     private func header(_ s: String) -> some View {
-        Text(s.uppercased()).font(Typo.label).tracking(0.9).foregroundStyle(Theme.textFaint)
+        Text(s.uppercased()).font(Typo.label).tracking(0.9).foregroundStyle(Theme.textFaint).accessibilityAddTraits(.isHeader)
     }
 
     private func reload() async {
@@ -392,7 +392,7 @@ struct ConflictsSection: View {
                 ForEach(list) { c in row(c) }
                 if let error { Text(error).font(Typo.caption).foregroundStyle(Theme.warning) }
             } header: {
-                Text("CHANGED HERE AND BY SOMEONE ELSE").font(Typo.label).tracking(0.9).foregroundStyle(Theme.warning)
+                Text("CHANGED HERE AND BY SOMEONE ELSE").font(Typo.label).tracking(0.9).foregroundStyle(Theme.warning).accessibilityAddTraits(.isHeader)
             } footer: {
                 Text("A file in conflict isn't sent until you choose.").font(Typo.caption)
             }
@@ -439,7 +439,7 @@ struct ConflictsSection: View {
 
     private func side(_ title: String, _ text: String?) -> some View {
         VStack(alignment: .leading, spacing: 4) {
-            Text(title.uppercased()).font(Typo.label).tracking(0.9).foregroundStyle(Theme.textFaint)
+            Text(title.uppercased()).font(Typo.label).tracking(0.9).foregroundStyle(Theme.textFaint).accessibilityAddTraits(.isHeader)
             Text(text ?? "(deleted)").font(Typo.mono(11.5)).foregroundStyle(Theme.textSoft).textSelection(.enabled)
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .padding(8)
@@ -536,7 +536,7 @@ struct JoinSheet: View {
             }
             .padding(.vertical, 6)
         } header: {
-            Text("CHECK WHO SENDS THE KEY").font(Typo.label).tracking(0.9).foregroundStyle(Theme.textFaint)
+            Text("CHECK WHO SENDS THE KEY").font(Typo.label).tracking(0.9).foregroundStyle(Theme.textFaint).accessibilityAddTraits(.isHeader)
         }
         .listRowBackground(Theme.surface)
     }
@@ -635,7 +635,7 @@ struct SharedAccountSection: View {
             ForEach(shared.notices, id: \.self) { n in NoticeText(notice: n) }
             if let error { Text(error).font(Typo.caption).foregroundStyle(Theme.warning) }
         } header: {
-            Text("SHARED COLLECTIONS").font(Typo.label).tracking(0.9).foregroundStyle(Theme.textFaint)
+            Text("SHARED COLLECTIONS").font(Typo.label).tracking(0.9).foregroundStyle(Theme.textFaint).accessibilityAddTraits(.isHeader)
         }
         .listRowBackground(Theme.surface)
         .task { try? await shared.refreshWorkspaces() }

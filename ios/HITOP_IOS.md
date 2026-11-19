@@ -25,7 +25,7 @@ Activity/Siri).
 | I2b | Shared end-to-end encrypted collections (workspaces) with hitop-sync-crypto's rules through a Rust C-ABI library of hitop-core's sync plan + hitop-sync-crypto (`ios/HITOP/SyncFFI`); team environments | done (branch `ios-i2b`, 2026-11-18; no server change) |
 | I3 | Collection runner + run report, Live Activity, widgets, App Intents | done (branch `ios-i3`, 2026-11-18; no server change) |
 | I4 | WebSocket, SSE, GraphQL schema, gRPC | done (branch `ios-i4`, 2026-11-19; no server change) |
-| I5 | Apple Intelligence features, iPad three columns + keyboard, accessibility pass (VoiceOver, Dynamic Type, Reduce Transparency) | planned |
+| I5 | Apple Intelligence features, iPad three columns + keyboard, accessibility pass (VoiceOver, Dynamic Type, Reduce Transparency) | done (branch `ios-i5`, 2026-11-19; no server change) |
 | I6 | App Store: screenshots, listing text, review notes, price → Free, submit (owner on a Mac) | planned |
 
 Owner tasks: none until I6 (I3 adds the app group to register, see "I3: what landed"), apart from opening the CI-built simulator builds or TestFlight if wanted.
@@ -559,3 +559,68 @@ body); Connect, sending messages, Call, Load services/schema and Stop work.
 
 **Owner steps**: none. (The owner's Mac build already runs `scripts/build-sync-ffi.sh xcframework`; it now also builds
 gRPC — a minute or two more.)
+
+## I5: what landed (2026-11-19, branch `ios-i5`)
+CI: `.github/workflows/ios.yml`, green run CI_RUN_LINK (jobs `app`, `core`, `hitopkit`; artifact `screenshots`: 30–37 are I5's, `pad-30`/`pad-31` the iPad Explain).
+
+**Apple Intelligence (on-device Foundation Models only; nothing leaves the device, every screen says so)**
+- Core `Intelligence.swift` (Foundation only, Linux-tested): `ModelInput` decides what the model may see: secret values
+  masked with HitopKit's `Masker`, credentials masked by name (Authorization keeps its scheme, `Bearer ••••`; Cookie,
+  Set-Cookie, API-key/token/session headers; query parameters and JSON keys like `password`, `access_token`, `client_secret`,
+  `key`), the request's auth by kind only ("basic (value hidden)"), bodies cut for the ~4k-token window (response ≤ 2,400
+  chars, request ≤ 600, strings ≤ 160, arrays to 3 items + "N more") plus the JSON's `shape` two levels deep. `Prompts`
+  (explain, suggest a test, request from text). `SuggestedCheck` (status, header, equals, exists, type, responseTime,
+  bodyContains) → `TestScript`: every check is validated against the actual response (a check it fails, a bad path, a
+  response time without 2× headroom or a duplicate is dropped), at most 6, rendered as `pm.test` with `pm.expect`
+  (the shim's API, as the web app/CLI/HitopKit run it). `RequestDraft` → request (method whitelist, header-name check,
+  JSON formatted, form rows). `LanguageAssistant` protocol; `FakeAssistant` (deterministic) for unit tests and `-UITestSeed`,
+  `-UITestAIUnavailable` = the no-model path.
+- `App/Platform/AppleIntelligence.swift`: the only `import FoundationModels`. `SystemLanguageModel.default.availability` →
+  "isn't available on this device" / "Turn on Apple Intelligence in Settings" / "getting ready" (no purchase wording);
+  `LanguageModelSession.streamResponse` for Explain, guided generation (`@Generable` `GeneratedChecks`, `GeneratedRequest`)
+  for tests and requests; context overflow, guardrail, language and rate-limit errors become one line on screen.
+- Explain response: iPhone response sheet header (the drafts: Explain takes Share's place; Share moves to the body's tools;
+  without the model Share stays and there is no Explain), iPad response column's full-width "Explain response" (disabled with
+  the reason when unavailable), ⇧⌘E. Sheet: streamed explanation, "Suggest a test" → script, Copy, "Add test to request"
+  (appended to the request's Tests, unsaved until Save; viewers can only copy).
+- Request from text or curl: Collections + menu (long press) / iPad + menu / ⇧⌘N. A curl command is parsed by Core
+  `Curl.swift` (`CurlImport`, the web app's `src/curl.js` rule for rule, plus the iOS keyboard's smart quotes/dashes) with no
+  model, so it works without Apple Intelligence; plain text goes to the model; left-out curl options are listed.
+
+**iPad**: Explain in the response column, ⇧⌘N and ⇧⌘E in the Request menu, pointer hover effects on the sidebar's search
+and page rows, the editor's and response's tabs, the body tools and Explain; page rows 44 pt. No key-press UI test (the CI
+iPad simulator drops key commands); `ShortcutTests` checks the new actions.
+
+**Accessibility**: section titles are headers; missing labels added (remove subprotocol, copy/share); Increase Contrast
+lifts the muted/faint text, chevrons, code comments and separators (`Color(hex:high:)`), on top of the cards' stronger edge;
+Reduce Motion turns the app's animations off (`Animation.hitop`); glass stays the system's (Reduce Transparency is
+applied by the system). Dynamic Type at accessibility sizes: segment tabs scroll with full names, the response header
+splits into two rows, label/field rows (auth, gRPC) stack, method tags grow with the text. `UITests/AccessibilityTests.swift`
+runs `performAccessibilityAudit()` on collections, the request's tabs, the response's tabs, Explain, history, environments,
+runs (options, result, report), account, WebSocket/SSE/gRPC, request from text, the widget gallery, and at Accessibility XL
+text; every issue is collected and reported at once. Accepted (with the reason in the test): contrast/element issues of
+system-drawn chrome (no element, keyboard, tab bar, status bar), the one-line JSON fold rows, middle-truncated sent URL and
+long request/history names (full text is the label).
+
+**I4 review polish**: the floating Save + Send bar steps aside while the keyboard is up (GraphQL variables, body, scripts,
+any field); the keyboard's bar has Done, Save and Send instead (`IntelligenceFlowTests` checks the variables box stays above
+it, screenshot 34). The run sheet's Report bar is a `safeAreaBar` (scroll edge effect, the list no longer shows through).
+The response size label no longer truncates (I1 nit).
+
+**Tests**: unit `CurlTests` (the web app's cases + every curl.sh of hitop-core's snippet goldens, bundled / `HITOP_SNIPPET_GOLDENS`),
+`IntelligenceTests` (no seeded secret, literal token, cookie, basic password, query key or response credential in any prompt;
+cutting/shape; validation + rendering; the rendered script passes when Create order is sent again in JavaScriptCore; fake
+streaming and failures; curl without the model; text drafts), `ShortcutTests` (⇧⌘N, ⇧⌘E). UI `IntelligenceFlowTests`
+(Explain + add test → Tests tab, curl and text requests, Apple Intelligence off, GraphQL variables with the keyboard),
+`AccessibilityTests`, iPad `ScreenshotTests`. Screenshots 30-explain-response, 31-suggested-test, 32-request-from-curl,
+33-ai-unavailable, 34-graphql-variables-keyboard, 35–37 large text; iPad 30-ipad-explain-button, 31-ipad-explain.
+
+**No server change.**
+
+**Deferred**: follow-up chips of the drafts ("Why is it slow?", "Make a request to pay", "Summarize headers"); explaining
+WebSocket/gRPC/SSE sessions; an explanation cache; Spotlight/App Intents for the AI actions.
+
+**Owner steps (on a device with Apple Intelligence; CI simulators have no model)**: Explain a few real responses (JSON,
+HTML, an error), check the wording and the "on device" note; Suggest a test and run it; "New request from text" with a
+sentence; turn Apple Intelligence off in Settings and check the reasons; VoiceOver, Larger Text at the largest size,
+Increase Contrast and Reduce Motion on a device.

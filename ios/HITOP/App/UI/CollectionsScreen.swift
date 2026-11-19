@@ -166,6 +166,7 @@ struct EnvironmentMenu: View {
 }
 
 struct CollectionsScreen: View {
+    @Environment(\.dynamicTypeSize) private var typeSize
     @Environment(AppModel.self) private var model
     @Environment(Navigator.self) private var nav
     @Environment(LibrarySync.self) private var sync
@@ -315,7 +316,7 @@ struct CollectionsScreen: View {
             }
             ForEach(requests) { r in requestRow(r, indent: 16) }
         } header: {
-            Text(title.uppercased()).font(Typo.label).tracking(0.9).foregroundStyle(Theme.textFaint)
+            Text(title.uppercased()).font(Typo.label).tracking(0.9).foregroundStyle(Theme.textFaint).accessibilityAddTraits(.isHeader)
         }
         .listRowBackground(Theme.surface)
     }
@@ -431,7 +432,7 @@ struct CollectionsScreen: View {
             withAnimation(Animation.hitop) { if open { openFolders.remove(key) } else { openFolders.insert(key) } }
         } label: {
             HStack(spacing: 6) {
-                Text(name.uppercased()).font(Typo.label).tracking(0.9).foregroundStyle(Theme.textFaint)
+                Text(name.uppercased()).font(Typo.label).tracking(0.9).foregroundStyle(Theme.textFaint).accessibilityAddTraits(.isHeader)
                 if !open { Text("\(count)").font(Typo.geist(11, .medium)).foregroundStyle(Theme.chevron) }
                 Spacer()
                 Image(systemName: "chevron.right")
@@ -460,7 +461,7 @@ struct CollectionsScreen: View {
         NavigationLink(value: Route.request(r.id)) {
             HStack(spacing: 12) {
                 MethodTag(method: methodLabel(r))
-                Text(r.name).font(Typo.row).foregroundStyle(Theme.textRow).lineLimit(1)
+                Text(r.name).font(Typo.row).foregroundStyle(Theme.textRow).lineLimit(typeSize.isAccessibilitySize ? 3 : 1)
                 Spacer(minLength: 4)
                 if model.isPinned(request: r.id) {
                     Image(systemName: "pin.fill").font(.system(size: 10)).foregroundStyle(Theme.accentText).accessibilityLabel("Pinned")

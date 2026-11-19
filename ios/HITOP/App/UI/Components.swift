@@ -98,17 +98,42 @@ func methodLabel(_ r: SavedRequest) -> String {
     }
 }
 
+/// A label beside its field, or above it at accessibility text sizes (nothing clipped, I5).
+struct LabeledRow<Content: View>: View {
+    var label: String
+    var width: CGFloat
+    @ViewBuilder var content: Content
+    @Environment(\.dynamicTypeSize) private var typeSize
+    @ScaledMetric(relativeTo: .body) private var scale: CGFloat = 1
+
+    var body: some View {
+        let stacked = typeSize.isAccessibilitySize
+        let layout = stacked ? AnyLayout(VStackLayout(alignment: .leading, spacing: 4)) : AnyLayout(HStackLayout())
+        layout {
+            Text(label).font(Typo.geist(14, .medium)).foregroundStyle(Theme.textSoft)
+                .frame(width: stacked ? nil : width * scale, alignment: .leading)
+            content
+        }
+        .padding(.vertical, stacked ? 8 : 0)
+    }
+}
+
 struct MethodTag: View {
     var method: String
     var width: CGFloat? = 52
     var size: CGFloat = 11.5
+    /// The tag's column grows with the text; at accessibility sizes it takes the width it needs
+    /// (no clipped "PO…" / "DE…", I5).
+    @ScaledMetric(relativeTo: .caption) private var scale: CGFloat = 1
+    @Environment(\.dynamicTypeSize) private var typeSize
 
     var body: some View {
         Text(method)
             .font(Typo.mono(size, .semibold, relativeTo: .caption))
             .foregroundStyle(Theme.method(method))
             .lineLimit(1)
-            .frame(width: width, alignment: .leading)
+            .fixedSize(horizontal: typeSize.isAccessibilitySize, vertical: false)
+            .frame(width: typeSize.isAccessibilitySize ? nil : width.map { $0 * scale }, alignment: .leading)
             .accessibilityLabel(method == "WS" ? "WebSocket" : method == "GQL" ? "GraphQL" : method)
     }
 }
@@ -163,8 +188,18 @@ struct SegmentTabs<T: Hashable>: View {
     var items: [(T, String)]
     @Binding var selection: T
     var label: String
+    @Environment(\.dynamicTypeSize) private var typeSize
 
     var body: some View {
+        // At accessibility text sizes the tabs keep their full names and scroll sideways.
+        if typeSize.isAccessibilitySize {
+            ScrollView(.horizontal, showsIndicators: false) { track(fill: false) }
+        } else {
+            track(fill: true)
+        }
+    }
+
+    private func track(fill: Bool) -> some View {
         HStack(spacing: 0) {
             ForEach(items, id: \.0) { item in
                 let on = item.0 == selection
@@ -173,8 +208,10 @@ struct SegmentTabs<T: Hashable>: View {
                         .font(Typo.geist(13, on ? .semibold : .medium, relativeTo: .subheadline))
                         .foregroundStyle(on ? Color.white : Theme.textTab)
                         .lineLimit(1)
-                        .minimumScaleFactor(0.7)
-                        .frame(maxWidth: .infinity, minHeight: 34)
+                        .minimumScaleFactor(fill ? 0.7 : 1)
+                        .fixedSize(horizontal: !fill, vertical: false)
+                        .padding(.horizontal, fill ? 0 : 14)
+                        .frame(maxWidth: fill ? .infinity : nil, minHeight: 34)
                         .background(RoundedRectangle(cornerRadius: 11, style: .continuous).fill(on ? Theme.fillStrong : .clear))
                         .contentShape(Rectangle())
                 }
@@ -182,6 +219,7 @@ struct SegmentTabs<T: Hashable>: View {
                 .frame(minHeight: 44)
                 .accessibilityAddTraits(on ? [.isSelected, .isButton] : .isButton)
                 .accessibilityIdentifier("tab-\(item.1)")
+                .hoverEffect(.highlight)
             }
         }
         .padding(3)
@@ -217,6 +255,7 @@ struct CapsuleTabs<T: Hashable>: View {
                     .buttonStyle(.plain)
                     .accessibilityAddTraits(on ? .isSelected : [])
                     .accessibilityIdentifier("rtab-\(item.1)")
+                    .hoverEffect(.highlight)
                 }
             }
         }

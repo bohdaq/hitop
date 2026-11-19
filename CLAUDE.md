@@ -566,6 +566,13 @@ hitop/
   text/event-stream live with `URLSession.bytes`, Stop), `GraphQL.swift` (introspection via `AppModel.introspect`, schema, cursor suggestions), `Grpc.swift`
   (`FFIGrpcClient`, `GrpcSession`); UI fakes `EchoWebSocketTransport`/`FakeGrpcClient` + StubURLProtocol streams/GraphQL under `-UITestSeed` (collection
   "realtime"); end-to-end `ProtocolEndToEndTests` with `HITOP_TEST_SERVERS_BIN` = `cargo build -p hitop --example test_servers` (ws echo, Greeter, SSE)
+- HITOP iOS I5 (Apple Intelligence + iPad + accessibility, ios/HITOP_IOS.md "I5"): Core `Intelligence.swift` (`ModelInput` = what the model may see:
+  secret values via HitopKit `Masker`, credential headers/query/JSON keys by name, auth by kind only, bodies cut to ~2.4k chars + `shape`; `Prompts`;
+  `SuggestedCheck` → `TestScript` (checks validated against the response, rendered as `pm.test`); `RequestDraft` → request; `LanguageAssistant`
+  protocol, `FakeAssistant` for `-UITestSeed` (`-UITestAIUnavailable` = no model), `ExplainSession`, `RequestFromText`), `Curl.swift` (`CurlImport` =
+  the web app's `src/curl.js`, deterministic, no model; CurlTests read hitop-core's snippet goldens via `HITOP_SNIPPET_GOLDENS`/bundle);
+  `App/Platform/AppleIntelligence.swift` = the only FoundationModels code (`@Generable` checks/request, availability, errors). Accessibility audits
+  `UITests/AccessibilityTests.swift` (all issues reported at once; accepted kinds listed with reasons)
 - The app (no editing) is generated with `xcodegen` on a Mac; bundle ids `hitop.rws8.tech.HitopCompanion` (+ `.Widget`),
   app group `group.hitop.rws8.tech.companion`; Swift 5 language mode for the app targets, Swift 6 for HitopKit
 

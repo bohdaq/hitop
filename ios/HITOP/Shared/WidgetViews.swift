@@ -196,12 +196,13 @@ struct RunActivityView: View {
                 WidgetLogo(size: 30)
                 VStack(alignment: .leading, spacing: 1) {
                     Text(state.finished ? attributes.collectionName : "Running \(attributes.collectionName)")
-                        .font(WidgetStyle.geist(15, "SemiBold")).foregroundStyle(WidgetStyle.text).lineLimit(1)
-                    Text(subtitle).font(WidgetStyle.geist(12)).foregroundStyle(WidgetStyle.tab).lineLimit(1)
+                        .font(WidgetStyle.geist(15, "SemiBold")).foregroundStyle(WidgetStyle.text).lineLimit(1).minimumScaleFactor(0.8)
+                    // I5 audit: shrinks a little rather than clip ("Staging · 1 failed" next to the count).
+                    Text(subtitle).font(WidgetStyle.geist(12)).foregroundStyle(WidgetStyle.tab).lineLimit(1).minimumScaleFactor(0.75)
                 }
                 Spacer(minLength: 6)
                 (Text("\(state.finished ? state.passed : state.done)") + Text("/\(state.total)").foregroundStyle(WidgetStyle.faint))
-                    .font(WidgetStyle.mono(18)).foregroundStyle(WidgetStyle.text)
+                    .font(WidgetStyle.mono(18)).foregroundStyle(WidgetStyle.text).fixedSize()
             }
             ProgressBar(fraction: state.fraction, failed: state.failed > 0 && state.finished)
             HStack {

@@ -165,8 +165,7 @@ struct ExplainSheet: View {
         let readOnly = model.isReadOnly(editor?.collectionID)
         if s.availability.isAvailable {
             VStack(alignment: .leading, spacing: 10) {
-                Text("SUGGESTED TEST").font(Typo.label).tracking(0.9).foregroundStyle(Theme.textFaint)
-                    .accessibilityAddTraits(.isHeader)
+                Text("SUGGESTED TEST").font(Typo.label).tracking(0.9).foregroundStyle(Theme.textFaint).accessibilityAddTraits(.isHeader)
                 if let suggestion = s.suggestion {
                     CodeBlock(text: suggestion.script, json: false, fill: Theme.sheetCode)
                         .accessibilityElement(children: .ignore)
@@ -320,6 +319,7 @@ struct RequestFromTextSheet: View {
     }
 
     private func create() {
+        guard canMake else { return }
         working = true
         failure = nil
         let input = text

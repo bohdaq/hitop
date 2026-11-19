@@ -23,7 +23,7 @@ struct EnvironmentsScreen: View {
                 .buttonStyle(.plain)
                 .accessibilityAddTraits(model.state.activeEnvironmentID == nil ? .isSelected : [])
             } header: {
-                Text("ENVIRONMENTS").font(Typo.label).tracking(0.9).foregroundStyle(Theme.textFaint)
+                Text("ENVIRONMENTS").font(Typo.label).tracking(0.9).foregroundStyle(Theme.textFaint).accessibilityAddTraits(.isHeader)
             } footer: {
                 Text("The active environment fills ${variables} in every request. Secret values stay in this device's Keychain.")
                     .font(Typo.caption).foregroundStyle(Theme.textMuted)
@@ -44,7 +44,7 @@ struct EnvironmentsScreen: View {
                 }
                 .accessibilityIdentifier("environment-Globals")
             } header: {
-                Text("GLOBALS").font(Typo.label).tracking(0.9).foregroundStyle(Theme.textFaint)
+                Text("GLOBALS").font(Typo.label).tracking(0.9).foregroundStyle(Theme.textFaint).accessibilityAddTraits(.isHeader)
             } footer: {
                 Text("Globals apply everywhere, below collection and environment values.").font(Typo.caption).foregroundStyle(Theme.textMuted)
             }
@@ -181,7 +181,7 @@ struct EnvironmentDetail: View {
                         }
                     }
                 } header: {
-                    Text("VARIABLES").font(Typo.label).tracking(0.9).foregroundStyle(Theme.textFaint)
+                    Text("VARIABLES").font(Typo.label).tracking(0.9).foregroundStyle(Theme.textFaint).accessibilityAddTraits(.isHeader)
                 } footer: {
                     if team {
                         Text("A team environment of your organization: change it in the web app. Secret values you enter stay in this device's Keychain.")

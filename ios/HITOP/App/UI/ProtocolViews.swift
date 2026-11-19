@@ -65,7 +65,7 @@ struct WebSocketFieldsEditor: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
-            Text("SAVED MESSAGES").font(Typo.label).tracking(0.9).foregroundStyle(Theme.textFaint)
+            Text("SAVED MESSAGES").font(Typo.label).tracking(0.9).foregroundStyle(Theme.textFaint).accessibilityAddTraits(.isHeader)
             VStack(spacing: 0) {
                 ForEach(Array(editor.draft.websocket.messages.enumerated()), id: \.offset) { i, m in
                     VStack(alignment: .leading, spacing: 6) {
@@ -117,7 +117,7 @@ struct WebSocketFieldsEditor: View {
                 }
                 .accessibilityIdentifier("ws-add-message")
             }
-            Text("SUBPROTOCOLS").font(Typo.label).tracking(0.9).foregroundStyle(Theme.textFaint).padding(.top, 6)
+            Text("SUBPROTOCOLS").font(Typo.label).tracking(0.9).foregroundStyle(Theme.textFaint).padding(.top, 6).accessibilityAddTraits(.isHeader)
             VStack(spacing: 0) {
                 ForEach(Array(editor.draft.websocket.subprotocols.enumerated()), id: \.offset) { i, _ in
                     HStack {
@@ -134,6 +134,7 @@ struct WebSocketFieldsEditor: View {
                         if !readOnly {
                             Button(role: .destructive) { editor.draft.websocket.subprotocols.remove(at: i) } label: { Image(systemName: "minus.circle") }
                                 .frame(width: 44, height: 44)
+                                .accessibilityLabel("Remove subprotocol")
                         }
                     }
                     .padding(.horizontal, 14).frame(minHeight: 46)
@@ -458,7 +459,7 @@ struct GrpcFieldsEditor: View {
             }
 
             HStack {
-                Text("MESSAGE").font(Typo.label).tracking(0.9).foregroundStyle(Theme.textFaint)
+                Text("MESSAGE").font(Typo.label).tracking(0.9).foregroundStyle(Theme.textFaint).accessibilityAddTraits(.isHeader)
                 Spacer()
                 if !readOnly {
                     SmallChipButton(title: "Template") { Task { await editor.useGrpcTemplate() } }
@@ -478,10 +479,11 @@ struct GrpcFieldsEditor: View {
     }
 
     private func row(_ label: String, @ViewBuilder content: () -> some View) -> some View {
-        HStack {
-            Text(label).font(Typo.geist(14, .medium)).foregroundStyle(Theme.textSoft).frame(width: 74, alignment: .leading)
-            content()
-            Spacer(minLength: 0)
+        LabeledRow(label: label, width: 74) {
+            HStack {
+                content()
+                Spacer(minLength: 0)
+            }
         }
         .padding(.horizontal, 14)
         .frame(minHeight: 48)
@@ -576,7 +578,7 @@ struct GrpcLogRow: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 5) {
             HStack {
-                Text(title).font(Typo.label).tracking(0.8).foregroundStyle(color)
+                Text(title).font(Typo.label).tracking(0.8).foregroundStyle(color).accessibilityAddTraits(.isHeader)
                 Spacer()
                 Text(clockText(entry.time)).font(Typo.mono(10.5)).foregroundStyle(Theme.textFaint)
             }

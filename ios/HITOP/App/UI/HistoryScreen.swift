@@ -66,7 +66,7 @@ struct HistoryScreen: View {
                             }
                     }
                 } header: {
-                    Text(group.0.uppercased()).font(Typo.label).tracking(0.9).foregroundStyle(Theme.textFaint)
+                    Text(group.0.uppercased()).font(Typo.label).tracking(0.9).foregroundStyle(Theme.textFaint).accessibilityAddTraits(.isHeader)
                 }
                 .listRowBackground(Theme.surface)
                 .listRowSeparatorTint(Theme.separator)
