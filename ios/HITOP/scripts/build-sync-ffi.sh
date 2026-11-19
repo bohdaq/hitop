@@ -8,7 +8,8 @@
 # Needs rustup's cargo (cli/rust-toolchain.toml's stable). The xcframework is what project.yml
 # links: run this once before `xcodegen generate`, and again after a change to SyncFFI,
 # hitop-core or hitop-sync-crypto. SIM_ARCHS="arm64 x86_64" adds an Intel simulator slice.
-# CARGO_TARGET_DIR is honoured (CI keeps it out of the tree). The xcframework holds the libraries
+# CARGO_TARGET_DIR is honoured (CI keeps it out of the tree). SYNC_FFI_CARGO_FLAGS adds cargo flags
+# (CI measures the app without gRPC with "--no-default-features"). The xcframework holds the libraries
 # only: the module (SyncFFI/include/module.modulemap) comes in through SWIFT_INCLUDE_PATHS, so
 # the app and its unit tests see one definition of CHitopSync.
 set -eu
@@ -22,9 +23,9 @@ mode=${1:-xcframework}
 build() {
   # $1: target triple, or "" for this machine
   if [ -n "$1" ]; then
-    (cd "$crate" && "$cargo" build --locked --release --target "$1" --target-dir "$target_dir") >&2
+    (cd "$crate" && "$cargo" build --locked --release ${SYNC_FFI_CARGO_FLAGS:-} --target "$1" --target-dir "$target_dir") >&2
   else
-    (cd "$crate" && "$cargo" build --locked --release --target-dir "$target_dir") >&2
+    (cd "$crate" && "$cargo" build --locked --release ${SYNC_FFI_CARGO_FLAGS:-} --target-dir "$target_dir") >&2
   fi
 }
 

@@ -13,6 +13,9 @@
 //! `hitop_sync_free`). Binary values are base64url without padding, as in hitop-wasm; JSON the
 //! caller must read exactly (collections with 64-bit ids) crosses as JSON *text* inside a string.
 //! A panic is caught and returned as an error: nothing unwinds into Swift.
+//!
+//! Feature `grpc` (default, I4) adds the `grpc*` operations: hitop-core's gRPC client, the code
+//! `hitop grpc` and the desktop app run (src/grpc.rs).
 
 use std::collections::BTreeMap;
 use std::ffi::{c_char, CStr, CString};
@@ -25,6 +28,9 @@ use hitop_core::sync::{self, BlobText, Push, RemoteBlob, State};
 use hitop_sync_crypto::{self as crypto, BlobContext, Device, DeviceKeyPair, ReceivedWrap, Recipient, WorkspaceKey, WorkspaceMemory, WrapHeader};
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
+
+#[cfg(feature = "grpc")]
+mod grpc;
 
 type R = Result<Value, String>;
 
@@ -285,6 +291,8 @@ fn call(op: &str, a: &Args) -> R {
             let files: files::Files = a.json("files")?;
             serde_json::to_value(files::plan_sync(&existing, &files).map_err(|e| format!("{e:#}"))?).map_err(err)
         }
+        #[cfg(feature = "grpc")]
+        other if other.starts_with("grpc") => grpc::call(other, a),
         other => Err(format!("unknown operation {other}")),
     }
 }

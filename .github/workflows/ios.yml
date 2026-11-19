@@ -12,6 +12,9 @@ on:
       - "cli/crates/hitop-core/**"
       - "cli/crates/hitop-sync-crypto/**"
       - "cli/crates/hitop/src/commands/sync/**"
+      # The I4 end-to-end test servers.
+      - "cli/crates/hitop/examples/test_servers.rs"
+      - "cli/crates/hitop/tests/support/ws_echo.rs"
       # hitop-core takes its dependencies from the cli workspace.
       - "cli/Cargo.toml"
       # RunsTests reads the spec's run report.
@@ -60,6 +63,7 @@ jobs:
           rustup show active-toolchain || rustup default stable
           ios/HITOP/scripts/build-sync-ffi.sh xcframework
           ls -R ios/HITOP/Vendor | head -20
+          ls -la "$CARGO_TARGET_DIR"/aarch64-apple-ios/release/libhitop_sync_ffi.a "$CARGO_TARGET_DIR"/sim/libhitop_sync_ffi.a
 
       - name: Generate the project
         working-directory: ios/HITOP
@@ -218,13 +222,56 @@ jobs:
         env:
           CARGO_PROFILE_DEV_DEBUG: "0"
         run: cargo build --locked -p hitop --bin hitop
+      - name: Build the local WebSocket, SSE and gRPC test servers (I4 end-to-end tests)
+        working-directory: cli
+        env:
+          CARGO_PROFILE_DEV_DEBUG: "0"
+        run: cargo build --locked -p hitop --example test_servers
       - name: swift test (App/Core + UnitTests, CloudEndToEndTests required)
         env:
           HITOP_SYNC_SERVER_BIN: ${{ github.workspace }}/sync-server/target/debug/hitop-sync-server
           HITOP_BIN: ${{ github.workspace }}/cli/target/debug/hitop
+          HITOP_TEST_SERVERS_BIN: ${{ github.workspace }}/cli/target/debug/examples/test_servers
           CARGO_TARGET_DIR: ${{ runner.temp }}/ffi-target
           HITOP_E2E_REQUIRED: "1"
         run: ios/HITOP/scripts/core-tests.sh
+
+  # What gRPC (SyncFFI feature `grpc`: hitop-core's tonic client) adds to the app: the Release
+  # device binary with and without it, and the native libraries the static library needs.
+  # Manual runs only (Actions → iOS → Run workflow), as it builds the app twice.
+  size:
+    name: App size with and without gRPC (Release, device)
+    if: github.event_name == 'workflow_dispatch'
+    runs-on: macos-26
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Xcode 26 + XcodeGen
+        run: |
+          xcode=$(ls -d /Applications/Xcode_26*.app 2>/dev/null | sort -V | tail -1)
+          if [ -n "$xcode" ]; then sudo xcode-select -s "$xcode"; fi
+          curl -sSfL -o "$RUNNER_TEMP/xcodegen.zip" "https://github.com/yonaskolb/XcodeGen/releases/download/$XCODEGEN_VERSION/xcodegen.zip"
+          echo "$XCODEGEN_SHA256  $RUNNER_TEMP/xcodegen.zip" | shasum -a 256 -c -
+          unzip -q "$RUNNER_TEMP/xcodegen.zip" -d "$RUNNER_TEMP"
+          echo "$RUNNER_TEMP/xcodegen/bin" >> "$GITHUB_PATH"
+      - name: Build both ways
+        env:
+          CARGO_TARGET_DIR: ${{ runner.temp }}/ffi-target
+        run: |
+          rustup show active-toolchain || rustup default stable
+          rustup target add aarch64-apple-ios
+          (cd ios/HITOP/SyncFFI && cargo rustc --locked --release --target aarch64-apple-ios --lib --crate-type staticlib -- --print native-static-libs 2>&1 | grep -i "native-static-libs" || true)
+          measure() {
+            ios/HITOP/scripts/build-sync-ffi.sh xcframework
+            (cd ios/HITOP && xcodegen generate >/dev/null && xcodebuild build -project HITOPApp.xcodeproj -scheme HITOP -configuration Release \
+              -destination "generic/platform=iOS" -derivedDataPath "$RUNNER_TEMP/dd-$1" CODE_SIGNING_ALLOWED=NO 2>&1 | grep -E "error:|BUILD (SUCCEEDED|FAILED)")
+            app="$RUNNER_TEMP/dd-$1/Build/Products/Release-iphoneos/HITOP.app"
+            bytes=$(stat -f %z "$app/HITOP")
+            all=$(du -sk "$app" | cut -f1)
+            echo "$1: HITOP binary $bytes bytes, HITOP.app ${all} KB" | tee -a "$GITHUB_STEP_SUMMARY"
+          }
+          measure grpc
+          SYNC_FFI_CARGO_FLAGS=--no-default-features measure no-grpc
 
   hitopkit:
     name: HitopKit swift test (macOS, JavaScriptCore)
