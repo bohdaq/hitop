@@ -84,7 +84,8 @@ async function syncServer(extraEnv = {}) {
   };
   const database = () => Buffer.concat(fs.readdirSync(dir).map((f) => fs.readFileSync(path.join(dir, f))));
   // The database itself, to play a malicious server (node:sqlite, Node 22.13+).
-  const sql = () => new (require('node:sqlite').DatabaseSync)(path.join(dir, 'sync.db'));
+  // The server writes the same file: wait for its lock instead of failing with "database is locked".
+  const sql = () => { const db = new (require('node:sqlite').DatabaseSync)(path.join(dir, 'sync.db')); db.exec('PRAGMA busy_timeout = 10000'); return db; };
   const stop = () => {
     child.kill();
     fs.rmSync(dir, { recursive: true, force: true });

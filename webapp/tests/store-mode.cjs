@@ -78,6 +78,7 @@ async function syncServer() {
     const r = spawnSync(path.resolve(bin), ['set-plan', org, 'team', '5'], { env, encoding: 'utf8' });
     if (r.status !== 0) throw new Error(`set-plan: ${r.stderr}`);
     const db = new (require('node:sqlite').DatabaseSync)(path.join(dir, 'sync.db'));
+    db.exec('PRAGMA busy_timeout = 10000'); // the server writes the same file
     db.prepare("UPDATE entitlements SET status = 'expired' WHERE org_id = ?").run(org);
     db.close();
   };

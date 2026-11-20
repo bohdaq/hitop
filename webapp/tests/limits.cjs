@@ -72,7 +72,8 @@ async function syncServer() {
     if (!line) throw new Error(`no mail to ${email}`);
     return line.trim().split('#').pop();
   };
-  const sql = () => new (require('node:sqlite').DatabaseSync)(path.join(dir, 'sync.db'));
+  // The server writes the same file: wait for its lock instead of failing with "database is locked".
+  const sql = () => { const db = new (require('node:sqlite').DatabaseSync)(path.join(dir, 'sync.db')); db.exec('PRAGMA busy_timeout = 10000'); return db; };
   const stop = () => {
     child.kill();
     fs.rmSync(dir, { recursive: true, force: true });
