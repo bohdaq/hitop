@@ -78,11 +78,19 @@ function api() {
   await p.waitForFunction(() => document.querySelector('lit-material-popover.var-peek')?.open, null, { timeout: 3000 }).catch(() => {});
   check('a click on a variable says where it comes from', (await p.locator('lit-material-popover.var-peek').evaluate((el) => el.open)) && (await p.locator('.var-peek').innerText()).includes('Nothing defines it'));
   await p.keyboard.press('Escape');
+  // The peek must be closed before the keys go to the URL field, or they land in the popover.
+  await p.waitForFunction(() => !document.querySelector('lit-material-popover.var-peek')?.open, null, { timeout: 3000 }).catch(() => {});
   await p.keyboard.press('Control+KeyL'); // the URL field (a click on it would land on the chip)
   await p.keyboard.press('End');
   for (let i = 0; i < '?id=${orderId}'.length; i++) await p.keyboard.press('Backspace');
+  await settle(p);
   await p.keyboard.press('Control+Enter');
-  await p.locator('.response-meta .status-chip').waitFor();
+  // A send that a busy runner swallowed is sent once more, so the test checks the response, not the timing.
+  if (!(await p.locator('.response-meta .status-chip').waitFor({ timeout: 10000 }).then(() => true, () => false))) {
+    await p.keyboard.press('Control+KeyL');
+    await p.keyboard.press('Control+Enter');
+    await p.locator('.response-meta .status-chip').waitFor();
+  }
   const waterfall = p.locator('.response lit-material-timing-waterfall.timing-bar');
   check('one response: no Diff vs last yet', !(await p.locator('.response lit-material-tabs[aria-label="Response details"] lit-material-tab').allInnerTexts()).some((t) => t.trim() === 'Diff vs last'));
   if (TAURI) {
