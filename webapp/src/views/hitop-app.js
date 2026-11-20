@@ -435,6 +435,12 @@ export class HitopApp extends LitElement {
 
   async openDialog(kind, data = {}) {
     this.navOpen = false;
+    // A dialog closed just before (closeDialog, then this) fires its close event later, and that
+    // clears this.dialog: wait for it first, or it takes the new dialog away (library e2e flake).
+    if (this.dialogClosing) {
+      await Promise.race([this.dialogClosing, new Promise((r) => setTimeout(r, 1000))]);
+      this.dialogClosing = this.dialogClosed = null; // also when it never came (the element was replaced)
+    }
     this.dialog = { kind, ...data };
     if (kind === "code") refreshCode(this);
     await this.updateComplete;
@@ -467,7 +473,18 @@ export class HitopApp extends LitElement {
   }
 
   closeDialog() {
-    this.querySelector("#dialog")?.close();
+    const dlg = this.querySelector("#dialog");
+    if (!dlg?.open) return;
+    this.dialogClosing ??= new Promise((resolve) => (this.dialogClosed = resolve));
+    dlg.close();
+  }
+
+  // The dialog's own close event (not one bubbling from a menu inside it).
+  onDialogClose(e) {
+    if (e.target !== e.currentTarget) return;
+    this.dialog = null;
+    this.dialogClosed?.();
+    this.dialogClosing = this.dialogClosed = null;
   }
 
   field(id) {
@@ -1007,8 +1024,7 @@ export class HitopApp extends LitElement {
         break;
     }
     return html`
-      <!-- Only the dialog's own close: lit-material menus inside it fire bubbling, composed "close" events too. -->
-      <lit-material-dialog id="dialog" class=${WIDE_DIALOGS.includes(d.kind) || d.kind === "quick-open" || d.kind === "ai" ? "wide" : FIT_DIALOGS.includes(d.kind) ? "fit" : d.kind === "sign-in" ? "sign-in-dialog" : ""} @close=${(e) => e.target === e.currentTarget && (this.dialog = null)}>
+      <lit-material-dialog id="dialog" class=${WIDE_DIALOGS.includes(d.kind) || d.kind === "quick-open" || d.kind === "ai" ? "wide" : FIT_DIALOGS.includes(d.kind) ? "fit" : d.kind === "sign-in" ? "sign-in-dialog" : ""} @close=${(e) => this.onDialogClose(e)}>
         <span slot="headline">${headline}</span>
         <form id="dialog-form" class="dialog-form" novalidate @submit=${(e) => this.submitDialog(e)} @input=${(e) => this.clearFieldError(e.target)} @keydown=${(e) => this.dialogKey(e)}>${body}</form>
         ${footer}
