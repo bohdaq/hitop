@@ -966,7 +966,8 @@ fn google_and_github_need_the_server_to_offer_them() {
 
 /// The server's log after `needle` shows up (alerts are delivered every few seconds).
 fn wait_for_log(server: &SyncServer, needle: &str) -> String {
-    for _ in 0..200 {
+    // 60 s: alert mails go out from a worker every 5 s, and a loaded CI runner was seen taking 20 s.
+    for _ in 0..600 {
         let log = server.log.lock().unwrap().clone();
         if log.contains(needle) {
             return log;
