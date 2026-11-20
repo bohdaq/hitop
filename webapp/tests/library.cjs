@@ -251,7 +251,15 @@ async function syncServer() {
     await two.page.waitForFunction(() => document.querySelector('hitop-app').store.currentOrgInfo?.name === 'Beta Team', null, { timeout: 10000 });
     check('New organization… creates it and switches to it', (await org(two).locator('lit-material-select-option').allInnerTexts()).some((t) => t.includes('Beta Team')));
     // It opens the Members page and the invite dialog (S3 → S4).
-    await two.page.locator('#dialog').getByLabel(/Email addresses/).waitFor({ timeout: 10000 });
+    // On a timeout, say what was on screen instead (this step flaked on CI 2026-11-19/20).
+    await two.page.locator('#dialog').getByLabel(/Email addresses/).waitFor({ timeout: 15000 }).catch(async (e) => {
+      const seen = await two.page.evaluate(() => {
+        const app = document.querySelector('hitop-app');
+        const t = document.querySelector('#toast');
+        return { dialog: app.dialog?.kind ?? null, open: document.querySelector('#dialog')?.open ?? null, page: app.store?.view ?? location.hash, org: app.store?.currentOrgInfo?.name, toast: [t?.message, t?.textContent].filter(Boolean).join(' ') };
+      }).catch((x) => ({ evaluateFailed: x.message }));
+      throw new Error(`${e.message}\non screen: ${JSON.stringify(seen)}`);
+    });
     check('...then its Members page and the invite dialog', (await two.page.locator('hitop-org').count()) === 1);
     await two.page.locator('#dialog').getByLabel(/Email addresses/).fill('carol@example.com, dave@example.org');
     await settle(two.page);

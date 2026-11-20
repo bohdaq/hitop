@@ -1007,7 +1007,8 @@ export class HitopApp extends LitElement {
         break;
     }
     return html`
-      <lit-material-dialog id="dialog" class=${WIDE_DIALOGS.includes(d.kind) || d.kind === "quick-open" || d.kind === "ai" ? "wide" : FIT_DIALOGS.includes(d.kind) ? "fit" : d.kind === "sign-in" ? "sign-in-dialog" : ""} @close=${() => (this.dialog = null)}>
+      <!-- Only the dialog's own close: lit-material menus inside it fire bubbling, composed "close" events too. -->
+      <lit-material-dialog id="dialog" class=${WIDE_DIALOGS.includes(d.kind) || d.kind === "quick-open" || d.kind === "ai" ? "wide" : FIT_DIALOGS.includes(d.kind) ? "fit" : d.kind === "sign-in" ? "sign-in-dialog" : ""} @close=${(e) => e.target === e.currentTarget && (this.dialog = null)}>
         <span slot="headline">${headline}</span>
         <form id="dialog-form" class="dialog-form" novalidate @submit=${(e) => this.submitDialog(e)} @input=${(e) => this.clearFieldError(e.target)} @keydown=${(e) => this.dialogKey(e)}>${body}</form>
         ${footer}
