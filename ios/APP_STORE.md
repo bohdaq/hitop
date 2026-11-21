@@ -13,17 +13,15 @@ unsigned Release archive (job `archive`). Signing, upload and App Store Connect 
    (section 9). `Info.plist` has no `ITSAppUsesNonExemptEncryption` key, like the Mac app: with
    `true` and no approved encryption documents, App Store Connect refuses the upload ("Invalid
    Export Compliance Code", 2026-11-21).
-2. **Account deletion (likely review blocker).** The app creates HITOP Cloud accounts (Sign in with
-   Apple, Google, GitHub), and App Review's guidelines ask that an app which lets people create an
-   account also lets them start deleting it from inside the app (check the current wording of the
-   account-deletion rule under Data Collection and Storage). Today neither the app, the web app nor the sync server has a
-   delete-account action; the privacy page says to email you. Options: (a) a small tranche first: a
-   server endpoint plus "Delete account" on the Account screen; (b) submit as is and answer a
-   rejection with that tranche. I recommend (a).
-3. **Privacy policy.** `https://hitop.rws8.tech/privacy.html` still opens with "HITOP has no
-   accounts" and calls the sync server a test server. HITOP Cloud's personal library (collections,
-   environments, globals, readable by the server) is not described. Update it before you submit
-   (the App Privacy answers in section 8 must match it).
+2. **Account deletion: built.** Account → **Delete account** (at the
+   bottom of the Account screen; the same in the web and desktop apps) deletes the HITOP Cloud
+   account at once (`DELETE /v1/me`, sync-server `account.rs`) and revokes its Sign in with Apple
+   token. Before you submit, the sync server with that endpoint (schema 19) must be deployed to
+   `sync.hitop.rws8.tech`: an older server answers 404 and the app shows that error.
+3. **Privacy policy: rewritten.** `site/src/pages/privacy.js` now describes the HITOP
+   Cloud account (what it keeps, what it doesn't, the personal library the server can read, shared
+   collections end to end encrypted), how to delete it in the app and what stays afterwards. Deploy
+   the site before you submit (the App Privacy answers in section 8 match it).
 4. **France.** The Mac app went out with France excluded until the ANSSI declaration is done. The
    iOS app uses the same cryptography (section 9). Either exclude France for 2.0.0 too (people in France
    who have the old app keep it, but nobody there can download it any more), or wait for ANSSI.
@@ -165,6 +163,11 @@ App Review Information → Notes:
 > Shortcuts ("Run <collection> in HITOP"), and Apple Intelligence on device (send a request, then
 > Explain in the response; + → New request from text or curl). Apple Intelligence features show only
 > on devices where it is available and turned on.
+>
+> Account deletion: signed in, open Account and tap **Delete account** at the bottom, then Delete
+> account in the sheet. The HITOP Cloud account is deleted at once, with its synced library, devices
+> and memberships (for Sign in with Apple, the Apple token is revoked); collections saved on the
+> device stay.
 
 Check those steps once on a fresh TestFlight install. Don't name a guideline clause in the note
 unless you've checked its current wording.
@@ -192,6 +195,8 @@ sync server's tables):
   security log keeps a shortened IP address and the user agent (privacy page); it isn't used for
   location or tracking.
 - **Tracking**: No. No third-party SDKs, no ads, no analytics, no usage ping in the iOS app.
+- Deletion: people delete the account in the app (Account → Delete account); the privacy page says
+  what stays afterwards (audit entries until a year old, encrypted backups up to 35 days).
 
 ## 9. Export compliance
 
@@ -222,6 +227,8 @@ app with some data:
 - The old app's requests and history are there (one-time import).
 - Sign in with Apple, Google and GitHub against https://sync.hitop.rws8.tech; sync a collection with
   the web app; the Account screen shows nothing to buy.
+- Account → Delete account with a throwaway Sign in with Apple account: signed out, collections kept;
+  appleid.apple.com → Sign in with Apple no longer lists HITOP (the token was revoked).
 - I3: add the three widgets; tap Send on the pinned-requests widget; run a collection with the Lock
   Screen showing (Live Activity, Dynamic Island); "Run shop-api in HITOP" (or your collection's name)
   with Siri; the Control Center control.

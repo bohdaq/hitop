@@ -184,5 +184,32 @@ final class CloudEndToEndTests: XCTestCase {
         XCTAssertTrue(usage.meters.allSatisfy { $0.max == nil })
         XCTAssertTrue(usage.meters.contains { $0.id == "devices" && $0.used == 2 })
     }
+
+    /// Account → Delete account against the real server (`DELETE /v1/me`): gone there (the other
+    /// device's session too), forgotten here, the collection kept on the phone.
+    func testDeletingTheAccountAgainstARealSyncServer() async throws {
+        try await startServer()
+        let email = "ios-delete@example.com"
+        let one = device("HITOP on iPhone")
+        let shop = one.model.addCollection(name: "shop-api")
+        try await signIn(one, email)
+        let two = device("HITOP on iPad")
+        try await signIn(two, email)
+        try await one.cloud.deleteAccount()
+        XCTAssertFalse(one.cloud.signedIn)
+        XCTAssertNil(one.cloud.credentials.load(server))
+        XCTAssertNotNil(one.model.collection(shop.id), "the collection stays on this phone")
+        // The other device's session is dead too.
+        do {
+            _ = try await two.cloud.devices()
+            XCTFail("the session should be gone")
+        } catch let e as CloudError {
+            XCTAssertEqual(e.status, 401)
+        }
+        // Signing in again is a new account: nothing synced from the old one.
+        let three = device("HITOP on iPhone")
+        try await signIn(three, email)
+        XCTAssertTrue(three.model.collections.allSatisfy { $0.name != "shop-api" })
+    }
 }
 #endif

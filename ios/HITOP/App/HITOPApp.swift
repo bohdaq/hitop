@@ -44,6 +44,10 @@ struct HITOPApp: App {
                 fake.addDevice(fake.signInEmail, name: "Work laptop")
             }
             fake.conflictOnFirstUpdate = args.contains("-UITestCloudConflict")
+            // Delete account refused: the only owner of an organization other people use.
+            if args.contains("-UITestDeleteRefused") {
+                fake.deleteBlockers = [.object(["kind": .string("org"), "id": .string("org-acme"), "name": .string("Acme"), "members": .number(3)])]
+            }
             cloud = HitopCloud(transport: URLSessionCloudTransport(configuration: StubURLProtocol.configuration()),
                                credentials: CloudCredentials(store: MemorySecretStore()),
                                settingsStore: MemoryCloudSettingsStore(CloudSettings(server: FakeCloud.server)),

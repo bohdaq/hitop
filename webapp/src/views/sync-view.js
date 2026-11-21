@@ -226,7 +226,7 @@ class HitopSync extends LitElement {
       this.store?.library?.checkAccount().catch(() => {});
       this.closest("hitop-app")?.requestUpdate();
       // Keep the recovery data up to date with this device's trust and key memory.
-      if (!String(what).startsWith("recovery") && what !== "signout") {
+      if (!String(what).startsWith("recovery") && what !== "signout" && what !== "delete-account") {
         await this.sync.refreshRecovery().catch((e) => (this.error ??= `Couldn't update your recovery data: ${errorText(e)}`));
       }
     }
@@ -769,7 +769,28 @@ class HitopSync extends LitElement {
           <p class="hint">${a.deviceName} · <code class="fingerprint" aria-label="Your fingerprint">${this.fingerprint ?? ""}</code></p>
         </section>
       </details>
+      <section class="account-delete" aria-label="Delete account">
+        <lit-material-button variant="outlined" class="destructive" ?disabled=${!!this.busy} @click=${() => this.deleteAccount(a)}>${icon("trash")} Delete account</lit-material-button>
+        <p class="hint">Deletes your HITOP Cloud account and what it keeps. Collections in this ${platform().name === "tauri" ? "app" : "browser"} stay.</p>
+      </section>
     </div>`;
+  }
+
+  // App Store 5.1.1(v): the account can be deleted where it was made (web, desktop, iOS).
+  async deleteAccount(a) {
+    const here = platform().name === "tauri" ? "app" : "browser";
+    const ok = await confirm({
+      headline: `Delete ${a.email}?`,
+      message: `This can't be undone. HITOP Cloud deletes at once your account and its sign-ins, your synced library (collections, environments, globals), your devices and their keys, and your memberships of organizations and shared collections (ones only you use are deleted with their data). Collections and requests in this ${here} stay here.`,
+      confirmLabel: "Delete account",
+      destructive: true,
+    });
+    if (!ok) return;
+    await this.run("delete-account", async () => {
+      await this.sync.deleteAccount();
+      this.remote = null;
+      this.note = `The HITOP Cloud account ${a.email} was deleted. Your collections stay in this ${here}.`;
+    });
   }
 }
 

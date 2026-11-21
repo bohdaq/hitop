@@ -703,6 +703,24 @@ export class SyncClient {
     localStorage.removeItem(ACCOUNT_KEY);
   }
 
+  /**
+   * Deletes the HITOP Cloud account (`DELETE /v1/me {confirm: <its address>}`, sync-server
+   * account.rs: the account, its synced library, devices, personal organization and memberships),
+   * then forgets it here: the session and this device's key (no "same device again", unlike
+   * sign-out) and the account. Collections in this browser or app stay. A refusal (409
+   * `transfer_ownership_first`: the only owner of something other people use; 503 `try_again`)
+   * throws a SyncError with the server's message and changes nothing.
+   */
+  async deleteAccount() {
+    const a = this.account();
+    if (!a) throw new Error("Sign in to HITOP Cloud first");
+    const r = await this.call("DELETE", "/v1/me", { confirm: a.email });
+    await this.saveSecret(a.server, null);
+    localStorage.removeItem(DEVICE_KEY);
+    localStorage.removeItem(ACCOUNT_KEY);
+    return r.json;
+  }
+
   // --- recovery phrase (sync-server/THREAT_MODEL.md "Recovery") -----------------------------
   // The phrase seals this device's recovery data (its key, pins and key memory; the CLI's
   // `hitop sync recovery` writes and reads the same JSON) for the server to keep. On a new device,

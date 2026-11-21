@@ -247,6 +247,7 @@ final class SharedSync {
         state = store.load()
         model.onSharedChange = { [weak self] id in self?.schedule(id) }
         model.onCollectionDeleted = { [weak self] id in self?.forget(id) }
+        cloud.onAccountDeleted = { [weak self] a in self?.accountDeleted(a) }
         applyRoles()
         for (id, l) in state.links { if let cid = UInt64(id) { conflicts[cid] = conflictList(cid, l) } }
     }
@@ -307,6 +308,17 @@ final class SharedSync {
         save()
         applyRoles()
         return true
+    }
+
+    /// The account was deleted (`HitopCloud.deleteAccount`): its shared collections stay on this
+    /// device as they were last synced, never synced again (`gone`), and its own device key is no
+    /// longer pinned (the key itself is gone from the Keychain).
+    func accountDeleted(_ a: CloudAccount) {
+        for k in state.links.keys { state.links[k]?.gone = true }
+        state.pins[a.keyId] = nil
+        state.account = ""
+        save()
+        applyRoles()
     }
 
     private func me() throws -> (account: CloudAccount, secret: String) {
