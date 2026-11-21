@@ -1,6 +1,8 @@
 # HITOP for iOS 26 (ios/HITOP, plan ios/HITOP_IOS.md): XcodeGen project, build, unit and UI tests
 # on iOS 26 simulators, screenshots from the UI tests (artifact "screenshots"), and HitopKit's
 # swift test on macOS (JavaScriptCore; ci.yml's hitopkit job runs it on Linux).
+# I6: the App Store screenshots (job store-screenshots, artifact "app-store-screenshots") and the
+# owner's App Store script up to a Release archive for a generic iOS device, unsigned (job archive).
 name: iOS
 
 on:
@@ -122,6 +124,7 @@ jobs:
           xcrun simctl bootstatus "$PHONE_ID" -b
           xcodebuild test-without-building -project HITOPApp.xcodeproj -scheme HITOP \
             -destination "id=$PHONE_ID" -derivedDataPath "$RUNNER_TEMP/dd" \
+            -skip-testing:HITOPUITests/StoreScreenshotTests \
             -retry-tests-on-failure -test-iterations 2 \
             -resultBundlePath "$RUNNER_TEMP/phone.xcresult" 2>&1 | tee "$RUNNER_TEMP/test-phone.log" \
             | grep -E "Test Case|error:|failed|TEST (SUCCEEDED|FAILED)|Executed" || true
@@ -197,6 +200,129 @@ jobs:
           path: |
             ${{ runner.temp }}/*.log
             ${{ runner.temp }}/*.xcresult
+          if-no-files-found: ignore
+
+  # App Store screenshots (I6, ios/APP_STORE.md): UITests/StoreScreenshotTests on a 6.9" iPhone and a
+  # 13" iPad simulator (made here from their device types), status bar at 9:41, exported as
+  # iphone/NN-….png and ipad/NN-….png in upload order, flattened (no alpha), sizes checked against App Store Connect's.
+  store-screenshots:
+    name: App Store screenshots (iPhone 6.9", iPad 13")
+    runs-on: macos-26
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Xcode 26 + XcodeGen
+        run: |
+          xcode=$(ls -d /Applications/Xcode_26*.app 2>/dev/null | sort -V | tail -1)
+          if [ -n "$xcode" ]; then sudo xcode-select -s "$xcode"; fi
+          xcodebuild -version
+          curl -sSfL -o "$RUNNER_TEMP/xcodegen.zip" "https://github.com/yonaskolb/XcodeGen/releases/download/$XCODEGEN_VERSION/xcodegen.zip"
+          echo "$XCODEGEN_SHA256  $RUNNER_TEMP/xcodegen.zip" | shasum -a 256 -c -
+          unzip -q "$RUNNER_TEMP/xcodegen.zip" -d "$RUNNER_TEMP"
+          echo "$RUNNER_TEMP/xcodegen/bin" >> "$GITHUB_PATH"
+      - name: SyncFFI xcframework + project
+        env:
+          CARGO_TARGET_DIR: ${{ runner.temp }}/ffi-target
+        run: |
+          rustup show active-toolchain || rustup default stable
+          ios/HITOP/scripts/build-sync-ffi.sh xcframework
+          (cd ios/HITOP && xcodegen generate)
+      - name: Store simulators (iPhone 6.9", iPad 13")
+        run: python3 ios/HITOP/scripts/store-simulators.py >> "$GITHUB_ENV" && cat "$GITHUB_ENV"
+      - name: Build for testing
+        working-directory: ios/HITOP
+        run: |
+          set -o pipefail
+          xcodebuild build-for-testing -project HITOPApp.xcodeproj -scheme HITOP \
+            -destination "id=$STORE_PHONE_ID" -derivedDataPath "$RUNNER_TEMP/dd" \
+            CODE_SIGNING_ALLOWED=NO 2>&1 | tee "$RUNNER_TEMP/build.log" | grep -E "error:|BUILD (SUCCEEDED|FAILED)" || true
+          if grep -q "BUILD FAILED" "$RUNNER_TEMP/build.log"; then exit 1; fi
+      - name: Screenshots (${{ env.STORE_PHONE_NAME }}, ${{ env.STORE_PAD_NAME }})
+        working-directory: ios/HITOP
+        run: |
+          set -o pipefail
+          status=0
+          for d in phone pad; do
+            if [ $d = phone ]; then id=$STORE_PHONE_ID; else id=$STORE_PAD_ID; fi
+            xcrun simctl boot "$id" || true
+            xcrun simctl bootstatus "$id" -b
+            xcrun simctl status_bar "$id" override --time "9:41" --dataNetwork wifi --wifiMode active --wifiBars 3 \
+              --cellularMode active --cellularBars 4 --batteryState charged --batteryLevel 100
+            xcodebuild test-without-building -project HITOPApp.xcodeproj -scheme HITOP \
+              -destination "id=$id" -derivedDataPath "$RUNNER_TEMP/dd" \
+              -only-testing:HITOPUITests/StoreScreenshotTests -retry-tests-on-failure -test-iterations 2 \
+              -resultBundlePath "$RUNNER_TEMP/store-$d.xcresult" 2>&1 | tee "$RUNNER_TEMP/store-$d.log" \
+              | grep -E "Test Case|error:|failed|TEST (SUCCEEDED|FAILED)|Executed" || true
+            if ! grep -q "TEST EXECUTE SUCCEEDED\|TEST SUCCEEDED" "$RUNNER_TEMP/store-$d.log"; then
+              { echo "### Store screenshot failures ($d)"; echo '```'; grep -E "error:|failed" "$RUNNER_TEMP/store-$d.log" | head -40; echo '```'; } >> "$GITHUB_STEP_SUMMARY"
+              status=1
+            fi
+            xcrun simctl shutdown "$id" || true
+          done
+          exit $status
+      - name: Export, flatten and check sizes
+        if: success() || failure()
+        run: |
+          out="$RUNNER_TEMP/store"
+          mkdir -p "$out"
+          for d in phone pad; do
+            [ -d "$RUNNER_TEMP/store-$d.xcresult" ] || continue
+            xcrun xcresulttool export attachments --path "$RUNNER_TEMP/store-$d.xcresult" --output-path "$RUNNER_TEMP/store-export-$d"
+            python3 ios/HITOP/scripts/store-screenshots.py "$RUNNER_TEMP/store-export-$d" "$out"
+          done
+          # iPad captures come in the panel's portrait orientation: upright (landscape).
+          for f in "$out"/ipad/*.png; do
+            [ -f "$f" ] || continue
+            w=$(sips -g pixelWidth "$f" | awk '/pixelWidth/ {print $2}')
+            h=$(sips -g pixelHeight "$f" | awk '/pixelHeight/ {print $2}')
+            if [ "$h" -gt "$w" ]; then sips -r 270 "$f" >/dev/null; fi
+          done
+          sips -g hasAlpha "$out"/*/*.png | grep hasAlpha | sort | uniq -c || true
+          swift ios/HITOP/scripts/flatten-png.swift "$out"/*/*.png
+          ios/HITOP/scripts/check-store-screenshots.sh "$out" | tee -a "$GITHUB_STEP_SUMMARY"
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        if: success() || failure()
+        with:
+          name: app-store-screenshots
+          path: ${{ runner.temp }}/store
+          if-no-files-found: warn
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        if: failure()
+        with:
+          name: store-logs
+          path: |
+            ${{ runner.temp }}/*.log
+            ${{ runner.temp }}/store-*.xcresult
+          if-no-files-found: ignore
+
+  # The owner's App Store script (ios/HITOP/scripts/build-appstore.sh) up to the archive: Release,
+  # generic iOS device, unsigned (no secrets here), then its version, bundle and store-mode checks.
+  # Signing, export and upload run only on the owner's Mac.
+  archive:
+    name: App Store archive (Release, generic iOS, unsigned)
+    runs-on: macos-26
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Xcode 26 + XcodeGen
+        run: |
+          xcode=$(ls -d /Applications/Xcode_26*.app 2>/dev/null | sort -V | tail -1)
+          if [ -n "$xcode" ]; then sudo xcode-select -s "$xcode"; fi
+          curl -sSfL -o "$RUNNER_TEMP/xcodegen.zip" "https://github.com/yonaskolb/XcodeGen/releases/download/$XCODEGEN_VERSION/xcodegen.zip"
+          echo "$XCODEGEN_SHA256  $RUNNER_TEMP/xcodegen.zip" | shasum -a 256 -c -
+          unzip -q "$RUNNER_TEMP/xcodegen.zip" -d "$RUNNER_TEMP"
+          echo "$RUNNER_TEMP/xcodegen/bin" >> "$GITHUB_PATH"
+      - name: build-appstore.sh 2 --unsigned
+        env:
+          CARGO_TARGET_DIR: ${{ runner.temp }}/ffi-target
+        run: |
+          rustup show active-toolchain || rustup default stable
+          ios/HITOP/scripts/build-appstore.sh 2 --unsigned
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        if: failure()
+        with:
+          name: archive-log
+          path: ios/HITOP/build/archive.log
           if-no-files-found: ignore
 
   core:
