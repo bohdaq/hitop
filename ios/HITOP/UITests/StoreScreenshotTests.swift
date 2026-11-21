@@ -125,8 +125,9 @@ final class StoreScreenshotTests: XCTestCase {
         for _ in 0..<6 where !explain.isHittable { app.el("json-body").swipeUp(velocity: .slow) }
         explain.tap()
         waitLabel(app.el("explain-text"), contains: "where to go from here", timeout: 30)
-        app.el("suggest-test").tap()
-        wait(app.el("suggested-test"))
+        // The explanation with "Suggest a test" under it: the iPad's form sheet would cut a suggested
+        // script after its first line.
+        wait(app.el("suggest-test"))
         sleep(1)
         store(app, "ipad-02-explain")
     }
@@ -165,14 +166,9 @@ final class StoreScreenshotTests: XCTestCase {
         // Unfold the answer (data → products).
         let body = app.el("json-body")
         wait(body)
-        // A folded line toggles when tapped anywhere on it.
-        let data = body.staticTexts.containing(NSPredicate(format: "label CONTAINS %@", "1 key")).firstMatch
-        wait(data)
-        data.tap()
-        let products = body.staticTexts.containing(NSPredicate(format: "label CONTAINS %@", "HITOP tee")).firstMatch
-        if !products.waitForExistence(timeout: 3) {
-            body.staticTexts.containing(NSPredicate(format: "label CONTAINS %@", "items ]")).firstMatch.tap()
-        }
+        // The folded answer is three lines ({, "data": { 1 key }, }): a line toggles when tapped
+        // anywhere on it, so tap the middle one.
+        body.coordinate(withNormalizedOffset: CGVector(dx: 0.4, dy: 0.5)).tap()
         sleep(1)
         store(app, "ipad-04-graphql")
     }
