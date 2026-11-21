@@ -1,5 +1,5 @@
-// Writes to localStorage under the React app's keys and in its shapes (as
-// frontend/src/services/storageService.jsx writes them), but saying whether
+// Writes to localStorage under the old React app's keys and in its shapes (as
+// shared/services/storageService.js writes them), but saying whether
 // the write worked: a full storage (QuotaExceededError) is reported to the
 // person by the store instead of only in the console.
 const KEYS = {

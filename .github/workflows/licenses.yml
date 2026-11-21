@@ -1,6 +1,6 @@
 # Dependency licenses and security advisories for every Rust workspace (policy and
 # documented advisory ignores in deny.toml, sync-server/deny.toml), and npm audit for
-# every npm package that ships (frontend/ is the frozen extension build, not audited here).
+# every npm package that ships.
 name: Licenses and advisories
 
 on:

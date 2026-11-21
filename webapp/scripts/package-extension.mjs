@@ -1,10 +1,10 @@
 // The browser extensions from the web app (HITOP Next A8): copies dist-extension/ (npm run
 // build:extension) into an extension folder with its manifest, background script and icons.
 //   node scripts/package-extension.mjs chrome|firefox|store <out dir>
-// chrome   = chrome-extension/ (unpacked, app/ subfolder, as the React build had it)
+// chrome   = chrome-extension/ (unpacked, app/ subfolder)
 // store    = chrome-store-package/ (Chrome Web Store: the app at the package root)
 // firefox  = extension/ (Firefox: app/ subfolder, its own manifest with the gecko id)
-// The React UI stays buildable: the repo's build-*.sh scripts take HITOP_EXTENSION_UI=react.
+// The repo's build-extension.sh, build-chrome-extension.sh and build-chrome-store.sh run it.
 import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -50,7 +50,7 @@ const icon = (size, name = `icon-${size}.png`) => fs.copyFileSync(path.join(root
 let manifest;
 if (kind === "firefox") {
   icon(48);
-  // The 128 px render, declared as 128 (web-ext lint checks sizes; extension/icons/icon-96.png is a 192 px file).
+  // The 128 px render, declared as 128 (web-ext lint checks sizes).
   icon(128);
   manifest = {
     manifest_version: 3,

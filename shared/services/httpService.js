@@ -4,7 +4,7 @@
  * Handles HTTP request execution and response processing
  */
 
-import { sendRequest } from './transportService';
+import { sendRequest } from './transportService.js';
 
 /**
  * Makes an HTTP request

@@ -57,8 +57,8 @@ push `desktop-v*` tags (GitHub Releases); crates.io versions can only be yanked,
 after green e2e; push to `bohdaq/hitop-action` and tag it.
 
 **Never:**
-- Touch `frontend/`, `extension/`, `chrome-extension/` or `chrome-store-package/` beyond fixes to
-  services shared with `webapp/`.
+- Bring back a second UI: the React apps (`frontend/`, `desktop/src`, `extension/`) were deleted on
+  2026-11-21; the web app (`webapp/`) is the one frontend, `shared/services/` its storage and request services.
 - Commit files you didn't change. Stage explicit paths (`git add <paths>`, then
   `git commit -- <paths>`). Other sessions may have work in the tree.
 - Use `git stash` or `git pull` without `--rebase --autostash`.

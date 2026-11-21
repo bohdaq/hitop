@@ -1,6 +1,6 @@
 // Writes dist/<route> for every page with Lit SSR, plus the brand files,
 // sitemap and robots.txt. Runs after `vite build` (needs the Vite manifest).
-// The web app itself is built separately (frontend/, npm run build:web) and
+// The web app itself is built separately (webapp/, npm run build) and
 // copied to dist/app/ by ../deploy.sh.
 import { render } from "@lit-labs/ssr";
 import { collectResult } from "@lit-labs/ssr/lib/render-result.js";

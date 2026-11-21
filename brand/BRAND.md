@@ -57,10 +57,6 @@ renders the same bytes on every machine). Sizes are what each file always was.
 | `site/public-assets/favicon.svg` | copy of the master | site and web app favicon (`/favicon.svg`, prerender copies it) |
 | `site/public-assets/favicon-16x16.png`, `favicon-32x32.png`, `favicon.png` | 16, 32, 192 | site |
 | `site/public-assets/apple-touch-icon.png` | 180 | site, web app |
-| `frontend/public/favicon.ico` | 16, 32, 48, 64, 128, 256 | extension pages (React app) |
-| `frontend/public/logo192.png`, `logo512.png` | 192, 512 | extension pages, Firefox/Edge manifest from `manifest_extension.json` |
-| `desktop/src/logo192.png` | 192 | React desktop UI sidebar |
-| `extension/icons/icon-48.png`, `icon-96.png` | 48, 192 | Firefox extension (`icon-96.png` has always been 192 × 192) |
 | `brand/png/logo-{16,32,48,128,192,256,300,512,1024}.png`, `logo-mono-512.png` | | exports for store listings (300 = Edge store logo and the Microsoft Store's 1:1 app tile icon), docs, press |
 | `desktop/msstore/Assets/`: `Square44x44Logo` (+ `.scale-200`, `.targetsize-{16,24,32,48,256}` plain and `_altform-unplated`), `Square150x150Logo`, `Wide310x150Logo`, `StoreLogo` (each + `.scale-200`) | 16 to 620 × 300 | Microsoft Store MSIX package (`desktop/msstore/AppxManifest.xml`, makepri indexes the variants): the icons fill the canvas like every other icon, the tiles carry the mark at 60 % of their height on a transparent tile |
 
