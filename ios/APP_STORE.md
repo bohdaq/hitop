@@ -9,10 +9,10 @@ unsigned Release archive (job `archive`). Signing, upload and App Store Connect 
 
 ## Before you start: decide these
 
-1. **Export compliance: encryption = true.** I changed `ITSAppUsesNonExemptEncryption` in
-   `ios/HITOP/App/Info.plist` from false to **true** in I6, because the app ships its own
-   cryptography (section 9). If you know the Mac filing covers this as exempt and want the old
-   answer back, revert that one line (`<true/>` → `<false/>`) before building.
+1. **Export compliance: answered in App Store Connect.** The app ships its own cryptography
+   (section 9). `Info.plist` has no `ITSAppUsesNonExemptEncryption` key, like the Mac app: with
+   `true` and no approved encryption documents, App Store Connect refuses the upload ("Invalid
+   Export Compliance Code", 2026-11-21).
 2. **Account deletion (likely review blocker).** The app creates HITOP Cloud accounts (Sign in with
    Apple, Google, GitHub), and App Review's guidelines ask that an app which lets people create an
    account also lets them start deleting it from inside the app (check the current wording of the
@@ -177,15 +177,17 @@ sync server's tables):
 
 ## 9. Export compliance
 
-`ios/HITOP/App/Info.plist` now says `ITSAppUsesNonExemptEncryption` = **true** (it said false until
-I6): besides Apple's TLS, the app ships its own cryptography for shared collections
-(`hitop-sync-crypto` through SyncFFI: HPKE key wraps, XChaCha20-Poly1305), the same code as the Mac
-app. So App Store Connect asks the export compliance questions for each build. Answer them exactly as
-you did for the Mac app 1.3.0 on 2026-11-18, which went with the self-classification report you
-emailed to BIS and NSA that day (annual, next by Feb 1): check whether that report names the iOS app
-too; if not, include it in the next one. France: as decided at the top. If App Store Connect gives
-you an export compliance code after the documents, add it as `ITSEncryptionExportComplianceCode` in
-Info.plist so later builds skip the questions.
+`ios/HITOP/App/Info.plist` has no `ITSAppUsesNonExemptEncryption` key, as the Mac app's doesn't.
+Besides Apple's TLS, the app ships its own cryptography for shared collections
+(`hitop-sync-crypto` through SyncFFI: HPKE key wraps, XChaCha20-Poly1305), the same code as the
+Mac app. After each upload the build shows **Missing Compliance** in TestFlight: answer the
+questions exactly as for the Mac app 1.3.0 on 2026-11-18 (standard algorithms, the
+self-classification report emailed to BIS and NSA that day; annual, next by Feb 1: name the iOS
+app in it too). Keep France out of Availability until ANSSI, as for the Mac app.
+
+A key set to `true` needs an approved document's `ITSEncryptionExportComplianceCode` next to it;
+App Store Connect has none for this app (App Compliance page, 2026-11-21), and without it the upload
+is refused ("Invalid Export Compliance Code").
 
 ## 10. Age rating
 
