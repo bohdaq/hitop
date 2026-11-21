@@ -126,7 +126,7 @@ async function syncServer() {
   await dialog.getByRole('button', { name: 'Delete account' }).click();
   await settle(p, 1200);
   const alert = await p.locator('hitop-sync lit-material-alert').innerText().catch(() => '');
-  check('refused: the server says to hand over or remove the members', alert.includes('make another member an owner'), alert);
+  check('refused: the server names Acme and says to hand over or remove the members', alert.includes('the organization Acme') && alert.includes('make another member an owner'), alert);
   check('refused: still signed in', (await inApp(p, 'return (await c.api("GET", "/v1/me")).email;')).value === email);
 
   // Bob leaves Acme; now the account goes.

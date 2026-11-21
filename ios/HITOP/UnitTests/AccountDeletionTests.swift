@@ -78,7 +78,7 @@ final class AccountDeletionTests: XCTestCase {
         } catch let CloudError.http(status, code, message) {
             XCTAssertEqual(status, 409)
             XCTAssertEqual(code, "transfer_ownership_first")
-            XCTAssertTrue(message.contains("make another member an owner"), message)
+            XCTAssertTrue(message.contains("the organization Acme") && message.contains("make another member an owner"), message)
         }
         XCTAssertTrue(cloud.signedIn)
         XCTAssertNotNil(cloud.credentials.load(FakeCloud.server)?.session)

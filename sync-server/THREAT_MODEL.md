@@ -94,6 +94,14 @@ needs no client crypto on the server.
   key when the server has one, kept only to revoke it at Apple when the account is deleted (it is
   useless without the server's Sign in with Apple key). See "Deleting an account".
 
+The server binary does not link any decryption code: the client crate and the AEAD/HPKE crates
+are dev-dependencies only, and `tests/no_crypto_in_server.rs` fails the build's tests if that
+changes. `tests/plaintext.rs` runs a full two-member session with a key rotation and checks that
+no plaintext, workspace key or device secret appears in the database files or in any answer. Since C5 the server links `ring` (already in the tree through the mail client's TLS) for
+**its own** secrets only: AES-256-GCM to seal per-org OIDC client secrets under the host key, and
+Ed25519 to sign audit exports and anchors. Neither ever touches a blob, a wrap or a report; the
+banned client crates stay out (`tests/no_crypto_in_server.rs`).
+
 ## Deleting an account
 
 `DELETE /v1/me {"confirm": "<the account's address>"}` (account.rs) needs a signed-in session: an
@@ -112,14 +120,6 @@ other people use is refused (409 `transfer_ownership_first`). Every Apple refres
 at Apple before anything is deleted; if Apple or Stripe can't be reached nothing is deleted (503).
 The audit log keeps its rows (address, truncated IP, user agent) until the retention purge, and
 encrypted backups keep the old database until they expire.
-
-The server binary does not link any decryption code: the client crate and the AEAD/HPKE crates
-are dev-dependencies only, and `tests/no_crypto_in_server.rs` fails the build's tests if that
-changes. `tests/plaintext.rs` runs a full two-member session with a key rotation and checks that
-no plaintext, workspace key or device secret appears in the database files or in any answer. Since C5 the server links `ring` (already in the tree through the mail client's TLS) for
-**its own** secrets only: AES-256-GCM to seal per-org OIDC client secrets under the host key, and
-Ed25519 to sign audit exports and anchors. Neither ever touches a blob, a wrap or a report; the
-banned client crates stay out (`tests/no_crypto_in_server.rs`).
 
 ## Construction
 

@@ -572,7 +572,8 @@ Everything here is the owner's: agents draft text, the owner signs.
   ROADMAP section 6 and in section 11, with the scope already written there.
 - **GDPR**: the owner is EU-based, so a DPA for Business/Enterprise with the standard clauses, a
   sub-processor list, a record of processing, deletion on request (in the apps: Account → Delete
-  account, `DELETE /v1/me`; org delete → everything; gone at once, backups expire within 35 days), data export (the client already has it: `hitop sync pull`).
+  account, `DELETE /v1/me`; org delete → everything; gone at once from the live database; copies of
+  it, upgrade snapshots and backups, deleted at 35 days: pruning them is an owner step, open), data export (the client already has it: `hitop sync pull`).
 - **AGPL and the hosted service**: AGPL §13 requires offering the source of the running version to
   users of the network service. The code is public, so the portal footer shows the commit and a
   link.

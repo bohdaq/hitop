@@ -21,7 +21,11 @@ unsigned Release archive (job `archive`). Signing, upload and App Store Connect 
 3. **Privacy policy: rewritten.** `site/src/pages/privacy.js` now describes the HITOP
    Cloud account (what it keeps, what it doesn't, the personal library the server can read, shared
    collections end to end encrypted), how to delete it in the app and what stays afterwards. Deploy
-   the site before you submit (the App Privacy answers in section 8 match it).
+   the site before you submit (the App Privacy answers in section 8 match it). The page says copies
+   of the database are deleted at 35 days: off-site backups aren't on yet, but the VM keeps the
+   copies made at upgrades (`sync.db.bak-*`, cutover snapshots) with no expiry. Delete those older
+   than 35 days and keep doing so (a cron line, or the backup timer's own pruning once it runs)
+   before the page goes live, or change that sentence.
 4. **France.** The Mac app went out with France excluded until the ANSSI declaration is done. The
    iOS app uses the same cryptography (section 9). Either exclude France for 2.0.0 too (people in France
    who have the old app keep it, but nobody there can download it any more), or wait for ANSSI.
@@ -196,7 +200,7 @@ sync server's tables):
   location or tracking.
 - **Tracking**: No. No third-party SDKs, no ads, no analytics, no usage ping in the iOS app.
 - Deletion: people delete the account in the app (Account → Delete account); the privacy page says
-  what stays afterwards (audit entries until a year old, encrypted backups up to 35 days).
+  what stays afterwards (audit entries until a year old, database copies up to 35 days).
 
 ## 9. Export compliance
 

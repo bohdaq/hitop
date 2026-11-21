@@ -43,7 +43,8 @@ final class AccountDeletionFlowTests: XCTestCase {
 
     @MainActor
     private func assertNothingToBuy(_ app: XCUIApplication, file: StaticString = #filePath, line: UInt = #line) {
-        let predicate = NSPredicate(format: "label CONTAINS[c] 'upgrade' OR label CONTAINS[c] 'pricing' OR label CONTAINS[c] 'buy' OR label CONTAINS '$' OR label CONTAINS[c] 'billing' OR label CONTAINS[c] 'subscription' OR label CONTAINS[c] 'price'")
+        // CloudFlowTests' list (the seeded demo shop's own data says "price", so not that word).
+        let predicate = NSPredicate(format: "label CONTAINS[c] 'upgrade' OR label CONTAINS[c] 'see plans' OR label CONTAINS[c] 'pricing' OR label CONTAINS[c] 'buy' OR label CONTAINS '$' OR label CONTAINS[c] 'billing' OR label CONTAINS[c] 'change the plan'")
         let hits = app.descendants(matching: .any).matching(predicate)
         XCTAssertEqual(hits.count, 0, "purchase words: \(hits.allElementsBoundByIndex.map(\.label))", file: file, line: line)
     }
@@ -92,7 +93,7 @@ final class AccountDeletionFlowTests: XCTestCase {
         app.el("confirm-delete-account").tap()
         let error = app.el("delete-account-error")
         wait(error, 20)
-        XCTAssertTrue(error.label.contains("make another member an owner"), error.label)
+        XCTAssertTrue(error.label.contains("the organization Acme") && error.label.contains("make another member an owner"), error.label)
         assertNothingToBuy(app)
         app.el("cancel-delete-account").tap()
         wait(app.el("account-email"))
