@@ -257,7 +257,11 @@ final class FakeCloud: CloudTransport, @unchecked Sendable {
                 return fail(400, "confirm_mismatch", "confirm must be this account's email address")
             }
             if let blockers = deleteBlockers, !blockers.isEmpty {
-                return fail(409, "transfer_ownership_first", "You are the only owner of \(blockers.count) shared collection or organization other people use: make another member an owner, or remove the other members, then delete the account.", ["blockers": .array(blockers)])
+                // account.rs `refuse_blocked`: organizations by name, shared collections counted.
+                var what = blockers.filter { $0["kind"]?.string == "org" }.map { "the organization \($0["name"]?.string ?? "")" }
+                let shared = blockers.filter { $0["kind"]?.string == "workspace" }.count
+                if shared > 0 { what.append(shared == 1 ? "1 shared collection" : "\(shared) shared collections") }
+                return fail(409, "transfer_ownership_first", "You are the only owner of \(what.joined(separator: " and ")) that other people use: make another member an owner, or remove the other members, then delete the account.", ["blockers": .array(blockers)])
             }
             let n = users[uid]!.devices.count
             users.removeValue(forKey: uid)

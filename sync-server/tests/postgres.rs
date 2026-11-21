@@ -506,3 +506,68 @@ fn postgres_scim() {
     assert_eq!((info["users"].clone(), info["activeUsers"].clone()), (json!(2), json!(1)), "{info}");
     assert_eq!(scim("DELETE", &format!("/Groups/{g}"), None).status, 204);
 }
+
+#[test]
+fn postgres_account_deletion() {
+    use common::stripe::{self as st, delivered, MockStripe, T0};
+    let Some(url) = database("account") else {
+        eprintln!("HITOP_SYNC_TEST_POSTGRES not set: skipped");
+        return;
+    };
+    let mock = MockStripe::start();
+    let config = mock.config();
+    let s = Server::with("pg-account", |c| {
+        c.database = url.clone();
+        c.plan_limits = true;
+        c.billing = Some(config);
+    });
+    let ada = Device::new(&s, "ada@example.com");
+    let bob = Device::new(&s, "bob@example.com");
+    // Ada: a workspace co-owned with Bob (in her personal org), a team org alone with a live
+    // subscription, a team org with Bob in it (Bob owner too), a library item, an Apple token.
+    let k1 = create_workspace(&s, &ada, WS);
+    let wraps = wraps_for(&[(bob.key_id.clone(), bob.keys.public_key().to_vec())], WS, 1, &k1);
+    assert_eq!(s.call("POST", &format!("/v1/workspaces/{WS}/members"), Some(&ada.session), Some(json!({ "email": "bob@example.com", "role": "editor", "wraps": wraps }))).status, 201);
+    assert_eq!(s.call("PUT", &format!("/v1/workspaces/{WS}/members/{}", bob.user_id), Some(&ada.session), Some(json!({ "role": "owner" }))).status, 200);
+    let solo = s.call("POST", "/v1/orgs", Some(&ada.session), Some(json!({ "name": "Solo" }))).json["id"].as_str().unwrap().to_string();
+    assert_eq!(s.call("POST", &format!("/v1/orgs/{solo}/billing/checkout"), Some(&ada.session), Some(json!({ "plan": "team", "seats": 1 }))).status, 200);
+    let meta = mock.last("/v1/checkout/sessions").metadata("subscription_data[metadata]");
+    delivered(&s, &st::subscription("customer.subscription.created", "sub_pg", st::TEAM_ANNUAL, "active", 1, T0, meta), "applied");
+    let team = s.call("POST", "/v1/orgs", Some(&ada.session), Some(json!({ "name": "Acme" }))).json["id"].as_str().unwrap().to_string();
+    assert_eq!(s.call("POST", &format!("/v1/orgs/{team}/members"), Some(&ada.session), Some(json!({ "email": "bob@example.com", "role": "owner" }))).status, 201);
+    assert_eq!(s.call("PUT", "/v1/library/collection/7", Some(&ada.session), Some(json!({ "data": { "id": 7, "name": "Shop", "requests": [] }, "baseVersion": 0 }))).status, 200);
+    s.app.state().db.tx(|tx| {
+        // The upsert, twice (the second replaces the token).
+        hitop_sync_server::apple::keep_token(tx, s.app.state(), "https://appleid.apple.com", "a-1", &ada.user_id, "r1")?;
+        hitop_sync_server::apple::keep_token(tx, s.app.state(), "https://appleid.apple.com", "a-1", &ada.user_id, "r2")
+    })
+    .unwrap();
+    let kept = s.app.state().db.tx(|tx| tx.query("SELECT refresh_token FROM apple_tokens", &[])).unwrap();
+    assert_eq!(kept.iter().map(|r| r.bytes(0)).collect::<Vec<_>>(), vec![b"r2".to_vec()]);
+
+    let r = s.call("DELETE", "/v1/me", Some(&ada.session), Some(json!({ "confirm": "ada@example.com" })));
+    assert_eq!(r.status, 200, "{}", r.json);
+    assert_eq!((r.json["workspacesLeft"].as_i64(), r.json["workspacesMoved"].as_i64(), r.json["orgsDeleted"].as_i64(), r.json["orgsLeft"].as_i64()), (Some(1), Some(1), Some(2), Some(1)));
+    // Apple isn't configured on this server: the token can't be revoked here, counted.
+    assert_eq!(r.json["appleNotRevoked"], 1);
+    assert_eq!(mock.count("DELETE", "/v1/subscriptions/sub_pg"), 1);
+    assert_eq!(s.call("GET", "/v1/me", Some(&ada.session), None).status, 401);
+    let w = s.call("GET", &format!("/v1/workspaces/{WS}"), Some(&bob.session), None);
+    assert_eq!(w.json["members"].as_array().unwrap().len(), 1);
+    assert_eq!(s.call("GET", &format!("/v1/orgs/{team}/members"), Some(&bob.session), None).json["members"].as_array().unwrap().len(), 1);
+    // No table holds her id or address any more (the audit log keeps its rows).
+    for table in hitop_sync_server::db::Db::tables() {
+        if table == "audit_log" || table == "audit_chain" {
+            continue;
+        }
+        let rows = s.app.state().db.tx(|tx| tx.query(&format!("SELECT * FROM {table}"), &[])).unwrap();
+        for row in rows {
+            let hit = row.values().iter().any(|v| match v {
+                hitop_sync_server::db::Value::Text(t) => t.contains(&ada.user_id) || t.contains("ada@example.com"),
+                hitop_sync_server::db::Value::Bytes(b) => String::from_utf8_lossy(b).contains(&ada.user_id),
+                _ => false,
+            });
+            assert!(!hit, "{table}: {:?}", row.values());
+        }
+    }
+}

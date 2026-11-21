@@ -266,3 +266,19 @@ fn deleting_the_account_revokes_the_apple_token() {
     assert!(s.app.state().db.tx(|tx| tx.query("SELECT subject FROM apple_tokens", &[])).unwrap().is_empty());
     assert_eq!(s.call("GET", "/v1/me", Some(&session), None).status, 401);
 }
+
+#[test]
+fn a_token_apple_refuses_doesnt_block_the_deletion() {
+    let idp = MockIdp::start();
+    let s = apple_server("apple-delete-refused", &idp);
+    let f = start(&s, None);
+    let ok = sign_in(&s, &idp, claims(&idp, "a-2", "eve@example.test", &f.nonce), &f);
+    let session = ok.json["session"].as_str().unwrap().to_string();
+    // A 4xx can't get better by trying again: the account goes, the token is counted as not revoked.
+    idp.inner.lock().unwrap().revoke_status = 400;
+    let r = s.call("DELETE", "/v1/me", Some(&session), Some(json!({ "confirm": "eve@example.test" })));
+    assert_eq!(r.status, 200, "{}", r.json);
+    assert_eq!((r.json["appleRevoked"].as_i64(), r.json["appleNotRevoked"].as_i64()), (Some(0), Some(1)));
+    assert_eq!(idp.inner.lock().unwrap().revoked.len(), 1, "it was tried");
+    assert_eq!(s.call("GET", "/v1/me", Some(&session), None).status, 401);
+}

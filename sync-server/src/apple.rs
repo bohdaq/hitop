@@ -250,7 +250,7 @@ fn token_label(issuer: &str, subject: &str) -> String {
 
 /// Keeps the refresh token of an Apple identity (the newest one wins), sealed under the host key
 /// when there is one.
-pub(crate) fn keep_token(tx: &mut Tx, state: &State, issuer: &str, subject: &str, user_id: &str, token: &str) -> Result<(), DbError> {
+pub fn keep_token(tx: &mut Tx, state: &State, issuer: &str, subject: &str, user_id: &str, token: &str) -> Result<(), DbError> {
     let stored = match &state.config.host_key {
         Some(k) => k.seal(&token_label(issuer, subject), token.as_bytes()),
         None => token.as_bytes().to_vec(),
@@ -289,9 +289,10 @@ pub struct Revoked {
 }
 
 /// Revokes each token at Apple (`POST <issuer>/auth/revoke`, client_secret_post with the signed
-/// client secret, `token_type_hint=refresh_token`). Apple answers 200 for a token it revoked (and
-/// for one it no longer knows); anything else, or no answer, is an error: the caller refuses and
-/// the person tries again (revoking twice is harmless).
+/// client secret, `token_type_hint=refresh_token`). 200 = revoked. A 4xx (Apple refuses the token
+/// or the client) can't get better by trying again: counted in `skipped`, the deletion goes on.
+/// No answer or a 5xx is an error: the caller refuses and the person tries again (revoking twice
+/// is harmless).
 pub(crate) fn revoke(state: &State, tokens: &[KeptToken]) -> Result<Revoked, String> {
     let mut out = Revoked::default();
     for t in tokens {
@@ -320,10 +321,16 @@ pub(crate) fn revoke(state: &State, tokens: &[KeptToken]) -> Result<Revoked, Str
         let form = [("client_id", c.oidc.client_id.as_str()), ("client_secret", secret.as_str()), ("token", token.as_str()), ("token_type_hint", "refresh_token")];
         let res = state.apple.http.post(&url).header("Accept", "application/json").send_form(form).map_err(|e| format!("{url}: {e}"))?;
         let status = res.status().as_u16();
-        if status != 200 {
-            return Err(format!("{url}: {status}"));
+        match status {
+            200 => out.revoked += 1,
+            // Apple refuses this token or our client (a rotated key, a token it no longer takes):
+            // trying again can't help, so the deletion goes on without it (logged, counted).
+            400..=499 => {
+                eprintln!("hitop-sync-server: Sign in with Apple revoke of {}: {status}, not revoked", t.subject);
+                out.skipped += 1;
+            }
+            _ => return Err(format!("{url}: {status}")),
         }
-        out.revoked += 1;
     }
     Ok(out)
 }

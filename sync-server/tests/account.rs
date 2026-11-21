@@ -301,11 +301,9 @@ fn an_only_owner_of_shared_things_is_refused_until_they_hand_over() {
             ("org".to_string(), team.clone())
         ]
     );
-    assert!(!r.json["message"]
-        .as_str()
-        .unwrap()
-        .to_lowercase()
-        .contains("plan"));
+    let message = r.json["message"].as_str().unwrap();
+    assert!(message.contains("the organization Acme and 1 shared collection"), "{message}");
+    assert!(!message.to_lowercase().contains("plan"));
     // Nothing changed.
     assert_eq!(
         s.call("GET", "/v1/me", Some(&ada.session), None).status,

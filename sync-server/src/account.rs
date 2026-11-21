@@ -31,8 +31,8 @@
 //! - **Sign in with Apple.** Every Apple refresh token kept for the account (apple.rs) is revoked
 //!   at Apple first, as Apple requires.
 //!
-//! Stripe and Apple are called outside any database transaction: a first transaction plans (and
-//! refuses), then the calls, then a second transaction plans again, refuses if anything changed
+//! Apple, then Stripe, are called outside any database transaction: a first transaction plans
+//! (and refuses), then the calls, then a second transaction plans again, refuses if anything changed
 //! meanwhile, and deletes. A failed call refuses with 503 `try_again` and deletes nothing; both
 //! calls are safe to repeat.
 //!
@@ -82,12 +82,22 @@ struct Plan {
 }
 
 fn refuse_blocked(blockers: Vec<Json>) -> ApiError {
-    let n = blockers.len();
+    // Named where the server knows a name (organizations); shared collections have none here
+    // (their names are encrypted), so they are counted.
+    let mut what: Vec<String> = blockers
+        .iter()
+        .filter(|b| b["kind"] == "org")
+        .map(|b| format!("the organization {}", b["name"].as_str().unwrap_or("")))
+        .collect();
+    let shared = blockers.iter().filter(|b| b["kind"] == "workspace").count();
+    if shared > 0 {
+        what.push(if shared == 1 { "1 shared collection".to_string() } else { format!("{shared} shared collections") });
+    }
     ApiError::conflict(
         "transfer_ownership_first",
         format!(
-            "You are the only owner of {n} shared {} other people use: make another member an owner, or remove the other members, then delete the account.",
-            if n == 1 { "collection or organization" } else { "collections or organizations" }
+            "You are the only owner of {} that other people use: make another member an owner, or remove the other members, then delete the account.",
+            what.join(" and ")
         ),
         json!({ "blockers": blockers }),
     )
@@ -471,7 +481,12 @@ pub fn delete(state: &State, request: &Request, _: &PathParams) -> ApiResult {
     };
     let (user, first) = state.db.tx(check)?;
 
-    // Outside any transaction: end subscriptions, then revoke Apple's tokens.
+    // Outside any transaction: revoke Apple's tokens first (a refusal here leaves everything as it
+    // was, the plan included), then end subscriptions (the last step that can fail).
+    let apple = crate::apple::revoke(state, &first.apple).map_err(|e| {
+        eprintln!("hitop-sync-server: account deletion of {}: Sign in with Apple revoke: {e}", user.id);
+        try_again()
+    })?;
     let mut cancelled = 0;
     if !first.subscriptions.is_empty() {
         if state.config.billing.is_none() {
@@ -482,22 +497,12 @@ pub fn delete(state: &State, request: &Request, _: &PathParams) -> ApiResult {
             match crate::billing::cancel_for_deletion(state, sub) {
                 Ok(now) => cancelled += usize::from(now),
                 Err(e) => {
-                    eprintln!(
-                        "hitop-sync-server: account deletion of {}: cancelling {sub}: {}",
-                        user.id, e.message
-                    );
+                    eprintln!("hitop-sync-server: account deletion of {}: cancelling {sub}: {}", user.id, e.message);
                     return Err(try_again());
                 }
             }
         }
     }
-    let apple = crate::apple::revoke(state, &first.apple).map_err(|e| {
-        eprintln!(
-            "hitop-sync-server: account deletion of {}: Sign in with Apple revoke: {e}",
-            user.id
-        );
-        try_again()
-    })?;
 
     let (summary, deleted_orgs) = state.db.tx(|tx| -> Result<(Json, bool), ApiError> {
         let (again, p) = check(tx)?;
