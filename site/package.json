@@ -23,7 +23,7 @@
     "@eslint/js": "10.0.1",
     "@lit-labs/ssr": "4.1.0",
     "@phosphor-icons/core": "^2.1.1",
-    "eslint": "10.14.0",
+    "eslint": "10.15.0",
     "eslint-plugin-lit": "2.3.1",
     "globals": "17.14.0",
     "marked": "^18.1.2",
