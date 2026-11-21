@@ -13,6 +13,9 @@
 # only: the module (SyncFFI/include/module.modulemap) comes in through SWIFT_INCLUDE_PATHS, so
 # the app and its unit tests see one definition of CHitopSync.
 set -eu
+# The app's minimum (project.yml deploymentTarget): without it rustc builds for the SDK's own iOS
+# version (27.2 on a newer Xcode) and the library wouldn't load on iOS 26.
+export IPHONEOS_DEPLOYMENT_TARGET="${IPHONEOS_DEPLOYMENT_TARGET:-26.0}"
 here=$(cd "$(dirname "$0")/.." && pwd)
 crate="$here/SyncFFI"
 cargo=${CARGO:-cargo}
