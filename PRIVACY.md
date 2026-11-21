@@ -71,9 +71,10 @@ You have the right to:
 ## HITOP's other apps
 
 This file covers the browser extensions, which send nothing anywhere. The policy for every
-HITOP app, including the web app's request proxy and the weekly usage ping you can turn on in the CLI
-and the free desktop builds (off by default, never in the extensions, the web app or the App
-Store apps), is at https://hitop.rws8.tech/privacy.html.
+HITOP app, including the web app's request proxy, the optional HITOP Cloud account (what it keeps
+and how to delete it: Account → Delete account in the iOS, web and desktop apps) and the weekly
+usage ping you can turn on in the CLI and the free desktop builds (off by default, never in the
+extensions, the web app or the App Store apps), is at https://hitop.rws8.tech/privacy.html.
 
 ## Changes to Privacy Policy
 

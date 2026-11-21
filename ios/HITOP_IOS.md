@@ -28,7 +28,15 @@ Activity/Siri).
 | I5 | Apple Intelligence features, iPad three columns + keyboard, accessibility pass (VoiceOver, Dynamic Type, Reduce Transparency) | done (branch `ios-i5`, 2026-11-19; no server change) |
 | I6 | App Store: screenshots, listing text, review notes, price → Free, submit (owner on a Mac) | done (branch `ios-i6`, 2026-11-21); owner: build + submit (`ios/APP_STORE.md`) |
 
-Owner tasks: I6 = `ios/APP_STORE.md` (decisions first: account deletion, privacy policy, France, Explain screenshots; then build, upload, listing, submit).
+Owner tasks: I6 = `ios/APP_STORE.md` (decisions first: France, Explain screenshots; account deletion and the privacy policy are built on branch `account-delete`, they need the sync server and site deployed; then build, upload, listing, submit).
+
+Account deletion (2026-11-21, App Store 5.1.1(v), branch `account-delete`): Account → Delete account (bottom of the
+Account screen) → `DeleteAccountSheet` (what goes, what stays, one destructive button) → Core `HitopCloud.deleteAccount()` =
+`DELETE /v1/me {"confirm": <address>}` (sync-server account.rs), then the Keychain entry (session + device secret), account,
+device and orgs are forgotten; `onAccountDeleted` → `SharedSync.accountDeleted` (links `gone`, own pin dropped); collections
+stay. Refusals (409 `transfer_ownership_first`, 503 `try_again`, offline) change nothing. Tests: UnitTests/AccountDeletionTests
+(FakeCloud `DELETE /v1/me`, `deleteBlockers`), CloudEndToEndTests `testDeletingTheAccountAgainstARealSyncServer`,
+UITests/AccountDeletionFlowTests (`-UITestDeleteRefused`).
 Agents can't run Xcode here (Linux bastion): every tranche is built and tested by the macOS CI job.
 
 ## I0 + I1: what landed (2026-11-18, branch `ios-i0-i1`)
@@ -661,8 +669,9 @@ artifact `app-store-screenshots`).
 - `ITSAppUsesNonExemptEncryption` is now true: the app ships hitop-sync-crypto through SyncFFI (owner answers the export
   questions as for the Mac app; `ios/APP_STORE.md` section 9).
 
-**Owner steps**: `ios/APP_STORE.md`. Found while writing it: there is no account deletion in the app (or anywhere but by
-email), which App Review asks for in apps that create accounts; the privacy page still says HITOP has no accounts.
+**Owner steps**: `ios/APP_STORE.md`. Found while writing it: there was no account deletion in the app (or anywhere but by
+email), which App Review asks for in apps that create accounts, and the privacy page said HITOP has no accounts. Both
+done on branch `account-delete` (2026-11-21, see "Account deletion" at the top).
 
 **Not verified here**: signing, export and upload (owner's Mac); App Store Connect accepting the screenshots (sizes match
 its published ones); how a reviewer reads the demo shop's words "price"/"pending_payment" in the sample data.

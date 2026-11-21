@@ -83,6 +83,9 @@ struct AccountView: View {
     @State private var about = false
     @State private var busy = false
     @State private var joining = false
+    @State private var deleting = false
+    /// Shown signed out right after the account was deleted.
+    @State private var deletedNotice: String?
 
     var body: some View {
         @Bindable var ui = ui
@@ -105,6 +108,7 @@ struct AccountView: View {
             .sheet(isPresented: $ui.showSignIn) { SignInSheet() }
             .sheet(isPresented: $about) { AboutView() }
             .sheet(isPresented: $joining) { JoinSheet() }
+            .sheet(isPresented: $deleting) { DeleteAccountSheet { email in deletedNotice = "The HITOP Cloud account \(email) was deleted. Your collections stay on this \(sync.deviceLabel.replacingOccurrences(of: "this ", with: ""))." } }
             .alert("Rename device", isPresented: Binding(get: { renaming != nil }, set: { if !$0 { renaming = nil } })) {
                 TextField("Name", text: $newName).accessibilityIdentifier("device-name-field")
                 Button("Cancel", role: .cancel) { renaming = nil }
@@ -148,6 +152,10 @@ struct AccountView: View {
                 .accessibilityIdentifier("sign-in")
                 if let e = cloud.lastError {
                     Text(e).font(Typo.caption).foregroundStyle(Theme.warning).multilineTextAlignment(.center)
+                }
+                if let deletedNotice {
+                    Text(deletedNotice).font(Typo.caption).foregroundStyle(Theme.textSoft).multilineTextAlignment(.center)
+                        .accessibilityIdentifier("account-deleted")
                 }
             }
             .frame(maxWidth: .infinity)
@@ -255,6 +263,16 @@ struct AccountView: View {
                     Text("Sign out").frame(maxWidth: .infinity, minHeight: 44)
                 }
                 .accessibilityIdentifier("sign-out")
+            }
+            .listRowBackground(Theme.surface)
+            // App Store 5.1.1(v): the account can be deleted where it was made.
+            Section {
+                Button(role: .destructive) { deleting = true } label: {
+                    Text("Delete account").frame(maxWidth: .infinity, minHeight: 44)
+                }
+                .accessibilityIdentifier("delete-account")
+            } footer: {
+                Text("Deletes your HITOP Cloud account and what it keeps; collections on this device stay.").font(Typo.caption)
             }
             .listRowBackground(Theme.surface)
         }
@@ -645,6 +663,99 @@ struct SignInSheet: View {
         } catch {
             self.error = error.localizedDescription
             step = .devices
+        }
+    }
+}
+
+/// Delete account (App Store 5.1.1(v)): what goes and what stays, then one destructive button.
+/// The server (`DELETE /v1/me`) deletes at once; this device then forgets the account (Keychain
+/// entry, device key) and keeps every collection. Neutral words only (store mode).
+struct DeleteAccountSheet: View {
+    @Environment(HitopCloud.self) private var cloud
+    @Environment(LibrarySync.self) private var sync
+    @Environment(\.dismiss) private var dismiss
+    /// Called with the deleted account's address.
+    var onDeleted: (String) -> Void
+    @State private var busy = false
+    @State private var error: String?
+
+    private var device: String { sync.deviceLabel.replacingOccurrences(of: "this ", with: "") }
+
+    var body: some View {
+        NavigationStack {
+            List {
+                Section {
+                    VStack(alignment: .leading, spacing: 10) {
+                        Text("Delete \(cloud.account?.email ?? "your account")?").font(Typo.title)
+                            .accessibilityIdentifier("delete-account-title")
+                        Text("This can't be undone. HITOP Cloud deletes at once:").font(Typo.body)
+                        VStack(alignment: .leading, spacing: 6) {
+                            bullet("your account and its sign-ins (Apple, Google, GitHub)")
+                            bullet("your synced library: collections, environments and globals kept in HITOP Cloud")
+                            bullet("your devices and their keys")
+                            bullet("your memberships of organizations and shared collections; ones only you use are deleted with their data")
+                        }
+                        Text("Collections and requests saved on this \(device) stay here. You can sign in again later as a new account.")
+                            .font(Typo.caption).foregroundStyle(Theme.textMuted)
+                            .accessibilityIdentifier("delete-account-stays")
+                    }
+                    .padding(.vertical, 6)
+                }
+                .listRowBackground(Theme.surface)
+                if let error {
+                    Section {
+                        Text(error).font(Typo.caption).foregroundStyle(Theme.warning).accessibilityIdentifier("delete-account-error")
+                    }
+                    .listRowBackground(Theme.surface)
+                }
+                Section {
+                    Button(role: .destructive) { Task { await delete() } } label: {
+                        HStack {
+                            Spacer()
+                            if busy { ProgressView() } else { Text("Delete account").font(Typo.geist(16, .semibold)) }
+                            Spacer()
+                        }
+                        .frame(minHeight: 44)
+                    }
+                    .disabled(busy)
+                    .accessibilityIdentifier("confirm-delete-account")
+                }
+                .listRowBackground(Theme.surface)
+            }
+            .scrollContentBackground(.hidden)
+            .background(Theme.ground.ignoresSafeArea())
+            .navigationTitle("Delete account")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar { ToolbarItem(placement: .cancellationAction) { Button("Cancel") { dismiss() }.disabled(busy).accessibilityIdentifier("cancel-delete-account") } }
+        }
+        .presentationDetents([.large])
+        .interactiveDismissDisabled(busy)
+    }
+
+    private func bullet(_ text: String) -> some View {
+        HStack(alignment: .firstTextBaseline, spacing: 8) {
+            Text("•").accessibilityHidden(true)
+            Text(text)
+        }
+        .font(Typo.caption).foregroundStyle(Theme.textSoft)
+    }
+
+    private func delete() async {
+        let email = cloud.account?.email ?? ""
+        busy = true
+        error = nil
+        defer { busy = false }
+        do {
+            try await cloud.deleteAccount()
+            onDeleted(email)
+            dismiss()
+        } catch let e as CloudError {
+            switch e {
+            case .unreachable: error = "HITOP Cloud can't be reached: nothing was deleted. Try again when you're online."
+            default: error = e.localizedDescription
+            }
+        } catch {
+            self.error = error.localizedDescription
         }
     }
 }

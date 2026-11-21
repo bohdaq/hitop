@@ -7,7 +7,7 @@ export const meta = {
   path: "/privacy.html",
   title: "Privacy policy · HITOP",
   description:
-    "HITOP has no accounts or tracking. Collections and history stay on your device. How the web app's request proxy and the usage ping you can turn on work.",
+    "HITOP has no tracking and needs no account. Collections and history stay on your device. What an optional HITOP Cloud account keeps, how to delete it, and how the web app's request proxy and the usage ping you can turn on work.",
 };
 
 export function render() {
@@ -15,7 +15,7 @@ export function render() {
     ${header(meta.path)}
     <main id="main" class="container page-text">
       <h1>Privacy policy</h1>
-      <p class="lead">HITOP does not collect, sell or share personal data, and you never need an account. The one exception is optional: the hitop sync test server keeps an account and a security log if you sign in to it (see below). Last updated 3 November 2026.</p>
+      <p class="lead">HITOP doesn't track you, show ads or sell personal data, and you never need an account. The one exception is optional: if you sign in to HITOP Cloud to sync or share collections, it keeps your account and what you sync (see below); you can delete the account in the app at any time. Last updated 21 November 2026.</p>
 
       <h2>What stays on your device</h2>
       <p>Everything you enter, including collections, requests, headers, variables, scripts and request history, is stored only on your device:</p>
@@ -26,7 +26,7 @@ export function render() {
         <li>iOS app: the app's own storage on your iPhone or iPad</li>
         <li>Web app and browser extensions: your browser's local storage</li>
       </ul>
-      <p>None of it leaves your device unless you export it yourself.</p>
+      <p>None of it leaves your device unless you export it yourself, or sign in to HITOP Cloud and sync it (below).</p>
 
       <h2>Requests you send</h2>
       <p>The Mac app, the iOS app, the CLI and the browser extensions send each request straight from your device to the address you entered. HITOP's servers are not involved.</p>
@@ -49,17 +49,29 @@ export function render() {
         <li>Turn it off at any time with <code>hitop telemetry off</code> or in the desktop app's settings. <code>hitop telemetry status</code> shows what would be sent.</li>
       </ul>
 
-      <h2>hitop sync test server, only if you sign in</h2>
-      <p>hitop sync is optional and in testing. If you sign in to the test server at <code>sync.hitop.rws8.tech</code> to share collections, it keeps:</p>
+      <h2>HITOP Cloud account, only if you sign in</h2>
+      <p>HITOP Cloud is optional: every app works without an account. If you sign in (with Apple, Google or GitHub, a password, an emailed code or your company's single sign-on) at <code>sync.hitop.rws8.tech</code>, HITOP Cloud keeps:</p>
       <ul>
-        <li>Your email address, your devices' public keys and names, and hashes of your sign-in and session tokens (never the tokens).</li>
-        <li>If you set a password: never the password itself. Your app turns it into two keys on your device; the server gets one of them and keeps only a slow hash of it, plus the settings your app needs to turn the password into keys again. The other key seals your device's keys (a key bundle the server stores but can't open), so the password unlocks your workspaces on a new device. If you sign in with Google or GitHub, the server keeps which Google or GitHub account it was (its id and email address); it never sees your Google or GitHub password and keeps no token from them.</li>
-        <li>Your shared workspaces only as ciphertext: files are encrypted on your device before they are sent, and the server can't read them. It sees who is in which workspace, how many files there are, their sizes and when they change.</li>
-        <li>Run history, only if your runs upload it (<code>hitop run --sync-report</code>): per run a status row the server can read (passed or failed, time, duration, request counts, the collection's and the environment's names, and failed request names only if the workspace's owners allow it), and the full report encrypted on your runner so the server can't read it. Alert settings (members' addresses, webhook URLs) are kept so the server can send alerts; an alert holds the status and a link, never a response or a secret value.</li>
-        <li>Secret values never sync unless you share them: an environment's values shared with <code>hitop sync secrets share</code> are encrypted for the devices you pick, and the server can't read them.</li>
-        <li>An audit log of security events: sign-ins and failed sign-ins, sign-outs, device keys, and in a workspace members added or removed, role changes, invites, key rotations and runner credentials. Each entry holds the time, the account, what it was done to, the first three parts of your IP address (the last part is dropped, IPv6 to its first 48 bits) and your app's user agent. Workspace owners can read their workspace's entries; you can read your own sign-ins. Entries are deleted after a year.</li>
+        <li>Your account: your email address (with Sign in with Apple, the relay address if you hide yours) and an account id. HITOP doesn't keep your name, even when Apple or Google sends it. For each Apple, Google, GitHub or single sign-on account you sign in with, which one it is (its id and email address); never its password. With Sign in with Apple, the server also keeps the token Apple gives it, sealed, only so that deleting your account can revoke HITOP's access at Apple.</li>
+        <li>Your devices: a name (the apps send "HITOP on iPhone", "HITOP on iPad" and the like, not your device's own name), each device's public key, when it was added and last used, and hashes of your sign-in and session tokens (never the tokens).</li>
+        <li>If you set a password: never the password itself. Your app turns it into two keys on your device; the server gets one of them and keeps only a slow hash of it, plus the settings your app needs to turn the password into keys again. The other key seals your device's keys (a key bundle the server stores but can't open). A recovery phrase works the same way.</li>
+        <li>Your synced personal library: the collections, environments and globals you keep in HITOP Cloud, and the last versions of each saved request, so they are the same on every device you sign in on. HITOP Cloud can read them. Secret values are sealed under a key only the server holds, and are not kept at all on a server without one.</li>
+        <li>Shared collections only as ciphertext: they are encrypted end to end on your devices before they are sent, and the server can't read them. It sees who is in which shared collection, how many files there are, their sizes and when they change.</li>
+        <li>Organizations: the ones you created or joined, their names, members and roles, the plan and seats an organization has, and daily usage counts (devices, storage, invites).</li>
+        <li>Run history, only if your runs upload it: per run a status row the server can read (passed or failed, time, duration, request counts, the collection's and the environment's names, and failed request names only if the owners allow it), and the full report encrypted so the server can't read it. Alert settings (members' addresses, webhook URLs) are kept so the server can send alerts.</li>
+        <li>An audit log of security events: sign-ins and failed sign-ins, sign-outs, device keys, account deletion, and in a shared collection or organization members added or removed, role changes, invites and key rotations. Each entry holds the time, the account and its email address, what it was done to, the first three parts of your IP address (the last part is dropped, IPv6 to its first 48 bits) and your app's user agent. Entries are deleted after a year.</li>
       </ul>
-      <p>Delete a workspace in the app or with <code>hitop sync</code>; email <a href="mailto:bohdaq@gmail.com">bohdaq@gmail.com</a> to have your account removed. A sync server someone else runs, for example your employer's, keeps what its operator configures.</p>
+      <p>What HITOP Cloud doesn't do: no tracking, no advertising, no analytics, and your data is never sold or shared for marketing. The requests you send and their responses never go through HITOP Cloud (the web app's proxy is above), and it doesn't see your request history or your device's Keychain.</p>
+
+      <h3>Deleting your account</h3>
+      <p>In the iOS app, the web app or the desktop app: <b>Account → Delete account</b>. You can also email <a href="mailto:bohdaq@gmail.com">bohdaq@gmail.com</a> and we delete it for you. Deleting is immediate and can't be undone:</p>
+      <ul>
+        <li>Deleted at once: your account, its sign-ins and sessions, access tokens, password and recovery data, devices and their keys, your synced personal library and its versions, your personal organization, organizations and shared collections only you were in (with their data), your memberships of the others, and pending invites to your address. Shared collections you leave this way get a new key from their owners' apps. Your Sign in with Apple token is revoked at Apple.</li>
+        <li>If you are the only owner of an organization or shared collection that other people use, the app asks you to make someone else an owner, or remove the others, first, so their work isn't deleted with your account.</li>
+        <li>An organization you delete this way stops its paid plan at once: nothing more is charged. Stripe keeps its own records of past payments as the law requires.</li>
+        <li>What stays for a while: audit log entries that name you are deleted when they are a year old. Encrypted backups of the database, kept at most 35 days, expire with the old data in them. Collections and requests saved on your own devices stay there until you delete them.</li>
+      </ul>
+      <p>Without an account nothing needs deleting: remove the app, or clear the web app's site data in your browser. A sync server someone else runs, for example your employer's, keeps what its operator configures.</p>
 
       <h2>HITOP Cloud plans, only if you buy one</h2>
       <p>Paid HITOP Cloud plans are sold through Stripe Managed Payments: Stripe (with Link, "Sold through Link") is the merchant of record. Stripe collects your name, email, billing address, payment details and tax information under its own privacy policy; HITOP never sees your card. The sync server keeps your organization's plan, seats, status and the Stripe customer, subscription, price and checkout ids, plus the ids and outcomes of Stripe's notifications (not their content). A Team trial records the organization, the account that started it and its email domain, so each gets one trial.</p>

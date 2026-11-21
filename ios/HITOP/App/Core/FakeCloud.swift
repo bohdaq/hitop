@@ -75,6 +75,9 @@ final class FakeCloud: CloudTransport, @unchecked Sendable {
     var libraryFailure: Int?
     /// UI test: the first update of a collection meets another device's change first.
     var conflictOnFirstUpdate = false
+    /// `DELETE /v1/me` answers 409 `transfer_ownership_first` with these (account.rs: the only
+    /// owner of something other people use).
+    var deleteBlockers: [JSONAny]?
     /// Every request seen: "METHOD path" (tests check what was sent).
     private(set) var log: [String] = []
     /// The last request's headers.
@@ -152,6 +155,11 @@ final class FakeCloud: CloudTransport, @unchecked Sendable {
     }
 
     func clearLog() { locked { log = [] } }
+
+    /// The account with this address exists (a deleted one doesn't).
+    func hasAccount(_ email: String) -> Bool {
+        locked { users.values.contains { $0.email == email } }
+    }
 
     // MARK: CloudTransport
 
@@ -240,7 +248,28 @@ final class FakeCloud: CloudTransport, @unchecked Sendable {
             } else if at("POST /v1/auth/logout") != nil {
                 sessions = sessions.filter { $0.value != uid || "Bearer \($0.key)" != header("authorization") }
                 return reply(200, .object([:]))
-            } else if at("GET /v1/me") != nil {
+            } else if at("DELETE /v1/me") != nil {
+            // account.rs: `confirm` = the address; the only owner of shared things is refused.
+            guard let b = body?.object, Set(b.keys) == ["confirm"], let confirm = b["confirm"]?.string else {
+                return fail(400, "bad_request", "send {\"confirm\": \"<the account's email address>\"}")
+            }
+            guard confirm.trimmingCharacters(in: .whitespaces).lowercased() == users[uid]!.email.lowercased() else {
+                return fail(400, "confirm_mismatch", "confirm must be this account's email address")
+            }
+            if let blockers = deleteBlockers, !blockers.isEmpty {
+                return fail(409, "transfer_ownership_first", "You are the only owner of \(blockers.count) shared collection or organization other people use: make another member an owner, or remove the other members, then delete the account.", ["blockers": .array(blockers)])
+            }
+            let n = users[uid]!.devices.count
+            users.removeValue(forKey: uid)
+            sessions = sessions.filter { $0.value != uid }
+            for (ws, var w) in spaces where w.role(uid) != nil {
+                w.members.removeAll { $0.0 == uid }
+                spaces[ws] = w
+            }
+            return reply(200, .object(["deleted": .bool(true), "workspacesDeleted": .number(0), "workspacesLeft": .number(0), "workspacesMoved": .number(0),
+                                       "orgsDeleted": .number(1), "orgsLeft": .number(0), "subscriptionsCancelled": .number(0),
+                                       "appleRevoked": .number(0), "appleNotRevoked": .number(0), "devices": .number(Double(n))]))
+        } else if at("GET /v1/me") != nil {
                 let u = users[uid]!
                 return reply(200, .object(["id": .string(u.id), "email": .string(u.email), "devices": .bool(true),
                                            "keys": .array(u.devices.map { .object(["id": .string($0.id), "name": .string($0.name), "publicKey": .string($0.publicKey)]) })]))

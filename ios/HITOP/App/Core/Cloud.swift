@@ -354,6 +354,8 @@ final class HitopCloud {
     @ObservationIgnored var deviceName: String
     /// Called after signing in or out (LibrarySync links or stops).
     @ObservationIgnored var onAccountChange: (@MainActor () -> Void)?
+    /// Called after the account was deleted (SharedSync forgets its links and pins).
+    @ObservationIgnored var onAccountDeleted: (@MainActor (CloudAccount) -> Void)?
     @ObservationIgnored private var pendingBrowser: (server: String, verifier: String, kind: String)?
     @ObservationIgnored private var pendingEmail: (server: String, email: String)?
 
@@ -589,6 +591,26 @@ final class HitopCloud {
         settings.org = nil
         settings.orgs = []
         persist()
+        onAccountChange?()
+    }
+
+    /// Deletes the HITOP Cloud account (`DELETE /v1/me {"confirm": <its address>}`, sync-server
+    /// account.rs: the account, its synced library, devices, personal organization and
+    /// memberships), then forgets it on this device: the Keychain entry (session and device
+    /// secret), the account, the device and the organizations. Collections and requests on this
+    /// device stay. Errors come back as `CloudError.http` with the server's code
+    /// (`transfer_ownership_first`: the only owner of something others use; `try_again`).
+    func deleteAccount() async throws {
+        guard let a = settings.account else { throw CloudError.notSignedIn }
+        _ = try await call("DELETE", "/v1/me", body: .object(["confirm": .string(a.email)]))
+        credentials.save(a.server, nil)
+        settings.account = nil
+        settings.device = nil
+        settings.org = nil
+        settings.orgs = []
+        lastError = nil
+        persist()
+        onAccountDeleted?(a)
         onAccountChange?()
     }
 
