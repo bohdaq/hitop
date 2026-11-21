@@ -6,6 +6,10 @@
 #   ios/HITOP/scripts/build-appstore.sh <build-number> --upload   # uploads to App Store Connect instead
 #   ios/HITOP/scripts/build-appstore.sh <build-number> --unsigned # CI: archive without signing, checks, no export
 #
+# CI (.github/workflows/ios-testflight.yml): with ASC_KEY_PATH (the .p8), ASC_KEY_ID and
+# ASC_ISSUER_ID set, Xcode signs in to App Store Connect with that API key (role Admin) instead of
+# an Apple ID: it makes the certificates (cloud-managed) and profiles itself, and uploads with it.
+#
 # build-number: CFBundleVersion, higher than every earlier upload of version 2.0.0 (failed uploads use
 #   theirs up too), e.g. 2, 3, …  The version (2.0.0) is MARKETING_VERSION in ios/HITOP/project.yml.
 # Needs: Xcode 26 (xcode-select), rustup's Rust (not Homebrew's; this adds the two iOS targets),
@@ -19,6 +23,11 @@ MODE="${2:-export}"
 case "$BUILD" in *[!0-9.]*|"") echo "build number must be digits and dots, e.g. 2" >&2; exit 2 ;; esac
 case "$MODE" in export|--upload|--unsigned) ;; *) echo "unknown option $MODE (--upload or --unsigned)" >&2; exit 2 ;; esac
 TEAM=XD7JHZ5DB3
+auth=()
+if [ -n "${ASC_KEY_PATH:-}" ]; then
+  : "${ASC_KEY_ID:?ASC_KEY_ID with ASC_KEY_PATH}" "${ASC_ISSUER_ID:?ASC_ISSUER_ID with ASC_KEY_PATH}"
+  auth=(-authenticationKeyPath "$ASC_KEY_PATH" -authenticationKeyID "$ASC_KEY_ID" -authenticationKeyIssuerID "$ASC_ISSUER_ID")
+fi
 cd "$(dirname "$0")/.."
 export PATH="$HOME/.cargo/bin:$PATH"
 
@@ -38,7 +47,7 @@ mkdir -p build
 if [ "$MODE" = --unsigned ]; then
   signing=(CODE_SIGNING_ALLOWED=NO)
 else
-  signing=(-allowProvisioningUpdates CODE_SIGN_STYLE=Automatic DEVELOPMENT_TEAM=$TEAM)
+  signing=(-allowProvisioningUpdates ${auth[@]+"${auth[@]}"} CODE_SIGN_STYLE=Automatic DEVELOPMENT_TEAM=$TEAM)
 fi
 xcodebuild archive -project HITOPApp.xcodeproj -scheme HITOP -configuration Release \
   -destination generic/platform=iOS -archivePath build/HITOP.xcarchive \
@@ -87,7 +96,7 @@ cat > build/ExportOptions.plist <<EOF
 </plist>
 EOF
 xcodebuild -exportArchive -archivePath build/HITOP.xcarchive -exportPath build/export \
-  -exportOptionsPlist build/ExportOptions.plist -allowProvisioningUpdates 2>&1 | tee build/export.log \
+  -exportOptionsPlist build/ExportOptions.plist -allowProvisioningUpdates ${auth[@]+"${auth[@]}"} 2>&1 | tee build/export.log \
   | grep -E 'error:|EXPORT (SUCCEEDED|FAILED)|Upload' || true
 grep -q 'EXPORT SUCCEEDED' build/export.log || { echo "export failed: see ios/HITOP/build/export.log" >&2; exit 1; }
 

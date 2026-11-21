@@ -1,0 +1,78 @@
+# HITOP for iOS → TestFlight, by hand (Actions → "iOS TestFlight" → Run workflow). The same script
+# as the owner's Mac (ios/HITOP/scripts/build-appstore.sh --upload), signed in to App Store Connect
+# with an API key instead of an Apple ID; setup in ios/APP_STORE.md ("Upload from GitHub Actions").
+# Secrets: ASC_KEY_ID, ASC_ISSUER_ID, ASC_KEY_P8 (the .p8 file's text), key role Admin.
+name: iOS TestFlight
+
+on:
+  workflow_dispatch:
+    inputs:
+      build:
+        description: "Build number (empty: 100 + this workflow's run number). Higher than every earlier upload of the version."
+        required: false
+        default: ""
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ios-testflight
+  cancel-in-progress: false
+
+env:
+  XCODEGEN_VERSION: "2.46.0"
+  XCODEGEN_SHA256: 4d9e34b62172d645eed6457cac13fc222569974098ef4ee9c3368bedf0196806
+
+jobs:
+  upload:
+    name: Archive, sign, upload to TestFlight
+    runs-on: macos-26
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Xcode 26 + XcodeGen
+        run: |
+          xcode=$(ls -d /Applications/Xcode_26*.app 2>/dev/null | sort -V | tail -1)
+          if [ -n "$xcode" ]; then sudo xcode-select -s "$xcode"; fi
+          xcodebuild -version
+          curl -sSfL -o "$RUNNER_TEMP/xcodegen.zip" "https://github.com/yonaskolb/XcodeGen/releases/download/$XCODEGEN_VERSION/xcodegen.zip"
+          echo "$XCODEGEN_SHA256  $RUNNER_TEMP/xcodegen.zip" | shasum -a 256 -c -
+          unzip -q "$RUNNER_TEMP/xcodegen.zip" -d "$RUNNER_TEMP"
+          echo "$RUNNER_TEMP/xcodegen/bin" >> "$GITHUB_PATH"
+      - name: App Store Connect API key
+        env:
+          ASC_KEY_P8: ${{ secrets.ASC_KEY_P8 }}
+          ASC_KEY_ID: ${{ secrets.ASC_KEY_ID }}
+          ASC_ISSUER_ID: ${{ secrets.ASC_ISSUER_ID }}
+        run: |
+          for v in ASC_KEY_P8 ASC_KEY_ID ASC_ISSUER_ID; do
+            [ -n "${!v}" ] || { echo "::error::secret $v is not set (ios/APP_STORE.md, Upload from GitHub Actions)"; exit 1; }
+          done
+          key="$RUNNER_TEMP/AuthKey_$ASC_KEY_ID.p8"
+          printf '%s\n' "$ASC_KEY_P8" > "$key"
+          chmod 600 "$key"
+          echo "ASC_KEY_PATH=$key" >> "$GITHUB_ENV"
+      - name: build-appstore.sh --upload
+        env:
+          CARGO_TARGET_DIR: ${{ runner.temp }}/ffi-target
+          ASC_KEY_ID: ${{ secrets.ASC_KEY_ID }}
+          ASC_ISSUER_ID: ${{ secrets.ASC_ISSUER_ID }}
+          BUILD_INPUT: ${{ inputs.build }}
+          RUN_NUMBER: ${{ github.run_number }}
+        run: |
+          build="${BUILD_INPUT:-$((100 + RUN_NUMBER))}"
+          echo "Build number: $build" >> "$GITHUB_STEP_SUMMARY"
+          rustup show active-toolchain || rustup default stable
+          ios/HITOP/scripts/build-appstore.sh "$build" --upload
+          echo "Uploaded HITOP build $build: App Store Connect → TestFlight (Missing Compliance → answer as for the Mac app)." >> "$GITHUB_STEP_SUMMARY"
+      - name: Remove the key
+        if: always()
+        run: rm -f "$RUNNER_TEMP"/AuthKey_*.p8
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        if: failure()
+        with:
+          name: testflight-logs
+          path: |
+            ios/HITOP/build/archive.log
+            ios/HITOP/build/export.log
+          if-no-files-found: ignore

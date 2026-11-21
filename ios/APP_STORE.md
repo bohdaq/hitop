@@ -70,6 +70,24 @@ install it there once before submitting (section 11).
 App Store Connect → HiTop HTTP Client → iOS App → **+ Version**: `2.0.0`. Under Build, pick the
 uploaded build. Export compliance questions come up for it (section 9).
 
+## 3b. Upload from GitHub Actions (no Mac)
+
+Workflow **iOS TestFlight** (`.github/workflows/ios-testflight.yml`) runs `build-appstore.sh --upload` on
+a GitHub macOS runner, signed in to App Store Connect with an API key: Xcode makes the
+distribution certificate (cloud-managed) and the profiles itself. One-time setup:
+
+1. App Store Connect → Users and Access → **Integrations** → App Store Connect API → **Team Keys** →
+   **+**: name `GitHub TestFlight`, access **Admin** (cloud signing needs it). Download the `.p8`
+   (only once), note the **Key ID** and the **Issuer ID** above the list.
+2. GitHub → bohdaq/hitop → Settings → Secrets and variables → Actions → **New repository secret**,
+   three times: `ASC_KEY_ID`, `ASC_ISSUER_ID`, `ASC_KEY_P8` (the .p8 file's whole text, BEGIN/END lines
+   included). Or from a terminal: `gh secret set ASC_KEY_P8 < AuthKey_XXXX.p8` (and the other two).
+   Never paste the key into a chat or a file in the repo.
+
+Then each upload: Actions → **iOS TestFlight** → **Run workflow** (branch main; build number empty =
+100 + the run number, or type one higher than every earlier upload). About 20 minutes; then
+TestFlight → Missing Compliance (section 9) → add the build to the testing group.
+
 ## 4. Price: Free
 
 Pricing and Availability → Price Schedule → base price **Free (0.00)**, starting today, as in
