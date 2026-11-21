@@ -416,3 +416,15 @@ and on hitop.rws8.tech/cloud/healthz. -->
 - Verified live: `/v1/auth/methods` unchanged (apple, github, google, email code, passkey, password);
   `POST /v1/auth/github/start` with `returnTo: hitop://sign-in` returns the GitHub authorize URL, `hitop://evil` is
   refused with the returnTo message. Rollback: `/usr/local/bin/hitop-sync-server.bak-<ts>` (migration 18 is additive).
+
+## 2026-11-21 Account deletion (schema 19), privacy page
+
+- Pre-deploy dump /root/pre-deploy-20261121-224608 (sync.pgdump + manifest). Sync server built at 96f90df
+  (`--release --locked --features postgres`): `DELETE /v1/me {"confirm"}` (account.rs), migration 19 `apple_tokens`
+  (additive). `install.sh` run by the owner: healthz schema 19, 0 over a limit. Live: `DELETE /v1/me` without a session
+  answers 400 (route present), `/v1/auth/methods` unchanged. Rollback: `/usr/local/bin/hitop-sync-server.bak-<ts>` +
+  `DROP TABLE apple_tokens; DELETE FROM schema_version WHERE version = 19;`.
+- Site + web app + portal from 96f90df (deploy/deploy.sh without the rebuild, run by the owner): privacy page describes
+  HITOP Cloud accounts and deletion, web app Account page has Delete account. All deploy checks 200/301, proxy ok.
+- Open: the DB copies on the VM (`sync.db.bak-*`, `/root/pre-deploy-*`, oldest 2026-11-01) have no expiry, while the
+  privacy page says copies go after 35 days: a cleanup timer is needed before 2026-12-06.
