@@ -90,6 +90,28 @@ needs no client crypto on the server.
 - Shared environment values (C4, `env_shares`, `env_share_wraps`): per shared environment a random
   share id, a version, the sealed content and one wrap of the share's key per recipient device
   (with the device's key id and its account); see "Shared environment values".
+- Sign in with Apple refresh tokens (`apple_tokens`): one per Apple identity, sealed under the host
+  key when the server has one, kept only to revoke it at Apple when the account is deleted (it is
+  useless without the server's Sign in with Apple key). See "Deleting an account".
+
+## Deleting an account
+
+`DELETE /v1/me {"confirm": "<the account's address>"}` (account.rs) needs a signed-in session: an
+access token or a runner credential is refused, so a leaked automation token can't delete an
+account. `confirm` is not a secret (the session can read the address): it makes the request
+deliberate. A stolen session can delete the account; it could already remove every device and
+workspace, so this adds no power over the account's data, and the person is mailed.
+
+What goes and what stays (module docs of account.rs): the account and everything only it holds;
+its personal org and team orgs it alone is in (their subscriptions cancelled at Stripe first);
+workspaces it alone is in. Workspaces shared with others lose its membership and wraps and are
+asked to rotate (only a client can: the server never holds a workspace key); until a remaining
+owner's client rotates, the deleted person's devices still hold the old epoch's key, as after any
+removal, but the server no longer serves them anything. The only owner of a workspace or org that
+other people use is refused (409 `transfer_ownership_first`). Every Apple refresh token is revoked
+at Apple before anything is deleted; if Apple or Stripe can't be reached nothing is deleted (503).
+The audit log keeps its rows (address, truncated IP, user agent) until the retention purge, and
+encrypted backups keep the old database until they expire.
 
 The server binary does not link any decryption code: the client crate and the AEAD/HPKE crates
 are dev-dependencies only, and `tests/no_crypto_in_server.rs` fails the build's tests if that

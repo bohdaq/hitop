@@ -62,11 +62,12 @@ pub const EVENTS: &[&str] = &[
     "session_revoked",
 ];
 
-/// HITOP Cloud events (orgs.rs, limits.rs, tokens.rs): `token_created` and `token_revoked` on the
+/// HITOP Cloud events (orgs.rs, limits.rs, tokens.rs, account.rs): `token_created`, `token_revoked` and `account_deleted` on the
 /// account chain, `workspace_moved` on the workspace's chain and the org chains, the rest on the
 /// chain of the org (`org:<id>`).
 pub const CLOUD_EVENTS: &[&str] = &[
     "org_created",
+    "account_deleted",
     "org_renamed",
     "org_deleted",
     "org_member_added",

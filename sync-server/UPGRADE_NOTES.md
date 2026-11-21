@@ -37,6 +37,17 @@ Also in this release: `hitop-sync-server support-bundle`, `dump`, `db-stats`, `m
 (README "Docker"). A server that sends mail now sends daily anchor mails to team org owners (see
 schema 9). Going back to 1.2's server from schema 10 means restoring the pre-upgrade dump.
 
+## Account deletion (on branch `account-delete`, not released): schema 18 → 19
+
+Migration 19 adds `apple_tokens` (the Sign in with Apple refresh token of each Apple identity, kept
+to revoke it when the account is deleted); additive. New route `DELETE /v1/me {"confirm"}` (README
+API table). With billing on, the Stripe key needs **write on Subscriptions** (it has it already
+for seats) and read on them: deleting an account reads and cancels the subscriptions of the orgs
+it deletes. Accounts that signed in with Apple before this version have no token to revoke until
+they sign in again. Going back: the old binary refuses schema 19; restore the pre-upgrade dump
+(or, since the table is new and nothing else changed, `DROP TABLE apple_tokens; DELETE FROM
+schema_version WHERE version = 19;`).
+
 ## 1.2.0 (2026-11-02): schema 3
 
 No migration from 1.1. Format 2 (authenticated) key wraps are accepted next to format 1; a

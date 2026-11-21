@@ -274,13 +274,20 @@ pub fn delete(state: &State, request: &Request, params: &PathParams) -> ApiResul
         if n > 0 {
             return Err(ApiError::conflict("org_not_empty", format!("the organization still owns {n} workspace(s): delete them or move them first"), json!({ "workspaces": n })));
         }
-        for table in ["org_invites", "org_members", "usage_counters", "entitlements", "org_items"] {
-            tx.execute(&format!("DELETE FROM {table} WHERE org_id = $1"), &[org.into()])?;
-        }
-        tx.execute("DELETE FROM orgs WHERE id = $1", &[org.into()])?;
+        delete_rows(tx, org)?;
         audit::record(tx, state, Event::new(&chain(org), "org_deleted", Some(&user)).target(org).detail(json!({ "name": o.name })))?;
         Ok((204, Json::Null))
     })
+}
+
+/// Deletes org `org`'s own rows (members, invites, usage, entitlement, shared items; SSO, domains,
+/// audit settings and anchors, SCIM go with it by foreign key). Its workspaces must be gone.
+pub(crate) fn delete_rows(tx: &mut Tx, org: &str) -> Result<(), DbError> {
+    for table in ["org_invites", "org_members", "usage_counters", "entitlements", "org_items"] {
+        tx.execute(&format!("DELETE FROM {table} WHERE org_id = $1"), &[org.into()])?;
+    }
+    tx.execute("DELETE FROM orgs WHERE id = $1", &[org.into()])?;
+    Ok(())
 }
 
 /// `GET /v1/orgs/:org/members`: members and pending invites.

@@ -824,10 +824,23 @@ struct CheckoutIn {
 
 /// One Stripe API call (form-encoded, pinned version), outside any database transaction.
 fn stripe_call(state: &State, c: &BillingConfig, method: &str, path: &str, form: &[(&str, String)]) -> Result<Json, ApiError> {
+    let (status, doc) = stripe_raw(state, c, method, path, form)?;
+    if !(200..300).contains(&status) {
+        let message = doc["error"]["message"].as_str().unwrap_or("").to_string();
+        eprintln!("hitop-sync-server: Stripe {method} {path}: {status} {}", doc["error"]["code"].as_str().unwrap_or(""));
+        return Err(ApiError::new(502, "billing_refused", format!("Stripe refused the request ({status}){}", if message.is_empty() { String::new() } else { format!(": {message}") })));
+    }
+    Ok(doc)
+}
+
+/// A Stripe API call's status and JSON answer; only no answer at all is an error.
+fn stripe_raw(state: &State, c: &BillingConfig, method: &str, path: &str, form: &[(&str, String)]) -> Result<(u16, Json), ApiError> {
     let url = format!("{}{path}", c.api_url);
     let auth = format!("Bearer {}", c.secret_key);
     let result = if method == "GET" {
         state.billing_http.get(&url).header("Authorization", &auth).header("Stripe-Version", STRIPE_VERSION).call()
+    } else if method == "DELETE" {
+        state.billing_http.delete(&url).header("Authorization", &auth).header("Stripe-Version", STRIPE_VERSION).header("Idempotency-Key", &uuid::Uuid::new_v4().to_string()).call()
     } else {
         let body = url::form_urlencoded::Serializer::new(String::new()).extend_pairs(form.iter().map(|(k, v)| (*k, v.as_str()))).finish();
         let idempotency = uuid::Uuid::new_v4().to_string();
@@ -848,12 +861,33 @@ fn stripe_call(state: &State, c: &BillingConfig, method: &str, path: &str, form:
     let status = res.status().as_u16();
     let text = res.body_mut().with_config().limit(1 << 20).read_to_string().map_err(|e| unreachable(format!("{method} {path}: {e}")))?;
     let doc: Json = serde_json::from_str(&text).unwrap_or(Json::Null);
-    if !(200..300).contains(&status) {
-        let message = doc["error"]["message"].as_str().unwrap_or("").to_string();
-        eprintln!("hitop-sync-server: Stripe {method} {path}: {status} {}", doc["error"]["code"].as_str().unwrap_or(""));
-        return Err(ApiError::new(502, "billing_refused", format!("Stripe refused the request ({status}){}", if message.is_empty() { String::new() } else { format!(": {message}") })));
+    Ok((status, doc))
+}
+
+/// Deleting an account (account.rs) deletes its personal org and the team orgs it alone is in: a
+/// subscription of such an org must not go on billing. Its status is read from Stripe (the row's
+/// own status can't tell: a paused or unpaid subscription is stored as `expired`, a refunded one
+/// may still renew), and anything not already ended is cancelled now (`DELETE
+/// /v1/subscriptions/:id`: no further invoice; Stripe's own records of past payments stay with
+/// Stripe). True when this call cancelled it. Doing it twice is harmless (the second finds it
+/// cancelled, or gone).
+pub(crate) fn cancel_for_deletion(state: &State, subscription: &str) -> Result<bool, ApiError> {
+    let c = config(state)?;
+    let path = format!("/v1/subscriptions/{}", url::form_urlencoded::byte_serialize(subscription.as_bytes()).collect::<String>());
+    let (status, doc) = stripe_raw(state, c, "GET", &path, &[])?;
+    if status == 404 || matches!(doc["status"].as_str(), Some("canceled" | "incomplete_expired")) {
+        return Ok(false);
     }
-    Ok(doc)
+    if !(200..300).contains(&status) {
+        eprintln!("hitop-sync-server: Stripe GET {path}: {status} {}", doc["error"]["code"].as_str().unwrap_or(""));
+        return Err(ApiError::new(502, "billing_refused", format!("Stripe refused the request ({status})")));
+    }
+    let (status, doc) = stripe_raw(state, c, "DELETE", &path, &[])?;
+    if (200..300).contains(&status) || status == 404 {
+        return Ok(status != 404);
+    }
+    eprintln!("hitop-sync-server: Stripe DELETE {path}: {status} {}", doc["error"]["code"].as_str().unwrap_or(""));
+    Err(ApiError::new(502, "billing_refused", format!("Stripe refused the request ({status})")))
 }
 
 /// `POST /v1/orgs/:org/billing/checkout {"plan","period","seats"}` (admin) → `{url}`: a Stripe

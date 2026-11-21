@@ -291,7 +291,7 @@ pub struct Sso {
     pub config: Option<OidcConfig>,
     /// Other spellings of the issuer the provider puts in `iss` (Google: `accounts.google.com`).
     pub extra_issuers: Vec<String>,
-    http: ureq::Agent,
+    pub(crate) http: ureq::Agent,
     provider: Mutex<Option<Provider>>,
     keys: Mutex<Option<Keys>>,
     last_jwks_fetch: Mutex<i64>,
@@ -841,7 +841,7 @@ fn complete(state: &State, sso: &Sso, c: &OidcConfig, flow: Flow, q: &HashMap<St
             return failed_page("the identity provider is unreachable or misconfigured");
         }
     };
-    let id_token = match exchange(state, sso, c, &provider, code, &flow.pkce_verifier) {
+    let (id_token, refresh_token) = match exchange(state, sso, c, &provider, code, &flow.pkce_verifier) {
         Ok(t) => t,
         Err(why) => return failed(state, kind, why),
     };
@@ -859,7 +859,14 @@ fn complete(state: &State, sso: &Sso, c: &OidcConfig, flow: Flow, q: &HashMap<St
         let email = identity.email.clone();
         return failed(state, kind, Refused { reason: "sso_required", message: format!("{email} signs in with its organization's single sign-on"), email });
     }
-    let user = match state.db.tx(|tx| account(tx, state, c, &identity)) {
+    let user = match state.db.tx(|tx| {
+        let user = account(tx, state, c, &identity)?;
+        // Sign in with Apple: its refresh token, so deleting the account can revoke it (account.rs).
+        if let (Some(_), Some(token)) = (&sso.minted_secret, &refresh_token) {
+            crate::apple::keep_token(tx, state, &c.issuer, &identity.subject, &user.id, token)?;
+        }
+        Ok::<_, ApiError>(user)
+    }) {
         Ok(u) => u,
         Err(e) => return failed_page(&e.message),
     };
@@ -899,8 +906,9 @@ pub(crate) fn hand_off(state: &State, flows: &Flows, kind: &str, user: &User, fl
     }
 }
 
-/// The token request: client secret (HTTP Basic, RFC 6749 2.3.1) and the PKCE verifier.
-fn exchange(state: &State, sso: &Sso, c: &OidcConfig, provider: &Provider, code: &str, pkce_verifier: &str) -> Result<String, Refused> {
+/// The token request: client secret (HTTP Basic, RFC 6749 2.3.1) and the PKCE verifier. Returns
+/// the ID token and the refresh token, if any (only Apple's is kept, apple.rs).
+fn exchange(state: &State, sso: &Sso, c: &OidcConfig, provider: &Provider, code: &str, pkce_verifier: &str) -> Result<(String, Option<String>), Refused> {
     let enc = |s: &str| url::form_urlencoded::byte_serialize(s.as_bytes()).collect::<String>();
     let basic = STANDARD.encode(format!("{}:{}", enc(&c.client_id), enc(&c.client_secret)));
     let redirect = redirect_uri_of(state, sso.kind);
@@ -936,7 +944,8 @@ fn exchange(state: &State, sso: &Sso, c: &OidcConfig, provider: &Provider, code:
         }
         return Err(refused("code_refused", format!("the identity provider refused the sign-in ({error})")));
     }
-    doc["id_token"].as_str().map(str::to_string).ok_or_else(|| refused("bad_token", "the identity provider sent no ID token"))
+    let id_token = doc["id_token"].as_str().map(str::to_string).ok_or_else(|| refused("bad_token", "the identity provider sent no ID token"))?;
+    Ok((id_token, doc["refresh_token"].as_str().filter(|t| !t.is_empty()).map(str::to_string)))
 }
 
 #[derive(Deserialize)]

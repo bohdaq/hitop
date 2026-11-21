@@ -57,6 +57,10 @@ pub struct Inner {
     pub apple: Option<(String, Vec<u8>, String)>,
     /// The last token request's form (Apple tests look at it).
     pub last_form: std::collections::HashMap<String, String>,
+    /// Apple mode: the forms of `POST /realm/auth/revoke` (Sign in with Apple's token revocation).
+    pub revoked: Vec<std::collections::HashMap<String, String>>,
+    /// What the revoke endpoint answers (0 = 200).
+    pub revoke_status: u16,
 }
 
 #[derive(Clone)]
@@ -150,6 +154,14 @@ impl MockIdp {
                     return (400, json!({ "error": "invalid_grant" }));
                 }
                 (200, json!({ "access_token": "opaque", "token_type": "Bearer", "id_token": inner.id_token }))
+            }
+            "/realm/auth/revoke" => {
+                let form: std::collections::HashMap<String, String> = url::form_urlencoded::parse(body.as_bytes()).into_owned().collect();
+                inner.revoked.push(form);
+                match inner.revoke_status {
+                    0 | 200 => (200, json!({})),
+                    s => (s, json!({ "error": "server_error" })),
+                }
             }
             _ => (404, json!({ "error": "not_found" })),
         }
