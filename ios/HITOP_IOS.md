@@ -636,6 +636,7 @@ Increase Contrast and Reduce Motion on a device.
 ## I6: what landed (2026-11-21, branch `ios-i6`)
 CI: `.github/workflows/ios.yml`, green runs https://github.com/bohdaq/hitop/actions/runs/44902375673 (commit 28ea1f9) and https://github.com/bohdaq/hitop/actions/runs/44909685754 (commit aaf46a2; the branch head after it only changes the iPad GraphQL screenshot test) (jobs `app`, `core`, `hitopkit`, new `store-screenshots` and `archive`;
 artifact `app-store-screenshots`).
+- Polish (branch `store-shots-polish`): a one-key JSON wrapper (GraphQL `data`) never starts folded, the Explain sheet grows to full height when a test is suggested (no cut script), demo data without price/payment words (order `processing`, GraphQL `sku name stock rating`, realtime "Live stock"/"Stock ticks"); store shots assert no "price"/"payment".
 
 - Owner doc `ios/APP_STORE.md`: decisions to take first, one-time Mac setup, build/upload, App Store Connect (version 2.0.0,
   Free, name HITOP, subtitle, promotional text, description, keywords, What's New, screenshot order, review notes, App

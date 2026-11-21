@@ -32,7 +32,7 @@ enum Seed {
         }
         let json = [KeyValue("Content-Type", "application/json"), KeyValue("Accept", "application/json"), KeyValue("Idempotency-Key", "${$guid}", enabled: false)]
         var catalog = r(1110, "POST", "Catalog query", "${baseUrl}/graphql", "catalog",
-                        body: "query Catalog($first: Int) {\n  products(first: $first) { sku name stock rating }\n}", bodyType: "graphql")
+                        body: "query Catalog($first: Int) {\n  products(first: $first) {\n    sku name stock rating\n  }\n}", bodyType: "graphql")
         catalog.graphqlVariables = "{ \"first\": 2 }"
         let shop = SavedCollection(id: 1001, name: "shop-api", requests: [
             r(1101, "POST", "Log in", "${baseUrl}/v2/auth/login", "auth", body: "{\n  \"email\": \"ada@example.com\",\n  \"password\": \"${password}\"\n}", headers: [json[0]]),
