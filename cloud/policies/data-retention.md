@@ -12,6 +12,7 @@ Status: draft for the owner's approval (C1, 2026-11-02). Review yearly.
 | Audit log | sync database | 365 days (`HITOP_SYNC_AUDIT_RETENTION_DAYS`) | hourly purge; IPs kept truncated (/24, /48) |
 | Request logs of the front proxy | VM | as rws keeps them (no bodies, no tokens) | log rotation |
 | Backups (C2) | off-site bucket, encrypted | 35 days | bucket lifecycle rule |
+| Database copies on the host (`sync.db.bak-*` from install.sh, `/root/pre-deploy-*` dumps) | the VM | 35 days | `hitop-db-copies-expire.timer` (cloud/ops/db-copies-expire.sh, daily) |
 | Billing records (C3) | Stripe | as the law requires of the merchant of record | Stripe |
 
 **Deletion on request** (GDPR article 17): within 30 days, including the time for backups that

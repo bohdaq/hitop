@@ -1,0 +1,15 @@
+[Unit]
+Description=HITOP: delete sync database copies older than 35 days (cloud/ops/db-copies-expire.sh)
+Documentation=https://github.com/bohdaq/hitop/blob/main/cloud/policies/data-retention.md
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/lib/hitop-sync/db-copies-expire.sh
+Nice=10
+IOSchedulingClass=idle
+NoNewPrivileges=true
+ProtectSystem=strict
+ReadWritePaths=/var/lib/private/hitop-sync /root
+PrivateTmp=true
+PrivateDevices=true
+PrivateNetwork=true

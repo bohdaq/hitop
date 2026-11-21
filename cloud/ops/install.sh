@@ -10,6 +10,8 @@
 #   install.sh disk-alert    disk / Postgres size / backup age checks every 15 minutes
 #   install.sh backup        hourly encrypted off-site backups (needs the owner's bucket and age key
 #                            in /etc/hitop-sync/backup.env and backup-recipients.txt first)
+#   install.sh db-copies     deletes sync database copies (sync.db.bak-*, /root/pre-deploy-*) once
+#                            they are 35 days old, daily (the privacy page's promise)
 #   install.sh status        what is installed, the limits systemd applies, the exposure scores
 #   install.sh remove <part> undoes one part (units and drop-ins back as they were)
 #
@@ -56,7 +58,7 @@ harden() {
 }
 
 show() {
-  for u in hitop-sync hitop-server "$(pg_unit)" hitop-sync-backup hitop-disk-alert; do
+  for u in hitop-sync hitop-server "$(pg_unit)" hitop-sync-backup hitop-disk-alert hitop-db-copies-expire; do
     systemctl cat "$u" >/dev/null 2>&1 || continue
     echo "== $u"
     systemctl show "$u" -p ActiveState -p MemoryHigh -p MemoryMax -p CPUQuotaPerSecUSec -p CPUWeight -p IOWeight -p TasksMax -p LimitNOFILE -p ProtectSystem -p NoNewPrivileges -p PrivateTmp | sed 's/^/   /'
@@ -79,6 +81,15 @@ case "$part" in
     systemctl restart "$u"
     systemctl is-active -q "$u" && say "$u active with limits" || { say "$u NOT active"; exit 1; }
     if systemctl is-active -q hitop-sync; then answers http://127.0.0.1:7881/healthz && say "hitop-sync answers"; fi;;
+  db-copies)
+    put "$here/db-copies-expire.sh" "$LIB/db-copies-expire.sh" 0755
+    put "$here/systemd/hitop-db-copies-expire.service" "$SYSTEMD/hitop-db-copies-expire.service"
+    put "$here/systemd/hitop-db-copies-expire.timer" "$SYSTEMD/hitop-db-copies-expire.timer"
+    systemctl daemon-reload
+    systemctl enable --now hitop-db-copies-expire.timer
+    systemctl start hitop-db-copies-expire.service
+    journalctl -u hitop-db-copies-expire -n 5 --no-pager || true
+    ;;
   disk-alert)
     put "$here/disk-alert.sh" "$LIB/disk-alert.sh" 0755
     put "$here/systemd/hitop-disk-alert.service" "$SYSTEMD/hitop-disk-alert.service"
@@ -113,9 +124,10 @@ case "$part" in
         done
         systemctl daemon-reload; systemctl restart hitop-sync hitop-server;;
       pg-limits) restore "$SYSTEMD/$(pg_unit).d/10-hitop-limits.conf"; systemctl daemon-reload; systemctl restart "$(pg_unit)";;
+      db-copies) systemctl disable --now hitop-db-copies-expire.timer || true; rm -f "$SYSTEMD/hitop-db-copies-expire.service" "$SYSTEMD/hitop-db-copies-expire.timer" "$LIB/db-copies-expire.sh"; systemctl daemon-reload;;
       disk-alert) systemctl disable --now hitop-disk-alert.timer || true; rm -f "$SYSTEMD/hitop-disk-alert.service" "$SYSTEMD/hitop-disk-alert.timer" "$LIB/disk-alert.sh"; systemctl daemon-reload;;
       backup) systemctl disable --now hitop-sync-backup.timer || true; rm -f "$SYSTEMD/hitop-sync-backup.service" "$SYSTEMD/hitop-sync-backup.timer" "$LIB/backup.sh" "$LIB/s3.sh"; systemctl daemon-reload;;
-      *) echo "remove hardening|pg-limits|disk-alert|backup" >&2; exit 2;;
+      *) echo "remove hardening|pg-limits|disk-alert|db-copies|backup" >&2; exit 2;;
     esac;;
   *) sed -n '2,20p' "$0"; exit 2;;
 esac
