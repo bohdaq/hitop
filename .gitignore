@@ -1,4 +1,6 @@
+# Extension folders written by the build-*.sh scripts (webapp/scripts/package-extension.mjs)
 /chrome-extension
+/chrome-store-package
 *.zip
 # Dependencies
 node_modules/
