@@ -306,7 +306,7 @@ struct SuggestedCheck: Equatable, Sendable, Codable, Identifiable {
         case status
         /// `path` = header name, `expected` = text the value contains ("" = it is there).
         case header
-        /// `path` = JSON path, `expected` = the value as JSON ("pending_payment" or 6480 or true).
+        /// `path` = JSON path, `expected` = the value as JSON ("processing" or 6480 or true).
         case equals
         /// `path` = JSON path: it is there and not null.
         case exists
@@ -321,7 +321,7 @@ struct SuggestedCheck: Equatable, Sendable, Codable, Identifiable {
     var kind: Kind
     var path: String
     var expected: String
-    /// The test's name ("order waits for payment"); a plain one is made when empty.
+    /// The test's name ("order is still processing"); a plain one is made when empty.
     var name: String
 
     var id: String { "\(kind.rawValue)|\(path)|\(expected)" }
@@ -595,7 +595,7 @@ enum Prompts {
         let instructions = """
         You write API tests. Suggest 3 to 5 checks that this exact response passes and that would catch a regression: \
         the status, an important header, and the body fields that matter for this request (values that identify the \
-        result such as a status field, types of ids and amounts). Use JSON paths like links.pay or items[0].sku. \
+        result such as a status field, types of ids and amounts). Use JSON paths like links.track or items[0].sku. \
         Never check values shown as ••••, timestamps, or random ids by exact value: check their type instead.
         """
         var parts: [String] = []

@@ -74,6 +74,9 @@ struct ExplainSheet: View {
     @Environment(\.dismiss) private var dismiss
     @State private var session: ExplainSession?
     @State private var added = false
+    /// Starts at half height; a suggested test opens it to full height, so the script isn't cut
+    /// at the sheet's edge.
+    @State private var detent: PresentationDetent = .medium
 
     private var editor: RequestEditor? { model.editor(for: target.id) }
 
@@ -100,8 +103,11 @@ struct ExplainSheet: View {
                 }
             }
         }
-        .presentationDetents([.medium, .large])
+        .presentationDetents([.medium, .large], selection: $detent)
         .presentationDragIndicator(.visible)
+        .onChange(of: session?.suggestion != nil) { _, suggested in
+            if suggested { withAnimation(.hitop) { detent = .large } }
+        }
         .task {
             guard session == nil, let editor, case let .success(o)? = editor.outcome else { return }
             let s = ExplainSession(assistant: ai.assistant, request: editor.draft, facts: ResponseFacts(o),

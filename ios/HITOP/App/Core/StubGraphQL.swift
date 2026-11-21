@@ -35,8 +35,8 @@ enum StubGraphQL {
                 field("cancelOrder", named("Order"), args: [("id", nonNull(scalar("ID")))]),
             ]),
             object("Product", [
-                field("sku", nonNull(scalar("ID"))), field("name", nonNull(scalar("String"))), field("price", nonNull(scalar("Int"))),
-                field("stock", scalar("Int")), field("category", named("Category")),
+                field("sku", nonNull(scalar("ID"))), field("name", nonNull(scalar("String"))), field("stock", scalar("Int")),
+                field("rating", scalar("Float")), field("category", named("Category")),
             ], description: "Something the shop sells."),
             object("Category", [field("id", nonNull(scalar("ID"))), field("name", nonNull(scalar("String")))]),
             object("Customer", [
@@ -49,12 +49,12 @@ enum StubGraphQL {
             ]),
             object("OrderItem", [field("sku", nonNull(scalar("ID"))), field("qty", nonNull(scalar("Int"))), field("product", named("Product"))]),
             .object(["kind": .string("ENUM"), "name": .string("OrderStatus"), "description": .null, "fields": .null, "inputFields": .null,
-                     "enumValues": .array(["PENDING_PAYMENT", "PAID", "SHIPPED", "CANCELLED"].map { .object(["name": .string($0)]) }), "possibleTypes": .null]),
+                     "enumValues": .array(["PROCESSING", "PACKED", "SHIPPED", "CANCELLED"].map { .object(["name": .string($0)]) }), "possibleTypes": .null]),
             .object(["kind": .string("INPUT_OBJECT"), "name": .string("OrderInput"), "description": .null, "fields": .null,
                      "inputFields": .array([field("customerId", nonNull(scalar("ID"))), field("skus", nonNull(list(nonNull(scalar("ID")))))]),
                      "enumValues": .null, "possibleTypes": .null]),
             object("__Schema", []),
-        ] + ["ID", "String", "Int", "Boolean"].map { .object(["kind": .string("SCALAR"), "name": .string($0), "description": .null, "fields": .null]) }
+        ] + ["ID", "String", "Int", "Float", "Boolean"].map { .object(["kind": .string("SCALAR"), "name": .string($0), "description": .null, "fields": .null]) }
         return .object(["data": .object(["__schema": .object([
             "queryType": .object(["name": .string("Query")]), "mutationType": .object(["name": .string("Mutation")]),
             "subscriptionType": .null, "types": .array(types),

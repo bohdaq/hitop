@@ -75,7 +75,7 @@ final class FlowTests: XCTestCase {
         wait(app.el("test-pass-Status is 201"))
         XCTAssertTrue(app.el("test-pass-Total equals sum of items").exists)
         XCTAssertTrue(app.el("test-pass-Responds under 1 s").exists)
-        XCTAssertTrue(app.el("test-pass-Has a payment link").exists)
+        XCTAssertTrue(app.el("test-pass-Has a tracking link").exists)
         app.el("rtab-Cookies").tap()
         XCTAssertTrue(app.staticTexts["session"].waitForExistence(timeout: 5))
         app.el("close-response").tap()

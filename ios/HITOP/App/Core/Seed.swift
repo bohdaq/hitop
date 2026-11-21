@@ -20,7 +20,7 @@ enum Seed {
     pm.test("Status is 201", () => pm.response.to.have.status(201));
     pm.test("Total equals sum of items", () => pm.expect(order.total.amount).to.eql(6480));
     pm.test("Responds under 1 s", () => pm.expect(pm.response.responseTime).to.be.below(1000));
-    pm.test("Has a payment link", () => pm.expect(order.links.pay).to.be.ok);
+    pm.test("Has a tracking link", () => pm.expect(order.links.track).to.be.ok);
     """
 
     static func collections() -> [SavedCollection] {
@@ -31,6 +31,9 @@ enum Seed {
                                 bodyType: bodyType ?? (body.isEmpty ? nil : "json"), file: folder.isEmpty ? slug : "\(folder)/\(slug)", extras: extras)
         }
         let json = [KeyValue("Content-Type", "application/json"), KeyValue("Accept", "application/json"), KeyValue("Idempotency-Key", "${$guid}", enabled: false)]
+        var catalog = r(1110, "POST", "Catalog query", "${baseUrl}/graphql", "catalog",
+                        body: "query Catalog($first: Int) {\n  products(first: $first) { sku name stock rating }\n}", bodyType: "graphql")
+        catalog.graphqlVariables = "{ \"first\": 2 }"
         let shop = SavedCollection(id: 1001, name: "shop-api", requests: [
             r(1101, "POST", "Log in", "${baseUrl}/v2/auth/login", "auth", body: "{\n  \"email\": \"ada@example.com\",\n  \"password\": \"${password}\"\n}", headers: [json[0]]),
             r(1102, "POST", "Refresh token", "${baseUrl}/v2/auth/refresh", "auth"),
@@ -42,8 +45,7 @@ enum Seed {
             r(1107, "GET", "Order events", "wss://api.shop.example/v2/orders/events", "orders", extras: ["kind": .string("websocket")]),
             r(1108, "DELETE", "Cancel order", "${baseUrl}/v2/orders/${orderId}", "orders"),
             r(1109, "GET", "List products", "${baseUrl}/v2/products?limit=20", "catalog"),
-            r(1110, "POST", "Catalog query", "${baseUrl}/graphql", "catalog",
-              body: "query Catalog($first: Int) {\n  products(first: $first) { sku name price }\n}", bodyType: "graphql"),
+            catalog,
             r(1111, "POST", "Stock levels", "${baseUrl}/v2/stock/query", "catalog", body: "{\n  \"skus\": [\"TEE-0193\"]\n}", headers: [json[0]]),
             r(1112, "POST", "Create customer", "${baseUrl}/v2/customers", "customers", body: "{\n  \"name\": \"Ada\"\n}", headers: [json[0]]),
             r(1113, "GET", "Get customer", "${baseUrl}/v2/customers/${customerId}", "customers"),
@@ -69,17 +71,17 @@ enum Seed {
     /// I4: a WebSocket, two event streams and two gRPC calls (StubURLProtocol, the in-app echo
     /// socket and the canned Greeter answer them).
     static func realtime() -> SavedCollection {
-        var prices = SavedRequest(id: 1401, name: "Live prices", url: "wss://stream.shop.example/v2/prices?market=${market}",
-                                  headers: [KeyValue("X-Client", "hitop")], file: "live-prices")
-        prices.kind = SavedRequest.websocketKind
-        prices.websocket = WebSocketFields(subprotocols: ["prices.v2", "prices.v1"], messages: [
+        var stock = SavedRequest(id: 1401, name: "Live stock", url: "wss://stream.shop.example/v2/stock?market=${market}",
+                                  headers: [KeyValue("X-Client", "hitop")], file: "live-stock")
+        stock.kind = SavedRequest.websocketKind
+        stock.websocket = WebSocketFields(subprotocols: ["stock.v2", "stock.v1"], messages: [
             WSSavedMessage(name: "subscribe", content: #"{"op": "subscribe", "symbol": "${symbol}"}"#),
             WSSavedMessage(name: "ping", content: "ping"),
             WSSavedMessage(name: "binary", content: "bin"),
         ])
         let events = KeyValue("Accept", "text/event-stream")
         let feed = SavedRequest(id: 1402, name: "Order feed", url: "${baseUrl}/v2/orders/stream", headers: [events], file: "order-feed")
-        let ticks = SavedRequest(id: 1403, name: "Price ticks", url: "${baseUrl}/v2/prices/live", headers: [events], file: "price-ticks")
+        let ticks = SavedRequest(id: 1403, name: "Stock ticks", url: "${baseUrl}/v2/stock/live", headers: [events], file: "stock-ticks")
         var hello = SavedRequest(id: 1404, name: "Say hello", url: "grpc.shop.example:443", headers: [KeyValue("x-tenant", "acme")], file: "say-hello")
         hello.kind = SavedRequest.grpcKind
         hello.grpc = GrpcFields(service: "hitop.test.Greeter", method: "SayHello", message: "{\n  \"name\": \"${customer}\"\n}")
@@ -88,7 +90,7 @@ enum Seed {
         stream.grpc = GrpcFields(service: "hitop.test.Greeter", method: "StreamHellos", message: "{\n  \"name\": \"Ada\",\n  \"times\": 3\n}")
         var noReflection = SavedRequest(id: 1406, name: "Legacy service", url: "noreflect.shop.example:443", file: "legacy-service")
         noReflection.kind = SavedRequest.grpcKind
-        return SavedCollection(id: 1004, name: "realtime", requests: [prices, feed, ticks, hello, stream, noReflection],
+        return SavedCollection(id: 1004, name: "realtime", requests: [stock, feed, ticks, hello, stream, noReflection],
                                variables: ["market": "eu", "symbol": "TEE-0193", "customer": "Ada"], auth: .bearer(token: "${token}"))
     }
 

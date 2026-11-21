@@ -86,9 +86,9 @@ struct GeneratedCheck {
     var kind: GeneratedCheckKind
     @Guide(description: "For equals, exists and type: the JSON path of the body field, like status, total.amount or items[0].sku. For header: the header name. Otherwise empty.")
     var path: String
-    @Guide(description: "For status: the code, like 201. For equals: the value as JSON, like \"pending_payment\" or 6480 or true. For type: string, number, boolean, array, object or null. For header: text the value contains, or empty. For responseTime: milliseconds. For bodyContains: the text. For exists: empty.")
+    @Guide(description: "For status: the code, like 201. For equals: the value as JSON, like \"processing\" or 6480 or true. For type: string, number, boolean, array, object or null. For header: text the value contains, or empty. For responseTime: milliseconds. For bodyContains: the text. For exists: empty.")
     var expected: String
-    @Guide(description: "A short test name that says what the check means, like \"order waits for payment\"")
+    @Guide(description: "A short test name that says what the check means, like \"order is still processing\"")
     var name: String
 
     var check: SuggestedCheck {

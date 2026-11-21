@@ -72,7 +72,7 @@ final class StoreScreenshotTests: XCTestCase {
         let realtime = app.el("collection-realtime")
         scrollTo(app, realtime)
         if realtime.value as? String != "expanded" { realtime.tap() }
-        let row = app.el("request-Live prices")
+        let row = app.el("request-Live stock")
         scrollTo(app, row)
         row.tap()
         wait(app.el("ws-add-message"))
@@ -98,8 +98,14 @@ final class StoreScreenshotTests: XCTestCase {
         explain.tap()
         waitLabel(app.el("explain-text"), contains: "where to go from here", timeout: 30)
         app.el("suggest-test").tap()
-        wait(app.el("suggested-test"))
-        sleep(1)
+        let script = app.el("suggested-test")
+        wait(script)
+        // The suggestion opens the sheet to full height: the whole script on screen, not cut.
+        sleep(2)
+        let screen = app.windows.firstMatch.frame
+        XCTAssertGreaterThanOrEqual(script.frame.minY, screen.minY, "the script's top is cut")
+        XCTAssertLessThanOrEqual(script.frame.maxY, screen.maxY - 20, "the script's end is cut")
+        XCTAssertTrue(app.el("explain-text").isHittable, "the explanation scrolled away")
         store(app, "iphone-06-explain")
     }
 
@@ -163,9 +169,9 @@ final class StoreScreenshotTests: XCTestCase {
         guard isPad else { return }
         let app = launchPad()
         sendOnPad(app, "Catalog query")
-        // The answer stays as the app shows it ({ "data": { 1 key } }): tapping a line to unfold it
-        // hit the wrong line on the CI iPad and folded the whole answer.
+        // A one-key wrapper (GraphQL's "data") opens on its contents: the products are on screen.
         wait(app.el("json-body"))
+        XCTAssertTrue(app.staticTexts.containing(NSPredicate(format: "label CONTAINS %@", "HITOP tee")).firstMatch.exists, "the answer is folded")
         sleep(1)
         store(app, "ipad-04-graphql")
     }
@@ -238,13 +244,13 @@ final class StoreScreenshotTests: XCTestCase {
     /// in the panel's portrait orientation; CI turns it upright.
     @MainActor
     private func store(_ app: XCUIApplication, _ name: String, file: StaticString = #filePath, line: UInt = #line) {
-        // Capitalised words match case-sensitively ("subscribe" is a saved WebSocket message, and
-        // "price" a JSON key of the demo data); phrases and currency amounts in any case.
+        // Capitalised words match case-sensitively ("subscribe" is a saved WebSocket message);
+        // phrases, "price" and "payment" (the demo data has neither) and currency amounts in any case.
         for word in ["Upgrade", "Buy", "Purchase", "Subscribe", "Pricing", "Checkout", "Billing", "Pro plan", "Team plan", "Business plan"] {
             let hit = app.staticTexts.containing(NSPredicate(format: "label CONTAINS %@", word)).firstMatch
             XCTAssertFalse(hit.exists, "'\(word)' on \(name): \(hit.exists ? hit.label : "")", file: file, line: line)
         }
-        for phrase in ["free trial", "per month", "per seat", "in-app purchase", "buy now"] {
+        for phrase in ["price", "payment", "free trial", "per month", "per seat", "in-app purchase", "buy now"] {
             XCTAssertFalse(app.staticTexts.containing(NSPredicate(format: "label CONTAINS[c] %@", phrase)).firstMatch.exists,
                            "'\(phrase)' on \(name)", file: file, line: line)
         }

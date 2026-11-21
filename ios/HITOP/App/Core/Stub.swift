@@ -24,7 +24,7 @@ final class StubURLProtocol: URLProtocol {
     override class func canInit(with request: URLRequest) -> Bool { true }
     override class func canonicalRequest(for request: URLRequest) -> URLRequest { request }
 
-    /// The live event stream's ticks (`/v2/prices/live`), until the client stops loading.
+    /// The live event stream's ticks (`/v2/stock/live`), until the client stops loading.
     private var ticker: Timer?
     private var ticks = 0
 
@@ -34,14 +34,14 @@ final class StubURLProtocol: URLProtocol {
         let response = HTTPURLResponse(url: url, statusCode: answer.status, httpVersion: "HTTP/2", headerFields: answer.headers)!
         client?.urlProtocol(self, didReceive: response, cacheStoragePolicy: .notAllowed)
         client?.urlProtocol(self, didLoad: answer.body)
-        if url.path == "/v2/prices/live" {
+        if url.path == "/v2/stock/live" {
             // Never ends: a tick every 0.4 s until Stop (stopLoading).
             // The timer runs on this loading thread's run loop, where the client is called.
             nonisolated(unsafe) let me = self
             let t = Timer(timeInterval: 0.4, repeats: true) { _ in
                 me.ticks += 1
-                let price = 2190 + me.ticks * 5
-                me.client?.urlProtocol(me, didLoad: Data("event: tick\nid: \(me.ticks + 2)\ndata: {\"sku\":\"TEE-0193\",\"price\":\(price)}\n\n".utf8))
+                let stock = max(0, 120 - me.ticks)
+                me.client?.urlProtocol(me, didLoad: Data("event: tick\nid: \(me.ticks + 2)\ndata: {\"sku\":\"TEE-0193\",\"stock\":\(stock)}\n\n".utf8))
             }
             RunLoop.current.add(t, forMode: .common)
             ticker = t
@@ -95,11 +95,11 @@ final class StubURLProtocol: URLProtocol {
         switch (method, path) {
         case ("POST", "/v2/orders"):
             return json(201, """
-            {"id":"ord_8KQ2mZ41","status":"pending_payment","total":{"amount":6480,"currency":"EUR"},"items":[{"sku":"TEE-0193","qty":2},{"sku":"CAP-0007","qty":1}],"customer":{"id":"cus_42","name":"Ada","tier":"gold"},"links":{"pay":"/v2/orders/ord_8KQ2mZ41/pay"},"createdAt":"2026-11-17T10:42Z"}
+            {"id":"ord_8KQ2mZ41","status":"processing","total":{"amount":6480,"currency":"EUR"},"items":[{"sku":"TEE-0193","qty":2},{"sku":"CAP-0007","qty":1}],"customer":{"id":"cus_42","name":"Ada","tier":"gold"},"links":{"track":"/v2/orders/ord_8KQ2mZ41/tracking"},"createdAt":"2026-11-17T10:42Z"}
             """, extra: ["Location": "/v2/orders/ord_8KQ2mZ41", "Set-Cookie": "session=s_91x; Path=/; Secure; HttpOnly"])
         case ("GET", "/v2/orders"):
             return json(200, """
-            [{"id":"ord_8KQ2mZ41","status":"pending_payment","total":6480},{"id":"ord_7HP1aX02","status":"shipped","total":2190}]
+            [{"id":"ord_8KQ2mZ41","status":"processing","total":6480},{"id":"ord_7HP1aX02","status":"shipped","total":2190}]
             """)
         case ("POST", "/v2/auth/login"):
             return json(200, #"{"token":"tok_live_5Yq","expiresIn":3600}"#, extra: ["Set-Cookie": "session=s_91x; Path=/; Secure; HttpOnly"])
@@ -111,11 +111,11 @@ final class StubURLProtocol: URLProtocol {
             : order events for shop-api
             event: order.created
             id: 1
-            data: {"id":"ord_8KQ2mZ41","status":"pending_payment","total":6480}
+            data: {"id":"ord_8KQ2mZ41","status":"processing","total":6480}
 
-            event: order.paid
+            event: order.packed
             id: 2
-            data: {"id":"ord_8KQ2mZ41","status":"paid"}
+            data: {"id":"ord_8KQ2mZ41","status":"packed"}
 
             event: order.shipped
             id: 3
@@ -124,24 +124,24 @@ final class StubURLProtocol: URLProtocol {
 
 
             """.utf8))
-        case ("GET", "/v2/prices/live"):
+        case ("GET", "/v2/stock/live"):
             return Answer(status: 200, headers: eventStreamHeaders, body: Data("""
             event: tick
             id: 1
-            data: {"sku":"TEE-0193","price":2190}
+            data: {"sku":"TEE-0193","stock":120}
 
             event: tick
             id: 2
-            data: {"sku":"CAP-0007","price":1290}
+            data: {"sku":"CAP-0007","stock":64}
 
 
             """.utf8))
         case ("POST", "/graphql"):
             if bodyText(request).contains("__schema") { return json(200, StubGraphQL.introspection) }
-            return json(200, #"{"data":{"products":[{"sku":"TEE-0193","name":"HITOP tee","price":2190},{"sku":"CAP-0007","name":"HITOP cap","price":1290}]}}"#)
+            return json(200, #"{"data":{"products":[{"sku":"TEE-0193","name":"HITOP tee","stock":120,"rating":4.8},{"sku":"CAP-0007","name":"HITOP cap","stock":64,"rating":4.6}]}}"#)
         case (_, let p) where p.hasPrefix("/v2/orders/"):
-            if method == "DELETE" { return json(409, #"{"error":"order already paid"}"#) }
-            return json(200, #"{"id":"ord_8KQ2mZ41","status":"pending_payment"}"#)
+            if method == "DELETE" { return json(409, #"{"error":"order already shipped"}"#) }
+            return json(200, #"{"id":"ord_8KQ2mZ41","status":"processing"}"#)
         default:
             return json(200, "{\"method\":\"\(method)\",\"path\":\"\(path)\",\"host\":\"\(host)\",\"ok\":true}")
         }

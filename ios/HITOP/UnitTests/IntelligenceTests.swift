@@ -94,7 +94,7 @@ final class IntelligenceTests: XCTestCase {
         let p = Prompts.explain(request: request, facts: ResponseFacts(outcome), secrets: secrets)
         XCTAssertTrue(p.text.contains("Status: 201 Created"), p.text)
         XCTAssertTrue(p.text.contains("POST https://staging.shop.example/v2/orders?expand=items"))
-        XCTAssertTrue(p.text.contains("pending_payment"))
+        XCTAssertTrue(p.text.contains("processing"))
         XCTAssertTrue(p.text.contains("BODY SHAPE\nobject {id: string, status: string, total: object"))
         XCTAssertTrue(p.text.contains("Set-Cookie: ••••"))
         XCTAssertFalse(p.text.contains("s_91x"))
@@ -108,10 +108,10 @@ final class IntelligenceTests: XCTestCase {
         let checks = [
             SuggestedCheck(.status, expected: "201", name: "Order is created"),
             SuggestedCheck(.status, expected: "200"),
-            SuggestedCheck(.equals, path: "status", expected: "pending_payment", name: "order waits for payment"),
+            SuggestedCheck(.equals, path: "status", expected: "processing", name: "order is still processing"),
             SuggestedCheck(.equals, path: "total.amount", expected: "6480"),
             SuggestedCheck(.equals, path: "total.amount", expected: "999"),
-            SuggestedCheck(.type, path: "links.pay", expected: "String"),
+            SuggestedCheck(.type, path: "links.track", expected: "String"),
             SuggestedCheck(.exists, path: "items[1].sku"),
             SuggestedCheck(.exists, path: "items[5].sku"),
             SuggestedCheck(.header, path: "Content-Type", expected: "application/json"),
@@ -127,10 +127,10 @@ final class IntelligenceTests: XCTestCase {
         const body = pm.response.json();
         pm.test("Order is created", () => pm.response.to.have.status(201));
         pm.test("Content-Type includes application/json", () => pm.expect(pm.response.headers.get("Content-Type")).to.include("application/json"));
-        pm.test("order waits for payment", () => pm.expect(body.status).to.eql("pending_payment"));
+        pm.test("order is still processing", () => pm.expect(body.status).to.eql("processing"));
         pm.test("total.amount is 6480", () => pm.expect(body.total.amount).to.eql(6480));
         pm.test("items[1].sku is present", () => pm.expect(body.items[1].sku).to.exist);
-        pm.test("links.pay is a string", () => pm.expect(body.links.pay).to.be.a("string"));
+        pm.test("links.track is a string", () => pm.expect(body.links.track).to.be.a("string"));
         """)
     }
 
@@ -165,7 +165,7 @@ final class IntelligenceTests: XCTestCase {
         let (request, outcome, secrets) = try await createOrder()
         let session = ExplainSession(assistant: FakeAssistant(), request: request, facts: ResponseFacts(outcome), secrets: secrets)
         let fake = FakeAssistant()
-        fake.checks = TestScript.heuristic(ResponseFacts(outcome)) + [SuggestedCheck(.exists, path: "links.pay"), SuggestedCheck(.status, expected: "500")]
+        fake.checks = TestScript.heuristic(ResponseFacts(outcome)) + [SuggestedCheck(.exists, path: "links.track"), SuggestedCheck(.status, expected: "500")]
         let s2 = ExplainSession(assistant: fake, request: request, facts: ResponseFacts(outcome), secrets: secrets)
         await s2.suggest()
         let suggestion = try XCTUnwrap(s2.suggestion)

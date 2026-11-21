@@ -172,7 +172,7 @@ final class AccessibilityTests: XCTestCase {
             row.tap()
         }
 
-        open("Live prices")
+        open("Live stock")
         wait(app.el("ws-add-message"))
         audit(app, "websocket request")
         app.el("send").tap()

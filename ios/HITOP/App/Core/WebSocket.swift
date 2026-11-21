@@ -240,7 +240,7 @@ struct EchoWebSocketTransport: WebSocketTransport {
             return socket
         }
         events.yield(.opened(protocol: target.subprotocols.first))
-        if target.url.contains("/prices") { events.yield(.text(#"{"type":"hello","feed":"prices","symbols":2}"#)) }
+        if target.url.contains("/v2/stock") { events.yield(.text(#"{"type":"hello","feed":"stock","symbols":2}"#)) }
         return socket
     }
 }

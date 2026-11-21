@@ -131,21 +131,32 @@ enum JSONOutline {
     }
 
     /// What starts folded: in a long body, the top-level objects and arrays that don't fit on one
-    /// line (the drafts' `▸ "items": [ 2 items ]`).
+    /// line (the drafts' `▸ "items": [ 2 items ]`). A wrapper with one key (GraphQL's `"data"`,
+    /// `{"result": …}`) is never folded itself: the rule applies to what it wraps, so the answer
+    /// opens on its contents instead of `"data": { 1 key }`.
     static func defaultFolds(_ value: JSONValue) -> Set<String> {
-        guard case let .object(o) = value, lines(value, folded: []).count > 12 else { return [] }
+        guard lines(value, folded: []).count > 12 else { return [] }
+        return folds(value, path: "$", depth: 1)
+    }
+
+    private static func isContainer(_ v: JSONValue) -> Bool {
+        switch v {
+        case let .object(c): !c.isEmpty
+        case let .array(c): !c.isEmpty
+        default: false
+        }
+    }
+
+    private static func folds(_ value: JSONValue, path: String, depth: Int) -> Set<String> {
+        guard case let .object(o) = value else { return [] }
+        if o.count == 1, let only = o.first, isContainer(only.1) {
+            return folds(only.1, path: "\(path).\(only.0)", depth: depth + 1)
+        }
         var out: Set<String> = []
-        for (k, child) in o {
-            let container: Bool
-            switch child {
-            case let .object(c): container = !c.isEmpty
-            case let .array(c): container = !c.isEmpty
-            default: container = false
-            }
-            guard container else { continue }
+        for (k, child) in o where isContainer(child) {
             let lead = JSONValue.quote(k) + ": "
-            let fits = inlineTokens(child).map { (lead + $0.map(\.text).joined() + ",").count + 2 <= inlineWidth } ?? false
-            if !fits { out.insert("$.\(k)") }
+            let fits = inlineTokens(child).map { (lead + $0.map(\.text).joined() + ",").count + depth * 2 <= inlineWidth } ?? false
+            if !fits { out.insert("\(path).\(k)") }
         }
         return out
     }

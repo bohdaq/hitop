@@ -48,13 +48,13 @@ final class ProtocolFlowTests: XCTestCase {
         guard UIDevice.current.userInterfaceIdiom == .phone else { return }
         let app = XCUIApplication.seeded()
         app.launch()
-        open(app, "Live prices")
+        open(app, "Live stock")
         wait(app.el("ws-add-message"))
         XCTAssertEqual(app.el("method").label, "Method WebSocket")
         shot(app, "22-websocket-request")
 
         app.el("send").tap()
-        waitLabel(app.el("socket-status"), contains: "Connected · prices.v2")
+        waitLabel(app.el("socket-status"), contains: "Connected · stock.v2")
         let subscribe = app.el("ws-saved-subscribe")
         wait(subscribe)
         subscribe.tap()
@@ -76,7 +76,7 @@ final class ProtocolFlowTests: XCTestCase {
         guard UIDevice.current.userInterfaceIdiom == .phone else { return }
         let app = XCUIApplication.seeded()
         app.launch()
-        open(app, "Price ticks")
+        open(app, "Stock ticks")
         XCTAssertEqual(app.el("method").label, "Method Server-Sent Events")
         app.el("send").tap()
         let count = app.el("events-count")

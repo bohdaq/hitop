@@ -118,7 +118,7 @@ final class ProtocolTests: XCTestCase {
         editor.send()
         await editor.waitForSend()
         guard case let .success(o)? = editor.outcome else { return XCTFail("\(String(describing: editor.outcome))") }
-        XCTAssertEqual(o.events?.map(\.event), ["order.created", "order.paid", "order.shipped"])
+        XCTAssertEqual(o.events?.map(\.event), ["order.created", "order.packed", "order.shipped"])
         XCTAssertEqual(o.events?.last?.data, "{\"id\":\"ord_8KQ2mZ41\",\"carrier\":\"DHL\",\n\"tracking\":\"JD0146 0001 2345\"}")
         XCTAssertEqual(o.events?.first?.lastEventID, "1")
         #if canImport(Darwin)
@@ -159,12 +159,12 @@ final class ProtocolTests: XCTestCase {
         let r = try XCTUnwrap(model.request(1401))
         let vars = model.context(for: 1004).merged
         let t = try WebSocketTargets.make(r, collectionAuth: model.collection(1004)?.auth, variables: vars)
-        XCTAssertEqual(t.url, "wss://stream.shop.example/v2/prices?market=eu")
+        XCTAssertEqual(t.url, "wss://stream.shop.example/v2/stock?market=eu")
         XCTAssertEqual(t.headers, [["X-Client", "hitop"], ["Authorization", "Bearer tok_staging_8f2"]])
-        XCTAssertEqual(t.subprotocols, ["prices.v2", "prices.v1"])
+        XCTAssertEqual(t.subprotocols, ["stock.v2", "stock.v1"])
         var key = r
         key.auth = .apiKey(key: "key", value: "${token}", inQuery: true)
-        XCTAssertEqual(try WebSocketTargets.make(key, collectionAuth: nil, variables: vars).url, "wss://stream.shop.example/v2/prices?market=eu&key=tok_staging_8f2")
+        XCTAssertEqual(try WebSocketTargets.make(key, collectionAuth: nil, variables: vars).url, "wss://stream.shop.example/v2/stock?market=eu&key=tok_staging_8f2")
         var missing = r
         missing.url = "wss://h/${nope}"
         XCTAssertThrowsError(try WebSocketTargets.make(missing, collectionAuth: nil, variables: vars)) { XCTAssertTrue("\($0.localizedDescription)".contains("nope")) }
@@ -175,8 +175,8 @@ final class ProtocolTests: XCTestCase {
         let s = editor.socket
         editor.send()
         await until("open") { s.status == .open }
-        XCTAssertEqual(s.negotiated, "prices.v2")
-        XCTAssertEqual(s.log.first?.text, "Connecting to wss://stream.shop.example/v2/prices?market=eu (subprotocols prices.v2, prices.v1)")
+        XCTAssertEqual(s.negotiated, "stock.v2")
+        XCTAssertEqual(s.log.first?.text, "Connecting to wss://stream.shop.example/v2/stock?market=eu (subprotocols stock.v2, stock.v1)")
         await editor.sendMessage(#"{"op": "subscribe", "symbol": "${symbol}"}"#)
         await until("echo") { s.log.contains { $0.kind == .received && $0.text == #"{"op": "subscribe", "symbol": "TEE-0193"}"# } }
         XCTAssertTrue(s.log.contains { $0.kind == .sent && $0.text == #"{"op": "subscribe", "symbol": "TEE-0193"}"# })

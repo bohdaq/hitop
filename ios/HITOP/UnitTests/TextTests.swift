@@ -55,6 +55,11 @@ final class TextTests: XCTestCase {
         XCTAssertEqual(JSONOutline.defaultFolds(JSONOutline.parse(#"{"a": {"b": 1}}"#)!), [], "a short body starts open")
         let long = try XCTUnwrap(JSONOutline.parse(#"{"a": {"b": 1, "c": 2, "d": 3, "e": 4, "f": 5, "g": 6, "h": 7, "i": 8, "j": 9}, "k": [{"x": 1}, {"y": 2}, {"z": 3}, {"w": 4}], "t": {"amount": 1}}"#))
         XCTAssertEqual(JSONOutline.defaultFolds(long), ["$.a", "$.k"])
+        let graphql = try XCTUnwrap(JSONOutline.parse(#"{"data":{"products":[{"sku":"TEE-0193","name":"HITOP tee","stock":120,"rating":4.8},{"sku":"CAP-0007","name":"HITOP cap","stock":64,"rating":4.6}]}}"#))
+        XCTAssertGreaterThan(JSONOutline.lines(graphql, folded: []).count, 12)
+        XCTAssertEqual(JSONOutline.defaultFolds(graphql), [], "a one-key wrapper (GraphQL's data) opens on its contents")
+        let wrapped = try XCTUnwrap(JSONOutline.parse(#"{"result": {"a": {"b": 1, "c": 2, "d": 3, "e": 4, "f": 5, "g": 6, "h": 7, "i": 8, "j": 9}, "t": {"amount": 1}}}"#))
+        XCTAssertEqual(JSONOutline.defaultFolds(wrapped), ["$.result.a"], "the rule applies inside the wrapper")
     }
 
     func testJSONValidateAndFormatKeepVariables() {
