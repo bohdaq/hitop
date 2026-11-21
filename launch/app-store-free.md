@@ -20,9 +20,9 @@ change the base price to **Free (0.00)**, starting today. People who bought the 
 their updates continue as before.
 
 - macOS: **HiTop API Client** (id6785294166), today $4.99
-- iOS: **HiTop HTTP Client** (id6785326628), today $2.99. The iOS app is frozen (no new builds
-  planned), so this price change is the only thing to do for it. As far as I know a price change
-  needs no new build. Check that in App Store Connect; I couldn't verify it from here.
+- iOS: **HiTop HTTP Client** (id6785326628), today $2.99. As far as I know a price change needs no new build (unverified). The
+  app gets its successor as version 2.0.0 (HITOP for iOS 26, free, store mode): build, listing,
+  review notes and privacy answers are in `ios/APP_STORE.md`.
 
 ## 2. Build the Mac App Store version from main (on the Mac)
 

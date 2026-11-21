@@ -26,9 +26,9 @@ Activity/Siri).
 | I3 | Collection runner + run report, Live Activity, widgets, App Intents | done (branch `ios-i3`, 2026-11-18; no server change) |
 | I4 | WebSocket, SSE, GraphQL schema, gRPC | done (branch `ios-i4`, 2026-11-19; no server change) |
 | I5 | Apple Intelligence features, iPad three columns + keyboard, accessibility pass (VoiceOver, Dynamic Type, Reduce Transparency) | done (branch `ios-i5`, 2026-11-19; no server change) |
-| I6 | App Store: screenshots, listing text, review notes, price → Free, submit (owner on a Mac) | planned |
+| I6 | App Store: screenshots, listing text, review notes, price → Free, submit (owner on a Mac) | done (branch `ios-i6`, 2026-11-21); owner: build + submit (`ios/APP_STORE.md`) |
 
-Owner tasks: none until I6 (I3 adds the app group to register, see "I3: what landed"), apart from opening the CI-built simulator builds or TestFlight if wanted.
+Owner tasks: I6 = `ios/APP_STORE.md` (decisions first: account deletion, privacy policy, France, Explain screenshots; then build, upload, listing, submit).
 Agents can't run Xcode here (Linux bastion): every tranche is built and tested by the macOS CI job.
 
 ## I0 + I1: what landed (2026-11-18, branch `ios-i0-i1`)
@@ -632,3 +632,38 @@ WebSocket/gRPC/SSE sessions; an explanation cache; Spotlight/App Intents for the
 HTML, an error), check the wording and the "on device" note; Suggest a test and run it; "New request from text" with a
 sentence; turn Apple Intelligence off in Settings and check the reasons; VoiceOver, Larger Text at the largest size,
 Increase Contrast and Reduce Motion on a device.
+
+## I6: what landed (2026-11-21, branch `ios-i6`)
+CI: `.github/workflows/ios.yml`, green run https://github.com/bohdaq/hitop/actions/runs/44902375673 (commit 28ea1f9; the final head run is in the report) (jobs `app`, `core`, `hitopkit`, new `store-screenshots` and `archive`;
+artifact `app-store-screenshots`).
+
+- Owner doc `ios/APP_STORE.md`: decisions to take first, one-time Mac setup, build/upload, App Store Connect (version 2.0.0,
+  Free, name HITOP, subtitle, promotional text, description, keywords, What's New, screenshot order, review notes, App
+  Privacy answers derived from the code, export compliance, age rating, device checks left from I3/I5).
+  `launch/app-store-free.md` no longer calls the iOS app frozen.
+- `ios/HITOP/scripts/build-appstore.sh <build> [--upload|--unsigned]` (style of desktop/scripts/build-mas.sh): SyncFFI
+  xcframework, xcodegen, `xcodebuild archive` Release for `generic/platform=iOS` with `CURRENT_PROJECT_VERSION=<build>` and
+  automatic signing (`-allowProvisioningUpdates`), checks (2.0.0 + build in the app and the widget extension, bundle id,
+  iOS 26.0 minimum, arm64, app group in both signatures), `scripts/check-store-app.sh` (no StoreKit linked or used, no
+  purchase phrase over 15 bytes in the app or extension, a control string; short words only printed: optimised Swift keeps
+  short literals out of the string section, so the UI tests stay the real guard), then `-exportArchive` with
+  `method app-store-connect`, `destination export` (an .ipa for Transporter) or `upload`, `manageAppVersionAndBuildNumber`
+  false. CI job `archive` runs it with `--unsigned` (`CODE_SIGNING_ALLOWED=NO`): the archive path and checks are proven;
+  signing, export and upload are not (no secrets in CI).
+- Store screenshots: `UITests/StoreScreenshotTests.swift` (one test per picture, store-word and price assertions on each
+  screen, skipped by the main run), CI job `store-screenshots`: simulators made from device types on the newest iOS 26
+  runtime (iPhone 17 Pro Max 1320 × 2868, iPad Pro 13-inch (M5) 2064 × 2752 turned to landscape 2752 × 2064), status bar
+  9:41, `scripts/store-screenshots.py` (export), `flatten-png.swift` (no alpha), `check-store-screenshots.sh` (exact file
+  list and sizes, fails otherwise). iPhone: 01-collections, 02-request, 03-response, 04-run-result, 05-websocket, 06-explain;
+  iPad: 01-request, 02-explain, 03-run-result, 04-graphql. `-UITestStoreScreens` makes the Apple Intelligence stand-in
+  answer the seeded Create order like the model would (`FakeAssistant.storeExplanation`, four checks that hold; unit test
+  `testStoreScreensAnswersHoldForCreateOrder`) instead of its test wording. "1 check" plural fix.
+- `ITSAppUsesNonExemptEncryption` is now true: the app ships hitop-sync-crypto through SyncFFI (owner answers the export
+  questions as for the Mac app; `ios/APP_STORE.md` section 9).
+
+**Owner steps**: `ios/APP_STORE.md`. Found while writing it: there is no account deletion in the app (or anywhere but by
+email), which App Review asks for in apps that create accounts; the privacy page still says HITOP has no accounts.
+
+**Not verified here**: signing, export and upload (owner's Mac); App Store Connect accepting the screenshots (sizes match
+its published ones); how a reviewer reads the demo shop's words "price"/"pending_payment" in the sample data.
+

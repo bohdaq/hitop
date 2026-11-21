@@ -687,9 +687,9 @@ final class FakeAssistant: LanguageAssistant {
 
     /// The store screenshots' explanation of shop-api's Create order answer (Stub.swift).
     static let storeExplanation = "201 Created: the server made a new order, ord_8KQ2mZ41, and its Location header points to it. "
-        + "The order holds two items (2 × TEE-0193 and 1 × CAP-0007) for customer cus_42, with a total of 6480 in EUR minor units, so 64.80. "
-        + "It was created at 10:42 UTC and isn't completed yet: its status says what comes next. "
-        + "The answer also set a session cookie (HttpOnly, Secure)."
+        + "The order holds two items, 2 × TEE-0193 and 1 × CAP-0007, for customer cus_42, with a total amount of 6480 in EUR. "
+        + "It was created at 10:42 UTC and isn't complete yet: its status field says what comes next, "
+        + "and links lists where to go from here."
 
     func explain(_ prompt: ModelPrompt, onText: @escaping @MainActor (String) -> Void) async throws -> String {
         prompts.append(prompt)

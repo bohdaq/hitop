@@ -96,7 +96,7 @@ final class StoreScreenshotTests: XCTestCase {
         let explain = app.el("explain-response")
         wait(explain)
         explain.tap()
-        waitLabel(app.el("explain-text"), contains: "session cookie", timeout: 30)
+        waitLabel(app.el("explain-text"), contains: "where to go from here", timeout: 30)
         app.el("suggest-test").tap()
         wait(app.el("suggested-test"))
         sleep(1)
@@ -124,7 +124,7 @@ final class StoreScreenshotTests: XCTestCase {
         wait(explain)
         for _ in 0..<6 where !explain.isHittable { app.el("json-body").swipeUp(velocity: .slow) }
         explain.tap()
-        waitLabel(app.el("explain-text"), contains: "session cookie", timeout: 30)
+        waitLabel(app.el("explain-text"), contains: "where to go from here", timeout: 30)
         app.el("suggest-test").tap()
         wait(app.el("suggested-test"))
         sleep(1)
@@ -165,10 +165,13 @@ final class StoreScreenshotTests: XCTestCase {
         // Unfold the answer (data → products).
         let body = app.el("json-body")
         wait(body)
-        for _ in 0..<4 {
-            let expand = body.buttons["Expand"].firstMatch
-            guard expand.exists else { break }
-            expand.tap()
+        // A folded line toggles when tapped anywhere on it.
+        let data = body.staticTexts.containing(NSPredicate(format: "label CONTAINS %@", "1 key")).firstMatch
+        wait(data)
+        data.tap()
+        let products = body.staticTexts.containing(NSPredicate(format: "label CONTAINS %@", "HITOP tee")).firstMatch
+        if !products.waitForExistence(timeout: 3) {
+            body.staticTexts.containing(NSPredicate(format: "label CONTAINS %@", "items ]")).firstMatch.tap()
         }
         sleep(1)
         store(app, "ipad-04-graphql")

@@ -105,6 +105,9 @@ struct ResponseContent: View {
                     .minimumScaleFactor(0.7)
                     .layoutPriority(1)
             }
+            // First claim on the row's width: the buttons' Spacer otherwise takes half of it and the
+            // size ("285 B") was cut to "28…" next to Explain (I6 store screenshots).
+            .layoutPriority(1)
             HStack(spacing: 8) {
                 // The iOS 26 sheet floats inset from the screen edges: nothing in this row may push it wider.
                 Spacer(minLength: 0)
