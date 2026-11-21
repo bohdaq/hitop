@@ -19,10 +19,10 @@ if (!out) {
   process.exit(2);
 }
 
-// What `npm run build:extension` + package-extension.mjs read: the web app, the React app's shared
-// services, the pm.* shim, the site's theme and mark, the Rust crates built to WebAssembly
+// What `npm run build:extension` + package-extension.mjs read: the web app, shared/ (the storage
+// and request services, the pm.* shim), the site's theme and mark, the Rust crates built to WebAssembly
 // (hitop-wasm, hitop-scripts-wasm and their path dependencies) and the icons.
-const PATHS = ["webapp", "frontend/src", "shared", "site/src", "cli", "brand/png", "LICENSE", ":(exclude)cli/fuzz"];
+const PATHS = ["webapp", "shared", "site/src", "cli", "brand/png", "LICENSE", ":(exclude)cli/fuzz"];
 
 const tool = (name) => {
   const local = join(homedir(), ".cargo/bin", name);
@@ -87,8 +87,8 @@ bundled web app). It should match the submitted package file for file
 \`npm run build:extension\` (Rust → wasm with \`cargo --locked\`, then \`vite build\` → dist-extension/)
 and \`node scripts/package-extension.mjs firefox\`.
 
-Where the bundled code comes from: \`webapp/src/\` (the app), \`frontend/src/services/\` and
-\`frontend/src/utils/\` (request logic shared with the older React app), \`shared/pm-shim.js\`,
+Where the bundled code comes from: \`webapp/src/\` (the app), \`shared/services/\` (storage and request
+logic), \`shared/pm-shim.js\`,
 \`site/src/\` (theme and logo), npm packages pinned in \`webapp/package-lock.json\`, and the Rust
 crates \`cli/crates/hitop-wasm\` and \`cli/crates/hitop-scripts-wasm\` (pinned in their Cargo.lock)
 built by \`webapp/scripts/build-wasm.mjs\` into \`webapp/src/wasm/pkg*/\`. The Vite settings are in

@@ -4,7 +4,7 @@
  * Manages request history tracking and retrieval
  */
 
-import { generateUniqueId } from '../utils/idGenerator';
+import { generateUniqueId } from './idGenerator.js';
 
 /**
  * Creates a history item from request data

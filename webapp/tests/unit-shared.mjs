@@ -1,15 +1,15 @@
-/**
- * Tests for Variable Interpolation Service
- * 
- * Run these tests with: npm test
- */
+// shared/services/variableInterpolation.js, with the tests it had in the old React app (where no
+// runner ran them): node tests/unit-shared.mjs
+import assert from "node:assert/strict";
+import { describe, test } from "node:test";
+import { interpolateVariables, safeInterpolateVariables, extractVariableNames, validateVariables } from "../../shared/services/variableInterpolation.js";
 
-import {
-  interpolateVariables,
-  safeInterpolateVariables,
-  extractVariableNames,
-  validateVariables
-} from './variableInterpolation';
+// The few Jest matchers these tests use.
+const expect = (actual) => ({
+  toBe: (expected) => assert.equal(actual, expected),
+  toEqual: (expected) => assert.deepEqual(actual, expected),
+  toThrow: (message) => assert.throws(actual, (e) => e.message.includes(message)),
+});
 
 describe('interpolateVariables', () => {
   test('should interpolate single variable', () => {

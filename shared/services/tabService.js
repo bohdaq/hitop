@@ -4,7 +4,7 @@
  * Manages tab creation and manipulation
  */
 
-import { generateUniqueId } from '../utils/idGenerator';
+import { generateUniqueId } from './idGenerator.js';
 
 /**
  * Creates a new tab with default values

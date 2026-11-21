@@ -2,9 +2,9 @@
 // data stays in localStorage under the keys the React app used, and
 // collection folders open through the File System Access API where the
 // browser has it (Chrome, Edge).
-import storageService from "../../../frontend/src/services/storageService.jsx";
+import storageService from "../../../shared/services/storageService.js";
 import { localSaves } from "./local-storage.js";
-import { sendRequest, usesProxy } from "../../../frontend/src/services/transportService.jsx";
+import { sendRequest, usesProxy } from "../../../shared/services/transportService.js";
 import { loadEnvironments, loadGlobals, saveEnvironments, saveGlobals } from "../features.js";
 import { loadFormat } from "../wasm/format.js";
 import { openResponseStore } from "./response-store.js";

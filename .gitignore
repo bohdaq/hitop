@@ -1,6 +1,7 @@
 # Extension folders written by the build-*.sh scripts (webapp/scripts/package-extension.mjs)
 /chrome-extension
 /chrome-store-package
+/extension
 *.zip
 # Dependencies
 node_modules/
@@ -50,7 +51,6 @@ lerna-debug.log*
 Thumbs.db
 
 # Extension build artifacts
-extension/app/
 hitop-firefox-extension.zip
 hitop-firefox-extension.xpi
 

@@ -1,5 +1,5 @@
 // The scripts before and after a request, run in a page (the web build) or in the browser
-// extension's sandboxed page (extension/sandbox, HITOP Next A8: extension pages may not eval).
+// extension's sandboxed page (sandbox.html, HITOP Next A8: extension pages may not eval).
 // Plain data in, plain data out, in the shape the desktop's Rust scripts answer (tauri.js):
 // pre → {url, headers, body, contextUpdates, variables, globals},
 // post → {tests, contextUpdates, variables, globals, error?}.

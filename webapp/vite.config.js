@@ -1,9 +1,8 @@
 import { fileURLToPath } from "node:url";
 import { defineConfig } from "vite";
 
-// The web app at hitop.rws8.tech/app/. The request logic is shared with the
-// extension build: services come from ../frontend/src/services (plain JS in
-// .jsx files, no React), so storage keys and shapes stay identical.
+// The web app at hitop.rws8.tech/app/. Storage and request services come from
+// ../shared/services (plain JS, the old React app's keys and shapes).
 //
 // `--mode extension` (npm run build:extension, HITOP Next A8): the browser extensions' pages.
 // Relative paths, a second page (sandbox.html, the script runner) and no inline script: an

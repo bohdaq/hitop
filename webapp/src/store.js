@@ -1,16 +1,16 @@
-// App state and every action, without UI. A port of frontend/src/App.jsx's
-// logic onto the same services, so collections, tabs, history and contexts
-// keep their localStorage keys and shapes: the React app and this one read
-// each other's data. Views subscribe with `store.addEventListener("change")`
+// App state and every action, without UI. Started as a port of the old React
+// app's logic onto its services (now shared/services/), so collections, tabs,
+// history and contexts keep the localStorage keys and shapes data stored by the
+// React extension and desktop UI still has. Views subscribe with `store.addEventListener("change")`
 // and report problems through the `notify` event (never window.alert).
 import { markImported, markSaved, SAMPLE_NAME, SAMPLE_REQUESTS } from "./getting-started.js";
 import { isBlankRequest, isEmptyMyRequests, isMyRequests, isPristineSample, MY_REQUESTS, requestAutoName, sampleRequests, SAMPLE_BASE_URL, tabHasContent, UNTITLED } from "./new-request.js";
-import collectionService from "../../frontend/src/services/collectionService.jsx";
-import contextService from "../../frontend/src/services/contextService.jsx";
-import historyService from "../../frontend/src/services/historyService.jsx";
-import tabService from "../../frontend/src/services/tabService.jsx";
-import { interpolateVariables } from "../../frontend/src/services/variableInterpolation.jsx";
-import { generateUniqueId } from "../../frontend/src/utils/idGenerator.jsx";
+import collectionService from "../../shared/services/collectionService.js";
+import contextService from "../../shared/services/contextService.js";
+import historyService from "../../shared/services/historyService.js";
+import tabService from "../../shared/services/tabService.js";
+import { interpolateVariables } from "../../shared/services/variableInterpolation.js";
+import { generateUniqueId } from "../../shared/services/idGenerator.js";
 import {
   applyAuth,
   awsV4Headers,

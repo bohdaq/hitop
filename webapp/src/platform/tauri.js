@@ -5,7 +5,7 @@
 // contexts.json, environments.json, shared with the CLI and the old React
 // desktop), secret values in the OS keychain, and collection folders on
 // disk. Open tabs stay in the window's localStorage.
-import storageService from "../../../frontend/src/services/storageService.jsx";
+import storageService from "../../../shared/services/storageService.js";
 import { localSaves } from "./local-storage.js";
 import { historyFromRust, historyToRust } from "./history.js";
 import { askOnce, settingsSections } from "./tauri-settings.js";

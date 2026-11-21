@@ -4,7 +4,7 @@
  * Manages collection import, export, and manipulation
  */
 
-import { generateUniqueId } from '../utils/idGenerator';
+import { generateUniqueId } from './idGenerator.js';
 
 /**
  * Converts HITOP collection to Bruno format

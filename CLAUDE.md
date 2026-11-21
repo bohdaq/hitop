@@ -2,13 +2,14 @@
 
 ## What this project is
 
-HITOP is an HTTP API testing tool available in four forms:
+HITOP is an HTTP API testing tool available as:
 - **CLI** (`cli/`) — Rust binary published to crates.io as `hitop` + `hitop-core`
-- **Desktop** (`desktop/`) — Tauri 2.0 native app (macOS, Windows, Linux)
-- **Firefox Extension** (`extension/`)
-- **Chrome Extension** (`chrome-extension/`)
+- **Web app** (`webapp/`) — Lit, at hitop.rws8.tech/app/; also the UI of the desktop app and the browser extensions
+- **Desktop** (`desktop/`) — Tauri 2.0 native app (macOS, Windows, Linux) loading the web app
+- **Browser extensions** (Chrome, Firefox) — the web app, `npm run build:extension` + `webapp/scripts/package-extension.mjs`
+- **iOS** (`ios/`)
 
-The React frontend (`frontend/`) is shared between the web/extension builds.
+Storage and request services shared by every web app build live in `shared/services/` (plain JS).
 
 ---
 
@@ -97,28 +98,21 @@ hitop/
 │   ├── fixtures/postman/       # Conduit (MIT), newman sample (Apache-2.0), Adyen BIN lookup (MIT), vendored with licenses
 │   ├── fixtures/openapi/       # swagger-petstore 3.0 (Apache-2.0), Adyen Checkout v71 3.1 (MIT), Kubernetes apps/v1 3.0 (Apache-2.0); README with sources
 │   └── fixtures/launch-gate/   # Shop API Postman collection + Staging/Local envs, mock_server.py, check_junit.py (CI job launch-gate)
-├── desktop/                    # Tauri 2.0 desktop app
-│   ├── src/                    # React frontend (JSX, Vite 6)
-│   │   ├── App.jsx             # Main component, async loads data from Rust on mount
-│   │   ├── components/         # UI components (all .jsx)
-│   │   └── services/           # Service layer — all invoke() Tauri commands
-│   │       ├── storageService.jsx
-│   │       ├── httpService.jsx
-│   │       └── scriptExecutionService.jsx
+├── desktop/                    # Tauri 2.0 desktop app (UI = the web app, webapp/dist-tauri; package.json only pins @tauri-apps/cli)
 │   └── src-tauri/
 │       ├── src/
 │       │   ├── commands.rs     # All Tauri commands wrapping hitop-core
 │       │   ├── git.rs          # git {cmd,args} over hitop-git, git_token_status|set|delete (keychain git/<host>/token)
 │       │   └── lib.rs          # Command registration
 │       ├── Cargo.toml          # depends on hitop-core via path
-│       ├── tauri.conf.json     # Bundle ID: tech.rws8.hitop, category: Developer Tools; React frontend (../dist)
-│       ├── tauri.webapp.conf.json # the switch: frontend = webapp/dist-tauri (npm run build:webapp / dev:webapp)
+│       ├── tauri.conf.json     # Bundle ID: tech.rws8.hitop, category: Developer Tools; frontend = webapp/dist-tauri (beforeBuildCommand builds it)
+│       ├── tauri.webapp.conf.json # same frontend settings as tauri.conf.json (kept for `--config` callers)
 │       ├── Entitlements.mas.plist          # Mac App Store entitlements
 │   ├── msstore/                # Microsoft Store MSIX: AppxManifest.xml template, make-layout.mjs (+ test), priconfig.xml, Assets/ (brand/export.sh)
 │   ├── scripts/check-store-binary.sh # store builds have no usage ping or updater (CI desktop job, release-msstore.yml)
 │       └── Entitlements.mas.inherit.plist  # MAS child process entitlements
-├── webapp/                     # hitop.rws8.tech/app/: Lit + lit-material, reuses frontend/src/services
-│   ├── src/store.js            # all app logic (port of frontend/src/App.jsx), same localStorage keys; folders, zip
+├── webapp/                     # hitop.rws8.tech/app/: Lit + lit-material, storage/request services from shared/services
+│   ├── src/store.js            # all app logic (started as a port of the old React App.jsx), same localStorage keys; folders, zip
 │   ├── src/platform/           # adapters: web.js (fetch/proxy, localStorage, File System Access), tauri.js (invoke), history.js;
 │   │                           # tauri-settings.js: desktop-only sections of the Settings page (secret managers; usage ping where built) + first-run usage ping question
 │   │                           # response-store.js: large response bodies in IndexedDB (both adapters), storage usage for Settings
@@ -147,12 +141,7 @@ hitop/
 │   ├── tests/ux.cjs            # UI/UX review fixes (docs/archive/reviews/2026-11-01-webapp-ux): Content-Type, scheme, response tools, quota, dirty tabs, import, shortcuts, top bar
 │   ├── tests/ux12.cjs          # 1.2 deferred items: IndexedDB bodies + fallbacks, Cancel/time limit, Settings, additive import, split panes, Mod+P, folder groups, request menu, tab ×, History page
 │   └── tests/e2e.cjs           # Playwright e2e, seeded with React-app storage (legacy-storage.json)
-├── frontend/                   # React app, now only for the browser extensions
-│   ├── index.html              # Vite entry point (root of frontend/)
-│   ├── vite.config.js          # Vite 6, outDir: build, multi-entry (main + sandbox)
-│   └── src/                    # All files are .jsx (not .js)
-├── extension/                  # Firefox extension source
-├── chrome-extension/           # Chrome extension source
+├── build-extension.sh, build-chrome-extension.sh, build-chrome-store.sh # web app → extension/, chrome-extension/, chrome-store-package/ (+ zips; all git-ignored)
 ├── site/                       # hitop.rws8.tech: lit-material + Lit SSR, rws8.tech design system
 │   ├── src/pages/              # home, pricing.html, privacy.html, 404, guides/
 │   ├── content/guides/*.md     # the /guides/<name>/ guide articles (scripts-before-and-after-requests, variables-and-environments = the script API and scopes) (/terms/*.html 301s there: server/src/legacy.rs) (Markdown + front matter); hitop-vs-*.md comparisons carry a checked date and sources
@@ -179,6 +168,9 @@ hitop/
 ├── spec/collection-format.md   # collection folder format v1, stable since 1.0 (CC BY 4.0); section 7 = compatibility promise
 ├── spec/compat/v1/             # compatibility suite: <case>/folder + expected.json (never changed, only added), run-report/report.json
 ├── shared/pm-shim.js           # the pm.* shim for Postman scripts, run by hitop-core (copy in the crate), the web app and HitopKit (copy in Resources/)
+├── shared/services/            # plain JS (ES modules) the web app imports: storageService, transportService (sendRequest, proxy), collectionService,
+│                               # contextService, historyService, tabService, httpService, variableInterpolation, idGenerator; from the old React app,
+│                               # so localStorage keys/shapes stay as it wrote them; unit tests in webapp/tests/unit-shared.mjs
 ├── spec/sending.md             # what hitop adds when sending (behaviour, not format) + spec/vectors/send.json (cases only added)
 ├── spec/run-report.md          # `hitop run --reporter json` report, reportVersion 1, and the JUnit shape (CC BY 4.0)
 ├── spec/STATE_MACHINES.md      # every lifecycle (send, socket, call, sync link, billing...): the rule (one status, guarded transitions with an identity, wire strings fixed, `data-state` for automation) and what is still implicit
@@ -328,13 +320,11 @@ hitop/
 - Reports: JUnit `<testcase file=...>` and report.json `file` (folder as given + `requests/<file>.yaml`, null for global storage)
 
 ### Desktop (`desktop/`)
-- Framework: Tauri 2.0, frontend: React 19 + MUI v7, build: Vite 6
+- Framework: Tauri 2.0; frontend: the web app (`webapp/`, Lit)
 - Bundle ID: `tech.rws8.hitop` (tauri.conf.json `identifier`)
-- Frontend: the Lit web app (`webapp/dist-tauri`) is the default in tauri.conf.json since HITOP Next T5 (2026-11-09);
-  GitHub builds used it already (tauri.github.conf.json). The old React UI `desktop/src` stays reachable with
-  `--config src-tauri/tauri.react.conf.json` (`npm run dev:react`, `build:react`; CI checks it with
-  `TAURI_CONFIG="$(cat tauri.react.conf.json)" cargo check`). The Mac App Store build (plain `tauri build` on the owner's Mac)
-  now builds the web app first: it needs the wasm32 target and wasm-bindgen-cli 0.2.126, and `npm ci` in webapp/.
+- Frontend: the Lit web app (`webapp/dist-tauri`), in tauri.conf.json since HITOP Next T5 (2026-11-09) and in
+  tauri.github.conf.json; the React UI (`desktop/src`) was deleted 2026-11-21. The Mac App Store build (plain `tauri build` on the owner's Mac)
+  builds the web app first: it needs the wasm32 target and wasm-bindgen-cli 0.2.126, and `npm ci` in webapp/.
   WebSocket: `ws_connect {args: {url, headers, protocols, timeoutMs}, onEvent: Channel}` → `{id, status, protocol, headers}`, events
   `{type: message|closed|error}` (binary as base64) on the channel; `ws_send {id, data, binary?}`, `ws_close {id}` (state `Sockets`).
   gRPC: `grpc_list {args: {address, plaintext, metadata, protos, importPaths, baseDir, timeoutMs}}` → `{source, services}`,
@@ -409,13 +399,8 @@ hitop/
   child processes (op/az/aws) work as in the GitHub build; no deep link or loopback sign-in on desktop (paste the code). Unverified on
   Windows: owner checklist in `launch/microsoft-store.md`
 
-### Frontend (`frontend/`)
-- Build tool: Vite 6 (migrated from CRA — zero vulnerabilities)
-- All source files use `.jsx` extension (not `.js`)
-- Build output: `build/` (compatible with extension build pipeline)
-- Dev server: `npm start` (port 3000)
-- Build: `npm run build`
-- Extension build: `npm run build:extension` (copies manifest_extension.json). Since HITOP Next A8 the repo's `build-*extension*.sh`/`build-chrome-store.sh` ship the web app instead (`webapp`: `npm run build:extension` → `dist-extension/`, then `webapp/scripts/package-extension.mjs chrome|store|firefox <dir>`; scripts run in the manifest's sandboxed page in Chrome; Firefox has no sandboxed pages, so there they run in boa compiled to wasm in a worker: `cli/crates/hitop-scripts-wasm` (own workspace, hitop-core feature `scripting`), `build-wasm.mjs --scripts` → `src/wasm/pkg-scripts/`, `platform/wasm-scripts.js` + `src/scripts-worker.js`, 30 s limit, e2e `tests/firefox.cjs` (Playwright Firefox, `?wasm-scripts`)); `HITOP_EXTENSION_UI=react` builds this React app
+### Browser extensions (the web app)
+- Build: since HITOP Next A8 the extensions are the web app; the repo's `build-extension.sh`, `build-chrome-extension.sh`, `build-chrome-store.sh` run (`webapp`: `npm run build:extension` → `dist-extension/`, then `webapp/scripts/package-extension.mjs chrome|store|firefox <dir>`; scripts run in the manifest's sandboxed page in Chrome; Firefox has no sandboxed pages, so there they run in boa compiled to wasm in a worker: `cli/crates/hitop-scripts-wasm` (own workspace, hitop-core feature `scripting`), `build-wasm.mjs --scripts` → `src/wasm/pkg-scripts/`, `platform/wasm-scripts.js` + `src/scripts-worker.js`, 30 s limit, e2e `tests/firefox.cjs` (Playwright Firefox, `?wasm-scripts`))
 - Extension releases (docs/archive/HITOP_NEXT_UI.md EXT1): the version is `extensionVersion` in `webapp/package.json` (package-extension.mjs writes it into both manifests).
   Release: `cd webapp && npm pkg set extensionVersion=5.0.1`, commit, push, then push tag `ext-v5.0.1`; `.github/workflows/release-extensions.yml`
   checks tag = version = both manifests, builds, `web-ext lint`s, attaches `hitop-chrome-<v>.zip`, `hitop-firefox-<v>.zip` and
@@ -424,13 +409,12 @@ hitop/
   `CWS_PUBLISHER_ID`, optional `CWS_EXTENSION_ID`; test `tests/cws-publish.mjs` = fake API, in test:unit), Firefox = `web-ext sign --channel listed`
   (pinned web-ext, secrets `AMO_JWT_ISSUER`/`AMO_JWT_SECRET`, `--upload-source-code`, `--approval-timeout 0`). Missing secrets skip that store with a notice;
   `ext-v<v>-rc.N` = pre-release, nothing submitted; a manual run builds and packages only (artifacts), except on an `ext-v` tag with dry run off (re-submits). Agents never push `ext-v` tags: the owner releases
-- `services/` are shared with `webapp/` (plain JS, no React): change them with both apps in mind
-- `services/transportService.jsx`: every request goes through `sendRequest()`; public hosts use
-  the proxy when `VITE_HITOP_PROXY` is set (webapp build), otherwise fetch
+- `shared/services/transportService.js`: every request of the web build goes through `sendRequest()`; public hosts use
+  the proxy when `VITE_HITOP_PROXY` is set (web build, extensions), otherwise fetch
 
 ### Web app (`webapp/`)
 - Lit + lit-material in light DOM; theme from `site/src/theme.css`; dark only (owner 2026-11-09: no theme toggle or setting anywhere, `color-scheme: dark`, `src/theme.js` drops old `hitop-theme`/`hitop-theme-system` keys; the site and portal too); `npm run build` → `dist/` (base `/app/`)
-- Storage must stay readable by the React app (same keys/shapes); `npm run test:e2e` with BASE= a running hitop-server
+- Storage keeps the old React app's keys and shapes (data people stored with it still loads); `npm run test:e2e` with BASE= a running hitop-server
 - Response bodies over 64 KB go to IndexedDB (`platform/response-store.js`, DB `hitop-responses`, by tab id, `{body, raw}`,
   `platform().responses`, both adapters); `hitop_tabs` keeps their first 16 KB with `responseCut` + `responseStored`
   (`storedTabInDb`), restored after a reload (`store.restoreResponses`). Without IndexedDB or after a refused write (one toast):
