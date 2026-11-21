@@ -634,7 +634,7 @@ sentence; turn Apple Intelligence off in Settings and check the reasons; VoiceOv
 Increase Contrast and Reduce Motion on a device.
 
 ## I6: what landed (2026-11-21, branch `ios-i6`)
-CI: `.github/workflows/ios.yml`, green run https://github.com/bohdaq/hitop/actions/runs/44902375673 (commit 28ea1f9; the final head run is in the report) (jobs `app`, `core`, `hitopkit`, new `store-screenshots` and `archive`;
+CI: `.github/workflows/ios.yml`, green runs https://github.com/bohdaq/hitop/actions/runs/44902375673 (commit 28ea1f9) and https://github.com/bohdaq/hitop/actions/runs/44909685754 (commit aaf46a2; the branch head after it only changes the iPad GraphQL screenshot test) (jobs `app`, `core`, `hitopkit`, new `store-screenshots` and `archive`;
 artifact `app-store-screenshots`).
 
 - Owner doc `ios/APP_STORE.md`: decisions to take first, one-time Mac setup, build/upload, App Store Connect (version 2.0.0,

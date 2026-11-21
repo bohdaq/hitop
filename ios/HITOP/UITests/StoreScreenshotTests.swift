@@ -163,12 +163,9 @@ final class StoreScreenshotTests: XCTestCase {
         guard isPad else { return }
         let app = launchPad()
         sendOnPad(app, "Catalog query")
-        // Unfold the answer (data → products).
-        let body = app.el("json-body")
-        wait(body)
-        // The folded answer is three lines ({, "data": { 1 key }, }): a line toggles when tapped
-        // anywhere on it, so tap the middle one.
-        body.coordinate(withNormalizedOffset: CGVector(dx: 0.4, dy: 0.5)).tap()
+        // The answer stays as the app shows it ({ "data": { 1 key } }): tapping a line to unfold it
+        // hit the wrong line on the CI iPad and folded the whole answer.
+        wait(app.el("json-body"))
         sleep(1)
         store(app, "ipad-04-graphql")
     }
