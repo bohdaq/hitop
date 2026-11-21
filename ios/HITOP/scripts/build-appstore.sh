@@ -25,7 +25,10 @@ export PATH="$HOME/.cargo/bin:$PATH"
 for tool in xcodebuild xcodegen cargo rustup; do
   command -v "$tool" >/dev/null || { echo "missing $tool (see ios/APP_STORE.md, one-time setup)" >&2; exit 1; }
 done
-xcodebuild -version | head -1 | grep -q '^Xcode 2[6-9]' || { echo "needs Xcode 26 or later: $(xcodebuild -version | head -1)" >&2; exit 1; }
+# Read all of xcodebuild's output (sed, not head/grep -q: closing the pipe early made xcodebuild
+# abort on a broken pipe now and then).
+xcode=$(xcodebuild -version | sed -n 1p)
+case "$xcode" in "Xcode 2"[6-9]*) ;; *) echo "needs Xcode 26 or later: $xcode" >&2; exit 1 ;; esac
 VERSION=$(sed -n 's/^ *MARKETING_VERSION: *"\{0,1\}\([0-9.]*\)"\{0,1\}.*/\1/p' project.yml | head -1)
 test -n "$VERSION" || { echo "no MARKETING_VERSION in project.yml" >&2; exit 1; }
 
