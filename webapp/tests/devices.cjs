@@ -1,4 +1,4 @@
-// DD3 (HITOP_NEXT_UI.md): Account → Devices against a real sync server (HITOP_SYNC_SERVER_BIN;
+// DD3 (docs/archive/HITOP_NEXT_UI.md): Account → Devices against a real sync server (HITOP_SYNC_SERVER_BIN;
 // skipped without it unless CI is set), web and Tauri mode: the list (this device marked and
 // seen, since the app sends X-Hitop-Device once the server says it reads it), rename, remove
 // another device, never this one; the top bar's device chip opens the list.

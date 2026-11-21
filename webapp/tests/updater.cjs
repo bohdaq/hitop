@@ -1,4 +1,4 @@
-// SU1 desktop self-update (HITOP_NEXT_UI.md SU1): the GitHub Release builds'
+// SU1 desktop self-update (docs/archive/HITOP_NEXT_UI.md SU1): the GitHub Release builds'
 // updater (desktop/src-tauri/src/updates.rs, feature `updater`) driven by
 // platform/tauri-updater.js. In Tauri mode the mock plays the updater and
 // process plugins: no update; an update → the bar → Restart to update downloads

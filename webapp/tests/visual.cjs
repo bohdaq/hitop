@@ -3,7 +3,7 @@
 //   node tests/visual.cjs [out dir]            (default: visual/<time>/)
 // Serves dist/ itself (build first: npm run build), so no hitop-server is
 // needed; sends are not made (a seeded tab already carries a response).
-// Compare the pictures with the design boards (HITOP_NEXT_UI.md) by eye, or
+// Compare the pictures with the design boards (docs/archive/HITOP_NEXT_UI.md) by eye, or
 // diff two runs.
 const { chromium } = require("playwright");
 const fs = require("fs");

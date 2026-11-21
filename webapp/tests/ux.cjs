@@ -1,4 +1,4 @@
-// The UI/UX review fixes (reviews/2026-11-01-webapp-ux), in web and Tauri
+// The UI/UX review fixes (docs/archive/reviews/2026-11-01-webapp-ux), in web and Tauri
 // mode, against a local Node server (no public host): Content-Type for raw
 // bodies, a scheme for typed URLs, the response tools, Compare's default,
 // large responses and a full storage, unsaved tabs, import, shortcuts and the

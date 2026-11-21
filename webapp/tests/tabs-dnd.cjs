@@ -1,4 +1,4 @@
-// DD2 (HITOP_NEXT_UI.md): tabs. A drop line while a tab is dragged, a tab dropped on a sidebar
+// DD2 (docs/archive/HITOP_NEXT_UI.md): tabs. A drop line while a tab is dragged, a tab dropped on a sidebar
 // folder moves its request there, Pin keeps tabs first (no ×), Close others / to the right keep
 // unsaved and pinned tabs. Web and Tauri mode.
 //   BASE=http://localhost:7879 node tests/tabs-dnd.cjs

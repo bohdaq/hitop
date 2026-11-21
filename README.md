@@ -120,8 +120,9 @@ GitLab CI and any other runner: `ghcr.io/bohdaq/hitop:1.2.0` (distroless) or
   [Bruno](https://hitop.rws8.tech/guides/hitop-vs-bruno/),
   [Insomnia](https://hitop.rws8.tech/guides/hitop-vs-insomnia/),
   [Yaak](https://hitop.rws8.tech/guides/hitop-vs-yaak/)
-- The CLI's full reference: [cli/crates/hitop/README.md](cli/crates/hitop/README.md);
-  [variables](VARIABLES_GUIDE.md), [scripting](SCRIPTING_GUIDE.md)
+- [Variables and environments](https://hitop.rws8.tech/guides/variables-and-environments/),
+  [scripts before and after a request](https://hitop.rws8.tech/guides/scripts-before-and-after-requests/)
+- The CLI's full reference: [cli/crates/hitop/README.md](cli/crates/hitop/README.md)
 
 ## Building from source
 
@@ -133,8 +134,8 @@ cd desktop && npm ci && npx tauri build    # the desktop app
 ```
 
 The repository also holds the site and request proxy (`server/`, `site/`), the self-hostable sync
-server (`sync-server/`), and the older React frontend and Firefox and Chrome extensions
-(`frontend/`, `extension/`, [EXTENSION_GUIDE.md](EXTENSION_GUIDE.md)), which are frozen.
+server (`sync-server/`),
+and the browser extensions, which are the web app (`webapp/`, `npm run build:extension`).
 
 ## Contributing
 

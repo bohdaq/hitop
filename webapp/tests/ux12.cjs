@@ -1,4 +1,4 @@
-// The 1.2 web app UX items (reviews/2026-11-01-webapp-ux, "Status (1.2.0)"),
+// The 1.2 web app UX items (docs/archive/reviews/2026-11-01-webapp-ux, "Status (1.2.0)"),
 // in web and Tauri mode, against a local Node server (no public host):
 // large responses in IndexedDB (and the 1.1 fallback without it), Cancel and
 // the request timeout, the Settings page, import that adds, the split panes,

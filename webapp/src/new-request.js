@@ -1,4 +1,4 @@
-// FV1 (HITOP_NEXT_UI.md): new requests land in a collection, and a first visit starts on the
+// FV1 (docs/archive/HITOP_NEXT_UI.md): new requests land in a collection, and a first visit starts on the
 // sample. What decides that and is pure (no storage, no store): the automatic name a new request
 // follows its URL with, what counts as an untouched request or collection, the sample's
 // requests. Unit-checked in tests/unit-ux.mjs; store.js does the rest.

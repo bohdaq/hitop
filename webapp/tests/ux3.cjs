@@ -1,4 +1,4 @@
-// The 2026-11-15 UX review fixes (reviews/2026-11-15-ux-review.md): redirects and their cookies,
+// The 2026-11-15 UX review fixes (docs/archive/reviews/2026-11-15-ux-review.md): redirects and their cookies,
 // the request's Settings tab, inherited auth and headers, path variables, Format, Console, the JSON
 // filter, the "Not sent" card, the URL mirror, the phone layout and the History preview tab.
 //   BASE=http://localhost:7879 node tests/ux3.cjs   (HITOP_MODE=tauri: the desktop build)

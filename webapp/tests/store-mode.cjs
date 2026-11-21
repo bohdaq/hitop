@@ -1,4 +1,4 @@
-// ST1 free store apps (HITOP_NEXT_UI.md ST1): the desktop's store builds (Mac App Store, Microsoft
+// ST1 free store apps (docs/archive/HITOP_NEXT_UI.md ST1): the desktop's store builds (Mac App Store, Microsoft
 // Store; Rust's `build_info` says `store: true`, the mock's `storeBuild`) show no purchase call to
 // action (App Store 3.1.1/3.1.3), the GitHub Release builds keep today's screens. Tauri mode only
 // (the web app is never a store build); a real sync server with HITOP_SYNC_LIMITS=plans
