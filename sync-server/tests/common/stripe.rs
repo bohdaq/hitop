@@ -195,6 +195,19 @@ fn answer(s: &Seen) -> (u16, Value) {
             }
             (200, json!({ "id": "bps_test", "object": "billing_portal.session", "customer": customer, "url": format!("https://billing.stripe.com/p/session/test_{customer}") }))
         }
+        // Account deletion (billing.rs cancel_for_deletion): a subscription's status, and a cancel.
+        // Ids starting `sub_gone` are unknown, `sub_ended` already cancelled; others active.
+        ("GET", p) if p.starts_with("/v1/subscriptions/") => {
+            let id = p.trim_start_matches("/v1/subscriptions/");
+            if id.starts_with("sub_gone") {
+                return error(404, "invalid_request_error", "resource_missing", "No such subscription");
+            }
+            (200, json!({ "id": id, "object": "subscription", "status": if id.starts_with("sub_ended") { "canceled" } else { "active" } }))
+        }
+        ("DELETE", p) if p.starts_with("/v1/subscriptions/") => {
+            let id = p.trim_start_matches("/v1/subscriptions/");
+            (200, json!({ "id": id, "object": "subscription", "status": "canceled" }))
+        }
         ("POST", p) if p.starts_with("/v1/subscriptions/") => {
             let id = p.trim_start_matches("/v1/subscriptions/");
             let item = s.get("items[0][id]").unwrap_or("");

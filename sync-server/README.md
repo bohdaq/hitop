@@ -221,6 +221,10 @@ domain under Services → Sign in with Apple for Email Communication. Set the Ap
 server-to-server notification endpoint to `<HITOP_SYNC_PUBLIC_URL>/v1/auth/apple/notifications`
 (and the App ID in `HITOP_SYNC_APPLE_APP_IDS`): when someone stops using Sign in with Apple with
 your server, or deletes their Apple account, the Apple sign-in is unlinked from their account.
+The refresh token Apple returns at each sign-in is kept (`apple_tokens`, sealed under the host key
+when there is one) so that deleting a HITOP account (`DELETE /v1/me`) revokes it at Apple
+(`POST https://appleid.apple.com/auth/revoke`), as Apple requires; accounts that last signed in with
+Apple before this server version have none to revoke.
 
 Any Google, GitHub or Apple account with a verified address may sign in; the first time, it is linked
 to the account with that address (or one is made). GitHub must report the address as the
@@ -337,6 +341,7 @@ verifies a wrap (clients do, THREAT_MODEL.md "Authenticated wraps").
 | `POST /v1/auth/passkey/login/start {email}` / `finish {challengeId, credential}` | → session |
 | `POST /v1/auth/logout` | |
 | `GET /v1/me`; `POST /v1/me/keys {name, publicKey}` | account; register a device's X25519 public key |
+| `DELETE /v1/me {confirm}` | delete the account (`confirm` = its address; a session, never an access token or runner): its sessions, tokens, sign-ins, devices, library, personal org, the orgs and workspaces it alone is in (their subscriptions cancelled first), its memberships elsewhere (those workspaces are asked to rotate); revokes its Sign in with Apple tokens → `{deleted, workspacesDeleted, workspacesLeft, workspacesMoved, orgsDeleted, orgsLeft, subscriptionsCancelled, appleRevoked, appleNotRevoked}`. 400 `confirm_mismatch`; 409 `transfer_ownership_first {blockers: [{kind: workspace\|org, id, name?, members}]}` (the only owner of something others use); 409 `changed`; 503 `try_again` (Stripe or Apple unreachable: nothing deleted) |
 | `GET /v1/users/keys?email=` | another account's device keys (to add them) |
 | `GET/POST /v1/workspaces` `{id, wraps}` | list; create (id = 32 hex digits, epoch 1 wrapped for each of your devices) |
 | `GET/DELETE /v1/workspaces/:ws` | members, keys (`hasKey`, `legacyEpochs`: epochs whose wrap for it is format 1), epoch, seq; delete (owner) |

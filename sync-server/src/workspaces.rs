@@ -352,16 +352,21 @@ pub fn delete(state: &State, request: &Request, params: &PathParams) -> ApiResul
         let user = authenticate(state, tx, request)?;
         let ws = membership(tx, id, &user)?;
         require(&ws, Role::Owner)?;
-        for table in ["blobs", "wraps", "invites", "env_share_wraps", "env_shares", "runs", "alert_deliveries", "alert_state", "alert_settings", "members"] {
-            tx.execute(&format!("DELETE FROM {table} WHERE workspace_id = $1"), &[id.into()])?;
-        }
-        tx.execute("DELETE FROM workspaces WHERE id = $1", &[id.into()])?;
-        // Runner accounts exist for one workspace only.
-        let runners = tx.execute("DELETE FROM users WHERE runner_of = $1", &[id.into()])?;
+        let runners = delete_rows(tx, id)?;
         // The workspace's log stays (until the retention purge) and ends with this row.
         audit::record(tx, state, Event::new(id, "workspace_deleted", Some(&user)).target(id).detail(json!({ "runnersRemoved": runners })))?;
         Ok((204, Json::Null))
     })
+}
+
+/// Deletes workspace `id` with every blob, wrap, invite, shared value, run and alert of it, and its
+/// runner accounts (they exist for one workspace only). Returns how many runners went.
+pub(crate) fn delete_rows(tx: &mut Tx, id: &str) -> Result<u64, DbError> {
+    for table in ["blobs", "wraps", "invites", "env_share_wraps", "env_shares", "runs", "alert_deliveries", "alert_state", "alert_settings", "members"] {
+        tx.execute(&format!("DELETE FROM {table} WHERE workspace_id = $1"), &[id.into()])?;
+    }
+    tx.execute("DELETE FROM workspaces WHERE id = $1", &[id.into()])?;
+    tx.execute("DELETE FROM users WHERE runner_of = $1", &[id.into()])
 }
 
 /// `GET /v1/workspaces/:ws/wraps?keyId=`: the caller's wrapped keys for every epoch.

@@ -232,3 +232,37 @@ fn notifications_unlink_on_revoke_and_check_the_signature() {
     // The account itself stays.
     assert!(s.app.state().db.tx(|tx| tx.query_one("SELECT id FROM users WHERE id = $1", &[user.as_str().unwrap().into()])).unwrap().is_some());
 }
+
+#[test]
+fn deleting_the_account_revokes_the_apple_token() {
+    let idp = MockIdp::start();
+    let s = apple_server("apple-delete", &idp);
+    let f = start(&s, None);
+    let ok = sign_in(&s, &idp, claims(&idp, "a-1", "abc@privaterelay.appleid.com", &f.nonce), &f);
+    let session = ok.json["session"].as_str().unwrap().to_string();
+    let user = ok.json["user"]["id"].as_str().unwrap().to_string();
+    // The refresh token from the token answer is kept (no host key here: as sent).
+    let kept = s.app.state().db.tx(|tx| tx.query("SELECT subject, user_id, refresh_token FROM apple_tokens", &[])).unwrap();
+    assert_eq!(kept.iter().map(|r| (r.text(0), r.text(1), r.bytes(2))).collect::<Vec<_>>(), vec![("a-1".to_string(), user.clone(), b"r".to_vec())]);
+
+    // Apple is down: nothing is deleted, the person is told to try again.
+    idp.inner.lock().unwrap().revoke_status = 503;
+    let r = s.call("DELETE", "/v1/me", Some(&session), Some(json!({ "confirm": "abc@privaterelay.appleid.com" })));
+    assert_eq!((r.status, r.json["error"].as_str()), (503, Some("try_again")), "{}", r.json);
+    assert_eq!(s.call("GET", "/v1/me", Some(&session), None).status, 200);
+
+    idp.inner.lock().unwrap().revoke_status = 0;
+    idp.inner.lock().unwrap().revoked.clear();
+    let r = s.call("DELETE", "/v1/me", Some(&session), Some(json!({ "confirm": "abc@privaterelay.appleid.com" })));
+    assert_eq!(r.status, 200, "{}", r.json);
+    assert_eq!(r.json["appleRevoked"], 1);
+    let revoked = idp.inner.lock().unwrap().revoked.clone();
+    assert_eq!(revoked.len(), 1);
+    let form = &revoked[0];
+    assert_eq!((form["token"].as_str(), form["token_type_hint"].as_str(), form["client_id"].as_str()), ("r", "refresh_token", idp::CLIENT_ID));
+    // The client secret is the server's signed ES256 JWT, as for the token request.
+    assert_eq!(jsonwebtoken::decode_header(&form["client_secret"]).unwrap().kid.as_deref(), Some(KEY_ID));
+    assert!(identities(&s).is_empty());
+    assert!(s.app.state().db.tx(|tx| tx.query("SELECT subject FROM apple_tokens", &[])).unwrap().is_empty());
+    assert_eq!(s.call("GET", "/v1/me", Some(&session), None).status, 401);
+}

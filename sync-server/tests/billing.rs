@@ -559,3 +559,57 @@ fn prices_by_lookup_key_and_nothing_managed_payments_refuses() {
     billing(&s, &ada, &org);
     assert_eq!(mock.count("GET", "/v1/prices"), 2);
 }
+
+#[test]
+fn deleting_the_account_cancels_its_subscriptions_first() {
+    let mock = MockStripe::start();
+    let s = server("billing-account-delete", &mock);
+    let ada = Device::new(&s, "ada@example.com");
+    let personal = format!("personal-{}", ada.user_id);
+    // Pro on her personal org (live), Team on a team org she alone is in (already cancelled at
+    // Stripe), and a team org with Bob that stays (its subscription is the org's, not hers).
+    let meta = checkout(&s, &mock, &ada, &personal, "pro", "monthly", None);
+    delivered(&s, &st::subscription("customer.subscription.created", "sub_9", st::PRO_MONTHLY, "active", 1, T0, meta), "applied");
+    let solo = org_create(&s, &ada, "Solo");
+    let meta = checkout(&s, &mock, &ada, &solo, "team", "monthly", Some(1));
+    delivered(&s, &st::subscription("customer.subscription.created", "sub_ended_1", st::TEAM_MONTHLY, "active", 1, T0, meta), "applied");
+    let shared = org_create(&s, &ada, "Shared");
+    let bob = Device::new(&s, "bob@example.com");
+    assert_eq!(add_org_member(&s, &ada, &shared, "bob@example.com").status, 201);
+    assert_eq!(s.call("PUT", &format!("/v1/orgs/{shared}/members/{}", bob.user_id), Some(&ada.session), Some(json!({ "role": "owner" }))).status, 200);
+    let meta = checkout(&s, &mock, &ada, &shared, "team", "monthly", Some(2));
+    delivered(&s, &st::subscription("customer.subscription.created", "sub_shared", st::TEAM_MONTHLY, "active", 2, T0, meta), "applied");
+
+    let r = s.call("DELETE", "/v1/me", Some(&ada.session), Some(json!({ "confirm": "ada@example.com" })));
+    assert_eq!(r.status, 200, "{}", r.json);
+    assert_eq!(r.json["subscriptionsCancelled"], 1);
+    assert!(mock.seen.lock().unwrap().iter().filter(|x| x.path.starts_with("/v1/subscriptions/")).all(|x| x.authorized));
+    assert_eq!((mock.count("GET", "/v1/subscriptions/sub_9"), mock.count("DELETE", "/v1/subscriptions/sub_9")), (1, 1));
+    assert_eq!((mock.count("GET", "/v1/subscriptions/sub_ended_1"), mock.count("DELETE", "/v1/subscriptions/sub_ended_1")), (1, 0), "already ended: not cancelled again");
+    assert_eq!(mock.count("DELETE", "/v1/subscriptions/sub_shared") + mock.count("GET", "/v1/subscriptions/sub_shared"), 0, "the org that stays keeps its subscription");
+    assert_eq!(billing(&s, &bob, &shared)["status"], "active");
+    // Stripe's own `deleted` event afterwards matches nothing (the org is gone) and is answered 200.
+    delivered(&s, &st::subscription("customer.subscription.deleted", "sub_9", st::PRO_MONTHLY, "canceled", 1, T0 + 60, json!({ "org_id": personal, "user_id": ada.user_id })), "unmatched");
+}
+
+#[test]
+fn deleting_the_account_waits_for_stripe() {
+    let mock = MockStripe::start();
+    let s = server("billing-account-delete-down", &mock);
+    let ada = Device::new(&s, "ada@example.com");
+    let personal = format!("personal-{}", ada.user_id);
+    let meta = checkout(&s, &mock, &ada, &personal, "pro", "monthly", None);
+    delivered(&s, &st::subscription("customer.subscription.created", "sub_7", st::PRO_MONTHLY, "active", 1, T0, meta), "applied");
+    // A key Stripe refuses: the subscription can't be read, so nothing is deleted.
+    let wrong = hitop_sync_server::billing::BillingConfig::new("sk_test_wrong", st::WEBHOOK_SECRET, vec![], &mock.url, false);
+    let s2 = Server::with("billing-account-delete-down-2", |cfg| {
+        cfg.plan_limits = true;
+        cfg.billing = Some(wrong);
+        cfg.database = format!("sqlite:{}", s.dir.join("sync.db").display());
+    });
+    let r = s2.call("DELETE", "/v1/me", Some(&ada.session), Some(json!({ "confirm": "ada@example.com" })));
+    assert_eq!((r.status, r.json["error"].as_str()), (503, Some("try_again")), "{}", r.json);
+    assert!(!r.json["message"].as_str().unwrap().to_lowercase().contains("stripe"));
+    assert_eq!(s.call("GET", "/v1/me", Some(&ada.session), None).status, 200);
+    assert_eq!(mock.count("DELETE", "/v1/subscriptions/sub_7"), 0);
+}

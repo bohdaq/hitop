@@ -16,6 +16,13 @@
 //! (`consent-revoked`) or deletes their Apple account (`account-delete`), the Apple identity is
 //! unlinked from the HITOP account; the account itself stays (it may have other sign-ins).
 //!
+//! The refresh token Apple sends with the token answer of each sign-in is kept (`apple_tokens`,
+//! sealed under the host key when the server has one, hostkey.rs), for one use only: deleting the
+//! HITOP account (`DELETE /v1/me`, account.rs) revokes it at Apple (`POST <issuer>/auth/revoke`),
+//! as Apple requires of apps that offer Sign in with Apple. It is useless without this server's
+//! Sign in with Apple key. Accounts that last signed in with Apple before the server kept it have
+//! no token to revoke (their deletion's audit row says `appleRevoked: 0`).
+//!
 //! Settings (environment), all or none: `HITOP_SYNC_APPLE_CLIENT_ID` (the Services ID),
 //! `HITOP_SYNC_APPLE_TEAM_ID`, `HITOP_SYNC_APPLE_KEY_ID`, and `HITOP_SYNC_APPLE_PRIVATE_KEY_FILE`
 //! (the `.p8` file; or the PEM itself in `HITOP_SYNC_APPLE_PRIVATE_KEY`). Optional:
@@ -33,6 +40,7 @@ use serde_json::{json, Value as Json};
 
 use crate::api::{body, ApiError, ApiResult, State};
 use crate::audit::{self, Event};
+use crate::db::{DbError, Tx};
 use crate::oidc::OidcConfig;
 
 pub const APPLE_ISSUER: &str = "https://appleid.apple.com";
@@ -190,6 +198,7 @@ pub fn notifications(state: &State, request: &Request, _: &PathParams) -> ApiRes
         match kind {
             "consent-revoked" | "account-delete" => {
                 tx.execute("DELETE FROM oidc_identities WHERE issuer = $1 AND subject = $2", &[(&issuer).into(), subject.into()])?;
+                tx.execute("DELETE FROM apple_tokens WHERE issuer = $1 AND subject = $2", &[(&issuer).into(), subject.into()])?;
                 audit::record(tx, state, Event::new(audit::ACCOUNT, "sso_unlinked", None).email(&email).target(&user_id).detail(json!({ "issuer": issuer, "subject": subject, "reason": kind })))?;
             }
             "email-disabled" | "email-enabled" => {
@@ -233,4 +242,88 @@ fn verify(state: &State, c: &AppleConfig, token: &str) -> Result<Json, String> {
         return Err("expired".into());
     }
     Ok(claims)
+}
+
+fn token_label(issuer: &str, subject: &str) -> String {
+    format!("apple-refresh-token:{issuer}:{subject}")
+}
+
+/// Keeps the refresh token of an Apple identity (the newest one wins), sealed under the host key
+/// when there is one.
+pub(crate) fn keep_token(tx: &mut Tx, state: &State, issuer: &str, subject: &str, user_id: &str, token: &str) -> Result<(), DbError> {
+    let stored = match &state.config.host_key {
+        Some(k) => k.seal(&token_label(issuer, subject), token.as_bytes()),
+        None => token.as_bytes().to_vec(),
+    };
+    tx.execute(
+        "INSERT INTO apple_tokens (issuer, subject, user_id, refresh_token, created_at) VALUES ($1, $2, $3, $4, $5) ON CONFLICT (issuer, subject) DO UPDATE SET user_id = $3, refresh_token = $4, created_at = $5",
+        &[issuer.into(), subject.into(), user_id.into(), stored.into(), state.now().into()],
+    )?;
+    Ok(())
+}
+
+/// One kept token of an account, to revoke.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct KeptToken {
+    pub issuer: String,
+    pub subject: String,
+    stored: Vec<u8>,
+}
+
+/// The Apple refresh tokens kept for `user_id`.
+pub(crate) fn tokens_of(tx: &mut Tx, user_id: &str) -> Result<Vec<KeptToken>, DbError> {
+    Ok(tx
+        .query("SELECT issuer, subject, refresh_token FROM apple_tokens WHERE user_id = $1 ORDER BY issuer, subject", &[user_id.into()])?
+        .iter()
+        .map(|r| KeptToken { issuer: r.text(0), subject: r.text(1), stored: r.bytes(2) })
+        .collect())
+}
+
+/// What revoking an account's Apple tokens did.
+#[derive(Debug, Default, Clone, Copy)]
+pub struct Revoked {
+    pub revoked: usize,
+    /// Tokens that can't be revoked here (Apple isn't configured any more, or the token is sealed
+    /// under another host key): the deletion goes on, its audit row counts them.
+    pub skipped: usize,
+}
+
+/// Revokes each token at Apple (`POST <issuer>/auth/revoke`, client_secret_post with the signed
+/// client secret, `token_type_hint=refresh_token`). Apple answers 200 for a token it revoked (and
+/// for one it no longer knows); anything else, or no answer, is an error: the caller refuses and
+/// the person tries again (revoking twice is harmless).
+pub(crate) fn revoke(state: &State, tokens: &[KeptToken]) -> Result<Revoked, String> {
+    let mut out = Revoked::default();
+    for t in tokens {
+        let (Some(c), Some(minted)) = (state.config.apple.as_ref(), state.apple.minted_secret.as_ref()) else {
+            out.skipped += 1;
+            continue;
+        };
+        if c.oidc.issuer != t.issuer {
+            out.skipped += 1;
+            continue;
+        }
+        // A sealed value starts with its version byte (1); a plain token is printable text.
+        let token = if t.stored.first() == Some(&1) {
+            match state.config.host_key.as_ref().map(|k| k.open(&token_label(&t.issuer, &t.subject), &t.stored)) {
+                Some(Ok(plain)) => String::from_utf8_lossy(&plain).into_owned(),
+                _ => {
+                    out.skipped += 1;
+                    continue;
+                }
+            }
+        } else {
+            String::from_utf8_lossy(&t.stored).into_owned()
+        };
+        let secret = minted.get(&c.oidc, state.now())?;
+        let url = format!("{}/auth/revoke", c.oidc.issuer);
+        let form = [("client_id", c.oidc.client_id.as_str()), ("client_secret", secret.as_str()), ("token", token.as_str()), ("token_type_hint", "refresh_token")];
+        let res = state.apple.http.post(&url).header("Accept", "application/json").send_form(form).map_err(|e| format!("{url}: {e}"))?;
+        let status = res.status().as_u16();
+        if status != 200 {
+            return Err(format!("{url}: {status}"));
+        }
+        out.revoked += 1;
+    }
+    Ok(out)
 }

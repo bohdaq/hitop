@@ -273,6 +273,7 @@ impl SyncApp {
             ("POST", "/v1/auth/apple/finish", crate::apple::finish),
             ("POST", "/v1/auth/apple/notifications", crate::apple::notifications),
             ("GET", "/v1/me", crate::auth::me),
+            ("DELETE", "/v1/me", crate::account::delete),
             // Hosted MCP: the library for AI assistants (mcp.rs).
             ("POST", "/mcp", crate::mcp::handle),
             ("GET", "/v1/me/audit", crate::audit::mine),

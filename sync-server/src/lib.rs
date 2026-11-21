@@ -3,6 +3,7 @@
 //! decrypts client data; clients encrypt with `hitop-sync-crypto` (MIT). (Its own secrets, such as
 //! per-org OIDC client secrets, it seals under its host key, hostkey.rs.) See THREAT_MODEL.md.
 
+pub mod account;
 pub mod admin;
 pub mod alerts;
 pub mod anchors;

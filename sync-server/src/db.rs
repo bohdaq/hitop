@@ -305,6 +305,8 @@ impl Tx<'_> {
 /// grants SCIM made (so it only ever takes back what it gave). 11: device keys an org admin took
 /// out of an org workspace (admin.rs `remove_device`): no wrap of that workspace is ever stored or
 /// asked for them again (the key itself and the person's other workspaces stay).
+/// The last one (account deletion, account.rs): `apple_tokens`, the Sign in with Apple refresh
+/// token of each Apple identity, kept only so deleting the account can revoke it at Apple.
 const MIGRATIONS: &[&str] = &[r"
 CREATE TABLE users (
   id TEXT PRIMARY KEY,
@@ -842,6 +844,16 @@ CREATE TABLE request_history (
 ALTER TABLE device_keys ADD COLUMN last_used_at BIGINT NOT NULL DEFAULT 0;
 ALTER TABLE sessions ADD COLUMN device_key_id TEXT NOT NULL DEFAULT '';
 CREATE INDEX sessions_device ON sessions(device_key_id);
+", r"
+CREATE TABLE apple_tokens (
+  issuer TEXT NOT NULL,
+  subject TEXT NOT NULL,
+  user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  refresh_token {BLOB} NOT NULL,
+  created_at BIGINT NOT NULL,
+  PRIMARY KEY (issuer, subject)
+);
+CREATE INDEX apple_tokens_user ON apple_tokens(user_id);
 "];
 
 /// Steps in Rust that run in the same transaction as a migration's SQL (index = migration
