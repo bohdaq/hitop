@@ -426,5 +426,6 @@ and on hitop.rws8.tech/cloud/healthz. -->
   `DROP TABLE apple_tokens; DELETE FROM schema_version WHERE version = 19;`.
 - Site + web app + portal from 96f90df (deploy/deploy.sh without the rebuild, run by the owner): privacy page describes
   HITOP Cloud accounts and deletion, web app Account page has Delete account. All deploy checks 200/301, proxy ok.
-- Open: the DB copies on the VM (`sync.db.bak-*`, `/root/pre-deploy-*`, oldest 2026-11-01) have no expiry, while the
-  privacy page says copies go after 35 days: a cleanup timer is needed before 2026-12-06.
+- DB copies on the VM (`sync.db.bak-*`, `/root/pre-deploy-*`, oldest 2026-11-01) now expire after 35 days, as the
+  privacy page says: `install.sh db-copies` (owner, 2026-11-21 23:42 UTC) installed `hitop-db-copies-expire.timer`
+  (daily); first run deleted 0. The first copies go on 2026-12-06.
