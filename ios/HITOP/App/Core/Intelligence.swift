@@ -676,17 +676,28 @@ final class FakeAssistant: LanguageAssistant {
     /// one wrong check that validation must drop).
     var checks: [SuggestedCheck]?
     var failure: AssistantFailure?
+    /// App Store screenshots (`-UITestStoreScreens`): an explanation and checks written the way the
+    /// on-device model answers for the seeded Create order response, instead of the test wording.
+    var storeScreens = false
 
-    init(availability: AssistantAvailability = .available) {
+    init(availability: AssistantAvailability = .available, storeScreens: Bool = false) {
         self.availability = availability
+        self.storeScreens = storeScreens
     }
+
+    /// The store screenshots' explanation of shop-api's Create order answer (Stub.swift).
+    static let storeExplanation = "201 Created: the server made a new order, ord_8KQ2mZ41, and its Location header points to it. "
+        + "The order holds two items (2 × TEE-0193 and 1 × CAP-0007) for customer cus_42, with a total of 6480 in EUR minor units, so 64.80. "
+        + "It was created at 10:42 UTC and isn't completed yet: its status says what comes next. "
+        + "The answer also set a session cookie (HttpOnly, Secure)."
 
     func explain(_ prompt: ModelPrompt, onText: @escaping @MainActor (String) -> Void) async throws -> String {
         prompts.append(prompt)
         if let failure { throw failure }
         let status = Self.line(prompt.text, after: "Status: ") ?? "?"
         let shape = Self.line(prompt.text.replacingOccurrences(of: "BODY SHAPE\n", with: "SHAPE: "), after: "SHAPE: ").map { " The body is an \($0.hasPrefix("object") ? "object" : "answer") with these fields: \(ModelInput.cut($0, 120))." } ?? ""
-        let text = "The server answered \(status).\(shape) Nothing here was sent anywhere: this is the test stand-in for the on-device model."
+        let text = storeScreens && status.hasPrefix("201") ? Self.storeExplanation
+            : "The server answered \(status).\(shape) Nothing here was sent anywhere: this is the test stand-in for the on-device model."
         var so = ""
         for word in text.split(separator: " ") {
             so += (so.isEmpty ? "" : " ") + word
@@ -700,6 +711,12 @@ final class FakeAssistant: LanguageAssistant {
         prompts.append(prompt)
         if let failure { throw failure }
         if let checks { return checks }
+        if storeScreens && Self.line(prompt.text, after: "Status: ")?.hasPrefix("201") == true {
+            return [SuggestedCheck(.status, expected: "201", name: "Order is created"),
+                    SuggestedCheck(.header, path: "Location", expected: "/v2/orders/", name: "Location points to the order"),
+                    SuggestedCheck(.type, path: "items", expected: "array", name: "Items is a list"),
+                    SuggestedCheck(.equals, path: "total.currency", expected: "EUR", name: "Total is in EUR")]
+        }
         let status = Self.line(prompt.text, after: "Status: ").flatMap { Int($0.prefix { $0.isNumber }) } ?? 200
         return [SuggestedCheck(.status, expected: String(status), name: "Status is \(status)"),
                 SuggestedCheck(.status, expected: "599", name: "a wrong guess")]

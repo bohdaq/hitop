@@ -172,7 +172,7 @@ struct ExplainSheet: View {
                         .accessibilityLabel("Suggested test script")
                         .accessibilityValue(suggestion.checks.map { $0.name.isEmpty ? TestScript.defaultName($0) : $0.name }.joined(separator: ", "))
                         .accessibilityIdentifier("suggested-test")
-                    Text("\(suggestion.checks.count) checks, each checked against this response\(suggestion.dropped > 0 ? " (\(suggestion.dropped) that it fails left out)" : "").")
+                    Text("\(suggestion.checks.count == 1 ? "1 check" : "\(suggestion.checks.count) checks"), each checked against this response\(suggestion.dropped > 0 ? " (\(suggestion.dropped) that it fails left out)" : "").")
                         .font(Typo.caption).foregroundStyle(Theme.textMuted)
                     HStack(spacing: 10) {
                         Button {

@@ -57,7 +57,7 @@ for bin in $bins; do
 $phrases
 EOF
   echo "-- $name: short words, for reading (not a failure):"
-  strings -a "$bin" | grep -E 'Upgrade|Purchase|Subscribe|Pricing|Checkout|Billing|[Tt]rial' | sort -u | head -20 | sed 's/^/   /' || true
+  strings -a "$bin" | grep -E 'Upgrade|Purchase|Subscribe|Pricing|Checkout|Billing|[Tt]rial' | cut -c1-120 | sort -u | head -20 | sed 's/^/   /' || true
 done
 
 # Control: the default sync server address is a literal in the app (Core/Cloud.swift).

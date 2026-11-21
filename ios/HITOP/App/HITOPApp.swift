@@ -66,7 +66,8 @@ struct HITOPApp: App {
         // I5: Apple Intelligence on the on-device model; UI tests use the deterministic fake (CI
         // simulators have no model), `-UITestAIUnavailable` the path of a device without it.
         let assistant: LanguageAssistant = uiTest
-            ? FakeAssistant(availability: args.contains("-UITestAIUnavailable") ? .notEligible : .available)
+            ? FakeAssistant(availability: args.contains("-UITestAIUnavailable") ? .notEligible : .available,
+                            storeScreens: args.contains("-UITestStoreScreens"))
             : AppleIntelligenceAssistant()
         _ai = State(initialValue: Intelligence(assistant: assistant))
         scenario = uiTest ? ["-UITestSharedInvite", "-UITestSharedJoined"].first { args.contains($0) } : nil

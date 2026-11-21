@@ -202,6 +202,20 @@ final class IntelligenceTests: XCTestCase {
         XCTAssertEqual(off.suggestFailure, AssistantAvailability.turnedOff.reason)
     }
 
+    /// The App Store screenshots' stand-in (`-UITestStoreScreens`): its four checks all hold for the
+    /// seeded Create order answer, and its explanation states only facts of that answer.
+    func testStoreScreensAnswersHoldForCreateOrder() async throws {
+        let (request, outcome, secrets) = try await createOrder()
+        let fake = FakeAssistant(storeScreens: true)
+        let s = ExplainSession(assistant: fake, request: request, facts: ResponseFacts(outcome), secrets: secrets)
+        await s.explain()
+        XCTAssertEqual(s.text, FakeAssistant.storeExplanation)
+        let checks = try await fake.suggestChecks(Prompts.explain(request: request, facts: ResponseFacts(outcome), secrets: secrets))
+        let suggestion = TestScript.suggestion(checks, facts: ResponseFacts(outcome))
+        XCTAssertEqual(suggestion.dropped, 0)
+        XCTAssertEqual(suggestion.checks.count, 4)
+    }
+
     func testUnavailableReasonsHaveNoPurchaseWords() {
         let all = [AssistantAvailability.notEligible, .turnedOff, .notReady, .unsupported].compactMap(\.reason)
             + [AssistantFailure.tooLong, .refused, .language, .busy, .other].map(\.message)

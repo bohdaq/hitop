@@ -96,7 +96,7 @@ final class StoreScreenshotTests: XCTestCase {
         let explain = app.el("explain-response")
         wait(explain)
         explain.tap()
-        waitLabel(app.el("explain-text"), contains: "201 Created")
+        waitLabel(app.el("explain-text"), contains: "session cookie", timeout: 30)
         app.el("suggest-test").tap()
         wait(app.el("suggested-test"))
         sleep(1)
@@ -124,7 +124,7 @@ final class StoreScreenshotTests: XCTestCase {
         wait(explain)
         for _ in 0..<6 where !explain.isHittable { app.el("json-body").swipeUp(velocity: .slow) }
         explain.tap()
-        waitLabel(app.el("explain-text"), contains: "201 Created")
+        waitLabel(app.el("explain-text"), contains: "session cookie", timeout: 30)
         app.el("suggest-test").tap()
         wait(app.el("suggested-test"))
         sleep(1)
@@ -136,10 +136,16 @@ final class StoreScreenshotTests: XCTestCase {
         guard isPad else { return }
         let app = launchPad()
         wait(app.el("request-Create order"))
-        let header = app.staticTexts["SHOP-API"]
-        wait(header)
-        header.press(forDuration: 1.2)
-        let run = app.buttons["Run collection"]
+        // The sidebar's Runs page (below the collections), then Run shop-api.
+        let runs = app.el("pad-page-Runs")
+        for _ in 0..<10 where !(runs.exists && runs.isHittable) {
+            // Drag inside the sidebar (left column) upwards.
+            app.coordinate(withNormalizedOffset: CGVector(dx: 0.12, dy: 0.8))
+                .press(forDuration: 0.05, thenDragTo: app.coordinate(withNormalizedOffset: CGVector(dx: 0.12, dy: 0.3)))
+        }
+        wait(runs)
+        runs.tap()
+        let run = app.el("run-collection-shop-api")
         wait(run)
         run.tap()
         let start = app.el("run-start")
@@ -156,6 +162,14 @@ final class StoreScreenshotTests: XCTestCase {
         guard isPad else { return }
         let app = launchPad()
         sendOnPad(app, "Catalog query")
+        // Unfold the answer (data → products).
+        let body = app.el("json-body")
+        wait(body)
+        for _ in 0..<4 {
+            let expand = body.buttons["Expand"].firstMatch
+            guard expand.exists else { break }
+            expand.tap()
+        }
         sleep(1)
         store(app, "ipad-04-graphql")
     }
@@ -165,6 +179,7 @@ final class StoreScreenshotTests: XCTestCase {
     @MainActor
     private func launch() -> XCUIApplication {
         let app = XCUIApplication.seeded()
+        app.launchArguments += ["-UITestStoreScreens"]
         app.launch()
         return app
     }
@@ -188,7 +203,14 @@ final class StoreScreenshotTests: XCTestCase {
         let row = app.el("request-\(name)")
         wait(row)
         for _ in 0..<6 where !row.isHittable { app.el("request-Log in").swipeUp(velocity: .slow) }
-        row.tap()
+        // The first request opens by itself at launch and can win over an early tap: tap until the
+        // request column shows this one.
+        let title = app.navigationBars[name]
+        for _ in 0..<5 where !title.exists {
+            row.tap()
+            _ = title.waitForExistence(timeout: 3)
+        }
+        XCTAssertTrue(title.exists, "\(name) didn't open")
         let send = app.el("send")
         wait(send)
         send.tap()
