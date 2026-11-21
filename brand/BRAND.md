@@ -61,8 +61,6 @@ renders the same bytes on every machine). Sizes are what each file always was.
 | `frontend/public/logo192.png`, `logo512.png` | 192, 512 | extension pages, Firefox/Edge manifest from `manifest_extension.json` |
 | `desktop/src/logo192.png` | 192 | React desktop UI sidebar |
 | `extension/icons/icon-48.png`, `icon-96.png` | 48, 192 | Firefox extension (`icon-96.png` has always been 192 × 192) |
-| `chrome-store-package/icons/icon-16.png`, `icon-48.png`, `icon-128.png` | 16, 48, 128 | Chrome Web Store package |
-| `chrome-store-package/favicon.ico`, `logo192.png`, `logo512.png` | as in `frontend/public` | Chrome Web Store package |
 | `brand/png/logo-{16,32,48,128,192,256,300,512,1024}.png`, `logo-mono-512.png` | | exports for store listings (300 = Edge store logo and the Microsoft Store's 1:1 app tile icon), docs, press |
 | `desktop/msstore/Assets/`: `Square44x44Logo` (+ `.scale-200`, `.targetsize-{16,24,32,48,256}` plain and `_altform-unplated`), `Square150x150Logo`, `Wide310x150Logo`, `StoreLogo` (each + `.scale-200`) | 16 to 620 × 300 | Microsoft Store MSIX package (`desktop/msstore/AppxManifest.xml`, makepri indexes the variants): the icons fill the canvas like every other icon, the tiles carry the mark at 60 % of their height on a transparent tile |
 

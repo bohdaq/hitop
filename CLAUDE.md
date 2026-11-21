@@ -6,7 +6,7 @@ HITOP is an HTTP API testing tool available in four forms:
 - **CLI** (`cli/`) — Rust binary published to crates.io as `hitop` + `hitop-core`
 - **Desktop** (`desktop/`) — Tauri 2.0 native app (macOS, Windows, Linux)
 - **Firefox Extension** (`extension/`)
-- **Chrome Extension** (`chrome-extension/`, `chrome-store-package/`)
+- **Chrome Extension** (`chrome-extension/`)
 
 The React frontend (`frontend/`) is shared between the web/extension builds.
 
