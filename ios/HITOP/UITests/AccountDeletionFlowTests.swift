@@ -71,7 +71,10 @@ final class AccountDeletionFlowTests: XCTestCase {
         assertNothingToBuy(app)
         // Cancel first: nothing happens.
         app.el("cancel-delete-account").tap()
-        wait(app.el("account-email"))
+        // Back on the Account screen (scrolled down to the button), still signed in.
+        wait(app.el("delete-account"))
+        XCTAssertTrue(app.el("sign-out").exists)
+        XCTAssertFalse(app.el("confirm-delete-account").exists)
         openDeleteSheet(app)
         app.el("confirm-delete-account").tap()
         // Signed out, told so; the collections are still here.
@@ -96,6 +99,9 @@ final class AccountDeletionFlowTests: XCTestCase {
         XCTAssertTrue(error.label.contains("the organization Acme") && error.label.contains("make another member an owner"), error.label)
         assertNothingToBuy(app)
         app.el("cancel-delete-account").tap()
-        wait(app.el("account-email"))
+        // Back on the Account screen (scrolled down to the button), still signed in.
+        wait(app.el("delete-account"))
+        XCTAssertTrue(app.el("sign-out").exists)
+        XCTAssertFalse(app.el("confirm-delete-account").exists)
     }
 }
