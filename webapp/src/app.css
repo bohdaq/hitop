@@ -1208,7 +1208,7 @@ hitop-app lit-material-text-field::part(label) { inset-inline-start: -20px; }
 .limit-note p > :first-child { flex: none; margin-top: 2px; color: var(--md-sys-color-on-surface-variant); }
 .org-card lit-material-alert > [slot="action"] { justify-self: start; align-self: start; width: auto; }
 
-/* UX2 (reviews/2026-11-12-ux-audit.md). (7) failures read as failures, waits show their time. */
+/* UX2 (docs/archive/reviews/2026-11-12-ux-audit.md). (7) failures read as failures, waits show their time. */
 .checks-summary.fail, .count.fail { color: var(--hitop-fail); }
 .response[data-checks="failed"] > .response-meta { box-shadow: inset 0 2px 0 var(--hitop-fail); }
 .error-card { display: flex; flex-direction: column; align-items: flex-start; gap: 8px; max-width: 72ch; }

@@ -1,4 +1,4 @@
-// UX2 (reviews/2026-11-12-ux-audit.md, HITOP_NEXT_UI.md UX2): a check per top-10 item, in both
+// UX2 (docs/archive/reviews/2026-11-12-ux-audit.md, docs/archive/HITOP_NEXT_UI.md UX2): a check per top-10 item, in both
 // modes, against a local server (CORS open, so the web build calls it straight from the browser).
 //   BASE=http://localhost:7879 node tests/ux2.cjs   (HITOP_MODE=tauri: the desktop build)
 const http = require('http');

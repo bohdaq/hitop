@@ -1,5 +1,5 @@
 //! Where a request's time went: DNS, connect (TCP and TLS together), waiting for the first
-//! byte, and downloading the body (HITOP_NEXT_UI.md, track B).
+//! byte, and downloading the body (docs/archive/HITOP_NEXT_UI.md, track B).
 //!
 //! reqwest has no per-request timing API, so the default client ([`crate::http`]) gets two
 //! hooks that write [`Event`]s into one shared [`Recorder`]: a DNS resolver that times each

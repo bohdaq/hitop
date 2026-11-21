@@ -1,4 +1,4 @@
-// User stories closed after the HITOP Next redesign (HITOP_NEXT_UI.md, "Stories audit"):
+// User stories closed after the HITOP Next redesign (docs/archive/HITOP_NEXT_UI.md, "Stories audit"):
 //   U19 a secret with no value on this device: named before Send, the send stopped with a note
 //       that says where to fill it in, the URL chip, the Environments page; filled → sent.
 // Local Node server only.

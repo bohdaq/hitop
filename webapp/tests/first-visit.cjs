@@ -1,4 +1,4 @@
-// FV1 (HITOP_NEXT_UI.md): the first visit and new requests that land in a collection, in web and
+// FV1 (docs/archive/HITOP_NEXT_UI.md): the first visit and new requests that land in a collection, in web and
 // Tauri mode.
 //   BASE=http://localhost:7879 node tests/first-visit.cjs
 //   HITOP_MODE=tauri node tests/first-visit.cjs

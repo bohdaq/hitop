@@ -1,4 +1,4 @@
-// HITOP Next (HITOP_NEXT_UI.md): the app shell (rail, title bar, status bar, tab reorder), in web
+// HITOP Next (docs/archive/HITOP_NEXT_UI.md): the app shell (rail, title bar, status bar, tab reorder), in web
 // and Tauri mode, against a local Node server.
 //   BASE=http://localhost:7879 node tests/next.cjs
 //   HITOP_MODE=tauri node tests/next.cjs

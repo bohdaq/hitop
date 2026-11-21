@@ -3,7 +3,7 @@
  * and ink grounds, Geist, landing-page-design rules) with HITOP's purple, the
  * app icon's colour, as the accent.
  *
- * Dark only (owner decision 2026-11-09, HITOP_NEXT_UI.md): HITOP Next graphite, #0A0A0C ground,
+ * Dark only (owner decision 2026-11-09, docs/archive/HITOP_NEXT_UI.md): HITOP Next graphite, #0A0A0C ground,
  * #EDEDF0 text, one violet accent (#A99CFF, 8.2:1 on the ground). `color-scheme: dark` makes
  * lit-material's own light-dark() tokens resolve to their dark side too.
  */
@@ -88,7 +88,7 @@
   --md-sys-color-shadow: #000000;
   --md-sys-color-scrim: #000000;
 
-  /* HITOP Next: meaning colours (HITOP_NEXT_UI.md "Foundations"). Methods, results and
+  /* HITOP Next: meaning colours (docs/archive/HITOP_NEXT_UI.md "Foundations"). Methods, results and
      timing phases; light values are first drafts until the light pass (plan step 9). */
   --hitop-method-get: #5ec79b;
   --hitop-method-post: #f2b45c;

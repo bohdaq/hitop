@@ -1,4 +1,4 @@
-// DD1 (HITOP_NEXT_UI.md): drag and drop in the sidebar tree, in web and Tauri mode: a request
+// DD1 (docs/archive/HITOP_NEXT_UI.md): drag and drop in the sidebar tree, in web and Tauri mode: a request
 // into an empty folder and between rows, Undo, folders kept over a reload, folders reordered and
 // nested, collections reordered, Alt copies, a click still opens, Alt+Down, the tab strip, Esc.
 //   BASE=http://localhost:7879 node tests/tree-dnd.cjs

@@ -6,7 +6,7 @@ the app sells nothing: like Slack or Notion, people sign in to an account that a
 (App Store Review Guidelines 3.1.1 and 3.1.3). The Microsoft Store build follows the same rule.
 GitHub Release builds and the web app keep everything as it is.
 
-What the code does (HITOP_NEXT_UI.md ST1): a plain `tauri build` (no Cargo feature `github`) is a
+What the code does (docs/archive/HITOP_NEXT_UI.md ST1): a plain `tauri build` (no Cargo feature `github`) is a
 store build. Its web app shows the plan's name and usage meters and neutral limit messages, and no
 price, no Pay/Choose/Upgrade/trial/seat button, no link to pricing, checkout or the billing portal,
 no "see plans", and no word about buying anywhere else. It also takes the "See or change the plan

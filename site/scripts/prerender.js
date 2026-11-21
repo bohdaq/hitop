@@ -112,8 +112,6 @@ write(
     "",
     "## Optional",
     "",
-    "- [Scripting guide](https://github.com/bohdaq/hitop/blob/main/SCRIPTING_GUIDE.md): pre-request and test scripts",
-    "- [Variables guide](https://github.com/bohdaq/hitop/blob/main/VARIABLES_GUIDE.md): environments and variables",
     "- [Changelog](https://github.com/bohdaq/hitop/blob/main/CHANGELOG.md): changes per release",
     "",
   ].join("\n"),
