@@ -90,6 +90,23 @@ fn server_with(envs: &[(&str, String)]) -> Option<SyncServer> {
 
 impl SyncServer {
     /// The code in the last mail to `email` (the server prints mails with HITOP_SYNC_MAIL=log).
+    /// How many mails the server has sent to `email` so far.
+    fn mails_to(&self, email: &str) -> usize {
+        self.log.lock().unwrap().matches(&format!("mail to {email}:")).count()
+    }
+
+    /// Like `code_for`, but only from a mail sent after the first `seen` ones: a second sign-in
+    /// must not read the code of the first (already used) mail before the new one is logged.
+    fn new_code_for(&self, email: &str, after: &str, seen: usize) -> String {
+        for _ in 0..200 {
+            if self.mails_to(email) > seen {
+                return self.code_for(email, after);
+            }
+            std::thread::sleep(Duration::from_millis(50));
+        }
+        panic!("no new mail to {email}");
+    }
+
     fn code_for(&self, email: &str, after: &str) -> String {
         for _ in 0..50 {
             let log = self.log.lock().unwrap().clone();
@@ -190,9 +207,10 @@ impl Client {
 
     /// Signs in with a mailed code; returns this device's key fingerprint.
     fn login(&self, server: &SyncServer, email: &str) -> String {
+        let seen = server.mails_to(email);
         let first = self.ok(&["sync", "login", "--email", email, "--code"]);
         assert!(first.contains("--code"), "{first}");
-        let code = server.code_for(email, "/signin#");
+        let code = server.new_code_for(email, "/signin#", seen);
         let out = self.ok(&["sync", "login", "--email", email, "--code", &code]);
         out.lines().find_map(|l| l.split("key fingerprint ").nth(1)).unwrap().trim().to_string()
     }
@@ -924,10 +942,11 @@ fn a_password_signs_in_and_unlocks_the_keys_on_a_new_computer() {
 
     // Forgot on a third computer: warned before, signed in after, but no keys.
     let ada3 = Client::new(&server);
+    let seen = server.mails_to("ada@example.com");
     let o = ada3.run(&["sync", "password", "forgot", "--email", "ada@example.com"]);
     assert_eq!(o.code, 0, "{}", o.stderr);
     assert!(o.stderr.contains("can't unlock your end-to-end encrypted workspaces"), "{}", o.stderr);
-    let code = server.code_for("ada@example.com", "/signin#");
+    let code = server.new_code_for("ada@example.com", "/signin#", seen);
     let o = stdin(&ada3, &["sync", "password", "reset", "--code", &code, "--password-stdin"], "third long password\n");
     assert_eq!(o.code, 0, "{}\n{}", o.stdout, o.stderr);
     assert!(o.stderr.contains("is gone") && o.stderr.contains("no workspace keys"), "{}", o.stderr);
