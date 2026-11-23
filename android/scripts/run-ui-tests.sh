@@ -7,7 +7,9 @@ set -eu
 cd "$(dirname "$0")/.."
 adb wait-for-device
 ready() {
+  # Also the user's credential-encrypted storage (/data/user/0): apps can't write files before it.
   [ "$(adb shell getprop sys.boot_completed 2>/dev/null | tr -d '\r')" = 1 ] \
+    && [ "$(adb shell getprop sys.user.0.ce_available 2>/dev/null | tr -d '\r')" = true ] \
     && adb shell settings get global device_name >/dev/null 2>&1 \
     && adb shell pm path android >/dev/null 2>&1 \
     && adb shell cmd input -h >/dev/null 2>&1
