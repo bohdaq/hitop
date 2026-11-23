@@ -37,28 +37,16 @@ jobs:
       - uses: gradle/actions/setup-gradle@8da46b539cd8fe6ab27ca75128919a18d757604c # v6.4.1
         with:
           cache-read-only: true
-      - name: Upload key and client id from secrets
+      - name: Secrets are set
         env:
           KEYSTORE_B64: ${{ secrets.ANDROID_UPLOAD_KEYSTORE_BASE64 }}
           KEYSTORE_PASSWORD: ${{ secrets.ANDROID_UPLOAD_KEYSTORE_PASSWORD }}
           KEY_ALIAS: ${{ secrets.ANDROID_UPLOAD_KEY_ALIAS }}
-          KEY_PASSWORD: ${{ secrets.ANDROID_UPLOAD_KEY_PASSWORD }}
           CLIENT_ID: ${{ secrets.HITOP_GOOGLE_SERVER_CLIENT_ID }}
-          RUN_NUMBER: ${{ github.run_number }}
         run: |
           for v in KEYSTORE_B64 KEYSTORE_PASSWORD KEY_ALIAS CLIENT_ID; do
             [ -n "${!v}" ] || { echo "::error::a secret for $v is not set (android/PLAY_STORE.md, GitHub secrets)"; exit 1; }
           done
-          umask 077
-          printf '%s' "$KEYSTORE_B64" | base64 -d > "$RUNNER_TEMP/upload.jks"
-          {
-            echo "HITOP_UPLOAD_KEYSTORE=$RUNNER_TEMP/upload.jks"
-            echo "HITOP_UPLOAD_KEYSTORE_PASSWORD=$KEYSTORE_PASSWORD"
-            echo "HITOP_UPLOAD_KEY_ALIAS=$KEY_ALIAS"
-            echo "HITOP_UPLOAD_KEY_PASSWORD=${KEY_PASSWORD:-$KEYSTORE_PASSWORD}"
-            echo "HITOP_GOOGLE_SERVER_CLIENT_ID=$CLIENT_ID"
-            echo "HITOP_VERSION_CODE=$((1000 + RUN_NUMBER))"
-          } >> "$GITHUB_ENV"
       - name: Rust targets, NDK, cargo-ndk, bundletool
         run: |
           (cd cli && rustup show)
@@ -71,7 +59,24 @@ jobs:
           echo "BUNDLETOOL=$RUNNER_TEMP/bundletool.jar" >> "$GITHUB_ENV"
       - name: Release APK and AAB (signed, checked)
         working-directory: android
-        run: scripts/build-release.sh
+        # The upload key exists only during this step: written to the runner's temp directory,
+        # used by Gradle, deleted before any later step (the upload action never sees it).
+        env:
+          KEYSTORE_B64: ${{ secrets.ANDROID_UPLOAD_KEYSTORE_BASE64 }}
+          HITOP_UPLOAD_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_UPLOAD_KEYSTORE_PASSWORD }}
+          HITOP_UPLOAD_KEY_ALIAS: ${{ secrets.ANDROID_UPLOAD_KEY_ALIAS }}
+          KEY_PASSWORD: ${{ secrets.ANDROID_UPLOAD_KEY_PASSWORD }}
+          HITOP_GOOGLE_SERVER_CLIENT_ID: ${{ secrets.HITOP_GOOGLE_SERVER_CLIENT_ID }}
+        run: |
+          umask 077
+          export HITOP_UPLOAD_KEYSTORE="$RUNNER_TEMP/upload.jks"
+          trap 'rm -f "$HITOP_UPLOAD_KEYSTORE"' EXIT
+          printf '%s' "$KEYSTORE_B64" | base64 -d > "$HITOP_UPLOAD_KEYSTORE"
+          export HITOP_UPLOAD_KEY_PASSWORD="${KEY_PASSWORD:-$HITOP_UPLOAD_KEYSTORE_PASSWORD}"
+          # One clock for both release workflows (minutes since 2026-01-01): codes never collide or go back.
+          export HITOP_VERSION_CODE="$(( ($(date +%s) - 1767225600) / 60 ))"
+          echo "version code $HITOP_VERSION_CODE"
+          scripts/build-release.sh
       - name: GitHub Release
         env:
           GH_TOKEN: ${{ github.token }}
@@ -83,6 +88,3 @@ jobs:
           pre=""; case "$VERSION" in *-rc.*) pre="--prerelease";; esac
           # Never "Latest": that stays with the desktop release (its updater reads latest.json there).
           gh release create "$GITHUB_REF_NAME" out/* --title "HITOP for Android $VERSION" --notes "Signed with the upload key. Google Play builds come from android-play.yml." --latest=false $pre
-      - name: Remove the key file
-        if: always()
-        run: rm -f "$RUNNER_TEMP/upload.jks"

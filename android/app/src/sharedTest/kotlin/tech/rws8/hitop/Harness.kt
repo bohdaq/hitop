@@ -26,6 +26,11 @@ object Harness {
         val ctx = ApplicationProvider.getApplicationContext<Context>()
         AppGraph.useSeed(ctx, if (robolectric) MemorySecretStore() else null)
         AppGraph.runsInProcess = robolectric
+        // The run notification's permission, granted as a person would on the first run: the system
+        // dialog would otherwise take the taps meant for the app (Android 13+ devices).
+        if (!robolectric && Build.VERSION.SDK_INT >= 33) {
+            InstrumentationRegistry.getInstrumentation().uiAutomation.grantRuntimePermission(ctx.packageName, android.Manifest.permission.POST_NOTIFICATIONS)
+        }
         return ActivityScenario.launch(MainActivity::class.java)
     }
 

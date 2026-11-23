@@ -113,7 +113,8 @@ Play takes uploads through its API only after the app's first release was made i
    Review → Start rollout. Testers tab: an email list with yourself.
 3. From then on: **Actions → Android Play → Run workflow** (status `completed`; `draft` while the
    app has never been reviewed) uploads each build to the internal track. The version code is
-   1000 + the workflow's run number unless you give one; it must be higher than every earlier upload.
+   the minutes since 2026-01-01 (both workflows use that clock, so a tag build and a Play upload
+   never get the same code) unless you give one; it must be higher than every earlier upload.
 4. Closed test (the 12 testers for 14 days): Testing → Closed testing → Create track, add the
    testers' emails or a Google Group, then **Promote release** from internal testing to it.
 
@@ -133,27 +134,35 @@ Play takes uploads through its API only after the app's first release was made i
 
 ## 9. Data safety answers
 
-Does the app collect or share any of the required user data types? **Yes** (only with a HITOP
-Cloud account; everything else stays on the phone and is not "collected" in Play's sense).
+Does the app collect or share any of the required user data types? **Yes**: HITOP Cloud data
+(only with an account), and the diagnostics Google's ML Kit sends for the on-device AI
+(every phone: the app asks ML Kit at start whether the model is there). Source for ML Kit:
+https://developers.google.com/ml-kit/android-data-disclosure (section GenAI, `genai-prompt`).
 
-- Is all collected data encrypted in transit? **Yes** (HTTPS).
+- Is all collected data encrypted in transit? **Yes** (HTTPS; ML Kit says the same of its data).
 - Do you provide a way to request deletion? **Yes**: in the app (Account → Delete account), and by
   email; the web URL field: https://hitop.rws8.tech/privacy.html (its "Deleting your account" section
   says how, including by email without the app).
-- Shared with third parties: **None** for every type below (HITOP Cloud is HITOP's own service).
+- Shared with third parties: **No** for every type below (HITOP Cloud is HITOP's own service; ML
+  Kit's data goes to Google as the SDK's provider, which Play counts as collection, and ML Kit says
+  it doesn't transfer it to third parties).
 
-| Data type | Collected | Optional? | Purposes | Notes |
+| Data type | Collected | Optional? | Purposes | From |
 | --- | --- | --- | --- | --- |
-| Personal info → Email address | Yes | Optional (only with an account) | Account management, App functionality | the sign-in address |
-| Personal info → User IDs | Yes | Optional | Account management, App functionality | account id, Google/GitHub/Apple account ids |
-| App activity → Other user-generated content | Yes | Optional | App functionality | synced collections, environments, globals (library); shared collections are end-to-end encrypted |
-| App info and performance | **No** | | | no crash reports, no diagnostics |
-| Device or other IDs | **No** | | | the device's public key and "HITOP on <model>" are account data, not a device id |
-| Location, Financial info, Health, Messages, Photos, Audio, Files, Calendar, Contacts, Web browsing | **No** | | | |
+| Personal info → Email address | Yes | Optional (only with an account) | Account management, App functionality | HITOP Cloud: the sign-in address |
+| Personal info → User IDs | Yes | Optional | Account management, App functionality | HITOP Cloud: account id, Google/GitHub/Apple account ids |
+| App activity → Other user-generated content | Yes | Optional | App functionality | HITOP Cloud: synced collections, environments, globals (shared collections are end-to-end encrypted) |
+| App info and performance → Diagnostics | Yes | Required | Analytics | ML Kit: device model, OS version, app version, latency, error codes, input/output sizes |
+| Device or other IDs | Yes | Required | Analytics | ML Kit: a per-installation identifier for its diagnostics |
+| Location, Financial info, Health, Messages, Photos, Audio, Files, Calendar, Contacts, Web browsing, App activity (other than above) | **No** | | | |
 
 Not collected: requests and responses (they go from the phone to the address entered), request
-history, secret values on the phone, anything the on-device model reads (Gemini Nano runs on the
-phone). The app has no analytics or advertising SDK and no usage ping.
+history, secret values on the phone, and the prompts and answers of the on-device model (ML Kit:
+"Input, inference, and output data is processed locally"). HITOP itself has no analytics or
+advertising SDK and no usage ping (the Android build of hitop-ffi has no telemetry feature). Google
+sign-in (Credential Manager) publishes no data disclosure of its own; what it hands the app (the
+Google account's ID token) is covered by the account rows above. Recheck ML Kit's page before each
+submission: Google updates it.
 
 ## 10. Releases
 

@@ -36,6 +36,7 @@ class AccessibilityTest {
             compose.waitFor(hasText("201 Created"))
             listOf("Body", "Headers", "Tests", "Cookies").forEach { compose.onNodeWithTag("response-tab-$it").performClick() }
             compose.onNodeWithTag("close-response").performClick()
+            compose.waitUntil(10_000) { compose.onAllNodes(hasTestTag("response-sheet")).fetchSemanticsNodes().isEmpty() }
             compose.onNodeWithTag("back").performClick()
             listOf("History", "Environments", "Runs", "Collections").forEach { compose.onNodeWithTag("tab-$it").performClick(); compose.waitForIdle() }
             compose.onNodeWithTag("account-button").performClick()

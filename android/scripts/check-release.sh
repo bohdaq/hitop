@@ -14,6 +14,11 @@ for abi in arm64-v8a x86_64; do
   unzip -l "$aab" | grep -q "base/lib/$abi/libhitop_ffi.so" || { echo "the bundle has no $abi library" >&2; exit 1; }
 done
 echo "both ABIs in the bundle"
+# No usage ping in the app (privacy policy, Data safety): hitop-core's telemetry endpoint is in the CLI, never here.
+tmp=$(mktemp -d); trap 'rm -rf "$tmp"' EXIT
+unzip -q -o "$aab" 'base/lib/*' -d "$tmp"
+if grep -rlq "api/ping" "$tmp"; then echo "the bundle's native code holds the usage ping endpoint" >&2; exit 1; fi
+echo "no usage ping in the native code"
 # jarsigner exits 0 for an unsigned file too: read what it says.
 jarsigner -verify "$aab" 2>&1 | grep -q "^jar verified" && echo "the bundle is signed" || { echo "the bundle isn't signed" >&2; exit 1; }
 if [ -n "$apk" ]; then

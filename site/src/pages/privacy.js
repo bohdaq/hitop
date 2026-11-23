@@ -40,7 +40,7 @@ export function render() {
       </ul>
 
       <h2>No tracking</h2>
-      <p>HITOP contains no analytics SDKs, crash reporting, advertising identifiers, third party SDKs, session recording or fingerprinting. The website sets no cookies. If you choose a light or dark theme, your browser keeps that choice in local storage under <code>hitop-theme</code>.</p>
+      <p>HITOP contains no analytics SDKs, crash reporting, advertising identifiers, session recording or fingerprinting, and no third party SDKs apart from Google's in the Android app (below). The website sets no cookies. If you choose a light or dark theme, your browser keeps that choice in local storage under <code>hitop-theme</code>.</p>
 
       <h2>Usage ping, only if you turn it on</h2>
       <p>The CLI (from version 0.3.0) and the free desktop builds from GitHub can send one anonymous ping a week, only if you turn it on. It is off by default; the desktop app asks once, with No as the default answer, and the CLI only sends it after <code>hitop telemetry on</code>. The Mac App Store, iOS and Android apps, the web app and the browser extensions don't contain this code at all.</p>
@@ -51,7 +51,8 @@ export function render() {
       </ul>
 
       <h2>On-device AI in the Android app</h2>
-      <p>On phones that have Gemini Nano, the Android app can explain a response, suggest tests and turn a description into a request. The model runs on the phone through Android's on-device AI service: what it reads (the response, with secret values and credentials hidden) never leaves the phone and is not sent to HITOP or to Google by HITOP. Turning a curl command into a request needs no model.</p>
+      <p>On phones that have Gemini Nano, the Android app can explain a response, suggest tests and turn a description into a request. The model runs on the phone through Google's ML Kit and Android's on-device AI service: what it reads (the response, with secret values and credentials hidden) and what it answers stay on the phone. Turning a curl command into a request needs no model.</p>
+      <p>ML Kit is Google's library, not HITOP's, and it sends Google diagnostics about its own use whenever the app checks for the model (at start) or uses it: the phone's model and Android version, HITOP's version, timings, sizes and error codes, and an identifier per installation. It doesn't send what the model reads or writes. Google describes this at <a href="https://developers.google.com/ml-kit/android-data-disclosure">ML Kit data disclosure</a>. The Android app's other Google library, for signing in with Google, is used only when you choose it.</p>
 
       <h2>HITOP Cloud account, only if you sign in</h2>
       <p>HITOP Cloud is optional: every app works without an account. If you sign in (with Apple, Google or GitHub, a password, an emailed code or your company's single sign-on) at <code>sync.hitop.rws8.tech</code>, HITOP Cloud keeps:</p>
