@@ -366,24 +366,8 @@ class Library(private val store: LibraryStore, private val secrets: SecretStore)
      * cookie jar. Adds a history entry. Blocking work runs on the IO dispatcher.
      */
     suspend fun send(collectionId: String, draft: Request, timeoutMs: Long = 0): SendResult = withContext(Dispatchers.IO) {
-        val s = _state.value
-        val c = s.collection(collectionId) ?: Collection.new("Unsaved")
-        val requests = if (c.request(draft.id) != null) c.requests.map { if (it.id == draft.id) draft else it } else c.requests + draft
-        val index = requests.indexOfFirst { it.id == draft.id }
-        val env = s.activeEnvironment
-        val args = buildJsonObject {
-            put("collection", c.forEngine(requests).toString())
-            put("request", index)
-            env?.let { put("environment", it.forEngine()) }
-            put("secrets", environmentSecrets(env).toJsonObject())
-            put("globals", s.globals.variables.filterKeys { it !in s.globals.secrets }.toJsonObject())
-            put("globalSecrets", globalSecrets(s.globals).toJsonObject())
-            put("scriptVariables", JsonObject((scriptVariables[collectionId] ?: emptyMap<String, String?>()).mapValues { (_, v) -> v?.let(::JsonPrimitive) ?: JsonNull }))
-            put("scriptGlobals", JsonObject(scriptGlobals.mapValues { (_, v) -> v?.let(::JsonPrimitive) ?: JsonNull }))
-            put("context", contexts[collectionId] ?: EmptyObject)
-            put("jar", store.loadJar())
-            if (timeoutMs > 0) put("timeoutMs", timeoutMs)
-        }
+        val c = _state.value.collection(collectionId) ?: Collection.new("Unsaved")
+        val args = engineArgs(c, draft) { if (timeoutMs > 0) put("timeoutMs", timeoutMs); put("jar", store.loadJar()) }
         val result = try {
             parse(Ffi.call("send", args).jsonObject, collectionId)
         } catch (e: Exception) {
@@ -395,6 +379,35 @@ class Library(private val store: LibraryStore, private val secrets: SecretStore)
         }
         addHistory(HistoryEntry(Ids.next(), System.currentTimeMillis(), c.name, draft, snapshot, result.error?.raw))
         result
+    }
+
+    /** What hitop-ffi's `send` and `snippet` take: the collection with [draft] in it, scopes, secrets. */
+    private fun engineArgs(c: Collection, draft: Request, more: kotlinx.serialization.json.JsonObjectBuilder.() -> Unit = {}): JsonObject {
+        val s = _state.value
+        val requests = if (c.request(draft.id) != null) c.requests.map { if (it.id == draft.id) draft else it } else c.requests + draft
+        val env = s.activeEnvironment
+        return buildJsonObject {
+            put("collection", c.forEngine(requests).toString())
+            put("request", requests.indexOfFirst { it.id == draft.id })
+            env?.let { put("environment", it.forEngine()) }
+            put("secrets", environmentSecrets(env).toJsonObject())
+            put("globals", s.globals.variables.filterKeys { it !in s.globals.secrets }.toJsonObject())
+            put("globalSecrets", globalSecrets(s.globals).toJsonObject())
+            put("scriptVariables", JsonObject((scriptVariables[c.id] ?: emptyMap<String, String?>()).mapValues { (_, v) -> v?.let(::JsonPrimitive) ?: JsonNull }))
+            put("scriptGlobals", JsonObject(scriptGlobals.mapValues { (_, v) -> v?.let(::JsonPrimitive) ?: JsonNull }))
+            put("context", contexts[c.id] ?: EmptyObject)
+            more()
+        }
+    }
+
+    /** The request as code (curl, fetch, python, go, java, rust); secrets stay `{{NAME}}`. */
+    suspend fun snippet(collectionId: String, draft: Request, lang: String): String = withContext(Dispatchers.IO) {
+        val c = _state.value.collection(collectionId) ?: Collection.new("Unsaved")
+        try {
+            Ffi.call("snippet", engineArgs(c, draft) { put("lang", lang) }).jsonObject.str("code")
+        } catch (e: Exception) {
+            e.message ?: "No snippet"
+        }
     }
 
     private fun parse(o: JsonObject, collectionId: String): SendResult {

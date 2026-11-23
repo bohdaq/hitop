@@ -10,5 +10,4 @@
         <item name="android:forceDarkAllowed">false</item>
     </style>
     <color name="ground">#0B0B0E</color>
-    <color name="ic_launcher_background">#667EEA</color>
 </resources>

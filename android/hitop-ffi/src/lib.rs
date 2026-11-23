@@ -37,6 +37,7 @@ fn call(op: &str, a: &Value) -> Option<R> {
         "version" => Ok(json!({ "ffi": env!("CARGO_PKG_VERSION") })),
         "echo" => Ok(a.get("text").cloned().unwrap_or(Value::Null)),
         "send" => send::send(&Args(a)),
+        "snippet" => send::snippet(&Args(a)),
         // UI tests and screenshots: every http:// request goes to the app's local stub server
         // (reqwest reads HTTP_PROXY when hitop-core builds its client, before the first request).
         "useHttpProxy" => Args(a).str("proxy").map(|proxy| {

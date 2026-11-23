@@ -50,7 +50,21 @@ android {
     // libhitop_ffi.so per ABI from scripts/build-ffi.sh android.
     sourceSets["main"].jniLibs.directories.add(rootProject.layout.projectDirectory.dir("build/ffi/jniLibs").asFile.path)
     packaging { jniLibs { useLegacyPackaging = false } }
-    testOptions { animationsDisabled = true }
+    // The UI tests in src/sharedTest run on the emulators (androidTest) and on the JVM under
+    // Robolectric (test), with a host build of hitop-ffi: fast local runs, same tests.
+    sourceSets["test"].kotlin.directories.add("src/sharedTest/kotlin")
+    sourceSets["androidTest"].kotlin.directories.add("src/sharedTest/kotlin")
+    testOptions {
+        animationsDisabled = true
+        unitTests {
+            isIncludeAndroidResources = true
+            all { test ->
+                test.systemProperty("java.library.path", rootProject.layout.projectDirectory.dir("build/ffi/host").asFile.absolutePath)
+                test.systemProperty("robolectric.graphicsMode", "NATIVE")
+                test.maxHeapSize = "3g"
+            }
+        }
+    }
 }
 
 kotlin { jvmToolchain(17) }
@@ -70,6 +84,12 @@ dependencies {
     debugImplementation(libs.compose.ui.test.manifest)
 
     testImplementation(libs.junit)
+    testImplementation(libs.robolectric)
+    testImplementation(platform(libs.compose.bom))
+    testImplementation(libs.compose.ui.test.junit4)
+    testImplementation(libs.androidx.test.ext.junit)
+    testImplementation(libs.androidx.test.core)
+    testImplementation(libs.androidx.test.storage)
     androidTestImplementation(platform(libs.compose.bom))
     androidTestImplementation(libs.compose.ui.test.junit4)
     androidTestImplementation(libs.androidx.test.ext.junit)

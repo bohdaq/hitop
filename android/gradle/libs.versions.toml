@@ -15,6 +15,7 @@ uiautomator = "2.4.1"
 testCore = "1.7.0"
 testServices = "1.6.0"
 navigation = "2.10.2"
+robolectric = "4.18.1"
 
 [libraries]
 androidx-core-ktx = { module = "androidx.core:core-ktx", version.ref = "coreKtx" }
@@ -39,6 +40,7 @@ androidx-test-core = { module = "androidx.test:core-ktx", version.ref = "testCor
 androidx-test-services = { module = "androidx.test.services:test-services", version.ref = "testServices" }
 androidx-test-storage = { module = "androidx.test.services:storage", version.ref = "testServices" }
 androidx-navigation-compose = { module = "androidx.navigation:navigation-compose", version.ref = "navigation" }
+robolectric = { module = "org.robolectric:robolectric", version.ref = "robolectric" }
 androidx-test-uiautomator = { module = "androidx.test.uiautomator:uiautomator", version.ref = "uiautomator" }
 
 [plugins]

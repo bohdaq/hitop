@@ -28,11 +28,11 @@ export const TARGETS = [
 ];
 
 // Android adaptive launcher icon (android/app/src/main/res/mipmap-*): a 108 dp square per density, the logo's
-// gradient as the background layer, its white H and play arrow as the foreground (and the monochrome layer for
-// themed icons), scaled so the logo's disc (60 of its 64 units) spans the 72 dp the launcher's mask shows.
+// gradient as the background layer, its white H and play arrow as the foreground (also the monochrome layer for
+// themed icons, in ic_launcher.xml), scaled so the logo's disc (60 of its 64 units) spans the 72 dp the launcher's mask shows.
 function androidAssets() {
   const densities = [["mdpi", 108], ["hdpi", 162], ["xhdpi", 216], ["xxhdpi", 324], ["xxxhdpi", 432]];
-  return densities.flatMap(([d, px]) => ["background", "foreground", "monochrome"].map((layer) =>
+  return densities.flatMap(([d, px]) => ["background", "foreground"].map((layer) =>
     [`android/app/src/main/res/mipmap-${d}/ic_launcher_${layer}.png`, [px, layer], "android"]));
 }
 

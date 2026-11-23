@@ -123,6 +123,31 @@ pub(crate) fn send(a: &Args) -> Result<Value, String> {
     Ok(out)
 }
 
+/// `snippet`: the request as code (hitop-core `snippet::generate`, the CLI's and the web app's
+/// Code). Secret values and variables with no value stay `{{NAME}}`.
+pub(crate) fn snippet(a: &Args) -> Result<Value, String> {
+    let i = inputs(a)?;
+    let lang = hitop_core::snippet::Lang::parse(a.str("lang")?).ok_or("lang: curl, fetch, python, go, java or rust")?;
+    let index = a.u64("request")? as usize;
+    let saved = i.collection.requests.get(index).ok_or("request: no such request")?;
+    let request = i.collection.effective(saved);
+    let mut names: Vec<String> = i.secrets.names().map(str::to_string).collect();
+    names.extend(i.options.global_secrets.names().map(str::to_string));
+    if let Some(e) = &i.environment {
+        names.extend(e.secrets.iter().cloned());
+    }
+    // Variables without the secrets' values: those become placeholders.
+    let state = RunState::new(&i.collection, i.environment.as_ref(), &Secrets::default(), &RunOptions { globals: a.opt_json("globals")?.unwrap_or_default(), ..Default::default() });
+    let mut vars = state.scopes.merged();
+    let session: VariableUpdates = a.opt_json("scriptVariables")?.unwrap_or_default();
+    hitop_core::prepare::apply_updates(&mut vars, &session);
+    for n in &names {
+        vars.remove(n);
+    }
+    let out = hitop_core::snippet::generate(lang, &request, i.collection.auth.as_ref(), &vars, &names).map_err(|e| format!("{e:#}"))?;
+    Ok(json!({ "code": out.code, "placeholders": out.placeholders }))
+}
+
 #[cfg(test)]
 mod tests {
     use crate::call_json;
@@ -191,6 +216,16 @@ mod tests {
         assert!(wire.contains("authorization: Bearer tok_s3cret") || wire.contains("Authorization: Bearer tok_s3cret"), "{wire}");
         assert!(wire.ends_with("{\"customerId\": 42}"), "{wire}");
         assert_eq!(ok["sent"]["body"], "{\"customerId\": 42}");
+    }
+
+    #[test]
+    fn a_snippet_keeps_secrets_as_placeholders() {
+        let collection = json!({ "id": 1, "name": "c", "auth": { "type": "bearer", "token": "${token}" }, "requests": [{ "id": 2, "name": "r", "method": "GET", "url": "https://${host}/x", "headers": [], "body": "" }] });
+        let args = json!({ "collection": collection.to_string(), "request": 0, "lang": "curl",
+            "environment": { "id": "e", "name": "E", "variables": { "host": "api.example.com" }, "secrets": ["token"] }, "secrets": { "token": "s3" } });
+        let out: Value = serde_json::from_str(&call_json("snippet", &args.to_string())).unwrap();
+        let code = out["ok"]["code"].as_str().unwrap();
+        assert!(code.contains("https://api.example.com/x") && code.contains("{{token}}") && !code.contains("s3"), "{code}");
     }
 
     #[test]

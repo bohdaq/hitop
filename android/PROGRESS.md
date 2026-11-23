@@ -19,13 +19,13 @@ Instructions: `android/GOAL.md`. Update this file after every task.
 | --- | --- |
 | hitop-core `runner::RunState` + `run_step` (additive; `run_collection_jar` calls it) and hitop-ffi `send` (one saved request as a run sends it, state carried by the app) | done |
 | core: web-app JSON models (unknown keys kept), file storage, Library (collections, requests, folders, pins, environments, globals, secrets, history), sender, seed, stub HTTP proxy; JVM tests through the real engine | done |
-| Secrets in Android Keystore (AES-GCM key, encrypted file) | |
-| App shell: ViewModel, bottom navigation, dark system bars | |
-| Collections screen (drafts' Main) | |
-| Request editor (drafts' Request): method, URL with variable chips + peek, Params, Headers, Body, Auth, Scripts, Tests | |
-| Response sheet (drafts' Response): status, timing bar, Body (folding JSON), Headers, Tests, Cookies | |
-| Environments, globals, History | |
-| UI tests on the seeded shop-api through the stub + screenshots | |
+| Secrets in Android Keystore (AES-GCM key, encrypted file) | done |
+| App shell: ViewModel, bottom navigation, dark system bars | done |
+| Collections screen (drafts' Main) | done |
+| Request editor (drafts' Request): method, URL with variable chips + peek, Params, Headers, Body, Auth, Scripts, Tests | done |
+| Response sheet (drafts' Response): status, timing bar, Body (folding JSON), Headers, Tests, Cookies | done |
+| Environments, globals, History | done |
+| UI tests on the seeded shop-api through the stub + screenshots (src/sharedTest: emulators in CI, Robolectric locally) | written, CI pending |
 
 ## A0 tasks
 

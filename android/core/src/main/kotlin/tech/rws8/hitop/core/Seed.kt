@@ -1,7 +1,6 @@
 package tech.rws8.hitop.core
 
 import kotlinx.serialization.json.JsonArray
-import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
@@ -149,7 +148,4 @@ object Seed {
             entry(9005, 7200, "1106", 200, 88, 120),
         )
     }
-
-    @Suppress("unused")
-    private val keep: JsonObject = EmptyObject
 }
