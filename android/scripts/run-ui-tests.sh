@@ -17,12 +17,13 @@ until [ "$(adb shell getprop sys.boot_completed 2>/dev/null | tr -d '\r')" = 1 ]
 done
 adb shell input keyevent 82 || true
 ./gradlew :app:connectedDebugAndroidTest "$@"
-results=$(find app/build/outputs/androidTest-results/connected -name 'TEST-*.xml')
-[ -n "$results" ] || { echo "no test results: nothing ran" >&2; exit 1; }
-python3 - $results <<'PY'
-import sys, xml.etree.ElementTree as ET
+python3 - <<'PY'
+import glob, sys, xml.etree.ElementTree as ET
 tests = failures = 0
-for f in sys.argv[1:]:
+files = glob.glob("app/build/outputs/androidTest-results/connected/**/TEST-*.xml", recursive=True)
+if not files:
+    sys.exit("no test results: nothing ran")
+for f in files:
     r = ET.parse(f).getroot()
     for s in ([r] if r.tag == "testsuite" else r.iter("testsuite")):
         tests += int(s.get("tests", 0)); failures += int(s.get("failures", 0)) + int(s.get("errors", 0))
