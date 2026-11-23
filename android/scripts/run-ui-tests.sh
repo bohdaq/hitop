@@ -24,6 +24,7 @@ while [ $ok -lt 5 ]; do
   sleep 2
 done
 adb shell input keyevent 82 || true
+echo "current user: $(adb shell am get-current-user 2>/dev/null | tr -d '\r'), users: $(adb shell pm list users 2>/dev/null | tr -d '\r' | tr '\n' ' ')"
 status=0
 ./gradlew :app:connectedDebugAndroidTest "$@" || status=$?
 python3 - <<'PY'
