@@ -2,14 +2,50 @@
 //! JSON in and JSON out like SyncFFI's `hitop_sync_call`. Operations this crate doesn't know go
 //! to SyncFFI (`hitop_sync_ffi::call_json`): sync plan, folder format, hitop-sync-crypto, gRPC.
 
+use serde::Deserialize;
 use serde_json::{json, Value};
 
+mod send;
+
 type R = Result<Value, String>;
+
+/// An operation's arguments (a JSON object).
+pub(crate) struct Args<'a>(pub &'a Value);
+
+impl Args<'_> {
+    pub fn str(&self, k: &str) -> Result<&str, String> {
+        self.0.get(k).and_then(Value::as_str).ok_or_else(|| format!("argument {k}: a string"))
+    }
+    pub fn u64(&self, k: &str) -> Result<u64, String> {
+        self.0.get(k).and_then(Value::as_u64).ok_or_else(|| format!("argument {k}: a number"))
+    }
+    /// An optional argument; null or missing = None.
+    pub fn opt_json<T: for<'de> Deserialize<'de>>(&self, k: &str) -> Result<Option<T>, String> {
+        match self.0.get(k) {
+            None | Some(Value::Null) => Ok(None),
+            Some(v) => serde_json::from_value(v.clone()).map(Some).map_err(|e| format!("argument {k}: {e}")),
+        }
+    }
+    /// A value that crosses as JSON text (exact 64-bit ids).
+    pub fn text_json<T: for<'de> Deserialize<'de>>(&self, k: &str) -> Result<T, String> {
+        serde_json::from_str(self.str(k)?).map_err(|e| format!("argument {k}: {e}"))
+    }
+}
 
 fn call(op: &str, a: &Value) -> Option<R> {
     Some(match op {
         "version" => Ok(json!({ "ffi": env!("CARGO_PKG_VERSION") })),
         "echo" => Ok(a.get("text").cloned().unwrap_or(Value::Null)),
+        "send" => send::send(&Args(a)),
+        // UI tests and screenshots: every http:// request goes to the app's local stub server
+        // (reqwest reads HTTP_PROXY when hitop-core builds its client, before the first request).
+        "useHttpProxy" => Args(a).str("proxy").map(|proxy| {
+            std::env::set_var("HTTP_PROXY", proxy);
+            std::env::set_var("http_proxy", proxy);
+            std::env::remove_var("NO_PROXY");
+            std::env::remove_var("no_proxy");
+            Value::Bool(true)
+        }),
         "evalScript" => {
             let script = a.get("script").and_then(Value::as_str).unwrap_or("");
             let ctx = hitop_core::scripting::PreRequestCtx {

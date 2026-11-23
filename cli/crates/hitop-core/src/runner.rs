@@ -10,7 +10,7 @@ use crate::{
     http,
     model::{Collection, Environment, RequestResult, TestResult},
     prepare::{prepare_in, variables, Draft, Scopes},
-    scripting::{run_post_request_script_with, PostRequestCtx, SentRequest},
+    scripting::{run_post_request_script_with, PostRequestCtx, SentRequest, VariableUpdates},
     secrets::{Masker, Secrets},
 };
 
@@ -118,6 +118,52 @@ pub fn run_collection_opts(
     run_collection_jar(collection, environment, secrets, options, None, on_step)
 }
 
+/// What one request of a run hands to the next: the scripts' context, every variable scope with
+/// the values scripts set applied, and the OAuth 2.0 tokens fetched so far. [`run_collection_jar`]
+/// keeps one for the whole run; an app sending one request at a time ([`run_step`]) keeps the
+/// script-set values ([`RunState::script_variables`], [`RunState::script_globals`]) itself.
+pub struct RunState {
+    pub context: HashMap<String, Value>,
+    pub scopes: Scopes,
+    /// Every variable the scripts of this state's steps set (`None` = unset; the last value wins).
+    pub script_variables: VariableUpdates,
+    /// The same for globals (`pm.globals.set`).
+    pub script_globals: VariableUpdates,
+    /// The request as the last step sent it (after scripts, auth, form bodies and signing).
+    pub last_sent: Option<SentRequest>,
+    tokens: crate::oauth2::Tokens,
+}
+
+impl RunState {
+    /// The scopes a run starts with: collection variables, the environment, `overrides`, then
+    /// secrets (references filled in); globals below them all.
+    pub fn new(collection: &Collection, environment: Option<&Environment>, secrets: &Secrets, options: &RunOptions) -> Self {
+        let mut upper = variables(&collection.variables, environment);
+        upper.extend(options.overrides.iter().map(|(k, v)| (k.clone(), v.clone())));
+        secrets.apply(&mut upper);
+        // `token: ${secret:vault:...}` in a variable's value: the resolved
+        // reference (in `secrets`) takes its place.
+        secrets.expand_refs(&mut upper);
+        let mut globals = options.globals.clone();
+        secrets.expand_refs(&mut globals);
+        options.global_secrets.expand_refs(&mut globals);
+        RunState {
+            context: HashMap::new(),
+            scopes: Scopes { globals, upper },
+            script_variables: VariableUpdates::new(),
+            script_globals: VariableUpdates::new(),
+            last_sent: None,
+            tokens: crate::oauth2::Tokens::interactive(options.timeout),
+        }
+    }
+
+    fn apply(&mut self, variables: &VariableUpdates, globals: &VariableUpdates) {
+        self.scopes.apply(variables, globals);
+        self.script_variables.extend(variables.iter().map(|(k, v)| (k.clone(), v.clone())));
+        self.script_globals.extend(globals.iter().map(|(k, v)| (k.clone(), v.clone())));
+    }
+}
+
 /// [`run_collection_opts`] with a cookie jar: cookies set by one response are
 /// sent with the next requests (and stay in `jar` for the caller to save).
 pub fn run_collection_jar(
@@ -129,114 +175,15 @@ pub fn run_collection_jar(
     on_step: &mut dyn FnMut(&RunStepResult),
 ) -> Vec<RunStepResult> {
     let stop_on_fail = options.stop_on_fail;
-    let mut context: HashMap<String, Value> = HashMap::new();
-    let mut upper = variables(&collection.variables, environment);
-    upper.extend(options.overrides.iter().map(|(k, v)| (k.clone(), v.clone())));
-    secrets.apply(&mut upper);
-    // `token: ${secret:vault:...}` in a variable's value: the resolved
-    // reference (in `secrets`) takes its place.
-    secrets.expand_refs(&mut upper);
-    let mut globals = options.globals.clone();
-    secrets.expand_refs(&mut globals);
-    options.global_secrets.expand_refs(&mut globals);
-    let mut scopes = Scopes { globals, upper };
+    let mut state = RunState::new(collection, environment, secrets, options);
     let masker = secrets.masker_with(&options.global_secrets);
     let mut results = Vec::new();
-    let mut tokens = crate::oauth2::Tokens::interactive(options.timeout);
 
     for saved in &collection.requests {
         if !is_run_step(saved) {
             continue;
         }
-        // Folder and collection auth and headers, inherited (model.rs `Collection::effective`).
-        let inherited = collection.effective(saved);
-        let request = &inherited;
-        let settings = request.settings();
-        let timeout = settings.timeout_ms.filter(|ms| *ms > 0).map(std::time::Duration::from_millis).or(options.timeout);
-        let no_redirects = settings.follow_redirects == Some(false);
-        let started = Instant::now();
-        // OAuth 2.0: a token (from the cache, or the token endpoint now) in place of the preset.
-        let oauth = {
-            let vars = scopes.merged();
-            let now = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map_or(0, |d| d.as_secs());
-            tokens.resolve(request.auth.as_ref().or(collection.auth.as_ref()), &|s| crate::interpolation::interpolate(s, &vars), now, &mut |r| {
-                let res = http::execute_opts("POST", &r.url, &r.headers, r.body.clone().into_bytes(), http::Options { timeout: options.timeout, jar: None, ..Default::default() })?;
-                Ok((res.status, res.body))
-            })
-        };
-        let (oauth_auth, oauth_error) = match oauth {
-            Ok(a) => (a, None),
-            Err(e) => (None, Some(e)),
-        };
-        // A request's own auth (even `none`) wins over the collection's.
-        let mut draft = Draft::of(request, collection.auth.as_ref());
-        if let Some(a) = &oauth_auth {
-            draft.auth = Some(a);
-        }
-        let prepared = match oauth_error {
-            Some(e) => Err(e),
-            None => prepare_in(&draft, &scopes, &context),
-        };
-        let step = match prepared {
-            Err(e) => RunStepResult {
-                request_name: request.name.clone(),
-                method: request.method.clone(),
-                url: request.url.clone(),
-                result: Err(e),
-                tests: vec![],
-                duration_ms: 0,
-            },
-            Ok(pre) => {
-                let mut sent_parts = (pre.headers.clone(), pre.body.clone().into_bytes());
-                context.extend(pre.context_updates.clone());
-                // Variables a script sets (pm.environment.set, ...) last for the run.
-                scopes.apply(&pre.variables, &pre.globals);
-                let variables = scopes.merged();
-                let result = form::outgoing(request, &pre.headers, &pre.body, &variables).and_then(|(mut h, b)| {
-                    // AWS Signature v4 signs the request as it goes out.
-                    crate::aws_sigv4::sign_if_aws(request.auth.as_ref().or(collection.auth.as_ref()), &|s| crate::interpolation::interpolate(s, &variables), &request.method, &pre.url, &mut h, &b)?;
-                    sent_parts = (h.clone(), b.clone());
-                    let first = http::execute_opts(&request.method, &pre.url, &h, b.clone(), http::Options { timeout, jar: jar.as_deref_mut(), no_redirects })?;
-                    // Digest: the server's 401 challenge answered once.
-                    let fill = |s: &str| crate::interpolation::interpolate(s, &variables);
-                    match crate::digest_auth::retry_headers(request.auth.as_ref().or(collection.auth.as_ref()), &fill, first.status, &first.headers, &request.method, &pre.url, &h)? {
-                        Some(h2) => {
-                            sent_parts = (h2.clone(), b.clone());
-                            http::execute_opts(&request.method, &pre.url, &h2, b, http::Options { timeout, jar: jar.as_deref_mut(), no_redirects })
-                        }
-                        None => Ok(first),
-                    }
-                });
-                let (headers, body) = sent_parts;
-                let mut tests = vec![];
-                if let Ok(resp) = &result {
-                    let sent = SentRequest { url: pre.url.clone(), method: request.method.clone(), headers, body: String::from_utf8(body).unwrap_or_default() };
-                    match run_post_request_script_with(
-                        &request.post_request_script,
-                        &PostRequestCtx {
-                            response_body: &resp.body,
-                            response_headers: &resp.headers,
-                            status_code: resp.status,
-                            duration_ms: resp.duration_ms,
-                            variables: &variables,
-                            context: &context,
-                            request: Some(&sent),
-                            globals: Some(&scopes.globals),
-                        },
-                    ) {
-                        Ok(post) => {
-                            context.extend(post.context_updates);
-                            scopes.apply(&post.variables, &post.globals);
-                            tests = post.tests;
-                        }
-                        Err(e) => tests.push(TestResult { name: "post-request script".into(), pass: false, detail: e.to_string() }),
-                    }
-                }
-                RunStepResult { request_name: request.name.clone(), method: request.method.clone(), url: pre.url, result, tests, duration_ms: 0 }
-            }
-        };
-        let mut step = step;
-        step.duration_ms = started.elapsed().as_millis() as u64;
+        let mut step = run_step(collection, saved, &mut state, options, jar.as_deref_mut());
         step.mask(&masker);
         let failed = !step.passed();
         on_step(&step);
@@ -247,6 +194,104 @@ pub fn run_collection_jar(
     }
 
     results
+}
+
+/// One request of `collection` as a run sends it: folder and collection auth and headers
+/// inherited, OAuth 2.0 tokens, the pre-request script, the request, Digest's retry, the
+/// post-request script and its assertions, with `state` carried in and out. The step is not
+/// masked: mask it with the run's [`Masker`] before anything shows or keeps it.
+pub fn run_step(collection: &Collection, saved: &crate::model::Request, state: &mut RunState, options: &RunOptions, mut jar: Option<&mut Jar>) -> RunStepResult {
+    // Folder and collection auth and headers, inherited (model.rs `Collection::effective`).
+    let inherited = collection.effective(saved);
+    let request = &inherited;
+    let settings = request.settings();
+    let timeout = settings.timeout_ms.filter(|ms| *ms > 0).map(std::time::Duration::from_millis).or(options.timeout);
+    let no_redirects = settings.follow_redirects == Some(false);
+    let started = Instant::now();
+    state.last_sent = None;
+    // OAuth 2.0: a token (from the cache, or the token endpoint now) in place of the preset.
+    let oauth = {
+        let vars = state.scopes.merged();
+        let now = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map_or(0, |d| d.as_secs());
+        state.tokens.resolve(request.auth.as_ref().or(collection.auth.as_ref()), &|s| crate::interpolation::interpolate(s, &vars), now, &mut |r| {
+            let res = http::execute_opts("POST", &r.url, &r.headers, r.body.clone().into_bytes(), http::Options { timeout: options.timeout, jar: None, ..Default::default() })?;
+            Ok((res.status, res.body))
+        })
+    };
+    let (oauth_auth, oauth_error) = match oauth {
+        Ok(a) => (a, None),
+        Err(e) => (None, Some(e)),
+    };
+    // A request's own auth (even `none`) wins over the collection's.
+    let mut draft = Draft::of(request, collection.auth.as_ref());
+    if let Some(a) = &oauth_auth {
+        draft.auth = Some(a);
+    }
+    let prepared = match oauth_error {
+        Some(e) => Err(e),
+        None => prepare_in(&draft, &state.scopes, &state.context),
+    };
+    let mut step = match prepared {
+        Err(e) => RunStepResult {
+            request_name: request.name.clone(),
+            method: request.method.clone(),
+            url: request.url.clone(),
+            result: Err(e),
+            tests: vec![],
+            duration_ms: 0,
+        },
+        Ok(pre) => {
+            let mut sent_parts = (pre.headers.clone(), pre.body.clone().into_bytes());
+            state.context.extend(pre.context_updates.clone());
+            // Variables a script sets (pm.environment.set, ...) last for the run.
+            state.apply(&pre.variables, &pre.globals);
+            let variables = state.scopes.merged();
+            let result = form::outgoing(request, &pre.headers, &pre.body, &variables).and_then(|(mut h, b)| {
+                // AWS Signature v4 signs the request as it goes out.
+                crate::aws_sigv4::sign_if_aws(request.auth.as_ref().or(collection.auth.as_ref()), &|s| crate::interpolation::interpolate(s, &variables), &request.method, &pre.url, &mut h, &b)?;
+                sent_parts = (h.clone(), b.clone());
+                let first = http::execute_opts(&request.method, &pre.url, &h, b.clone(), http::Options { timeout, jar: jar.as_deref_mut(), no_redirects })?;
+                // Digest: the server's 401 challenge answered once.
+                let fill = |s: &str| crate::interpolation::interpolate(s, &variables);
+                match crate::digest_auth::retry_headers(request.auth.as_ref().or(collection.auth.as_ref()), &fill, first.status, &first.headers, &request.method, &pre.url, &h)? {
+                    Some(h2) => {
+                        sent_parts = (h2.clone(), b.clone());
+                        http::execute_opts(&request.method, &pre.url, &h2, b, http::Options { timeout, jar, no_redirects })
+                    }
+                    None => Ok(first),
+                }
+            });
+            let (headers, body) = sent_parts;
+            let sent = SentRequest { url: pre.url.clone(), method: request.method.clone(), headers, body: String::from_utf8(body).unwrap_or_default() };
+            let mut tests = vec![];
+            if let Ok(resp) = &result {
+                match run_post_request_script_with(
+                    &request.post_request_script,
+                    &PostRequestCtx {
+                        response_body: &resp.body,
+                        response_headers: &resp.headers,
+                        status_code: resp.status,
+                        duration_ms: resp.duration_ms,
+                        variables: &variables,
+                        context: &state.context,
+                        request: Some(&sent),
+                        globals: Some(&state.scopes.globals),
+                    },
+                ) {
+                    Ok(post) => {
+                        state.context.extend(post.context_updates);
+                        state.apply(&post.variables, &post.globals);
+                        tests = post.tests;
+                    }
+                    Err(e) => tests.push(TestResult { name: "post-request script".into(), pass: false, detail: e.to_string() }),
+                }
+            }
+            state.last_sent = Some(sent);
+            RunStepResult { request_name: request.name.clone(), method: request.method.clone(), url: pre.url, result, tests, duration_ms: 0 }
+        }
+    };
+    step.duration_ms = started.elapsed().as_millis() as u64;
+    step
 }
 
 #[cfg(test)]

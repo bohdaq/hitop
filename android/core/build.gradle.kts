@@ -8,8 +8,10 @@ plugins {
 kotlin { jvmToolchain(17) }
 
 dependencies {
-    implementation(libs.kotlinx.serialization.json)
+    api(libs.kotlinx.serialization.json)
+    api(libs.kotlinx.coroutines.core)
     testImplementation(libs.junit)
+    testImplementation(libs.kotlinx.coroutines.test)
 }
 
 val ffiHost = rootProject.layout.projectDirectory.dir("build/ffi/host")

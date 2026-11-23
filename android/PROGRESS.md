@@ -5,13 +5,27 @@ Instructions: `android/GOAL.md`. Update this file after every task.
 | Tranche | Status |
 | --- | --- |
 | A0 Project, theme, hitop-ffi, CI | done (2026-11-23, PR #9; green run https://github.com/bohdaq/hitop/actions/runs/45088798691) |
-| A1 Core client | not started |
+| A1 Core client | in progress (branch `android-a1`) |
 | A2 Cloud sign-in + library sync | not started |
 | A3 Shared encrypted collections | not started |
 | A4 Runs, notification, widgets | not started |
 | A5 WebSocket, SSE, GraphQL, gRPC | not started |
 | A6 AI, tablet, accessibility | not started |
 | A7 Release | not started |
+
+## A1 tasks
+
+| Task | Status |
+| --- | --- |
+| hitop-core `runner::RunState` + `run_step` (additive; `run_collection_jar` calls it) and hitop-ffi `send` (one saved request as a run sends it, state carried by the app) | done |
+| core: web-app JSON models (unknown keys kept), file storage, Library (collections, requests, folders, pins, environments, globals, secrets, history), sender, seed, stub HTTP proxy; JVM tests through the real engine | done |
+| Secrets in Android Keystore (AES-GCM key, encrypted file) | |
+| App shell: ViewModel, bottom navigation, dark system bars | |
+| Collections screen (drafts' Main) | |
+| Request editor (drafts' Request): method, URL with variable chips + peek, Params, Headers, Body, Auth, Scripts, Tests | |
+| Response sheet (drafts' Response): status, timing bar, Body (folding JSON), Headers, Tests, Cookies | |
+| Environments, globals, History | |
+| UI tests on the seeded shop-api through the stub + screenshots | |
 
 ## A0 tasks
 
