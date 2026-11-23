@@ -48,6 +48,7 @@ import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.semantics.clearAndSetSemantics
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.buildJsonObject
@@ -199,12 +200,21 @@ private fun BodyView(res: SendResult) {
     LazyColumn(Modifier.fillMaxWidth().clip(RoundedCornerShape(16.dp)).background(Hitop.codeDeep).padding(vertical = 12.dp).testTag("body-json")) {
         items(lines) { l ->
             val foldable = l.path != null && (l.kind == JsonOutline.Kind.OPEN || l.kind == JsonOutline.Kind.SUMMARY)
+            // A foldable line is one control a screen reader names ("total, 2 keys, folded"), with a
+            // 48 dp touch target; the arrow glyph itself is hidden from it. Other lines stay compact.
+            val name = (l.key ?: "item") + ", " + l.text.trim() + if (l.folded) ", folded" else ", open"
             Row(
                 Modifier.fillMaxWidth()
-                    .then(if (foldable) Modifier.clickable(onClickLabel = if (l.folded) "Unfold" else "Fold") { folded = if (l.folded) folded - l.path!! else folded + l.path!! } else Modifier)
+                    .then(
+                        if (foldable) Modifier.heightIn(min = 48.dp)
+                            .clickable(onClickLabel = if (l.folded) "Unfold" else "Fold") { folded = if (l.folded) folded - l.path!! else folded + l.path!! }
+                            .semantics(mergeDescendants = true) { contentDescription = name }
+                        else Modifier
+                    )
                     .padding(start = 8.dp, end = 12.dp),
+                verticalAlignment = Alignment.CenterVertically,
             ) {
-                Text(if (foldable) (if (l.folded) "▸" else "▾") else " ", Modifier.width(16.dp), style = HitopType.mono, color = Hitop.textMuted)
+                Text(if (foldable) (if (l.folded) "▸" else "▾") else " ", Modifier.width(16.dp).clearAndSetSemantics {}, style = HitopType.mono, color = Hitop.textMuted)
                 Text(buildAnnotatedString {
                     append("  ".repeat(l.depth))
                     l.key?.let { withStyle(SpanStyle(color = Hitop.jsonKey)) { append("\"$it\"") }; append(": ") }
