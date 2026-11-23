@@ -58,7 +58,12 @@ class ProtocolFlowTest {
         Harness.launchSeeded().use {
             open("Stock ticks")
             compose.onNodeWithTag("send").performClick()
-            compose.waitFor(hasText("Live · 2 events", substring = true), 20_000)
+            // At least two ticks while live: the stub ticks every 0.4 s, so the count can pass 2 between polls.
+            compose.waitFor(androidx.compose.ui.test.SemanticsMatcher("live with 2+ events") { node ->
+                node.config.getOrElseNullable(androidx.compose.ui.semantics.SemanticsProperties.Text) { null }.orEmpty().any { t ->
+                    Regex("""Live · (\d+) events""").find(t.text)?.groupValues?.get(1)?.toInt()?.let { it >= 2 } == true
+                }
+            }, 20_000)
             compose.screenshot("21-sse-live")
             compose.onNodeWithTag("sse-stop").performClick()
             compose.waitFor(hasText("Stopped ·", substring = true), 20_000)
