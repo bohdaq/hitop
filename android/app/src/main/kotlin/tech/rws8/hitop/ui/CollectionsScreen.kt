@@ -48,6 +48,8 @@ import androidx.compose.ui.semantics.role
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.focus.focusRequester
+import kotlinx.coroutines.launch
 import tech.rws8.hitop.core.Collection
 import tech.rws8.hitop.core.Request
 import tech.rws8.hitop.ui.theme.Hitop
@@ -62,23 +64,49 @@ private enum class Filter(val label: String) { ALL("All"), PINNED("Pinned"), REC
 
 @Composable
 fun CollectionsScreen(vm: AppViewModel) {
+    val inPane = LocalInListPane.current
     val s by vm.library.state.collectAsState()
+    val cloud by vm.cloud.cloud.settings.collectAsState()
+    val badges by vm.cloud.sync.badges.collectAsState()
+    val syncStatus by vm.cloud.sync.status.collectAsState()
+    val notices by vm.cloud.sync.notices.collectAsState()
+    val sharedConflicts by vm.shared.conflicts.collectAsState()
+    val sharedNotices by vm.shared.notices.collectAsState()
+    val scope = androidx.compose.runtime.rememberCoroutineScope()
     var query by rememberSaveable { mutableStateOf("") }
     var filter by rememberSaveable { mutableStateOf(Filter.ALL) }
     var dialog by remember { mutableStateOf<(@Composable () -> Unit)?>(null) }
     val collapsed = remember { mutableStateListOf<String>() }
     val last = s.lastStatus
 
-    Box(Modifier.fillMaxSize()) {
+    // The organization picked on the Account screen: a collection's `org`, none = personal (web app `orgOf`).
+    val current = vm.cloud.cloud.currentOrg
+    val visible = s.collections.filter { c -> if (cloud.account == null || current == null || current.personal) c.org == null || c.org == current?.id else c.org == current.id }
+    androidx.compose.material3.pulltorefresh.PullToRefreshBox(
+        isRefreshing = syncStatus.pulling,
+        onRefresh = { scope.launch { vm.cloud.sync.sync() } },
+        modifier = Modifier.fillMaxSize(),
+    ) {
         LazyColumn(Modifier.fillMaxSize().testTag("collections"), contentPadding = PaddingValues(bottom = 96.dp)) {
             item {
                 Row(Modifier.padding(start = 16.dp, end = 16.dp, top = 20.dp, bottom = 8.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                    LogoMark(40, Modifier.semantics { contentDescription = "HITOP" })
+                    LogoMark(40, Modifier.clip(CircleShape).clickable(onClickLabel = "Account") { vm.push(Screen.Account) }.semantics { contentDescription = "Account" }.testTag("account-button"))
                     Column(Modifier.weight(1f)) {
-                        Text("Collections", style = HitopType.screenTitle, color = Hitop.text, modifier = Modifier.semantics { heading() })
-                        Text("On this phone", style = HitopType.caption, color = Hitop.textMuted)
+                        Text("Collections", style = HitopType.screenTitle, color = Hitop.text, maxLines = 1, softWrap = false, modifier = Modifier.semantics { heading() })
+                        val where = when {
+                            cloud.account == null -> "On this phone"
+                            else -> (if (current == null || current.personal) "Personal" else current.name) + when {
+                                syncStatus.saving -> " · saving…"
+                                syncStatus.error != null -> " · waiting to sync"
+                                else -> " · synced"
+                            }
+                        }
+                        Text(where, style = HitopType.caption, color = Hitop.textMuted, modifier = Modifier.testTag("collections-subtitle"))
                     }
-                    EnvironmentPill(vm)
+                    IconButton(onClick = { dialog = { FromTextDialog(vm) { dialog = null } } }, modifier = Modifier.testTag("from-text-button")) {
+                        Icon(HitopIcons.Sparkle, "New request from text or curl", tint = Hitop.accent)
+                    }
+                    if (!inPane) EnvironmentPill(vm)
                 }
             }
             item {
@@ -89,8 +117,10 @@ fun CollectionsScreen(vm: AppViewModel) {
                     Icon(HitopIcons.Search, null, tint = Hitop.textMuted, modifier = Modifier.size(20.dp))
                     Box(Modifier.weight(1f)) {
                         if (query.isEmpty()) Text("Search requests, collections, history", style = HitopType.body, color = Hitop.textMuted, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                        val focus = remember { androidx.compose.ui.focus.FocusRequester() }
+                        androidx.compose.runtime.LaunchedEffect(vm.searchFocus) { if (vm.searchFocus > 0) runCatching { focus.requestFocus() } }
                         BasicTextField(query, { query = it }, singleLine = true, textStyle = HitopType.body.copy(color = Hitop.text), cursorBrush = SolidColor(Hitop.accent),
-                            modifier = Modifier.fillMaxWidth().semantics { contentDescription = "Search" }.testTag("search"))
+                            modifier = Modifier.fillMaxWidth().focusRequester(focus).semantics { contentDescription = "Search" }.testTag("search"))
                     }
                 }
             }
@@ -99,13 +129,42 @@ fun CollectionsScreen(vm: AppViewModel) {
                     Filter.entries.forEach { f -> HitopChip(f.label, filter == f, Modifier.clickable { filter = f }.semantics { role = Role.Tab }.testTag("filter-${f.label}")) }
                 }
             }
+            notices.forEach { n ->
+                item {
+                    Row(Modifier.padding(horizontal = 16.dp, vertical = 4.dp).fillMaxWidth().clip(RoundedCornerShape(16.dp)).background(Hitop.insight).padding(14.dp).testTag("notice"), verticalAlignment = Alignment.CenterVertically) {
+                        Text(n, Modifier.weight(1f), style = HitopType.bodySmall, color = Hitop.onInsight)
+                        IconButton(onClick = { vm.cloud.sync.dismissNotice(n) }) { Icon(HitopIcons.Close, "Dismiss", tint = Hitop.textMuted, modifier = Modifier.size(16.dp)) }
+                    }
+                }
+            }
+            sharedNotices.forEach { n ->
+                item {
+                    Row(Modifier.padding(horizontal = 16.dp, vertical = 4.dp).fillMaxWidth().clip(RoundedCornerShape(16.dp)).background(Hitop.insight).padding(14.dp).testTag("notice"), verticalAlignment = Alignment.CenterVertically) {
+                        Column(Modifier.weight(1f)) {
+                            Text(n.text, style = HitopType.bodySmall, color = Hitop.onInsight)
+                            n.detail?.let { Text(it, style = HitopType.monoSmall, color = Hitop.textMuted) }
+                        }
+                        IconButton(onClick = { vm.shared.dismissNotice(n) }) { Icon(HitopIcons.Close, "Dismiss", tint = Hitop.textMuted, modifier = Modifier.size(16.dp)) }
+                    }
+                }
+            }
             val q = query.trim().lowercase()
             fun matches(c: Collection, r: Request) = q.isEmpty() || r.name.lowercase().contains(q) || r.url.lowercase().contains(q) || c.name.lowercase().contains(q)
             when (filter) {
-                Filter.ALL -> items(s.collections, key = { "c-" + it.id }) { c ->
+                Filter.ALL -> items(visible, key = { "c-" + it.id }) { c ->
                     val rows = c.requests.filter { matches(c, it) }
                     if (q.isNotEmpty() && rows.isEmpty()) return@items
-                    CollectionCard(vm, c, rows, last, c.id in collapsed && q.isEmpty(), { if (c.id in collapsed) collapsed.remove(c.id) else collapsed.add(c.id) }) { dialog = it }
+                    val badge = when {
+                        cloud.account == null -> "on this phone"
+                        else -> when (badges[c.id]) {
+                            tech.rws8.hitop.cloud.LibrarySync.Badge.SYNCED -> syncStatus.lastSync?.let { "synced " + tech.rws8.hitop.cloud.LibrarySync.ago(it) } ?: "synced"
+                            tech.rws8.hitop.cloud.LibrarySync.Badge.WAITING -> if (syncStatus.saving) "saving…" else "waiting to sync"
+                            tech.rws8.hitop.cloud.LibrarySync.Badge.REFUSED -> "not in HITOP Cloud"
+                            else -> "on this phone"
+                        }
+                    }
+                    val sharedBadge = vm.shared.badge(c.id)
+                    CollectionCard(vm, c, rows, last, c.id in collapsed && q.isEmpty(), { if (c.id in collapsed) collapsed.remove(c.id) else collapsed.add(c.id) }, sharedBadge?.let { b -> (if (s.sharedRoles[c.id] == "viewer") "$b · View only" else b) + (sharedConflicts[c.id]?.size?.takeIf { it > 0 }?.let { " · $it conflict" } ?: "") } ?: badge, cloud.account != null && vm.cloud.sync.isLocalOnly(c.id)) { dialog = it }
                 }
                 Filter.PINNED -> {
                     val pinned = s.pins.mapNotNull { s.find(it) }.filter { (c, r) -> matches(c, r) }
@@ -124,7 +183,7 @@ fun CollectionsScreen(vm: AppViewModel) {
                 }
             }
         }
-        ExtendedFloatingActionButton(
+        if (!inPane) ExtendedFloatingActionButton(
             onClick = { vm.newRequest() },
             containerColor = Hitop.accent, contentColor = Hitop.onAccent,
             shape = RoundedCornerShape(16.dp),
@@ -137,8 +196,10 @@ fun CollectionsScreen(vm: AppViewModel) {
 }
 
 @Composable
-private fun CollectionCard(vm: AppViewModel, c: Collection, rows: List<Request>, last: Map<String, Int>, folded: Boolean, toggle: () -> Unit, showDialog: ((@Composable () -> Unit)?) -> Unit) {
+private fun CollectionCard(vm: AppViewModel, c: Collection, rows: List<Request>, last: Map<String, Int>, folded: Boolean, toggle: () -> Unit, badge: String, localOnly: Boolean, showDialog: ((@Composable () -> Unit)?) -> Unit) {
     var menu by remember { mutableStateOf(false) }
+    var share by remember { mutableStateOf(false) }
+    if (share) ShareSheet(vm, c.id) { share = false }
     Card(Modifier.padding(horizontal = 16.dp, vertical = 6.dp)) {
         Row(
             Modifier.fillMaxWidth().clickable(onClickLabel = if (folded) "Show requests" else "Hide requests") { toggle() }.padding(horizontal = 16.dp, vertical = 10.dp).testTag("collection-${c.name}"),
@@ -150,7 +211,12 @@ private fun CollectionCard(vm: AppViewModel, c: Collection, rows: List<Request>,
             Column(Modifier.weight(1f)) {
                 Text(c.name, style = HitopType.cardTitle, color = Hitop.text, maxLines = 1, overflow = TextOverflow.Ellipsis)
                 val n = c.requests.size
-                Text("$n ${if (n == 1) "request" else "requests"} · on this phone", style = HitopType.caption, color = Hitop.textMuted)
+                Text("$n ${if (n == 1) "request" else "requests"} · $badge", style = HitopType.caption, color = Hitop.textMuted, modifier = Modifier.testTag("badge-${c.name}"))
+            }
+            if (c.requests.any { !it.isWebSocket && !it.isGrpc }) {
+                IconButton(onClick = { vm.push(Screen.Run(c.id)) }, modifier = Modifier.size(44.dp).clip(CircleShape).background(Hitop.accentContainer).testTag("run-button-${c.name}")) {
+                    Icon(HitopIcons.Run, "Run ${c.name}", tint = Hitop.accent, modifier = Modifier.size(18.dp))
+                }
             }
             Box {
                 IconButton(onClick = { menu = true }, modifier = Modifier.testTag("collection-menu-${c.name}")) { Icon(HitopIcons.More, "More for ${c.name}", tint = Hitop.textSecondary) }
@@ -160,6 +226,8 @@ private fun CollectionCard(vm: AppViewModel, c: Collection, rows: List<Request>,
                         menu = false
                         showDialog { TextDialog("New folder", "", "Create", { showDialog(null) }) { n -> vm.library.addFolder(c.id, n); showDialog(null) } }
                     })
+                    if (localOnly) DropdownMenuItem(text = { Text("Save to HITOP Cloud", color = Hitop.text) }, onClick = { menu = false; vm.cloud.upload(c.id) })
+                    if (vm.cloud.cloud.signedIn) DropdownMenuItem(text = { Text(if (vm.shared.link(c.id) != null) "People…" else "Share…", color = Hitop.text) }, onClick = { menu = false; share = true }, modifier = Modifier.testTag("share-${c.name}"))
                     DropdownMenuItem(text = { Text("Rename", color = Hitop.text) }, onClick = {
                         menu = false
                         showDialog { TextDialog("Rename collection", c.name, "Rename", { showDialog(null) }) { n -> vm.library.renameCollection(c.id, n); showDialog(null) } }

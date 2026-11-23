@@ -938,6 +938,7 @@ dependencies = [
  "hitop-core",
  "hitop-sync-ffi",
  "jni",
+ "reqwest",
  "serde",
  "serde_json",
  "tokio",

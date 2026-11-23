@@ -1,4 +1,8 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <string name="app_name" translatable="false">HITOP</string>
+    <string name="widget_last_run_description">The newest collection run: passed of total</string>
+    <string name="widget_failing_description">Collections run lately, failing ones first</string>
+    <string name="widget_pinned_description">Pinned requests with a Send button</string>
+    <string name="tile_label">Run a collection</string>
 </resources>

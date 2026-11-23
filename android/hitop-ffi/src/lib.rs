@@ -5,7 +5,10 @@
 use serde::Deserialize;
 use serde_json::{json, Value};
 
+mod run;
 mod send;
+mod sse;
+mod ws;
 
 type R = Result<Value, String>;
 
@@ -38,6 +41,18 @@ fn call(op: &str, a: &Value) -> Option<R> {
         "echo" => Ok(a.get("text").cloned().unwrap_or(Value::Null)),
         "send" => send::send(&Args(a)),
         "snippet" => send::snippet(&Args(a)),
+        "runStart" => run::start(&Args(a)),
+        "runNext" => run::next(&Args(a)),
+        "runCancel" => run::cancel(&Args(a)),
+        "wsConnect" => ws::connect_op(&Args(a)),
+        "wsSend" => ws::send(&Args(a)),
+        "wsSendSaved" => ws::send_saved(&Args(a)),
+        "wsNext" => ws::next(&Args(a)),
+        "wsClose" => ws::close(&Args(a)),
+        "sseStart" => sse::start(&Args(a)),
+        "sseNext" => sse::next(&Args(a)),
+        "sseCancel" => sse::cancel(&Args(a)),
+        "grpcTarget" => sse::grpc_target(&Args(a)),
         // UI tests and screenshots: every http:// request goes to the app's local stub server
         // (reqwest reads HTTP_PROXY when hitop-core builds its client, before the first request).
         "useHttpProxy" => Args(a).str("proxy").map(|proxy| {

@@ -71,11 +71,13 @@ import tech.rws8.hitop.ui.theme.HitopType
 import tech.rws8.hitop.ui.theme.MethodColors
 import tech.rws8.hitop.ui.theme.MethodTag
 
-private val METHODS = listOf("GET", "POST", "PUT", "PATCH", "DELETE", "HEAD", "OPTIONS")
 private val EDITOR_TABS = listOf("Params", "Headers", "Body", "Auth", "Scripts", "Tests")
+private val WS_TABS = listOf("Params", "Headers", "Messages", "Auth")
+private val GRPC_TABS = listOf("Service", "Metadata", "Auth")
 
 @Composable
 fun RequestScreen(vm: AppViewModel, collectionId: String, requestId: String) {
+    @Suppress("LocalVariableName") val LocalResponsePaneValue = LocalResponsePane.current
     val s by vm.library.state.collectAsState()
     val c = s.collection(collectionId)
     val r = vm.draft(requestId)
@@ -83,23 +85,26 @@ fun RequestScreen(vm: AppViewModel, collectionId: String, requestId: String) {
         Text("This request was deleted.", Modifier.statusBarsPadding().padding(16.dp), color = Hitop.textMuted)
         return
     }
-    var tab by rememberSaveable(requestId) { mutableStateOf(if (r.bodyKind != BodyKind.NONE) "Body" else "Params") }
+    val tabs = when { r.isWebSocket -> WS_TABS; r.isGrpc -> GRPC_TABS; else -> EDITOR_TABS }
+    var tab by rememberSaveable(requestId) { mutableStateOf(if (r.isGrpc) "Service" else if (r.bodyKind != BodyKind.NONE && !r.isWebSocket) "Body" else "Params") }
+    if (tab !in tabs) tab = tabs.first()
     var menu by remember { mutableStateOf(false) }
     var dialog by remember { mutableStateOf<(@Composable () -> Unit)?>(null) }
     var peek by remember { mutableStateOf<String?>(null) }
     var showCode by remember { mutableStateOf(false) }
     val dirty = vm.isDirty(requestId)
+    val viewOnly = vm.library.isReadOnly(collectionId)
     val edit = { f: (Request) -> Request -> vm.edit(requestId, f) }
     val title = if (requestId in s.autoNamed) tech.rws8.hitop.core.AutoName.of(r) else r.name
 
     Column(Modifier.fillMaxSize().background(Hitop.ground).statusBarsPadding().imePadding()) {
         Row(Modifier.padding(start = 8.dp, end = 8.dp, top = 8.dp, bottom = 8.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-            IconButton(onClick = { vm.pop() }, modifier = Modifier.testTag("back")) { Icon(HitopIcons.Back, "Back", tint = Hitop.text) }
+            if (!LocalResponsePane.current) IconButton(onClick = { vm.pop() }, modifier = Modifier.testTag("back")) { Icon(HitopIcons.Back, "Back", tint = Hitop.text) }
             Column(Modifier.weight(1f)) {
                 Text(title, style = HitopType.title, color = Hitop.text, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.semantics { heading() }.testTag("request-title"))
-                Text(listOf(c.name, r.folder).filter { it.isNotEmpty() }.joinToString(" › ") + if (dirty) " · unsaved" else "", style = HitopType.caption, color = Hitop.textMuted, maxLines = 1)
+                Text(listOf(c.name, r.folder).filter { it.isNotEmpty() }.joinToString(" › ") + if (viewOnly) " · View only" else if (dirty) " · unsaved" else "", style = HitopType.caption, color = Hitop.textMuted, maxLines = 1)
             }
-            IconButton(onClick = { vm.save(collectionId, requestId) }, enabled = dirty || requestId in s.autoNamed, modifier = Modifier.testTag("save")) {
+            if (!viewOnly) IconButton(onClick = { vm.save(collectionId, requestId) }, enabled = dirty || requestId in s.autoNamed, modifier = Modifier.testTag("save")) {
                 Icon(HitopIcons.Save, if (dirty) "Save changes" else "Saved", tint = if (dirty) Hitop.accent else Hitop.textMuted)
             }
             Box {
@@ -122,7 +127,7 @@ fun RequestScreen(vm: AppViewModel, collectionId: String, requestId: String) {
 
         Column(Modifier.padding(start = 16.dp, end = 16.dp, bottom = 12.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
-                MethodMenu(r.method) { m -> edit { it.withMethod(m) } }
+                MethodMenu(tech.rws8.hitop.core.Modes.of(r)) { m -> edit { tech.rws8.hitop.core.Modes.set(it, m) } }
                 EnvironmentPill(vm)
             }
             CodeEditor(r.url, { u -> edit { it.withUrl(u.replace("\n", "")) } }, label = "URL", placeholder = "https://api.example.com/path", minHeight = 0, ground = Hitop.surface)
@@ -139,14 +144,14 @@ fun RequestScreen(vm: AppViewModel, collectionId: String, requestId: String) {
         }
 
         PrimaryScrollableTabRow(
-            selectedTabIndex = EDITOR_TABS.indexOf(tab),
+            selectedTabIndex = tabs.indexOf(tab),
             containerColor = Hitop.ground, contentColor = Hitop.text, edgePadding = 8.dp,
-            indicator = { TabRowDefaults.PrimaryIndicator(Modifier.tabIndicatorOffset(EDITOR_TABS.indexOf(tab), matchContentSize = false), color = Hitop.accent, width = 48.dp) },
+            indicator = { TabRowDefaults.PrimaryIndicator(Modifier.tabIndicatorOffset(tabs.indexOf(tab), matchContentSize = false), color = Hitop.accent, width = 48.dp) },
             divider = { Box(Modifier.fillMaxWidth().height(1.dp).background(Hitop.divider)) },
         ) {
-            EDITOR_TABS.forEach { t ->
+            tabs.forEach { t ->
                 val count = when (t) {
-                    "Headers" -> r.headers.count { it.enabled }.takeIf { it > 0 }
+                    "Headers", "Metadata" -> r.headers.count { it.enabled }.takeIf { it > 0 }
                     "Params" -> queryOf(r.url).size.takeIf { it > 0 }
                     else -> null
                 }
@@ -158,8 +163,10 @@ fun RequestScreen(vm: AppViewModel, collectionId: String, requestId: String) {
         Column(Modifier.weight(1f).verticalScroll(rememberScrollState()).padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
             when (tab) {
                 "Params" -> ParamsTab(r, edit)
-                "Headers" -> HeadersTab(r, c.auth, edit)
-                "Body" -> BodyTab(r, edit)
+                "Headers", "Metadata" -> HeadersTab(r, c.auth, edit)
+                "Body" -> if (r.bodyKind == BodyKind.GRAPHQL) { BodyTab(r, edit, graphql = { GraphQLEditor(vm, collectionId, r, edit) }) } else BodyTab(r, edit)
+                "Messages" -> WebSocketTab(r, edit)
+                "Service" -> GrpcTab(vm, collectionId, r, edit)
                 "Auth" -> AuthTab(r, c.auth, edit)
                 "Scripts" -> {
                     Text("Runs before the request is sent: set variables with pm.environment.set, change the request.", style = HitopType.caption, color = Hitop.textMuted)
@@ -177,38 +184,53 @@ fun RequestScreen(vm: AppViewModel, collectionId: String, requestId: String) {
                 Text("Code", style = HitopType.body, color = Hitop.text)
             }
             val busy = vm.sending[requestId] == true
+            val live = r.isWebSocket || r.isGrpc || r.tag == "SSE"
             Button(
-                onClick = { vm.send(collectionId, requestId) },
-                enabled = !busy && !r.isWebSocket && !r.isGrpc,
+                onClick = { if (live) vm.startLive(collectionId, requestId) else vm.send(collectionId, requestId) },
+                enabled = !busy,
                 modifier = Modifier.weight(1f).height(56.dp).testTag("send"),
                 shape = RoundedCornerShape(28.dp),
                 colors = ButtonDefaults.buttonColors(containerColor = Hitop.accent, contentColor = Hitop.onAccent, disabledContainerColor = Hitop.accentContainer, disabledContentColor = Hitop.textMuted),
             ) {
                 if (busy) CircularProgressIndicator(Modifier.size(20.dp), color = Hitop.onAccent, strokeWidth = 2.dp) else Icon(HitopIcons.Send, null, modifier = Modifier.size(20.dp))
                 Spacer(Modifier.width(10.dp))
-                Text(if (busy) "Sending…" else if (r.isWebSocket || r.isGrpc) "Not in this version" else "Send", style = HitopType.button)
+                Text(if (busy) "Sending…" else if (r.isWebSocket) "Connect" else if (r.isGrpc) "Call" else "Send", style = HitopType.button)
             }
         }
     }
     dialog?.invoke()
     if (showCode) CodeSheet(vm, collectionId, r) { showCode = false }
-    if (vm.sheetFor == requestId) vm.responses[requestId]?.let { ResponseSheet(vm, collectionId, requestId, it) { vm.sheetFor = null } }
+    if (vm.sheetFor == requestId && !LocalResponsePane.current) vm.responses[requestId]?.let { ResponseSheet(vm, collectionId, requestId, it) { vm.sheetFor = null } }
+    if (vm.explainFor == requestId) vm.responses[requestId]?.let { res ->
+        ExplainSheet(vm, collectionId, requestId, res) { vm.explainFor = null; if (!LocalResponsePaneValue) vm.sheetFor = requestId }
+    }
+    if (vm.liveFor == requestId) {
+        val close = { vm.liveFor = null }
+        when {
+            r.isWebSocket -> WebSocketSheet(vm, r, close)
+            r.isGrpc -> GrpcSheet(vm, r, close)
+            else -> SseSheet(vm, r, close)
+        }
+    }
 }
 
 @Composable
 private fun MethodMenu(method: String, onPick: (String) -> Unit) {
+    val tag = when (method) { "WebSocket" -> "WS"; "gRPC" -> "GRPC"; else -> method }
     var open by remember { mutableStateOf(false) }
     Box {
         Row(
-            Modifier.clip(RoundedCornerShape(12.dp)).background(MethodColors.container(method)).clickable { open = true }.heightIn(min = 40.dp).padding(horizontal = 12.dp)
+            Modifier.clip(RoundedCornerShape(12.dp)).background(MethodColors.container(tag)).clickable { open = true }.heightIn(min = 40.dp).padding(horizontal = 12.dp)
                 .semantics { contentDescription = "Method $method" }.testTag("method"),
             verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp),
         ) {
-            Text(method, style = HitopType.method.copy(fontSize = HitopType.label.fontSize), color = MethodColors.of(method))
-            Icon(HitopIcons.ChevronDown, null, tint = MethodColors.of(method), modifier = Modifier.size(14.dp))
+            Text(tag, style = HitopType.method.copy(fontSize = HitopType.label.fontSize), color = MethodColors.of(tag))
+            Icon(HitopIcons.ChevronDown, null, tint = MethodColors.of(tag), modifier = Modifier.size(14.dp))
         }
         DropdownMenu(open, { open = false }, containerColor = Hitop.surfaceHigh) {
-            METHODS.forEach { m -> DropdownMenuItem(text = { MethodTag(m) }, onClick = { onPick(m); open = false }, modifier = Modifier.testTag("method-$m")) }
+            tech.rws8.hitop.core.Modes.ALL.forEach { m ->
+                DropdownMenuItem(text = { Text(m, style = HitopType.method.copy(fontSize = HitopType.label.fontSize), color = MethodColors.of(when (m) { "WebSocket" -> "WS"; "gRPC" -> "GRPC"; else -> m })) }, onClick = { onPick(m); open = false }, modifier = Modifier.testTag("method-$m"))
+            }
         }
     }
 }
@@ -268,7 +290,7 @@ private fun HeadersTab(r: Request, collectionAuth: Auth?, edit: ((Request) -> Re
 }
 
 @Composable
-private fun BodyTab(r: Request, edit: ((Request) -> Request) -> Unit) {
+private fun BodyTab(r: Request, edit: ((Request) -> Request) -> Unit, graphql: (@Composable () -> Unit)? = null) {
     val kinds = listOf(BodyKind.JSON, BodyKind.TEXT, BodyKind.FORM, BodyKind.MULTIPART, BodyKind.GRAPHQL, BodyKind.NONE)
     val kind = r.bodyKind
     ChipRow(kinds.map { it.label }, kind.label, { l -> edit { it.withBodyKind(kinds.first { k -> k.label == l }) } })
@@ -292,7 +314,7 @@ private fun BodyTab(r: Request, edit: ((Request) -> Request) -> Unit) {
             Text(if (kind == BodyKind.FORM) "Sent as application/x-www-form-urlencoded." else "Sent as multipart/form-data (text fields; files come with a later version).", style = HitopType.caption, color = Hitop.textMuted)
         }
         BodyKind.GRAPHQL -> {
-            CodeEditor(r.body, { v -> edit { it.withBody(v) } }, label = "GraphQL query", placeholder = "query { … }", minHeight = 200)
+            if (graphql != null) graphql() else CodeEditor(r.body, { v -> edit { it.withBody(v) } }, label = "GraphQL query", placeholder = "query { … }", minHeight = 200)
             SectionLabel("Variables (JSON)")
             CodeEditor(r.graphqlVariables, { v -> edit { it.withGraphql(v, it.graphqlOperationName) } }, json = true, label = "GraphQL variables", placeholder = "{ }", minHeight = 80)
             SectionLabel("Operation name")

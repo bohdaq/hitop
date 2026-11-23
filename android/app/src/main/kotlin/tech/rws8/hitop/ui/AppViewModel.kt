@@ -15,6 +15,9 @@ import tech.rws8.hitop.core.SendResult
 enum class Tab(val label: String) { COLLECTIONS("Collections"), HISTORY("History"), ENVIRONMENTS("Environments"), RUNS("Runs") }
 
 sealed interface Screen {
+    data object Account : Screen
+    data class Run(val collectionId: String) : Screen
+    data class Report(val id: Long) : Screen
     data class Request(val collectionId: String, val requestId: String) : Screen
     data class EnvironmentDetail(val envId: String) : Screen
     data object Globals : Screen
@@ -25,7 +28,32 @@ sealed interface Screen {
  * survive navigation while the app runs, like iOS's one editor per request), responses and sends
  * in flight.
  */
-class AppViewModel(val library: Library) : ViewModel() {
+class AppViewModel(val library: Library, cloud: tech.rws8.hitop.cloud.HitopCloud, sync: tech.rws8.hitop.cloud.LibrarySync, val shared: tech.rws8.hitop.sync.SharedSync, signIn: tech.rws8.hitop.platform.SignInPlatform, val runs: tech.rws8.hitop.core.RunCenter, val assistant: tech.rws8.hitop.core.LanguageAssistant) : ViewModel() {
+    /** The on-device model is there (Explain, Suggest a test, request from text); hidden when not. */
+    var aiReady by mutableStateOf(false)
+        private set
+
+    init {
+        viewModelScope.launch { aiReady = runCatching { assistant.availability() }.getOrNull() is tech.rws8.hitop.core.LanguageAssistant.Availability.Ready }
+    }
+
+    fun secretValues(): List<String> = library.activeSecretValues()
+
+    /** Starts a collection run: the foreground service on a device, in-process under Robolectric. */
+    fun startRun(context: android.content.Context, collectionId: String, iterations: Int = 1, bail: Boolean = false) {
+        if (runs.running) return
+        if (tech.rws8.hitop.platform.AppGraph.runsInProcess) {
+            viewModelScope.launch {
+                runs.run(collectionId, iterations, bail)
+                tech.rws8.hitop.platform.Widgets.refresh(context.applicationContext)
+            }
+        } else {
+            tech.rws8.hitop.platform.RunService.start(context, collectionId, iterations, bail)
+        }
+    }
+
+    val cloud = CloudModel(cloud, sync, signIn, viewModelScope)
+
     var tab by mutableStateOf(Tab.COLLECTIONS)
     val stack = mutableStateListOf<Screen>()
     val drafts = mutableStateMapOf<String, Request>()
@@ -33,13 +61,75 @@ class AppViewModel(val library: Library) : ViewModel() {
     val sending = mutableStateMapOf<String, Boolean>()
     /** The request whose response sheet is open. */
     var sheetFor by mutableStateOf<String?>(null)
+    /** The request whose response is being explained (its own sheet; the response sheet steps aside). */
+    var explainFor by mutableStateOf<String?>(null)
+    /** The request whose live sheet (WebSocket, SSE, gRPC) is open. */
+    var liveFor by mutableStateOf<String?>(null)
+
+    private val wsSessions = HashMap<String, tech.rws8.hitop.core.WebSocketSession>()
+    private val sseSessions = HashMap<String, tech.rws8.hitop.core.SseSession>()
+    private val grpcSessions = HashMap<String, tech.rws8.hitop.core.GrpcSession>()
+    val schemas = mutableStateMapOf<String, tech.rws8.hitop.core.GraphQLSchema>()
+
+    fun ws(id: String) = wsSessions.getOrPut(id) { tech.rws8.hitop.core.WebSocketSession(library, viewModelScope) }
+    fun sse(id: String) = sseSessions.getOrPut(id) { tech.rws8.hitop.core.SseSession(library, viewModelScope) }
+    fun grpc(id: String) = grpcSessions.getOrPut(id) { tech.rws8.hitop.core.GrpcSession(library, viewModelScope) }
+    fun collectionOf(requestId: String) = library.state.value.find(requestId)?.first?.id
+
+    /** Introspection through the normal send path (kept out of the history); an error's text, or null. */
+    suspend fun loadSchema(collectionId: String, r: Request): String? {
+        val res = library.send(collectionId, tech.rws8.hitop.core.GraphQLSchema.introspectionRequest(r), history = false)
+        res.error?.let { return it.headline }
+        return try {
+            schemas[r.id] = tech.rws8.hitop.core.GraphQLSchema.parse(res.body)
+            null
+        } catch (e: Exception) {
+            "Couldn't read the schema: ${e.message}"
+        }
+    }
+
+    /** Send for live kinds: connect a WebSocket, read an event stream, make a gRPC call. */
+    fun startLive(collectionId: String, requestId: String) {
+        val r = draft(requestId) ?: return
+        when {
+            r.isWebSocket -> ws(requestId).connect(collectionId, r)
+            r.isGrpc -> grpc(requestId).start(collectionId, r)
+            else -> sse(requestId).start(collectionId, r)
+        }
+        liveFor = requestId
+    }
+
+    override fun onCleared() {
+        wsSessions.values.forEach { it.close() }
+        sseSessions.values.forEach { it.stop() }
+        grpcSessions.values.forEach { it.cancel() }
+    }
 
     val top: Screen? get() = stack.lastOrNull()
 
     fun push(s: Screen) { stack.add(s) }
     fun pop(): Boolean = if (stack.isEmpty()) false else { stack.removeAt(stack.lastIndex); true }
 
-    fun openRequest(collectionId: String, requestId: String) = push(Screen.Request(collectionId, requestId))
+    fun openRequest(collectionId: String, requestId: String) {
+        // One request screen at a time (the wide layout shows the newest in its middle pane).
+        if (top is Screen.Request) stack.removeAt(stack.lastIndex)
+        push(Screen.Request(collectionId, requestId))
+    }
+
+    /** Ctrl+K: the Collections tab with its search field focused. */
+    var searchFocus by mutableStateOf(0)
+    fun showSearch() {
+        if (top !is Screen.Request) stack.clear()
+        tab = Tab.COLLECTIONS
+        searchFocus++
+    }
+
+    /** Ctrl+Enter: send (or connect/call) the request on screen. */
+    fun sendCurrent() {
+        val r = top as? Screen.Request ?: return
+        val d = draft(r.requestId) ?: return
+        if (d.isWebSocket || d.isGrpc || d.tag == "SSE") startLive(r.collectionId, r.requestId) else send(r.collectionId, r.requestId)
+    }
 
     fun newRequest(collectionId: String? = null, folder: String = "") {
         val (c, r) = library.newRequest(collectionId, folder)
@@ -57,6 +147,7 @@ class AppViewModel(val library: Library) : ViewModel() {
 
     fun edit(requestId: String, change: (Request) -> Request) {
         val r = draft(requestId) ?: return
+        library.state.value.find(requestId)?.first?.let { if (library.isReadOnly(it.id)) return }
         drafts[requestId] = change(r)
     }
 

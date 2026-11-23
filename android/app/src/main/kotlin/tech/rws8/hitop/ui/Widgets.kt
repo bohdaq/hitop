@@ -14,6 +14,7 @@ import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
@@ -189,21 +190,33 @@ fun ChipRow(options: List<String>, selected: String, onSelect: (String) -> Unit,
     }
 }
 
-/** A one-field dialog (rename, new collection, new folder). */
+/** A one-field sheet (rename, new collection, new folder). */
+@OptIn(androidx.compose.material3.ExperimentalMaterial3Api::class)
 @Composable
 fun TextDialog(title: String, initial: String, confirm: String, onDismiss: () -> Unit, onConfirm: (String) -> Unit) {
     var text by remember { mutableStateOf(initial) }
-    AlertDialog(
-        onDismissRequest = onDismiss,
-        containerColor = Hitop.surfaceHigh,
-        title = { Text(title, style = HitopType.title, color = Hitop.text) },
-        text = {
-            OutlinedTextField(text, { text = it }, singleLine = true, colors = fieldColors(), textStyle = HitopType.body.copy(color = Hitop.text), modifier = Modifier.fillMaxWidth().testTag("dialog-field"))
-        },
-        confirmButton = { TextButton(onClick = { onConfirm(text.trim()) }, enabled = text.isNotBlank()) { Text(confirm, color = Hitop.accent) } },
-        dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel", color = Hitop.textSecondary) } },
-    )
+    InputSheet(title, onDismiss, actions = {
+        TextButton(onClick = onDismiss) { Text("Cancel", color = Hitop.textSecondary) }
+        TextButton(onClick = { onConfirm(text.trim()) }, enabled = text.isNotBlank(), modifier = Modifier.testTag("dialog-confirm")) { Text(confirm, color = Hitop.accent) }
+    }) {
+        SmallField(text, { text = it }, title, Modifier.fillMaxWidth().testTag("dialog-field"))
+    }
 }
+
+/** A sheet asking for text: title, content, actions at the end. */
+@OptIn(androidx.compose.material3.ExperimentalMaterial3Api::class)
+@Composable
+fun InputSheet(title: String, onDismiss: () -> Unit, actions: @Composable () -> Unit, content: @Composable () -> Unit) {
+    androidx.compose.material3.ModalBottomSheet(onDismissRequest = onDismiss, containerColor = Hitop.surfaceHigh, sheetState = androidx.compose.material3.rememberModalBottomSheetState(skipPartiallyExpanded = true)) {
+        Column(Modifier.padding(horizontal = 16.dp).padding(bottom = 16.dp).androidx_navigationBarsPadding(), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+            Text(title, style = HitopType.title, color = Hitop.text)
+            content()
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) { actions() }
+        }
+    }
+}
+
+private fun Modifier.androidx_navigationBarsPadding() = this.then(Modifier.navigationBarsPadding())
 
 @Composable
 fun ConfirmDialog(title: String, text: String, confirm: String, onDismiss: () -> Unit, onConfirm: () -> Unit) {

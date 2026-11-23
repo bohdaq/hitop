@@ -1,6 +1,7 @@
 // The app's logic without Android: models, storage, HITOP Cloud, sync, runs. Unit tests run on the
 // JVM with a host build of hitop-ffi (scripts/build-ffi.sh host), so they need no emulator.
 plugins {
+    `java-test-fixtures`
     alias(libs.plugins.kotlin.jvm)
     alias(libs.plugins.kotlin.serialization)
 }
@@ -12,6 +13,7 @@ dependencies {
     api(libs.kotlinx.coroutines.core)
     testImplementation(libs.junit)
     testImplementation(libs.kotlinx.coroutines.test)
+    testFixturesImplementation(libs.kotlinx.serialization.json)
 }
 
 val ffiHost = rootProject.layout.projectDirectory.dir("build/ffi/host")

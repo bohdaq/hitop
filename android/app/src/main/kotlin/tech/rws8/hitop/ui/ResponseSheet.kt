@@ -74,6 +74,7 @@ fun ResponseSheet(vm: AppViewModel, collectionId: String, requestId: String, res
 @Composable
 fun ResponseContent(vm: AppViewModel, collectionId: String, requestId: String, res: SendResult, close: (() -> Unit)?, modifier: Modifier = Modifier) {
     var tab by rememberSaveable(res) { mutableStateOf("Body") }
+
     val clipboard = LocalClipboardManager.current
     val context = LocalContext.current
     Column(modifier.fillMaxWidth()) {
@@ -85,6 +86,9 @@ fun ResponseContent(vm: AppViewModel, collectionId: String, requestId: String, r
             } else {
                 StatusPill("Failed", false, Modifier.testTag("status"))
                 Spacer(Modifier.weight(1f))
+            }
+            if (vm.aiReady && res.status != null) IconButton(onClick = { vm.explainFor = requestId; vm.sheetFor = null }, modifier = Modifier.size(44.dp).clip(androidx.compose.foundation.shape.CircleShape).background(Hitop.accentContainer).testTag("explain")) {
+                Icon(HitopIcons.Sparkle, "Explain response", tint = Hitop.accent, modifier = Modifier.size(20.dp))
             }
             close?.let { IconButton(onClick = it, modifier = Modifier.testTag("close-response")) { Icon(HitopIcons.Close, "Close", tint = Hitop.text) } }
         }

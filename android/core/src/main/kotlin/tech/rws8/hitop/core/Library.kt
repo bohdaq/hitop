@@ -27,6 +27,10 @@ data class LibraryState(
     /** New requests still named from their URL (until saved under a name or renamed). */
     val autoNamed: Set<String> = emptySet(),
     val loaded: Boolean = false,
+    /** Shared collections: collection id → role (owner, editor, viewer; "removed" = no longer shared). */
+    val sharedRoles: Map<String, String> = emptyMap(),
+    /** Shared collections' team organization (none: personal). */
+    val sharedOrgs: Map<String, String?> = emptyMap(),
 ) {
     val activeEnvironment: Environment? get() = environments.firstOrNull { it.id == activeEnvironmentId }
     fun collection(id: String) = collections.firstOrNull { it.id == id }
@@ -81,6 +85,44 @@ class Library(private val store: LibraryStore, private val secrets: SecretStore)
     private val _state = MutableStateFlow(LibraryState())
     val state: StateFlow<LibraryState> = _state.asStateFlow()
 
+    /** Called after every change made here (not after `applyRemote*`): HITOP Cloud pushes. */
+    var onLibraryChange: (() -> Unit)? = null
+    /** Shared (end-to-end encrypted) collections, A3: never in the personal library. */
+    var isShared: (String) -> Boolean = { id -> id in _state.value.sharedRoles }
+    /** A shared collection changed here (SharedSync pushes it). */
+    var onSharedChange: ((String) -> Unit)? = null
+    /** A collection was deleted here (SharedSync forgets its link). */
+    var onCollectionDeleted: ((String) -> Unit)? = null
+    /** The organization a new collection is filed under (null: personal). */
+    var orgForNew: () -> String? = { null }
+
+    private fun changed(collectionId: String? = null) {
+        if (collectionId != null && isShared(collectionId)) onSharedChange?.invoke(collectionId)
+        onLibraryChange?.invoke()
+    }
+
+    /** A viewer's shared collection (or one no longer shared): nothing in it changes here. */
+    fun isReadOnly(collectionId: String): Boolean = _state.value.sharedRoles[collectionId].let { it == "viewer" || it == "removed" }
+
+    /** Shared collections' roles and organizations (SharedSync keeps them current). */
+    fun setShared(roles: Map<String, String>, orgs: Map<String, String?>) = _state.update { it.copy(sharedRoles = roles, sharedOrgs = orgs) }
+
+    /** A request copy added to a collection (a conflict kept both ways). */
+    fun addRequestCopy(r: Request, collectionId: String) {
+        val c = _state.value.collection(collectionId) ?: return
+        putCollection(c.withRequests(c.requests + r))
+    }
+
+    /** Team environments (`team: <org>`) of [org] replace those of any organization. */
+    fun applyTeamEnvironments(list: List<Environment>, org: String?) {
+        val s = _state.value
+        val mine = s.environments.filter { it.team == null }
+        val next = mine + list
+        val active = s.activeEnvironmentId.takeIf { a -> next.any { it.id == a } }
+        store.saveEnvironments(next.filter { it.team == null }, active)
+        _state.update { it.copy(environments = next, activeEnvironmentId = active) }
+    }
+
     /** What scripts set, per collection, for this session (as the web app keeps `scriptVariables`). */
     private val scriptVariables = HashMap<String, MutableMap<String, String?>>()
     private val scriptGlobals = HashMap<String, String?>()
@@ -112,8 +154,8 @@ class Library(private val store: LibraryStore, private val secrets: SecretStore)
     }
 
     /** UI tests and screenshots: the shop-api sample of the drafts, its environments and history. */
-    fun seedShopApi() {
-        val cols = Seed.collections()
+    fun seedShopApi(wsBase: String? = null) {
+        val cols = Seed.collections() + listOfNotNull(wsBase?.let { Seed.realtime(it) })
         cols.forEach { store.saveCollection(it) }
         val envs = Seed.environments()
         store.saveEnvironments(envs, "env-staging")
@@ -126,12 +168,45 @@ class Library(private val store: LibraryStore, private val secrets: SecretStore)
 
     // ---- collections and requests
 
-    private fun putCollection(c: Collection) {
+    private fun putCollection(c: Collection, notify: Boolean = true) {
+        // A viewer's shared collection changes only by syncing.
+        if (notify && isReadOnly(c.id)) return
         store.saveCollection(c)
         _state.update { s -> s.copy(collections = if (s.collections.any { it.id == c.id }) s.collections.map { if (it.id == c.id) c else it } else s.collections + c) }
+        if (notify) changed(c.id)
     }
 
-    fun addCollection(name: String): Collection = Collection.new(name.ifBlank { "New collection" }).also(::putCollection)
+    fun addCollection(name: String): Collection {
+        var c = Collection.new(name.ifBlank { "New collection" })
+        orgForNew()?.let { c = c.set("org", JsonPrimitive(it)) }
+        putCollection(c)
+        return c
+    }
+
+    // ---- from HITOP Cloud (no change notification: they came from there)
+
+    fun applyRemote(c: Collection) = putCollection(c, notify = false)
+
+    fun applyRemoteRemoval(id: String) {
+        store.deleteCollection(id)
+        _state.update { s -> s.copy(collections = s.collections.filter { it.id != id }) }
+    }
+
+    fun applyRemoteEnvironments(list: List<Environment>, active: String?) {
+        store.saveEnvironments(list, active)
+        _state.update { it.copy(environments = list, activeEnvironmentId = active) }
+    }
+
+    fun applyRemoteGlobals(g: Globals) {
+        store.saveGlobals(g)
+        _state.update { it.copy(globals = g) }
+    }
+
+    /** A conflict copy ("… (this phone)"): a collection of its own, synced like any other. */
+    fun addCollectionCopy(c: Collection) = putCollection(c)
+
+    fun setSecretValue(envId: String, name: String, value: String?) = secrets.set(SecretStore.envKey(envId, name), value)
+    fun setGlobalSecretValue(name: String, value: String?) = secrets.set(SecretStore.globalKey(name), value)
 
     fun renameCollection(id: String, name: String) {
         val c = _state.value.collection(id) ?: return
@@ -139,8 +214,12 @@ class Library(private val store: LibraryStore, private val secrets: SecretStore)
     }
 
     fun deleteCollection(id: String) {
-        store.deleteCollection(id)
-        _state.update { s -> s.copy(collections = s.collections.filter { it.id != id }) }
+        if (_state.value.sharedRoles[id] == "viewer") {
+            // A viewer may drop the copy on this phone; the workspace stays.
+        }
+        applyRemoteRemoval(id)
+        onCollectionDeleted?.invoke(id)
+        changed()
     }
 
     /** Where a request goes when no collection is meant: My requests (made when missing). */
@@ -150,7 +229,7 @@ class Library(private val store: LibraryStore, private val secrets: SecretStore)
 
     /** A new "Untitled" request, added to the collection at once and named from its URL until saved. */
     fun newRequest(collectionId: String? = null, folder: String = "", template: Request? = null): Pair<Collection, Request> {
-        val c = collectionId?.let { _state.value.collection(it) } ?: defaultCollection()
+        val c = collectionId?.takeIf { !isReadOnly(it) }?.let { _state.value.collection(it) } ?: defaultCollection()
         var r = template ?: Request.new()
         if (folder.isNotEmpty()) r = r.withFile("$folder/untitled")
         val updated = c.withRequests(c.requests + r)
@@ -243,8 +322,8 @@ class Library(private val store: LibraryStore, private val secrets: SecretStore)
     // ---- environments, globals, secrets
 
     private fun putEnvironments(list: List<Environment>, active: String?) {
-        store.saveEnvironments(list, active)
-        _state.update { it.copy(environments = list, activeEnvironmentId = active) }
+        applyRemoteEnvironments(list, active)
+        changed()
     }
 
     fun setActiveEnvironment(id: String?) = putEnvironments(_state.value.environments, id)
@@ -298,17 +377,15 @@ class Library(private val store: LibraryStore, private val secrets: SecretStore)
         } else {
             secrets.set(SecretStore.globalKey(name), null); vars[name] = value; names = names - name
         }
-        val ng = g.copy(variables = vars, secrets = names)
-        store.saveGlobals(ng)
-        _state.update { it.copy(globals = ng) }
+        applyRemoteGlobals(g.copy(variables = vars, secrets = names))
+        changed()
     }
 
     fun removeGlobal(name: String) {
         val g = _state.value.globals
         secrets.set(SecretStore.globalKey(name), null)
-        val ng = g.copy(variables = g.variables - name, secrets = g.secrets - name)
-        store.saveGlobals(ng)
-        _state.update { it.copy(globals = ng) }
+        applyRemoteGlobals(g.copy(variables = g.variables - name, secrets = g.secrets - name))
+        changed()
     }
 
     fun globalSecretValue(name: String): String? = secrets.get(SecretStore.globalKey(name))
@@ -317,6 +394,9 @@ class Library(private val store: LibraryStore, private val secrets: SecretStore)
         e?.secrets?.mapNotNull { n -> secrets.get(SecretStore.envKey(e.id, n))?.let { n to it } }?.toMap() ?: emptyMap()
 
     private fun globalSecrets(g: Globals): Map<String, String> = g.secrets.mapNotNull { n -> secrets.get(SecretStore.globalKey(n))?.let { n to it } }.toMap()
+
+    /** Every secret value the active environment and globals hold (masked out of what the on-device model sees). */
+    fun activeSecretValues(): List<String> = environmentSecrets(_state.value.activeEnvironment).values.toList() + globalSecrets(_state.value.globals).values
 
     /** A variable's value and where it comes from (the peek on a `${name}` chip). */
     fun peek(collectionId: String, name: String): Peek {
@@ -365,7 +445,7 @@ class Library(private val store: LibraryStore, private val secrets: SecretStore)
      * hitop-core: the environment, secrets, globals, the scripts' values of earlier sends, the
      * cookie jar. Adds a history entry. Blocking work runs on the IO dispatcher.
      */
-    suspend fun send(collectionId: String, draft: Request, timeoutMs: Long = 0): SendResult = withContext(Dispatchers.IO) {
+    suspend fun send(collectionId: String, draft: Request, timeoutMs: Long = 0, history: Boolean = true): SendResult = withContext(Dispatchers.IO) {
         val c = _state.value.collection(collectionId) ?: Collection.new("Unsaved")
         val args = engineArgs(c, draft) { if (timeoutMs > 0) put("timeoutMs", timeoutMs); put("jar", store.loadJar()) }
         val result = try {
@@ -377,25 +457,39 @@ class Library(private val store: LibraryStore, private val secrets: SecretStore)
             val cut = result.body.length > ResponseSnapshot.MAX_BODY
             ResponseSnapshot(it, result.headers, if (cut) result.body.substring(0, ResponseSnapshot.MAX_BODY) else result.body, cut, result.durationMs, result.size, result.tests)
         }
-        addHistory(HistoryEntry(Ids.next(), System.currentTimeMillis(), c.name, draft, snapshot, result.error?.raw))
+        if (history) addHistory(HistoryEntry(Ids.next(), System.currentTimeMillis(), c.name, draft, snapshot, result.error?.raw))
         result
     }
 
     /** What hitop-ffi's `send` and `snippet` take: the collection with [draft] in it, scopes, secrets. */
+    /** The engine's arguments for [draft] in its collection (WebSocket, SSE, gRPC sessions use them). */
+    fun requestArgs(collectionId: String, draft: Request, more: kotlinx.serialization.json.JsonObjectBuilder.() -> Unit = {}): JsonObject =
+        engineArgs(_state.value.collection(collectionId) ?: Collection.new("Unsaved"), draft, more)
+
     private fun engineArgs(c: Collection, draft: Request, more: kotlinx.serialization.json.JsonObjectBuilder.() -> Unit = {}): JsonObject {
-        val s = _state.value
         val requests = if (c.request(draft.id) != null) c.requests.map { if (it.id == draft.id) draft else it } else c.requests + draft
-        val env = s.activeEnvironment
+        return scopeArgs(c, requests, _state.value.activeEnvironment, sessionValues = true) {
+            put("request", requests.indexOfFirst { it.id == draft.id })
+            more()
+        }
+    }
+
+    /** A run's arguments: the collection as saved, [env], secrets and globals; script values start afresh (as a run). */
+    fun runArgs(c: Collection, env: Environment?, more: kotlinx.serialization.json.JsonObjectBuilder.() -> Unit = {}): JsonObject = scopeArgs(c, c.requests, env, sessionValues = false, more)
+
+    private fun scopeArgs(c: Collection, requests: List<Request>, env: Environment?, sessionValues: Boolean, more: kotlinx.serialization.json.JsonObjectBuilder.() -> Unit): JsonObject {
+        val s = _state.value
         return buildJsonObject {
             put("collection", c.forEngine(requests).toString())
-            put("request", requests.indexOfFirst { it.id == draft.id })
             env?.let { put("environment", it.forEngine()) }
             put("secrets", environmentSecrets(env).toJsonObject())
             put("globals", s.globals.variables.filterKeys { it !in s.globals.secrets }.toJsonObject())
             put("globalSecrets", globalSecrets(s.globals).toJsonObject())
-            put("scriptVariables", JsonObject((scriptVariables[c.id] ?: emptyMap<String, String?>()).mapValues { (_, v) -> v?.let(::JsonPrimitive) ?: JsonNull }))
-            put("scriptGlobals", JsonObject(scriptGlobals.mapValues { (_, v) -> v?.let(::JsonPrimitive) ?: JsonNull }))
-            put("context", contexts[c.id] ?: EmptyObject)
+            if (sessionValues) {
+                put("scriptVariables", JsonObject((scriptVariables[c.id] ?: emptyMap<String, String?>()).mapValues { (_, v) -> v?.let(::JsonPrimitive) ?: JsonNull }))
+                put("scriptGlobals", JsonObject(scriptGlobals.mapValues { (_, v) -> v?.let(::JsonPrimitive) ?: JsonNull }))
+                put("context", contexts[c.id] ?: EmptyObject)
+            }
             more()
         }
     }

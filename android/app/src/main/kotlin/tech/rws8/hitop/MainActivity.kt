@@ -1,6 +1,8 @@
 package tech.rws8.hitop
 
+import android.content.Intent
 import android.graphics.Color
+import kotlinx.coroutines.launch
 import androidx.core.graphics.toColorInt
 import android.os.Bundle
 import androidx.activity.ComponentActivity
@@ -19,7 +21,10 @@ class MainActivity : ComponentActivity() {
     private val vm: AppViewModel by viewModels {
         object : ViewModelProvider.Factory {
             @Suppress("UNCHECKED_CAST")
-            override fun <T : ViewModel> create(modelClass: Class<T>): T = AppViewModel(AppGraph.library(applicationContext)) as T
+            override fun <T : ViewModel> create(modelClass: Class<T>): T {
+                val p = AppGraph.parts(applicationContext)
+                return AppViewModel(p.library, p.cloud, p.sync, p.shared, p.signIn, p.runs, p.assistant) as T
+            }
         }
     }
 
@@ -31,5 +36,31 @@ class MainActivity : ComponentActivity() {
         )
         super.onCreate(savedInstanceState)
         setContent { HitopTheme { HitopRoot(vm) } }
+        handle(intent)
+    }
+
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        handle(intent)
+    }
+
+    /** `hitop://sign-in?sso=<code>`: a provider page sent the browser back (HITOP Cloud sign-in). */
+    private fun handle(intent: Intent?) {
+        val data = intent?.data ?: return
+        if (data.scheme != "hitop") return
+        when (data.host) {
+            "sign-in" -> vm.cloud.handleReturn(data.toString())
+            "runs" -> { vm.stack.clear(); vm.tab = tech.rws8.hitop.ui.Tab.RUNS }
+            "run" -> data.pathSegments.firstOrNull()?.let { vm.tab = tech.rws8.hitop.ui.Tab.RUNS; vm.push(tech.rws8.hitop.ui.Screen.Run(it)) }
+            "request" -> if (data.pathSegments.size == 2) vm.openRequest(data.pathSegments[0], data.pathSegments[1])
+        }
+        intent.data = null
+    }
+
+    override fun onStart() {
+        super.onStart()
+        // Other devices' changes when the app comes to the front.
+        val p = AppGraph.parts(applicationContext)
+        AppGraph.scope.launch { p.sync.sync(); p.shared.syncAll() }
     }
 }

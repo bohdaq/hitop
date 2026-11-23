@@ -25,6 +25,7 @@ object Harness {
     fun launchSeeded(): ActivityScenario<MainActivity> {
         val ctx = ApplicationProvider.getApplicationContext<Context>()
         AppGraph.useSeed(ctx, if (robolectric) MemorySecretStore() else null)
+        AppGraph.runsInProcess = robolectric
         return ActivityScenario.launch(MainActivity::class.java)
     }
 

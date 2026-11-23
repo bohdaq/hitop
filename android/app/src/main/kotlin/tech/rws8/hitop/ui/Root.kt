@@ -35,18 +35,57 @@ import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.role
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
+import androidx.compose.foundation.focusable
+import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.input.key.isCtrlPressed
+import androidx.compose.ui.input.key.isMetaPressed
+import androidx.compose.ui.input.key.key
+import androidx.compose.ui.input.key.onPreviewKeyEvent
+import androidx.compose.ui.input.key.type
 import tech.rws8.hitop.ui.theme.Dot
 import tech.rws8.hitop.ui.theme.Hitop
 import tech.rws8.hitop.ui.theme.HitopIcons
 import tech.rws8.hitop.ui.theme.HitopType
 
 @Composable
-fun HitopRoot(vm: AppViewModel) {
-    BackHandler(enabled = vm.stack.isNotEmpty()) { vm.pop() }
+fun HitopRoot(vm: AppViewModel, single: Boolean = false) {
+    if (!single) {
+        BackHandler(enabled = vm.stack.isNotEmpty()) { vm.pop() }
+        TrustPrompt(vm)
+        // Focusable at the root so a hardware keyboard's shortcuts arrive before anything has focus.
+        val rootFocus = androidx.compose.runtime.remember { androidx.compose.ui.focus.FocusRequester() }
+        androidx.compose.runtime.LaunchedEffect(Unit) { runCatching { rootFocus.requestFocus() } }
+        androidx.compose.foundation.layout.BoxWithConstraints(Modifier.fillMaxSize().onPreviewKeyEvent { shortcut(vm, it) }.focusRequester(rootFocus).focusable().testTag("root")) {
+            val panes = Panes.of(maxWidth)
+            if (panes == Panes.ONE) Screens(vm) else WideLayout(vm, panes)
+        }
+        return
+    }
+    Screens(vm)
+}
+
+/** Keyboard shortcuts (tablets, ChromeOS, desktop mode): Ctrl+Enter send, Ctrl+S save, Ctrl+K search, Ctrl+N new request. */
+private fun shortcut(vm: AppViewModel, e: androidx.compose.ui.input.key.KeyEvent): Boolean {
+    if (e.type != androidx.compose.ui.input.key.KeyEventType.KeyDown || !(e.isCtrlPressed || e.isMetaPressed)) return false
+    val r = vm.top as? Screen.Request
+    return when (e.key) {
+        androidx.compose.ui.input.key.Key.Enter -> { r?.let { vm.sendCurrent() }; r != null }
+        androidx.compose.ui.input.key.Key.S -> { r?.let { vm.save(it.collectionId, it.requestId) }; r != null }
+        androidx.compose.ui.input.key.Key.K -> { vm.showSearch(); true }
+        androidx.compose.ui.input.key.Key.N -> { vm.newRequest(); true }
+        else -> false
+    }
+}
+
+@Composable
+private fun Screens(vm: AppViewModel) {
     when (val top = vm.top) {
         is Screen.Request -> RequestScreen(vm, top.collectionId, top.requestId)
         is Screen.EnvironmentDetail -> EnvironmentDetailScreen(vm, top.envId)
         Screen.Globals -> GlobalsScreen(vm)
+        Screen.Account -> AccountScreen(vm)
+        is Screen.Run -> RunScreen(vm, top.collectionId)
+        is Screen.Report -> ReportScreen(vm, top.id)
         null -> Tabs(vm)
     }
 }
@@ -80,17 +119,9 @@ private fun Tabs(vm: AppViewModel) {
                 Tab.COLLECTIONS -> CollectionsScreen(vm)
                 Tab.HISTORY -> HistoryScreen(vm)
                 Tab.ENVIRONMENTS -> EnvironmentsScreen(vm)
-                Tab.RUNS -> RunsPlaceholder()
+                Tab.RUNS -> RunsTab(vm)
             }
         }
-    }
-}
-
-@Composable
-private fun RunsPlaceholder() {
-    Column(Modifier.fillMaxSize().padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-        Text("Runs", style = HitopType.screenTitle, color = Hitop.text)
-        Text("Run every request of a collection in order and see a report. Coming in the next version of this app.", style = HitopType.bodySmall, color = Hitop.textMuted)
     }
 }
 

@@ -16,6 +16,11 @@ testCore = "1.7.0"
 testServices = "1.6.0"
 navigation = "2.10.2"
 robolectric = "4.18.1"
+credentials = "1.6.0"
+googleid = "1.2.1"
+browser = "1.10.0"
+glance = "1.2.0"
+mlkitGenai = "1.0.0-beta5"
 
 [libraries]
 androidx-core-ktx = { module = "androidx.core:core-ktx", version.ref = "coreKtx" }
@@ -40,6 +45,15 @@ androidx-test-core = { module = "androidx.test:core-ktx", version.ref = "testCor
 androidx-test-services = { module = "androidx.test.services:test-services", version.ref = "testServices" }
 androidx-test-storage = { module = "androidx.test.services:storage", version.ref = "testServices" }
 androidx-navigation-compose = { module = "androidx.navigation:navigation-compose", version.ref = "navigation" }
+androidx-credentials = { module = "androidx.credentials:credentials", version.ref = "credentials" }
+androidx-credentials-play = { module = "androidx.credentials:credentials-play-services-auth", version.ref = "credentials" }
+googleid = { module = "com.google.android.libraries.identity.googleid:googleid", version.ref = "googleid" }
+androidx-browser = { module = "androidx.browser:browser", version.ref = "browser" }
+glance-appwidget = { module = "androidx.glance:glance-appwidget", version.ref = "glance" }
+glance-material3 = { module = "androidx.glance:glance-material3", version.ref = "glance" }
+glance-testing = { module = "androidx.glance:glance-appwidget-testing", version.ref = "glance" }
+mlkit-genai-prompt = { module = "com.google.mlkit:genai-prompt", version.ref = "mlkitGenai" }
+compose-ui-test-accessibility = { module = "androidx.compose.ui:ui-test-junit4-accessibility" }
 robolectric = { module = "org.robolectric:robolectric", version.ref = "robolectric" }
 androidx-test-uiautomator = { module = "androidx.test.uiautomator:uiautomator", version.ref = "uiautomator" }
 

@@ -118,6 +118,20 @@ object Seed {
         return listOf(shop, hooks, mine)
     }
 
+    /** WebSocket, event streams and gRPC (UI tests: [wsBase] is the stub's echo, ws://127.0.0.1:<port>). */
+    fun realtime(wsBase: String): Collection {
+        val stock = Request.new("Live stock", "\${wsBase}/v2/stock?market=\${market}").withHeaders(listOf(Header("X-Client", "hitop")))
+            .set("kind", JsonPrimitive("websocket"))
+            .withWebSocket(listOf("stock.v2", "stock.v1"), listOf(WsMessage("subscribe", "{\"op\": \"subscribe\", \"symbol\": \"\${symbol}\"}"), WsMessage("ping", "ping"), WsMessage("binary", "bin")))
+            .withFile("live-stock")
+        val feed = Modes.set(Request.new("Order feed", "\${baseUrl}/v2/orders/stream"), "SSE").withFile("order-feed")
+        val ticks = Modes.set(Request.new("Stock ticks", "\${baseUrl}/v2/stock/live"), "SSE").withFile("stock-ticks")
+        val hello = Request.new("Say hello", "grpc.shop.example:443").set("kind", JsonPrimitive("grpc"))
+            .withGrpc(GrpcFields("hitop.test.Greeter", "SayHello", "{\n  \"name\": \"\${customer}\"\n}", false)).withHeaders(listOf(Header("x-tenant", "acme"))).withFile("say-hello")
+        return collection(1004, "realtime", listOf(stock, feed, ticks, hello), mapOf("wsBase" to wsBase, "market" to "eu", "symbol" to "TEE-0193", "customer" to "Ada"), bearer)
+            .withRequests(listOf(stock, feed, ticks, hello).mapIndexed { i, r -> r.set("id", JsonPrimitive(1401 + i)) })
+    }
+
     fun environments(): List<Environment> = listOf(
         env("env-staging", "Staging", mapOf("baseUrl" to "http://staging.shop.example", "customerId" to "42", "token" to "", "password" to ""), listOf("token", "password")),
         env("env-production", "Production", mapOf("baseUrl" to "http://api.shop.example", "customerId" to "1001", "token" to ""), listOf("token")),
