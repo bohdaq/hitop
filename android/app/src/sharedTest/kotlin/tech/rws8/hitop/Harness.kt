@@ -3,7 +3,10 @@ package tech.rws8.hitop
 import android.content.Context
 import android.graphics.Bitmap
 import android.os.Build
+import androidx.compose.ui.graphics.asAndroidBitmap
 import androidx.compose.ui.test.SemanticsMatcher
+import androidx.compose.ui.test.captureToImage
+import androidx.compose.ui.test.isRoot
 import androidx.compose.ui.test.hasTestTag
 import androidx.compose.ui.test.hasText
 import androidx.compose.ui.test.junit4.ComposeTestRule
@@ -33,12 +36,16 @@ object Harness {
     fun ComposeTestRule.waitForText(text: String, timeoutMs: Long = 20_000) = waitFor(hasText(text, substring = true), timeoutMs)
 
     /** A screen capture into the test storage (CI artifact "screenshots-api*"); none under Robolectric. */
-    fun screenshot(name: String) {
+    fun ComposeTestRule.screenshot(name: String) {
         if (robolectric) return
         val instrumentation = InstrumentationRegistry.getInstrumentation()
+        waitForIdle()
         instrumentation.waitForIdleSync()
-        Thread.sleep(300)
-        val bitmap = instrumentation.uiAutomation.takeScreenshot() ?: return
+        // The system capture shows every window (sheets, dialogs, system bars); some emulator
+        // images refuse it (API 37 with SwiftShader), then the top Compose window is captured.
+        val bitmap = instrumentation.uiAutomation.takeScreenshot()
+            ?: runCatching { onAllNodes(isRoot()).let { roots -> roots[roots.fetchSemanticsNodes().size - 1] }.captureToImage().asAndroidBitmap() }.getOrNull()
+            ?: return
         TestStorage().openOutputFile("screenshots/api${Build.VERSION.SDK_INT}/$name.png").use { bitmap.compress(Bitmap.CompressFormat.PNG, 100, it) }
     }
 

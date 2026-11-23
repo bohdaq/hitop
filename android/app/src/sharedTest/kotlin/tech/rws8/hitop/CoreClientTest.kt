@@ -15,6 +15,7 @@ import org.junit.Assert.assertTrue
 import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
+import tech.rws8.hitop.Harness.screenshot
 import tech.rws8.hitop.Harness.waitFor
 import tech.rws8.hitop.Harness.waitForTag
 import tech.rws8.hitop.Harness.waitForText
@@ -36,14 +37,14 @@ class CoreClientTest {
     fun createOrderSends201AndPassesItsFourTests() {
         Harness.launchSeeded().use {
             compose.waitForTag("collections")
-            Harness.screenshot("01-collections")
+            compose.screenshot("01-collections")
             open("Create order")
             compose.onNodeWithTag("editor-tab-Body").performClick()
-            Harness.screenshot("02-request")
+            compose.screenshot("02-request")
             compose.onNodeWithTag("send").performClick()
             compose.waitForText("201 Created")
             compose.onNodeWithText("Tests 4/4").assertIsDisplayed()
-            Harness.screenshot("03-response")
+            compose.screenshot("03-response")
             compose.onNodeWithTag("response-tab-Tests").performClick()
             listOf("Status is 201", "Total equals sum of items", "Responds under 1 s", "Has a tracking link").forEach { compose.onNodeWithText(it).assertExists() }
             compose.onNodeWithTag("response-tab-Cookies").performClick()
@@ -71,7 +72,7 @@ class CoreClientTest {
             compose.onNodeWithTag("tab-History").performClick()
             compose.waitForTag("history")
             compose.onNodeWithTag("history").performScrollToNode(hasTestTag("history-GET /anything"))
-            Harness.screenshot("04-history")
+            compose.screenshot("04-history")
             compose.onNodeWithTag("history-GET /anything").performClick()
             compose.waitForTag("send")
             compose.onNodeWithTag("request-title").assertExists()
@@ -107,7 +108,7 @@ class CoreClientTest {
             compose.onNodeWithTag("back").performClick()
             compose.onNodeWithTag("tab-Environments").performClick()
             compose.waitForTag("env-open-Staging")
-            Harness.screenshot("05-environments")
+            compose.screenshot("05-environments")
             compose.onNodeWithTag("env-open-Staging").performClick()
             compose.waitForTag("value-token")
             compose.onNodeWithText("tok_staging_8f2").assertDoesNotExist()
