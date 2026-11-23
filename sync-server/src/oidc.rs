@@ -632,6 +632,14 @@ fn claim_bool(v: &Json) -> Option<bool> {
 /// Checks an ID token: signature (an asymmetric algorithm, a key from the provider's JWKS),
 /// issuer, audience and `azp`, expiry, issue time and nonce; then the address and the groups.
 fn check_id_token(state: &State, sso: &Sso, c: &OidcConfig, provider: &Provider, token: &str, nonce: &str) -> Result<Identity, Refused> {
+    check_id_token_from(state, sso, c, provider, token, nonce, &[c.client_id.as_str()])
+}
+
+/// [`check_id_token`] where the token may have been obtained by one of `parties` (`azp`): the
+/// server's own client, or (native Google sign-in) the Android app's clients. The audience is
+/// always the server's client id.
+#[allow(clippy::too_many_arguments)]
+fn check_id_token_from(state: &State, sso: &Sso, c: &OidcConfig, provider: &Provider, token: &str, nonce: &str, parties: &[&str]) -> Result<Identity, Refused> {
     let now = state.now();
     let header = jsonwebtoken::decode_header(token).map_err(|e| refused("bad_token", format!("the ID token is malformed: {e}")))?;
     if !ALGORITHMS.contains(&header.alg) {
@@ -671,7 +679,9 @@ fn check_id_token(state: &State, sso: &Sso, c: &OidcConfig, provider: &Provider,
         _ => 1,
     };
     let azp = claims["azp"].as_str();
-    if (audiences > 1 && azp.is_none()) || azp.is_some_and(|a| a != c.client_id) {
+    // A token another client obtained (native sign-in) must say which one.
+    let other_party = parties.len() > 1 || parties.first() != Some(&c.client_id.as_str());
+    if ((audiences > 1 || other_party) && azp.is_none()) || azp.is_some_and(|a| !parties.contains(&a)) {
         return Err(refused("bad_token", "the ID token was issued to another client (azp)"));
     }
     if claims["nonce"].as_str() != Some(nonce) {
@@ -968,6 +978,65 @@ pub fn finish(state: &State, request: &Request, _: &PathParams) -> ApiResult {
 pub fn google_finish(state: &State, request: &Request, _: &PathParams) -> ApiResult {
     config(&state.google)?;
     finish_with(state, &state.google.flows, "google", request)
+}
+
+/// How long a native sign-in's nonce stays usable.
+const NATIVE_NONCE_TTL: i64 = 600;
+
+/// `POST /v1/auth/google/native/start`: a nonce for the Android app's Google sign-in (Credential
+/// Manager puts it in the ID token). One use, ten minutes. 404 unless Google and the app's client
+/// ids are configured.
+pub fn google_native_start(state: &State, _: &Request, _: &PathParams) -> ApiResult {
+    native_config(state)?;
+    let now = state.now();
+    let nonce = new_token();
+    // Kept as a flow keyed by the nonce itself: only the nonce matters here.
+    let flow = Flow { expires: now + NATIVE_NONCE_TTL, nonce: nonce.clone(), pkce_verifier: String::new(), client_challenge: String::new(), return_to: None, org: None };
+    state.google.flows.remember_flow(&format!("native:{nonce}"), flow, now);
+    Ok((200, json!({ "nonce": nonce, "expiresIn": NATIVE_NONCE_TTL })))
+}
+
+fn native_config(state: &State) -> Result<&OidcConfig, ApiError> {
+    match (&state.config.google, state.config.google_android_clients.is_empty()) {
+        (Some(c), false) => Ok(c),
+        _ => Err(ApiError::new(404, "google_native_off", "native Google sign-in isn't configured on this server")),
+    }
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+struct NativeFinish {
+    id_token: String,
+    nonce: String,
+}
+
+/// `POST /v1/auth/google/native/finish {idToken, nonce}`: the Android app's Google ID token
+/// (audience = this server's Google client, `azp` = one of the app's Android clients, the nonce
+/// from `native/start`) → a session, as `/v1/auth/google/finish` gives. Same account rules as the
+/// browser sign-in: linked identity, else the verified address, else a new account; never past a
+/// domain that signs in with SSO only.
+pub fn google_native_finish(state: &State, request: &Request, _: &PathParams) -> ApiResult {
+    let c = native_config(state)?;
+    let input: NativeFinish = body(request)?;
+    let now = state.now();
+    let refuse = |why: Refused| {
+        audit::record_alone(state, Event::new(audit::ACCOUNT, "signin_failed", None).email(&why.email).detail(json!({ "method": "google", "reason": why.reason })));
+        ApiError::new(401, why.reason, why.message)
+    };
+    let Some(flow) = state.google.flows.take_flow(&format!("native:{}", input.nonce.trim()), now) else {
+        return Err(refuse(refused("unknown_nonce", "this sign-in expired or was already used; sign in again")));
+    };
+    let provider = state.google.provider(c, now).map_err(|e| config_error(state, e))?;
+    let parties: Vec<&str> = state.config.google_android_clients.iter().map(String::as_str).collect();
+    let identity = check_id_token_from(state, &state.google, c, &provider, &input.id_token, &flow.nonce, &parties).map_err(refuse)?;
+    if sso_required_for(state, &identity.email) {
+        let email = identity.email.clone();
+        return Err(refuse(Refused { reason: "sso_required", message: format!("{email} signs in with single sign-on on this server"), email }));
+    }
+    state.db.tx(|tx| {
+        let user = account(tx, state, c, &identity)?;
+        new_session(state, tx, &user, "google")
+    })
 }
 
 /// `POST /v1/auth/apple/finish {code, verifier}`.

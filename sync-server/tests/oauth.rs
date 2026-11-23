@@ -243,3 +243,68 @@ fn provider_settings_from_the_environment() {
     assert_eq!((gh.web_url.as_str(), gh.api_url.as_str()), ("https://github.com", "https://api.github.com"));
     assert!(hitop_sync_server::github::GithubConfig::from_env(&env(&[("HITOP_SYNC_GITHUB_CLIENT_ID", "id"), ("HITOP_SYNC_GITHUB_CLIENT_SECRET", "s"), ("HITOP_SYNC_GITHUB_URL", "http://evil.example")])).is_err());
 }
+
+/// The Android app's native Google sign-in: Credential Manager gives the app an ID token whose
+/// audience is the server's Google client and whose `azp` is the app's Android client; the nonce
+/// comes from `native/start` and works once.
+#[test]
+fn google_native_sign_in_takes_the_android_apps_id_token() {
+    let idp = MockIdp::start();
+    let off = google_server("oauth-native-off", &idp, |_| {});
+    assert_eq!(off.call("GET", "/v1/auth/methods", None, None).json["googleNative"], false);
+    let r = off.call("POST", "/v1/auth/google/native/start", None, Some(json!({})));
+    assert_eq!((r.status, r.json["error"].as_str()), (404, Some("google_native_off")));
+
+    let s = google_server("oauth-native", &idp, |c| c.google_android_clients = vec!["android-client".into(), "android-debug".into()]);
+    assert_eq!(s.call("GET", "/v1/auth/methods", None, None).json["googleNative"], true);
+    let nonce = |s: &Server| s.call("POST", "/v1/auth/google/native/start", None, Some(json!({}))).json["nonce"].as_str().unwrap().to_string();
+    let token = |n: &str, azp: Option<&str>, aud: &str, email: &str| {
+        let mut c = idp.claims("g-native", email, n);
+        c["aud"] = aud.into();
+        if let Some(a) = azp {
+            c["azp"] = a.into();
+        }
+        idp.sign(&c)
+    };
+    let finish = |s: &Server, id_token: String, n: &str| s.call("POST", "/v1/auth/google/native/finish", None, Some(json!({ "idToken": id_token, "nonce": n })));
+
+    // Signed up, with a session that works.
+    let n = nonce(&s);
+    let ok = finish(&s, token(&n, Some("android-client"), idp::CLIENT_ID, "Ada@Gmail.test"), &n);
+    assert_eq!(ok.status, 200, "{}", ok.json);
+    assert_eq!(ok.json["user"]["email"], "ada@gmail.test");
+    let session = ok.json["session"].as_str().unwrap().to_string();
+    assert_eq!(s.call("GET", "/v1/me", Some(&session), None).json["email"], "ada@gmail.test");
+    // The same nonce again: refused (one use).
+    let again = finish(&s, token(&n, Some("android-client"), idp::CLIENT_ID, "ada@gmail.test"), &n);
+    assert_eq!((again.status, again.json["error"].as_str()), (401, Some("unknown_nonce")));
+    assert_eq!(last_failure(&s), json!({ "method": "google", "reason": "unknown_nonce" }));
+    // A nonce the server never gave.
+    assert_eq!(finish(&s, token("made-up", Some("android-client"), idp::CLIENT_ID, "ada@gmail.test"), "made-up").status, 401);
+    // Another app's client (azp), no azp at all, another audience, a token for another nonce: refused.
+    for (azp, aud, why) in [(Some("someone-else"), idp::CLIENT_ID, "bad_token"), (None, idp::CLIENT_ID, "bad_token"), (Some("android-client"), "another-server", "bad_token")] {
+        let n = nonce(&s);
+        let r = finish(&s, token(&n, azp, aud, "ada@gmail.test"), &n);
+        assert_eq!((r.status, r.json["error"].as_str()), (401, Some(why)), "{azp:?} {aud}: {}", r.json);
+    }
+    let n = nonce(&s);
+    let other = nonce(&s);
+    let r = finish(&s, token(&other, Some("android-client"), idp::CLIENT_ID, "ada@gmail.test"), &n);
+    assert_eq!((r.status, r.json["error"].as_str()), (401, Some("bad_nonce")));
+    // The second Android client (debug build) works, and links to the same account.
+    let n = nonce(&s);
+    let r = finish(&s, token(&n, Some("android-debug"), idp::CLIENT_ID, "ada@gmail.test"), &n);
+    assert_eq!(r.json["user"]["id"], ok.json["user"]["id"]);
+    // An unverified address isn't linked or signed up.
+    let n = nonce(&s);
+    let mut c = idp.claims("g-unverified", "eve@gmail.test", &n);
+    c["azp"] = "android-client".into();
+    c["email_verified"] = false.into();
+    let r = finish(&s, idp.sign(&c), &n);
+    assert_eq!((r.status, r.json["error"].as_str()), (401, Some("unverified_email")));
+    // Nonces expire.
+    let n = nonce(&s);
+    s.advance(601);
+    idp.advance(601);
+    assert_eq!(finish(&s, token(&n, Some("android-client"), idp::CLIENT_ID, "ada@gmail.test"), &n).json["error"], "unknown_nonce");
+}

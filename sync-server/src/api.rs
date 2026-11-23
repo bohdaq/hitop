@@ -267,6 +267,8 @@ impl SyncApp {
             ("POST", "/v1/me/password", crate::password::set),
             ("POST", "/v1/auth/google/start", crate::oidc::google_start),
             ("POST", "/v1/auth/google/finish", crate::oidc::google_finish),
+        ("POST", "/v1/auth/google/native/start", crate::oidc::google_native_start),
+        ("POST", "/v1/auth/google/native/finish", crate::oidc::google_native_finish),
             ("POST", "/v1/auth/github/start", crate::github::start),
             ("POST", "/v1/auth/github/finish", crate::github::finish),
             ("POST", "/v1/auth/apple/start", crate::apple::start),

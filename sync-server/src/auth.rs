@@ -191,6 +191,8 @@ pub fn methods(state: &State, _: &Request, _: &PathParams) -> ApiResult {
             "passkey": true,
             "sso": sso,
             "google": state.config.google.is_some(),
+            // The Android app's native Google sign-in (oidc.rs `google_native_*`).
+            "googleNative": state.config.google.is_some() && !state.config.google_android_clients.is_empty(),
             "github": state.config.github.is_some(),
             "apple": state.config.apple.is_some(),
         }),

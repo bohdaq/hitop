@@ -25,6 +25,9 @@
 //! - Passwords: see password.rs (`HITOP_SYNC_PASSWORDS=off`, `HITOP_SYNC_PASSWORD_PEPPER[_FILE]`)
 //! - "Continue with Google": `HITOP_SYNC_GOOGLE_CLIENT_ID` and `HITOP_SYNC_GOOGLE_CLIENT_SECRET`
 //!   (or `_FILE`), redirect URI `<public URL>/v1/auth/google/callback`; off when unset (oidc.rs)
+//! - Native Google sign-in of the Android app: `HITOP_SYNC_GOOGLE_ANDROID_CLIENT_IDS` (comma-separated
+//!   OAuth client ids of type Android); with Google configured, `POST /v1/auth/google/native/{start,finish}`
+//!   take the app's Google ID token (audience = the Google client id above, `azp` = one of these) (oidc.rs)
 //! - "Continue with GitHub": `HITOP_SYNC_GITHUB_CLIENT_ID` and `HITOP_SYNC_GITHUB_CLIENT_SECRET`
 //!   (or `_FILE`), callback URL `<public URL>/v1/auth/github/callback`; off when unset (github.rs)
 //! - "Continue with Apple": `HITOP_SYNC_APPLE_CLIENT_ID` (Services ID), `_TEAM_ID`, `_KEY_ID` and
@@ -82,6 +85,8 @@ pub struct Config {
     pub password: PasswordConfig,
     /// "Continue with Google" (an OpenID Connect provider); `None` when not configured.
     pub google: Option<OidcConfig>,
+    /// The Android app's Google OAuth client ids (native sign-in, oidc.rs `google_native_*`).
+    pub google_android_clients: Vec<String>,
     /// "Continue with GitHub" (OAuth 2); `None` when not configured.
     pub github: Option<GithubConfig>,
     /// "Continue with Apple" (apple.rs); `None` when not configured.
@@ -156,6 +161,7 @@ impl Config {
             max_json_bytes: 1 << 20,
             password: PasswordConfig::default(),
             google: None,
+            google_android_clients: vec![],
             github: None,
             apple: None,
             billing: None,
@@ -209,6 +215,7 @@ impl Config {
         };
         c.password = PasswordConfig::from_env(&var)?;
         c.google = crate::oidc::google_from_env(&var)?;
+        c.google_android_clients = var("HITOP_SYNC_GOOGLE_ANDROID_CLIENT_IDS").map(|v| v.split(',').map(|s| s.trim().to_string()).filter(|s| !s.is_empty()).collect()).unwrap_or_default();
         c.github = GithubConfig::from_env(&var)?;
         c.apple = crate::apple::AppleConfig::from_env(&var)?;
     c.git = crate::gitsync::GitConfig::from_env(&var)?;
