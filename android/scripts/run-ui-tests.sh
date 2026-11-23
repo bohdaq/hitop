@@ -8,8 +8,12 @@ cd "$(dirname "$0")/.."
 adb wait-for-device
 ready() {
   # Also the user's credential-encrypted storage (/data/user/0): apps can't write files before it.
+  # sys.user.0.ce_available said true on the Google APIs 37 images while the user was still locked
+  # (ContextImpl "lockState: LOCKED", every file write ENOENT): wait for RUNNING_UNLOCKED as well.
+  adb shell wm dismiss-keyguard >/dev/null 2>&1 || true
   [ "$(adb shell getprop sys.boot_completed 2>/dev/null | tr -d '\r')" = 1 ] \
     && [ "$(adb shell getprop sys.user.0.ce_available 2>/dev/null | tr -d '\r')" = true ] \
+    && adb shell dumpsys user 2>/dev/null | grep -q "State: RUNNING_UNLOCKED" \
     && adb shell settings get global device_name >/dev/null 2>&1 \
     && adb shell pm path android >/dev/null 2>&1 \
     && adb shell cmd input -h >/dev/null 2>&1
@@ -24,7 +28,7 @@ while [ $ok -lt 5 ]; do
   sleep 2
 done
 adb shell input keyevent 82 || true
-echo "current user: $(adb shell am get-current-user 2>/dev/null | tr -d '\r'), users: $(adb shell pm list users 2>/dev/null | tr -d '\r' | tr '\n' ' ')"
+echo "current user: $(adb shell am get-current-user 2>/dev/null | tr -d '\r'), state: $(adb shell dumpsys user 2>/dev/null | grep -m1 -o 'State: [A-Z_]*')"
 status=0
 ./gradlew :app:connectedDebugAndroidTest "$@" || status=$?
 python3 - <<'PY'
