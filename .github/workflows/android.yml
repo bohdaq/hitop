@@ -126,16 +126,12 @@ jobs:
           - api: "31"
             target: google_apis
             gpu: swiftshader_indirect
-          # API 37: the Google APIs 37.0 image ran the tests before the app's data directory existed
-          # (ENOENT); the AOSP 37.0 image's system_server aborted in task snapshots with SwiftShader
-          # and lavapipe (gfxstream assertion !hasReadColorBufferDma; no guest renderer, and the
-          # emulator has no switch for that feature). Tried next: the test-device image (software
-          # rendering in the guest) and the 16 KB page image of the app's compile level.
+          # API 37 on the test-device image (software rendering in the guest). The AOSP 37.0 image's
+          # system_server aborted in task snapshots (gfxstream assertion !hasReadColorBufferDma, with
+          # SwiftShader and lavapipe); the Google APIs 37.0/37.2 images kept the user locked (apps
+          # couldn't write files, or never reached RUNNING_UNLOCKED). android/DECISIONS.md.
           - api: "37.0"
             target: aosp_atd
-            gpu: swiftshader_indirect
-          - api: "37.2"
-            target: google_apis_ps16k
             gpu: swiftshader_indirect
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
