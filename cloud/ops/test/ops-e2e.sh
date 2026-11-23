@@ -58,7 +58,11 @@ ev="$(ls "$t/evidence"/*.md)"
 grep -q "PASSED" "$ev" && grep -q "manifest: \*\*yes\*\*" "$ev" && grep -q " 0 broken" "$ev" && ok "restore-drill.sh restores, row counts and hashes equal, audit chains intact, evidence written" || { cat "$ev"; fail "evidence"; }
 grep -q "| users | 2 | 2 | yes |" "$ev" && ok "the evidence lists each table" || { cat "$ev"; fail "evidence table"; }
 if env BACKUP_TARGET="file://$t/target" "$deploy/restore-drill.sh" --identity "$t/other.txt" --evidence-dir "$t/evidence2" > /dev/null 2>&1; then fail "a wrong age key restored"; else ok "a wrong age key restores nothing"; fi
-cp "$t/target/$obj" "$t/tampered.tar.age"; printf 'x' | dd of="$t/tampered.tar.age" bs=1 seek=300 conv=notrunc 2>/dev/null
+# One byte changed for sure (writing a fixed byte left the file as it was when that byte was already it).
+cp "$t/target/$obj" "$t/tampered.tar.age"
+byte=$(dd if="$t/tampered.tar.age" bs=1 skip=300 count=1 2>/dev/null | od -An -tu1 | tr -d ' ')
+printf "\\$(printf '%03o' $(( (byte + 1) % 256 )))" | dd of="$t/tampered.tar.age" bs=1 seek=300 conv=notrunc 2>/dev/null
+cmp -s "$t/target/$obj" "$t/tampered.tar.age" && fail "the tampered copy is unchanged"
 mkdir -p "$t/target-bad"; cp "$t/tampered.tar.age" "$t/target-bad/hitop-sync-20990101T000000Z.tar.age"
 if env BACKUP_TARGET="file://$t/target-bad" "$deploy/restore-drill.sh" --identity "$t/id.txt" --evidence-dir "$t/evidence3" > /dev/null 2>&1; then fail "a tampered backup restored"; else ok "a tampered backup is refused"; fi
 if env "${common[@]}" AGE_RECIPIENTS_FILE="$t/none.txt" BACKUP_TARGET="file://$t/target" "$deploy/backup.sh" > /dev/null 2>&1; then fail "a backup without recipients"; else ok "no age recipient, no backup (never unencrypted)"; fi
