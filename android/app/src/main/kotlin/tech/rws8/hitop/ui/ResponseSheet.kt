@@ -65,7 +65,7 @@ import tech.rws8.hitop.ui.theme.StatusPill
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun ResponseSheet(vm: AppViewModel, collectionId: String, requestId: String, res: SendResult, close: () -> Unit) {
-    val state = rememberModalBottomSheetState(skipPartiallyExpanded = false)
+    val state = rememberModalBottomSheetState(skipPartiallyExpanded = true)
     ModalBottomSheet(onDismissRequest = close, sheetState = state, containerColor = Hitop.surface, modifier = Modifier.testTag("response-sheet")) {
         ResponseContent(vm, collectionId, requestId, res, close, Modifier.fillMaxHeight(0.92f))
     }
