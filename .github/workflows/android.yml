@@ -5,9 +5,9 @@
 name: Android
 
 on:
-  # Every push to main runs it (a docs-only commit too) and every push to an android-* branch.
+  # Every push to main runs it (a docs-only commit too); branches run it through their pull request.
   push:
-    branches: [main, "android-*"]
+    branches: [main]
   pull_request:
     paths:
       - "android/**"
