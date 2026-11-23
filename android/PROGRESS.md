@@ -5,7 +5,7 @@ Instructions: `android/GOAL.md`. Update this file after every task.
 | Tranche | Status |
 | --- | --- |
 | A0 Project, theme, hitop-ffi, CI | done (2026-11-23, PR #9; green run https://github.com/bohdaq/hitop/actions/runs/45088798691) |
-| A1 Core client | in progress (branch `android-a1`) |
+| A1 Core client | done (2026-11-23, PR #10; green run https://github.com/bohdaq/hitop/actions/runs/45112172270) |
 | A2 Cloud sign-in + library sync | built, tests pass locally; CI on branch `android-a2` |
 | A3 Shared encrypted collections | built, tests pass locally; CI on branch `android-a2` |
 | A4 Runs, notification, widgets | built, tests pass locally; CI on branch `android-a2` |
@@ -78,7 +78,7 @@ Instructions: `android/GOAL.md`. Update this file after every task.
 | Request editor (drafts' Request): method, URL with variable chips + peek, Params, Headers, Body, Auth, Scripts, Tests | done |
 | Response sheet (drafts' Response): status, timing bar, Body (folding JSON), Headers, Tests, Cookies | done |
 | Environments, globals, History | done |
-| UI tests on the seeded shop-api through the stub + screenshots (src/sharedTest: emulators in CI, Robolectric locally) | written, CI pending |
+| UI tests on the seeded shop-api through the stub + screenshots (src/sharedTest: emulators in CI, Robolectric locally) | done (API 31 + API 37 test-device image) |
 
 ## A0 tasks
 
