@@ -8,6 +8,7 @@ HITOP is an HTTP API testing tool available as:
 - **Desktop** (`desktop/`) — Tauri 2.0 native app (macOS, Windows, Linux) loading the web app
 - **Browser extensions** (Chrome, Firefox) — the web app, `npm run build:extension` + `webapp/scripts/package-extension.mjs`
 - **iOS** (`ios/`)
+- **Android** (`android/`) — Kotlin + Compose, hitop-core through a JNI crate; plan `android/GOAL.md`, status `android/PROGRESS.md`
 
 Storage and request services shared by every web app build live in `shared/services/` (plain JS).
 
@@ -560,6 +561,24 @@ hitop/
   `UITests/AccessibilityTests.swift` (all issues reported at once; accepted kinds listed with reasons)
 - The app (no editing) is generated with `xcodegen` on a Mac; bundle ids `hitop.rws8.tech.HitopCompanion` (+ `.Widget`),
   app group `group.hitop.rws8.tech.companion`; Swift 5 language mode for the app targets, Swift 6 for HitopKit
+
+### Android (`android/`)
+- Plan and owner decisions `android/GOAL.md`; status `android/PROGRESS.md`; agent choices `android/DECISIONS.md`; owner steps
+  `android/OWNER-NEEDED.md`; the owner's design drafts as `.dc.html` in `android/design/`. Package id `tech.rws8.hitop`, minSdk 31,
+  compile/target 37 (37.2 platform), AGP 9.5.2 (built-in Kotlin), Kotlin 2.4.21, Gradle 9.9.2, JDK 17, NDK r28c, versions in
+  `android/gradle/libs.versions.toml`
+- `android/hitop-ffi` (MIT, own workspace + lock seeded from SyncFFI's): one JNI function `tech.rws8.hitop.ffi.Native.call(byte[] op,
+  byte[] args): byte[]` (UTF-8 JSON, `{"ok"}`/`{"error"}`, panics caught); ops it doesn't own go to SyncFFI (`hitop_sync_ffi::call_json`,
+  path dependency). hitop-core with `native`, `websocket`, `grpc`: the whole request pipeline (prepare, boa scripts, HTTP, runs, reports)
+  runs in Rust. Build: `android/scripts/build-ffi.sh android [abi...]` (cargo-ndk → `android/build/ffi/jniLibs/<abi>`) or `host`
+  (`android/build/ffi/host`, for core's JVM tests); a hitop-core/hitop-sync-crypto dependency change needs `cargo update -p` here too
+- Modules: `core` (plain Kotlin JVM: models, storage, cloud, sync, runs; `./gradlew :core:test` loads the host library) and `app`
+  (Compose + Material 3, theme `ui/theme/Theme.kt` = the drafts' tokens, Geist fonts in res/font with OFL in assets/licenses).
+  Launcher icon layers are rendered by `brand/export.mjs` (mipmap-*/ic_launcher_{background,foreground,monochrome}.png)
+- CI `.github/workflows/android.yml`: hitop-ffi `cargo test` + clippy; app job (both ABIs + host, `scripts/check-16k.sh` on the .so and
+  the APK, `:core:test :app:licenseeDebug :app:lintDebug :app:assembleDebug`); UI tests on API 31 and 37.0 emulators
+  (`connectedDebugAndroidTest`, screenshots via TestStorage → artifact `screenshots-api*`). No local emulator on the build machine
+  (no kvm group): UI tests run in CI. Gradle licences: `app.cash.licensee` allow-list in app/build.gradle.kts
 
 ### Website and proxy
 - Hosting: VM bohdan-prod-donotdelete (168.119.17.57) behind the front rws; see `deploy/README.md`

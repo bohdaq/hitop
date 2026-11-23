@@ -1,0 +1,80 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>HITOP Android: Collection run</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600;700&amp;family=Geist+Mono:wght@400;500&amp;display=swap">
+<style>
+body{margin:0}
+a{color:#A99CFF}a:hover{color:#C9C0FF}
+</style>
+</helmet>
+<div style="width: 412px; height: 915px; box-sizing: border-box; background: #0B0B0E; color: #ECEAF4; font-family: Geist, system-ui, sans-serif; display: flex; flex-direction: column; overflow: hidden">
+  <header style="display: flex; align-items: center; gap: 8px; padding: 16px 8px 8px 8px">
+    <a href="Main.dc.html" aria-label="Close" style="width: 48px; height: 48px; display: flex; align-items: center; justify-content: center; color: #ECEAF4">
+      <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" aria-hidden="true"><path d="M6 6l12 12M18 6 6 18"/></svg>
+    </a>
+    <div style="flex: 1; display: flex; flex-direction: column">
+      <span style="font-size: 18px; font-weight: 600">Run shop-api</span>
+      <span style="font-size: 13px; color: #9C98AE">Staging · 1 iteration</span>
+    </div>
+    <button aria-label="Run again" style="width: 48px; height: 48px; border-radius: 24px; border: none; background: none; color: #ECEAF4; display: flex; align-items: center; justify-content: center">
+      <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M20 12a8 8 0 1 1-2.3-5.7M20 4v5h-5"/></svg>
+    </button>
+  </header>
+  <div style="display: flex; align-items: center; gap: 20px; padding: 12px 24px 20px 24px">
+    <svg width="120" height="120" viewBox="0 0 120 120" role="img" aria-label="11 of 12 passed">
+      <circle cx="60" cy="60" r="50" fill="none" stroke="#22212C" stroke-width="12"/>
+      <circle cx="60" cy="60" r="50" fill="none" stroke="{{ring}}" stroke-width="12" stroke-linecap="round" stroke-dasharray="288 314" transform="rotate(-90 60 60)"/>
+      <text x="60" y="66" text-anchor="middle" fill="#ECEAF4" font-family="Geist" font-size="26" font-weight="700">11/12</text>
+    </svg>
+    <div style="display: flex; flex-direction: column; gap: 10px; flex: 1">
+      <div style="display: flex; justify-content: space-between; font-size: 14px"><span style="color: #9C98AE">Checks</span><span style="font-family: 'Geist Mono', monospace">5/5</span></div>
+      <div style="display: flex; justify-content: space-between; font-size: 14px"><span style="color: #9C98AE">p95</span><span style="font-family: 'Geist Mono', monospace">90 ms</span></div>
+      <div style="display: flex; justify-content: space-between; font-size: 14px"><span style="color: #9C98AE">Total</span><span style="font-family: 'Geist Mono', monospace">10.3 s</span></div>
+    </div>
+  </div>
+  <div style="margin: 0 16px 12px 16px; padding: 14px 16px; border-radius: 16px; background: #2B1618; display: flex; align-items: center; gap: 12px">
+    <span style="font: 600 12px 'Geist Mono', monospace; color: #F87171">DELETE</span>
+    <div style="flex: 1; display: flex; flex-direction: column">
+      <span style="font-size: 15px; font-weight: 600">Cancel order</span>
+      <span style="font-size: 13px; color: #FCA5A5">HTTP 409 · order already shipped</span>
+    </div>
+  </div>
+  <ol style="list-style: none; margin: 0 16px; padding: 4px 0; flex: 1; background: #15151B; border-radius: 24px; overflow: hidden">
+    <sc-for list="{{steps}}" as="s" hint-placeholder-count="9">
+      <li style="display: flex; align-items: center; gap: 12px; height: 50px; padding: 0 16px">
+        <span style="width: 20px; color: {{s.markColor}}; font-weight: 700">{{s.mark}}</span>
+        <span style="width: 54px; font: 600 12px 'Geist Mono', monospace; color: {{s.color}}">{{s.method}}</span>
+        <span style="flex: 1; font-size: 15px">{{s.name}}</span>
+        <span style="font: 13px 'Geist Mono', monospace; color: #9C98AE">{{s.ms}}</span>
+      </li>
+    </sc-for>
+  </ol>
+  <div style="padding: 16px 16px 24px 16px; display: flex; gap: 12px">
+    <button style="flex: 1; height: 56px; border-radius: 28px; border: 1px solid #2C2A38; background: none; color: #ECEAF4; font: 500 15px Geist, sans-serif">Share report</button>
+    <button style="flex: 1; height: 56px; border-radius: 28px; border: none; background: {{accent}}; color: #1A1530; font: 600 15px Geist, sans-serif">Open report</button>
+  </div>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"accent":{"editor":"color","default":"#A99CFF","options":["#A99CFF","#8AB4FF","#6EE7C8"]},"$preview":{"width":412,"height":915}}'>
+class Component extends DCLogic {
+  renderVals() {
+    const accent = this.props.accent ?? '#A99CFF';
+    const m = { GET: '#4ADE80', POST: '#FBBF24', PATCH: '#C084FC', DELETE: '#F87171' };
+    const steps = [
+      ['POST', 'Log in', '90 ms', true], ['POST', 'Refresh token', '7 ms', true], ['GET', 'List orders', '3 ms', true],
+      ['POST', 'Create order', '132 ms', true], ['GET', 'Get order', '1 ms', true], ['PATCH', 'Update shipping', '1 ms', true],
+      ['DELETE', 'Cancel order', '409', false], ['GET', 'Stock levels', '4 ms', true], ['GET', 'Order events', '2 ms', true]
+    ].map(([method, name, ms, ok]) => ({ method, name, ms, color: m[method], mark: ok ? '✓' : '✕', markColor: ok ? '#4ADE80' : '#F87171' }));
+    return { accent, steps, ring: '#F59E8B' };
+  }
+}
+</script>
+</body>
+</html>

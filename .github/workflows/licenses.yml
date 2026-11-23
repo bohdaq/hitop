@@ -18,7 +18,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        workspace: [cli, cli/crates/hitop-wasm, server, desktop/src-tauri]
+        workspace: [cli, cli/crates/hitop-wasm, server, desktop/src-tauri, android/hitop-ffi]
     steps:
       - uses: actions/checkout@v4
       - uses: taiki-e/install-action@v2

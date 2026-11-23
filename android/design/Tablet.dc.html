@@ -1,0 +1,92 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>HITOP Android: Tablet and foldable</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600;700&amp;family=Geist+Mono:wght@400;500&amp;display=swap">
+<style>
+body{margin:0}
+a{color:#A99CFF}a:hover{color:#C9C0FF}
+</style>
+</helmet>
+<div style="width: 1280px; height: 800px; box-sizing: border-box; background: #0B0B0E; color: #ECEAF4; font-family: Geist, system-ui, sans-serif; display: flex; overflow: hidden">
+  <nav aria-label="Main" style="width: 88px; background: #15151B; display: flex; flex-direction: column; align-items: center; gap: 20px; padding: 20px 0">
+    <span style="width: 44px; height: 44px; border-radius: 22px; background: linear-gradient(135deg,#667eea,#764ba2); color: #fff; font: 700 16px Geist, sans-serif; display: flex; align-items: center; justify-content: center">H</span>
+    <button aria-label="New request" style="width: 56px; height: 56px; border-radius: 16px; border: none; background: {{accent}}; color: #1A1530; display: flex; align-items: center; justify-content: center">
+      <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg>
+    </button>
+    <sc-for list="{{rail}}" as="t" hint-placeholder-count="4">
+      <a href="#" style="display: flex; flex-direction: column; align-items: center; gap: 4px; color: {{t.color}}; text-decoration: none; font-size: 12px">
+        <span style="width: 56px; height: 32px; border-radius: 16px; background: {{t.pill}}; display: flex; align-items: center; justify-content: center">
+          <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="{{t.icon}}"/></svg>
+        </span>{{t.label}}
+      </a>
+    </sc-for>
+  </nav>
+  <aside style="width: 300px; border-right: 1px solid #1E1D27; padding: 16px; display: flex; flex-direction: column; gap: 6px">
+    <span style="font-size: 20px; font-weight: 600; padding: 4px 8px 12px 8px">shop-api</span>
+    <sc-for list="{{rows}}" as="r" hint-placeholder-count="8">
+      <div style="display: flex; align-items: center; gap: 10px; height: 44px; padding: 0 12px; border-radius: 12px; background: {{r.bg}}">
+        <span style="width: 54px; font: 600 12px 'Geist Mono', monospace; color: {{r.color}}">{{r.method}}</span>
+        <span style="font-size: 14px">{{r.name}}</span>
+      </div>
+    </sc-for>
+  </aside>
+  <main style="flex: 1; padding: 20px; display: flex; flex-direction: column; gap: 14px; border-right: 1px solid #1E1D27">
+    <div style="display: flex; align-items: center; gap: 10px">
+      <span style="height: 40px; padding: 0 12px; border-radius: 12px; background: #3A2E12; color: #FBBF24; font: 600 13px 'Geist Mono', monospace; display: flex; align-items: center">POST</span>
+      <span style="flex: 1; height: 40px; border-radius: 12px; background: #15151B; padding: 0 14px; display: flex; align-items: center; font: 13px 'Geist Mono', monospace"><span style="color: {{accent}}">${baseUrl}</span>/v2/orders?expand=items</span>
+      <button style="height: 40px; padding: 0 20px; border-radius: 20px; border: none; background: {{accent}}; color: #1A1530; font: 600 14px Geist, sans-serif">Send</button>
+    </div>
+    <div style="display: flex; gap: 20px; border-bottom: 1px solid #22212C; font-size: 14px; color: #9C98AE">
+      <span style="padding: 10px 0">Params</span><span style="padding: 10px 0">Headers</span><span style="padding: 10px 0; color: #ECEAF4; border-bottom: 3px solid {{accent}}">Body</span><span style="padding: 10px 0">Auth</span><span style="padding: 10px 0">Scripts</span><span style="padding: 10px 0">Tests</span>
+    </div>
+    <pre style="margin: 0; flex: 1; background: #111117; border-radius: 16px; padding: 16px; font: 13px/1.7 'Geist Mono', monospace; white-space: pre-wrap">{
+  <span style="color: #8AB4FF">"customerId"</span>: <span style="color: {{accent}}">${customerId}</span>,
+  <span style="color: #8AB4FF">"currency"</span>: <span style="color: #FDE68A">"EUR"</span>,
+  <span style="color: #8AB4FF">"items"</span>: [ { <span style="color: #8AB4FF">"sku"</span>: <span style="color: #FDE68A">"TEE-0193"</span>, <span style="color: #8AB4FF">"qty"</span>: <span style="color: #F9A8D4">2</span> } ]
+}</pre>
+    <span style="font-size: 12px; color: #6F6B80">Ctrl+Enter send · Ctrl+S save · Ctrl+K search (keyboard and mouse on tablets, ChromeOS, desktop mode)</span>
+  </main>
+  <section aria-label="Response" style="width: 360px; padding: 20px; display: flex; flex-direction: column; gap: 14px; background: #101016">
+    <div style="display: flex; align-items: center; gap: 10px">
+      <span style="height: 30px; padding: 0 10px; border-radius: 8px; background: #12301F; color: #4ADE80; font: 600 13px 'Geist Mono', monospace; display: flex; align-items: center">201 Created</span>
+      <span style="font: 13px 'Geist Mono', monospace; color: #C9C6D6">132 ms · 287 B</span>
+    </div>
+    <div style="display: flex; gap: 6px">
+      <span style="height: 30px; padding: 0 12px; border-radius: 15px; background: #3A3358; color: #E4DEFF; font-size: 12px; display: flex; align-items: center">Body</span>
+      <span style="height: 30px; padding: 0 12px; border-radius: 15px; border: 1px solid #2C2A38; color: #C9C6D6; font-size: 12px; display: flex; align-items: center">Headers 7</span>
+      <span style="height: 30px; padding: 0 12px; border-radius: 15px; border: 1px solid #2C2A38; color: #4ADE80; font-size: 12px; display: flex; align-items: center">Tests 4/4</span>
+    </div>
+    <pre style="margin: 0; flex: 1; background: #0B0B0E; border-radius: 16px; padding: 14px; font: 13px/1.7 'Geist Mono', monospace; white-space: pre-wrap">{
+  <span style="color: #8AB4FF">"id"</span>: <span style="color: #FDE68A">"ord_8KQ2mZ41"</span>,
+  <span style="color: #8AB4FF">"status"</span>: <span style="color: #FDE68A">"processing"</span>,
+  <span style="color: #8AB4FF">"items"</span>: <span style="color: #6F6B80">[ 2 items ]</span>
+}</pre>
+  </section>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"accent":{"editor":"color","default":"#A99CFF","options":["#A99CFF","#8AB4FF","#6EE7C8"]},"$preview":{"width":1280,"height":800}}'>
+class Component extends DCLogic {
+  renderVals() {
+    const accent = this.props.accent ?? '#A99CFF';
+    const m = { GET: '#4ADE80', POST: '#FBBF24', PATCH: '#C084FC', DELETE: '#F87171' };
+    const rows = [['POST', 'Log in'], ['GET', 'List orders'], ['POST', 'Create order'], ['GET', 'Get order'], ['PATCH', 'Update shipping'], ['DELETE', 'Cancel order'], ['GET', 'Stock levels'], ['GET', 'Order events']]
+      .map(([method, name]) => ({ method, name, color: m[method], bg: name === 'Create order' ? '#2A2540' : 'transparent' }));
+    const rail = [
+      { label: 'Collections', icon: 'M3 7h6l2 2h10v10H3z', on: true },
+      { label: 'History', icon: 'M12 7v5l3 2M3 12a9 9 0 1 0 3-6.7M3 4v4h4' },
+      { label: 'Envs', icon: 'M4 6h16M4 12h10M4 18h6' },
+      { label: 'Runs', icon: 'M7 4v16l13-8z' }
+    ].map(t => ({ ...t, color: t.on ? '#ECEAF4' : '#9C98AE', pill: t.on ? '#3A3358' : 'transparent' }));
+    return { accent, rows, rail };
+  }
+}
+</script>
+</body>
+</html>

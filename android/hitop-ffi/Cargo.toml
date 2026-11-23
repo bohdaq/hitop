@@ -1,0 +1,42 @@
+[package]
+name = "hitop-ffi"
+version = "0.1.0"
+edition = "2021"
+description = "The HITOP Android app's Rust: hitop-core (prepare, scripts, HTTP, runs, reports, WebSocket, gRPC) and hitop sync (SyncFFI's operations) behind one JNI function (JSON in, JSON out)"
+authors = ["Bohdan Tsap <bohdaq@gmail.com>"]
+license = "MIT"
+repository = "https://github.com/bohdaq/hitop"
+publish = false
+
+# Its own workspace (like ios/HITOP/SyncFFI and cli/crates/hitop-wasm): own Cargo.lock and target
+# dir, so the CLI workspace and `cargo publish` never see it. The lock started as SyncFFI's, so
+# both apps build the same versions; a dependency change in hitop-core or hitop-sync-crypto needs
+# `cargo update -p <crate>` here too (CI builds `--locked`).
+[workspace]
+
+[lib]
+# cdylib: libhitop_ffi.so, loaded by the app (cargo-ndk, arm64-v8a + x86_64) and by the JVM unit
+# tests of android/core (a host build); rlib: `cargo test`.
+crate-type = ["cdylib", "rlib"]
+
+[dependencies]
+# SyncFFI's operations (sync plan, folder format, hitop-sync-crypto, gRPC) are called as they
+# are, not copied: one implementation for both apps.
+hitop-sync-ffi = { path = "../../ios/HITOP/SyncFFI" }
+hitop-core = { path = "../../cli/crates/hitop-core", default-features = false, features = ["native", "websocket", "grpc"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+base64 = "0.22"
+anyhow = "1"
+jni = { version = "0.21", default-features = false }
+tokio = { version = "1.54.1", default-features = false, features = ["rt", "sync", "macros", "time"] }
+
+[profile.release]
+opt-level = "s"
+panic = "unwind"
+strip = "debuginfo"
+
+[profile.dev.package.argon2]
+opt-level = 3
+[profile.dev.package.blake2]
+opt-level = 3

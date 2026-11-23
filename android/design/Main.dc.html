@@ -1,0 +1,119 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>HITOP Android: Collections</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600;700&amp;family=Geist+Mono:wght@400;500&amp;display=swap">
+<style>
+body{margin:0}
+a{color:#A99CFF}a:hover{color:#C9C0FF}
+</style>
+</helmet>
+<div style="width: 412px; height: 915px; box-sizing: border-box; background: #0B0B0E; color: #ECEAF4; font-family: Geist, system-ui, sans-serif; display: flex; flex-direction: column; position: relative; overflow: hidden">
+  <header style="display: flex; align-items: center; gap: 12px; padding: 20px 16px 8px 16px">
+    <button aria-label="Account" style="width: 40px; height: 40px; border-radius: 20px; border: none; background: linear-gradient(135deg,#667eea,#764ba2); color: #fff; font: 700 15px Geist, sans-serif">H</button>
+    <div style="flex: 1; display: flex; flex-direction: column">
+      <span style="font-size: 22px; font-weight: 600">Collections</span>
+      <span style="font-size: 13px; color: #9C98AE">Personal · synced</span>
+    </div>
+    <button style="display: flex; align-items: center; gap: 6px; height: 36px; padding: 0 14px; border-radius: 18px; border: 1px solid #2C2A38; background: #15151B; color: #ECEAF4; font: 500 13px Geist, sans-serif">
+      <span style="width: 8px; height: 8px; border-radius: 4px; background: {{accent}}"></span>Staging
+    </button>
+  </header>
+  <div style="padding: 8px 16px">
+    <label style="display: flex; align-items: center; gap: 10px; height: 52px; padding: 0 18px; border-radius: 26px; background: #1C1C24; color: #9C98AE; font-size: 15px">
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg>
+      <input aria-label="Search" placeholder="Search requests, collections, history" style="flex: 1; background: none; border: none; color: #ECEAF4; font: 15px Geist, sans-serif; outline: none">
+    </label>
+  </div>
+  <div style="display: flex; gap: 8px; padding: 4px 16px 12px 16px">
+    <button style="height: 32px; padding: 0 14px; border-radius: 8px; border: none; background: #3A3358; color: #E4DEFF; font: 500 13px Geist, sans-serif">All</button>
+    <button style="height: 32px; padding: 0 14px; border-radius: 8px; border: 1px solid #2C2A38; background: none; color: #C9C6D6; font: 500 13px Geist, sans-serif">Pinned</button>
+    <button style="height: 32px; padding: 0 14px; border-radius: 8px; border: 1px solid #2C2A38; background: none; color: #C9C6D6; font: 500 13px Geist, sans-serif">Shared</button>
+    <button style="height: 32px; padding: 0 14px; border-radius: 8px; border: 1px solid #2C2A38; background: none; color: #C9C6D6; font: 500 13px Geist, sans-serif">Recent</button>
+  </div>
+  <div style="flex: 1; overflow: hidden; padding: 0 16px; display: flex; flex-direction: column; gap: 12px">
+    <section style="background: #15151B; border-radius: 24px; padding: 8px 0">
+      <div style="display: flex; align-items: center; gap: 12px; padding: 10px 16px">
+        <div style="width: 40px; height: 40px; border-radius: 12px; background: #2A2540; display: flex; align-items: center; justify-content: center; color: {{accent}}">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M3 7h6l2 2h10v10H3z"/></svg>
+        </div>
+        <div style="flex: 1; display: flex; flex-direction: column">
+          <span style="font-size: 16px; font-weight: 600">shop-api</span>
+          <span style="font-size: 13px; color: #9C98AE">13 requests · 11/12 passed 2 min ago</span>
+        </div>
+        <button aria-label="Run shop-api" style="width: 44px; height: 44px; border-radius: 22px; border: none; background: #2A2540; color: {{accent}}; display: flex; align-items: center; justify-content: center">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M7 4v16l13-8z"/></svg>
+        </button>
+      </div>
+      <sc-for list="{{rows}}" as="r" hint-placeholder-count="5">
+        <a href="Request.dc.html" style="display: flex; align-items: center; gap: 12px; padding: 0 16px; height: 52px; color: #ECEAF4; text-decoration: none">
+          <span style="width: 56px; font: 600 12px 'Geist Mono', monospace; color: {{r.color}}">{{r.method}}</span>
+          <span style="flex: 1; font-size: 15px">{{r.name}}</span>
+          <span style="font: 500 12px 'Geist Mono', monospace; color: {{r.statusColor}}">{{r.status}}</span>
+        </a>
+      </sc-for>
+    </section>
+    <section style="background: #15151B; border-radius: 24px">
+      <div style="display: flex; align-items: center; gap: 12px; padding: 14px 16px">
+        <div style="width: 40px; height: 40px; border-radius: 12px; background: #1F2A2A; display: flex; align-items: center; justify-content: center; color: #6EE7C8">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><circle cx="9" cy="8" r="3"/><circle cx="17" cy="9" r="2.5"/><path d="M3 19c0-3 3-5 6-5s6 2 6 5M15 14c3 0 6 1.5 6 4"/></svg>
+        </div>
+        <div style="flex: 1; display: flex; flex-direction: column">
+          <span style="font-size: 16px; font-weight: 600">payments-team</span>
+          <span style="font-size: 13px; color: #9C98AE">Shared · end-to-end encrypted · 4 people</span>
+        </div>
+      </div>
+    </section>
+    <section style="background: #15151B; border-radius: 24px">
+      <div style="display: flex; align-items: center; gap: 12px; padding: 14px 16px">
+        <div style="width: 40px; height: 40px; border-radius: 12px; background: #2A2540; display: flex; align-items: center; justify-content: center; color: {{accent}}">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M3 7h6l2 2h10v10H3z"/></svg>
+        </div>
+        <div style="flex: 1; display: flex; flex-direction: column">
+          <span style="font-size: 16px; font-weight: 600">realtime</span>
+          <span style="font-size: 13px; color: #9C98AE">WebSocket · SSE · gRPC</span>
+        </div>
+      </div>
+    </section>
+  </div>
+  <button aria-label="New request" style="position: absolute; right: 16px; bottom: 104px; height: 56px; padding: 0 20px; border-radius: 16px; border: none; background: {{accent}}; color: #1A1530; font: 600 15px Geist, sans-serif; display: flex; align-items: center; gap: 10px; box-shadow: 0 6px 18px rgba(0,0,0,.45)">
+    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg>New request
+  </button>
+  <nav aria-label="Main" style="height: 80px; background: #15151B; display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); align-items: center">
+    <sc-for list="{{tabs}}" as="t" hint-placeholder-count="4">
+      <a href="#" style="display: flex; flex-direction: column; align-items: center; gap: 4px; color: {{t.color}}; text-decoration: none; font-size: 12px; font-weight: 500">
+        <span style="width: 64px; height: 32px; border-radius: 16px; background: {{t.pill}}; display: flex; align-items: center; justify-content: center">
+          <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="{{t.icon}}"/></svg>
+        </span>{{t.label}}
+      </a>
+    </sc-for>
+  </nav>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"accent":{"editor":"color","default":"#A99CFF","options":["#A99CFF","#8AB4FF","#6EE7C8"]},"$preview":{"width":412,"height":915}}'>
+class Component extends DCLogic {
+  renderVals() {
+    const accent = this.props.accent ?? '#A99CFF';
+    const m = { GET: '#4ADE80', POST: '#FBBF24', PATCH: '#C084FC', DELETE: '#F87171', PUT: '#60A5FA' };
+    const rows = [
+      ['POST', 'Log in', '200'], ['GET', 'List orders', '200'], ['POST', 'Create order', '201'],
+      ['PATCH', 'Update shipping', '200'], ['DELETE', 'Cancel order', '409']
+    ].map(([method, name, status]) => ({ method, name, status, color: m[method], statusColor: status.startsWith('2') ? '#4ADE80' : '#F87171' }));
+    const tabs = [
+      { label: 'Collections', icon: 'M3 7h6l2 2h10v10H3z', on: true },
+      { label: 'History', icon: 'M12 7v5l3 2M3 12a9 9 0 1 0 3-6.7M3 4v4h4' },
+      { label: 'Environments', icon: 'M4 6h16M4 12h10M4 18h6' },
+      { label: 'Runs', icon: 'M7 4v16l13-8z' }
+    ].map(t => ({ ...t, color: t.on ? '#ECEAF4' : '#9C98AE', pill: t.on ? '#3A3358' : 'transparent' }));
+    return { accent, rows, tabs };
+  }
+}
+</script>
+</body>
+</html>

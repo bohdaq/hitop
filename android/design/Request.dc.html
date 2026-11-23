@@ -1,0 +1,92 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>HITOP Android: Request editor</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600;700&amp;family=Geist+Mono:wght@400;500&amp;display=swap">
+<style>
+body{margin:0}
+a{color:#A99CFF}a:hover{color:#C9C0FF}
+</style>
+</helmet>
+<div style="width: 412px; height: 915px; box-sizing: border-box; background: #0B0B0E; color: #ECEAF4; font-family: Geist, system-ui, sans-serif; display: flex; flex-direction: column; position: relative; overflow: hidden">
+  <header style="display: flex; align-items: center; gap: 8px; padding: 16px 8px 8px 8px">
+    <a href="Main.dc.html" aria-label="Back" style="width: 48px; height: 48px; display: flex; align-items: center; justify-content: center; color: #ECEAF4">
+      <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M15 5l-7 7 7 7"/></svg>
+    </a>
+    <div style="flex: 1; display: flex; flex-direction: column">
+      <span style="font-size: 18px; font-weight: 600">Create order</span>
+      <span style="font-size: 13px; color: #9C98AE">shop-api › orders</span>
+    </div>
+    <button aria-label="Save" style="width: 48px; height: 48px; border-radius: 24px; border: none; background: none; color: #ECEAF4; display: flex; align-items: center; justify-content: center">
+      <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M5 4h11l3 3v13H5z"/><path d="M8 4v5h7V4M8 20v-6h8v6"/></svg>
+    </button>
+    <button aria-label="More" style="width: 48px; height: 48px; border-radius: 24px; border: none; background: none; color: #ECEAF4; display: flex; align-items: center; justify-content: center">
+      <svg width="22" height="22" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><circle cx="12" cy="5" r="1.8"/><circle cx="12" cy="12" r="1.8"/><circle cx="12" cy="19" r="1.8"/></svg>
+    </button>
+  </header>
+  <div style="padding: 4px 16px 12px 16px; display: flex; flex-direction: column; gap: 10px">
+    <div style="display: flex; gap: 8px">
+      <button style="height: 40px; padding: 0 12px; border-radius: 12px; border: none; background: #3A2E12; color: #FBBF24; font: 600 13px 'Geist Mono', monospace; display: flex; align-items: center; gap: 6px">POST
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" aria-hidden="true"><path d="m6 9 6 6 6-6"/></svg>
+      </button>
+      <button style="height: 40px; padding: 0 12px; border-radius: 12px; border: 1px solid #2C2A38; background: none; color: #ECEAF4; font: 500 13px Geist, sans-serif; display: flex; align-items: center; gap: 6px">
+        <span style="width: 8px; height: 8px; border-radius: 4px; background: {{accent}}"></span>Staging
+      </button>
+    </div>
+    <label style="display: block; background: #15151B; border-radius: 16px; padding: 14px 16px; font: 14px/1.5 'Geist Mono', monospace; color: #ECEAF4; word-break: break-all">
+      <span style="color: {{accent}}">${baseUrl}</span>/v2/orders?expand=items
+    </label>
+  </div>
+  <div role="tablist" style="display: flex; gap: 0; padding: 0 8px; border-bottom: 1px solid #22212C">
+    <sc-for list="{{tabs}}" as="t" hint-placeholder-count="6">
+      <button role="tab" style="flex: 1; height: 48px; border: none; background: none; color: {{t.color}}; font: 500 14px Geist, sans-serif; border-bottom: 3px solid {{t.line}}">{{t.label}}</button>
+    </sc-for>
+  </div>
+  <div style="flex: 1; padding: 16px; display: flex; flex-direction: column; gap: 12px; overflow: hidden">
+    <div style="display: flex; gap: 8px">
+      <button style="height: 32px; padding: 0 12px; border-radius: 8px; border: none; background: #3A3358; color: #E4DEFF; font: 500 13px Geist, sans-serif">JSON</button>
+      <button style="height: 32px; padding: 0 12px; border-radius: 8px; border: 1px solid #2C2A38; background: none; color: #C9C6D6; font: 500 13px Geist, sans-serif">Form</button>
+      <button style="height: 32px; padding: 0 12px; border-radius: 8px; border: 1px solid #2C2A38; background: none; color: #C9C6D6; font: 500 13px Geist, sans-serif">GraphQL</button>
+      <button style="height: 32px; padding: 0 12px; border-radius: 8px; border: 1px solid #2C2A38; background: none; color: #C9C6D6; font: 500 13px Geist, sans-serif">None</button>
+    </div>
+    <pre style="margin: 0; flex: 1; background: #111117; border-radius: 16px; padding: 16px; font: 14px/1.7 'Geist Mono', monospace; color: #ECEAF4; white-space: pre-wrap">{
+  <span style="color: #8AB4FF">"customerId"</span>: <span style="color: {{accent}}">${customerId}</span>,
+  <span style="color: #8AB4FF">"currency"</span>: <span style="color: #FDE68A">"EUR"</span>,
+  <span style="color: #8AB4FF">"items"</span>: [
+    { <span style="color: #8AB4FF">"sku"</span>: <span style="color: #FDE68A">"TEE-0193"</span>, <span style="color: #8AB4FF">"qty"</span>: <span style="color: #F9A8D4">2</span> },
+    { <span style="color: #8AB4FF">"sku"</span>: <span style="color: #FDE68A">"CAP-0007"</span>, <span style="color: #8AB4FF">"qty"</span>: <span style="color: #F9A8D4">1</span> }
+  ]
+}</pre>
+    <div style="display: flex; align-items: center; gap: 10px; background: #15151B; border-radius: 16px; padding: 12px 14px; font-size: 13px; color: #C9C6D6">
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="{{accent}}" stroke-width="2" aria-hidden="true"><path d="M12 3l2.5 5.5L20 11l-5.5 2.5L12 19l-2.5-5.5L4 11l5.5-2.5z"/></svg>
+      <span style="flex: 1">customerId = cus_42 · from Staging</span>
+    </div>
+  </div>
+  <div style="padding: 12px 16px 24px 16px; display: flex; gap: 12px; background: #0B0B0E">
+    <button style="height: 56px; padding: 0 20px; border-radius: 28px; border: 1px solid #2C2A38; background: none; color: #ECEAF4; font: 500 15px Geist, sans-serif">Code</button>
+    <a href="Response.dc.html" style="flex: 1; height: 56px; border-radius: 28px; background: {{accent}}; color: #1A1530; font: 600 16px Geist, sans-serif; display: flex; align-items: center; justify-content: center; gap: 10px; text-decoration: none">
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M3 20.5 21 12 3 3.5v6.5l12 2-12 2z"/></svg>Send
+    </a>
+  </div>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"accent":{"editor":"color","default":"#A99CFF","options":["#A99CFF","#8AB4FF","#6EE7C8"]},"$preview":{"width":412,"height":915}}'>
+class Component extends DCLogic {
+  renderVals() {
+    const accent = this.props.accent ?? '#A99CFF';
+    const tabs = ['Params', 'Headers', 'Body', 'Auth', 'Scripts', 'Tests'].map(label => {
+      const on = label === 'Body';
+      return { label, color: on ? '#ECEAF4' : '#9C98AE', line: on ? accent : 'transparent' };
+    });
+    return { accent, tabs };
+  }
+}
+</script>
+</body>
+</html>

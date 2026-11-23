@@ -1,0 +1,83 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>HITOP Android: Response sheet</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600;700&amp;family=Geist+Mono:wght@400;500&amp;display=swap">
+<style>
+body{margin:0}
+a{color:#A99CFF}a:hover{color:#C9C0FF}
+</style>
+</helmet>
+<div style="width: 412px; height: 915px; box-sizing: border-box; background: #0B0B0E; color: #ECEAF4; font-family: Geist, system-ui, sans-serif; position: relative; overflow: hidden">
+  <div aria-hidden="true" style="padding: 28px 24px; opacity: .35">
+    <div style="font-size: 18px; font-weight: 600">Create order</div>
+    <div style="margin-top: 16px; height: 48px; border-radius: 16px; background: #15151B"></div>
+  </div>
+  <section aria-label="Response" style="position: absolute; left: 0; right: 0; bottom: 0; top: 120px; background: #15151B; border-radius: 28px 28px 0 0; display: flex; flex-direction: column">
+    <div style="display: flex; justify-content: center; padding: 12px 0 4px 0"><span style="width: 32px; height: 4px; border-radius: 2px; background: #4A4758"></span></div>
+    <div style="display: flex; align-items: center; gap: 10px; padding: 8px 16px">
+      <span style="height: 32px; padding: 0 12px; border-radius: 8px; background: #12301F; color: #4ADE80; font: 600 14px 'Geist Mono', monospace; display: flex; align-items: center">201 Created</span>
+      <span style="font: 500 14px 'Geist Mono', monospace; color: #C9C6D6">132 ms · 287 B</span>
+      <span style="flex: 1"></span>
+      <button aria-label="Explain response" style="width: 44px; height: 44px; border-radius: 22px; border: none; background: #2A2540; color: {{accent}}; display: flex; align-items: center; justify-content: center">
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M12 3l2.5 5.5L20 11l-5.5 2.5L12 19l-2.5-5.5L4 11l5.5-2.5z"/></svg>
+      </button>
+      <a href="Request.dc.html" aria-label="Close" style="width: 44px; height: 44px; display: flex; align-items: center; justify-content: center; color: #ECEAF4">
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" aria-hidden="true"><path d="M6 6l12 12M18 6 6 18"/></svg>
+      </a>
+    </div>
+    <div style="padding: 4px 16px 12px 16px">
+      <div style="display: flex; height: 8px; border-radius: 4px; overflow: hidden; gap: 2px">
+        <span style="width: 8%; background: #7DD3FC"></span><span style="width: 15%; background: #C4B5FD"></span><span style="width: 55%; background: #FDBA74"></span><span style="width: 22%; background: #4ADE80"></span>
+      </div>
+      <div style="display: flex; justify-content: space-between; margin-top: 6px; font-size: 12px; color: #9C98AE">
+        <span>DNS 11</span><span>TLS 20</span><span>Waiting 82</span><span>Download 29 ms</span>
+      </div>
+    </div>
+    <div style="display: flex; gap: 8px; padding: 0 16px 12px 16px">
+      <sc-for list="{{tabs}}" as="t" hint-placeholder-count="4">
+        <button style="height: 36px; padding: 0 14px; border-radius: 18px; border: {{t.border}}; background: {{t.bg}}; color: {{t.color}}; font: 500 13px Geist, sans-serif">{{t.label}}</button>
+      </sc-for>
+    </div>
+    <pre style="margin: 0 16px; flex: 1; background: #0F0F14; border-radius: 16px; padding: 16px; font: 14px/1.75 'Geist Mono', monospace; color: #ECEAF4; white-space: pre-wrap; overflow: hidden">▾ {
+    <span style="color: #8AB4FF">"id"</span>: <span style="color: #FDE68A">"ord_8KQ2mZ41"</span>,
+    <span style="color: #8AB4FF">"status"</span>: <span style="color: #FDE68A">"processing"</span>,
+▸   <span style="color: #8AB4FF">"total"</span>: <span style="color: #6F6B80">{ 2 keys }</span>,
+▸   <span style="color: #8AB4FF">"items"</span>: <span style="color: #6F6B80">[ 2 items ]</span>,
+▸   <span style="color: #8AB4FF">"customer"</span>: <span style="color: #6F6B80">{ 3 keys }</span>,
+    <span style="color: #8AB4FF">"createdAt"</span>: <span style="color: #FDE68A">"2026-11-17T10:42Z"</span>
+  }</pre>
+    <div style="display: flex; align-items: center; gap: 12px; margin: 12px 16px 0 16px; padding: 14px 16px; border-radius: 16px; background: #1F1C2E">
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="{{accent}}" stroke-width="2" aria-hidden="true"><path d="M12 3l2.5 5.5L20 11l-5.5 2.5L12 19l-2.5-5.5L4 11l5.5-2.5z"/></svg>
+      <span style="flex: 1; font-size: 14px; line-height: 1.45; color: #DCD8EA">201 Created: a new order ord_8KQ2mZ41 for cus_42 with two items, still processing.</span>
+    </div>
+    <div style="display: flex; gap: 12px; padding: 16px 16px 24px 16px">
+      <button style="flex: 1; height: 48px; border-radius: 24px; border: 1px solid #2C2A38; background: none; color: #ECEAF4; font: 500 14px Geist, sans-serif">Copy</button>
+      <button style="flex: 1; height: 48px; border-radius: 24px; border: 1px solid #2C2A38; background: none; color: #ECEAF4; font: 500 14px Geist, sans-serif">Share</button>
+      <button style="flex: 1; height: 48px; border-radius: 24px; border: none; background: #2A2540; color: {{accent}}; font: 500 14px Geist, sans-serif">Save example</button>
+    </div>
+  </section>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"accent":{"editor":"color","default":"#A99CFF","options":["#A99CFF","#8AB4FF","#6EE7C8"]},"$preview":{"width":412,"height":915}}'>
+class Component extends DCLogic {
+  renderVals() {
+    const accent = this.props.accent ?? '#A99CFF';
+    const tabs = ['Body', 'Headers 7', 'Tests 4/4', 'Cookies 1'].map((label, i) => ({
+      label,
+      bg: i === 0 ? '#3A3358' : 'transparent',
+      color: i === 0 ? '#E4DEFF' : (i === 2 ? '#4ADE80' : '#C9C6D6'),
+      border: i === 0 ? 'none' : '1px solid #2C2A38'
+    }));
+    return { accent, tabs };
+  }
+}
+</script>
+</body>
+</html>
