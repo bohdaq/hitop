@@ -579,6 +579,22 @@ hitop/
   the APK, `:core:test :app:licenseeDebug :app:lintDebug :app:assembleDebug`); UI tests on API 31 and 37.0 emulators
   (`connectedDebugAndroidTest`, screenshots via TestStorage → artifact `screenshots-api*`). No local emulator on the build machine
   (no kvm group): UI tests run in CI. Gradle licences: `app.cash.licensee` allow-list in app/build.gradle.kts
+- Tests: UI tests in `app/src/sharedTest` run on the emulators and under Robolectric (`./gradlew :app:testDebugUnitTest`, host
+  hitop-ffi via java.library.path); `Harness.launchSeeded()` = the seed + `StubServer` (HTTP proxy for `*.shop.example`, SSE,
+  WebSocket echo) + `FakeCloud` + `FakeAssistant`. Core end-to-end tests need `HITOP_SYNC_SERVER_BIN`, `HITOP_BIN`,
+  `HITOP_TEST_SERVERS_BIN` (`HITOP_E2E_REQUIRED=1` in CI fails instead of skipping)
+- Features: Cloud (`core/cloud`: HitopCloud, LibrarySync; Google via Credential Manager + server `/v1/auth/google/native/*`
+  when `BuildConfig.GOOGLE_SERVER_CLIENT_ID` and `/v1/auth/methods` `googleNative`, else Custom Tab like GitHub/Apple →
+  `hitop://sign-in`), shared collections (`core/sync/SharedSync.kt` over SyncFFI ops), runs (`RunCenter`, FFI `runStart/runNext/
+  runCancel`, `RunService` dataSync foreground service), Glance widgets + Quick Settings tile + shortcuts (`platform/`),
+  WebSocket/SSE/GraphQL/gRPC (`core/Protocols.kt`, `GraphQL.kt`), on-device AI (`platform/GeminiNano.kt` = ML Kit GenAI Prompt,
+  `core/Intelligence.kt`: ModelInput masks secrets, CurlImport), layouts `ui/WideLayout.kt` (two panes ≥ 600 dp, three ≥ 1200 dp),
+  shortcuts in `ui/Root.kt`
+- Release (A7, `android/PLAY_STORE.md`): signing only from env (`HITOP_UPLOAD_KEYSTORE`, `_PASSWORD`, `HITOP_UPLOAD_KEY_ALIAS`,
+  `HITOP_VERSION_CODE`); `scripts/build-release.sh` + `check-release.sh` (bundletool validate, signature, both ABIs, 16 KB;
+  BUNDLETOOL = jar, 1.18.3 sha256-pinned in workflows); CI job App does it with a throwaway key; `android-play.yml` (manual,
+  internal track only), `release-android.yml` (owner tag `android-v*` → GitHub Release, never Latest). Store pictures:
+  `StoreScreenshots` test with `-Phitop.storeScreenshots=$PWD/store/screenshots` (in android/) → `android/store/screenshots/`
 
 ### Website and proxy
 - Hosting: VM bohdan-prod-donotdelete (168.119.17.57) behind the front rws; see `deploy/README.md`

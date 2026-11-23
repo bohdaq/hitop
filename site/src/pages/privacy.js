@@ -24,36 +24,40 @@ export function render() {
         <li>CLI on Linux: <code>~/.config/hitop/</code></li>
         <li>CLI on Windows: <code>%APPDATA%\\hitop\\</code></li>
         <li>iOS app: the app's own storage on your iPhone or iPad</li>
+        <li>Android app: the app's own storage on your phone or tablet (secret values sealed with a key in the Android Keystore); it is left out of Android's cloud backups and device transfers</li>
         <li>Web app and browser extensions: your browser's local storage</li>
       </ul>
       <p>None of it leaves your device unless you export it yourself, or sign in to HITOP Cloud and sync it (below).</p>
 
       <h2>Requests you send</h2>
-      <p>The Mac app, the iOS app, the CLI and the browser extensions send each request straight from your device to the address you entered. HITOP's servers are not involved.</p>
+      <p>The Mac app, the iOS and Android apps, the CLI and the browser extensions send each request straight from your device to the address you entered. HITOP's servers are not involved.</p>
       <p>The web app at hitop.rws8.tech sends requests to public addresses through the HITOP request proxy on the same server, because browsers block most cross origin API calls. For those requests:</p>
       <ul>
         <li>The proxy receives the method, URL, headers and body you send, makes the request, and returns the response to your browser.</li>
         <li>It does not store requests, responses, headers or bodies, and does not log them. The web server's access log records your IP address, the time and the path <code>/api/proxy</code>, not where the request went.</li>
         <li>It refuses private and internal addresses. Requests to localhost and other private addresses are never sent to the proxy; your browser sends them itself.</li>
-        <li>Don't send secrets you are not comfortable passing through a server you don't run. For those, use the Mac or iOS app, the CLI or an extension.</li>
+        <li>Don't send secrets you are not comfortable passing through a server you don't run. For those, use the Mac, iOS or Android app, the CLI or an extension.</li>
       </ul>
 
       <h2>No tracking</h2>
       <p>HITOP contains no analytics SDKs, crash reporting, advertising identifiers, third party SDKs, session recording or fingerprinting. The website sets no cookies. If you choose a light or dark theme, your browser keeps that choice in local storage under <code>hitop-theme</code>.</p>
 
       <h2>Usage ping, only if you turn it on</h2>
-      <p>The CLI (from version 0.3.0) and the free desktop builds from GitHub can send one anonymous ping a week, only if you turn it on. It is off by default; the desktop app asks once, with No as the default answer, and the CLI only sends it after <code>hitop telemetry on</code>. The Mac App Store and iOS apps, the web app and the browser extensions don't contain this code at all.</p>
+      <p>The CLI (from version 0.3.0) and the free desktop builds from GitHub can send one anonymous ping a week, only if you turn it on. It is off by default; the desktop app asks once, with No as the default answer, and the CLI only sends it after <code>hitop telemetry on</code>. The Mac App Store, iOS and Android apps, the web app and the browser extensions don't contain this code at all.</p>
       <ul>
         <li>The ping holds a random install id made on your device, which surface it is (CLI or desktop), the version and the operating system family. Nothing else: no requests, URLs, collections or account.</li>
         <li>It goes to <code>https://hitop.rws8.tech/api/ping</code>. The server keeps only daily counts. It uses the install id to count each install once a week, through a hash with a salt that is thrown away every week, so installs can't be followed from week to week. It doesn't store your IP address; the web server's access log records it with the time and the path, as for any page.</li>
         <li>Turn it off at any time with <code>hitop telemetry off</code> or in the desktop app's settings. <code>hitop telemetry status</code> shows what would be sent.</li>
       </ul>
 
+      <h2>On-device AI in the Android app</h2>
+      <p>On phones that have Gemini Nano, the Android app can explain a response, suggest tests and turn a description into a request. The model runs on the phone through Android's on-device AI service: what it reads (the response, with secret values and credentials hidden) never leaves the phone and is not sent to HITOP or to Google by HITOP. Turning a curl command into a request needs no model.</p>
+
       <h2>HITOP Cloud account, only if you sign in</h2>
       <p>HITOP Cloud is optional: every app works without an account. If you sign in (with Apple, Google or GitHub, a password, an emailed code or your company's single sign-on) at <code>sync.hitop.rws8.tech</code>, HITOP Cloud keeps:</p>
       <ul>
         <li>Your account: your email address (with Sign in with Apple, the relay address if you hide yours) and an account id. HITOP doesn't keep the name Apple or Google sends. For each Apple, Google, GitHub or single sign-on account you sign in with, which one it is (its id and email address); never its password. With Sign in with Apple, the server also keeps the token Apple gives it, sealed, only so that deleting your account can revoke HITOP's access at Apple.</li>
-        <li>Your devices: a name (the apps send "HITOP on iPhone", "HITOP on iPad" and the like, not your device's own name), each device's public key, when it was added and last used, and hashes of your sign-in and session tokens (never the tokens).</li>
+        <li>Your devices: a name (the apps send "HITOP on iPhone", "HITOP on iPad", "HITOP on Pixel 9" (the Android phone's model) and the like, not your device's own name), each device's public key, when it was added and last used, and hashes of your sign-in and session tokens (never the tokens).</li>
         <li>If you set a password: never the password itself. Your app turns it into two keys on your device; the server gets one of them and keeps only a slow hash of it, plus the settings your app needs to turn the password into keys again. The other key seals your device's keys (a key bundle the server stores but can't open). A recovery phrase works the same way.</li>
         <li>Your synced personal library: the collections, environments and globals you keep in HITOP Cloud, and the last versions of each saved request, so they are the same on every device you sign in on. HITOP Cloud can read them. Secret values are sealed under a key only the server holds, and are not kept at all on a server without one.</li>
         <li>Shared collections only as ciphertext: they are encrypted end to end on your devices before they are sent, and the server can't read them. It sees who is in which shared collection, how many files there are, their sizes and when they change.</li>
@@ -65,7 +69,7 @@ export function render() {
       <p>What HITOP Cloud doesn't do: no tracking, no advertising, no analytics, and your data is never sold or shared for marketing. The requests you send and their responses never go through HITOP Cloud (the web app's proxy is above), and it doesn't see your request history or your device's Keychain.</p>
 
       <h3>Deleting your account</h3>
-      <p>In the iOS app, the web app or the desktop app: <b>Account → Delete account</b>. You can also email <a href="mailto:bohdaq@gmail.com">bohdaq@gmail.com</a> and we delete it for you. Deleting is immediate and can't be undone:</p>
+      <p>In the iOS or Android app, the web app or the desktop app: <b>Account → Delete account</b>. You can also email <a href="mailto:bohdaq@gmail.com">bohdaq@gmail.com</a> and we delete it for you. Deleting is immediate and can't be undone:</p>
       <ul>
         <li>Deleted at once: your account, its sign-ins and sessions, access tokens, password and recovery data, devices and their keys, your synced personal library and its versions, your personal organization, organizations and shared collections only you were in (with their data), your memberships of the others, and pending invites to your address. Shared collections you leave this way get a new key from their owners' apps. Your Sign in with Apple token is revoked at Apple. If you installed HITOP's GitHub App, it stays installed on your GitHub account until you uninstall it there (GitHub → Settings → Applications); HITOP no longer uses it.</li>
         <li>If you are the only owner of an organization or shared collection that other people use, the app asks you to make someone else an owner, or remove the others, first, so their work isn't deleted with your account.</li>

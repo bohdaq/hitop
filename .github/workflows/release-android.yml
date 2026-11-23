@@ -1,0 +1,88 @@
+# HITOP for Android: a signed APK and AAB on a GitHub Release, when the owner pushes a tag
+# android-v<version> (= versionName in android/app/build.gradle.kts; -rc.N = pre-release).
+# Agents never push these tags. The APK is for people who install it themselves; Google Play
+# gets the AAB through android-play.yml. Secrets as android-play.yml (no Play account needed).
+name: Android release
+
+on:
+  push:
+    tags: ["android-v*"]
+
+permissions:
+  contents: write
+
+env:
+  NDK_VERSION: "28.2.13676358"
+  CARGO_NDK_VERSION: "4.1.2"
+  BUNDLETOOL_VERSION: "1.18.3"
+  BUNDLETOOL_SHA256: a099cfa1543f55593bc2ed16a70a7c67fe54b1747bb7301f37fdfd6d91028e29
+
+jobs:
+  release:
+    name: Signed APK and AAB
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Tag = versionName
+        run: |
+          tag=${GITHUB_REF_NAME#android-v}
+          name=$(sed -n 's/^ *versionName = "\(.*\)"/\1/p' android/app/build.gradle.kts)
+          [ "${tag%%-rc.*}" = "$name" ] || { echo "::error::tag $GITHUB_REF_NAME but versionName is $name"; exit 1; }
+          echo "VERSION=$tag" >> "$GITHUB_ENV"
+      - uses: actions/setup-java@d1374f8ac74474200d16ef8ecee22c7ae7a51880 # v6.3.0
+        with:
+          distribution: temurin
+          java-version: "17"
+      - uses: gradle/actions/setup-gradle@8da46b539cd8fe6ab27ca75128919a18d757604c # v6.4.1
+        with:
+          cache-read-only: true
+      - name: Upload key and client id from secrets
+        env:
+          KEYSTORE_B64: ${{ secrets.ANDROID_UPLOAD_KEYSTORE_BASE64 }}
+          KEYSTORE_PASSWORD: ${{ secrets.ANDROID_UPLOAD_KEYSTORE_PASSWORD }}
+          KEY_ALIAS: ${{ secrets.ANDROID_UPLOAD_KEY_ALIAS }}
+          KEY_PASSWORD: ${{ secrets.ANDROID_UPLOAD_KEY_PASSWORD }}
+          CLIENT_ID: ${{ secrets.HITOP_GOOGLE_SERVER_CLIENT_ID }}
+          RUN_NUMBER: ${{ github.run_number }}
+        run: |
+          for v in KEYSTORE_B64 KEYSTORE_PASSWORD KEY_ALIAS CLIENT_ID; do
+            [ -n "${!v}" ] || { echo "::error::a secret for $v is not set (android/PLAY_STORE.md, GitHub secrets)"; exit 1; }
+          done
+          umask 077
+          printf '%s' "$KEYSTORE_B64" | base64 -d > "$RUNNER_TEMP/upload.jks"
+          {
+            echo "HITOP_UPLOAD_KEYSTORE=$RUNNER_TEMP/upload.jks"
+            echo "HITOP_UPLOAD_KEYSTORE_PASSWORD=$KEYSTORE_PASSWORD"
+            echo "HITOP_UPLOAD_KEY_ALIAS=$KEY_ALIAS"
+            echo "HITOP_UPLOAD_KEY_PASSWORD=${KEY_PASSWORD:-$KEYSTORE_PASSWORD}"
+            echo "HITOP_GOOGLE_SERVER_CLIENT_ID=$CLIENT_ID"
+            echo "HITOP_VERSION_CODE=$((1000 + RUN_NUMBER))"
+          } >> "$GITHUB_ENV"
+      - name: Rust targets, NDK, cargo-ndk, bundletool
+        run: |
+          (cd cli && rustup show)
+          rustup target add aarch64-linux-android x86_64-linux-android
+          yes | "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --install "ndk;$NDK_VERSION" > /dev/null
+          echo "ANDROID_NDK_HOME=$ANDROID_HOME/ndk/$NDK_VERSION" >> "$GITHUB_ENV"
+          cargo install cargo-ndk --version "$CARGO_NDK_VERSION" --locked
+          curl -sSfL -o "$RUNNER_TEMP/bundletool.jar" "https://github.com/google/bundletool/releases/download/$BUNDLETOOL_VERSION/bundletool-all-$BUNDLETOOL_VERSION.jar"
+          echo "$BUNDLETOOL_SHA256  $RUNNER_TEMP/bundletool.jar" | sha256sum -c -
+          echo "BUNDLETOOL=$RUNNER_TEMP/bundletool.jar" >> "$GITHUB_ENV"
+      - name: Release APK and AAB (signed, checked)
+        working-directory: android
+        run: scripts/build-release.sh
+      - name: GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          mkdir -p out
+          cp android/app/build/outputs/apk/release/app-release.apk "out/hitop-android-$VERSION.apk"
+          cp android/app/build/outputs/bundle/release/app-release.aab "out/hitop-android-$VERSION.aab"
+          (cd out && sha256sum * > SHA256SUMS)
+          pre=""; case "$VERSION" in *-rc.*) pre="--prerelease";; esac
+          # Never "Latest": that stays with the desktop release (its updater reads latest.json there).
+          gh release create "$GITHUB_REF_NAME" out/* --title "HITOP for Android $VERSION" --notes "Signed with the upload key. Google Play builds come from android-play.yml." --latest=false $pre
+      - name: Remove the key file
+        if: always()
+        run: rm -f "$RUNNER_TEMP/upload.jks"
