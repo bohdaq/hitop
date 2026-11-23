@@ -125,10 +125,14 @@ jobs:
         include:
           - api: "31"
             target: google_apis
+            gpu: swiftshader_indirect
           # The AOSP image: on the Google APIs 37.0 image the app's data directory was missing when
           # the tests ran (every file write failed with ENOENT).
           - api: "37.0"
             target: default
+            # Host-side SwiftShader aborted system_server on 37.0 (gfxstream assertion
+            # hasReadColorBufferDma while taking a task snapshot): render in the guest.
+            gpu: guest
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: actions/setup-java@d1374f8ac74474200d16ef8ecee22c7ae7a51880 # v6.3.0
@@ -162,7 +166,7 @@ jobs:
           ram-size: 4096M
           disk-size: 4096M
           emulator-boot-timeout: 900
-          emulator-options: -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -camera-back none
+          emulator-options: -no-window -gpu ${{ matrix.gpu }} -noaudio -no-boot-anim -camera-back none
           # Gradle turns animations off (testOptions.animationsDisabled).
           disable-animations: false
           working-directory: android
@@ -180,7 +184,7 @@ jobs:
           ram-size: 4096M
           disk-size: 4096M
           emulator-boot-timeout: 900
-          emulator-options: -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -camera-back none
+          emulator-options: -no-window -gpu ${{ matrix.gpu }} -noaudio -no-boot-anim -camera-back none
           # Gradle turns animations off (testOptions.animationsDisabled).
           disable-animations: false
           working-directory: android
