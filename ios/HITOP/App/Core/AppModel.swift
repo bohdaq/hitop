@@ -94,12 +94,13 @@ final class AppModel {
         globals = store.loadGlobals()
         history = store.loadHistory()
         state = store.loadState()
-        if !state.legacyImported {
+        keptDrafts = Dictionary(store.loadDrafts().map { ($0.id, $0) }, uniquingKeysWith: { _, last in last })
+        if !state.legacyImported && !store.unreadableFiles.contains("state.json") {
             if let dir = legacyDirectory { importLegacy(LegacyImport.read(from: dir)) }
             state.legacyImported = true
             persistState()
         }
-        if collections.isEmpty {
+        if collections.isEmpty && store.unreadableFiles.isEmpty {
             let mine = SavedCollection(name: AutoName.myRequests)
             collections = [mine]
             persist(mine)
@@ -651,8 +652,19 @@ final class AppModel {
         }
         guard let r = request(id) else { return nil }
         let e = RequestEditor(request: r, model: self)
+        if let kept = keptDrafts.removeValue(forKey: id), kept != r { e.draft = kept }
         editors[id] = e
         return e
+    }
+
+    /// Unsaved edits from before the app's process ended, until their request is opened.
+    @ObservationIgnored private var keptDrafts: [UInt64: SavedRequest] = [:]
+
+    /// Writes unsaved edits (the app leaves the screen: iOS may end its process).
+    func saveDrafts() {
+        var all = keptDrafts.filter { request($0.key) != nil }
+        for (id, e) in editors where e.isDirty && request(id) != nil { all[id] = e.draft }
+        try? store.saveDrafts(all.values.sorted { $0.id < $1.id })
     }
 
     /// After a rename or move from a list: an open editor takes the new name and place.

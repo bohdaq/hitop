@@ -56,6 +56,32 @@ final class LibrarySyncTests: XCTestCase {
         .object(["id": .number(Double(id)), "name": .string(name), "requests": .array(requests), "variables": .object([:])])
     }
 
+    // MARK: Damaged files
+
+    func testADamagedCollectionComesBackInsteadOfBeingDeletedInTheCloud() async throws {
+        let dir = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: dir) }
+        func start() {
+            model = AppModel(store: FileLibraryStore(root: dir), vault: vault)
+            model.load()
+            cloud = HitopCloud(transport: fake, credentials: CloudCredentials(store: secrets), settingsStore: settings)
+            sync = LibrarySync(cloud: cloud, model: model, stateStore: syncStore)
+            cloud.onAccountChange = nil
+            sync.pushDelay = .seconds(3600)
+            sync.retryDelay = .seconds(3600)
+        }
+        start()
+        let shop = model.addCollection(name: "shop-api")
+        try await signIn()
+        XCTAssertEqual(serverCollections(), ["shop-api"])
+        try Data("{".utf8).write(to: dir.appendingPathComponent("collections/\(shop.id).json"))
+        start()
+        XCTAssertNil(model.collections.first { $0.id == shop.id })
+        await sync.sync()
+        XCTAssertEqual(serverCollections(), ["shop-api"])
+        XCTAssertEqual(model.collections.first { $0.id == shop.id }?.name, "shop-api")
+    }
+
     // MARK: First link
 
     func testFirstLinkUploadsWhatIsHereButAnEmptyMyRequests() async throws {

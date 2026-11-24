@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import { applyPathVariables, cleanSettings, inheritDefaults, inheritedAuth, pathVariableNames, requestTimeout } from "../src/defaults.js";
 import { jsonPath } from "../src/json-path.js";
 import { formatBody, prettyJson, prettyXml } from "../src/format-body.js";
+import { findDamaged } from "../src/platform/local-storage.js";
 import { responseCookies, rowsToText, textToRows } from "../src/rows.js";
 
 // Inherited auth and headers: the nearest folder, then the collection; a request's none wins.
@@ -65,3 +66,16 @@ import { responseCookies, rowsToText, textToRows } from "../src/rows.js";
 }
 
 console.log("unit-ux3: all checks passed");
+
+// Stored data that can't be read: named, and copied before anything replaces it.
+{
+  const map = new Map([["hitop_collections", '[{"id": 1, "na'], ["hitop_environments", "[]"], ["hitop_globals", "[]"]]);
+  const storage = { getItem: (k) => map.get(k) ?? null, setItem: (k, v) => void map.set(k, v) };
+  assert.deepEqual([...findDamaged(storage)], ["collections", "globals"]);
+  assert.equal(map.get("hitop_collections_damaged"), '[{"id": 1, "na');
+  assert.equal(findDamaged({ getItem: () => null, setItem() {} }).size, 0);
+  assert.equal(findDamaged({ getItem() { throw new Error("blocked"); } }).size, 0);
+  const full = { getItem: (k) => (k === "hitop_collections" ? "{" : null), setItem() { throw new Error("full"); } };
+  assert.deepEqual([...findDamaged(full)], ["collections"]);
+}
+console.log("damaged storage ok");

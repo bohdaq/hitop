@@ -3,7 +3,7 @@
 // collection folders open through the File System Access API where the
 // browser has it (Chrome, Edge).
 import storageService from "../../../shared/services/storageService.js";
-import { localSaves } from "./local-storage.js";
+import { findDamaged, localSaves } from "./local-storage.js";
 import { sendRequest, usesProxy } from "../../../shared/services/transportService.js";
 import { loadEnvironments, loadGlobals, saveEnvironments, saveGlobals } from "../features.js";
 import { loadFormat } from "../wasm/format.js";
@@ -362,6 +362,7 @@ export function createPlatform() {
     // Large response bodies across reloads (IndexedDB), or null without it.
     responses: null,
     async init() {
+      this.storage.damaged = findDamaged();
       this.responses = await openResponseStore();
     },
     storage: {

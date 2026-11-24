@@ -164,6 +164,20 @@ export class Library extends EventTarget {
     return { account: key, cursor: null, known: {}, localOnly };
   }
 
+  /**
+   * Stored data that couldn't be read isn't deleted data: the library forgets this browser had it,
+   * so the next pull brings it back and no push removes or empties it.
+   */
+  forgetDamaged(damaged) {
+    if (!damaged?.size) return;
+    const known = this.state.known;
+    for (const key of Object.keys(known)) {
+      if ((damaged.has("collections") && key.startsWith("collection/")) || (damaged.has("environments") && key === "environments/all") || (damaged.has("globals") && key === "globals/all")) delete known[key];
+    }
+    this.state.cursor = null;
+    writeState(this.state);
+  }
+
   async api(method, path, body, allow = []) {
     return this.client.call(method, path, body, { allow });
   }
@@ -176,6 +190,7 @@ export class Library extends EventTarget {
     const st = platform().storage;
     const collections = st.loadCollections() || [];
     this.state = this.loadState(collections);
+    this.forgetDamaged(st.damaged);
     let r;
     try {
       r = await this.pullRaw();

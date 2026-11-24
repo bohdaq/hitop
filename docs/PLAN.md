@@ -44,7 +44,12 @@ Status is kept in the table at the end; choices made on the way go under "Decisi
 
 | # | Status |
 | --- | --- |
-| C0 | in progress |
+| C0 | built: core and CLI storage journal, damaged files kept (core, web, desktop, iOS) and never deleted from the cloud, iOS drafts; CI pending |
 | C1–C9 | not started |
 
 ## Decisions
+
+| Date | Decision | Why |
+| --- | --- | --- |
+| 2026-11-25 | Core writes its JSON files in place with a journal next to them, not by rename. | The Microsoft Store build shares files with the CLI only while they are rewritten in place (CLAUDE.md MS1). |
+| 2026-11-25 | A desktop keychain that fails marks its environments as damaged for the library. | Otherwise their empty secret values would be pushed. |

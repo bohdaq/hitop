@@ -86,6 +86,60 @@ final class StorageTests: XCTestCase {
         XCTAssertTrue(reread.loadCollections().isEmpty)
     }
 
+    func testADamagedFileIsKeptWhenItIsReplaced() throws {
+        let store = FileLibraryStore(root: dir)
+        try store.saveEnvironments([SavedEnvironment(id: "e1", name: "Staging")])
+        try Data("{\"environments\": [".utf8).write(to: dir.appendingPathComponent("environments.json"))
+        try Data("x".utf8).write(to: dir.appendingPathComponent("collections/7.json"))
+        let again = FileLibraryStore(root: dir)
+        XCTAssertTrue(again.loadEnvironments().isEmpty)
+        XCTAssertTrue(again.loadCollections().isEmpty)
+        XCTAssertEqual(again.damagedFiles, ["environments.json", "collections/7.json"])
+        try again.saveEnvironments([])
+        let kept = try FileManager.default.contentsOfDirectory(atPath: dir.path).filter { $0.hasPrefix("environments.json.damaged-") }
+        XCTAssertEqual(kept.count, 1)
+        XCTAssertEqual(try String(contentsOf: dir.appendingPathComponent(kept[0]), encoding: .utf8), "{\"environments\": [")
+        again.setAsideDamaged()
+        XCTAssertTrue(again.damagedFiles.isEmpty)
+        XCTAssertTrue(FileLibraryStore(root: dir).loadCollections().isEmpty)
+    }
+
+    func testAnUnreadableFileIsNotReplaced() throws {
+        // A folder where the file should be: there, but not readable as a file (as on a locked phone).
+        try FileManager.default.createDirectory(at: dir.appendingPathComponent("environments.json"), withIntermediateDirectories: true)
+        let store = FileLibraryStore(root: dir)
+        XCTAssertTrue(store.loadEnvironments().isEmpty)
+        XCTAssertEqual(store.unreadableFiles, ["environments.json"])
+        XCTAssertThrowsError(try store.saveEnvironments([]))
+        try FileManager.default.removeItem(at: dir.appendingPathComponent("environments.json"))
+        XCTAssertTrue(store.loadEnvironments().isEmpty)
+        XCTAssertTrue(store.damagedFiles.isEmpty)
+    }
+
+    @MainActor
+    func testUnsavedEditsOutliveTheProcess() throws {
+        func start() -> AppModel {
+            let m = AppModel(store: FileLibraryStore(root: dir), vault: MemoryVault())
+            m.load()
+            return m
+        }
+        let one = start()
+        let c = one.addCollection(name: "shop")
+        let r = try XCTUnwrap(one.newRequest(in: c.id))
+        let editor = try XCTUnwrap(one.editor(for: r.id))
+        editor.draft.url = "https://edited.test/x"
+        one.saveDrafts()
+        let two = start()
+        // Kept also when nobody opens it.
+        two.saveDrafts()
+        let three = start()
+        XCTAssertEqual(three.editor(for: r.id)?.draft.url, "https://edited.test/x")
+        XCTAssertEqual(three.editor(for: r.id)?.isDirty, true)
+        three.editor(for: r.id)?.save()
+        three.saveDrafts()
+        XCTAssertEqual(start().editor(for: r.id)?.isDirty, false)
+    }
+
     func testHistoryIsCapped() throws {
         let store = FileLibraryStore(root: dir)
         let entries = (0..<150).map { HistoryEntry(id: UInt64($0), timestamp: UInt64($0), request: SavedRequest(name: "r\($0)")) }

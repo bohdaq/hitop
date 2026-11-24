@@ -144,6 +144,23 @@ async function syncServer() {
     const url = await store(two, 'return s.collections.find((c) => c.name === "Shop API").requests[0].url;');
     check('...and the request', url === 'https://shop.e2e-library.test/orders', url);
 
+    // Stored data that can't be read is not deleted data: it comes back, and stays in the library.
+    if (process.env.HITOP_MODE !== 'tauri') {
+      await two.page.evaluate(() => {
+        const bad = localStorage.getItem('hitop_collections').slice(0, 40);
+        // After the page's own last save (pagehide), before the next page reads it.
+        window.addEventListener('pagehide', () => localStorage.setItem('hitop_collections', bad));
+        window.addEventListener('unload', () => localStorage.setItem('hitop_collections', bad));
+      });
+      await two.page.reload({ waitUntil: 'networkidle' });
+      await settle(two.page, 800);
+      await saved(two);
+      check('unreadable collections come back from the library', (await names(two)).includes('Shop API'), JSON.stringify(await names(two)));
+      const still = await (await fetch(`${server.url}/v1/library`, { headers: { Authorization: `Bearer ${await one.page.evaluate(() => document.querySelector('hitop-app').store.library.client.secret().then((x) => x.session))}` } })).json();
+      check('...are not deleted from it', still.items.some((i) => i.kind === 'collection' && i.data?.name === 'Shop API' && !i.deleted), JSON.stringify(still.items.map((i) => i.data?.name)));
+      check('...and the unreadable text is kept', Boolean(await two.page.evaluate(() => localStorage.getItem('hitop_collections_damaged'))));
+    }
+
     // An edit in browser two reaches browser one on focus.
     await store(two, `const c = s.collections.find((c) => c.name === "Shop API"); s.collections = s.collections.map((x) => x.id === c.id ? { ...x, requests: [...x.requests, { id: 102, name: "Get order", method: "GET", url: "https://shop.e2e-library.test/orders/1", headers: [], body: "" }] } : x); s.emit();`);
     await saved(two);

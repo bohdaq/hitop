@@ -90,6 +90,7 @@ final class LibrarySync {
         self.stateStore = stateStore
         self.deviceLabel = deviceLabel
         state = stateStore.load()
+        forgetDamaged()
         status.lastSync = state.lastSync
         model.onLibraryChange = { [weak self] in self?.changed() }
         cloud.onAccountChange = { [weak self] in
@@ -103,12 +104,35 @@ final class LibrarySync {
         try? stateStore.save(state)
     }
 
+    /// Files on this device that couldn't be used (`LibraryStore.damagedFiles`) aren't deleted data:
+    /// the library forgets this device had them, so the next pull brings them back and no push
+    /// removes or empties them.
+    private func forgetDamaged() {
+        let files = model.store.damagedFiles
+        let lost = state.known.keys.filter { key in
+            if key.hasPrefix("collection/") { return files.contains("collections/\(key.dropFirst("collection/".count)).json") }
+            return (key == "environments/all" && files.contains("environments.json")) || (key == "globals/all" && files.contains("globals.json"))
+        }
+        if !lost.isEmpty {
+            for key in lost { state.known.removeValue(forKey: key) }
+            state.cursor = nil
+            save()
+        }
+        model.store.setAsideDamaged()
+    }
+
     // MARK: - Account
 
     /// Linked to the signed-in account (a new account starts a new state, with the first-link rules).
     @discardableResult
     func checkAccount() -> Bool {
         let key = cloud.accountKey
+        // The library couldn't be opened (the phone was locked): read it again before anything syncs.
+        if !model.store.unreadableFiles.isEmpty {
+            model.load()
+            forgetDamaged()
+            if !model.store.unreadableFiles.isEmpty { return false }
+        }
         guard !key.isEmpty else {
             if status.on { status.on = false }
             pushTask?.cancel()

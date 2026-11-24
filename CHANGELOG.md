@@ -4,6 +4,15 @@ Releases before 1.2 are listed in ROADMAP.md (section 5) and on the GitHub Relea
 
 ## Unreleased
 
+### Data safety
+
+- Web, desktop, iOS, Android: stored collections, environments or globals that can't be read are kept aside and come back from
+  HITOP Cloud; before, the next sync could delete or empty them there.
+- CLI and desktop: `collections.json`, `environments.json`, `globals.json`, `history.json` and `contexts.json` are written through a
+  journal (`<file>.tmp`) and a cut-off write is finished at the next read; a damaged file is copied to `<file>.damaged-<time>`
+  before it is replaced. Behaviour change: the desktop no longer starts over an unreadable file without keeping it.
+- iOS: unsaved edits survive the app's process; nothing is written over files that can't be opened while the phone is locked.
+
 ### Lifecycle fixes (spec/STATE_MACHINES.md)
 
 - **Security, web app:** a send or run in another tab no longer drops the secret-manager values

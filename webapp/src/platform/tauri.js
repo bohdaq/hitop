@@ -144,14 +144,15 @@ async function syncSecrets(known, wanted, onError) {
   return known;
 }
 
-async function loadSecretValues(accounts) {
+async function loadSecretValues(accounts, onFail) {
   const out = {};
   for (const acc of accounts) {
     try {
       const v = await invoke("secret_get", { account: acc });
       if (v != null) out[acc] = v;
     } catch {
-      // no keychain: the value stays empty
+      // no keychain: the value stays empty here (and isn't emptied in HITOP Cloud)
+      onFail?.();
     }
   }
   return out;
@@ -305,18 +306,23 @@ export function createPlatform() {
       folderIds = new Set(ids);
     },
     async init() {
+      const damaged = (what, empty) => {
+        platform.storage.damaged.add(what);
+        return empty;
+      };
       const [collections, history, contexts, envs, cookies] = await Promise.all([
-        invoke("load_collections").catch(() => null),
+        // An error is a file that can't be read (hitop-core keeps it): not an empty library.
+        invoke("load_collections").catch(() => damaged("collections", null)),
         invoke("load_history").catch(() => []),
         invoke("load_contexts").catch(() => ({})),
-        invoke("load_environments").catch(() => ({ active: null, environments: [] })),
+        invoke("load_environments").catch(() => damaged("environments", { active: null, environments: [] })),
         invoke("cookies_load").catch(() => []),
       ]);
       // Large response bodies across reloads: the window's IndexedDB, as on the web.
       platform.responses = await openResponseStore();
-      const globals = await invoke("load_globals").catch(() => null);
+      const globals = await invoke("load_globals").catch(() => damaged("globals", null));
       const gNames = Array.isArray(globals?.secrets) ? globals.secrets : [];
-      knownGlobalSecrets = await loadSecretValues(gNames.map((n) => account(GLOBAL, GLOBAL, n)));
+      knownGlobalSecrets = await loadSecretValues(gNames.map((n) => account(GLOBAL, GLOBAL, n)), () => damaged("globals"));
       cache.globals = {
         variables: { ...(globals?.variables ?? {}), ...Object.fromEntries(gNames.map((n) => [n, knownGlobalSecrets[account(GLOBAL, GLOBAL, n)] ?? ""])) },
         secrets: gNames,
@@ -356,7 +362,7 @@ export function createPlatform() {
       cache.contexts = contexts && typeof contexts === "object" ? contexts : {};
       const environments = envs?.environments ?? [];
       const accounts = environments.flatMap((e) => (e.secrets || []).map((n) => account(GLOBAL, e.name, n)));
-      knownSecrets = await loadSecretValues(accounts);
+      knownSecrets = await loadSecretValues(accounts, () => damaged("environments"));
       cache.environments = {
         environments: environments.map((e) => ({
           ...e,
@@ -366,6 +372,7 @@ export function createPlatform() {
       };
     },
     storage: {
+      damaged: new Set(),
       loadCollections: () => cache.collections,
       saveCollections: (collections) => write("collections", "save_collections", { collections: collections.filter((c) => !folderIds.has(c.id)) }),
       loadTabs: storageService.loadTabs,

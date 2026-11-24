@@ -35,6 +35,7 @@ struct RootView: View {
         }
         .onChange(of: scenePhase) { _, phase in
             // Widgets and intents see what changed here (pins, environment, sends) when the app leaves.
+            if phase != .active { sync.model.saveDrafts() }
             if phase == .background { IntentBridge.services?.system.refreshWidgets() }
             if phase == .active {
                 Task {

@@ -20,6 +20,38 @@ function write(key, text) {
   }
 }
 
+// Stored text that can't be read: copied to `<key>_damaged` before anything replaces it. Returns
+// which of collections, environments and globals are damaged (the library pulls them again).
+const CHECKED = { collections: "hitop_collections", environments: "hitop_environments", globals: "hitop_globals" };
+
+export function findDamaged(storage = globalThis.localStorage) {
+  const damaged = new Set();
+  for (const [name, key] of Object.entries(CHECKED)) {
+    let text;
+    try {
+      text = storage.getItem(key);
+    } catch {
+      continue; // storage blocked: nothing is stored at all
+    }
+    if (text === null) continue;
+    let ok = false;
+    try {
+      const v = JSON.parse(text);
+      ok = name === "globals" ? v === null || (typeof v === "object" && !Array.isArray(v)) : Array.isArray(v) || v === null;
+    } catch {
+      // not JSON
+    }
+    if (ok) continue;
+    damaged.add(name);
+    try {
+      storage.setItem(`${key}_damaged`, text);
+    } catch {
+      // storage full: the damaged text stays under its own key until something is saved
+    }
+  }
+  return damaged;
+}
+
 const json = (key) => (value) => write(key, JSON.stringify(value));
 
 // Each returns true when saved, false when the browser refused (storage full or blocked).

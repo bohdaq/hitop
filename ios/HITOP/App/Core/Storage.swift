@@ -20,6 +20,26 @@ protocol LibraryStore: Sendable {
     func saveHistory(_ history: [HistoryEntry]) throws
     func loadState() -> AppState
     func saveState(_ state: AppState) throws
+    /// Unsaved edits of open requests (they outlive the app's process).
+    func loadDrafts() -> [SavedRequest]
+    func saveDrafts(_ drafts: [SavedRequest]) throws
+    /// Files that are there but couldn't be used, by name under the library folder.
+    var damagedFiles: Set<String> { get }
+    /// Files that couldn't be opened at all (the phone is locked): nothing is written over them.
+    var unreadableFiles: Set<String> { get }
+    /// Moves the damaged files aside (`<name>.damaged-<time>`).
+    func setAsideDamaged()
+}
+
+extension LibraryStore {
+    var damagedFiles: Set<String> { [] }
+    var unreadableFiles: Set<String> { [] }
+    func setAsideDamaged() {}
+}
+
+struct UnreadableFile: LocalizedError {
+    let name: String
+    var errorDescription: String? { "\(name) can't be read right now, so it isn't replaced." }
 }
 
 /// Small local state: not synced.
@@ -45,6 +65,28 @@ final class FileLibraryStore: LibraryStore, @unchecked Sendable {
     let root: URL
     private let fm = FileManager.default
     static let historyLimit = 100
+    private let lock = NSLock()
+    private var damaged: Set<String> = []
+    private var unreadable: Set<String> = []
+
+    var damagedFiles: Set<String> { lock.lock(); defer { lock.unlock() }; return damaged }
+    var unreadableFiles: Set<String> { lock.lock(); defer { lock.unlock() }; return unreadable }
+
+    private func name(_ file: URL) -> String {
+        file.deletingLastPathComponent().lastPathComponent == "collections" ? "collections/\(file.lastPathComponent)" : file.lastPathComponent
+    }
+
+    func setAsideDamaged() {
+        for n in damagedFiles { setAside(n) }
+    }
+
+    private func setAside(_ n: String) {
+        let stamp = Int(Date().timeIntervalSince1970 * 1000)
+        guard (try? fm.moveItem(at: url(n), to: url("\(n).damaged-\(stamp)"))) != nil else { return }
+        lock.lock()
+        damaged.remove(n)
+        lock.unlock()
+    }
 
     init(root: URL) {
         self.root = root
@@ -60,11 +102,22 @@ final class FileLibraryStore: LibraryStore, @unchecked Sendable {
     private func url(_ name: String) -> URL { root.appendingPathComponent(name) }
 
     private func read<T: Decodable>(_ type: T.Type, _ file: URL) -> T? {
-        guard let data = try? Data(contentsOf: file) else { return nil }
-        return try? JSONDecoder().decode(T.self, from: data)
+        guard fm.fileExists(atPath: file.path) else { return nil }
+        let n = name(file)
+        let data = try? Data(contentsOf: file)
+        let value = data.flatMap { try? JSONDecoder().decode(T.self, from: $0) }
+        lock.lock()
+        defer { lock.unlock() }
+        unreadable.remove(n)
+        damaged.remove(n)
+        if data == nil { unreadable.insert(n) } else if value == nil { damaged.insert(n) }
+        return value
     }
 
     private func write<T: Encodable>(_ value: T, _ file: URL) throws {
+        let n = name(file)
+        if unreadableFiles.contains(n) { throw UnreadableFile(name: n) }
+        if damagedFiles.contains(n) { setAside(n) }
         let enc = JSONEncoder()
         enc.outputFormatting = [.prettyPrinted, .sortedKeys, .withoutEscapingSlashes]
         try fm.createDirectory(at: file.deletingLastPathComponent(), withIntermediateDirectories: true)
@@ -103,6 +156,12 @@ final class FileLibraryStore: LibraryStore, @unchecked Sendable {
 
     func loadState() -> AppState { read(AppState.self, url("state.json")) ?? AppState() }
     func saveState(_ state: AppState) throws { try write(state, url("state.json")) }
+
+    func loadDrafts() -> [SavedRequest] { read([SavedRequest].self, url("drafts.json")) ?? [] }
+    func saveDrafts(_ drafts: [SavedRequest]) throws {
+        if drafts.isEmpty && !fm.fileExists(atPath: url("drafts.json").path) { return }
+        try write(drafts, url("drafts.json"))
+    }
 }
 
 /// Everything in memory, for tests and previews.
@@ -129,4 +188,7 @@ final class MemoryLibraryStore: LibraryStore, @unchecked Sendable {
     func saveHistory(_ h: [HistoryEntry]) throws { locked { history = Array(h.prefix(FileLibraryStore.historyLimit)) } }
     func loadState() -> AppState { locked { state } }
     func saveState(_ s: AppState) throws { locked { state = s } }
+    private var drafts: [SavedRequest] = []
+    func loadDrafts() -> [SavedRequest] { locked { drafts } }
+    func saveDrafts(_ d: [SavedRequest]) throws { locked { drafts = d } }
 }
