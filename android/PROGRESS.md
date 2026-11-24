@@ -129,7 +129,7 @@ Choices made without you, each reversible: `android/DECISIONS.md`.
 
 | Tranche | Status |
 | --- | --- |
-| B0 | in progress |
+| B0 | built: drafts on disk, Cancel, `onTimeout`, one run per service, atomic writes, damaged files kept (and never deleted from the cloud), undecryptable secrets kept; CI pending (PR 12) |
 | B1 | not started |
 | B2 | not started |
 | B3 | not started |
