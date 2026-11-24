@@ -18,8 +18,8 @@ object Shortcuts {
         val s = Widgets.snapshot(context)
         val list = s.collections.take(4).map { c ->
             ShortcutInfoCompat.Builder(context, "run-${c.collectionId}")
-                .setShortLabel("Run ${c.name}")
-                .setLongLabel("Run ${c.name} in HITOP")
+                .setShortLabel(tr(R.string.s_run, c.name))
+                .setLongLabel(tr(R.string.s_run_in_hitop, c.name))
                 .setIcon(IconCompat.createWithResource(context, R.drawable.ic_notification))
                 .setIntent(Intent(Intent.ACTION_VIEW, Uri.parse("hitop://run/${c.collectionId}"), context, MainActivity::class.java))
                 .build()

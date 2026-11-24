@@ -49,6 +49,8 @@ import tech.rws8.hitop.ui.theme.Dot
 import tech.rws8.hitop.ui.theme.Hitop
 import tech.rws8.hitop.ui.theme.HitopIcons
 import tech.rws8.hitop.ui.theme.HitopType
+import tech.rws8.hitop.R
+import tech.rws8.hitop.platform.tr
 
 @Composable
 fun HitopRoot(vm: AppViewModel, single: Boolean = false) {
@@ -81,14 +83,14 @@ private fun CrashPrompt() {
         tech.rws8.hitop.platform.CrashReport.dismiss(context)
         report = null
     }
-    InputSheet("HITOP closed unexpectedly", { done() }, actions = {
-        androidx.compose.material3.TextButton(onClick = { done() }, modifier = Modifier.testTag("crash-dismiss")) { Text("Dismiss", color = Hitop.textSecondary) }
+    InputSheet(tr(R.string.s_hitop_closed_unexpectedly), { done() }, actions = {
+        androidx.compose.material3.TextButton(onClick = { done() }, modifier = Modifier.testTag("crash-dismiss")) { Text(tr(R.string.s_dismiss), color = Hitop.textSecondary) }
         androidx.compose.material3.TextButton(onClick = {
-            runCatching { tech.rws8.hitop.platform.Incoming.share(context, "hitop-crash-report.txt", "text/plain", text.toByteArray(), "Share the crash report") }
+            runCatching { tech.rws8.hitop.platform.Incoming.share(context, "hitop-crash-report.txt", "text/plain", text.toByteArray(), tr(R.string.s_share_the_crash_report)) }
             done()
-        }, modifier = Modifier.testTag("crash-share")) { Text("Share report", color = Hitop.accent) }
+        }, modifier = Modifier.testTag("crash-share")) { Text(tr(R.string.s_share_report), color = Hitop.accent) }
     }) {
-        Text("Nothing was sent. The report below has no request, address, variable or secret in it; share it only if you want to.", style = HitopType.caption, color = Hitop.textSecondary)
+        Text(tr(R.string.s_nothing_was_sent_the_report_below_has), style = HitopType.caption, color = Hitop.textSecondary)
         Text(text, Modifier.fillMaxWidth().heightIn(max = 240.dp).verticalScroll(androidx.compose.foundation.rememberScrollState()).testTag("crash-text"), style = HitopType.monoSmall, color = Hitop.text)
     }
 }
@@ -105,10 +107,9 @@ private fun UndoBar(u: AppViewModel.Undo, modifier: Modifier, done: () -> Unit) 
     }
     androidx.compose.foundation.layout.Row(
         modifier.navigationBarsPadding().padding(start = 16.dp, end = 16.dp, bottom = 96.dp).clip(androidx.compose.foundation.shape.RoundedCornerShape(16.dp)).background(Hitop.surfaceHigh).padding(start = 16.dp).testTag("undo-bar"),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
+        verticalAlignment = Alignment.CenterVertically) {
         Text(u.label, Modifier.weight(1f, fill = false), style = HitopType.bodySmall, color = Hitop.text, maxLines = 1, overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis)
-        androidx.compose.material3.TextButton(onClick = { u.undo(); done() }, modifier = Modifier.testTag("undo")) { Text("Undo", color = Hitop.accent) }
+        androidx.compose.material3.TextButton(onClick = { u.undo(); done() }, modifier = Modifier.testTag("undo")) { Text(tr(R.string.s_undo), color = Hitop.accent) }
     }
 }
 
@@ -155,14 +156,11 @@ private fun Tabs(vm: AppViewModel) {
                         label = { Text(t.label, style = HitopType.navLabel, maxLines = 1) },
                         colors = NavigationBarItemDefaults.colors(
                             selectedIconColor = Hitop.text, selectedTextColor = Hitop.text, indicatorColor = Hitop.selected,
-                            unselectedIconColor = Hitop.textMuted, unselectedTextColor = Hitop.textMuted,
-                        ),
-                        modifier = Modifier.testTag("tab-${t.label}"),
-                    )
+                            unselectedIconColor = Hitop.textMuted, unselectedTextColor = Hitop.textMuted),
+                        modifier = Modifier.testTag("tab-${t.label}"))
                 }
             }
-        },
-    ) { padding ->
+        }) { padding ->
         Box(Modifier.padding(padding).fillMaxSize()) {
             when (vm.tab) {
                 Tab.COLLECTIONS -> CollectionsScreen(vm)
@@ -184,25 +182,23 @@ fun EnvironmentPill(vm: AppViewModel, modifier: Modifier = Modifier) {
         Row(
             Modifier.clip(RoundedCornerShape(18.dp)).background(Hitop.surface)
                 .clickable { open = true }
-                .semantics { role = Role.Button; contentDescription = "Environment: ${active?.name ?: "none"}" }
+                .semantics { role = Role.Button; contentDescription = tr(R.string.s_environment, active?.name ?: tr(R.string.s_none)) }
                 .heightIn(min = 40.dp).padding(horizontal = 14.dp)
                 .testTag("environment-pill"),
             verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(6.dp),
-        ) {
+            horizontalArrangement = Arrangement.spacedBy(6.dp)) {
             Dot(if (active == null) Hitop.textMuted else Hitop.accent)
-            Text(active?.name ?: "No environment", style = HitopType.label, color = Hitop.text)
+            Text(active?.name ?: tr(R.string.s_no_environment), style = HitopType.label, color = Hitop.text)
             Icon(HitopIcons.ChevronDown, null, tint = Hitop.textMuted, modifier = Modifier.size(14.dp))
         }
         DropdownMenu(open, { open = false }, containerColor = Hitop.surfaceHigh) {
-            DropdownMenuItem(text = { Text("No environment", color = Hitop.text) }, onClick = { vm.library.setActiveEnvironment(null); open = false })
+            DropdownMenuItem(text = { Text(tr(R.string.s_no_environment), color = Hitop.text) }, onClick = { vm.library.setActiveEnvironment(null); open = false })
             s.environments.forEach { e ->
                 DropdownMenuItem(
                     text = { Text(e.name, color = Hitop.text) },
                     leadingIcon = { if (e.id == s.activeEnvironmentId) Icon(HitopIcons.Check, null, tint = Hitop.accent) },
                     onClick = { vm.library.setActiveEnvironment(e.id); open = false },
-                    modifier = Modifier.testTag("env-option-${e.name}"),
-                )
+                    modifier = Modifier.testTag("env-option-${e.name}"))
             }
         }
     }

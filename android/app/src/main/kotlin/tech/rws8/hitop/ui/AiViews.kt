@@ -47,6 +47,8 @@ import tech.rws8.hitop.core.TestScript
 import tech.rws8.hitop.ui.theme.Hitop
 import tech.rws8.hitop.ui.theme.HitopIcons
 import tech.rws8.hitop.ui.theme.HitopType
+import tech.rws8.hitop.R
+import tech.rws8.hitop.platform.tr
 
 /** Explain a response with the on-device model; suggest tests that pass on it and add them to the request. */
 @OptIn(ExperimentalMaterial3Api::class)
@@ -73,14 +75,14 @@ fun ExplainSheet(vm: AppViewModel, collectionId: String, requestId: String, res:
         Column(Modifier.padding(horizontal = 16.dp).padding(bottom = 16.dp).navigationBarsPadding().verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(12.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Icon(HitopIcons.Sparkle, null, tint = Hitop.accent, modifier = Modifier.size(20.dp))
-                Text("  Explain response", style = HitopType.title, color = Hitop.text)
+                Text(tr(R.string.s_explain_response), style = HitopType.title, color = Hitop.text)
             }
-            Text(text.ifEmpty { if (done) "" else "Thinking on this phone…" }, style = HitopType.body, color = Hitop.onInsight,
+            Text(text.ifEmpty { if (done) "" else tr(R.string.s_thinking_on_this_phone) }, style = HitopType.body, color = Hitop.onInsight,
                 modifier = Modifier.fillMaxWidth().clip(RoundedCornerShape(16.dp)).background(Hitop.insight).padding(16.dp).testTag("explanation"))
             error?.let { Text(it, style = HitopType.caption, color = Hitop.errorText) }
-            Text("On this phone: the model sees the response with secrets and credentials hidden, and nothing leaves the device.", style = HitopType.caption, color = Hitop.textMuted)
+            Text(tr(R.string.s_on_this_phone_the_model_sees_the), style = HitopType.caption, color = Hitop.textMuted)
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                OutlinedButton(onClick = { clipboard.setText(AnnotatedString(text)) }, enabled = text.isNotEmpty()) { Text("Copy", color = Hitop.text) }
+                OutlinedButton(onClick = { clipboard.setText(AnnotatedString(text)) }, enabled = text.isNotEmpty()) { Text(tr(R.string.s_copy), color = Hitop.text) }
                 Button(onClick = {
                     suggesting = true
                     scope.launch {
@@ -93,17 +95,17 @@ fun ExplainSheet(vm: AppViewModel, collectionId: String, requestId: String, res:
                         suggesting = false
                     }
                 }, enabled = done && !suggesting, colors = ButtonDefaults.buttonColors(containerColor = Hitop.accentContainer, contentColor = Hitop.accent), modifier = Modifier.testTag("suggest-test")) {
-                    if (suggesting) CircularProgressIndicator(Modifier.size(16.dp), strokeWidth = 2.dp) else Text("Suggest a test")
+                    if (suggesting) CircularProgressIndicator(Modifier.size(16.dp), strokeWidth = 2.dp) else Text(tr(R.string.s_suggest_a_test))
                 }
             }
             script?.let { s ->
-                if (s.isEmpty()) Text("No check the model suggested holds for this response.", style = HitopType.caption, color = Hitop.textMuted)
+                if (s.isEmpty()) Text(tr(R.string.s_no_check_the_model_suggested_holds_for), style = HitopType.caption, color = Hitop.textMuted)
                 else {
                     Text(s, style = HitopType.monoSmall, color = Hitop.text, modifier = Modifier.fillMaxWidth().clip(RoundedCornerShape(12.dp)).background(Hitop.codeDeep).padding(12.dp).testTag("suggested-script"))
                     if (!vm.library.isReadOnly(collectionId)) Button(onClick = {
                         vm.edit(requestId) { it.withPost((it.postRequestScript.trimEnd() + "\n" + s).trim() + "\n") }
                         close()
-                    }, colors = ButtonDefaults.buttonColors(containerColor = Hitop.accent, contentColor = Hitop.onAccent), modifier = Modifier.testTag("add-test")) { Text("Add test to request") }
+                    }, colors = ButtonDefaults.buttonColors(containerColor = Hitop.accent, contentColor = Hitop.onAccent), modifier = Modifier.testTag("add-test")) { Text(tr(R.string.s_add_test_to_request)) }
                 }
             }
         }
@@ -117,8 +119,8 @@ fun FromTextDialog(vm: AppViewModel, initial: String = "", close: () -> Unit) {
     var text by remember { mutableStateOf(initial) }
     var busy by remember { mutableStateOf(false) }
     var note by remember { mutableStateOf<String?>(null) }
-    InputSheet("New request from text", close, actions = {
-        TextButton(onClick = close) { Text("Cancel", color = Hitop.textSecondary) }
+    InputSheet(tr(R.string.s_new_request_from_text), close, actions = {
+        TextButton(onClick = close) { Text(tr(R.string.s_cancel), color = Hitop.textSecondary) }
         TextButton(onClick = {
             scope.launch {
                 busy = true
@@ -132,10 +134,10 @@ fun FromTextDialog(vm: AppViewModel, initial: String = "", close: () -> Unit) {
                     vm.openRequest(c.id, r.id)
                 }
             }
-        }, enabled = text.isNotBlank() && !busy, modifier = Modifier.testTag("from-text-make")) { Text("Make request", color = Hitop.accent) }
+        }, enabled = text.isNotBlank() && !busy, modifier = Modifier.testTag("from-text-make")) { Text(tr(R.string.s_make_request), color = Hitop.accent) }
     }) {
-        Text(if (vm.aiReady) "Paste a curl command, or describe the request (\"list open orders\")." else "Paste a curl command. Describing a request needs the on-device model, which this phone doesn't have.", style = HitopType.caption, color = Hitop.textSecondary)
-        CodeEditor(text, { text = it }, label = "from-text", placeholder = "curl https://… or a description", minHeight = 120, ground = Hitop.surface, style = HitopType.monoSmall)
+        Text(if (vm.aiReady) tr(R.string.s_paste_a_curl_command_or_describe_the) else tr(R.string.s_paste_a_curl_command_describing_a_request), style = HitopType.caption, color = Hitop.textSecondary)
+        CodeEditor(text, { text = it }, label = "from-text", placeholder = tr(R.string.s_curl_https_or_a_description), minHeight = 120, ground = Hitop.surface, style = HitopType.monoSmall)
         note?.let { Text(it, style = HitopType.caption, color = Hitop.warning, modifier = Modifier.testTag("from-text-note")) }
     }
 }

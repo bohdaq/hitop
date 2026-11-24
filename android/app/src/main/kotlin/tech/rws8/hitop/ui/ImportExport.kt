@@ -36,6 +36,8 @@ import tech.rws8.hitop.core.Request
 import tech.rws8.hitop.platform.Incoming
 import tech.rws8.hitop.ui.theme.Hitop
 import tech.rws8.hitop.ui.theme.HitopType
+import tech.rws8.hitop.R
+import tech.rws8.hitop.platform.tr
 
 /** The document at [url], fetched as any request (kept out of the history). */
 private suspend fun fetch(vm: AppViewModel, url: String): String {
@@ -80,26 +82,26 @@ fun ImportSheet(vm: AppViewModel, start: ImportSource?, close: () -> Unit) {
         }
     }
     val p = plan
-    InputSheet("Import", close, actions = {
-        TextButton(onClick = close) { Text("Cancel", color = Hitop.textSecondary) }
-        if (p != null) TextButton(onClick = { vm.library.applyImport(p); close() }, enabled = !p.isEmpty, modifier = Modifier.testTag("import-apply")) { Text("Import", color = Hitop.accent) }
-        else TextButton(onClick = { load { val t = fetch(vm, url); withContext(Dispatchers.IO) { Importing.read(t, url.trim()) } } }, enabled = url.isNotBlank() && !busy, modifier = Modifier.testTag("import-load")) { Text("Load", color = Hitop.accent) }
+    InputSheet(tr(R.string.s_import), close, actions = {
+        TextButton(onClick = close) { Text(tr(R.string.s_cancel), color = Hitop.textSecondary) }
+        if (p != null) TextButton(onClick = { vm.library.applyImport(p); close() }, enabled = !p.isEmpty, modifier = Modifier.testTag("import-apply")) { Text(tr(R.string.s_import), color = Hitop.accent) }
+        else TextButton(onClick = { load { val t = fetch(vm, url); withContext(Dispatchers.IO) { Importing.read(t, url.trim()) } } }, enabled = url.isNotBlank() && !busy, modifier = Modifier.testTag("import-load")) { Text(tr(R.string.s_load), color = Hitop.accent) }
     }) {
         if (p == null) {
-            Text("A Postman collection or environment, an OpenAPI document, a HITOP export, or a collection folder as a zip.", style = HitopType.caption, color = Hitop.textSecondary)
-            OutlinedButton(onClick = { pick.launch(arrayOf("*/*")) }, enabled = !busy, modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp).testTag("import-file")) { Text("Choose a file", color = Hitop.text) }
-            SmallField(url, { url = it }, "Or the address of an OpenAPI document", Modifier.fillMaxWidth().testTag("import-url"))
-            if (busy) Text("Reading…", style = HitopType.caption, color = Hitop.textMuted)
+            Text(tr(R.string.s_a_postman_collection_or_environment_an_openapi), style = HitopType.caption, color = Hitop.textSecondary)
+            OutlinedButton(onClick = { pick.launch(arrayOf("*/*")) }, enabled = !busy, modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp).testTag("import-file")) { Text(tr(R.string.s_choose_a_file), color = Hitop.text) }
+            SmallField(url, { url = it }, tr(R.string.s_or_the_address_of_an_openapi_document), Modifier.fillMaxWidth().testTag("import-url"))
+            if (busy) Text(tr(R.string.s_reading), style = HitopType.caption, color = Hitop.textMuted)
         } else {
             Column(Modifier.heightIn(max = 360.dp).verticalScroll(rememberScrollState()).testTag("import-plan"), verticalArrangement = Arrangement.spacedBy(6.dp)) {
                 Text(p.title, style = HitopType.label, color = Hitop.accent)
-                p.collections.forEach { c -> Text("${c.name} · ${c.requests.size} ${if (c.requests.size == 1) "request" else "requests"}", style = HitopType.body, color = Hitop.text) }
-                p.environments.forEach { e -> Text("Environment ${e.environment.name} · ${e.environment.variables.size + e.environment.secrets.count { it !in e.environment.variables }} variables", style = HitopType.body, color = Hitop.text) }
-                p.globals?.let { g -> Text("Globals · ${g.environment.variables.size + g.environment.secrets.count { it !in g.environment.variables }} variables", style = HitopType.body, color = Hitop.text) }
-                if (p.isEmpty) Text("There is nothing to import in it.", style = HitopType.caption, color = Hitop.warning)
+                p.collections.forEach { c -> Text("${c.name} · ${c.requests.size} ${if (c.requests.size == 1) tr(R.string.s_request) else tr(R.string.s_requests)}", style = HitopType.body, color = Hitop.text) }
+                p.environments.forEach { e -> Text(tr(R.string.s_environment_variables, e.environment.name, e.environment.variables.size + e.environment.secrets.count { it !in e.environment.variables }), style = HitopType.body, color = Hitop.text) }
+                p.globals?.let { g -> Text(tr(R.string.s_globals_variables, g.environment.variables.size + g.environment.secrets.count { it !in g.environment.variables }), style = HitopType.body, color = Hitop.text) }
+                if (p.isEmpty) Text(tr(R.string.s_there_is_nothing_to_import_in_it), style = HitopType.caption, color = Hitop.warning)
                 p.issues.forEach { Text(it, style = HitopType.caption, color = Hitop.warning) }
             }
-            Text("It is added; nothing here is replaced. Secret values go to this phone's keystore.", style = HitopType.caption, color = Hitop.textMuted)
+            Text(tr(R.string.s_it_is_added_nothing_here_is_replaced), style = HitopType.caption, color = Hitop.textMuted)
         }
         error?.let { Text(it, style = HitopType.caption, color = Hitop.errorText, modifier = Modifier.testTag("import-error")) }
     }
@@ -120,7 +122,7 @@ fun ExportSheet(c: Collection, close: () -> Unit) {
         scope.launch {
             try {
                 val bytes = withContext(Dispatchers.IO) { make() }
-                Incoming.share(context, c.name.ifBlank { "collection" } + suffix, type, bytes, "Share ${c.name}")
+                Incoming.share(context, c.name.ifBlank { "collection" } + suffix, type, bytes, tr(R.string.s_share_2, c.name))
                 close()
             } catch (e: CancellationException) {
                 throw e
@@ -129,11 +131,11 @@ fun ExportSheet(c: Collection, close: () -> Unit) {
             }
         }
     }
-    InputSheet("Export ${c.name}", close, actions = { TextButton(onClick = close) { Text("Cancel", color = Hitop.textSecondary) } }) {
-        Text("Environments and secret values aren't included. Anything typed directly into a request is.", style = HitopType.caption, color = Hitop.textSecondary)
-        OutlinedButton(onClick = { share(".zip", "application/zip") { Importing.exportZip(c) } }, modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp).testTag("export-zip")) { Text("Collection folder (zip)", color = Hitop.text) }
-        OutlinedButton(onClick = { share(".hitop.json", "application/json") { Importing.exportJson(c, "hitop").toByteArray() } }, modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp).testTag("export-hitop")) { Text("HITOP JSON", color = Hitop.text) }
-        OutlinedButton(onClick = { share(".postman_collection.json", "application/json") { Importing.exportJson(c, "postman").toByteArray() } }, modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp).testTag("export-postman")) { Text("Postman v2.1", color = Hitop.text) }
+    InputSheet(tr(R.string.s_export_2, c.name), close, actions = { TextButton(onClick = close) { Text(tr(R.string.s_cancel), color = Hitop.textSecondary) } }) {
+        Text(tr(R.string.s_environments_and_secret_values_aren_t_included), style = HitopType.caption, color = Hitop.textSecondary)
+        OutlinedButton(onClick = { share(".zip", "application/zip") { Importing.exportZip(c) } }, modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp).testTag("export-zip")) { Text(tr(R.string.s_collection_folder_zip), color = Hitop.text) }
+        OutlinedButton(onClick = { share(".hitop.json", "application/json") { Importing.exportJson(c, "hitop").toByteArray() } }, modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp).testTag("export-hitop")) { Text(tr(R.string.s_hitop_json), color = Hitop.text) }
+        OutlinedButton(onClick = { share(".postman_collection.json", "application/json") { Importing.exportJson(c, "postman").toByteArray() } }, modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp).testTag("export-postman")) { Text(tr(R.string.s_postman_v2_1), color = Hitop.text) }
         error?.let { Text(it, style = HitopType.caption, color = Hitop.errorText) }
     }
 }
@@ -166,25 +168,25 @@ fun SpecSyncSheet(vm: AppViewModel, c: Collection, close: () -> Unit) {
         if (uri != null) preview { withContext(Dispatchers.IO) { String(Incoming.read(context, uri), Charsets.UTF_8) } }
     }
     val s = sync
-    InputSheet("Sync ${c.name} with OpenAPI", close, actions = {
-        TextButton(onClick = close) { Text("Cancel", color = Hitop.textSecondary) }
-        if (s == null) TextButton(onClick = { preview { fetch(vm, url) } }, enabled = url.isNotBlank(), modifier = Modifier.testTag("spec-preview")) { Text("Preview", color = Hitop.accent) }
-        else TextButton(onClick = { vm.library.replaceCollection(s.collection); close() }, enabled = !s.empty, modifier = Modifier.testTag("spec-apply")) { Text("Apply", color = Hitop.accent) }
+    InputSheet(tr(R.string.s_sync_with_openapi_2, c.name), close, actions = {
+        TextButton(onClick = close) { Text(tr(R.string.s_cancel), color = Hitop.textSecondary) }
+        if (s == null) TextButton(onClick = { preview { fetch(vm, url) } }, enabled = url.isNotBlank(), modifier = Modifier.testTag("spec-preview")) { Text(tr(R.string.s_preview), color = Hitop.accent) }
+        else TextButton(onClick = { vm.library.replaceCollection(s.collection); close() }, enabled = !s.empty, modifier = Modifier.testTag("spec-apply")) { Text(tr(R.string.s_apply), color = Hitop.accent) }
     }) {
         if (s == null) {
-            SmallField(url, { url = it }, "Address of the OpenAPI document", Modifier.fillMaxWidth().testTag("spec-url"))
-            OutlinedButton(onClick = { pick.launch(arrayOf("*/*")) }, modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)) { Text("Choose a file", color = Hitop.text) }
+            SmallField(url, { url = it }, tr(R.string.s_address_of_the_openapi_document), Modifier.fillMaxWidth().testTag("spec-url"))
+            OutlinedButton(onClick = { pick.launch(arrayOf("*/*")) }, modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)) { Text(tr(R.string.s_choose_a_file), color = Hitop.text) }
         } else {
             Column(Modifier.heightIn(max = 320.dp).verticalScroll(rememberScrollState()).testTag("spec-diff"), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                if (s.empty) Text("Nothing to change.", style = HitopType.body, color = Hitop.text)
-                s.added.forEach { Text("+ $it", style = HitopType.monoSmall, color = Hitop.success) }
-                s.changed.forEach { Text("~ $it", style = HitopType.monoSmall, color = Hitop.text) }
-                s.removed.forEach { Text("− $it" + if (prune) "" else " (stays here)", style = HitopType.monoSmall, color = Hitop.warning) }
-                Text("${s.unchanged} unchanged", style = HitopType.caption, color = Hitop.textMuted)
+                if (s.empty) Text(tr(R.string.s_nothing_to_change), style = HitopType.body, color = Hitop.text)
+                s.added.forEach { Text("+ ${it}", style = HitopType.monoSmall, color = Hitop.success) }
+                s.changed.forEach { Text("~ ${it}", style = HitopType.monoSmall, color = Hitop.text) }
+                s.removed.forEach { Text("− ${it}" + if (prune) "" else tr(R.string.s_stays_here), style = HitopType.monoSmall, color = Hitop.warning) }
+                Text(tr(R.string.s_unchanged, s.unchanged), style = HitopType.caption, color = Hitop.textMuted)
             }
             if (s.removed.isNotEmpty()) Row(verticalAlignment = Alignment.CenterVertically) {
                 Checkbox(prune, { prune = it; text?.let { t -> preview { t } } }, modifier = Modifier.testTag("spec-prune"))
-                Text("Delete requests no longer in the document", style = HitopType.bodySmall, color = Hitop.text)
+                Text(tr(R.string.s_delete_requests_no_longer_in_the_document), style = HitopType.bodySmall, color = Hitop.text)
             }
         }
         error?.let { Text(it, style = HitopType.caption, color = Hitop.errorText) }

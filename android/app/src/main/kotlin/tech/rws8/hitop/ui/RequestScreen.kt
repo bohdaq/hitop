@@ -70,6 +70,8 @@ import tech.rws8.hitop.ui.theme.HitopIcons
 import tech.rws8.hitop.ui.theme.HitopType
 import tech.rws8.hitop.ui.theme.MethodColors
 import tech.rws8.hitop.ui.theme.MethodTag
+import tech.rws8.hitop.R
+import tech.rws8.hitop.platform.tr
 
 private val EDITOR_TABS = listOf("Params", "Headers", "Body", "Auth", "Scripts", "Tests")
 private val WS_TABS = listOf("Params", "Headers", "Messages", "Auth")
@@ -82,7 +84,7 @@ fun RequestScreen(vm: AppViewModel, collectionId: String, requestId: String) {
     val c = s.collection(collectionId)
     val r = vm.draft(requestId)
     if (c == null || r == null) {
-        Text("This request was deleted.", Modifier.statusBarsPadding().padding(16.dp), color = Hitop.textMuted)
+        Text(tr(R.string.s_this_request_was_deleted), Modifier.statusBarsPadding().padding(16.dp), color = Hitop.textMuted)
         return
     }
     val tabs = when { r.isWebSocket -> WS_TABS; r.isGrpc -> GRPC_TABS; else -> EDITOR_TABS }
@@ -99,29 +101,29 @@ fun RequestScreen(vm: AppViewModel, collectionId: String, requestId: String) {
 
     Column(Modifier.fillMaxSize().background(Hitop.ground).statusBarsPadding().imePadding()) {
         Row(Modifier.padding(start = 8.dp, end = 8.dp, top = 8.dp, bottom = 8.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-            if (!LocalResponsePane.current) IconButton(onClick = { vm.pop() }, modifier = Modifier.testTag("back")) { Icon(HitopIcons.Back, "Back", tint = Hitop.text) }
+            if (!LocalResponsePane.current) IconButton(onClick = { vm.pop() }, modifier = Modifier.testTag("back")) { Icon(HitopIcons.Back, tr(R.string.s_back), tint = Hitop.text) }
             Column(Modifier.weight(1f)) {
                 Text(title, style = HitopType.title, color = Hitop.text, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.semantics { heading() }.testTag("request-title"))
-                Text(listOf(c.name, r.folder).filter { it.isNotEmpty() }.joinToString(" › ") + if (viewOnly) " · View only" else if (dirty) " · unsaved" else "", style = HitopType.caption, color = Hitop.textMuted, maxLines = 1)
+                Text(listOf(c.name, r.folder).filter { it.isNotEmpty() }.joinToString(" › ") + if (viewOnly) tr(R.string.s_view_only) else if (dirty) tr(R.string.s_unsaved) else "", style = HitopType.caption, color = Hitop.textMuted, maxLines = 1)
             }
             if (!viewOnly) IconButton(onClick = { vm.save(collectionId, requestId) }, enabled = dirty || requestId in s.autoNamed, modifier = Modifier.testTag("save")) {
-                Icon(HitopIcons.Save, if (dirty) "Save changes" else "Saved", tint = if (dirty) Hitop.accent else Hitop.textMuted)
+                Icon(HitopIcons.Save, if (dirty) tr(R.string.s_save_changes) else tr(R.string.s_saved), tint = if (dirty) Hitop.accent else Hitop.textMuted)
             }
             Box {
-                IconButton(onClick = { menu = true }, modifier = Modifier.testTag("request-more")) { Icon(HitopIcons.More, "More", tint = Hitop.text) }
+                IconButton(onClick = { menu = true }, modifier = Modifier.testTag("request-more")) { Icon(HitopIcons.More, tr(R.string.s_more), tint = Hitop.text) }
                 DropdownMenu(menu, { menu = false }, containerColor = Hitop.surfaceHigh) {
-                    DropdownMenuItem(text = { Text("Rename", color = Hitop.text) }, onClick = {
+                    DropdownMenuItem(text = { Text(tr(R.string.s_rename), color = Hitop.text) }, onClick = {
                         menu = false
-                        dialog = { TextDialog("Rename request", r.name, "Rename", { dialog = null }) { n -> vm.save(collectionId, requestId); vm.library.renameRequest(requestId, n); dialog = null } }
+                        dialog = { TextDialog(tr(R.string.s_rename_request), r.name, tr(R.string.s_rename), { dialog = null }) { n -> vm.save(collectionId, requestId); vm.library.renameRequest(requestId, n); dialog = null } }
                     })
-                    DropdownMenuItem(text = { Text(if (requestId in s.pins) "Unpin" else "Pin", color = Hitop.text) }, onClick = { menu = false; vm.library.togglePin(requestId) })
-                    DropdownMenuItem(text = { Text("Duplicate", color = Hitop.text) }, onClick = { menu = false; vm.library.duplicateRequest(requestId)?.let { vm.openRequest(collectionId, it.id) } })
-                    if (vm.shared.link(collectionId) != null) DropdownMenuItem(text = { Text("Comments", color = Hitop.text) }, onClick = { menu = false; dialog = { CommentsSheet(vm, collectionId, requestId) { dialog = null } } }, modifier = Modifier.testTag("comments-menu"))
-                    if (r.examples.isNotEmpty()) DropdownMenuItem(text = { Text("Examples (${r.examples.size})", color = Hitop.text) }, onClick = { menu = false; dialog = { ExamplesSheet(vm, collectionId, requestId) { dialog = null } } }, modifier = Modifier.testTag("examples"))
-                    if (dirty) DropdownMenuItem(text = { Text("Discard changes", color = Hitop.text) }, onClick = { menu = false; vm.discard(requestId) })
-                    DropdownMenuItem(text = { Text("Delete", color = Hitop.error) }, onClick = {
+                    DropdownMenuItem(text = { Text(if (requestId in s.pins) tr(R.string.s_unpin) else tr(R.string.s_pin), color = Hitop.text) }, onClick = { menu = false; vm.library.togglePin(requestId) })
+                    DropdownMenuItem(text = { Text(tr(R.string.s_duplicate), color = Hitop.text) }, onClick = { menu = false; vm.library.duplicateRequest(requestId)?.let { vm.openRequest(collectionId, it.id) } })
+                    if (vm.shared.link(collectionId) != null) DropdownMenuItem(text = { Text(tr(R.string.s_comments), color = Hitop.text) }, onClick = { menu = false; dialog = { CommentsSheet(vm, collectionId, requestId) { dialog = null } } }, modifier = Modifier.testTag("comments-menu"))
+                    if (r.examples.isNotEmpty()) DropdownMenuItem(text = { Text(tr(R.string.s_examples_2, r.examples.size), color = Hitop.text) }, onClick = { menu = false; dialog = { ExamplesSheet(vm, collectionId, requestId) { dialog = null } } }, modifier = Modifier.testTag("examples"))
+                    if (dirty) DropdownMenuItem(text = { Text(tr(R.string.s_discard_changes), color = Hitop.text) }, onClick = { menu = false; vm.discard(requestId) })
+                    DropdownMenuItem(text = { Text(tr(R.string.s_delete), color = Hitop.error) }, onClick = {
                         menu = false
-                        dialog = { ConfirmDialog("Delete ${r.name}?", "It is deleted from ${c.name} on this phone.", "Delete", { dialog = null }) { dialog = null; vm.pop(); vm.undoable("Deleted ${r.name}") { vm.library.deleteRequest(requestId) }; vm.discard(requestId) } }
+                        dialog = { ConfirmDialog(tr(R.string.s_delete_2, r.name), tr(R.string.s_it_is_deleted_from_on_this_phone, c.name), tr(R.string.s_delete), { dialog = null }) { dialog = null; vm.pop(); vm.undoable(tr(R.string.s_deleted, r.name)) { vm.library.deleteRequest(requestId) }; vm.discard(requestId) } }
                     })
                 }
             }
@@ -132,13 +134,13 @@ fun RequestScreen(vm: AppViewModel, collectionId: String, requestId: String) {
                 MethodMenu(tech.rws8.hitop.core.Modes.of(r)) { m -> edit { tech.rws8.hitop.core.Modes.set(it, m) } }
                 EnvironmentPill(vm)
             }
-            CodeEditor(r.url, { u -> edit { it.withUrl(u.replace("\n", "")) } }, label = "URL", placeholder = "https://api.example.com/path", minHeight = 0, ground = Hitop.surface)
+            CodeEditor(r.url, { u -> edit { it.withUrl(u.replace("\n", "")) } }, label = tr(R.string.s_url), placeholder = "https://api.example.com/path", minHeight = 0, ground = Hitop.surface)
             val vars = Variables.names(r.url + "\n" + r.body + "\n" + r.headers.joinToString { it.value })
             if (vars.isNotEmpty()) {
                 Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                     vars.forEach { v ->
-                        Text("\${$v}", style = HitopType.monoSmall, color = Hitop.accent,
-                            modifier = Modifier.clip(RoundedCornerShape(8.dp)).background(Hitop.accentContainer).clickable(onClickLabel = "Show its value") { peek = if (peek == v) null else v }.heightIn(min = 32.dp).padding(horizontal = 10.dp, vertical = 8.dp).testTag("var-$v"))
+                        Text("\${${v}}", style = HitopType.monoSmall, color = Hitop.accent,
+                            modifier = Modifier.clip(RoundedCornerShape(8.dp)).background(Hitop.accentContainer).clickable(onClickLabel = tr(R.string.s_show_its_value)) { peek = if (peek == v) null else v }.heightIn(min = 32.dp).padding(horizontal = 10.dp, vertical = 8.dp).testTag("var-$v"))
                     }
                 }
             }
@@ -149,8 +151,7 @@ fun RequestScreen(vm: AppViewModel, collectionId: String, requestId: String) {
             selectedTabIndex = tabs.indexOf(tab),
             containerColor = Hitop.ground, contentColor = Hitop.text, edgePadding = 8.dp,
             indicator = { TabRowDefaults.PrimaryIndicator(Modifier.tabIndicatorOffset(tabs.indexOf(tab), matchContentSize = false), color = Hitop.accent, width = 48.dp) },
-            divider = { Box(Modifier.fillMaxWidth().height(1.dp).background(Hitop.divider)) },
-        ) {
+            divider = { Box(Modifier.fillMaxWidth().height(1.dp).background(Hitop.divider)) }) {
             tabs.forEach { t ->
                 val count = when (t) {
                     "Headers", "Metadata" -> r.headers.count { it.enabled }.takeIf { it > 0 }
@@ -158,7 +159,7 @@ fun RequestScreen(vm: AppViewModel, collectionId: String, requestId: String) {
                     else -> null
                 }
                 Tab(selected = tab == t, onClick = { tab = t }, modifier = Modifier.testTag("editor-tab-$t"),
-                    text = { Text(if (count != null) "$t $count" else t, style = HitopType.bodySmall, color = if (tab == t) Hitop.text else Hitop.textMuted) })
+                    text = { Text(if (count != null) "${t} ${count}" else t, style = HitopType.bodySmall, color = if (tab == t) Hitop.text else Hitop.textMuted) })
             }
         }
 
@@ -171,19 +172,19 @@ fun RequestScreen(vm: AppViewModel, collectionId: String, requestId: String) {
                 "Service" -> GrpcTab(vm, collectionId, r, edit)
                 "Auth" -> AuthTab(vm, r, c.auth, edit)
                 "Scripts" -> {
-                    Text("Runs before the request is sent: set variables with pm.environment.set, change the request.", style = HitopType.caption, color = Hitop.textMuted)
-                    CodeEditor(r.preRequestScript, { v -> edit { it.withPre(v) } }, label = "Pre-request script", placeholder = "pm.environment.set(\"ts\", Date.now())", minHeight = 220)
+                    Text(tr(R.string.s_runs_before_the_request_is_sent_set), style = HitopType.caption, color = Hitop.textMuted)
+                    CodeEditor(r.preRequestScript, { v -> edit { it.withPre(v) } }, label = tr(R.string.s_pre_request_script), placeholder = tr(R.string.s_pm_environment_set_ts_date_now), minHeight = 220)
                 }
                 "Tests" -> {
-                    Text("Runs after the response: pm.test with pm.expect, as in Postman.", style = HitopType.caption, color = Hitop.textMuted)
-                    CodeEditor(r.postRequestScript, { v -> edit { it.withPost(v) } }, label = "Tests script", placeholder = "pm.test(\"Status is 200\", () => pm.response.to.have.status(200));", minHeight = 220)
+                    Text(tr(R.string.s_runs_after_the_response_pm_test_with), style = HitopType.caption, color = Hitop.textMuted)
+                    CodeEditor(r.postRequestScript, { v -> edit { it.withPost(v) } }, label = tr(R.string.s_tests_script), placeholder = tr(R.string.s_pm_test_status_is_200_pm_response), minHeight = 220)
                 }
             }
         }
 
         Row(Modifier.navigationBarsPadding().padding(start = 16.dp, end = 16.dp, top = 12.dp, bottom = 16.dp), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
             OutlinedButton(onClick = { showCode = true }, modifier = Modifier.height(56.dp).testTag("code"), shape = RoundedCornerShape(28.dp), border = androidx.compose.foundation.BorderStroke(1.dp, Hitop.border)) {
-                Text("Code", style = HitopType.body, color = Hitop.text)
+                Text(tr(R.string.s_code), style = HitopType.body, color = Hitop.text)
             }
             val busy = vm.sending[requestId] == true
             val live = r.isWebSocket || r.isGrpc || r.tag == "SSE"
@@ -191,11 +192,10 @@ fun RequestScreen(vm: AppViewModel, collectionId: String, requestId: String) {
                 onClick = { if (busy) vm.cancelSend(requestId) else if (live) vm.startLive(collectionId, requestId) else vm.send(collectionId, requestId) },
                 modifier = Modifier.weight(1f).height(56.dp).testTag("send"),
                 shape = RoundedCornerShape(28.dp),
-                colors = ButtonDefaults.buttonColors(containerColor = Hitop.accent, contentColor = Hitop.onAccent, disabledContainerColor = Hitop.accentContainer, disabledContentColor = Hitop.textMuted),
-            ) {
+                colors = ButtonDefaults.buttonColors(containerColor = Hitop.accent, contentColor = Hitop.onAccent, disabledContainerColor = Hitop.accentContainer, disabledContentColor = Hitop.textMuted)) {
                 if (busy) CircularProgressIndicator(Modifier.size(20.dp), color = Hitop.onAccent, strokeWidth = 2.dp) else Icon(HitopIcons.Send, null, modifier = Modifier.size(20.dp))
                 Spacer(Modifier.width(10.dp))
-                Text(if (busy) "Cancel" else if (r.isWebSocket) "Connect" else if (r.isGrpc) "Call" else "Send", style = HitopType.button)
+                Text(if (busy) tr(R.string.s_cancel) else if (r.isWebSocket) tr(R.string.s_connect) else if (r.isGrpc) tr(R.string.s_call) else tr(R.string.s_send_2), style = HitopType.button)
             }
         }
     }
@@ -222,9 +222,8 @@ private fun MethodMenu(method: String, onPick: (String) -> Unit) {
     Box {
         Row(
             Modifier.clip(RoundedCornerShape(12.dp)).background(MethodColors.container(tag)).clickable { open = true }.heightIn(min = 40.dp).padding(horizontal = 12.dp)
-                .semantics { contentDescription = "Method $method" }.testTag("method"),
-            verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp),
-        ) {
+                .semantics { contentDescription = tr(R.string.s_method_2, method) }.testTag("method"),
+            verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
             Text(tag, style = HitopType.method.copy(fontSize = HitopType.label.fontSize), color = MethodColors.of(tag))
             Icon(HitopIcons.ChevronDown, null, tint = MethodColors.of(tag), modifier = Modifier.size(14.dp))
         }
@@ -242,17 +241,16 @@ private fun PeekCard(vm: AppViewModel, collectionId: String, name: String, close
     var show by remember(name) { mutableStateOf(false) }
     Row(
         Modifier.fillMaxWidth().clip(RoundedCornerShape(16.dp)).background(Hitop.surface).padding(horizontal = 14.dp, vertical = 10.dp).testTag("peek"),
-        verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp),
-    ) {
+        verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
         Icon(HitopIcons.Sparkle, null, tint = Hitop.accent, modifier = Modifier.size(18.dp))
         val value = when {
             p.value == null -> "no value"
             p.secret && !show -> "••••••"
             else -> p.value
         }
-        Text("$name = $value · ${if (p.scope == null) p.where else "from ${p.where}"}", Modifier.weight(1f), style = HitopType.caption, color = Hitop.textSecondary)
-        if (p.secret && p.value != null) TextButton(onClick = { show = !show }) { Text(if (show) "Hide" else "Show", color = Hitop.accent) }
-        IconButton(onClick = close) { Icon(HitopIcons.Close, "Close", tint = Hitop.textMuted, modifier = Modifier.size(16.dp)) }
+        Text("${name} = ${value} · ${if (p.scope == null) p.where else tr(R.string.s_from_2, p.where)}", Modifier.weight(1f), style = HitopType.caption, color = Hitop.textSecondary)
+        if (p.secret && p.value != null) TextButton(onClick = { show = !show }) { Text(if (show) tr(R.string.s_hide) else tr(R.string.s_show), color = Hitop.accent) }
+        IconButton(onClick = close) { Icon(HitopIcons.Close, tr(R.string.s_close), tint = Hitop.textMuted, modifier = Modifier.size(16.dp)) }
     }
 }
 
@@ -275,7 +273,7 @@ private fun ParamsTab(r: Request, edit: ((Request) -> Request) -> Unit) {
     val rows = queryOf(r.url).map { Triple(it.first, it.second, true) } + r.disabledParams.map { Triple(it.key, it.value, false) }
     KeyValueRows(rows, { list ->
         edit { it.withUrl(withQuery(it.url, list.filter { t -> t.third }.map { t -> t.first to t.second })).withDisabledParams(list.filter { t -> !t.third }.map { t -> ParamRow(t.first, t.second) }) }
-    }, "Parameter", "Value", "Add parameter")
+    }, tr(R.string.s_parameter), tr(R.string.s_value), tr(R.string.s_add_parameter))
 }
 
 @Composable
@@ -283,10 +281,10 @@ private fun HeadersTab(r: Request, collectionAuth: Auth?, edit: ((Request) -> Re
     val extras = r.headers.map { it.extra }
     KeyValueRows(r.headers.map { Triple(it.name, it.value, it.enabled) }, { list ->
         edit { it.withHeaders(list.mapIndexed { i, t -> Header(t.first, t.second, t.third, extras.getOrNull(i) ?: tech.rws8.hitop.core.EmptyObject) }) }
-    }, "Header", "Value", "Add header")
+    }, tr(R.string.s_header), tr(R.string.s_value), tr(R.string.s_add_header))
     val auth = r.auth ?: collectionAuth
     if (auth != null && auth.type != "none") {
-        Text("Auth adds its own header (${auth.type}${if (r.auth == null) ", from the collection" else ""}).", style = HitopType.caption, color = Hitop.textMuted)
+        Text(tr(R.string.s_auth_adds_its_own_header, auth.type, if (r.auth == null) tr(R.string.s_from_the_collection) else ""), style = HitopType.caption, color = Hitop.textMuted)
     }
 }
 
@@ -297,13 +295,13 @@ private fun BodyTab(vm: AppViewModel, r: Request, edit: ((Request) -> Request) -
     ChipRow(kinds.map { it.label }, kind.label, { l -> edit { it.withBodyKind(kinds.first { k -> k.label == l }) } })
     when (kind) {
         BodyKind.JSON, BodyKind.TEXT -> {
-            CodeEditor(r.body, { v -> edit { it.withBody(v) } }, json = kind == BodyKind.JSON, label = "Body", placeholder = if (kind == BodyKind.JSON) "{ \"key\": \"value\" }" else "Text to send", minHeight = 240)
+            CodeEditor(r.body, { v -> edit { it.withBody(v) } }, json = kind == BodyKind.JSON, label = tr(R.string.s_body), placeholder = if (kind == BodyKind.JSON) tr(R.string.s_key_value) else tr(R.string.s_text_to_send), minHeight = 240)
             if (kind == BodyKind.JSON && r.body.isNotBlank()) {
                 val valid = remember(r.body) { JsonOutline.parse(r.body.replace(Regex("\\$\\{[^}]+\\}"), "0")) != null || runCatching { tech.rws8.hitop.core.HitopJson.parseToJsonElement(r.body.replace(Regex("\\$\\{[^}]+\\}"), "0")) }.isSuccess }
                 Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    Text(if (valid) "Valid JSON" else "Not valid JSON yet", style = HitopType.caption, color = if (valid) Hitop.success else Hitop.warning)
+                    Text(if (valid) tr(R.string.s_valid_json) else tr(R.string.s_not_valid_json_yet), style = HitopType.caption, color = if (valid) Hitop.success else Hitop.warning)
                     Spacer(Modifier.weight(1f))
-                    if (valid) TextButton(onClick = { edit { it.withBody(formatKeepingVariables(it.body)) } }) { Text("Format", color = Hitop.accent) }
+                    if (valid) TextButton(onClick = { edit { it.withBody(formatKeepingVariables(it.body)) } }) { Text(tr(R.string.s_format), color = Hitop.accent) }
                 }
             }
         }
@@ -312,17 +310,17 @@ private fun BodyTab(vm: AppViewModel, r: Request, edit: ((Request) -> Request) -
             val extras = r.formFields
             KeyValueRows(r.formFields.map { Triple(it.key, it.value, it.enabled) }, { list ->
                 edit { it.withFormFields(list.mapIndexed { i, t -> FormRow(t.first, t.second, extras.getOrNull(i)?.type ?: "text", t.third, extras.getOrNull(i)?.extra ?: tech.rws8.hitop.core.EmptyObject) }) }
-            }, "Field", "Value", "Add field")
-            Text("Sent as application/x-www-form-urlencoded.", style = HitopType.caption, color = Hitop.textMuted)
+            }, tr(R.string.s_field), tr(R.string.s_value), tr(R.string.s_add_field))
+            Text(tr(R.string.s_sent_as_application_x_www_form_urlencoded), style = HitopType.caption, color = Hitop.textMuted)
         }
         BodyKind.GRAPHQL -> {
-            if (graphql != null) graphql() else CodeEditor(r.body, { v -> edit { it.withBody(v) } }, label = "GraphQL query", placeholder = "query { … }", minHeight = 200)
-            SectionLabel("Variables (JSON)")
-            CodeEditor(r.graphqlVariables, { v -> edit { it.withGraphql(v, it.graphqlOperationName) } }, json = true, label = "GraphQL variables", placeholder = "{ }", minHeight = 80)
-            SectionLabel("Operation name")
-            SmallField(r.graphqlOperationName, { v -> edit { it.withGraphql(it.graphqlVariables, v) } }, "Operation name", Modifier.fillMaxWidth())
+            if (graphql != null) graphql() else CodeEditor(r.body, { v -> edit { it.withBody(v) } }, label = tr(R.string.s_graphql_query), placeholder = tr(R.string.s_query), minHeight = 200)
+            SectionLabel(tr(R.string.s_variables_json))
+            CodeEditor(r.graphqlVariables, { v -> edit { it.withGraphql(v, it.graphqlOperationName) } }, json = true, label = tr(R.string.s_graphql_variables), placeholder = "{ }", minHeight = 80)
+            SectionLabel(tr(R.string.s_operation_name))
+            SmallField(r.graphqlOperationName, { v -> edit { it.withGraphql(it.graphqlVariables, v) } }, tr(R.string.s_operation_name), Modifier.fillMaxWidth())
         }
-        BodyKind.NONE -> Text("This request has no body.", style = HitopType.bodySmall, color = Hitop.textMuted)
+        BodyKind.NONE -> Text(tr(R.string.s_this_request_has_no_body), style = HitopType.bodySmall, color = Hitop.textMuted)
     }
 }
 
@@ -346,7 +344,7 @@ fun AuthEditor(vm: AppViewModel, auth: Auth?, inherit: String, inheritText: Stri
     val labels = linkedMapOf("inherit" to inherit).apply { putAll(AUTH_LABELS) }
     val current = auth?.type ?: "inherit"
     if (auth != null && !auth.editable) {
-        Text("${auth.type} auth: kept as it is; edit it in the web or desktop app.", style = HitopType.bodySmall, color = Hitop.textSecondary)
+        Text(tr(R.string.s_auth_kept_as_it_is_edit_it, auth.type), style = HitopType.bodySmall, color = Hitop.textSecondary)
         TextButton(onClick = { set(null) }) { Text(inherit, color = Hitop.accent) }
         return
     }
@@ -359,39 +357,39 @@ fun AuthEditor(vm: AppViewModel, auth: Auth?, inherit: String, inheritText: Stri
         SmallField(auth!!.field(name), { v -> set(if (optional) auth.optional(name, v) else auth.with(name, v)) }, label, Modifier.fillMaxWidth().testTag("auth-$name"))
     when (current) {
         "inherit" -> Text(inheritText, style = HitopType.bodySmall, color = Hitop.textMuted)
-        "none" -> Text("No auth is sent, even when the collection has one.", style = HitopType.bodySmall, color = Hitop.textMuted)
-        "bearer" -> field("token", "Token")
-        "basic" -> { field("username", "Username"); field("password", "Password") }
+        "none" -> Text(tr(R.string.s_no_auth_is_sent_even_when_the), style = HitopType.bodySmall, color = Hitop.textMuted)
+        "bearer" -> field("token", tr(R.string.s_token))
+        "basic" -> { field("username", tr(R.string.s_username)); field("password", tr(R.string.s_password)) }
         "digest" -> {
-            field("username", "Username"); field("password", "Password")
-            Text("Answered after the server's 401 challenge.", style = HitopType.caption, color = Hitop.textMuted)
+            field("username", tr(R.string.s_username)); field("password", tr(R.string.s_password))
+            Text(tr(R.string.s_answered_after_the_server_s_401_challenge), style = HitopType.caption, color = Hitop.textMuted)
         }
         "apikey" -> {
-            field("key", "Key name"); field("value", "Value")
+            field("key", tr(R.string.s_key_name)); field("value", tr(R.string.s_value))
             ChipRow(listOf("Header", "Query"), if (auth!!.field("in") == "query") "Query" else "Header", { l -> set(auth.with("in", l.lowercase())) })
         }
         "awsv4" -> {
-            field("accessKey", "Access key"); field("secretKey", "Secret key"); field("sessionToken", "Session token (optional)", true)
-            field("region", "Region"); field("service", "Service")
+            field("accessKey", tr(R.string.s_access_key)); field("secretKey", tr(R.string.s_secret_key)); field("sessionToken", tr(R.string.s_session_token_optional), true)
+            field("region", tr(R.string.s_region)); field("service", tr(R.string.s_service))
         }
         "oauth2" -> {
             val grants = linkedMapOf("client_credentials" to "Client credentials", "password" to "Password", "authorization_code" to "Sign in (code + PKCE)")
             val grant = auth!!.field("grant").ifEmpty { "client_credentials" }
             ChipRow(grants.values.toList(), grants[grant] ?: grant, { l -> set(auth.with("grant", grants.entries.first { it.value == l }.key)) })
-            if (grant == "authorization_code") field("authUrl", "Authorization URL", true)
-            field("tokenUrl", "Token URL"); field("clientId", "Client id"); field("clientSecret", "Client secret (optional)", true); field("scope", "Scope (optional)", true)
-            if (grant == "password") { field("username", "Username", true); field("password", "Password", true) }
+            if (grant == "authorization_code") field("authUrl", tr(R.string.s_authorization_url), true)
+            field("tokenUrl", tr(R.string.s_token_url)); field("clientId", tr(R.string.s_client_id)); field("clientSecret", tr(R.string.s_client_secret_optional), true); field("scope", tr(R.string.s_scope_optional), true)
+            if (grant == "password") { field("username", tr(R.string.s_username), true); field("password", tr(R.string.s_password), true) }
             ChipRow(listOf("Basic header", "In the body"), if (auth.field("clientAuth") == "body") "In the body" else "Basic header", { l -> set(auth.optional("clientAuth", if (l == "In the body") "body" else "")) })
             if (grant == "authorization_code") {
-                field("redirectUri", "Redirect URI (optional)", true)
-                Text("Send opens the sign-in page. Register http://127.0.0.1:<port>/callback with the provider and write it here with your port; empty means any free port.", style = HitopType.caption, color = Hitop.textMuted)
+                field("redirectUri", tr(R.string.s_redirect_uri_optional), true)
+                Text(tr(R.string.s_send_opens_the_sign_in_page_register), style = HitopType.caption, color = Hitop.textMuted)
             }
-            Text("The token stays in memory until it expires or HITOP closes.", style = HitopType.caption, color = Hitop.textMuted)
+            Text(tr(R.string.s_the_token_stays_in_memory_until_it), style = HitopType.caption, color = Hitop.textMuted)
         }
     }
     val effective = auth ?: collectionAuth
-    if (effective?.signsIn == true) TextButton(onClick = { vm.library.forgetTokens() }, modifier = Modifier.testTag("oauth-forget")) { Text("Forget signed-in tokens", color = Hitop.accent) }
-    Text("Write \${name} to use a variable; secrets stay in this phone's keystore.", style = HitopType.caption, color = Hitop.textMuted)
+    if (effective?.signsIn == true) TextButton(onClick = { vm.library.forgetTokens() }, modifier = Modifier.testTag("oauth-forget")) { Text(tr(R.string.s_forget_signed_in_tokens), color = Hitop.accent) }
+    Text(tr(R.string.s_write_name_to_use_a_variable_secrets), style = HitopType.caption, color = Hitop.textMuted)
 }
 
 @OptIn(androidx.compose.material3.ExperimentalMaterial3Api::class)
@@ -405,14 +403,14 @@ private fun CodeSheet(vm: AppViewModel, collectionId: String, r: Request, close:
     androidx.compose.runtime.LaunchedEffect(lang, r) { code = vm.library.snippet(collectionId, r, lang) }
     androidx.compose.material3.ModalBottomSheet(onDismissRequest = close, containerColor = Hitop.surface) {
         Column(Modifier.padding(16.dp).navigationBarsPadding(), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-            Text("Code", style = HitopType.title, color = Hitop.text)
+            Text(tr(R.string.s_code), style = HitopType.title, color = Hitop.text)
             ChipRow(langs, lang, { lang = it })
             Box(Modifier.fillMaxWidth().clip(RoundedCornerShape(16.dp)).background(Hitop.codeDeep).border(1.dp, Hitop.divider, RoundedCornerShape(16.dp)).heightIn(min = 120.dp, max = 420.dp).verticalScroll(rememberScrollState()).padding(16.dp)) {
                 Text(code, style = HitopType.monoSmall, color = Hitop.text, modifier = Modifier.testTag("snippet"))
             }
-            Text("Secrets and variables without a value stay as {{name}}.", style = HitopType.caption, color = Hitop.textMuted)
+            Text(tr(R.string.s_secrets_and_variables_without_a_value_stay), style = HitopType.caption, color = Hitop.textMuted)
             Button(onClick = { clipboard.setText(AnnotatedString(code)); scope.launch { close() } }, colors = ButtonDefaults.buttonColors(containerColor = Hitop.accent, contentColor = Hitop.onAccent), modifier = Modifier.fillMaxWidth().height(48.dp)) {
-                Text("Copy", style = HitopType.button)
+                Text(tr(R.string.s_copy), style = HitopType.button)
             }
         }
     }
@@ -448,23 +446,23 @@ private fun MultipartRows(vm: AppViewModel, r: Request, edit: ((Request) -> Requ
     r.formFields.forEachIndexed { i, f ->
         val label = f.key.ifEmpty { "${i + 1}" }
         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-            androidx.compose.material3.Checkbox(f.enabled, { put(i, f.copy(enabled = it)) }, modifier = Modifier.semantics { contentDescription = "Send Field $label" })
-            SmallField(f.key, { put(i, f.copy(key = it)) }, "Field", Modifier.weight(1f))
+            androidx.compose.material3.Checkbox(f.enabled, { put(i, f.copy(enabled = it)) }, modifier = Modifier.semantics { contentDescription = tr(R.string.s_send_field, label) })
+            SmallField(f.key, { put(i, f.copy(key = it)) }, tr(R.string.s_field), Modifier.weight(1f))
             if (f.type == "file") {
                 val name = (f.extra["fileName"] as? kotlinx.serialization.json.JsonPrimitive)?.content
                 val token = (f.extra["fileToken"] as? kotlinx.serialization.json.JsonPrimitive)?.content
                 val here = token != null && vm.library.hasUpload(r.id, token)
                 OutlinedButton(onClick = { target = i; pick.launch(arrayOf("*/*")) }, modifier = Modifier.weight(1.4f).heightIn(min = 48.dp).testTag("file-$label")) {
-                    Text(when { name == null -> "Choose a file"; here -> name; else -> "$name (choose again)" }, style = HitopType.monoSmall, color = if (here || name == null) Hitop.text else Hitop.warning, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                    Text(when { name == null -> tr(R.string.s_choose_a_file); here -> name; else -> tr(R.string.s_choose_again, name) }, style = HitopType.monoSmall, color = if (here || name == null) Hitop.text else Hitop.warning, maxLines = 1, overflow = TextOverflow.Ellipsis)
                 }
-            } else SmallField(f.value, { put(i, f.copy(value = it)) }, "Value", Modifier.weight(1.4f))
-            IconButton(onClick = { edit { q -> q.withFormFields(q.formFields.filterIndexed { n, _ -> n != i }) } }) { Icon(HitopIcons.Close, "Remove Field $label", tint = Hitop.textMuted, modifier = Modifier.size(18.dp)) }
+            } else SmallField(f.value, { put(i, f.copy(value = it)) }, tr(R.string.s_value), Modifier.weight(1.4f))
+            IconButton(onClick = { edit { q -> q.withFormFields(q.formFields.filterIndexed { n, _ -> n != i }) } }) { Icon(HitopIcons.Close, tr(R.string.s_remove_field, label), tint = Hitop.textMuted, modifier = Modifier.size(18.dp)) }
         }
     }
     Row {
-        TextButton(onClick = { edit { it.withFormFields(it.formFields + FormRow("", "")) } }) { Text("Add field", style = HitopType.label, color = Hitop.accent) }
-        TextButton(onClick = { edit { it.withFormFields(it.formFields + FormRow("", "", "file")) } }, modifier = Modifier.testTag("add-file")) { Text("Add file", style = HitopType.label, color = Hitop.accent) }
+        TextButton(onClick = { edit { it.withFormFields(it.formFields + FormRow("", "")) } }) { Text(tr(R.string.s_add_field), style = HitopType.label, color = Hitop.accent) }
+        TextButton(onClick = { edit { it.withFormFields(it.formFields + FormRow("", "", "file")) } }, modifier = Modifier.testTag("add-file")) { Text(tr(R.string.s_add_file), style = HitopType.label, color = Hitop.accent) }
     }
-    Text("Sent as multipart/form-data. Files stay on this phone: they aren't synced or exported.", style = HitopType.caption, color = Hitop.textMuted)
+    Text(tr(R.string.s_sent_as_multipart_form_data_files_stay), style = HitopType.caption, color = Hitop.textMuted)
     error?.let { Text(it, style = HitopType.caption, color = Hitop.errorText) }
 }

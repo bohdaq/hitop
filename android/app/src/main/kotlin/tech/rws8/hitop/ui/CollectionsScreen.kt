@@ -59,6 +59,8 @@ import tech.rws8.hitop.ui.theme.HitopType
 import tech.rws8.hitop.ui.theme.LogoMark
 import tech.rws8.hitop.ui.theme.MethodTag
 import tech.rws8.hitop.ui.theme.statusColor
+import tech.rws8.hitop.R
+import tech.rws8.hitop.platform.tr
 
 private enum class Filter(val label: String) { ALL("All"), PINNED("Pinned"), RECENT("Recent") }
 
@@ -85,14 +87,13 @@ fun CollectionsScreen(vm: AppViewModel) {
     androidx.compose.material3.pulltorefresh.PullToRefreshBox(
         isRefreshing = syncStatus.pulling,
         onRefresh = { scope.launch { vm.cloud.sync.sync() } },
-        modifier = Modifier.fillMaxSize(),
-    ) {
+        modifier = Modifier.fillMaxSize()) {
         LazyColumn(Modifier.fillMaxSize().testTag("collections"), contentPadding = PaddingValues(bottom = 96.dp)) {
             item {
                 Row(Modifier.padding(start = 16.dp, end = 16.dp, top = 20.dp, bottom = 8.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                    LogoMark(40, Modifier.clip(CircleShape).clickable(onClickLabel = "Account") { vm.push(Screen.Account) }.semantics { contentDescription = "Account" }.testTag("account-button"))
+                    LogoMark(40, Modifier.clip(CircleShape).clickable(onClickLabel = tr(R.string.s_account)) { vm.push(Screen.Account) }.semantics { contentDescription = tr(R.string.s_account) }.testTag("account-button"))
                     Column(Modifier.weight(1f)) {
-                        Text("Collections", style = HitopType.screenTitle, color = Hitop.text, maxLines = 1, softWrap = false, modifier = Modifier.semantics { heading() })
+                        Text(tr(R.string.s_collections), style = HitopType.screenTitle, color = Hitop.text, maxLines = 1, softWrap = false, modifier = Modifier.semantics { heading() })
                         val where = when {
                             cloud.account == null -> "On this phone"
                             else -> (if (current == null || current.personal) "Personal" else current.name) + when {
@@ -104,27 +105,26 @@ fun CollectionsScreen(vm: AppViewModel) {
                         Text(where, style = HitopType.caption, color = Hitop.textMuted, modifier = Modifier.testTag("collections-subtitle"))
                     }
                     IconButton(onClick = { dialog = { FromTextDialog(vm) { dialog = null } } }, modifier = Modifier.testTag("from-text-button")) {
-                        Icon(HitopIcons.Sparkle, "New request from text or curl", tint = Hitop.accent)
+                        Icon(HitopIcons.Sparkle, tr(R.string.s_new_request_from_text_or_curl), tint = Hitop.accent)
                     }
                     if (!inPane) EnvironmentPill(vm)
                 }
                 if (s.damaged.isNotEmpty()) Row(Modifier.padding(horizontal = 16.dp, vertical = 8.dp).testTag("damaged"), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    Text("${if (s.damaged.size == 1) "A file" else "${s.damaged.size} files"} couldn't be read and was kept aside: ${s.damaged.joinToString()}. Anything in HITOP Cloud comes back with the next sync.", Modifier.weight(1f), style = HitopType.caption, color = Hitop.warning)
-                    androidx.compose.material3.TextButton(onClick = { vm.library.dismissDamaged() }) { Text("OK", color = Hitop.accent) }
+                    Text(tr(R.string.s_couldn_t_be_read_and_was_kept, if (s.damaged.size == 1) tr(R.string.s_a_file) else tr(R.string.s_files, s.damaged.size), s.damaged.joinToString()), Modifier.weight(1f), style = HitopType.caption, color = Hitop.warning)
+                    androidx.compose.material3.TextButton(onClick = { vm.library.dismissDamaged() }) { Text(tr(R.string.s_ok), color = Hitop.accent) }
                 }
             }
             item {
                 Row(
                     Modifier.padding(horizontal = 16.dp, vertical = 8.dp).fillMaxWidth().clip(RoundedCornerShape(26.dp)).background(Hitop.surfaceHigh).height(52.dp).padding(horizontal = 18.dp),
-                    verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp),
-                ) {
+                    verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                     Icon(HitopIcons.Search, null, tint = Hitop.textMuted, modifier = Modifier.size(20.dp))
                     Box(Modifier.weight(1f)) {
-                        if (query.isEmpty()) Text("Search requests, collections, history", style = HitopType.body, color = Hitop.textMuted, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                        if (query.isEmpty()) Text(tr(R.string.s_search_requests_collections_history), style = HitopType.body, color = Hitop.textMuted, maxLines = 1, overflow = TextOverflow.Ellipsis)
                         val focus = remember { androidx.compose.ui.focus.FocusRequester() }
                         androidx.compose.runtime.LaunchedEffect(vm.searchFocus) { if (vm.searchFocus > 0) runCatching { focus.requestFocus() } }
                         BasicTextField(query, { query = it }, singleLine = true, textStyle = HitopType.body.copy(color = Hitop.text), cursorBrush = SolidColor(Hitop.accent),
-                            modifier = Modifier.fillMaxWidth().focusRequester(focus).semantics { contentDescription = "Search" }.testTag("search"))
+                            modifier = Modifier.fillMaxWidth().focusRequester(focus).semantics { contentDescription = tr(R.string.s_search) }.testTag("search"))
                     }
                 }
             }
@@ -137,7 +137,7 @@ fun CollectionsScreen(vm: AppViewModel) {
                 item {
                     Row(Modifier.padding(horizontal = 16.dp, vertical = 4.dp).fillMaxWidth().clip(RoundedCornerShape(16.dp)).background(Hitop.insight).padding(14.dp).testTag("notice"), verticalAlignment = Alignment.CenterVertically) {
                         Text(n, Modifier.weight(1f), style = HitopType.bodySmall, color = Hitop.onInsight)
-                        IconButton(onClick = { vm.cloud.sync.dismissNotice(n) }) { Icon(HitopIcons.Close, "Dismiss", tint = Hitop.textMuted, modifier = Modifier.size(16.dp)) }
+                        IconButton(onClick = { vm.cloud.sync.dismissNotice(n) }) { Icon(HitopIcons.Close, tr(R.string.s_dismiss), tint = Hitop.textMuted, modifier = Modifier.size(16.dp)) }
                     }
                 }
             }
@@ -148,7 +148,7 @@ fun CollectionsScreen(vm: AppViewModel) {
                             Text(n.text, style = HitopType.bodySmall, color = Hitop.onInsight)
                             n.detail?.let { Text(it, style = HitopType.monoSmall, color = Hitop.textMuted) }
                         }
-                        IconButton(onClick = { vm.shared.dismissNotice(n) }) { Icon(HitopIcons.Close, "Dismiss", tint = Hitop.textMuted, modifier = Modifier.size(16.dp)) }
+                        IconButton(onClick = { vm.shared.dismissNotice(n) }) { Icon(HitopIcons.Close, tr(R.string.s_dismiss), tint = Hitop.textMuted, modifier = Modifier.size(16.dp)) }
                     }
                 }
             }
@@ -172,23 +172,23 @@ fun CollectionsScreen(vm: AppViewModel) {
                 }
                 Filter.PINNED -> {
                     val pinned = s.pins.mapNotNull { s.find(it) }.filter { (c, r) -> matches(c, r) }
-                    item { FlatCard(vm, pinned, last, "Pin a request from its menu to keep it here.") }
+                    item { FlatCard(vm, pinned, last, tr(R.string.s_pin_a_request_from_its_menu_to)) }
                 }
                 Filter.RECENT -> {
                     val recent = s.history.map { it.request.id }.distinct().mapNotNull { s.find(it) }.filter { (c, r) -> matches(c, r) }.take(20)
-                    item { FlatCard(vm, recent, last, "Requests you send show here.") }
+                    item { FlatCard(vm, recent, last, tr(R.string.s_requests_you_send_show_here)) }
                 }
             }
             item {
-                TextButton(onClick = { dialog = { TextDialog("New collection", "", "Create", { dialog = null }) { n -> vm.library.addCollection(n); dialog = null } } }, modifier = Modifier.padding(horizontal = 8.dp).testTag("new-collection")) {
+                TextButton(onClick = { dialog = { TextDialog(tr(R.string.s_new_collection), "", tr(R.string.s_create), { dialog = null }) { n -> vm.library.addCollection(n); dialog = null } } }, modifier = Modifier.padding(horizontal = 8.dp).testTag("new-collection")) {
                     Icon(HitopIcons.Plus, null, tint = Hitop.accent, modifier = Modifier.size(18.dp))
                     Spacer(Modifier.size(6.dp))
-                    Text("New collection", style = HitopType.label, color = Hitop.accent)
+                    Text(tr(R.string.s_new_collection), style = HitopType.label, color = Hitop.accent)
                 }
                 TextButton(onClick = { vm.importing = true }, modifier = Modifier.padding(horizontal = 8.dp).testTag("import")) {
                     Icon(HitopIcons.Folder, null, tint = Hitop.accent, modifier = Modifier.size(18.dp))
                     Spacer(Modifier.size(6.dp))
-                    Text("Import", style = HitopType.label, color = Hitop.accent)
+                    Text(tr(R.string.s_import), style = HitopType.label, color = Hitop.accent)
                 }
             }
         }
@@ -197,9 +197,8 @@ fun CollectionsScreen(vm: AppViewModel) {
             containerColor = Hitop.accent, contentColor = Hitop.onAccent,
             shape = RoundedCornerShape(16.dp),
             icon = { Icon(HitopIcons.Plus, null) },
-            text = { Text("New request", style = HitopType.button.copy(fontSize = HitopType.body.fontSize)) },
-            modifier = Modifier.align(Alignment.BottomEnd).padding(16.dp).testTag("new-request"),
-        )
+            text = { Text(tr(R.string.s_new_request), style = HitopType.button.copy(fontSize = HitopType.body.fontSize)) },
+            modifier = Modifier.align(Alignment.BottomEnd).padding(16.dp).testTag("new-request"))
         dialog?.invoke()
     }
 }
@@ -212,50 +211,49 @@ private fun CollectionCard(vm: AppViewModel, c: Collection, rows: List<Request>,
     var export by remember { mutableStateOf(false) }
     if (export) ExportSheet(c) { export = false }
     var authOpen by remember { mutableStateOf(false) }
-    if (authOpen) InputSheet("Auth of ${c.name}", { authOpen = false }, actions = { TextButton(onClick = { authOpen = false }) { Text("Done", color = Hitop.accent) } }) {
-        Text("Used by every request that doesn't set its own.", style = HitopType.caption, color = Hitop.textSecondary)
+    if (authOpen) InputSheet(tr(R.string.s_auth_of, c.name), { authOpen = false }, actions = { TextButton(onClick = { authOpen = false }) { Text(tr(R.string.s_done), color = Hitop.accent) } }) {
+        Text(tr(R.string.s_used_by_every_request_that_doesn_t), style = HitopType.caption, color = Hitop.textSecondary)
         AuthEditor(vm, c.auth, "No auth", "Requests without their own auth send none.", null) { vm.library.setCollectionAuth(c.id, it) }
     }
     var spec by remember { mutableStateOf(false) }
     if (spec) SpecSyncSheet(vm, c) { spec = false }
     Card(Modifier.padding(horizontal = 16.dp, vertical = 6.dp)) {
         Row(
-            Modifier.fillMaxWidth().clickable(onClickLabel = if (folded) "Show requests" else "Hide requests") { toggle() }.padding(horizontal = 16.dp, vertical = 10.dp).testTag("collection-${c.name}"),
-            verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp),
-        ) {
+            Modifier.fillMaxWidth().clickable(onClickLabel = if (folded) tr(R.string.s_show_requests) else tr(R.string.s_hide_requests)) { toggle() }.padding(horizontal = 16.dp, vertical = 10.dp).testTag("collection-${c.name}"),
+            verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
             Box(Modifier.size(40.dp).clip(RoundedCornerShape(12.dp)).background(Hitop.accentContainer), contentAlignment = Alignment.Center) {
                 Icon(HitopIcons.Folder, null, tint = Hitop.accent, modifier = Modifier.size(20.dp))
             }
             Column(Modifier.weight(1f)) {
                 Text(c.name, style = HitopType.cardTitle, color = Hitop.text, maxLines = 1, overflow = TextOverflow.Ellipsis)
                 val n = c.requests.size
-                Text("$n ${if (n == 1) "request" else "requests"} · $badge", style = HitopType.caption, color = Hitop.textMuted, modifier = Modifier.testTag("badge-${c.name}"))
+                Text("${n} ${if (n == 1) tr(R.string.s_request) else tr(R.string.s_requests)} · ${badge}", style = HitopType.caption, color = Hitop.textMuted, modifier = Modifier.testTag("badge-${c.name}"))
             }
             if (c.requests.any { !it.isWebSocket && !it.isGrpc }) {
                 IconButton(onClick = { vm.push(Screen.Run(c.id)) }, modifier = Modifier.size(44.dp).clip(CircleShape).background(Hitop.accentContainer).testTag("run-button-${c.name}")) {
-                    Icon(HitopIcons.Run, "Run ${c.name}", tint = Hitop.accent, modifier = Modifier.size(18.dp))
+                    Icon(HitopIcons.Run, tr(R.string.s_run, c.name), tint = Hitop.accent, modifier = Modifier.size(18.dp))
                 }
             }
             Box {
-                IconButton(onClick = { menu = true }, modifier = Modifier.testTag("collection-menu-${c.name}")) { Icon(HitopIcons.More, "More for ${c.name}", tint = Hitop.textSecondary) }
+                IconButton(onClick = { menu = true }, modifier = Modifier.testTag("collection-menu-${c.name}")) { Icon(HitopIcons.More, tr(R.string.s_more_for, c.name), tint = Hitop.textSecondary) }
                 DropdownMenu(menu, { menu = false }, containerColor = Hitop.surfaceHigh) {
-                    DropdownMenuItem(text = { Text("New request", color = Hitop.text) }, onClick = { menu = false; vm.newRequest(c.id) })
-                    DropdownMenuItem(text = { Text("New folder", color = Hitop.text) }, onClick = {
+                    DropdownMenuItem(text = { Text(tr(R.string.s_new_request), color = Hitop.text) }, onClick = { menu = false; vm.newRequest(c.id) })
+                    DropdownMenuItem(text = { Text(tr(R.string.s_new_folder), color = Hitop.text) }, onClick = {
                         menu = false
-                        showDialog { TextDialog("New folder", "", "Create", { showDialog(null) }) { n -> vm.library.addFolder(c.id, n); showDialog(null) } }
+                        showDialog { TextDialog(tr(R.string.s_new_folder), "", tr(R.string.s_create), { showDialog(null) }) { n -> vm.library.addFolder(c.id, n); showDialog(null) } }
                     })
-                    if (localOnly) DropdownMenuItem(text = { Text("Save to HITOP Cloud", color = Hitop.text) }, onClick = { menu = false; vm.cloud.upload(c.id) })
-                    if (vm.cloud.cloud.signedIn) DropdownMenuItem(text = { Text(if (vm.shared.link(c.id) != null) "People…" else "Share…", color = Hitop.text) }, onClick = { menu = false; share = true }, modifier = Modifier.testTag("share-${c.name}"))
-                    if (!vm.library.isReadOnly(c.id)) DropdownMenuItem(text = { Text("Auth…", color = Hitop.text) }, onClick = { menu = false; authOpen = true }, modifier = Modifier.testTag("auth-${c.name}"))
-                    DropdownMenuItem(text = { Text("Export…", color = Hitop.text) }, onClick = { menu = false; export = true }, modifier = Modifier.testTag("export-${c.name}"))
-                    if (c.json["openapi"] != null && !vm.library.isReadOnly(c.id)) DropdownMenuItem(text = { Text("Sync with OpenAPI…", color = Hitop.text) }, onClick = { menu = false; spec = true }, modifier = Modifier.testTag("spec-${c.name}"))
-                    DropdownMenuItem(text = { Text("Rename", color = Hitop.text) }, onClick = {
+                    if (localOnly) DropdownMenuItem(text = { Text(tr(R.string.s_save_to_hitop_cloud), color = Hitop.text) }, onClick = { menu = false; vm.cloud.upload(c.id) })
+                    if (vm.cloud.cloud.signedIn) DropdownMenuItem(text = { Text(if (vm.shared.link(c.id) != null) tr(R.string.s_people) else tr(R.string.s_share), color = Hitop.text) }, onClick = { menu = false; share = true }, modifier = Modifier.testTag("share-${c.name}"))
+                    if (!vm.library.isReadOnly(c.id)) DropdownMenuItem(text = { Text(tr(R.string.s_auth), color = Hitop.text) }, onClick = { menu = false; authOpen = true }, modifier = Modifier.testTag("auth-${c.name}"))
+                    DropdownMenuItem(text = { Text(tr(R.string.s_export), color = Hitop.text) }, onClick = { menu = false; export = true }, modifier = Modifier.testTag("export-${c.name}"))
+                    if (c.json["openapi"] != null && !vm.library.isReadOnly(c.id)) DropdownMenuItem(text = { Text(tr(R.string.s_sync_with_openapi), color = Hitop.text) }, onClick = { menu = false; spec = true }, modifier = Modifier.testTag("spec-${c.name}"))
+                    DropdownMenuItem(text = { Text(tr(R.string.s_rename), color = Hitop.text) }, onClick = {
                         menu = false
-                        showDialog { TextDialog("Rename collection", c.name, "Rename", { showDialog(null) }) { n -> vm.library.renameCollection(c.id, n); showDialog(null) } }
+                        showDialog { TextDialog(tr(R.string.s_rename_collection), c.name, tr(R.string.s_rename), { showDialog(null) }) { n -> vm.library.renameCollection(c.id, n); showDialog(null) } }
                     })
-                    DropdownMenuItem(text = { Text("Delete", color = Hitop.error) }, onClick = {
+                    DropdownMenuItem(text = { Text(tr(R.string.s_delete), color = Hitop.error) }, onClick = {
                         menu = false
-                        showDialog { ConfirmDialog("Delete ${c.name}?", "Its ${c.requests.size} requests are deleted from this phone.", "Delete", { showDialog(null) }) { if (c.id in vm.library.state.value.sharedRoles) vm.library.deleteCollection(c.id) else vm.undoable("Deleted ${c.name}") { vm.library.deleteCollection(c.id) }; showDialog(null) } }
+                        showDialog { ConfirmDialog(tr(R.string.s_delete_2, c.name), tr(R.string.s_its_requests_are_deleted_from_this_phone, c.requests.size), tr(R.string.s_delete), { showDialog(null) }) { if (c.id in vm.library.state.value.sharedRoles) vm.library.deleteCollection(c.id) else vm.undoable(tr(R.string.s_deleted, c.name)) { vm.library.deleteCollection(c.id) }; showDialog(null) } }
                     })
                 }
             }
@@ -272,7 +270,7 @@ private fun CollectionCard(vm: AppViewModel, c: Collection, rows: List<Request>,
                 folder = r.folder
                 RequestRow(vm, c, r, last[r.id], showDialog)
             }
-            if (rows.isEmpty()) Text("No requests yet", Modifier.padding(16.dp), style = HitopType.caption, color = Hitop.textMuted)
+            if (rows.isEmpty()) Text(tr(R.string.s_no_requests_yet), Modifier.padding(16.dp), style = HitopType.caption, color = Hitop.textMuted)
         }
     }
 }
@@ -286,31 +284,30 @@ fun RequestRow(vm: AppViewModel, c: Collection, r: Request, status: Int?, showDi
     Box {
         Row(
             Modifier.fillMaxWidth()
-                .combinedClickable(onClickLabel = "Open", onLongClickLabel = "More", onLongClick = { menu = true }) { vm.openRequest(c.id, r.id) }
+                .combinedClickable(onClickLabel = tr(R.string.s_open), onLongClickLabel = "More", onLongClick = { menu = true }) { vm.openRequest(c.id, r.id) }
                 .heightIn(min = 52.dp).padding(horizontal = 16.dp)
                 .semantics(mergeDescendants = true) {}
                 .testTag("request-${r.name}"),
-            verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp),
-        ) {
+            verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
             MethodTag(r.tag)
             Column(Modifier.weight(1f)) {
                 Text(r.name, style = HitopType.body, color = Hitop.text, maxLines = 1, overflow = TextOverflow.Ellipsis)
                 subtitle?.let { Text(it, style = HitopType.caption, color = Hitop.textMuted, maxLines = 1) }
             }
-            if (pinned) Icon(HitopIcons.Pin, "Pinned", tint = Hitop.textMuted, modifier = Modifier.size(14.dp))
-            status?.let { Text("$it", style = HitopType.monoSmall, color = statusColor(it)) }
+            if (pinned) Icon(HitopIcons.Pin, tr(R.string.s_pinned), tint = Hitop.textMuted, modifier = Modifier.size(14.dp))
+            status?.let { Text("${it}", style = HitopType.monoSmall, color = statusColor(it)) }
         }
         DropdownMenu(menu, { menu = false }, containerColor = Hitop.surfaceHigh) {
-            DropdownMenuItem(text = { Text(if (pinned) "Unpin" else "Pin", color = Hitop.text) }, onClick = { menu = false; vm.library.togglePin(r.id) })
-            DropdownMenuItem(text = { Text("Rename", color = Hitop.text) }, onClick = {
+            DropdownMenuItem(text = { Text(if (pinned) tr(R.string.s_unpin) else tr(R.string.s_pin), color = Hitop.text) }, onClick = { menu = false; vm.library.togglePin(r.id) })
+            DropdownMenuItem(text = { Text(tr(R.string.s_rename), color = Hitop.text) }, onClick = {
                 menu = false
-                showDialog { TextDialog("Rename request", r.name, "Rename", { showDialog(null) }) { n -> vm.library.renameRequest(r.id, n); showDialog(null) } }
+                showDialog { TextDialog(tr(R.string.s_rename_request), r.name, tr(R.string.s_rename), { showDialog(null) }) { n -> vm.library.renameRequest(r.id, n); showDialog(null) } }
             })
-            DropdownMenuItem(text = { Text("Duplicate", color = Hitop.text) }, onClick = { menu = false; vm.library.duplicateRequest(r.id) })
-            DropdownMenuItem(text = { Text("Move…", color = Hitop.text) }, onClick = { menu = false; showDialog { MoveDialog(vm, r) { showDialog(null) } } })
-            DropdownMenuItem(text = { Text("Delete", color = Hitop.error) }, onClick = {
+            DropdownMenuItem(text = { Text(tr(R.string.s_duplicate), color = Hitop.text) }, onClick = { menu = false; vm.library.duplicateRequest(r.id) })
+            DropdownMenuItem(text = { Text(tr(R.string.s_move), color = Hitop.text) }, onClick = { menu = false; showDialog { MoveDialog(vm, r) { showDialog(null) } } })
+            DropdownMenuItem(text = { Text(tr(R.string.s_delete), color = Hitop.error) }, onClick = {
                 menu = false
-                showDialog { ConfirmDialog("Delete ${r.name}?", "It is deleted from ${c.name} on this phone.", "Delete", { showDialog(null) }) { vm.undoable("Deleted ${r.name}") { vm.library.deleteRequest(r.id) }; showDialog(null) } }
+                showDialog { ConfirmDialog(tr(R.string.s_delete_2, r.name), tr(R.string.s_it_is_deleted_from_on_this_phone, c.name), tr(R.string.s_delete), { showDialog(null) }) { vm.undoable(tr(R.string.s_deleted, r.name)) { vm.library.deleteRequest(r.id) }; showDialog(null) } }
             })
         }
     }
@@ -322,21 +319,20 @@ private fun MoveDialog(vm: AppViewModel, r: Request, done: () -> Unit) {
     androidx.compose.material3.AlertDialog(
         onDismissRequest = done,
         containerColor = Hitop.surfaceHigh,
-        title = { Text("Move ${r.name}", style = HitopType.title, color = Hitop.text) },
+        title = { Text(tr(R.string.s_move_2, r.name), style = HitopType.title, color = Hitop.text) },
         text = {
             LazyColumn {
                 s.collections.forEach { c ->
                     item {
-                        Text(c.name, Modifier.fillMaxWidth().clickable { vm.undoable("Moved ${r.name}") { vm.library.moveRequest(r.id, c.id, "") }; done() }.heightIn(min = 48.dp).padding(vertical = 12.dp), style = HitopType.body, color = Hitop.text)
+                        Text(c.name, Modifier.fillMaxWidth().clickable { vm.undoable(tr(R.string.s_moved, r.name)) { vm.library.moveRequest(r.id, c.id, "") }; done() }.heightIn(min = 48.dp).padding(vertical = 12.dp), style = HitopType.body, color = Hitop.text)
                     }
                     items(c.allFolders) { f ->
-                        Text("  $f", Modifier.fillMaxWidth().clickable { vm.undoable("Moved ${r.name}") { vm.library.moveRequest(r.id, c.id, f) }; done() }.heightIn(min = 48.dp).padding(start = 16.dp, top = 12.dp, bottom = 12.dp), style = HitopType.bodySmall, color = Hitop.textSecondary)
+                        Text("  ${f}", Modifier.fillMaxWidth().clickable { vm.undoable(tr(R.string.s_moved, r.name)) { vm.library.moveRequest(r.id, c.id, f) }; done() }.heightIn(min = 48.dp).padding(start = 16.dp, top = 12.dp, bottom = 12.dp), style = HitopType.bodySmall, color = Hitop.textSecondary)
                     }
                 }
             }
         },
-        confirmButton = { TextButton(onClick = done) { Text("Cancel", color = Hitop.textSecondary) } },
-    )
+        confirmButton = { TextButton(onClick = done) { Text(tr(R.string.s_cancel), color = Hitop.textSecondary) } })
 }
 
 @Composable

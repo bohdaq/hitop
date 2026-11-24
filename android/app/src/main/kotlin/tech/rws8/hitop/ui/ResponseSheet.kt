@@ -62,6 +62,8 @@ import tech.rws8.hitop.ui.theme.Hitop
 import tech.rws8.hitop.ui.theme.HitopIcons
 import tech.rws8.hitop.ui.theme.HitopType
 import tech.rws8.hitop.ui.theme.StatusPill
+import tech.rws8.hitop.R
+import tech.rws8.hitop.platform.tr
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -91,9 +93,9 @@ fun ResponseContent(vm: AppViewModel, collectionId: String, requestId: String, r
                 Spacer(Modifier.weight(1f))
             }
             if (vm.aiReady && res.status != null) IconButton(onClick = { vm.explainFor = requestId; vm.sheetFor = null }, modifier = Modifier.size(44.dp).clip(androidx.compose.foundation.shape.CircleShape).background(Hitop.accentContainer).testTag("explain")) {
-                Icon(HitopIcons.Sparkle, "Explain response", tint = Hitop.accent, modifier = Modifier.size(20.dp))
+                Icon(HitopIcons.Sparkle, tr(R.string.s_explain_response_2), tint = Hitop.accent, modifier = Modifier.size(20.dp))
             }
-            close?.let { IconButton(onClick = it, modifier = Modifier.testTag("close-response")) { Icon(HitopIcons.Close, "Close", tint = Hitop.text) } }
+            close?.let { IconButton(onClick = it, modifier = Modifier.testTag("close-response")) { Icon(HitopIcons.Close, tr(R.string.s_close), tint = Hitop.text) } }
         }
         res.timings?.takeIf { it.totalMs > 0 }?.let { TimingBar(it) }
         val error = res.error
@@ -115,8 +117,7 @@ fun ResponseContent(vm: AppViewModel, collectionId: String, requestId: String, r
                     Modifier.clip(RoundedCornerShape(18.dp)).then(if (on) Modifier.background(Hitop.selected) else Modifier.background(Color.Transparent))
                         .then(if (on) Modifier else Modifier.clip(RoundedCornerShape(18.dp)))
                         .clickable { tab = key }.heightIn(min = 40.dp).padding(horizontal = 14.dp).testTag("response-tab-$key"),
-                    contentAlignment = Alignment.Center,
-                ) { Text(t, style = HitopType.label, color = color) }
+                    contentAlignment = Alignment.Center) { Text(t, style = HitopType.label, color = color) }
             }
         }
         Box(Modifier.weight(1f, fill = false).padding(horizontal = 16.dp, vertical = 8.dp)) {
@@ -124,7 +125,7 @@ fun ResponseContent(vm: AppViewModel, collectionId: String, requestId: String, r
                 "Body" -> BodyView(res)
                 "Headers" -> Rows(res.headers)
                 "Tests" -> TestsView(res)
-                "Cookies" -> if (res.cookies.isEmpty()) Text("No cookies for this host.", style = HitopType.bodySmall, color = Hitop.textMuted)
+                "Cookies" -> if (res.cookies.isEmpty()) Text(tr(R.string.s_no_cookies_for_this_host), style = HitopType.bodySmall, color = Hitop.textMuted)
                     else Rows(res.cookies.map { it.name to "${it.value}  ·  ${it.domain}${it.path}${if (it.secure) " · secure" else ""}" })
             }
         }
@@ -133,7 +134,7 @@ fun ResponseContent(vm: AppViewModel, collectionId: String, requestId: String, r
             if (vm.compareSources(requestId).isNotEmpty()) SheetButton("Compare", Modifier.weight(1f)) { comparing = true }
             SheetButton("Share", Modifier.weight(1f)) {
                 val send = Intent(Intent.ACTION_SEND).setType("text/plain").putExtra(Intent.EXTRA_TEXT, res.body)
-                context.startActivity(Intent.createChooser(send, "Share the response"))
+                context.startActivity(Intent.createChooser(send, tr(R.string.s_share_the_response)))
             }
             SheetButton("Save example", Modifier.weight(1f), accent = true) {
                 vm.edit(requestId) { r ->
@@ -156,8 +157,7 @@ private fun SheetButton(label: String, modifier: Modifier, accent: Boolean = fal
     OutlinedButton(
         onClick = onClick, modifier = modifier.height(48.dp).testTag("response-$label"), shape = RoundedCornerShape(24.dp),
         border = if (accent) null else androidx.compose.foundation.BorderStroke(1.dp, Hitop.border),
-        colors = androidx.compose.material3.ButtonDefaults.outlinedButtonColors(containerColor = if (accent) Hitop.accentContainer else Color.Transparent),
-    ) { Text(label, style = HitopType.bodySmall, color = if (accent) Hitop.accent else Hitop.text, maxLines = 1) }
+        colors = androidx.compose.material3.ButtonDefaults.outlinedButtonColors(containerColor = if (accent) Hitop.accentContainer else Color.Transparent)) { Text(label, style = HitopType.bodySmall, color = if (accent) Hitop.accent else Hitop.text, maxLines = 1) }
 }
 
 @Composable
@@ -165,15 +165,15 @@ private fun TimingBar(t: tech.rws8.hitop.core.Timings) {
     val parts = listOf(Triple("DNS", t.dnsMs, Hitop.timingDns), Triple("Connect", t.connectMs, Hitop.timingTls), Triple("Waiting", t.waitMs, Hitop.timingWait), Triple("Download", t.downloadMs, Hitop.timingDownload)).filter { it.second > 0 }
     val total = parts.sumOf { it.second }.coerceAtLeast(1)
     Column(Modifier.padding(horizontal = 16.dp, vertical = 4.dp).semantics(mergeDescendants = true) {
-        contentDescription = "Timing: " + parts.joinToString { "${it.first} ${it.second} ms" } + if (t.reused) ", reused connection" else ""
+        contentDescription = tr(R.string.s_timing) + parts.joinToString { "${it.first} ${it.second} ms" } + if (t.reused) tr(R.string.s_reused_connection) else ""
     }) {
         Row(Modifier.fillMaxWidth().height(8.dp).clip(RoundedCornerShape(4.dp)), horizontalArrangement = Arrangement.spacedBy(2.dp)) {
             if (parts.isEmpty()) Box(Modifier.weight(1f).fillMaxHeight().background(Hitop.timingWait))
             parts.forEach { (_, ms, color) -> Box(Modifier.weight(ms.toFloat() / total).fillMaxHeight().background(color)) }
         }
         Row(Modifier.fillMaxWidth().padding(top = 6.dp), horizontalArrangement = Arrangement.SpaceBetween) {
-            parts.forEachIndexed { i, (label, ms, _) -> Text("$label $ms${if (i == parts.lastIndex) " ms" else ""}", style = HitopType.navLabel, color = Hitop.textMuted) }
-            if (t.reused) Text("reused", style = HitopType.navLabel, color = Hitop.textMuted)
+            parts.forEachIndexed { i, (label, ms, _) -> Text("${label} ${ms}${if (i == parts.lastIndex) " ms" else ""}", style = HitopType.navLabel, color = Hitop.textMuted) }
+            if (t.reused) Text(tr(R.string.s_reused), style = HitopType.navLabel, color = Hitop.textMuted)
         }
     }
 }
@@ -184,7 +184,7 @@ private fun ErrorCard(e: tech.rws8.hitop.core.ExplainedError) {
     Column(Modifier.padding(16.dp).fillMaxWidth().clip(RoundedCornerShape(16.dp)).background(Hitop.errorContainer).padding(16.dp).testTag("error-card"), verticalArrangement = Arrangement.spacedBy(6.dp)) {
         Text(e.headline, style = HitopType.cardTitle, color = Hitop.text)
         Text(e.next, style = HitopType.bodySmall, color = Hitop.errorText)
-        Text(if (details) "Hide details" else "Details", Modifier.clickable { details = !details }.padding(vertical = 8.dp), style = HitopType.label, color = Hitop.accent)
+        Text(if (details) tr(R.string.s_hide_details) else tr(R.string.s_details), Modifier.clickable { details = !details }.padding(vertical = 8.dp), style = HitopType.label, color = Hitop.accent)
         if (details) Text(e.raw, style = HitopType.monoSmall, color = Hitop.textSecondary)
     }
 }
@@ -194,7 +194,7 @@ private fun BodyView(res: SendResult) {
     val root = remember(res.body) { JsonOutline.parse(res.body) }
     if (root == null) {
         Box(Modifier.fillMaxWidth().clip(RoundedCornerShape(16.dp)).background(Hitop.codeDeep).padding(16.dp)) {
-            Text(res.body.ifEmpty { "(empty body)" }, style = HitopType.mono, color = if (res.body.isEmpty()) Hitop.textMuted else Hitop.text, modifier = Modifier.testTag("body-text"))
+            Text(res.body.ifEmpty { tr(R.string.s_empty_body) }, style = HitopType.mono, color = if (res.body.isEmpty()) Hitop.textMuted else Hitop.text, modifier = Modifier.testTag("body-text"))
         }
         return
     }
@@ -210,13 +210,12 @@ private fun BodyView(res: SendResult) {
                 Modifier.fillMaxWidth()
                     .then(
                         if (foldable) Modifier.heightIn(min = 48.dp)
-                            .clickable(onClickLabel = if (l.folded) "Unfold" else "Fold") { folded = if (l.folded) folded - l.path!! else folded + l.path!! }
+                            .clickable(onClickLabel = if (l.folded) tr(R.string.s_unfold) else tr(R.string.s_fold)) { folded = if (l.folded) folded - l.path!! else folded + l.path!! }
                             .semantics(mergeDescendants = true) { contentDescription = name }
                         else Modifier
                     )
                     .padding(start = 8.dp, end = 12.dp),
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
+                verticalAlignment = Alignment.CenterVertically) {
                 Text(if (foldable) (if (l.folded) "▸" else "▾") else " ", Modifier.width(16.dp).clearAndSetSemantics {}, style = HitopType.mono, color = Hitop.textMuted)
                 Text(buildAnnotatedString {
                     append("  ".repeat(l.depth))
@@ -250,7 +249,7 @@ private fun Rows(rows: List<Pair<String, String>>) {
 @Composable
 private fun TestsView(res: SendResult) {
     if (res.tests.isEmpty()) {
-        Text("No tests ran. Write them in the request's Tests tab.", style = HitopType.bodySmall, color = Hitop.textMuted)
+        Text(tr(R.string.s_no_tests_ran_write_them_in_the), style = HitopType.bodySmall, color = Hitop.textMuted)
         return
     }
     LazyColumn(verticalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.testTag("tests")) {

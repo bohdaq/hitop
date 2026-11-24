@@ -47,16 +47,16 @@ class RunService : Service() {
             val open = PendingIntent.getActivity(context, 0, Intent(Intent.ACTION_VIEW, Uri.parse("hitop://runs"), context, MainActivity::class.java), PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT)
             val stop = PendingIntent.getService(context, 1, Intent(context, RunService::class.java).setAction(ACTION_STOP), PendingIntent.FLAG_IMMUTABLE)
             val b = NotificationCompat.Builder(context, CHANNEL).setSmallIcon(R.drawable.ic_notification).setContentIntent(open).setOnlyAlertOnce(true).setCategory(NotificationCompat.CATEGORY_PROGRESS)
-            if (p == null) return b.setContentTitle("Starting a run…").build()
+            if (p == null) return b.setContentTitle(tr(R.string.s_starting_a_run)).build()
             val f = p.finished
             return if (f == null) {
-                b.setContentTitle("Running ${p.collectionName} · ${p.done} of ${p.total}")
-                    .setContentText("${p.passed} passed · ${p.failed} failed${p.environment?.let { " · $it" } ?: ""}")
+                b.setContentTitle(tr(R.string.s_running_of, p.collectionName, p.done, p.total))
+                    .setContentText(tr(R.string.s_passed_failed, p.passed, p.failed, p.environment?.let { " · ${it}" } ?: ""))
                     .setProgress(p.total, p.done, false).setOngoing(true)
                     .addAction(0, "Stop", stop).addAction(0, "Open", open).build()
             } else {
-                b.setContentTitle("${p.collectionName}: ${f.passed}/${f.total} passed${if (f.cancelled) " (stopped)" else ""}")
-                    .setContentText(f.firstFailure ?: "Every request passed${p.environment?.let { " · $it" } ?: ""}")
+                b.setContentTitle(tr(R.string.s_passed_2, p.collectionName, f.passed, f.total, if (f.cancelled) tr(R.string.s_stopped) else ""))
+                    .setContentText(f.firstFailure ?: tr(R.string.s_every_request_passed, p.environment?.let { " · ${it}" } ?: ""))
                     .setAutoCancel(true).build()
             }
         }
@@ -82,7 +82,7 @@ class RunService : Service() {
         if (started.isFailure) {
             // Not allowed now (Android's daily limit for background work): no run, and no crash.
             getSystemService(NotificationManager::class.java).notify(ID, NotificationCompat.Builder(this, CHANNEL).setSmallIcon(R.drawable.ic_notification)
-                .setContentTitle("The run didn't start").setContentText("Android's limit for background work is used up for now. Open HITOP and try again.").setAutoCancel(true).build())
+                .setContentTitle(tr(R.string.s_the_run_didn_t_start)).setContentText(tr(R.string.s_android_s_limit_for_background_work_is)).setAutoCancel(true).build())
             stopSelf()
             return START_NOT_STICKY
         }

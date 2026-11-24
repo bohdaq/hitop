@@ -33,21 +33,23 @@ import tech.rws8.hitop.core.SendResult
 import tech.rws8.hitop.ui.theme.Hitop
 import tech.rws8.hitop.ui.theme.HitopIcons
 import tech.rws8.hitop.ui.theme.HitopType
+import tech.rws8.hitop.R
+import tech.rws8.hitop.platform.tr
 
 /** The current response against an example or an earlier one. */
 @Composable
 fun CompareSheet(vm: AppViewModel, requestId: String, res: SendResult, close: () -> Unit) {
     val sources = remember(requestId, res) { vm.compareSources(requestId) }
     var with by remember { mutableStateOf(sources.firstOrNull()) }
-    InputSheet("Compare response", close, actions = { TextButton(onClick = close) { Text("Done", color = Hitop.accent) } }) {
+    InputSheet(tr(R.string.s_compare_response), close, actions = { TextButton(onClick = close) { Text(tr(R.string.s_done), color = Hitop.accent) } }) {
         ChipRow(sources.map { it.label }.distinct(), with?.label.orEmpty(), { l -> with = sources.first { it.label == l } })
         val w = with ?: return@InputSheet
         val d = remember(w, res) { ResponseDiff.compare(w, ComparedResponse.of("now", res)) }
         LazyColumn(Modifier.fillMaxWidth().heightIn(max = 420.dp).testTag("diff"), verticalArrangement = Arrangement.spacedBy(2.dp)) {
-            if (d.same) item { Text("The responses are the same.", style = HitopType.body, color = Hitop.text) }
-            d.status?.let { s -> item { SectionLabel("Status") }; item { ChangeRow(s) } }
-            if (d.headers.isNotEmpty()) { item { SectionLabel("Headers") }; items(d.headers) { ChangeRow(it) } }
-            if (d.body.any { it.kind != ResponseDiff.Kind.SAME }) { item { SectionLabel(if (d.json) "Body, by path" else "Body, by line") }; items(d.body) { ChangeRow(it) } }
+            if (d.same) item { Text(tr(R.string.s_the_responses_are_the_same), style = HitopType.body, color = Hitop.text) }
+            d.status?.let { s -> item { SectionLabel(tr(R.string.s_status)) }; item { ChangeRow(s) } }
+            if (d.headers.isNotEmpty()) { item { SectionLabel(tr(R.string.s_headers)) }; items(d.headers) { ChangeRow(it) } }
+            if (d.body.any { it.kind != ResponseDiff.Kind.SAME }) { item { SectionLabel(if (d.json) tr(R.string.s_body_by_path) else tr(R.string.s_body_by_line)) }; items(d.body) { ChangeRow(it) } }
         }
     }
 }
@@ -66,7 +68,7 @@ private fun ChangeRow(c: ResponseDiff.Change) {
         c.kind == ResponseDiff.Kind.CHANGED -> "${c.path}: ${cut(c.before)} → ${cut(c.after)}"
         else -> "${c.path}: ${cut(c.after ?: c.before)}"
     }
-    Text("$sign $text", Modifier.fillMaxWidth().background(Hitop.codeDeep).padding(horizontal = 8.dp, vertical = 2.dp).semantics { contentDescription = "$word $text" }, style = HitopType.monoSmall, color = color)
+    Text("${sign} ${text}", Modifier.fillMaxWidth().background(Hitop.codeDeep).padding(horizontal = 8.dp, vertical = 2.dp).semantics { contentDescription = "${word} ${text}" }, style = HitopType.monoSmall, color = color)
 }
 
 /** A request's saved examples: look, rename, delete. */
@@ -76,7 +78,7 @@ fun ExamplesSheet(vm: AppViewModel, collectionId: String, requestId: String, clo
     val readOnly = vm.library.isReadOnly(collectionId)
     var open by remember { mutableStateOf<Int?>(null) }
     fun change(f: (List<JsonObject>) -> List<JsonObject>) = vm.edit(requestId) { q -> f(q.examples.filterIsInstance<JsonObject>()).let { q.set("examples", if (it.isEmpty()) null else JsonArray(it)) } }
-    InputSheet("Examples", close, actions = { TextButton(onClick = close) { Text("Done", color = Hitop.accent) } }) {
+    InputSheet(tr(R.string.s_examples), close, actions = { TextButton(onClick = close) { Text(tr(R.string.s_done), color = Hitop.accent) } }) {
         LazyColumn(Modifier.fillMaxWidth().heightIn(max = 420.dp).testTag("examples-list")) {
             val list = r?.examples.orEmpty().filterIsInstance<JsonObject>()
             items(list.size) { i ->
@@ -85,17 +87,17 @@ fun ExamplesSheet(vm: AppViewModel, collectionId: String, requestId: String, clo
                 val name = (e["name"] as? JsonPrimitive)?.content ?: "Example ${i + 1}"
                 Column {
                     Row(verticalAlignment = Alignment.CenterVertically) {
-                        TextButton(onClick = { open = if (open == i) null else i }, modifier = Modifier.weight(1f).testTag("example-$i")) { Text("$name · ${x.status ?: "no status"}", Modifier.fillMaxWidth(), color = Hitop.text) }
-                        if (!readOnly) IconButton(onClick = { open = null; change { l -> l.filterIndexed { n, _ -> n != i } } }, modifier = Modifier.testTag("delete-example-$i")) { Icon(HitopIcons.Trash, "Delete example $name", tint = Hitop.textMuted) }
+                        TextButton(onClick = { open = if (open == i) null else i }, modifier = Modifier.weight(1f).testTag("example-$i")) { Text("${name} · ${x.status ?: tr(R.string.s_no_status)}", Modifier.fillMaxWidth(), color = Hitop.text) }
+                        if (!readOnly) IconButton(onClick = { open = null; change { l -> l.filterIndexed { n, _ -> n != i } } }, modifier = Modifier.testTag("delete-example-$i")) { Icon(HitopIcons.Trash, tr(R.string.s_delete_example, name), tint = Hitop.textMuted) }
                     }
                     if (open == i) {
-                        if (!readOnly) SmallField(name, { v -> change { l -> l.mapIndexed { n, o -> if (n == i) JsonObject(o + ("name" to JsonPrimitive(v))) else o } } }, "Name", Modifier.fillMaxWidth())
-                        Text(x.body.take(20_000).ifEmpty { "(empty body)" }, Modifier.fillMaxWidth().background(Hitop.codeDeep).padding(8.dp), style = HitopType.monoSmall, color = Hitop.text)
+                        if (!readOnly) SmallField(name, { v -> change { l -> l.mapIndexed { n, o -> if (n == i) JsonObject(o + ("name" to JsonPrimitive(v))) else o } } }, tr(R.string.s_name), Modifier.fillMaxWidth())
+                        Text(x.body.take(20_000).ifEmpty { tr(R.string.s_empty_body) }, Modifier.fillMaxWidth().background(Hitop.codeDeep).padding(8.dp), style = HitopType.monoSmall, color = Hitop.text)
                     }
                 }
             }
-            if (list.isEmpty()) item { Text("No examples. Save one from a response.", style = HitopType.caption, color = Hitop.textMuted) }
+            if (list.isEmpty()) item { Text(tr(R.string.s_no_examples_save_one_from_a_response), style = HitopType.caption, color = Hitop.textMuted) }
         }
-        if (!readOnly) Text("Changes are kept when you save the request.", style = HitopType.caption, color = Hitop.textMuted)
+        if (!readOnly) Text(tr(R.string.s_changes_are_kept_when_you_save_the), style = HitopType.caption, color = Hitop.textMuted)
     }
 }

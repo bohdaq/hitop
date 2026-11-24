@@ -29,6 +29,8 @@ import tech.rws8.hitop.ui.theme.Hitop
 import tech.rws8.hitop.ui.theme.HitopIcons
 import tech.rws8.hitop.ui.theme.HitopType
 import tech.rws8.hitop.ui.theme.LogoMark
+import tech.rws8.hitop.R
+import tech.rws8.hitop.platform.tr
 
 /**
  * How wide the window is: phone (one pane), foldable and small tablet (list + request, the response
@@ -58,7 +60,7 @@ fun WideLayout(vm: AppViewModel, panes: Panes) {
         NavigationRail(containerColor = Hitop.surface, modifier = Modifier.width(88.dp).statusBarsPadding(), header = {
             LogoMark(44)
             FloatingActionButton(onClick = { vm.newRequest() }, containerColor = Hitop.accent, contentColor = Hitop.onAccent, shape = RoundedCornerShape(16.dp), modifier = Modifier.padding(top = 12.dp).testTag("rail-new-request")) {
-                Icon(HitopIcons.Plus, "New request")
+                Icon(HitopIcons.Plus, tr(R.string.s_new_request))
             }
         }) {
             Tab.entries.forEach { t ->
@@ -66,10 +68,9 @@ fun WideLayout(vm: AppViewModel, panes: Panes) {
                     selected = vm.tab == t && top !is Screen.Account,
                     onClick = { vm.tab = t; if (top != null && top !is Screen.Request) vm.pop() },
                     icon = { Icon(railIcons.getValue(t), null) },
-                    label = { Text(if (t == Tab.ENVIRONMENTS) "Envs" else t.label, style = HitopType.navLabel) },
+                    label = { Text(if (t == Tab.ENVIRONMENTS) tr(R.string.s_envs) else t.label, style = HitopType.navLabel) },
                     colors = NavigationRailItemDefaults.colors(selectedIconColor = Hitop.text, selectedTextColor = Hitop.text, indicatorColor = Hitop.selected, unselectedIconColor = Hitop.textMuted, unselectedTextColor = Hitop.textMuted),
-                    modifier = Modifier.testTag("rail-${t.label}"),
-                )
+                    modifier = Modifier.testTag("rail-${t.label}"))
             }
         }
         // A full screen of its own (account, environment, run, report) takes the panes' place.

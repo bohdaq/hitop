@@ -55,6 +55,8 @@ import androidx.compose.ui.unit.dp
 import tech.rws8.hitop.ui.theme.Hitop
 import tech.rws8.hitop.ui.theme.HitopIcons
 import tech.rws8.hitop.ui.theme.HitopType
+import tech.rws8.hitop.R
+import tech.rws8.hitop.platform.tr
 
 /** Colours `${name}` in the accent and, with [json], keys, strings and numbers as the drafts do. */
 fun highlight(text: String, json: Boolean): AnnotatedString = buildAnnotatedString {
@@ -93,8 +95,7 @@ fun CodeEditor(
 ) {
     val transformation = remember(json) { Highlighter(json) }
     Box(
-        modifier.clip(RoundedCornerShape(16.dp)).background(ground).heightIn(min = minHeight.dp).padding(16.dp),
-    ) {
+        modifier.clip(RoundedCornerShape(16.dp)).background(ground).heightIn(min = minHeight.dp).padding(16.dp)) {
         if (value.isEmpty() && placeholder.isNotEmpty()) Text(placeholder, style = style, color = Hitop.textMuted)
         BasicTextField(
             value = value,
@@ -105,8 +106,7 @@ fun CodeEditor(
             cursorBrush = SolidColor(Hitop.accent),
             visualTransformation = transformation,
             keyboardOptions = KeyboardOptions(autoCorrectEnabled = false, capitalization = KeyboardCapitalization.None, keyboardType = if (singleLine) KeyboardType.Uri else KeyboardType.Ascii),
-            modifier = Modifier.fillMaxWidth().semantics { contentDescription = label }.testTag(label),
-        )
+            modifier = Modifier.fillMaxWidth().semantics { contentDescription = label }.testTag(label))
     }
 }
 
@@ -123,8 +123,7 @@ fun fieldColors() = OutlinedTextFieldDefaults.colors(
     unfocusedContainerColor = Hitop.surface,
     cursorColor = Hitop.accent,
     focusedLabelColor = Hitop.accent,
-    unfocusedLabelColor = Hitop.textMuted,
-)
+    unfocusedLabelColor = Hitop.textMuted)
 
 /** Name/value rows with a switch to send or keep each one (headers, params, form fields). */
 @Composable
@@ -144,13 +143,12 @@ fun KeyValueRows(
                     onCheckedChange = { c -> onChange(rows.toMutableList().also { it[i] = Triple(k, v, c) }) },
                     enabled = !readOnly,
                     colors = CheckboxDefaults.colors(checkedColor = Hitop.accent, checkmarkColor = Hitop.onAccent, uncheckedColor = Hitop.textMuted),
-                    modifier = Modifier.semantics { contentDescription = "Send $keyLabel ${k.ifEmpty { i + 1 }}" },
-                )
+                    modifier = Modifier.semantics { contentDescription = tr(R.string.s_send_3, keyLabel, k.ifEmpty { i + 1 }) })
                 SmallField(k, { nk -> onChange(rows.toMutableList().also { it[i] = Triple(nk, v, on) }) }, keyLabel, Modifier.weight(1f), readOnly)
                 SmallField(v, { nv -> onChange(rows.toMutableList().also { it[i] = Triple(k, nv, on) }) }, valueLabel, Modifier.weight(1.4f), readOnly)
                 if (!readOnly) {
                     IconButton(onClick = { onChange(rows.toMutableList().also { it.removeAt(i) }) }) {
-                        Icon(HitopIcons.Close, "Remove ${k.ifEmpty { keyLabel }}", tint = Hitop.textMuted, modifier = Modifier.size(18.dp))
+                        Icon(HitopIcons.Close, tr(R.string.s_remove_3, k.ifEmpty { keyLabel }), tint = Hitop.textMuted, modifier = Modifier.size(18.dp))
                     }
                 }
             }
@@ -175,8 +173,7 @@ fun SmallField(value: String, onChange: (String) -> Unit, label: String, modifie
             cursorBrush = SolidColor(Hitop.accent),
             visualTransformation = remember { Highlighter(false) },
             keyboardOptions = KeyboardOptions(autoCorrectEnabled = false, capitalization = KeyboardCapitalization.None),
-            modifier = Modifier.fillMaxWidth().semantics { contentDescription = label },
-        )
+            modifier = Modifier.fillMaxWidth().semantics { contentDescription = label })
     }
 }
 
@@ -196,7 +193,7 @@ fun ChipRow(options: List<String>, selected: String, onSelect: (String) -> Unit,
 fun TextDialog(title: String, initial: String, confirm: String, onDismiss: () -> Unit, onConfirm: (String) -> Unit) {
     var text by remember { mutableStateOf(initial) }
     InputSheet(title, onDismiss, actions = {
-        TextButton(onClick = onDismiss) { Text("Cancel", color = Hitop.textSecondary) }
+        TextButton(onClick = onDismiss) { Text(tr(R.string.s_cancel), color = Hitop.textSecondary) }
         TextButton(onClick = { onConfirm(text.trim()) }, enabled = text.isNotBlank(), modifier = Modifier.testTag("dialog-confirm")) { Text(confirm, color = Hitop.accent) }
     }) {
         SmallField(text, { text = it }, title, Modifier.fillMaxWidth().testTag("dialog-field"))
@@ -226,8 +223,7 @@ fun ConfirmDialog(title: String, text: String, confirm: String, onDismiss: () ->
         title = { Text(title, style = HitopType.title, color = Hitop.text) },
         text = { Text(text, style = HitopType.bodySmall, color = Hitop.textSecondary) },
         confirmButton = { TextButton(onClick = onConfirm) { Text(confirm, color = Hitop.error) } },
-        dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel", color = Hitop.textSecondary) } },
-    )
+        dismissButton = { TextButton(onClick = onDismiss) { Text(tr(R.string.s_cancel), color = Hitop.textSecondary) } })
 }
 
 /** The drafts' rounded section card. */

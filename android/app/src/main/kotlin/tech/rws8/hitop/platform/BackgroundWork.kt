@@ -80,7 +80,7 @@ object BackgroundWork {
         RunService.channel(context)
         val open = PendingIntent.getActivity(context, r.collectionId.hashCode(), Intent(Intent.ACTION_VIEW, Uri.parse("hitop://runs"), context, MainActivity::class.java), PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT)
         val n = NotificationCompat.Builder(context, RunService.CHANNEL).setSmallIcon(R.drawable.ic_notification).setContentIntent(open).setAutoCancel(true)
-            .setContentTitle("${r.collectionName}: ${r.passed}/${r.total} passed").setContentText(r.firstFailure ?: "The scheduled run failed").build()
+            .setContentTitle(tr(R.string.s_passed, r.collectionName, r.passed, r.total)).setContentText(r.firstFailure ?: tr(R.string.s_the_scheduled_run_failed)).build()
         context.getSystemService(NotificationManager::class.java).notify(r.collectionId.hashCode(), n)
     }
 }

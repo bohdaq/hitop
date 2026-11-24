@@ -41,6 +41,8 @@ import androidx.compose.ui.unit.dp
 import tech.rws8.hitop.ui.theme.Hitop
 import tech.rws8.hitop.ui.theme.HitopIcons
 import tech.rws8.hitop.ui.theme.HitopType
+import tech.rws8.hitop.R
+import tech.rws8.hitop.platform.tr
 
 @Composable
 fun EnvironmentsScreen(vm: AppViewModel) {
@@ -48,8 +50,8 @@ fun EnvironmentsScreen(vm: AppViewModel) {
     var dialog by remember { mutableStateOf<(@Composable () -> Unit)?>(null) }
     LazyColumn(Modifier.fillMaxSize().testTag("environments"), contentPadding = PaddingValues(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
         item {
-            Text("Environments", style = HitopType.screenTitle, color = Hitop.text, modifier = Modifier.semantics { heading() }.padding(top = 4.dp))
-            Text("The active one fills \${variables} in every request. Secret values stay in this phone's keystore.", style = HitopType.caption, color = Hitop.textMuted)
+            Text(tr(R.string.s_environments), style = HitopType.screenTitle, color = Hitop.text, modifier = Modifier.semantics { heading() }.padding(top = 4.dp))
+            Text(tr(R.string.s_the_active_one_fills_variables_in_every), style = HitopType.caption, color = Hitop.textMuted)
         }
         item {
             Card {
@@ -58,31 +60,30 @@ fun EnvironmentsScreen(vm: AppViewModel) {
                     Row(
                         Modifier.fillMaxWidth().selectable(selected = s.activeEnvironmentId == e?.id, role = Role.RadioButton) { vm.library.setActiveEnvironment(e?.id) }
                             .heightIn(min = 56.dp).padding(horizontal = 8.dp).testTag("env-row-${e?.name ?: "none"}"),
-                        verticalAlignment = Alignment.CenterVertically,
-                    ) {
+                        verticalAlignment = Alignment.CenterVertically) {
                         RadioButton(selected = s.activeEnvironmentId == e?.id, onClick = null, colors = RadioButtonDefaults.colors(selectedColor = Hitop.accent, unselectedColor = Hitop.textMuted), modifier = Modifier.padding(8.dp))
                         Column(Modifier.weight(1f)) {
-                            Text(e?.name ?: "No environment", style = HitopType.body, color = Hitop.text)
-                            e?.let { Text("${if (it.team != null) "Team · " else ""}${it.variables.size} variables${if (it.secrets.isNotEmpty()) " · ${it.secrets.size} secret" else ""}", style = HitopType.caption, color = Hitop.textMuted) }
+                            Text(e?.name ?: tr(R.string.s_no_environment), style = HitopType.body, color = Hitop.text)
+                            e?.let { Text(tr(R.string.s_variables, if (it.team != null) tr(R.string.s_team) else "", it.variables.size, if (it.secrets.isNotEmpty()) tr(R.string.s_secret, it.secrets.size) else ""), style = HitopType.caption, color = Hitop.textMuted) }
                         }
                         if (e != null) IconButton(onClick = { vm.push(Screen.EnvironmentDetail(e.id)) }, modifier = Modifier.testTag("env-open-${e.name}")) {
-                            Icon(HitopIcons.ChevronRight, "Edit ${e.name}", tint = Hitop.textSecondary)
+                            Icon(HitopIcons.ChevronRight, tr(R.string.s_edit, e.name), tint = Hitop.textSecondary)
                         }
                     }
                 }
             }
         }
         item {
-            TextButton(onClick = { dialog = { TextDialog("New environment", "", "Create", { dialog = null }) { n -> val e = vm.library.addEnvironment(n); dialog = null; vm.push(Screen.EnvironmentDetail(e.id)) } } }) {
-                Icon(HitopIcons.Plus, null, tint = Hitop.accent, modifier = Modifier.size(18.dp)); Spacer(Modifier.size(6.dp)); Text("New environment", color = Hitop.accent, style = HitopType.label)
+            TextButton(onClick = { dialog = { TextDialog(tr(R.string.s_new_environment), "", tr(R.string.s_create), { dialog = null }) { n -> val e = vm.library.addEnvironment(n); dialog = null; vm.push(Screen.EnvironmentDetail(e.id)) } } }) {
+                Icon(HitopIcons.Plus, null, tint = Hitop.accent, modifier = Modifier.size(18.dp)); Spacer(Modifier.size(6.dp)); Text(tr(R.string.s_new_environment), color = Hitop.accent, style = HitopType.label)
             }
         }
         item {
             Card(Modifier.clickable { vm.push(Screen.Globals) }.testTag("globals")) {
                 Row(Modifier.padding(horizontal = 16.dp, vertical = 10.dp), verticalAlignment = Alignment.CenterVertically) {
                     Column(Modifier.weight(1f)) {
-                        Text("Globals", style = HitopType.cardTitle, color = Hitop.text)
-                        Text("Below every collection and environment · ${s.globals.variables.size} variables", style = HitopType.caption, color = Hitop.textMuted)
+                        Text(tr(R.string.s_globals), style = HitopType.cardTitle, color = Hitop.text)
+                        Text(tr(R.string.s_below_every_collection_and_environment_variables, s.globals.variables.size), style = HitopType.caption, color = Hitop.textMuted)
                     }
                     Icon(HitopIcons.ChevronRight, null, tint = Hitop.textSecondary)
                 }
@@ -111,32 +112,32 @@ private fun VariableEditor(
                 Column(Modifier.padding(horizontal = 16.dp, vertical = 4.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         Text(name, Modifier.weight(1f), style = HitopType.mono, color = Hitop.jsonKey, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                        Text("Secret", style = HitopType.caption, color = Hitop.textMuted)
+                        Text(tr(R.string.s_secret_2), style = HitopType.caption, color = Hitop.textMuted)
                         Switch(secret, { on -> set(name, value, on) }, colors = SwitchDefaults.colors(checkedTrackColor = Hitop.accent, checkedThumbColor = Hitop.onAccent), modifier = Modifier.padding(start = 8.dp).testTag("secret-$name"))
-                        IconButton(onClick = { remove(name) }) { Icon(HitopIcons.Trash, "Remove $name", tint = Hitop.textMuted, modifier = Modifier.size(18.dp)) }
+                        IconButton(onClick = { remove(name) }) { Icon(HitopIcons.Trash, tr(R.string.s_remove_3, name), tint = Hitop.textMuted, modifier = Modifier.size(18.dp)) }
                     }
                     if (secret && !shown) {
                         Row(verticalAlignment = Alignment.CenterVertically) {
-                            Text(if (value.isEmpty()) "no value" else "••••••", Modifier.weight(1f).testTag("value-$name"), style = HitopType.mono, color = Hitop.textSecondary)
-                            TextButton(onClick = { shown = true }, modifier = Modifier.testTag("show-$name")) { Text("Show", color = Hitop.accent) }
+                            Text(if (value.isEmpty()) tr(R.string.s_no_value) else "••••••", Modifier.weight(1f).testTag("value-$name"), style = HitopType.mono, color = Hitop.textSecondary)
+                            TextButton(onClick = { shown = true }, modifier = Modifier.testTag("show-$name")) { Text(tr(R.string.s_show), color = Hitop.accent) }
                         }
                     } else {
-                        SmallField(value, { v -> set(name, v, secret) }, "Value of $name", Modifier.fillMaxWidth())
+                        SmallField(value, { v -> set(name, v, secret) }, tr(R.string.s_value_of, name), Modifier.fillMaxWidth())
                     }
                 }
             }
         }
         TextButton(onClick = { adding = true }, modifier = Modifier.testTag("add-variable")) {
-            Icon(HitopIcons.Plus, null, tint = Hitop.accent, modifier = Modifier.size(18.dp)); Spacer(Modifier.size(6.dp)); Text("Add variable", color = Hitop.accent, style = HitopType.label)
+            Icon(HitopIcons.Plus, null, tint = Hitop.accent, modifier = Modifier.size(18.dp)); Spacer(Modifier.size(6.dp)); Text(tr(R.string.s_add_variable), color = Hitop.accent, style = HitopType.label)
         }
     }
-    if (adding) TextDialog("New variable", "", "Add", { adding = false }) { n -> set(n, "", false); adding = false }
+    if (adding) TextDialog(tr(R.string.s_new_variable), "", tr(R.string.s_add), { adding = false }) { n -> set(n, "", false); adding = false }
 }
 
 @Composable
 private fun DetailHeader(vm: AppViewModel, title: String, subtitle: String, actions: @Composable () -> Unit = {}) {
     Row(Modifier.padding(8.dp), verticalAlignment = Alignment.CenterVertically) {
-        IconButton(onClick = { vm.pop() }) { Icon(HitopIcons.Back, "Back", tint = Hitop.text) }
+        IconButton(onClick = { vm.pop() }) { Icon(HitopIcons.Back, tr(R.string.s_back), tint = Hitop.text) }
         Column(Modifier.weight(1f)) {
             Text(title, style = HitopType.title, color = Hitop.text, modifier = Modifier.semantics { heading() })
             Text(subtitle, style = HitopType.caption, color = Hitop.textMuted)
@@ -151,10 +152,10 @@ fun EnvironmentDetailScreen(vm: AppViewModel, envId: String) {
     val e = s.environments.firstOrNull { it.id == envId } ?: run { vm.pop(); return }
     var dialog by remember { mutableStateOf<(@Composable () -> Unit)?>(null) }
     Column(Modifier.fillMaxSize().background(Hitop.ground).statusBarsPadding()) {
-        DetailHeader(vm, e.name, if (s.activeEnvironmentId == envId) "Active" else "Not active") {
-            TextButton(onClick = { dialog = { TextDialog("Rename environment", e.name, "Rename", { dialog = null }) { n -> vm.library.renameEnvironment(envId, n); dialog = null } } }) { Text("Rename", color = Hitop.accent) }
-            IconButton(onClick = { dialog = { ConfirmDialog("Delete ${e.name}?", "Its variables and secret values are deleted from this phone.", "Delete", { dialog = null }) { dialog = null; vm.library.deleteEnvironment(envId) } } }) {
-                Icon(HitopIcons.Trash, "Delete ${e.name}", tint = Hitop.error)
+        DetailHeader(vm, e.name, if (s.activeEnvironmentId == envId) tr(R.string.s_active) else tr(R.string.s_not_active)) {
+            TextButton(onClick = { dialog = { TextDialog(tr(R.string.s_rename_environment), e.name, tr(R.string.s_rename), { dialog = null }) { n -> vm.library.renameEnvironment(envId, n); dialog = null } } }) { Text(tr(R.string.s_rename), color = Hitop.accent) }
+            IconButton(onClick = { dialog = { ConfirmDialog(tr(R.string.s_delete_2, e.name), tr(R.string.s_its_variables_and_secret_values_are_deleted), tr(R.string.s_delete), { dialog = null }) { dialog = null; vm.library.deleteEnvironment(envId) } } }) {
+                Icon(HitopIcons.Trash, tr(R.string.s_delete_3, e.name), tint = Hitop.error)
             }
         }
         LazyColumn(contentPadding = PaddingValues(16.dp)) {
@@ -163,8 +164,8 @@ fun EnvironmentDetailScreen(vm: AppViewModel, envId: String) {
                 Card(Modifier.padding(bottom = 12.dp)) {
                     Row(Modifier.padding(horizontal = 16.dp, vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
                         Column(Modifier.weight(1f)) {
-                            Text("Shared with ${vm.cloud.cloud.settings.value.orgs.firstOrNull { it.id == (e.team ?: org?.id) }?.name ?: "the organization"}", style = HitopType.body, color = Hitop.text)
-                            Text("Its members see and edit the variables. Secret values stay on each member's device." + (e.json["updatedBy"] as? kotlinx.serialization.json.JsonPrimitive)?.let { " Last changed by ${it.content}." }.orEmpty(), style = HitopType.caption, color = Hitop.textMuted)
+                            Text(tr(R.string.s_shared_with, vm.cloud.cloud.settings.value.orgs.firstOrNull { it.id == (e.team ?: org?.id) }?.name ?: tr(R.string.s_the_organization)), style = HitopType.body, color = Hitop.text)
+                            Text(tr(R.string.s_its_members_see_and_edit_the_variables) + (e.json["updatedBy"] as? kotlinx.serialization.json.JsonPrimitive)?.let { tr(R.string.s_last_changed_by, it.content) }.orEmpty(), style = HitopType.caption, color = Hitop.textMuted)
                         }
                         Switch(e.team != null, { on -> vm.library.setTeam(envId, if (on) org?.id else null) }, colors = SwitchDefaults.colors(checkedTrackColor = Hitop.accent, checkedThumbColor = Hitop.onAccent), modifier = Modifier.testTag("team-switch"))
                     }
@@ -182,7 +183,7 @@ fun EnvironmentDetailScreen(vm: AppViewModel, envId: String) {
 fun GlobalsScreen(vm: AppViewModel) {
     val s by vm.library.state.collectAsState()
     Column(Modifier.fillMaxSize().background(Hitop.ground).statusBarsPadding()) {
-        DetailHeader(vm, "Globals", "Below every collection and environment")
+        DetailHeader(vm, tr(R.string.s_globals), tr(R.string.s_below_every_collection_and_environment))
         LazyColumn(contentPadding = PaddingValues(16.dp)) {
             item {
                 VariableEditor(s.globals.variables, s.globals.secrets, { vm.library.globalSecretValue(it) }, { n, v, sec -> vm.library.setGlobal(n, v, sec) }, { vm.library.removeGlobal(it) })

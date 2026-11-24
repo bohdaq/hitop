@@ -93,9 +93,9 @@ fun LastRunContent(s: WidgetSnapshot, now: Long = System.currentTimeMillis()) {
     Card {
         val r = s.lastRun
         Column(GlanceModifier.fillMaxSize().clickable(openApp(r?.let { "hitop://run/${it.collectionId}" } ?: "hitop://runs"))) {
-            Text("Last run", style = TextStyle(color = muted, fontSize = 13.sp))
+            Text(tr(R.string.s_last_run), style = TextStyle(color = muted, fontSize = 13.sp))
             if (r == null) {
-                Text("No run yet. Run a collection in HITOP.", style = TextStyle(color = text, fontSize = 15.sp))
+                Text(tr(R.string.s_no_run_yet_run_a_collection_in), style = TextStyle(color = text, fontSize = 15.sp))
                 return@Column
             }
             Text(r.name, style = TextStyle(color = text, fontSize = 17.sp, fontWeight = FontWeight.Medium), maxLines = 1)
@@ -110,8 +110,8 @@ fun LastRunContent(s: WidgetSnapshot, now: Long = System.currentTimeMillis()) {
 fun FailingContent(s: WidgetSnapshot) {
     Card {
         Column(GlanceModifier.fillMaxSize().clickable(openApp("hitop://runs"))) {
-            Text("Failing", style = TextStyle(color = muted, fontSize = 13.sp))
-            if (s.collections.isEmpty()) Text("Nothing run yet", style = TextStyle(color = text, fontSize = 15.sp))
+            Text(tr(R.string.s_failing), style = TextStyle(color = muted, fontSize = 13.sp))
+            if (s.collections.isEmpty()) Text(tr(R.string.s_nothing_run_yet), style = TextStyle(color = text, fontSize = 15.sp))
             s.collections.sortedBy { it.ok }.take(4).forEach { c ->
                 Row(GlanceModifier.padding(top = 6.dp), verticalAlignment = Alignment.CenterVertically) {
                     Box(GlanceModifier.size(8.dp).cornerRadius(4.dp).background(ColorProvider(if (c.ok) good else bad))) {}
@@ -128,20 +128,19 @@ fun FailingContent(s: WidgetSnapshot) {
 fun PinnedContent(s: WidgetSnapshot) {
     Card {
         Column(GlanceModifier.fillMaxSize()) {
-            Text("Pinned requests", style = TextStyle(color = muted, fontSize = 13.sp))
-            if (s.pins.isEmpty()) Text("Pin a request in HITOP to send it from here.", style = TextStyle(color = text, fontSize = 15.sp))
+            Text(tr(R.string.s_pinned_requests), style = TextStyle(color = muted, fontSize = 13.sp))
+            if (s.pins.isEmpty()) Text(tr(R.string.s_pin_a_request_in_hitop_to_send), style = TextStyle(color = text, fontSize = 15.sp))
             s.pins.take(3).forEach { p ->
                 Row(GlanceModifier.fillMaxWidth().height(52.dp), verticalAlignment = Alignment.CenterVertically) {
                     Text(p.method, style = TextStyle(color = ColorProvider(methodColor(p.method)), fontSize = 12.sp, fontWeight = FontWeight.Medium), modifier = GlanceModifier.width(54.dp))
                     Text(p.name, style = TextStyle(color = text, fontSize = 15.sp), maxLines = 1, modifier = GlanceModifier.defaultWeight().clickable(openApp("hitop://request/${p.collectionId}/${p.requestId}")))
-                    p.status?.let { Text("$it", style = TextStyle(color = ColorProvider(if (it < 400) good else bad), fontSize = 13.sp)) }
+                    p.status?.let { Text("${it}", style = TextStyle(color = ColorProvider(if (it < 400) good else bad), fontSize = 13.sp)) }
                     Spacer(GlanceModifier.width(8.dp))
                     Box(
                         GlanceModifier.size(44.dp).cornerRadius(22.dp).background(ColorProvider(Color(0xFF2A2540)))
                             .clickable(actionRunCallback<SendPinned>(actionParametersOf(SendPinned.REQUEST to p.requestId)))
-                            .semantics { contentDescription = "Send ${p.name}" },
-                        contentAlignment = Alignment.Center,
-                    ) {
+                            .semantics { contentDescription = tr(R.string.s_send, p.name) },
+                        contentAlignment = Alignment.Center) {
                         Image(ImageProvider(R.drawable.ic_send), contentDescription = null, colorFilter = ColorFilter.tint(ColorProvider(accent)), modifier = GlanceModifier.size(18.dp))
                     }
                 }

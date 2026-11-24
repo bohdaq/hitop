@@ -61,18 +61,20 @@ import tech.rws8.hitop.ui.theme.HitopType
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
+import tech.rws8.hitop.R
+import tech.rws8.hitop.platform.tr
 
 /** A WebSocket request's Messages tab: subprotocols and saved messages. */
 @Composable
 fun WebSocketTab(r: Request, edit: ((Request) -> Request) -> Unit) {
-    SectionLabel("Subprotocols")
-    KeyValueRows(r.subprotocols.map { Triple(it, "", true) }, { list -> edit { it.withWebSocket(subprotocols = list.map { t -> t.first }.filter { s -> s.isNotEmpty() }) } }, "Subprotocol", "", "Add subprotocol")
-    SectionLabel("Saved messages")
+    SectionLabel(tr(R.string.s_subprotocols))
+    KeyValueRows(r.subprotocols.map { Triple(it, "", true) }, { list -> edit { it.withWebSocket(subprotocols = list.map { t -> t.first }.filter { s -> s.isNotEmpty() }) } }, tr(R.string.s_subprotocol), "", tr(R.string.s_add_subprotocol))
+    SectionLabel(tr(R.string.s_saved_messages))
     val extras = r.wsMessages
     KeyValueRows(r.wsMessages.map { Triple(it.name, it.content, true) }, { list ->
         edit { it.withWebSocket(messages = list.mapIndexed { i, t -> WsMessage(t.first, t.second, extras.getOrNull(i)?.extra ?: tech.rws8.hitop.core.EmptyObject) }) }
-    }, "Name", "Message", "Add message")
-    Text("Messages are sent with \${variables} filled in when you send them.", style = HitopType.caption, color = Hitop.textMuted)
+    }, tr(R.string.s_name), tr(R.string.s_message), tr(R.string.s_add_message))
+    Text(tr(R.string.s_messages_are_sent_with_variables_filled_in), style = HitopType.caption, color = Hitop.textMuted)
 }
 
 /** A gRPC request's Service tab: service, method, message (with a template from reflection), TLS. */
@@ -85,19 +87,19 @@ fun GrpcTab(vm: AppViewModel, collectionId: String, r: Request, edit: ((Request)
     val error by session.schemaError.collectAsState()
     val source by session.source.collectAsState()
     val scope = rememberCoroutineScope()
-    SmallField(g.service, { v -> edit { it.withGrpc(g.copy(service = v)) } }, "Service", Modifier.fillMaxWidth())
-    SmallField(g.method, { v -> edit { it.withGrpc(g.copy(method = v)) } }, "Method", Modifier.fillMaxWidth())
+    SmallField(g.service, { v -> edit { it.withGrpc(g.copy(service = v)) } }, tr(R.string.s_service), Modifier.fillMaxWidth())
+    SmallField(g.method, { v -> edit { it.withGrpc(g.copy(method = v)) } }, tr(R.string.s_method), Modifier.fillMaxWidth())
     Row(verticalAlignment = Alignment.CenterVertically) {
-        Text("Plaintext (no TLS)", Modifier.weight(1f), style = HitopType.body, color = Hitop.text)
+        Text(tr(R.string.s_plaintext_no_tls), Modifier.weight(1f), style = HitopType.body, color = Hitop.text)
         Switch(g.plaintext, { v -> edit { it.withGrpc(g.copy(plaintext = v)) } }, colors = SwitchDefaults.colors(checkedTrackColor = Hitop.accent, checkedThumbColor = Hitop.onAccent))
     }
     Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-        OutlinedButton(onClick = { scope.launch { session.load(collectionId, r) } }, modifier = Modifier.testTag("grpc-load")) { Text("Load services", color = Hitop.text) }
+        OutlinedButton(onClick = { scope.launch { session.load(collectionId, r) } }, modifier = Modifier.testTag("grpc-load")) { Text(tr(R.string.s_load_services), color = Hitop.text) }
         if (g.service.isNotEmpty() && g.method.isNotEmpty()) OutlinedButton(onClick = {
             scope.launch { session.template(collectionId, r, "${g.service}.${g.method}")?.let { t -> edit { it.withGrpc(g.copy(message = t)) } } }
-        }) { Text("Template", color = Hitop.text) }
+        }) { Text(tr(R.string.s_template), color = Hitop.text) }
     }
-    source?.let { Text("From $it", style = HitopType.caption, color = Hitop.textMuted) }
+    source?.let { Text(tr(R.string.s_from, it), style = HitopType.caption, color = Hitop.textMuted) }
     error?.let { Text(it, style = HitopType.caption, color = Hitop.warning, modifier = Modifier.testTag("grpc-error")) }
     if (services.isNotEmpty()) {
         Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
@@ -106,9 +108,9 @@ fun GrpcTab(vm: AppViewModel, collectionId: String, r: Request, edit: ((Request)
             } }
         }
     }
-    SectionLabel("Message (JSON)")
-    CodeEditor(g.message, { v -> edit { it.withGrpc(g.copy(message = v)) } }, json = true, label = "gRPC message", placeholder = "{ }", minHeight = 160)
-    Text("Headers are the call's metadata; auth goes there too. Unary and server-streaming calls; .proto files aren't read on the phone (server reflection only).", style = HitopType.caption, color = Hitop.textMuted)
+    SectionLabel(tr(R.string.s_message_json))
+    CodeEditor(g.message, { v -> edit { it.withGrpc(g.copy(message = v)) } }, json = true, label = tr(R.string.s_grpc_message), placeholder = "{ }", minHeight = 160)
+    Text(tr(R.string.s_headers_are_the_call_s_metadata_auth), style = HitopType.caption, color = Hitop.textMuted)
 }
 
 /** A GraphQL query editor that knows its cursor: Load schema, then the fields of the type at the cursor as chips. */
@@ -120,8 +122,8 @@ fun GraphQLEditor(vm: AppViewModel, collectionId: String, r: Request, edit: ((Re
     val scope = rememberCoroutineScope()
     var error by remember { mutableStateOf<String?>(null) }
     Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
-        OutlinedButton(onClick = { scope.launch { error = vm.loadSchema(collectionId, r) } }, modifier = Modifier.testTag("load-schema")) { Text(if (schema == null) "Load schema" else "Reload schema", color = Hitop.text) }
-        schema?.let { Text("${it.types.size} types", style = HitopType.caption, color = Hitop.textMuted, modifier = Modifier.testTag("schema-loaded")) }
+        OutlinedButton(onClick = { scope.launch { error = vm.loadSchema(collectionId, r) } }, modifier = Modifier.testTag("load-schema")) { Text(if (schema == null) tr(R.string.s_load_schema) else tr(R.string.s_reload_schema), color = Hitop.text) }
+        schema?.let { Text(tr(R.string.s_types, it.types.size), style = HitopType.caption, color = Hitop.textMuted, modifier = Modifier.testTag("schema-loaded")) }
     }
     error?.let { Text(it, style = HitopType.caption, color = Hitop.warning) }
     val suggestions = schema?.suggestions(value.text, value.selection.end).orEmpty()
@@ -135,13 +137,13 @@ fun GraphQLEditor(vm: AppViewModel, collectionId: String, r: Request, edit: ((Re
                         val text = value.text.substring(0, at - prefix.length) + f.name + value.text.substring(at)
                         value = TextFieldValue(text, TextRange(at - prefix.length + f.name.length))
                         edit { it.withBody(text) }
-                    }.heightIn(min = 36.dp).padding(horizontal = 10.dp, vertical = 9.dp).semantics { contentDescription = "Insert ${f.name}: ${f.type}" }.testTag("suggest-${f.name}"))
+                    }.heightIn(min = 36.dp).padding(horizontal = 10.dp, vertical = 9.dp).semantics { contentDescription = tr(R.string.s_insert, f.name, f.type) }.testTag("suggest-${f.name}"))
             }
         }
     }
     androidx.compose.foundation.layout.Box(Modifier.fillMaxWidth().clip(RoundedCornerShape(16.dp)).background(Hitop.code).heightIn(min = 200.dp).padding(16.dp)) {
         BasicTextField(value, { v -> value = v; if (v.text != r.body) edit { it.withBody(v.text) } }, textStyle = HitopType.mono.copy(color = Hitop.text), cursorBrush = SolidColor(Hitop.accent),
-            modifier = Modifier.fillMaxWidth().semantics { contentDescription = "GraphQL query" }.testTag("GraphQL query"))
+            modifier = Modifier.fillMaxWidth().semantics { contentDescription = tr(R.string.s_graphql_query) }.testTag("GraphQL query"))
     }
     schema?.let { s -> SchemaBrowser(s) }
 }
@@ -149,7 +151,7 @@ fun GraphQLEditor(vm: AppViewModel, collectionId: String, r: Request, edit: ((Re
 @Composable
 private fun SchemaBrowser(s: GraphQLSchema) {
     var open by remember { mutableStateOf<String?>(null) }
-    Text(if (open == null) "Browse the schema" else "Schema: $open", Modifier.clickable { open = if (open == null) s.query else null }.padding(vertical = 8.dp).testTag("browse-schema"), style = HitopType.label, color = Hitop.accent)
+    Text(if (open == null) tr(R.string.s_browse_the_schema) else tr(R.string.s_schema, open), Modifier.clickable { open = if (open == null) s.query else null }.padding(vertical = 8.dp).testTag("browse-schema"), style = HitopType.label, color = Hitop.accent)
     val t = open?.let { s.types[it] } ?: return
     Column(Modifier.fillMaxWidth().clip(RoundedCornerShape(12.dp)).background(Hitop.surface).padding(12.dp)) {
         t.fields.forEach { f ->
@@ -173,18 +175,18 @@ fun WebSocketSheet(vm: AppViewModel, r: Request, close: () -> Unit) {
     ModalBottomSheet(onDismissRequest = close, containerColor = Hitop.surface, sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true), modifier = Modifier.testTag("ws-sheet")) {
         Column(Modifier.fillMaxHeight(0.9f).padding(horizontal = 16.dp).navigationBarsPadding(), verticalArrangement = Arrangement.spacedBy(10.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
-                Text(when (status) { WebSocketSession.Status.OPEN -> "Connected" + (s.protocol?.let { " · $it" } ?: ""); WebSocketSession.Status.CONNECTING -> "Connecting…"; else -> "Not connected" },
+                Text(when (status) { WebSocketSession.Status.OPEN -> tr(R.string.s_connected) + (s.protocol?.let { " · ${it}" } ?: ""); WebSocketSession.Status.CONNECTING -> tr(R.string.s_connecting); else -> tr(R.string.s_not_connected) },
                     Modifier.weight(1f).testTag("ws-status"), style = HitopType.cardTitle, color = if (status == WebSocketSession.Status.OPEN) Hitop.success else Hitop.textSecondary)
-                if (status == WebSocketSession.Status.OPEN) TextButton(onClick = { s.close() }, modifier = Modifier.testTag("ws-disconnect")) { Text("Disconnect", color = Hitop.error) }
-                else TextButton(onClick = { s.connect(vm.collectionOf(r.id) ?: return@TextButton, vm.draft(r.id) ?: r) }) { Text("Connect", color = Hitop.accent) }
+                if (status == WebSocketSession.Status.OPEN) TextButton(onClick = { s.close() }, modifier = Modifier.testTag("ws-disconnect")) { Text(tr(R.string.s_disconnect), color = Hitop.error) }
+                else TextButton(onClick = { s.connect(vm.collectionOf(r.id) ?: return@TextButton, vm.draft(r.id) ?: r) }) { Text(tr(R.string.s_connect), color = Hitop.accent) }
             }
             Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                 r.wsMessages.forEach { m -> OutlinedButton(onClick = { scope.launch { s.sendSaved(m.name) } }, enabled = status == WebSocketSession.Status.OPEN, modifier = Modifier.testTag("ws-saved-${m.name}")) { Text(m.name, color = Hitop.text) } }
             }
             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                SmallField(draft, { draft = it }, "Message", Modifier.weight(1f))
+                SmallField(draft, { draft = it }, tr(R.string.s_message), Modifier.weight(1f))
                 Button(onClick = { val t = draft; draft = ""; scope.launch { s.send(t) } }, enabled = status == WebSocketSession.Status.OPEN && draft.isNotEmpty(),
-                    colors = ButtonDefaults.buttonColors(containerColor = Hitop.accent, contentColor = Hitop.onAccent), modifier = Modifier.testTag("ws-send")) { Text("Send") }
+                    colors = ButtonDefaults.buttonColors(containerColor = Hitop.accent, contentColor = Hitop.onAccent), modifier = Modifier.testTag("ws-send")) { Text(tr(R.string.s_send_2)) }
             }
             LazyColumn(Modifier.weight(1f).fillMaxWidth().clip(RoundedCornerShape(16.dp)).background(Hitop.codeDeep).padding(12.dp).testTag("ws-log"), verticalArrangement = Arrangement.spacedBy(6.dp)) {
                 items(log) { l ->
@@ -208,15 +210,15 @@ fun SseSheet(vm: AppViewModel, r: Request, close: () -> Unit) {
     ModalBottomSheet(onDismissRequest = { s.stop(); close() }, containerColor = Hitop.surface, sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true), modifier = Modifier.testTag("sse-sheet")) {
         Column(Modifier.fillMaxHeight(0.9f).padding(horizontal = 16.dp).navigationBarsPadding(), verticalArrangement = Arrangement.spacedBy(10.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
-                Text((if (st.running) "Live · " else if (st.stopped) "Stopped · " else "Ended · ") + "${st.events.size} events", Modifier.weight(1f).testTag("sse-count"), style = HitopType.cardTitle, color = Hitop.text)
-                st.status?.let { Text("$it", style = HitopType.mono, color = if (it < 400) Hitop.success else Hitop.error) }
-                if (st.running) TextButton(onClick = { s.stop() }, modifier = Modifier.testTag("sse-stop")) { Text("Stop", color = Hitop.error) }
+                Text((if (st.running) tr(R.string.s_live) else if (st.stopped) tr(R.string.s_stopped_2) else tr(R.string.s_ended)) + tr(R.string.s_events, st.events.size), Modifier.weight(1f).testTag("sse-count"), style = HitopType.cardTitle, color = Hitop.text)
+                st.status?.let { Text("${it}", style = HitopType.mono, color = if (it < 400) Hitop.success else Hitop.error) }
+                if (st.running) TextButton(onClick = { s.stop() }, modifier = Modifier.testTag("sse-stop")) { Text(tr(R.string.s_stop), color = Hitop.error) }
             }
             st.error?.let { Text(it, style = HitopType.caption, color = Hitop.errorText) }
             LazyColumn(Modifier.weight(1f).fillMaxWidth().clip(RoundedCornerShape(16.dp)).background(Hitop.codeDeep).padding(12.dp).testTag("sse-events"), verticalArrangement = Arrangement.spacedBy(10.dp)) {
                 items(st.events) { (at, e) ->
                     Column(Modifier.semantics(mergeDescendants = true) {}) {
-                        Text("${time(at)} · ${e.event}${e.id?.let { " · #$it" } ?: ""}", style = HitopType.monoSmall, color = Hitop.jsonKey)
+                        Text("${time(at)} · ${e.event}${e.id?.let { " · #${it}" } ?: ""}", style = HitopType.monoSmall, color = Hitop.jsonKey)
                         Text(e.data, style = HitopType.monoSmall, color = Hitop.text)
                     }
                 }
@@ -234,9 +236,9 @@ fun GrpcSheet(vm: AppViewModel, r: Request, close: () -> Unit) {
     ModalBottomSheet(onDismissRequest = close, containerColor = Hitop.surface, sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true), modifier = Modifier.testTag("grpc-sheet")) {
         Column(Modifier.fillMaxHeight(0.9f).padding(horizontal = 16.dp).navigationBarsPadding(), verticalArrangement = Arrangement.spacedBy(10.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
-                Text(c.status?.let { "$it${c.statusMessage?.takeIf { m -> m.isNotEmpty() }?.let { m -> " · $m" } ?: ""}" } ?: if (c.running) "Calling…" else "—", Modifier.weight(1f).testTag("grpc-status"),
+                Text(c.status?.let { "${it}${c.statusMessage?.takeIf { m -> m.isNotEmpty() }?.let { m -> " · ${m}" } ?: ""}" } ?: if (c.running) tr(R.string.s_calling) else "—", Modifier.weight(1f).testTag("grpc-status"),
                     style = HitopType.cardTitle, color = if (c.status == "OK") Hitop.success else if (c.status != null || c.error != null) Hitop.error else Hitop.textSecondary)
-                if (c.running) TextButton(onClick = { s.cancel() }) { Text("Cancel", color = Hitop.error) }
+                if (c.running) TextButton(onClick = { s.cancel() }) { Text(tr(R.string.s_cancel), color = Hitop.error) }
             }
             c.error?.let { Text(it, style = HitopType.caption, color = Hitop.errorText, modifier = Modifier.testTag("grpc-call-error")) }
             LazyColumn(Modifier.weight(1f).fillMaxWidth().clip(RoundedCornerShape(16.dp)).background(Hitop.codeDeep).padding(12.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {

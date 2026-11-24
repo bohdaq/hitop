@@ -36,6 +36,8 @@ import java.text.SimpleDateFormat
 import java.util.Calendar
 import java.util.Date
 import java.util.Locale
+import tech.rws8.hitop.R
+import tech.rws8.hitop.platform.tr
 
 /** "Today", "Yesterday" or the date, for history groups. */
 fun dayLabel(ms: Long, now: Long = System.currentTimeMillis()): String {
@@ -57,12 +59,12 @@ fun HistoryScreen(vm: AppViewModel) {
     LazyColumn(Modifier.fillMaxSize().testTag("history"), contentPadding = PaddingValues(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
         item {
             Row(verticalAlignment = Alignment.CenterVertically) {
-                Text("History", Modifier.weight(1f).semantics { heading() }, style = HitopType.screenTitle, color = Hitop.text)
-                if (s.history.isNotEmpty()) TextButton(onClick = { confirm = true }) { Text("Clear", color = Hitop.accent) }
+                Text(tr(R.string.s_history), Modifier.weight(1f).semantics { heading() }, style = HitopType.screenTitle, color = Hitop.text)
+                if (s.history.isNotEmpty()) TextButton(onClick = { confirm = true }) { Text(tr(R.string.s_clear), color = Hitop.accent) }
             }
-            Text("Every request sent from this phone, newest first. Tap one to open it as a new request.", style = HitopType.caption, color = Hitop.textMuted)
+            Text(tr(R.string.s_every_request_sent_from_this_phone_newest), style = HitopType.caption, color = Hitop.textMuted)
         }
-        if (s.history.isEmpty()) item { Text("Nothing sent yet.", style = HitopType.bodySmall, color = Hitop.textMuted) }
+        if (s.history.isEmpty()) item { Text(tr(R.string.s_nothing_sent_yet), style = HitopType.bodySmall, color = Hitop.textMuted) }
         groups.forEach { (day, entries) ->
             item { SectionLabel(day) }
             item {
@@ -72,7 +74,7 @@ fun HistoryScreen(vm: AppViewModel) {
             }
         }
     }
-    if (confirm) ConfirmDialog("Clear the history?", "Every entry is deleted from this phone.", "Clear", { confirm = false }) { vm.library.clearHistory(); confirm = false }
+    if (confirm) ConfirmDialog(tr(R.string.s_clear_the_history), tr(R.string.s_every_entry_is_deleted_from_this_phone), tr(R.string.s_clear), { confirm = false }) { vm.library.clearHistory(); confirm = false }
 }
 
 @Composable
@@ -80,16 +82,15 @@ private fun HistoryRow(h: HistoryEntry, open: () -> Unit) {
     val locale = androidx.compose.ui.platform.LocalConfiguration.current.locales[0]
     val time = SimpleDateFormat("HH:mm", locale).format(Date(h.timestamp))
     Row(
-        Modifier.fillMaxWidth().clickable(onClickLabel = "Open as a new request") { open() }.heightIn(min = 56.dp).padding(horizontal = 16.dp).semantics(mergeDescendants = true) {}.testTag("history-${h.request.name}"),
-        verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp),
-    ) {
+        Modifier.fillMaxWidth().clickable(onClickLabel = tr(R.string.s_open_as_a_new_request)) { open() }.heightIn(min = 56.dp).padding(horizontal = 16.dp).semantics(mergeDescendants = true) {}.testTag("history-${h.request.name}"),
+        verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
         MethodTag(h.request.tag)
         Column(Modifier.weight(1f)) {
             Text(h.request.name, style = HitopType.body, color = Hitop.text, maxLines = 1, overflow = TextOverflow.Ellipsis)
-            Text("${h.collectionName} · $time${h.response?.let { " · " + formatDuration(it.durationMs) } ?: ""}", style = HitopType.caption, color = Hitop.textMuted, maxLines = 1)
+            Text("${h.collectionName} · ${time}${h.response?.let { " · " + formatDuration(it.durationMs) } ?: ""}", style = HitopType.caption, color = Hitop.textMuted, maxLines = 1)
         }
         val st = h.response?.status
-        Text(st?.toString() ?: "failed", style = HitopType.monoSmall, color = if (st == null) Hitop.error else statusColor(st))
+        Text(st?.toString() ?: tr(R.string.s_failed), style = HitopType.monoSmall, color = if (st == null) Hitop.error else statusColor(st))
     }
 }
 
