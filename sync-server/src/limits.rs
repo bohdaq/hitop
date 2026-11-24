@@ -148,10 +148,11 @@ impl Entitlement {
     /// The plan whose limits apply: a lapsed, paused, refunded or not yet paid (`incomplete`)
     /// subscription is on Free (nothing deleted). An ended trial or cancelled period becomes `expired` (`billing::expire`).
     pub fn plan_in_force(&self) -> &str {
-        if matches!(self.status.as_str(), "expired" | "unpaid" | "paused" | "refunded" | "incomplete") {
-            "free"
-        } else {
+        // An allow-list: a status this server doesn't know never keeps a paid plan.
+        if crate::billing::LIVE.contains(&self.status.as_str()) {
             &self.plan
+        } else {
+            "free"
         }
     }
 

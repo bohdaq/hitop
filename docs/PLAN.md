@@ -45,7 +45,8 @@ Status is kept in the table at the end; choices made on the way go under "Decisi
 | # | Status |
 | --- | --- |
 | C0 | built: core and CLI storage journal, damaged files kept (core, web, desktop, iOS) and never deleted from the cloud, iOS drafts; CI pending |
-| C1–C9 | not started |
+| C1 | in progress: billing allow-list done (the hosted server has only `active`) |
+| C2–C9 | not started |
 
 ## Decisions
 
