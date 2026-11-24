@@ -13,18 +13,23 @@ pub type Row = BTreeMap<String, String>;
 /// JSON when the file starts with `[`.
 pub fn read(path: &Path) -> Result<Vec<Row>> {
     let text = std::fs::read_to_string(path).with_context(|| format!("reading --data {}", path.display()))?;
-    let text = text.strip_prefix('\u{feff}').unwrap_or(&text);
+    let rows = parse(&text, path).with_context(|| format!("--data {}", path.display()))?;
+    if rows.is_empty() {
+        bail!("--data {} has no rows", path.display());
+    }
+    Ok(rows)
+}
+
+/// The rows of a data file's text; its name picks the parser (also the Android app's, hitop-ffi).
+pub fn parse(text: &str, path: &Path) -> Result<Vec<Row>> {
+    let text = text.strip_prefix('\u{feff}').unwrap_or(text);
     let ext = path.extension().and_then(|e| e.to_str()).map(str::to_ascii_lowercase);
     let json = match ext.as_deref() {
         Some("json") => true,
         Some("csv") => false,
         _ => text.trim_start().starts_with('['),
     };
-    let rows = if json { from_json(text) } else { from_csv(text) }.with_context(|| format!("--data {}", path.display()))?;
-    if rows.is_empty() {
-        bail!("--data {} has no rows", path.display());
-    }
-    Ok(rows)
+    if json { from_json(text) } else { from_csv(text) }
 }
 
 fn from_json(text: &str) -> Result<Vec<Row>> {

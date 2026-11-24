@@ -134,6 +134,6 @@ Choices made without you, each reversible: `android/DECISIONS.md`.
 | B2 | built: OAuth 2.0 (client credentials, password, code + PKCE on a loopback address), SigV4, Digest forms, collection auth; CI pending |
 | B3 | built: Settings (time limit, user certificates, proxy, library sync, cookies); CI pending |
 | B4 | built: compare with examples and history, examples list, undo after delete and move; CI pending |
-| B5 | not started |
+| B5 | built: background sync, scheduled runs, data files; CI pending |
 | B6 | not started |
 | B7 | not started |

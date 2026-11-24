@@ -5,6 +5,10 @@
 use serde::Deserialize;
 use serde_json::{json, Value};
 
+/// `hitop run --data`'s parser, the CLI's own file.
+#[path = "../../../cli/crates/hitop/src/commands/data.rs"]
+#[allow(dead_code)]
+mod data;
 mod files;
 mod import;
 mod network;
@@ -53,6 +57,7 @@ fn call(op: &str, a: &Value) -> Option<R> {
         "oauthForget" => oauth::forget(),
         "snippet" => send::snippet(&Args(a)),
         "runStart" => run::start(&Args(a)),
+        "dataRows" => run::data_rows(&Args(a)),
         "runNext" => run::next(&Args(a)),
         "runCancel" => run::cancel(&Args(a)),
         "wsConnect" => ws::connect_op(&Args(a)),

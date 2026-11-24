@@ -73,6 +73,7 @@ object AppGraph {
             network.forget()
             sync.refreshBadges()
             if (s.librarySync) scope.launch { sync.sync() }
+            if (fake == null) runCatching { BackgroundWork.updateSync(context) }
         }
         sync.forgetDamaged(store)
         store.setAsideDamaged()
@@ -82,8 +83,10 @@ object AppGraph {
             sync.refreshBadges()
             shared.applyRoles()
             scope.launch { sync.sync(); shared.syncAll() }
+            if (fake == null) runCatching { BackgroundWork.updateSync(context) }
         }
         val runs = RunCenter(lib, store, tech.rws8.hitop.BuildConfig.VERSION_NAME)
+        if (fake == null) runs.onSchedules = { runCatching { BackgroundWork.updateRuns(context) } }
         val assistant = if (fake != null) tech.rws8.hitop.core.FakeAssistant(assistantReady) else GeminiNano()
         return Parts(lib, cloud, sync, shared, if (fake != null) FakeSignIn(fake) else AndroidSignIn(), runs, settings, network, assistant)
     }

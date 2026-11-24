@@ -52,6 +52,7 @@ import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.core.content.FileProvider
+import kotlinx.coroutines.launch
 import tech.rws8.hitop.cloud.LibrarySync
 import tech.rws8.hitop.core.RunProgress
 import tech.rws8.hitop.core.RunRecord
@@ -123,11 +124,30 @@ fun RunScreen(vm: AppViewModel, collectionId: String) {
     val context = LocalContext.current
     // The run's progress notification needs the permission (Android 13+); the run goes either way.
     val ask = androidx.activity.compose.rememberLauncherForActivityResult(androidx.activity.result.contract.ActivityResultContracts.RequestPermission()) { }
-    fun start() {
+    var data by remember { mutableStateOf<tech.rws8.hitop.core.RunData?>(null) }
+    var dataError by remember { mutableStateOf<String?>(null) }
+    val scope = androidx.compose.runtime.rememberCoroutineScope()
+    val schedules by vm.runs.schedules.collectAsState()
+    val pickData = androidx.activity.compose.rememberLauncherForActivityResult(androidx.activity.result.contract.ActivityResultContracts.OpenDocument()) { uri ->
+        if (uri != null) scope.launch {
+            dataError = null
+            try {
+                data = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) { tech.rws8.hitop.core.RunData.read(tech.rws8.hitop.platform.Incoming.name(context, uri), String(tech.rws8.hitop.platform.Incoming.read(context, uri), Charsets.UTF_8)) }
+            } catch (e: kotlinx.coroutines.CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                dataError = e.message ?: "This file can't be read."
+            }
+        }
+    }
+    fun askPermission() {
         if (android.os.Build.VERSION.SDK_INT >= 33 && androidx.core.content.ContextCompat.checkSelfPermission(context, android.Manifest.permission.POST_NOTIFICATIONS) != android.content.pm.PackageManager.PERMISSION_GRANTED && !tech.rws8.hitop.platform.AppGraph.runsInProcess) {
             ask.launch(android.Manifest.permission.POST_NOTIFICATIONS)
         }
-        vm.startRun(context, collectionId, iterations, bail)
+    }
+    fun start() {
+        askPermission()
+        vm.startRun(context, collectionId, iterations, bail, data)
     }
     val p = current?.takeIf { it.collectionId == collectionId }
     Column(Modifier.fillMaxSize().background(Hitop.ground).statusBarsPadding()) {
@@ -146,11 +166,34 @@ fun RunScreen(vm: AppViewModel, collectionId: String) {
                         Text("Stop at the first failure", Modifier.weight(1f), style = HitopType.body, color = Hitop.text)
                         Switch(bail, { bail = it }, colors = SwitchDefaults.colors(checkedTrackColor = Hitop.accent, checkedThumbColor = Hitop.onAccent), modifier = Modifier.testTag("bail"))
                     }
-                    Row(Modifier.padding(horizontal = 16.dp, vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
+                    if (data == null) Row(Modifier.padding(horizontal = 16.dp, vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
                         Text("Iterations", Modifier.weight(1f), style = HitopType.body, color = Hitop.text)
                         TextButton(onClick = { if (iterations > 1) iterations-- }) { Text("−", color = Hitop.accent, style = HitopType.title) }
                         Text("$iterations", style = HitopType.mono, color = Hitop.text)
                         TextButton(onClick = { if (iterations < 20) iterations++ }) { Text("+", color = Hitop.accent, style = HitopType.title) }
+                    }
+                }
+                Card {
+                    Row(Modifier.padding(horizontal = 16.dp, vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
+                        Column(Modifier.weight(1f)) {
+                            Text(data?.name ?: "Data file", style = HitopType.body, color = Hitop.text)
+                            Text(data?.let { "${it.rows} rows: ${it.columns.joinToString()}" } ?: "CSV or JSON: one iteration per row, its values as variables.", style = HitopType.caption, color = Hitop.textMuted)
+                            dataError?.let { Text(it, style = HitopType.caption, color = Hitop.errorText) }
+                        }
+                        TextButton(onClick = { if (data == null) pickData.launch(arrayOf("*/*")) else data = null }, modifier = Modifier.testTag("run-data")) { Text(if (data == null) "Choose" else "Remove", color = Hitop.accent) }
+                    }
+                }
+                Card {
+                    val mine = schedules.firstOrNull { it.collectionId == collectionId }
+                    Column(Modifier.padding(horizontal = 16.dp, vertical = 8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                        Text("Run on a schedule", style = HitopType.body, color = Hitop.text)
+                        val names = linkedMapOf(0L to "Off", 15L to "15 min", 60L to "Hour", 360L to "6 hours", 1440L to "Day")
+                        ChipRow(names.values.toList(), names[mine?.everyMinutes ?: 0L] ?: "${mine?.everyMinutes} min", { l ->
+                            val every = names.entries.first { it.value == l }.key
+                            if (every > 0) askPermission()
+                            vm.runs.setSchedule(collectionId, if (every == 0L) null else tech.rws8.hitop.core.RunSchedule(collectionId, s.activeEnvironmentId, every))
+                        })
+                        Text(if (mine == null) "Runs in the background at about these intervals; Android decides when. You are told when a run fails." else "With ${s.environments.firstOrNull { it.id == mine.environmentId }?.name ?: "no environment"}, about every ${names[mine.everyMinutes]?.lowercase() ?: "${mine.everyMinutes} min"}. A run over about 10 minutes is stopped.", style = HitopType.caption, color = Hitop.textMuted, modifier = Modifier.testTag("schedule-text"))
                     }
                 }
                 Text("Every request in order with ${s.activeEnvironment?.name ?: "no environment"}; WebSocket and gRPC requests are left out. It runs on with the app closed, its progress in a notification.", style = HitopType.caption, color = Hitop.textMuted)

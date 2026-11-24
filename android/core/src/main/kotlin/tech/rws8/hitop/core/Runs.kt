@@ -44,6 +44,27 @@ data class RunRecord(
     }
 }
 
+/** A data file for a run: one iteration per row, the row's values as variables. */
+data class RunData(val name: String, val text: String, val rows: Int, val columns: List<String>) {
+    companion object {
+        /** Blocking; throws with the line of a mistake. */
+        fun read(name: String, text: String): RunData {
+            val o = Ffi.call("dataRows", buildJsonObject { put("data", text); put("dataName", name) }).jsonObject
+            return RunData(name, text, o.str("rows", "0").toInt(), o.stringList("columns"))
+        }
+    }
+}
+
+/** A collection run every [everyMinutes] (approximately: Android decides when), with [environmentId]. */
+data class RunSchedule(val collectionId: String, val environmentId: String?, val everyMinutes: Long) {
+    fun toJson() = buildJsonObject { put("collectionId", collectionId); environmentId?.let { put("environmentId", it) }; put("everyMinutes", everyMinutes) }
+
+    companion object {
+        val CHOICES = listOf(15L, 60L, 360L, 1440L)
+        fun of(o: JsonObject) = RunSchedule(o.str("collectionId"), o.strOrNull("environmentId"), (o.strOrNull("everyMinutes")?.toLongOrNull() ?: 60).coerceAtLeast(15))
+    }
+}
+
 /** A step of a run as it finishes (the live list and the notification). */
 data class RunStep(val iteration: Int, val name: String, val method: String, val status: Int?, val passed: Boolean, val durationMs: Long, val error: String?, val tests: List<TestResult>)
 
@@ -101,6 +122,21 @@ class RunCenter(private val library: Library, private val store: LibraryStore, p
     /** Called on every change of the run going on (the notification) and at its end (widgets). */
     var onProgress: ((RunProgress) -> Unit)? = null
 
+    /** A data file for the next run of a collection (handed over in memory, not through an intent). */
+    private val nextData = java.util.concurrent.ConcurrentHashMap<String, RunData>()
+    fun setData(collectionId: String, d: RunData?) { if (d == null) nextData.remove(collectionId) else nextData[collectionId] = d }
+
+    private val _schedules = MutableStateFlow((store.readJson("schedules.json") as? JsonArray)?.mapNotNull { (it as? JsonObject)?.let(RunSchedule::of) } ?: emptyList())
+    val schedules: StateFlow<List<RunSchedule>> = _schedules.asStateFlow()
+    var onSchedules: (() -> Unit)? = null
+
+    fun setSchedule(collectionId: String, s: RunSchedule?) {
+        val list = _schedules.value.filter { it.collectionId != collectionId } + listOfNotNull(s)
+        store.write("schedules.json", JsonArray(list.map { it.toJson() }))
+        _schedules.value = list
+        onSchedules?.invoke()
+    }
+
     private fun load(): List<RunRecord> = (store.readJson("runs.json") as? JsonArray)?.mapNotNull { (it as? JsonObject)?.let(RunRecord::of) } ?: emptyList()
 
     private fun save(list: List<RunRecord>) = store.write("runs.json", JsonArray(list.map { it.toJson() }))
@@ -121,10 +157,12 @@ class RunCenter(private val library: Library, private val store: LibraryStore, p
 
     private fun runNow(c: Collection, environmentId: String?, iterations: Int, bail: Boolean): RunRecord? {
         val env = library.state.value.environments.firstOrNull { it.id == environmentId }
+        val data = nextData.remove(c.id)
         val args = library.runArgs(c, env) {
+            data?.let { put("data", it.text); put("dataName", it.name) }
             put("iterations", iterations); put("bail", bail); put("toolVersion", toolVersion); put("jar", store.loadJar())
         }
-        val steps = c.requests.count { !it.isWebSocket && !it.isGrpc } * iterations
+        val steps = c.requests.count { !it.isWebSocket && !it.isGrpc } * (data?.rows ?: iterations)
         var progress = RunProgress(c.id, c.name, env?.name, steps)
         _current.value = progress
         onProgress?.invoke(progress)

@@ -80,6 +80,7 @@ class MainActivity : ComponentActivity() {
 
     override fun onStop() {
         vm.writeDrafts()
+        if (AppGraph.fakeCloud == null) runCatching { tech.rws8.hitop.platform.BackgroundWork.pushLater(applicationContext) }
         super.onStop()
     }
 
@@ -88,5 +89,9 @@ class MainActivity : ComponentActivity() {
         // Other devices' changes when the app comes to the front.
         val p = AppGraph.parts(applicationContext)
         AppGraph.scope.launch { p.sync.sync(); p.shared.syncAll() }
+        if (AppGraph.fakeCloud == null) runCatching {
+            tech.rws8.hitop.platform.BackgroundWork.updateSync(applicationContext)
+            tech.rws8.hitop.platform.BackgroundWork.updateRuns(applicationContext)
+        }
     }
 }

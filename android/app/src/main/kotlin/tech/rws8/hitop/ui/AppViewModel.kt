@@ -86,8 +86,9 @@ class AppViewModel(val library: Library, cloud: tech.rws8.hitop.cloud.HitopCloud
     fun secretValues(): List<String> = library.activeSecretValues()
 
     /** Starts a collection run: the foreground service on a device, in-process under Robolectric. */
-    fun startRun(context: android.content.Context, collectionId: String, iterations: Int = 1, bail: Boolean = false) {
+    fun startRun(context: android.content.Context, collectionId: String, iterations: Int = 1, bail: Boolean = false, data: tech.rws8.hitop.core.RunData? = null) {
         if (runs.running) return
+        runs.setData(collectionId, data)
         if (tech.rws8.hitop.platform.AppGraph.runsInProcess) {
             viewModelScope.launch {
                 runs.run(collectionId, iterations, bail)
