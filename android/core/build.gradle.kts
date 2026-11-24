@@ -14,6 +14,7 @@ dependencies {
     testImplementation(libs.junit)
     testImplementation(libs.kotlinx.coroutines.test)
     testFixturesImplementation(libs.kotlinx.serialization.json)
+    testFixturesImplementation(libs.kotlinx.coroutines.core)
 }
 
 val ffiHost = rootProject.layout.projectDirectory.dir("build/ffi/host")

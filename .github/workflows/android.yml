@@ -168,7 +168,7 @@ jobs:
           sudo udevadm trigger --name-match=kvm
       - name: Build the test APKs
         working-directory: android
-        run: ./gradlew :app:assembleDebug :app:assembleDebugAndroidTest
+        run: ./gradlew :app:assembleDebug :app:assembleDebugAndroidTest :app:assembleSmoke
       # The emulator sometimes refuses the action's first adb calls while it settles ("Failure calling
       # service input: Broken pipe"); one retry on a fresh emulator, never a retry of a failed test run.
       - name: Instrumented tests
@@ -189,7 +189,7 @@ jobs:
           working-directory: android
           # A test that ran and failed leaves tests-failed: then there is no retry (exit 2 = the
           # emulator never got ready, which is retried).
-          script: scripts/run-ui-tests.sh || { [ $? -eq 2 ] || touch ../tests-failed; exit 1; }
+          script: scripts/run-ui-tests.sh && scripts/smoke-release.sh || { [ $? -eq 2 ] || touch ../tests-failed; exit 1; }
       - name: Instrumented tests (retry)
         if: steps.first.outcome == 'failure' && hashFiles('tests-failed') == ''
         uses: ReactiveCircus/android-emulator-runner@c9c93e6ba9c4194322e114c40970d5983d9a07cc # v2.38.0
@@ -205,7 +205,7 @@ jobs:
           # Gradle turns animations off (testOptions.animationsDisabled).
           disable-animations: false
           working-directory: android
-          script: scripts/run-ui-tests.sh
+          script: scripts/run-ui-tests.sh && scripts/smoke-release.sh
       - name: Fail when the tests failed
         if: hashFiles('tests-failed') != ''
         run: exit 1

@@ -69,10 +69,18 @@ android {
     }
     buildTypes {
         release {
-            // No shrinking: the JNI bridge and the JSON models are reached by name.
-            isMinifyEnabled = false
+            // R8 removes unused code; names stay readable for crash reports (proguard-rules.pro).
+            isMinifyEnabled = true
+            isShrinkResources = true
+            proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
             if (keystore != null) signingConfig = signingConfigs.getByName("upload")
         }
+    }
+    // The release build with the debug key: CI starts it on the emulators (scripts/smoke-release.sh).
+    buildTypes.create("smoke") {
+        initWith(buildTypes.getByName("release"))
+        signingConfig = signingConfigs.getByName("debug")
+        matchingFallbacks += "release"
     }
     bundle {
         // One download per phone: its ABI's library only (Play splits by ABI).
@@ -134,6 +142,7 @@ dependencies {
     debugImplementation(libs.compose.ui.tooling)
     debugImplementation(libs.compose.ui.test.manifest)
 
+    testImplementation(testFixtures(project(":core")))
     testImplementation(libs.junit)
     testImplementation(libs.robolectric)
     testImplementation(libs.glance.testing)

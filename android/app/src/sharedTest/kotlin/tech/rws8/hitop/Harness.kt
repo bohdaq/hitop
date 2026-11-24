@@ -24,7 +24,7 @@ object Harness {
     /** The drafts' shop-api, every http:// request answered by the in-app stub, then the app. */
     fun launchSeeded(): ActivityScenario<MainActivity> {
         val ctx = ApplicationProvider.getApplicationContext<Context>()
-        AppGraph.useSeed(ctx, if (robolectric) MemorySecretStore() else null)
+        TestGraph.useSeed(ctx, if (robolectric) MemorySecretStore() else null)
         AppGraph.runsInProcess = robolectric
         // The run notification's permission, granted as a person would on the first run: the system
         // dialog would otherwise take the taps meant for the app (Android 13+ devices).

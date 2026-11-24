@@ -5,53 +5,57 @@ import android.os.Build
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
-import kotlinx.serialization.json.buildJsonObject
-import kotlinx.serialization.json.put
 import kotlinx.coroutines.launch
 import tech.rws8.hitop.cloud.CloudCredentials
-import tech.rws8.hitop.cloud.CloudSettings
-import tech.rws8.hitop.cloud.FakeCloud
 import tech.rws8.hitop.cloud.FileCloudSettingsStore
 import tech.rws8.hitop.cloud.HitopCloud
 import tech.rws8.hitop.cloud.LibrarySync
-import tech.rws8.hitop.cloud.MemoryCloudSettingsStore
 import tech.rws8.hitop.cloud.UrlConnectionTransport
 import tech.rws8.hitop.core.Library
 import tech.rws8.hitop.core.LibraryStore
 import tech.rws8.hitop.core.SecretStore
 import tech.rws8.hitop.core.RunCenter
-import tech.rws8.hitop.core.StubServer
 import tech.rws8.hitop.sync.FileSharedSyncStore
 import tech.rws8.hitop.sync.SharedSync
-import tech.rws8.hitop.ffi.Ffi
 import java.io.File
 
-/** The app's objects, made once per process. UI tests replace them with [useSeed] before launching. */
+/** The app's objects, made once per process. UI tests replace them with [use] before launching. */
 object AppGraph {
     class Parts(val library: Library, val cloud: HitopCloud, val sync: LibrarySync, val shared: SharedSync, val signIn: SignInPlatform, val runs: RunCenter, val settings: tech.rws8.hitop.core.SettingsStore, val network: PhoneNetwork, val assistant: tech.rws8.hitop.core.LanguageAssistant)
-
-    /** UI tests: the assistant's answers (FakeAssistant) and whether the model is there. */
-    @Volatile var assistantReady = true
 
     /** Robolectric runs collections in-process (no foreground service there); devices use RunService. */
     @Volatile var runsInProcess = false
 
     val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
     @Volatile private var parts: Parts? = null
-    @Volatile var stub: StubServer? = null
-        private set
-    @Volatile var fakeCloud: FakeCloud? = null
+    /** A test's objects are in use: no background work is scheduled for them. */
+    @Volatile var testing = false
         private set
 
+    /** UI tests: these objects from now on. */
+    fun use(p: Parts) {
+        testing = true
+        parts = p
+    }
+
     fun parts(context: Context): Parts = parts ?: synchronized(this) {
-        parts ?: make(context.applicationContext, seed = false).also { parts = it }
+        parts ?: make(context.applicationContext).also { parts = it }
     }
 
     fun library(context: Context) = parts(context).library
 
     private fun deviceName() = "HITOP on ${Build.MODEL?.takeIf { it.isNotBlank() } ?: "Android"}"
 
-    private fun make(context: Context, seed: Boolean, secrets: SecretStore? = null, fake: FakeCloud? = null): Parts {
+    /** Tests give their own secret store, cloud, sign-in and assistant, and a [seed]. */
+    fun make(
+        context: Context,
+        secrets: SecretStore? = null,
+        cloudFor: ((SecretStore) -> HitopCloud)? = null,
+        signIn: SignInPlatform = AndroidSignIn(),
+        assistant: () -> tech.rws8.hitop.core.LanguageAssistant = { GeminiNano() },
+        background: Boolean = true,
+        seed: (Library) -> Unit = { it.seedFirstVisit() },
+    ): Parts {
         val root = File(context.filesDir, "hitop-library")
         val store = LibraryStore(root)
         val vault = secrets ?: KeystoreSecretStore(File(context.filesDir, "secrets.json"))
@@ -61,19 +65,15 @@ object AppGraph {
         val network = PhoneNetwork(context)
         lib.network = { network.args(settings.value) }
         lib.timeoutMs = { settings.value.timeoutMs }
-        if (seed) lib.seedShopApi(stub?.let { "ws://127.0.0.1:${it.port}" }) else lib.seedFirstVisit()
-        val cloud = if (fake != null) {
-            HitopCloud(fake, CloudCredentials(vault), MemoryCloudSettingsStore(CloudSettings(server = FakeCloud.SERVER)), deviceName = "HITOP on Pixel")
-        } else {
-            HitopCloud(UrlConnectionTransport(), CloudCredentials(vault), FileCloudSettingsStore(File(root, "cloud.json")), deviceName = deviceName())
-        }
+        seed(lib)
+        val cloud = cloudFor?.invoke(vault) ?: HitopCloud(UrlConnectionTransport(), CloudCredentials(vault), FileCloudSettingsStore(File(root, "cloud.json")), deviceName = deviceName())
         val sync = LibrarySync(cloud, lib, File(root, "library-sync.json"), scope)
         sync.enabled = { settings.value.librarySync }
         settings.onChange = { s ->
             network.forget()
             sync.refreshBadges()
             if (s.librarySync) scope.launch { sync.sync() }
-            if (fake == null) runCatching { BackgroundWork.updateSync(context) }
+            if (background) runCatching { BackgroundWork.updateSync(context) }
         }
         sync.forgetDamaged(store)
         store.setAsideDamaged()
@@ -83,27 +83,10 @@ object AppGraph {
             sync.refreshBadges()
             shared.applyRoles()
             scope.launch { sync.sync(); shared.syncAll() }
-            if (fake == null) runCatching { BackgroundWork.updateSync(context) }
+            if (background) runCatching { BackgroundWork.updateSync(context) }
         }
         val runs = RunCenter(lib, store, tech.rws8.hitop.BuildConfig.VERSION_NAME)
-        if (fake == null) runs.onSchedules = { runCatching { BackgroundWork.updateRuns(context) } }
-        val assistant = if (fake != null) tech.rws8.hitop.core.FakeAssistant(assistantReady) else GeminiNano()
-        return Parts(lib, cloud, sync, shared, if (fake != null) FakeSignIn(fake) else AndroidSignIn(), runs, settings, network, assistant)
-    }
-
-    /**
-     * UI tests and screenshots: a fresh library with the drafts' shop-api, every http:// request
-     * answered by the in-process [StubServer], and HITOP Cloud answered by a [FakeCloud].
-     */
-    @Synchronized
-    fun useSeed(context: Context, secrets: SecretStore? = null) {
-        val app = context.applicationContext
-        File(app.filesDir, "hitop-library").deleteRecursively()
-        File(app.filesDir, "secrets.json").delete()
-        if (stub == null) {
-            stub = StubServer().start().also { s -> Ffi.call("useHttpProxy", buildJsonObject { put("proxy", s.proxy) }) }
-        }
-        val fake = FakeCloud().also { fakeCloud = it }
-        parts = make(app, seed = true, secrets, fake)
+        if (background) runs.onSchedules = { runCatching { BackgroundWork.updateRuns(context) } }
+        return Parts(lib, cloud, sync, shared, signIn, runs, settings, network, assistant())
     }
 }

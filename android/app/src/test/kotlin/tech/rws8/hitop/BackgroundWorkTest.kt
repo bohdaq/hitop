@@ -33,7 +33,7 @@ class BackgroundWorkTest {
 
     @Before
     fun seed() {
-        AppGraph.useSeed(ctx, MemorySecretStore())
+        TestGraph.useSeed(ctx, MemorySecretStore())
         WorkManagerTestInitHelper.initializeTestWorkManager(ctx, Configuration.Builder().setExecutor(SynchronousExecutor()).build())
     }
 
@@ -79,7 +79,7 @@ class BackgroundWorkTest {
         val p = AppGraph.parts(ctx)
         BackgroundWork.updateSync(ctx)
         assertTrue(states(BackgroundWork.SYNC).none { it == WorkInfo.State.ENQUEUED })
-        val fake = AppGraph.fakeCloud!!
+        val fake = TestGraph.fakeCloud!!
         runBlocking {
             p.cloud.startBrowserSignIn("github", tech.rws8.hitop.cloud.FakeCloud.SERVER)
             p.cloud.finishBrowserSignIn(fake.approve())

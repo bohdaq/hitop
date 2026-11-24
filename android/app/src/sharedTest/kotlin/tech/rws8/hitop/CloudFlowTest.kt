@@ -53,7 +53,7 @@ class CloudFlowTest {
             compose.screenshot("08-account")
             noPurchaseWords("account")
             compose.onNodeWithTag("back").performClick()
-            val fake = AppGraph.fakeCloud!!
+            val fake = TestGraph.fakeCloud!!
             compose.waitUntil(20_000) { fake.items.containsKey("collection/1001") && fake.items.containsKey("environments/all") }
             compose.waitFor(hasText("13 requests · synced", substring = true))
             compose.onNodeWithText("Personal · synced").assertExists()
@@ -69,7 +69,7 @@ class CloudFlowTest {
         Harness.launchSeeded().use {
             signIn("google")
             compose.waitForTag("account-email")
-            assertTrue(AppGraph.fakeCloud!!.calls.contains("POST /v1/auth/google/native/finish"))
+            assertTrue(TestGraph.fakeCloud!!.calls.contains("POST /v1/auth/google/native/finish"))
         }
     }
 
@@ -79,7 +79,7 @@ class CloudFlowTest {
             signIn("github")
             compose.waitForTag("account-email")
             compose.onNodeWithTag("back").performClick()
-            val fake = AppGraph.fakeCloud!!
+            val fake = TestGraph.fakeCloud!!
             compose.waitUntil(20_000) { fake.items.containsKey("collection/1002") }
             fake.conflictOnNextCollectionWrite = true
             AppGraph.library(androidx.test.core.app.ApplicationProvider.getApplicationContext()).renameCollection("1002", "webhooks v2")
@@ -93,7 +93,7 @@ class CloudFlowTest {
     @Test
     fun theDeviceLimitAsksToRemoveOne() {
         Harness.launchSeeded().use {
-            val fake = AppGraph.fakeCloud!!
+            val fake = TestGraph.fakeCloud!!
             fake.deviceLimit = 1
             fake.addDevice("Old phone")
             signIn("github")
@@ -117,7 +117,7 @@ class CloudFlowTest {
             compose.onNodeWithTag("delete-account").performClick()
             compose.onNodeWithTag("confirm-delete-account").performClick()
             compose.waitForTag("sign-in")
-            assertTrue(AppGraph.fakeCloud!!.userDeleted)
+            assertTrue(TestGraph.fakeCloud!!.userDeleted)
             compose.onNodeWithTag("back").performClick()
             compose.waitForTag("collection-shop-api")
             compose.onNodeWithText("On this phone").assertExists()

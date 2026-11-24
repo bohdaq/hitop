@@ -9,6 +9,8 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
@@ -53,6 +55,7 @@ fun HitopRoot(vm: AppViewModel, single: Boolean = false) {
     if (!single) {
         BackHandler(enabled = vm.stack.isNotEmpty()) { vm.pop() }
         TrustPrompt(vm)
+        CrashPrompt()
         if (vm.importing) ImportSheet(vm, vm.importSource) { vm.importing = false; vm.importSource = null }
         vm.sharedText?.let { t -> FromTextDialog(vm, t) { vm.sharedText = null } }
         // Focusable at the root so a hardware keyboard's shortcuts arrive before anything has focus.
@@ -66,6 +69,28 @@ fun HitopRoot(vm: AppViewModel, single: Boolean = false) {
         return
     }
     Screens(vm)
+}
+
+/** After a crash: look at the report, share it, or drop it. */
+@Composable
+private fun CrashPrompt() {
+    val context = androidx.compose.ui.platform.LocalContext.current
+    var report by remember { mutableStateOf(tech.rws8.hitop.platform.CrashReport.pending(context)) }
+    val text = report ?: return
+    fun done() {
+        tech.rws8.hitop.platform.CrashReport.dismiss(context)
+        report = null
+    }
+    InputSheet("HITOP closed unexpectedly", { done() }, actions = {
+        androidx.compose.material3.TextButton(onClick = { done() }, modifier = Modifier.testTag("crash-dismiss")) { Text("Dismiss", color = Hitop.textSecondary) }
+        androidx.compose.material3.TextButton(onClick = {
+            runCatching { tech.rws8.hitop.platform.Incoming.share(context, "hitop-crash-report.txt", "text/plain", text.toByteArray(), "Share the crash report") }
+            done()
+        }, modifier = Modifier.testTag("crash-share")) { Text("Share report", color = Hitop.accent) }
+    }) {
+        Text("Nothing was sent. The report below has no request, address, variable or secret in it; share it only if you want to.", style = HitopType.caption, color = Hitop.textSecondary)
+        Text(text, Modifier.fillMaxWidth().heightIn(max = 240.dp).verticalScroll(androidx.compose.foundation.rememberScrollState()).testTag("crash-text"), style = HitopType.monoSmall, color = Hitop.text)
+    }
 }
 
 @Composable

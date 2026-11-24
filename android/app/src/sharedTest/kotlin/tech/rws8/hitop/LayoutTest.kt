@@ -38,7 +38,7 @@ class LayoutTest {
 
     private fun show(size: DpSize, fontScale: Float = 1f) {
         val ctx = ApplicationProvider.getApplicationContext<android.content.Context>()
-        AppGraph.useSeed(ctx, if (Harness.robolectric) MemorySecretStore() else null)
+        TestGraph.useSeed(ctx, if (Harness.robolectric) MemorySecretStore() else null)
         AppGraph.runsInProcess = Harness.robolectric
         val p = AppGraph.parts(ctx)
         val vm = AppViewModel(p.library, p.cloud, p.sync, p.shared, p.signIn, p.runs, p.settings, p.network, p.assistant)

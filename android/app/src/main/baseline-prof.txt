@@ -1,0 +1,10 @@
+# Compiled ahead of time at install: the app's start and its screens (Compose brings its own profile).
+HSPLtech/rws8/hitop/MainActivity;->**(**)**
+HSPLtech/rws8/hitop/HitopApp;->**(**)**
+HSPLtech/rws8/hitop/platform/AppGraph;->**(**)**
+HSPLtech/rws8/hitop/platform/KeystoreSecretStore;->**(**)**
+HSPLtech/rws8/hitop/core/**;->**(**)**
+HSPLtech/rws8/hitop/ui/**;->**(**)**
+HSPLkotlinx/serialization/json/**;->**(**)**
+Ltech/rws8/hitop/MainActivity;
+Ltech/rws8/hitop/HitopApp;

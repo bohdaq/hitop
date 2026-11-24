@@ -59,7 +59,7 @@ class StoreScreenshots {
      */
     private fun show(responseFullScreen: Boolean = false) {
         val ctx = ApplicationProvider.getApplicationContext<android.content.Context>()
-        AppGraph.useSeed(ctx, MemorySecretStore())
+        TestGraph.useSeed(ctx, MemorySecretStore())
         AppGraph.runsInProcess = true
         val p = AppGraph.parts(ctx)
         val vm = AppViewModel(p.library, p.cloud, p.sync, p.shared, p.signIn, p.runs, p.settings, p.network, p.assistant)

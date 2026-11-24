@@ -52,7 +52,7 @@ class ReliabilityFlowTest {
         Harness.launchSeeded().use { s ->
             compose.waitForTag("collections")
             val latch = CountDownLatch(1)
-            AppGraph.stub!!.hold = latch
+            TestGraph.stub!!.hold = latch
             try {
                 s.vm { vm ->
                     val (c, _) = vm.library.state.value.find("1103")!!
@@ -61,7 +61,7 @@ class ReliabilityFlowTest {
                 }
                 compose.waitForTag("send")
                 compose.onNodeWithTag("send").performClick()
-                compose.waitUntil(20_000) { AppGraph.stub!!.seen.any { it.url.endsWith("/hold") } }
+                compose.waitUntil(20_000) { TestGraph.stub!!.seen.any { it.url.endsWith("/hold") } }
                 compose.waitFor(hasText("Cancel"))
                 compose.onNodeWithTag("send").performClick()
                 compose.waitFor(hasText("Send"))

@@ -48,7 +48,7 @@ class SharedFlowTest {
             compose.onNodeWithTag("share-webhooks").performClick()
             compose.waitForTag("share-now")
             compose.onNodeWithTag("share-now").performClick()
-            val fake = AppGraph.fakeCloud!!
+            val fake = TestGraph.fakeCloud!!
             compose.waitUntil(20_000) { fake.workspaces.values.any { it.blobs.size >= 7 } }
             compose.waitForTag("my-fingerprint")
             compose.waitFor(hasTestTag("member-${tech.rws8.hitop.cloud.FakeCloud.EMAIL}"))

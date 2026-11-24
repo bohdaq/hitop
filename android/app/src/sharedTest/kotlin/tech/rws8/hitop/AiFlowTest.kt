@@ -26,7 +26,7 @@ class AiFlowTest {
     val compose = createEmptyComposeRule()
 
     @After
-    fun reset() { AppGraph.assistantReady = true }
+    fun reset() { TestGraph.assistantReady = true }
 
     private fun sendCreateOrder() {
         compose.waitForTag("collections")
@@ -60,7 +60,7 @@ class AiFlowTest {
 
     @Test
     fun aRequestFromCurlNeedsNoModel() {
-        AppGraph.assistantReady = false
+        TestGraph.assistantReady = false
         Harness.launchSeeded().use {
             compose.waitForTag("from-text-button")
             compose.onNodeWithTag("from-text-button").performClick()

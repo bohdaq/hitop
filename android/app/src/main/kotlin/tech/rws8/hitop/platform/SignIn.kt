@@ -49,10 +49,3 @@ class AndroidSignIn : SignInPlatform {
         }
     }
 }
-
-/** UI tests: the fake cloud approves at once and hands the code back, as the real return would. */
-class FakeSignIn(private val fake: tech.rws8.hitop.cloud.FakeCloud) : SignInPlatform {
-    override fun openBrowser(context: Context, url: String, onReturn: (String) -> Unit) = onReturn("hitop://sign-in?sso=${fake.approve()}")
-    override val googleNative = true
-    override suspend fun googleIdToken(context: Context, nonce: String) = fake.nativeIdToken(nonce)
-}
