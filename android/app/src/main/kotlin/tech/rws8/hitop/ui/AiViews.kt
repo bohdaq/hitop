@@ -112,9 +112,9 @@ fun ExplainSheet(vm: AppViewModel, collectionId: String, requestId: String, res:
 
 /** A new request from a curl command (no model needed) or from a description (on-device model). */
 @Composable
-fun FromTextDialog(vm: AppViewModel, close: () -> Unit) {
+fun FromTextDialog(vm: AppViewModel, initial: String = "", close: () -> Unit) {
     val scope = rememberCoroutineScope()
-    var text by remember { mutableStateOf("") }
+    var text by remember { mutableStateOf(initial) }
     var busy by remember { mutableStateOf(false) }
     var note by remember { mutableStateOf<String?>(null) }
     InputSheet("New request from text", close, actions = {

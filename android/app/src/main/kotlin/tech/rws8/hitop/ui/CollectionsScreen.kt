@@ -185,6 +185,11 @@ fun CollectionsScreen(vm: AppViewModel) {
                     Spacer(Modifier.size(6.dp))
                     Text("New collection", style = HitopType.label, color = Hitop.accent)
                 }
+                TextButton(onClick = { vm.importing = true }, modifier = Modifier.padding(horizontal = 8.dp).testTag("import")) {
+                    Icon(HitopIcons.Folder, null, tint = Hitop.accent, modifier = Modifier.size(18.dp))
+                    Spacer(Modifier.size(6.dp))
+                    Text("Import", style = HitopType.label, color = Hitop.accent)
+                }
             }
         }
         if (!inPane) ExtendedFloatingActionButton(
@@ -204,6 +209,10 @@ private fun CollectionCard(vm: AppViewModel, c: Collection, rows: List<Request>,
     var menu by remember { mutableStateOf(false) }
     var share by remember { mutableStateOf(false) }
     if (share) ShareSheet(vm, c.id) { share = false }
+    var export by remember { mutableStateOf(false) }
+    if (export) ExportSheet(c) { export = false }
+    var spec by remember { mutableStateOf(false) }
+    if (spec) SpecSyncSheet(vm, c) { spec = false }
     Card(Modifier.padding(horizontal = 16.dp, vertical = 6.dp)) {
         Row(
             Modifier.fillMaxWidth().clickable(onClickLabel = if (folded) "Show requests" else "Hide requests") { toggle() }.padding(horizontal = 16.dp, vertical = 10.dp).testTag("collection-${c.name}"),
@@ -232,6 +241,8 @@ private fun CollectionCard(vm: AppViewModel, c: Collection, rows: List<Request>,
                     })
                     if (localOnly) DropdownMenuItem(text = { Text("Save to HITOP Cloud", color = Hitop.text) }, onClick = { menu = false; vm.cloud.upload(c.id) })
                     if (vm.cloud.cloud.signedIn) DropdownMenuItem(text = { Text(if (vm.shared.link(c.id) != null) "People…" else "Share…", color = Hitop.text) }, onClick = { menu = false; share = true }, modifier = Modifier.testTag("share-${c.name}"))
+                    DropdownMenuItem(text = { Text("Export…", color = Hitop.text) }, onClick = { menu = false; export = true }, modifier = Modifier.testTag("export-${c.name}"))
+                    if (c.json["openapi"] != null && !vm.library.isReadOnly(c.id)) DropdownMenuItem(text = { Text("Sync with OpenAPI…", color = Hitop.text) }, onClick = { menu = false; spec = true }, modifier = Modifier.testTag("spec-${c.name}"))
                     DropdownMenuItem(text = { Text("Rename", color = Hitop.text) }, onClick = {
                         menu = false
                         showDialog { TextDialog("Rename collection", c.name, "Rename", { showDialog(null) }) { n -> vm.library.renameCollection(c.id, n); showDialog(null) } }

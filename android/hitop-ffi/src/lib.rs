@@ -5,6 +5,8 @@
 use serde::Deserialize;
 use serde_json::{json, Value};
 
+mod files;
+mod import;
 mod run;
 mod send;
 mod sse;
@@ -40,6 +42,9 @@ fn call(op: &str, a: &Value) -> Option<R> {
         "version" => Ok(json!({ "ffi": env!("CARGO_PKG_VERSION") })),
         "echo" => Ok(a.get("text").cloned().unwrap_or(Value::Null)),
         "send" => send::send(&Args(a)),
+        "import" => import::import(&Args(a)),
+        "openapiSync" => import::openapi_sync(&Args(a)),
+        "export" => import::export(&Args(a)),
         "snippet" => send::snippet(&Args(a)),
         "runStart" => run::start(&Args(a)),
         "runNext" => run::next(&Args(a)),

@@ -41,7 +41,7 @@ class MainActivity : ComponentActivity() {
             savedInstanceState.getStringArray("request")?.takeIf { it.size == 2 && vm.draft(it[1]) != null }?.let { vm.openRequest(it[0], it[1]) }
         }
         setContent { HitopTheme { HitopRoot(vm) } }
-        handle(intent)
+        if (savedInstanceState == null) handle(intent)
     }
 
     override fun onNewIntent(intent: Intent) {
@@ -51,7 +51,9 @@ class MainActivity : ComponentActivity() {
 
     /** `hitop://sign-in?sso=<code>`: a provider page sent the browser back (HITOP Cloud sign-in). */
     private fun handle(intent: Intent?) {
-        val data = intent?.data ?: return
+        if (intent == null) return
+        tech.rws8.hitop.platform.Incoming.shared(this, intent)?.let { vm.receive(it); intent.action = null; return }
+        val data = intent.data ?: return
         if (data.scheme != "hitop") return
         when (data.host) {
             "sign-in" -> vm.cloud.handleReturn(data.toString())

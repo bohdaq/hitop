@@ -32,6 +32,7 @@ static NEXT: AtomicU64 = AtomicU64::new(1);
 
 pub(crate) fn start(a: &Args) -> Result<Value, String> {
     let i = inputs(a)?;
+    let files = crate::files::map(a)?;
     let iterations = a.0.get("iterations").and_then(Value::as_u64).unwrap_or(1).clamp(1, 100) as usize;
     let bail = a.0.get("bail").and_then(Value::as_bool).unwrap_or(false);
     let tool = a.0.get("toolVersion").and_then(Value::as_str).unwrap_or(env!("CARGO_PKG_VERSION")).to_string();
@@ -44,6 +45,7 @@ pub(crate) fn start(a: &Args) -> Result<Value, String> {
     let (tx, rx) = channel();
     runs().lock().unwrap_or_else(|p| p.into_inner()).insert(id, Run { events: rx, cancel: cancel.clone() });
     std::thread::spawn(move || {
+        let _files = crate::files::Scope::new(files);
         let m = masker(&i);
         let steps_per_iteration = i.collection.requests.iter().filter(|r| is_run_step(r)).count();
         let mut builder = ReportBuilder::new(&tool);

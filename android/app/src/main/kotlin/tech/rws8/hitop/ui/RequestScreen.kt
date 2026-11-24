@@ -164,7 +164,7 @@ fun RequestScreen(vm: AppViewModel, collectionId: String, requestId: String) {
             when (tab) {
                 "Params" -> ParamsTab(r, edit)
                 "Headers", "Metadata" -> HeadersTab(r, c.auth, edit)
-                "Body" -> if (r.bodyKind == BodyKind.GRAPHQL) { BodyTab(r, edit, graphql = { GraphQLEditor(vm, collectionId, r, edit) }) } else BodyTab(r, edit)
+                "Body" -> if (r.bodyKind == BodyKind.GRAPHQL) { BodyTab(vm, r, edit, graphql = { GraphQLEditor(vm, collectionId, r, edit) }) } else BodyTab(vm, r, edit)
                 "Messages" -> WebSocketTab(r, edit)
                 "Service" -> GrpcTab(vm, collectionId, r, edit)
                 "Auth" -> AuthTab(r, c.auth, edit)
@@ -289,7 +289,7 @@ private fun HeadersTab(r: Request, collectionAuth: Auth?, edit: ((Request) -> Re
 }
 
 @Composable
-private fun BodyTab(r: Request, edit: ((Request) -> Request) -> Unit, graphql: (@Composable () -> Unit)? = null) {
+private fun BodyTab(vm: AppViewModel, r: Request, edit: ((Request) -> Request) -> Unit, graphql: (@Composable () -> Unit)? = null) {
     val kinds = listOf(BodyKind.JSON, BodyKind.TEXT, BodyKind.FORM, BodyKind.MULTIPART, BodyKind.GRAPHQL, BodyKind.NONE)
     val kind = r.bodyKind
     ChipRow(kinds.map { it.label }, kind.label, { l -> edit { it.withBodyKind(kinds.first { k -> k.label == l }) } })
@@ -305,12 +305,13 @@ private fun BodyTab(r: Request, edit: ((Request) -> Request) -> Unit, graphql: (
                 }
             }
         }
-        BodyKind.FORM, BodyKind.MULTIPART -> {
+        BodyKind.MULTIPART -> MultipartRows(vm, r, edit)
+        BodyKind.FORM -> {
             val extras = r.formFields
             KeyValueRows(r.formFields.map { Triple(it.key, it.value, it.enabled) }, { list ->
                 edit { it.withFormFields(list.mapIndexed { i, t -> FormRow(t.first, t.second, extras.getOrNull(i)?.type ?: "text", t.third, extras.getOrNull(i)?.extra ?: tech.rws8.hitop.core.EmptyObject) }) }
             }, "Field", "Value", "Add field")
-            Text(if (kind == BodyKind.FORM) "Sent as application/x-www-form-urlencoded." else "Sent as multipart/form-data (text fields; files come with a later version).", style = HitopType.caption, color = Hitop.textMuted)
+            Text("Sent as application/x-www-form-urlencoded.", style = HitopType.caption, color = Hitop.textMuted)
         }
         BodyKind.GRAPHQL -> {
             if (graphql != null) graphql() else CodeEditor(r.body, { v -> edit { it.withBody(v) } }, label = "GraphQL query", placeholder = "query { … }", minHeight = 200)
@@ -384,4 +385,55 @@ private fun CodeSheet(vm: AppViewModel, collectionId: String, r: Request, close:
             }
         }
     }
+}
+
+/** Multipart rows: text, or a file from this phone (kept in the app's private storage, sent byte for byte). */
+@Composable
+private fun MultipartRows(vm: AppViewModel, r: Request, edit: ((Request) -> Request) -> Unit) {
+    val context = androidx.compose.ui.platform.LocalContext.current
+    val scope = rememberCoroutineScope()
+    var error by remember { mutableStateOf<String?>(null) }
+    var target by rememberSaveable { mutableStateOf(-1) }
+    fun put(i: Int, row: FormRow) = edit { q -> q.withFormFields(q.formFields.toMutableList().also { if (i in it.indices) it[i] = row }) }
+    val pick = androidx.activity.compose.rememberLauncherForActivityResult(androidx.activity.result.contract.ActivityResultContracts.OpenDocument()) { uri ->
+        val i = target
+        if (uri != null && i >= 0) scope.launch {
+            error = null
+            try {
+                val extra = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+                    require(tech.rws8.hitop.platform.Incoming.allowed(context, uri)) { "This file can't be opened." }
+                    (context.contentResolver.openInputStream(uri) ?: throw java.io.IOException("This file can't be opened.")).use {
+                        vm.library.addUpload(r.id, tech.rws8.hitop.platform.Incoming.name(context, uri), context.contentResolver.getType(uri).orEmpty(), it)
+                    }
+                }
+                edit { q -> q.withFormFields(q.formFields.mapIndexed { n, f -> if (n == i) f.copy(type = "file", extra = kotlinx.serialization.json.JsonObject(f.extra + extra)) else f }) }
+            } catch (e: kotlinx.coroutines.CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                error = e.message ?: "This file can't be opened."
+            }
+        }
+    }
+    r.formFields.forEachIndexed { i, f ->
+        val label = f.key.ifEmpty { "${i + 1}" }
+        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+            androidx.compose.material3.Checkbox(f.enabled, { put(i, f.copy(enabled = it)) }, modifier = Modifier.semantics { contentDescription = "Send Field $label" })
+            SmallField(f.key, { put(i, f.copy(key = it)) }, "Field", Modifier.weight(1f))
+            if (f.type == "file") {
+                val name = (f.extra["fileName"] as? kotlinx.serialization.json.JsonPrimitive)?.content
+                val token = (f.extra["fileToken"] as? kotlinx.serialization.json.JsonPrimitive)?.content
+                val here = token != null && vm.library.hasUpload(r.id, token)
+                OutlinedButton(onClick = { target = i; pick.launch(arrayOf("*/*")) }, modifier = Modifier.weight(1.4f).heightIn(min = 48.dp).testTag("file-$label")) {
+                    Text(when { name == null -> "Choose a file"; here -> name; else -> "$name (choose again)" }, style = HitopType.monoSmall, color = if (here || name == null) Hitop.text else Hitop.warning, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                }
+            } else SmallField(f.value, { put(i, f.copy(value = it)) }, "Value", Modifier.weight(1.4f))
+            IconButton(onClick = { edit { q -> q.withFormFields(q.formFields.filterIndexed { n, _ -> n != i }) } }) { Icon(HitopIcons.Close, "Remove Field $label", tint = Hitop.textMuted, modifier = Modifier.size(18.dp)) }
+        }
+    }
+    Row {
+        TextButton(onClick = { edit { it.withFormFields(it.formFields + FormRow("", "")) } }) { Text("Add field", style = HitopType.label, color = Hitop.accent) }
+        TextButton(onClick = { edit { it.withFormFields(it.formFields + FormRow("", "", "file")) } }, modifier = Modifier.testTag("add-file")) { Text("Add file", style = HitopType.label, color = Hitop.accent) }
+    }
+    Text("Sent as multipart/form-data. Files stay on this phone: they aren't synced or exported.", style = HitopType.caption, color = Hitop.textMuted)
+    error?.let { Text(it, style = HitopType.caption, color = Hitop.errorText) }
 }

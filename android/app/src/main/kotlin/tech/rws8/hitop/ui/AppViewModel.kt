@@ -34,7 +34,33 @@ class AppViewModel(val library: Library, cloud: tech.rws8.hitop.cloud.HitopCloud
         private set
 
     init {
+        runCatching { library.pruneUploads() }
         viewModelScope.launch { aiReady = runCatching { assistant.availability() }.getOrNull() is tech.rws8.hitop.core.LanguageAssistant.Availability.Ready }
+    }
+
+    /** The import sheet is open, and what it starts with (a file or text shared from another app). */
+    var importing by mutableStateOf(false)
+    var importSource by mutableStateOf<ImportSource?>(null)
+    /** Text shared from another app, for a new request (nothing is sent until the person taps Send). */
+    var sharedText by mutableStateOf<String?>(null)
+
+    fun receive(shared: tech.rws8.hitop.platform.Incoming.Shared) {
+        when (shared) {
+            is tech.rws8.hitop.platform.Incoming.Shared.File -> { importSource = ImportSource.File(shared.uri); importing = true }
+            is tech.rws8.hitop.platform.Incoming.Shared.Text -> {
+                val t = shared.text
+                when {
+                    tech.rws8.hitop.core.CurlImport.looksLikeCurl(t) -> sharedText = t
+                    Regex("https?://\\S+|wss?://\\S+").matches(t) -> {
+                        val (c, r) = library.newRequest()
+                        openRequest(c.id, r.id)
+                        edit(r.id) { it.withUrl(t) }
+                    }
+                    t.startsWith("{") || t.startsWith("[") || Regex("(?m)^(openapi|swagger):").containsMatchIn(t) -> { importSource = ImportSource.Text(t); importing = true }
+                    else -> sharedText = t
+                }
+            }
+        }
     }
 
     fun secretValues(): List<String> = library.activeSecretValues()

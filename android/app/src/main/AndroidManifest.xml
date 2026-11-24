@@ -32,6 +32,16 @@
                 <category android:name="android.intent.category.BROWSABLE" />
                 <data android:scheme="hitop" android:host="sign-in" />
             </intent-filter>
+            <!-- Share to HITOP: an address or a curl command makes a request, a file opens Import. -->
+            <intent-filter>
+                <action android:name="android.intent.action.SEND" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <data android:mimeType="text/*" />
+                <data android:mimeType="application/json" />
+                <data android:mimeType="application/yaml" />
+                <data android:mimeType="application/x-yaml" />
+                <data android:mimeType="application/zip" />
+            </intent-filter>
             <!-- Widgets, the notification and shortcuts: hitop://run/<collection>, hitop://runs, hitop://request/<c>/<r>. -->
             <intent-filter>
                 <action android:name="android.intent.action.VIEW" />

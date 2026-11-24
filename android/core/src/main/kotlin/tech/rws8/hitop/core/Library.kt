@@ -175,6 +175,93 @@ class Library(private val store: LibraryStore, private val secrets: SecretStore)
         load()
     }
 
+    // ---- importing, files
+
+    /** Adds what [plan] holds (never replaces a collection); the ids of the new collections. */
+    fun applyImport(plan: ImportPlan): List<String> {
+        val added = plan.collections.map { c0 ->
+            val s = _state.value
+            var c = Importing.fresh(c0, s.collections.mapTo(HashSet()) { it.id }, s.collections.flatMapTo(HashSet()) { x -> x.requests.map { it.id } })
+            c = c.set("org", orgForNew()?.let { JsonPrimitive(it) })
+            putCollection(c)
+            c.id
+        }
+        plan.environments.forEach { i ->
+            val clash = i.environment.id.isEmpty() || _state.value.environments.any { it.id == i.environment.id }
+            val e = (if (clash) i.environment.set("id", JsonPrimitive("env-${Ids.next()}")) else i.environment)
+                .let { it.withVariables(it.variables + it.secrets.associateWith { "" }) }.set("team", null)
+            i.secretValues.forEach { (n, v) -> secrets.set(SecretStore.envKey(e.id, n), v) }
+            putEnvironments(_state.value.environments + e, _state.value.activeEnvironmentId ?: e.id)
+        }
+        plan.globals?.let { g ->
+            g.environment.variables.filterKeys { it !in g.environment.secrets }.forEach { (n, v) -> setGlobal(n, v, secret = false) }
+            g.environment.secrets.forEach { n -> setGlobal(n, g.secretValues[n] ?: globalSecretValue(n).orEmpty(), secret = true) }
+        }
+        return added
+    }
+
+    fun replaceCollection(c: Collection) {
+        if (_state.value.collection(c.id) != null) putCollection(c)
+    }
+
+    private fun uploads(): Map<String, JsonObject> = (store.readJson("uploads.json") as? JsonObject)?.mapNotNull { (k, v) -> (v as? JsonObject)?.let { k to it } }?.toMap() ?: emptyMap()
+    private fun uploadFile(token: String) = store.file("uploads/$token")
+
+    /** Keeps a picked file for a multipart row of [requestId]; the row's keys that name it. */
+    @Synchronized
+    fun addUpload(requestId: String, name: String, type: String, bytes: java.io.InputStream, max: Long = 50L * 1024 * 1024): JsonObject {
+        val token = java.util.UUID.randomUUID().toString()
+        val f = uploadFile(token)
+        f.parentFile?.mkdirs()
+        try {
+            var total = 0L
+            f.outputStream().use { out ->
+                val buf = ByteArray(64 * 1024)
+                while (true) {
+                    val n = bytes.read(buf)
+                    if (n < 0) break
+                    total += n
+                    require(total <= max) { "The file is larger than ${max / 1024 / 1024} MB." }
+                    out.write(buf, 0, n)
+                }
+            }
+        } catch (e: Exception) {
+            f.delete()
+            throw e
+        }
+        // A header value can't hold line breaks; hitop-core quotes the rest of the name.
+        val mime = type.takeIf { Regex("[A-Za-z0-9.+-]+/[A-Za-z0-9.+-]+").matches(it) } ?: "application/octet-stream"
+        val entry = buildJsonObject { put("request", requestId); put("name", name); put("type", mime) }
+        store.write("uploads.json", JsonObject(uploads() + (token to entry)))
+        return buildJsonObject { put("fileName", name); put("fileToken", token) }
+    }
+
+    /** The file of a row is on this phone (picked for this request). */
+    fun hasUpload(requestId: String, token: String): Boolean = uploads()[token]?.str("request") == requestId && uploadFile(token).exists()
+
+    /** Drops files no saved request or draft names any more (start of the app). */
+    @Synchronized
+    fun pruneUploads() {
+        val all = uploads()
+        if (all.isEmpty()) return
+        val used = (_state.value.collections.flatMap { it.requests } + store.loadDrafts().values).flatMapTo(HashSet()) { r -> r.formFields.mapNotNull { it.extra.strOrNull("fileToken") } }
+        val gone = all.keys - used
+        if (gone.isEmpty()) return
+        gone.forEach { uploadFile(it).delete() }
+        store.write("uploads.json", JsonObject(all - gone))
+    }
+
+    /** The files [requests] name, for hitop-ffi (which reads only these, each only for its request). */
+    private fun filesArg(requests: List<Request>): JsonObject? {
+        val rows = requests.filter { it.bodyKind == BodyKind.MULTIPART }.flatMap { r -> r.formFields.mapNotNull { f -> f.extra.strOrNull("fileToken")?.let { r.id to it } } }
+        if (rows.isEmpty()) return null
+        val all = uploads()
+        return JsonObject(rows.mapNotNull { (id, token) ->
+            val e = all[token]?.takeIf { it.str("request") == id && uploadFile(token).exists() } ?: return@mapNotNull null
+            token to buildJsonObject { put("path", uploadFile(token).absolutePath); put("name", e.str("name")); put("type", e.str("type")); put("request", id) }
+        }.toMap())
+    }
+
     // ---- collections and requests
 
     private fun putCollection(c: Collection, notify: Boolean = true) {
@@ -503,6 +590,7 @@ class Library(private val store: LibraryStore, private val secrets: SecretStore)
         val s = _state.value
         return buildJsonObject {
             put("collection", c.forEngine(requests).toString())
+            filesArg(requests)?.let { put("files", it) }
             env?.let { put("environment", it.forEngine()) }
             put("secrets", environmentSecrets(env).toJsonObject())
             put("globals", s.globals.variables.filterKeys { it !in s.globals.secrets }.toJsonObject())

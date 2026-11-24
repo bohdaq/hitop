@@ -85,6 +85,7 @@ fn updates_json(u: &VariableUpdates) -> Value {
 
 pub(crate) fn send(a: &Args) -> Result<Value, String> {
     let i = inputs(a)?;
+    let _files = crate::files::Scope::of(a)?;
     let index = a.u64("request")? as usize;
     let saved = i.collection.requests.get(index).ok_or("request: no such request")?;
     if saved.is_websocket() || saved.is_grpc() {

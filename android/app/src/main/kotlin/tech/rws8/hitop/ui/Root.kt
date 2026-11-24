@@ -52,6 +52,8 @@ fun HitopRoot(vm: AppViewModel, single: Boolean = false) {
     if (!single) {
         BackHandler(enabled = vm.stack.isNotEmpty()) { vm.pop() }
         TrustPrompt(vm)
+        if (vm.importing) ImportSheet(vm, vm.importSource) { vm.importing = false; vm.importSource = null }
+        vm.sharedText?.let { t -> FromTextDialog(vm, t) { vm.sharedText = null } }
         // Focusable at the root so a hardware keyboard's shortcuts arrive before anything has focus.
         val rootFocus = androidx.compose.runtime.remember { androidx.compose.ui.focus.FocusRequester() }
         androidx.compose.runtime.LaunchedEffect(Unit) { runCatching { rootFocus.requestFocus() } }

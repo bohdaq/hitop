@@ -79,6 +79,26 @@ pub fn multipart(parts: &[Part]) -> Built {
     Built { body, content_type: format!("multipart/form-data; boundary={boundary}") }
 }
 
+/// A file row's contents, from whoever holds the files.
+#[derive(Debug, Clone, PartialEq)]
+pub struct FileData {
+    pub filename: String,
+    pub content_type: String,
+    pub data: Vec<u8>,
+}
+
+/// Looks up the file of a multipart row; `Ok(None)` when there is none.
+pub type FileSource = fn(&Request, &FormField) -> anyhow::Result<Option<FileData>>;
+
+static FILE_SOURCE: std::sync::OnceLock<FileSource> = std::sync::OnceLock::new();
+
+/// Multipart file rows ask `source` for their file from now on (the Android app keeps picked
+/// files). Nothing in a collection names a path: without a source, or for a row it doesn't know,
+/// file rows go out empty as before. False when a source is already installed.
+pub fn install_file_source(source: FileSource) -> bool {
+    FILE_SOURCE.set(source).is_ok()
+}
+
 /// The form body of a saved request (`bodyMode` `urlencoded` or
 /// `multipart`), with variables filled in; `None` for a text body. File rows
 /// carry no file in a collection (the web app keeps files only while the page
@@ -99,6 +119,9 @@ pub fn request_body(request: &Request, variables: &HashMap<String, String>) -> a
         .map(|f| {
             let name = interpolate(&f.key, variables)?;
             Ok(if f.kind == "file" {
+                if let Some(file) = FILE_SOURCE.get().map(|s| s(request, f)).transpose()?.flatten() {
+                    return Ok(Part::File { name, filename: file.filename, content_type: file.content_type, data: file.data });
+                }
                 let filename = f.extra.get("fileName").and_then(|v| v.as_str()).unwrap_or_default().to_string();
                 Part::File { name, filename, content_type: "application/octet-stream".into(), data: vec![] }
             } else {
