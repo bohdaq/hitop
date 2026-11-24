@@ -27,6 +27,8 @@ data class LibraryState(
     /** New requests still named from their URL (until saved under a name or renamed). */
     val autoNamed: Set<String> = emptySet(),
     val loaded: Boolean = false,
+    /** Files that couldn't be read at the start (kept aside; the person is told once). */
+    val damaged: List<String> = emptyList(),
     /** Shared collections: collection id → role (owner, editor, viewer; "removed" = no longer shared). */
     val sharedRoles: Map<String, String> = emptyMap(),
     /** Shared collections' team organization (none: personal). */
@@ -139,8 +141,15 @@ class Library(private val store: LibraryStore, private val secrets: SecretStore)
             history = store.loadHistory(),
             pins = st.stringList("pins"),
             loaded = true,
+            damaged = store.damaged,
         )
     }
+
+    fun dismissDamaged() = _state.update { it.copy(damaged = emptyList()) }
+
+    /** Unsaved edits kept from before, of requests that are still here and differ from their saved form. */
+    fun loadDrafts(): Map<String, Request> = store.loadDrafts().filter { (id, d) -> _state.value.find(id)?.second.let { it != null && it != d } }
+    fun saveDrafts(d: Map<String, Request>) = store.saveDrafts(d)
 
     // ---- seeding
 
@@ -449,7 +458,9 @@ class Library(private val store: LibraryStore, private val secrets: SecretStore)
         val c = _state.value.collection(collectionId) ?: Collection.new("Unsaved")
         val args = engineArgs(c, draft) { if (timeoutMs > 0) put("timeoutMs", timeoutMs); put("jar", store.loadJar()) }
         val result = try {
-            parse(Ffi.call("send", args).jsonObject, collectionId)
+            parse(callAbandonable("send", args).jsonObject, collectionId)
+        } catch (e: kotlinx.coroutines.CancellationException) {
+            throw e
         } catch (e: Exception) {
             SendResult(null, emptyList(), "", 0, null, emptyList(), emptyList(), Errors.explain(e.message ?: e.toString()), draft.url, draft.method, emptyList(), "", emptyList())
         }
@@ -459,6 +470,17 @@ class Library(private val store: LibraryStore, private val secrets: SecretStore)
         }
         if (history) addHistory(HistoryEntry(Ids.next(), System.currentTimeMillis(), c.name, draft, snapshot, result.error?.raw))
         result
+    }
+
+    /**
+     * The engine can't stop inside an exchange, so a cancelled send leaves it to finish (or reach
+     * its time limit) on its own thread; its response and cookies are dropped, as on the desktop.
+     */
+    private suspend fun callAbandonable(op: String, args: JsonObject): JsonElement = kotlinx.coroutines.suspendCancellableCoroutine { cont ->
+        Thread({
+            val r = runCatching { Ffi.call(op, args) }
+            cont.resumeWith(r)
+        }, "hitop-$op").apply { isDaemon = true }.start()
     }
 
     /** What hitop-ffi's `send` and `snippet` take: the collection with [draft] in it, scopes, secrets. */

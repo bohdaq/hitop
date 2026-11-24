@@ -56,7 +56,20 @@ class AppViewModel(val library: Library, cloud: tech.rws8.hitop.cloud.HitopCloud
 
     var tab by mutableStateOf(Tab.COLLECTIONS)
     val stack = mutableStateListOf<Screen>()
-    val drafts = mutableStateMapOf<String, Request>()
+    val drafts = mutableStateMapOf<String, Request>().apply { putAll(library.loadDrafts()) }
+    private var draftsJob: kotlinx.coroutines.Job? = null
+    private val sends = HashMap<String, kotlinx.coroutines.Job>()
+
+    private fun draftsChanged() {
+        draftsJob?.cancel()
+        draftsJob = viewModelScope.launch { kotlinx.coroutines.delay(400); writeDrafts() }
+    }
+
+    /** Unsaved edits to disk now (the app goes to the background: Android may end its process). */
+    fun writeDrafts() {
+        draftsJob?.cancel()
+        runCatching { library.saveDrafts(drafts.toMap()) }
+    }
     val responses = mutableStateMapOf<String, SendResult>()
     val sending = mutableStateMapOf<String, Boolean>()
     /** The request whose response sheet is open. */
@@ -149,6 +162,7 @@ class AppViewModel(val library: Library, cloud: tech.rws8.hitop.cloud.HitopCloud
         val r = draft(requestId) ?: return
         library.state.value.find(requestId)?.first?.let { if (library.isReadOnly(it.id)) return }
         drafts[requestId] = change(r)
+        draftsChanged()
     }
 
     fun isDirty(requestId: String): Boolean {
@@ -160,9 +174,10 @@ class AppViewModel(val library: Library, cloud: tech.rws8.hitop.cloud.HitopCloud
         val d = draft(requestId) ?: return
         library.saveRequest(collectionId, d)
         drafts.remove(requestId)
+        draftsChanged()
     }
 
-    fun discard(requestId: String) { drafts.remove(requestId) }
+    fun discard(requestId: String) { drafts.remove(requestId); draftsChanged() }
 
     fun send(collectionId: String, requestId: String) {
         val raw = draft(requestId) ?: return
@@ -170,13 +185,17 @@ class AppViewModel(val library: Library, cloud: tech.rws8.hitop.cloud.HitopCloud
         val d = if (requestId in library.state.value.autoNamed) raw.withName(tech.rws8.hitop.core.AutoName.of(raw)) else raw
         if (sending[requestId] == true) return
         sending[requestId] = true
-        viewModelScope.launch {
+        sends[requestId] = viewModelScope.launch {
             try {
                 responses[requestId] = library.send(collectionId, d)
                 sheetFor = requestId
             } finally {
                 sending.remove(requestId)
+                sends.remove(requestId)
             }
         }
     }
+
+    /** Stops waiting for the answer; nothing of it is kept. */
+    fun cancelSend(requestId: String) { sends[requestId]?.cancel() }
 }

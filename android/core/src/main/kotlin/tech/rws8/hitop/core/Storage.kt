@@ -20,6 +20,25 @@ import java.io.File
 class LibraryStore(val root: File) {
     private val collectionsDir = File(root, "collections")
 
+    /** Files that exist but couldn't be read: never overwritten, set aside first (`<name>.damaged-<time>`). */
+    private val unreadable = LinkedHashSet<File>()
+    val damaged: List<String> get() = synchronized(unreadable) { unreadable.map { it.relativeTo(root).path } }
+
+    fun isDamaged(name: String) = name in damaged
+    fun isCollectionDamaged(id: String) = isDamaged("collections/${fileName(id)}")
+
+    /** Moves the damaged files aside, once whoever syncs knows about them. */
+    fun setAsideDamaged() = synchronized(unreadable) {
+        unreadable.toList().forEach { f -> if (runCatching { SafeFiles.setAside(f) }.isSuccess) unreadable.remove(f) }
+    }
+
+    private fun <T> read(f: File, parse: (String) -> T?): T? {
+        if (!f.exists()) return null
+        val v = runCatching { parse(f.readText()) }.getOrNull()
+        if (v == null) synchronized(unreadable) { unreadable.add(f) }
+        return v
+    }
+
     init {
         collectionsDir.mkdirs()
     }
@@ -29,7 +48,7 @@ class LibraryStore(val root: File) {
     fun loadCollections(): List<Collection> = collectionsDir.listFiles { f -> f.name.endsWith(".json") }
         ?.sortedBy { it.name }
         ?.mapNotNull { f ->
-            runCatching { HitopJson.parseToJsonElement(f.readText()).jsonObject.obj("collection")?.let(::Collection) }.getOrNull()
+            read(f) { t -> HitopJson.parseToJsonElement(t).jsonObject.obj("collection")?.let(::Collection) }
         }
         ?.sortedBy { order(it) }
         ?: emptyList()
@@ -51,18 +70,13 @@ class LibraryStore(val root: File) {
 
     private fun fileName(id: String) = id.replace(Regex("[^A-Za-z0-9_.-]"), "_") + ".json"
 
-    fun readJson(name: String): JsonElement? = file(name).takeIf { it.exists() }?.let { runCatching { HitopJson.parseToJsonElement(it.readText()) }.getOrNull() }
+    fun readJson(name: String): JsonElement? = read(file(name)) { HitopJson.parseToJsonElement(it) }
 
     fun write(name: String, value: JsonElement) = write(file(name), value)
 
     private fun write(f: File, value: JsonElement) {
-        f.parentFile?.mkdirs()
-        val tmp = File(f.parentFile, f.name + ".tmp")
-        tmp.writeText(value.toString())
-        if (!tmp.renameTo(f)) {
-            f.delete()
-            tmp.renameTo(f)
-        }
+        synchronized(unreadable) { if (unreadable.remove(f)) SafeFiles.setAside(f) }
+        SafeFiles.write(f, value.toString())
     }
 
     fun loadEnvironments(): Pair<List<Environment>, String?> {
@@ -80,6 +94,13 @@ class LibraryStore(val root: File) {
 
     fun loadHistory(): List<HistoryEntry> = (readJson("history.json") as? JsonArray)?.mapNotNull { (it as? JsonObject)?.let(HistoryEntry::of) } ?: emptyList()
     fun saveHistory(list: List<HistoryEntry>) = write("history.json", JsonArray(list.map { it.toJson() }))
+
+    /** The editors' unsaved requests by id (they outlive the app's process). */
+    fun loadDrafts(): Map<String, Request> = (readJson("drafts.json") as? JsonObject)?.mapNotNull { (k, v) -> (v as? JsonObject)?.let { k to Request(it) } }?.toMap() ?: emptyMap()
+    fun saveDrafts(d: Map<String, Request>) {
+        if (d.isEmpty() && !file("drafts.json").exists()) return
+        write("drafts.json", JsonObject(d.mapValues { it.value.json }))
+    }
 
     fun loadState(): JsonObject = readJson("state.json") as? JsonObject ?: EmptyObject
     fun saveState(o: JsonObject) = write("state.json", o)

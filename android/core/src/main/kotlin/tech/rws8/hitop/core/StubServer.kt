@@ -28,6 +28,7 @@ class StubServer {
     val proxy: String get() = "http://127.0.0.1:$port"
     val seen = CopyOnWriteArrayList<Seen>()
     @Volatile private var running = true
+    @Volatile var hold = java.util.concurrent.CountDownLatch(0)
 
     fun start(): StubServer {
         thread(name = "hitop-stub", isDaemon = true) {
@@ -71,6 +72,8 @@ class StubServer {
         val url = if (target.startsWith("http")) target else "http://$host$target"
         val seenRequest = Seen(method, url, headers, String(body, Charsets.UTF_8))
         seen.add(seenRequest)
+        // Answered only once the test lets it (a send to cancel).
+        if (url.substringBefore('?').endsWith("/hold")) hold.await()
         // A local server (end-to-end tests): passed through as a plain proxy, streamed back as it comes.
         if (headers.any { it.first.equals("upgrade", true) && it.second.equals("websocket", true) }) return webSocket(s, input, headers)
         val local = runCatching { URI(url) }.getOrNull()

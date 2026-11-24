@@ -186,15 +186,14 @@ fun RequestScreen(vm: AppViewModel, collectionId: String, requestId: String) {
             val busy = vm.sending[requestId] == true
             val live = r.isWebSocket || r.isGrpc || r.tag == "SSE"
             Button(
-                onClick = { if (live) vm.startLive(collectionId, requestId) else vm.send(collectionId, requestId) },
-                enabled = !busy,
+                onClick = { if (busy) vm.cancelSend(requestId) else if (live) vm.startLive(collectionId, requestId) else vm.send(collectionId, requestId) },
                 modifier = Modifier.weight(1f).height(56.dp).testTag("send"),
                 shape = RoundedCornerShape(28.dp),
                 colors = ButtonDefaults.buttonColors(containerColor = Hitop.accent, contentColor = Hitop.onAccent, disabledContainerColor = Hitop.accentContainer, disabledContentColor = Hitop.textMuted),
             ) {
                 if (busy) CircularProgressIndicator(Modifier.size(20.dp), color = Hitop.onAccent, strokeWidth = 2.dp) else Icon(HitopIcons.Send, null, modifier = Modifier.size(20.dp))
                 Spacer(Modifier.width(10.dp))
-                Text(if (busy) "Sending…" else if (r.isWebSocket) "Connect" else if (r.isGrpc) "Call" else "Send", style = HitopType.button)
+                Text(if (busy) "Cancel" else if (r.isWebSocket) "Connect" else if (r.isGrpc) "Call" else "Send", style = HitopType.button)
             }
         }
     }

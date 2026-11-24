@@ -35,6 +35,11 @@ class MainActivity : ComponentActivity() {
             navigationBarStyle = SystemBarStyle.dark("#15151B".toColorInt()),
         )
         super.onCreate(savedInstanceState)
+        // After the process ended in the background: back where the person was (a rotation keeps the view model).
+        if (savedInstanceState != null && vm.stack.isEmpty()) {
+            savedInstanceState.getString("tab")?.let { t -> tech.rws8.hitop.ui.Tab.entries.firstOrNull { it.name == t }?.let { vm.tab = it } }
+            savedInstanceState.getStringArray("request")?.takeIf { it.size == 2 && vm.draft(it[1]) != null }?.let { vm.openRequest(it[0], it[1]) }
+        }
         setContent { HitopTheme { HitopRoot(vm) } }
         handle(intent)
     }
@@ -55,6 +60,17 @@ class MainActivity : ComponentActivity() {
             "request" -> if (data.pathSegments.size == 2) vm.openRequest(data.pathSegments[0], data.pathSegments[1])
         }
         intent.data = null
+    }
+
+    override fun onSaveInstanceState(outState: Bundle) {
+        super.onSaveInstanceState(outState)
+        outState.putString("tab", vm.tab.name)
+        (vm.top as? tech.rws8.hitop.ui.Screen.Request)?.let { outState.putStringArray("request", arrayOf(it.collectionId, it.requestId)) }
+    }
+
+    override fun onStop() {
+        vm.writeDrafts()
+        super.onStop()
     }
 
     override fun onStart() {

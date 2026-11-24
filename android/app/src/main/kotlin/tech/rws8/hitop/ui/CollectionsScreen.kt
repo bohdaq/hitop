@@ -108,6 +108,10 @@ fun CollectionsScreen(vm: AppViewModel) {
                     }
                     if (!inPane) EnvironmentPill(vm)
                 }
+                if (s.damaged.isNotEmpty()) Row(Modifier.padding(horizontal = 16.dp, vertical = 8.dp).testTag("damaged"), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Text("${if (s.damaged.size == 1) "A file" else "${s.damaged.size} files"} couldn't be read and was kept aside: ${s.damaged.joinToString()}. Anything in HITOP Cloud comes back with the next sync.", Modifier.weight(1f), style = HitopType.caption, color = Hitop.warning)
+                    androidx.compose.material3.TextButton(onClick = { vm.library.dismissDamaged() }) { Text("OK", color = Hitop.accent) }
+                }
             }
             item {
                 Row(

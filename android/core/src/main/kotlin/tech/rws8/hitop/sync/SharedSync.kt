@@ -98,10 +98,7 @@ class FileSharedSyncStore(private val root: File) : SharedSyncStore {
     private val stateFile get() = File(root, "shared-sync.json")
     private fun filesFile(ws: String) = File(File(root, "shared"), "$ws.json")
     private fun write(f: File, text: String) {
-        f.parentFile?.mkdirs()
-        val tmp = File(f.parentFile, f.name + ".tmp")
-        tmp.writeText(text)
-        tmp.renameTo(f)
+        tech.rws8.hitop.core.SafeFiles.write(f, text)
     }
 
     override fun load() = SharedState.of(runCatching { HitopJson.parseToJsonElement(stateFile.readText()).jsonObject }.getOrNull())
@@ -478,6 +475,11 @@ class SharedSync(private val cloud: HitopCloud, private val library: Library, pr
         try {
             var k = workspaceKeys(ws)
             if (k.legacy) runCatching { upgradeWraps(ws, k) }
+            // The folder's files are gone or unreadable here: start over from the server's, deleting nothing.
+            if (store.files(ws).isEmpty() && (state.states[ws] ?: EMPTY_STATE) != EMPTY_STATE) {
+                state = state.copy(states = state.states - ws)
+                save()
+            }
             repeat(5) {
                 val st = state.states[ws] ?: EMPTY_STATE
                 val (remote, seq) = changes(ws, (st as? JsonObject)?.strOrNull("seq")?.toLongOrNull() ?: 0, k.keys)
@@ -494,6 +496,9 @@ class SharedSync(private val cloud: HitopCloud, private val library: Library, pr
                     val before = cid
                     cid = applyFiles(cid, files)
                     if (before != cid) status(cid) { it.copy(syncing = true) }
+                } else if (library.state.value.collection(cid) == null && local.isNotEmpty()) {
+                    // The collection's own file was lost (a deleted collection drops its link).
+                    cid = applyFiles(cid, local)
                 } else {
                     store.saveFiles(ws, local)
                 }

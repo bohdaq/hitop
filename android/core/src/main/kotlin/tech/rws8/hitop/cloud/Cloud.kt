@@ -144,10 +144,7 @@ interface CloudSettingsStore {
 class FileCloudSettingsStore(private val file: File) : CloudSettingsStore {
     override fun load() = CloudSettings.of(runCatching { HitopJson.parseToJsonElement(file.readText()).jsonObject }.getOrNull())
     override fun save(s: CloudSettings) {
-        file.parentFile?.mkdirs()
-        val tmp = File(file.parentFile, file.name + ".tmp")
-        tmp.writeText(s.toJson().toString())
-        tmp.renameTo(file)
+        tech.rws8.hitop.core.SafeFiles.write(file, s.toJson().toString())
     }
 }
 

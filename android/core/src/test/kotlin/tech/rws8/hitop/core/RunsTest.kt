@@ -29,7 +29,12 @@ class RunsTest {
         assertEquals(12, r.total)
         assertEquals(11, r.passed)
         assertTrue(r.firstFailure!!, r.firstFailure!!.startsWith("DELETE Cancel order · HTTP 409"))
-        assertEquals((0..12).toList(), steps.distinct())
+        // Steps that finish together arrive together: never backwards, from nothing to all.
+        steps.distinct().let { d ->
+            assertEquals(d.sorted(), d)
+            assertEquals(0, d.first())
+            assertEquals(12, d.last())
+        }
         val report = RunReport.parse(r.reportJson)!!
         assertEquals("1", report.json.str("reportVersion"))
         assertEquals(12, report.count("requests", "total"))

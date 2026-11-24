@@ -64,6 +64,8 @@ object AppGraph {
             HitopCloud(UrlConnectionTransport(), CloudCredentials(vault), FileCloudSettingsStore(File(root, "cloud.json")), deviceName = deviceName())
         }
         val sync = LibrarySync(cloud, lib, File(root, "library-sync.json"), scope)
+        sync.forgetDamaged(store)
+        store.setAsideDamaged()
         val shared = SharedSync(cloud, lib, FileSharedSyncStore(root), scope)
         lib.orgForNew = { cloud.orgForNew }
         cloud.onAccountChange = {

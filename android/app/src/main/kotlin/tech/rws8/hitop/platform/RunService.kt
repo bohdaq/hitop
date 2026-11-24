@@ -25,6 +25,9 @@ class RunService : Service() {
     companion object {
         const val CHANNEL = "runs"
         const val ID = 4201
+
+        /** A run was started here and hasn't ended (main thread only). */
+        private var active = false
         const val EXTRA_COLLECTION = "collection"
         const val EXTRA_ITERATIONS = "iterations"
         const val EXTRA_BAIL = "bail"
@@ -59,6 +62,13 @@ class RunService : Service() {
         }
     }
 
+    /** Android 15+: background data sync is over for today. The run stops after its request in flight. */
+    override fun onTimeout(startId: Int, fgsType: Int) {
+        AppGraph.parts(applicationContext).runs.cancel()
+        ServiceCompat.stopForeground(this, ServiceCompat.STOP_FOREGROUND_DETACH)
+        stopSelf()
+    }
+
     override fun onBind(intent: Intent?): IBinder? = null
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
@@ -68,12 +78,26 @@ class RunService : Service() {
             return START_NOT_STICKY
         }
         channel(this)
-        ServiceCompat.startForeground(this, ID, notification(this, null), ServiceInfo.FOREGROUND_SERVICE_TYPE_DATA_SYNC)
+        val started = runCatching { ServiceCompat.startForeground(this, ID, notification(this, parts.runs.current.value?.takeIf { it.finished == null }), ServiceInfo.FOREGROUND_SERVICE_TYPE_DATA_SYNC) }
+        if (started.isFailure) {
+            // Not allowed now (Android's daily limit for background work): no run, and no crash.
+            getSystemService(NotificationManager::class.java).notify(ID, NotificationCompat.Builder(this, CHANNEL).setSmallIcon(R.drawable.ic_notification)
+                .setContentTitle("The run didn't start").setContentText("Android's limit for background work is used up for now. Open HITOP and try again.").setAutoCancel(true).build())
+            stopSelf()
+            return START_NOT_STICKY
+        }
+        // One run at a time: a second start (tile, widget) leaves the one going on alone.
+        if (active || parts.runs.running) return START_NOT_STICKY
         val collection = intent?.getStringExtra(EXTRA_COLLECTION) ?: return START_NOT_STICKY.also { stopSelf() }
         val nm = getSystemService(NotificationManager::class.java)
         parts.runs.onProgress = { p -> nm.notify(ID, notification(this, p)) }
+        active = true
         AppGraph.scope.launch {
-            val record = parts.runs.run(collection, intent.getIntExtra(EXTRA_ITERATIONS, 1), intent.getBooleanExtra(EXTRA_BAIL, false))
+            val record = try {
+                runCatching { parts.runs.run(collection, intent.getIntExtra(EXTRA_ITERATIONS, 1), intent.getBooleanExtra(EXTRA_BAIL, false)) }.getOrNull()
+            } finally {
+                active = false
+            }
             Widgets.refresh(applicationContext)
             ServiceCompat.stopForeground(this@RunService, ServiceCompat.STOP_FOREGROUND_DETACH)
             parts.runs.current.value?.let { nm.notify(ID, notification(this@RunService, it)) }

@@ -96,6 +96,7 @@ class RunCenter(private val library: Library, private val store: LibraryStore, p
     private val _history = MutableStateFlow(load())
     val history: StateFlow<List<RunRecord>> = _history.asStateFlow()
     @Volatile private var runId: Long? = null
+    private val busy = java.util.concurrent.atomic.AtomicBoolean(false)
 
     /** Called on every change of the run going on (the notification) and at its end (widgets). */
     var onProgress: ((RunProgress) -> Unit)? = null
@@ -104,12 +105,21 @@ class RunCenter(private val library: Library, private val store: LibraryStore, p
 
     private fun save(list: List<RunRecord>) = store.write("runs.json", JsonArray(list.map { it.toJson() }))
 
-    val running: Boolean get() = runId != null
+    val running: Boolean get() = busy.get()
 
     /** Runs [collectionId] (with the active environment); returns its record, or null when one runs already. */
     suspend fun run(collectionId: String, iterations: Int = 1, bail: Boolean = false, environmentId: String? = library.state.value.activeEnvironmentId): RunRecord? = withContext(Dispatchers.IO) {
-        if (runId != null) return@withContext null
         val c = library.state.value.collection(collectionId) ?: return@withContext null
+        if (!busy.compareAndSet(false, true)) return@withContext null
+        try {
+            runNow(c, environmentId, iterations, bail)
+        } finally {
+            runId = null
+            busy.set(false)
+        }
+    }
+
+    private fun runNow(c: Collection, environmentId: String?, iterations: Int, bail: Boolean): RunRecord? {
         val env = library.state.value.environments.firstOrNull { it.id == environmentId }
         val args = library.runArgs(c, env) {
             put("iterations", iterations); put("bail", bail); put("toolVersion", toolVersion); put("jar", store.loadJar())
@@ -120,39 +130,35 @@ class RunCenter(private val library: Library, private val store: LibraryStore, p
         onProgress?.invoke(progress)
         val id = Ffi.call("runStart", args).jsonObject.str("id").toLong()
         runId = id
-        try {
-            while (true) {
-                val r = Ffi.call("runNext", buildJsonObject { put("id", id); put("waitMs", 400) }).jsonObject
-                for (e in (r["events"] as? JsonArray).orEmpty().map { it.jsonObject }) {
-                    when (e.str("type")) {
-                        "step" -> {
-                            val s = e.obj("step") ?: EmptyObject
-                            val resp = s.obj("response")
-                            progress = progress.copy(steps = progress.steps + RunStep(
-                                e.str("iteration", "1").toInt(), s.str("name"), s.str("method"), resp?.strOrNull("status")?.toIntOrNull(), s.bool("passed", false),
-                                s.str("durationMs", "0").toLong(), s.strOrNull("error"), (s["tests"] as? JsonArray).orEmpty().map { TestResult.of(it.jsonObject) },
-                            ))
-                        }
-                        "done" -> {
-                            (e["jar"] as? JsonArray)?.let { store.saveJar(it) }
-                            val failure = progress.steps.firstOrNull { !it.passed }?.let { f -> "${f.method} ${f.name} · " + (f.status?.let { "HTTP $it" } ?: f.error ?: "failed") + (f.tests.firstOrNull { !it.pass }?.let { " · ${it.name}" } ?: "") }
-                            val record = RunRecord(Ids.next(), c.id, c.name, env?.name, progress.startedAt, System.currentTimeMillis() - progress.startedAt,
-                                progress.steps.size, progress.passed, !e.bool("cancelled", false) && bail && progress.failed > 0 && progress.steps.size < steps, e.bool("cancelled", false), failure, e.str("reportJson"))
-                            progress = progress.copy(finished = record, reportJunit = e.strOrNull("junit"), reportHtml = e.strOrNull("html"))
-                            val list = (listOf(record) + _history.value).take(RunRecord.MAX)
-                            save(list)
-                            _history.value = list
-                        }
+        while (true) {
+            val r = Ffi.call("runNext", buildJsonObject { put("id", id); put("waitMs", 400) }).jsonObject
+            for (e in (r["events"] as? JsonArray).orEmpty().map { it.jsonObject }) {
+                when (e.str("type")) {
+                    "step" -> {
+                        val s = e.obj("step") ?: EmptyObject
+                        val resp = s.obj("response")
+                        progress = progress.copy(steps = progress.steps + RunStep(
+                            e.str("iteration", "1").toInt(), s.str("name"), s.str("method"), resp?.strOrNull("status")?.toIntOrNull(), s.bool("passed", false),
+                            s.str("durationMs", "0").toLong(), s.strOrNull("error"), (s["tests"] as? JsonArray).orEmpty().map { TestResult.of(it.jsonObject) },
+                        ))
+                    }
+                    "done" -> {
+                        (e["jar"] as? JsonArray)?.let { store.saveJar(it) }
+                        val failure = progress.steps.firstOrNull { !it.passed }?.let { f -> "${f.method} ${f.name} · " + (f.status?.let { "HTTP $it" } ?: f.error ?: "failed") + (f.tests.firstOrNull { !it.pass }?.let { " · ${it.name}" } ?: "") }
+                        val record = RunRecord(Ids.next(), c.id, c.name, env?.name, progress.startedAt, System.currentTimeMillis() - progress.startedAt,
+                            progress.steps.size, progress.passed, !e.bool("cancelled", false) && bail && progress.failed > 0 && progress.steps.size < steps, e.bool("cancelled", false), failure, e.str("reportJson"))
+                        progress = progress.copy(finished = record, reportJunit = e.strOrNull("junit"), reportHtml = e.strOrNull("html"))
+                        val list = (listOf(record) + _history.value).take(RunRecord.MAX)
+                        save(list)
+                        _history.value = list
                     }
                 }
-                _current.value = progress
-                onProgress?.invoke(progress)
-                if (r.bool("done", false)) break
             }
-        } finally {
-            runId = null
+            _current.value = progress
+            onProgress?.invoke(progress)
+            if (r.bool("done", false)) break
         }
-        progress.finished
+        return progress.finished
     }
 
     fun cancel() {
@@ -172,6 +178,6 @@ class RunCenter(private val library: Library, private val store: LibraryStore, p
     }
 
     fun dismissCurrent() {
-        if (runId == null) _current.value = null
+        if (!running) _current.value = null
     }
 }

@@ -116,10 +116,27 @@ class LibrarySync(
 
     private fun save() {
         val f = stateFile ?: return
-        f.parentFile?.mkdirs()
-        val tmp = File(f.parentFile, f.name + ".tmp")
-        tmp.writeText(state.toJson().toString())
-        tmp.renameTo(f)
+        tech.rws8.hitop.core.SafeFiles.write(f, state.toJson().toString())
+    }
+
+    /**
+     * Files on this phone couldn't be read (LibraryStore.damaged): what they held isn't deleted.
+     * The library forgets it had them, so the next pull brings everything again and no push
+     * removes or empties them. Call before the first sync, then set the files aside.
+     */
+    fun forgetDamaged(store: tech.rws8.hitop.core.LibraryStore) {
+        val lost = state.known.keys.filter { k ->
+            when {
+                k.startsWith("collection/") -> store.isCollectionDamaged(k.removePrefix("collection/"))
+                k == "environments/all" -> store.isDamaged("environments.json")
+                k == "globals/all" -> store.isDamaged("globals.json")
+                else -> false
+            }
+        }
+        if (lost.isEmpty()) return
+        state = state.copy(known = state.known - lost.toSet(), cursor = null)
+        save()
+        refreshBadges()
     }
 
     // ---- account

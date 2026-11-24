@@ -7,6 +7,7 @@ import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.jsonObject
 import tech.rws8.hitop.core.HitopJson
+import tech.rws8.hitop.core.SafeFiles
 import tech.rws8.hitop.core.SecretStore
 import java.io.File
 import java.security.KeyStore
@@ -23,6 +24,9 @@ import javax.crypto.spec.GCMParameterSpec
 class KeystoreSecretStore(private val file: File) : SecretStore {
     private val alias = "hitop-secrets"
     private var cache: MutableMap<String, String>? = null
+
+    /** Ciphertexts that don't open now: written back as they are, never dropped. */
+    private val sealed = HashMap<String, String>()
 
     private fun key(): SecretKey {
         val ks = KeyStore.getInstance("AndroidKeyStore").apply { load(null) }
@@ -42,15 +46,17 @@ class KeystoreSecretStore(private val file: File) : SecretStore {
         cache?.let { return it }
         val out = HashMap<String, String>()
         if (file.exists()) {
-            runCatching {
-                val o = HitopJson.parseToJsonElement(file.readText()).jsonObject
-                val k = key()
-                o.forEach { (name, v) ->
-                    val bytes = Base64.decode((v as JsonPrimitive).content, Base64.NO_WRAP)
+            val o = runCatching { HitopJson.parseToJsonElement(file.readText()).jsonObject }.getOrNull()
+            if (o == null) SafeFiles.setAside(file)
+            val k = runCatching { key() }.getOrNull()
+            o?.forEach { (name, v) ->
+                val text = (v as? JsonPrimitive)?.content ?: return@forEach
+                runCatching {
+                    val bytes = Base64.decode(text, Base64.NO_WRAP)
                     val c = Cipher.getInstance("AES/GCM/NoPadding")
-                    c.init(Cipher.DECRYPT_MODE, k, GCMParameterSpec(128, bytes, 0, 12))
+                    c.init(Cipher.DECRYPT_MODE, k!!, GCMParameterSpec(128, bytes, 0, 12))
                     out[name] = String(c.doFinal(bytes, 12, bytes.size - 12), Charsets.UTF_8)
-                }
+                }.onFailure { sealed[name] = text }
             }
         }
         cache = out
@@ -59,20 +65,19 @@ class KeystoreSecretStore(private val file: File) : SecretStore {
 
     private fun persist(m: Map<String, String>) {
         val k = key()
-        val o = JsonObject(m.mapValues { (_, v) ->
+        val o = JsonObject(sealed.mapValues { JsonPrimitive(it.value) } + m.mapValues { (_, v) ->
             val c = Cipher.getInstance("AES/GCM/NoPadding")
             c.init(Cipher.ENCRYPT_MODE, k)
             JsonPrimitive(Base64.encodeToString(c.iv + c.doFinal(v.toByteArray(Charsets.UTF_8)), Base64.NO_WRAP))
         })
-        val tmp = File(file.parentFile, file.name + ".tmp")
-        tmp.writeText(o.toString())
-        tmp.renameTo(file)
+        SafeFiles.write(file, o.toString())
     }
 
     @Synchronized override fun get(key: String): String? = values()[key]
 
     @Synchronized override fun set(key: String, value: String?) {
         val m = values()
+        sealed.remove(key)
         if (value == null) m.remove(key) else m[key] = value
         persist(m)
     }
