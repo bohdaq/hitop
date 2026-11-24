@@ -467,7 +467,8 @@ async function launchOff(options) {
   await bob.page.waitForSelector('#dialog #signin-server[error]', { timeout: 15000 }).catch(() => {});
   const serverError = await D(bob).locator('#signin-server').evaluate((e) => (e.error ? e.errorText : ''));
   check('no single sign-on: said inline under Server, not in a banner', serverError.includes('no single sign-on') && (await bob.page.locator('#dialog lit-material-alert').count()) === 0, serverError);
-  check('...and focus goes to that field', await bob.page.evaluate(() => document.activeElement?.id === 'signin-server'));
+  // The dialog moves focus on the next animation frame.
+  check('...and focus goes to that field', await bob.page.waitForFunction(() => document.activeElement?.id === 'signin-server', null, { timeout: 15000 }).then(() => true, () => false));
   await D(bob).getByRole('button', { name: '‹ Back' }).click();
   await waitStep(bob, 'providers');
   check('‹ Back returns to the providers', (await D(bob).locator('.signin-provider').count()) === 1);
