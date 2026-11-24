@@ -52,3 +52,4 @@ Choices `android/GOAL.md` doesn't cover, each with its reason. The owner may ove
 | 2026-11-24 | Undo brings a deleted collection back under a new id. | HITOP Cloud may already hold its tombstone; the same id would be a conflict copy. Shared collections have no undo (the link to the workspace is dropped). |
 | 2026-11-24 | WorkManager 2.12.0 (already in the app at 2.7.1 through Glance). A scheduled run uses the environment active when it was set and may take about 10 minutes (a worker's limit). | Owner's choice (approximate schedules). |
 | 2026-11-24 | Data files: hitop-ffi compiles the CLI's own `commands/data.rs` (its text parser split out of `read`); at most 1000 rows on the phone. | One parser, same errors. |
+| 2026-11-24 | B1–B5 land as one branch (`android-b5`), like A2–A7. | Five stacked branches queued five full CI runs (macOS included) at once. |

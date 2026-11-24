@@ -100,6 +100,9 @@ class LibrarySync(
     private val _notices = MutableStateFlow<List<String>>(emptyList())
     val notices: StateFlow<List<String>> = _notices.asStateFlow()
 
+    /** Off in Settings: nothing is pulled or pushed, and what waits stays here. */
+    @Volatile var enabled: () -> Boolean = { true }
+
     var pushDelayMs = 1_000L
     var retryDelayMs = 15_000L
     var state: State = State.of(stateFile?.takeIf { it.exists() }?.let { runCatching { HitopJson.parseToJsonElement(it.readText()).jsonObject }.getOrNull() })
@@ -140,9 +143,6 @@ class LibrarySync(
     }
 
     // ---- account
-
-    /** Off in Settings: nothing is pulled or pushed, and what waits stays here. */
-    @Volatile var enabled: () -> Boolean = { true }
 
     fun checkAccount(): Boolean {
         val key = cloud.accountKey

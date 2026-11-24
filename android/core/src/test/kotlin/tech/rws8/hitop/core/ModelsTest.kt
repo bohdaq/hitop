@@ -34,7 +34,8 @@ class ModelsTest {
             assertTrue("$it kept in $text", text.contains(it))
         }
         assertEquals("1", edited.variables["n"])
-        assertFalse(Auth(c.json.obj("auth")!!).editable)
+        assertTrue(Auth(c.json.obj("auth")!!).editable)
+        assertFalse(Auth.of("hawk").editable)
     }
 
     @Test

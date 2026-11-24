@@ -18,6 +18,8 @@ import tech.rws8.hitop.ui.HitopRoot
 import tech.rws8.hitop.ui.theme.HitopTheme
 
 class MainActivity : ComponentActivity() {
+    private companion object { const val RECEIVED = "tech.rws8.hitop.RECEIVED" }
+
     private val vm: AppViewModel by viewModels {
         object : ViewModelProvider.Factory {
             @Suppress("UNCHECKED_CAST")
@@ -55,7 +57,12 @@ class MainActivity : ComponentActivity() {
     /** `hitop://sign-in?sso=<code>`: a provider page sent the browser back (HITOP Cloud sign-in). */
     private fun handle(intent: Intent?) {
         if (intent == null) return
-        tech.rws8.hitop.platform.Incoming.shared(this, intent)?.let { vm.receive(it); intent.action = null; return }
+        tech.rws8.hitop.platform.Incoming.shared(this, intent)?.let { 
+            // Marked, not cleared: the activity keeps the intent it was started with.
+            if (!intent.getBooleanExtra(RECEIVED, false)) vm.receive(it)
+            intent.putExtra(RECEIVED, true)
+            return
+        }
         val data = intent.data ?: return
         if (data.scheme != "hitop") return
         when (data.host) {

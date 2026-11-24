@@ -42,6 +42,9 @@ for f in files:
     r = ET.parse(f).getroot()
     for s in ([r] if r.tag == "testsuite" else r.iter("testsuite")):
         tests += int(s.get("tests", 0)); failures += int(s.get("failures", 0)) + int(s.get("errors", 0))
+    for t in r.iter("testcase"):
+        for x in list(t.findall("failure")) + list(t.findall("error")):
+            print(f"FAILED {t.get('classname')}.{t.get('name')}: {(x.text or '')[:1500]}")
 print(f"{tests} UI tests ran, {failures} failed")
 # Nothing ran = the emulator, not the tests (exit 2: the workflow tries a fresh emulator).
 sys.exit(2 if tests == 0 else 1 if failures else 0)
