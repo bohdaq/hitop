@@ -72,17 +72,25 @@ data class Auth(val json: JsonObject) {
     fun field(name: String): String = json.str(name)
     fun with(name: String, value: String): Auth = Auth(json.with(name, value))
 
+    /** [with], leaving an empty optional field out (as the web app writes it). */
+    fun optional(name: String, value: String): Auth = if (value.isEmpty()) Auth(json.without(name)) else with(name, value)
+
+    /** Sends with it may need a person to sign in in a browser. */
+    val signsIn: Boolean get() = type == "oauth2" && field("grant") == "authorization_code"
+
     /** Whether this app edits it (the others are kept and shown by name). */
     val editable: Boolean get() = type in EDITABLE
 
     companion object {
-        val EDITABLE = listOf("none", "bearer", "basic", "apikey")
+        val EDITABLE = listOf("none", "bearer", "basic", "apikey", "oauth2", "awsv4", "digest")
         fun of(type: String): Auth = Auth(buildJsonObject {
             put("type", type)
             when (type) {
                 "bearer" -> put("token", "")
-                "basic" -> { put("username", ""); put("password", "") }
+                "basic", "digest" -> { put("username", ""); put("password", "") }
                 "apikey" -> { put("key", ""); put("value", ""); put("in", "header") }
+                "oauth2" -> { put("grant", "client_credentials"); put("tokenUrl", ""); put("clientId", "") }
+                "awsv4" -> { put("accessKey", ""); put("secretKey", ""); put("region", ""); put("service", "") }
             }
         })
         val NONE = of("none")

@@ -211,6 +211,11 @@ private fun CollectionCard(vm: AppViewModel, c: Collection, rows: List<Request>,
     if (share) ShareSheet(vm, c.id) { share = false }
     var export by remember { mutableStateOf(false) }
     if (export) ExportSheet(c) { export = false }
+    var authOpen by remember { mutableStateOf(false) }
+    if (authOpen) InputSheet("Auth of ${c.name}", { authOpen = false }, actions = { TextButton(onClick = { authOpen = false }) { Text("Done", color = Hitop.accent) } }) {
+        Text("Used by every request that doesn't set its own.", style = HitopType.caption, color = Hitop.textSecondary)
+        AuthEditor(vm, c.auth, "No auth", "Requests without their own auth send none.", null) { vm.library.setCollectionAuth(c.id, it) }
+    }
     var spec by remember { mutableStateOf(false) }
     if (spec) SpecSyncSheet(vm, c) { spec = false }
     Card(Modifier.padding(horizontal = 16.dp, vertical = 6.dp)) {
@@ -241,6 +246,7 @@ private fun CollectionCard(vm: AppViewModel, c: Collection, rows: List<Request>,
                     })
                     if (localOnly) DropdownMenuItem(text = { Text("Save to HITOP Cloud", color = Hitop.text) }, onClick = { menu = false; vm.cloud.upload(c.id) })
                     if (vm.cloud.cloud.signedIn) DropdownMenuItem(text = { Text(if (vm.shared.link(c.id) != null) "People…" else "Share…", color = Hitop.text) }, onClick = { menu = false; share = true }, modifier = Modifier.testTag("share-${c.name}"))
+                    if (!vm.library.isReadOnly(c.id)) DropdownMenuItem(text = { Text("Auth…", color = Hitop.text) }, onClick = { menu = false; authOpen = true }, modifier = Modifier.testTag("auth-${c.name}"))
                     DropdownMenuItem(text = { Text("Export…", color = Hitop.text) }, onClick = { menu = false; export = true }, modifier = Modifier.testTag("export-${c.name}"))
                     if (c.json["openapi"] != null && !vm.library.isReadOnly(c.id)) DropdownMenuItem(text = { Text("Sync with OpenAPI…", color = Hitop.text) }, onClick = { menu = false; spec = true }, modifier = Modifier.testTag("spec-${c.name}"))
                     DropdownMenuItem(text = { Text("Rename", color = Hitop.text) }, onClick = {

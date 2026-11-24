@@ -131,7 +131,7 @@ Choices made without you, each reversible: `android/DECISIONS.md`.
 | --- | --- |
 | B0 | built: drafts on disk, Cancel, `onTimeout`, one run per service, atomic writes, damaged files kept (and never deleted from the cloud), undecryptable secrets kept; CI pending (PR 12) |
 | B1 | built: import (Postman, OpenAPI file or address, HITOP JSON, folder zip), export (zip, HITOP, Postman), Sync with OpenAPI, Share to HITOP, multipart files; CI pending |
-| B2 | not started |
+| B2 | built: OAuth 2.0 (client credentials, password, code + PKCE on a loopback address), SigV4, Digest forms, collection auth; CI pending |
 | B3 | not started |
 | B4 | not started |
 | B5 | not started |

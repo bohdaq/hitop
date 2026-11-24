@@ -229,6 +229,8 @@ class StubServer {
                     listOf("Location" to "/v2/orders/ord_8KQ2mZ41", "Set-Cookie" to "session=s_91x; Path=/; HttpOnly"))
                 m == "GET" && path == "/v2/orders" -> json(200, """[{"id":"ord_8KQ2mZ41","status":"processing","total":6480},{"id":"ord_7HP1aX02","status":"shipped","total":2190}]""")
                 m == "POST" && path == "/v2/auth/login" -> json(200, """{"token":"tok_live_5Yq","expiresIn":3600}""", listOf("Set-Cookie" to "session=s_91x; Path=/; HttpOnly"))
+                path == "/oauth/token" -> json(200, """{"access_token":"stub-token","expires_in":3600}""")
+                path == "/digest" && r.header("Authorization") == null -> Answer(401, listOf("WWW-Authenticate" to "Digest realm=\"stub\", nonce=\"n1\", qop=\"auth\""), ByteArray(0))
                 path == "/echo" -> json(200, "{\"method\":\"$m\",\"path\":\"$path\",\"env\":\"${r.header("X-Env").orEmpty()}\",\"ok\":true}")
                 m == "GET" && path == "/v2/orders/stream" -> Answer(200, listOf("Content-Type" to "text/event-stream", "Cache-Control" to "no-store"), ORDER_EVENTS.toByteArray())
                 m == "POST" && path == "/graphql" && r.body.contains("__schema") -> json(200, INTROSPECTION)

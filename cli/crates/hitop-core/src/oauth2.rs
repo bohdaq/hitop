@@ -187,8 +187,25 @@ impl Tokens {
     /// Tokens whose authorization code grant signs in in a browser (when a person is there).
     #[cfg(feature = "native")]
     pub fn interactive(timeout: Option<std::time::Duration>) -> Self {
-        Tokens(HashMap::new(), Some(Box::new(move |o, fill| browser_sign_in(o, fill, timeout))))
+        Tokens(HashMap::new(), Some(Box::new(move |o, fill| match SIGN_IN.get() {
+            Some(sign_in) => sign_in(o, fill, timeout),
+            None => browser_sign_in(o, fill, timeout),
+        })))
     }
+}
+
+/// How a person signs in where there is no terminal (the Android app).
+#[cfg(feature = "native")]
+pub type InstalledSignIn = fn(&OAuth2, &dyn Fn(&str) -> Result<String>, Option<std::time::Duration>) -> Result<(String, Option<u64>)>;
+
+#[cfg(feature = "native")]
+static SIGN_IN: std::sync::OnceLock<InstalledSignIn> = std::sync::OnceLock::new();
+
+/// Uses `f` for the authorization code grant instead of [`browser_sign_in`]. False when one is
+/// installed already.
+#[cfg(feature = "native")]
+pub fn install_sign_in(f: InstalledSignIn) -> bool {
+    SIGN_IN.set(f).is_ok()
 }
 
 /// The authorization code grant with PKCE: the sign-in page in the browser (or
@@ -196,12 +213,31 @@ impl Tokens {
 /// Only with a person at the terminal (stderr is one), unless an opener is set.
 #[cfg(feature = "native")]
 pub fn browser_sign_in(o: &OAuth2, interpolate: &dyn Fn(&str) -> Result<String>, timeout: Option<std::time::Duration>) -> Result<(String, Option<u64>)> {
-    use std::io::{IsTerminal, Read, Write};
-    use std::time::{Duration, Instant};
+    use std::io::IsTerminal;
     let opener = std::env::var("HITOP_OAUTH_OPENER").ok().filter(|s| !s.is_empty());
     if opener.is_none() && !std::io::stderr().is_terminal() {
         bail!("OAuth 2.0: the authorization code grant needs a person to sign in in a browser: run it in a terminal, or use client credentials in CI");
     }
+    sign_in_with(o, interpolate, timeout, &mut |url| {
+        match &opener {
+            Some(cmd) => {
+                std::process::Command::new("sh").arg("-c").arg(format!("{cmd} \"$0\"")).arg(url).spawn()?;
+            }
+            None => {
+                eprintln!("Sign in to continue: {url}");
+                let open = if cfg!(target_os = "macos") { "open" } else if cfg!(windows) { "explorer" } else { "xdg-open" };
+                let _ = std::process::Command::new(open).arg(url).stdout(std::process::Stdio::null()).stderr(std::process::Stdio::null()).spawn();
+            }
+        }
+        Ok(())
+    }, &|| false)
+}
+
+/// [`browser_sign_in`] with the sign-in page opened by `open`; gives up when `cancelled` says so.
+#[cfg(feature = "native")]
+pub fn sign_in_with(o: &OAuth2, interpolate: &dyn Fn(&str) -> Result<String>, timeout: Option<std::time::Duration>, open: &mut dyn FnMut(&str) -> Result<()>, cancelled: &dyn Fn() -> bool) -> Result<(String, Option<u64>)> {
+    use std::io::{Read, Write};
+    use std::time::{Duration, Instant};
     let rand = ring::rand::SystemRandom::new();
     let mut bytes = [0u8; 32];
     ring::rand::SecureRandom::fill(&rand, &mut bytes).map_err(|_| anyhow::anyhow!("no randomness"))?;
@@ -215,19 +251,13 @@ pub fn browser_sign_in(o: &OAuth2, interpolate: &dyn Fn(&str) -> Result<String>,
     let listener = std::net::TcpListener::bind(("127.0.0.1", port)).map_err(|e| anyhow::anyhow!("OAuth 2.0: can't listen for the sign-in on 127.0.0.1:{port}: {e}"))?;
     let redirect = if given.is_empty() { format!("http://127.0.0.1:{}/callback", listener.local_addr()?.port()) } else { given };
     let url = authorize_url(o, interpolate, &redirect, &challenge, &state)?;
-    match &opener {
-        Some(cmd) => {
-            std::process::Command::new("sh").arg("-c").arg(format!("{cmd} \"$0\"")).arg(&url).spawn()?;
-        }
-        None => {
-            eprintln!("Sign in to continue: {url}");
-            let open = if cfg!(target_os = "macos") { "open" } else if cfg!(windows) { "explorer" } else { "xdg-open" };
-            let _ = std::process::Command::new(open).arg(&url).stdout(std::process::Stdio::null()).stderr(std::process::Stdio::null()).spawn();
-        }
-    }
+    open(&url)?;
     listener.set_nonblocking(true)?;
     let deadline = Instant::now() + Duration::from_secs(180);
     let code = loop {
+        if cancelled() {
+            bail!("OAuth 2.0: the sign-in was cancelled");
+        }
         match listener.accept() {
             Ok((mut stream, _)) => {
                 stream.set_nonblocking(false)?;

@@ -46,6 +46,8 @@ pub(crate) fn start(a: &Args) -> Result<Value, String> {
     runs().lock().unwrap_or_else(|p| p.into_inner()).insert(id, Run { events: rx, cancel: cancel.clone() });
     std::thread::spawn(move || {
         let _files = crate::files::Scope::new(files);
+        // A run never opens a browser: it uses a token from an earlier send, or fails saying so.
+        let _oauth = crate::oauth::Scope::new(None);
         let m = masker(&i);
         let steps_per_iteration = i.collection.requests.iter().filter(|r| is_run_step(r)).count();
         let mut builder = ReportBuilder::new(&tool);

@@ -40,6 +40,9 @@ class MainActivity : ComponentActivity() {
             savedInstanceState.getString("tab")?.let { t -> tech.rws8.hitop.ui.Tab.entries.firstOrNull { it.name == t }?.let { vm.tab = it } }
             savedInstanceState.getStringArray("request")?.takeIf { it.size == 2 && vm.draft(it[1]) != null }?.let { vm.openRequest(it[0], it[1]) }
         }
+        AppGraph.library(applicationContext).openSignIn = { url ->
+            runOnUiThread { runCatching { AppGraph.parts(applicationContext).signIn.openBrowser(this, url) {} } }
+        }
         setContent { HitopTheme { HitopRoot(vm) } }
         if (savedInstanceState == null) handle(intent)
     }
@@ -68,6 +71,11 @@ class MainActivity : ComponentActivity() {
         super.onSaveInstanceState(outState)
         outState.putString("tab", vm.tab.name)
         (vm.top as? tech.rws8.hitop.ui.Screen.Request)?.let { outState.putStringArray("request", arrayOf(it.collectionId, it.requestId)) }
+    }
+
+    override fun onDestroy() {
+        if (!isChangingConfigurations) AppGraph.library(applicationContext).openSignIn = null
+        super.onDestroy()
     }
 
     override fun onStop() {

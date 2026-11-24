@@ -543,7 +543,7 @@ class Library(private val store: LibraryStore, private val secrets: SecretStore)
      */
     suspend fun send(collectionId: String, draft: Request, timeoutMs: Long = 0, history: Boolean = true): SendResult = withContext(Dispatchers.IO) {
         val c = _state.value.collection(collectionId) ?: Collection.new("Unsaved")
-        val args = engineArgs(c, draft) { if (timeoutMs > 0) put("timeoutMs", timeoutMs); put("jar", store.loadJar()) }
+        val args = engineArgs(c, draft) { if (timeoutMs > 0) put("timeoutMs", timeoutMs); put("jar", store.loadJar()); put("sendId", sendIds.incrementAndGet()) }
         val result = try {
             parse(callAbandonable("send", args).jsonObject, collectionId)
         } catch (e: kotlinx.coroutines.CancellationException) {
@@ -564,10 +564,36 @@ class Library(private val store: LibraryStore, private val secrets: SecretStore)
      * its time limit) on its own thread; its response and cookies are dropped, as on the desktop.
      */
     private suspend fun callAbandonable(op: String, args: JsonObject): JsonElement = kotlinx.coroutines.suspendCancellableCoroutine { cont ->
+        val id = args["sendId"]
+        val done = java.util.concurrent.atomic.AtomicBoolean(false)
         Thread({
             val r = runCatching { Ffi.call(op, args) }
+            done.set(true)
             cont.resumeWith(r)
         }, "hitop-$op").apply { isDaemon = true }.start()
+        cont.invokeOnCancellation { if (id != null) runCatching { Ffi.call("oauthCancel", buildJsonObject { put("sendId", id) }) } }
+        // OAuth 2.0's authorization code grant asks for a page to open while the send waits.
+        val open = openSignIn
+        if (id != null && open != null && args.str("collection").contains("authorization_code")) Thread({
+            while (!done.get() && cont.isActive) {
+                val page = runCatching { Ffi.call("oauthPending", buildJsonObject { put("sendId", id) }) as? JsonPrimitive }.getOrNull()?.takeIf { it !is JsonNull }?.content
+                if (page != null) open(page)
+                Thread.sleep(200)
+            }
+        }, "hitop-oauth").apply { isDaemon = true }.start()
+    }
+
+    private val sendIds = java.util.concurrent.atomic.AtomicLong(System.currentTimeMillis())
+
+    /** Opens an OAuth 2.0 sign-in page (the app sets it). */
+    @Volatile var openSignIn: ((String) -> Unit)? = null
+
+    /** Forgets OAuth 2.0 tokens got by signing in (they are only in memory). */
+    fun forgetTokens() { runCatching { Ffi.call("oauthForget") } }
+
+    fun setCollectionAuth(id: String, a: Auth?) {
+        val c = _state.value.collection(id) ?: return
+        putCollection(c.withAuth(a))
     }
 
     /** What hitop-ffi's `send` and `snippet` take: the collection with [draft] in it, scopes, secrets. */

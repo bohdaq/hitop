@@ -167,7 +167,7 @@ fun RequestScreen(vm: AppViewModel, collectionId: String, requestId: String) {
                 "Body" -> if (r.bodyKind == BodyKind.GRAPHQL) { BodyTab(vm, r, edit, graphql = { GraphQLEditor(vm, collectionId, r, edit) }) } else BodyTab(vm, r, edit)
                 "Messages" -> WebSocketTab(r, edit)
                 "Service" -> GrpcTab(vm, collectionId, r, edit)
-                "Auth" -> AuthTab(r, c.auth, edit)
+                "Auth" -> AuthTab(vm, r, c.auth, edit)
                 "Scripts" -> {
                     Text("Runs before the request is sent: set variables with pm.environment.set, change the request.", style = HitopType.caption, color = Hitop.textMuted)
                     CodeEditor(r.preRequestScript, { v -> edit { it.withPre(v) } }, label = "Pre-request script", placeholder = "pm.environment.set(\"ts\", Date.now())", minHeight = 220)
@@ -332,34 +332,63 @@ fun formatKeepingVariables(body: String): String {
     return Regex("\"__hitop_var_(\\d+)__\"").replace(pretty) { m -> vars[m.groupValues[1].toInt()] }
 }
 
+private val AUTH_LABELS = linkedMapOf("none" to "None", "bearer" to "Bearer token", "basic" to "Basic", "apikey" to "API key", "oauth2" to "OAuth 2.0", "digest" to "Digest", "awsv4" to "AWS SigV4")
+
 @Composable
-private fun AuthTab(r: Request, collectionAuth: Auth?, edit: ((Request) -> Request) -> Unit) {
-    val labels = linkedMapOf("inherit" to "From collection", "none" to "None", "bearer" to "Bearer token", "basic" to "Basic", "apikey" to "API key")
-    val auth = r.auth
+private fun AuthTab(vm: AppViewModel, r: Request, collectionAuth: Auth?, edit: ((Request) -> Request) -> Unit) =
+    AuthEditor(vm, r.auth, "From collection", collectionAuth?.let { "The collection's auth: ${AUTH_LABELS[it.type] ?: it.type}." } ?: "The collection has no auth.", collectionAuth) { a -> edit { it.withAuth(a) } }
+
+/** Auth for a request or a collection; null = [inherit]. */
+@Composable
+fun AuthEditor(vm: AppViewModel, auth: Auth?, inherit: String, inheritText: String, collectionAuth: Auth?, set: (Auth?) -> Unit) {
+    val labels = linkedMapOf("inherit" to inherit).apply { putAll(AUTH_LABELS) }
     val current = auth?.type ?: "inherit"
     if (auth != null && !auth.editable) {
         Text("${auth.type} auth: kept as it is; edit it in the web or desktop app.", style = HitopType.bodySmall, color = Hitop.textSecondary)
-        TextButton(onClick = { edit { it.withAuth(null) } }) { Text("Use the collection's auth instead", color = Hitop.accent) }
+        TextButton(onClick = { set(null) }) { Text(inherit, color = Hitop.accent) }
         return
     }
     ChipRow(labels.values.toList(), labels[current] ?: current, { l ->
         val type = labels.entries.first { it.value == l }.key
-        edit { it.withAuth(if (type == "inherit") null else if (type == it.auth?.type) it.auth else Auth.of(type)) }
+        set(if (type == "inherit") null else if (type == auth?.type) auth else Auth.of(type))
     })
+    @Composable
+    fun field(name: String, label: String, optional: Boolean = false) =
+        SmallField(auth!!.field(name), { v -> set(if (optional) auth.optional(name, v) else auth.with(name, v)) }, label, Modifier.fillMaxWidth().testTag("auth-$name"))
     when (current) {
-        "inherit" -> Text(collectionAuth?.let { "The collection's auth: ${labels[it.type] ?: it.type}." } ?: "The collection has no auth.", style = HitopType.bodySmall, color = Hitop.textMuted)
+        "inherit" -> Text(inheritText, style = HitopType.bodySmall, color = Hitop.textMuted)
         "none" -> Text("No auth is sent, even when the collection has one.", style = HitopType.bodySmall, color = Hitop.textMuted)
-        "bearer" -> SmallField(auth!!.field("token"), { v -> edit { it.withAuth(auth.with("token", v)) } }, "Token", Modifier.fillMaxWidth())
-        "basic" -> {
-            SmallField(auth!!.field("username"), { v -> edit { it.withAuth(auth.with("username", v)) } }, "Username", Modifier.fillMaxWidth())
-            SmallField(auth.field("password"), { v -> edit { it.withAuth(auth.with("password", v)) } }, "Password", Modifier.fillMaxWidth())
+        "bearer" -> field("token", "Token")
+        "basic" -> { field("username", "Username"); field("password", "Password") }
+        "digest" -> {
+            field("username", "Username"); field("password", "Password")
+            Text("Answered after the server's 401 challenge.", style = HitopType.caption, color = Hitop.textMuted)
         }
         "apikey" -> {
-            SmallField(auth!!.field("key"), { v -> edit { it.withAuth(auth.with("key", v)) } }, "Key name", Modifier.fillMaxWidth())
-            SmallField(auth.field("value"), { v -> edit { it.withAuth(auth.with("value", v)) } }, "Value", Modifier.fillMaxWidth())
-            ChipRow(listOf("Header", "Query"), if (auth.field("in") == "query") "Query" else "Header", { l -> edit { it.withAuth(auth.with("in", l.lowercase())) } })
+            field("key", "Key name"); field("value", "Value")
+            ChipRow(listOf("Header", "Query"), if (auth!!.field("in") == "query") "Query" else "Header", { l -> set(auth.with("in", l.lowercase())) })
+        }
+        "awsv4" -> {
+            field("accessKey", "Access key"); field("secretKey", "Secret key"); field("sessionToken", "Session token (optional)", true)
+            field("region", "Region"); field("service", "Service")
+        }
+        "oauth2" -> {
+            val grants = linkedMapOf("client_credentials" to "Client credentials", "password" to "Password", "authorization_code" to "Sign in (code + PKCE)")
+            val grant = auth!!.field("grant").ifEmpty { "client_credentials" }
+            ChipRow(grants.values.toList(), grants[grant] ?: grant, { l -> set(auth.with("grant", grants.entries.first { it.value == l }.key)) })
+            if (grant == "authorization_code") field("authUrl", "Authorization URL", true)
+            field("tokenUrl", "Token URL"); field("clientId", "Client id"); field("clientSecret", "Client secret (optional)", true); field("scope", "Scope (optional)", true)
+            if (grant == "password") { field("username", "Username", true); field("password", "Password", true) }
+            ChipRow(listOf("Basic header", "In the body"), if (auth.field("clientAuth") == "body") "In the body" else "Basic header", { l -> set(auth.optional("clientAuth", if (l == "In the body") "body" else "")) })
+            if (grant == "authorization_code") {
+                field("redirectUri", "Redirect URI (optional)", true)
+                Text("Send opens the sign-in page. Register http://127.0.0.1:<port>/callback with the provider and write it here with your port; empty means any free port.", style = HitopType.caption, color = Hitop.textMuted)
+            }
+            Text("The token stays in memory until it expires or HITOP closes.", style = HitopType.caption, color = Hitop.textMuted)
         }
     }
+    val effective = auth ?: collectionAuth
+    if (effective?.signsIn == true) TextButton(onClick = { vm.library.forgetTokens() }, modifier = Modifier.testTag("oauth-forget")) { Text("Forget signed-in tokens", color = Hitop.accent) }
     Text("Write \${name} to use a variable; secrets stay in this phone's keystore.", style = HitopType.caption, color = Hitop.textMuted)
 }
 
