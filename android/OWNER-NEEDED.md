@@ -26,15 +26,13 @@ Step by step, with every console field: `android/PLAY_STORE.md`. This is the che
 
 - [ ] **Google Cloud OAuth clients of type Android** (package `tech.rws8.hitop`; one with the app
       signing SHA-256 from Play Console, one with the upload key's SHA-256) (PLAY_STORE.md §4).
-- [ ] **Sync server**: deploy this tree's `sync-server` (new routes
-      `POST /v1/auth/google/native/{start,finish}`, method `googleNative` in `/v1/auth/methods`) and
-      set `HITOP_SYNC_GOOGLE_ANDROID_CLIENT_IDS=<the Android client ids, comma separated>` in
-      `/etc/hitop-sync/env`. Until then Google sign-in runs in the browser (it works already).
+- [x] **Sync server** deployed 2026-11-24 (3a30dbe): `POST /v1/auth/google/native/{start,finish}` are there, off.
+- [ ] Set `HITOP_SYNC_GOOGLE_ANDROID_CLIENT_IDS=<the Android client ids, comma separated>` in `/etc/hitop-sync/env` and
+      restart `hitop-sync`. Until then Google sign-in runs in the browser (it works already).
 
 ## Website
 
-- [ ] **Deploy the site** from this tree: the privacy policy (Play's privacy URL) now has the
-      Android app (storage, Keystore, no backups, on-device AI, device name, Delete account).
+- [x] Site pages (privacy policy with the Android sections) deployed 2026-11-24. The web app, portal and proxy were not.
 
 ## On a real phone (no emulator can check these)
 
@@ -44,3 +42,12 @@ Step by step, with every console field: `android/PLAY_STORE.md`. This is the che
       Suggest a test, request from a description.
 - [ ] Real sign-in with Google (Credential Manager), GitHub and Apple (Custom Tab back to the app).
 - [ ] A tablet or foldable: three panes from 1200 dp, two from 600 dp, Ctrl+Enter with a keyboard.
+- [ ] OAuth 2.0 with sign-in: Send opens the page, the token is used; the app survives being in the background meanwhile.
+- [ ] A user-installed certificate: an internal API works only with Settings → Trust this phone's certificates.
+- [ ] Background: sync with the app closed, a 15-minute scheduled run, the notification when it fails.
+- [ ] Company SSO against a real provider. Share to HITOP from a browser; a file upload; an import from Downloads.
+- [ ] Cold start feels fast (the startup profile is hand-written and wasn't measured).
+
+## Ready to tag?
+
+B0–B7 are done. After the phone checks above: bump nothing (`versionName` is 1.0.0), push tag `android-v1.0.0`.

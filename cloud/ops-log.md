@@ -429,3 +429,11 @@ and on hitop.rws8.tech/cloud/healthz. -->
 - DB copies on the VM (`sync.db.bak-*`, `/root/pre-deploy-*`, oldest 2026-11-01) now expire after 35 days, as the
   privacy page says: `install.sh db-copies` (owner, 2026-11-21 23:42 UTC) installed `hitop-db-copies-expire.timer`
   (daily); first run deleted 0. The first copies go on 2026-12-06.
+
+## 2026-11-24 Native Google sign-in routes (no migration), site pages
+
+- Pre-deploy dump /root/pre-deploy-20261124-* (sync.pgdump + manifest, rc 0). Sync server built at 3a30dbe (`--release --locked --features
+  postgres`), `install.sh`: healthz schema 19, 0 over a limit, no panic in the journal. `/v1/auth/methods` gains `googleNative: false`; the
+  native routes answer 404 `google_native_off` until `HITOP_SYNC_GOOGLE_ANDROID_CLIENT_IDS` is set; `hitop://sign-in` still accepted,
+  `hitop://evil` refused. Rollback: `/usr/local/bin/hitop-sync-server.bak-20261124-213326`.
+- Site pages only (site/dist without app/ and cloud/, checked byte for byte untouched) from 3a30dbe; backup `/var/www/hitop.bak-20261124-*`.
