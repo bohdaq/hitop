@@ -8,6 +8,7 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.sync.withLock
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonNull
@@ -32,6 +33,7 @@ import tech.rws8.hitop.core.obj
 import tech.rws8.hitop.core.str
 import tech.rws8.hitop.core.strOrNull
 import tech.rws8.hitop.core.stringList
+import tech.rws8.hitop.core.stringMap
 import java.io.File
 
 /*
@@ -92,6 +94,10 @@ interface SharedSyncStore {
     fun files(ws: String): Map<String, String>
     fun saveFiles(ws: String, files: Map<String, String>)
     fun dropFiles(ws: String)
+
+    /** Team environments as last synced, and edits of them still to send. */
+    fun loadTeam(): JsonObject
+    fun saveTeam(o: JsonObject)
 }
 
 class FileSharedSyncStore(private val root: File) : SharedSyncStore {
@@ -106,6 +112,8 @@ class FileSharedSyncStore(private val root: File) : SharedSyncStore {
     override fun files(ws: String) = runCatching { HitopJson.parseToJsonElement(filesFile(ws).readText()).jsonObject.mapValues { (it.value as JsonPrimitive).content } }.getOrDefault(emptyMap())
     override fun saveFiles(ws: String, files: Map<String, String>) = write(filesFile(ws), JsonObject(files.mapValues { JsonPrimitive(it.value) }).toString())
     override fun dropFiles(ws: String) { filesFile(ws).delete() }
+    override fun loadTeam() = runCatching { HitopJson.parseToJsonElement(File(root, "team-environments.json").readText()).jsonObject }.getOrDefault(EmptyObject)
+    override fun saveTeam(o: JsonObject) = write(File(root, "team-environments.json"), o.toString())
 }
 
 class MemorySharedSyncStore : SharedSyncStore {
@@ -116,6 +124,9 @@ class MemorySharedSyncStore : SharedSyncStore {
     @Synchronized override fun files(ws: String) = all[ws] ?: emptyMap()
     @Synchronized override fun saveFiles(ws: String, files: Map<String, String>) { all[ws] = files }
     @Synchronized override fun dropFiles(ws: String) { all.remove(ws) }
+    private var team = EmptyObject
+    override fun loadTeam() = team
+    override fun saveTeam(o: JsonObject) { team = o }
 }
 
 data class SharedWorkspace(val id: String, val role: String, val epoch: Int, val org: String?, val orgName: String?, val orgPersonal: Boolean)
@@ -177,7 +188,25 @@ class SharedSync(private val cloud: HitopCloud, private val library: Library, pr
     private val running = HashSet<String>()
     private val again = HashSet<String>()
 
+    /** A team environment as the server has it: its organization, version and data. */
+    private data class TeamKnown(val org: String, val version: Long, val data: JsonObject)
+    private val teamKnown = LinkedHashMap<String, TeamKnown>()
+    private val teamLock = kotlinx.coroutines.sync.Mutex()
+    private var teamJob: Job? = null
+    /** The account [teamKnown] belongs to: another account's environments are never sent or deleted. */
+    private var teamAccount = ""
+
+    private fun checkTeamAccount() {
+        if (teamAccount == cloud.accountKey) return
+        teamAccount = cloud.accountKey
+        teamKnown.clear()
+        library.applyTeamEnvironments(emptyList(), null)
+        saveTeamState()
+    }
+
     init {
+        loadTeamState()
+        library.onTeamChange = { saveTeamState(); scheduleTeam() }
         library.onSharedChange = { schedule(it) }
         library.onCollectionDeleted = { forget(it) }
         cloud.onAccountDeleted = { accountDeleted(it) }
@@ -526,7 +555,7 @@ class SharedSync(private val cloud: HitopCloud, private val library: Library, pr
                 }
                 if (!retry) {
                     synced(cid)
-                    runCatching { refreshShares(ws) }
+                    runCatching { refreshShares(ws, cid) }
                     return base.copy(pushed = pushed.toList())
                 }
             }
@@ -823,6 +852,7 @@ class SharedSync(private val cloud: HitopCloud, private val library: Library, pr
 
     suspend fun setRole(id: String, userId: String, role: String) {
         api("PUT", "/v1/workspaces/${live(id).workspace}/members/$userId", buildJsonObject { put("role", role) })
+        runCatching { refreshWorkspaces() }
     }
 
     // ---- shared environment values (HITOP Cloud C4)
@@ -916,32 +946,193 @@ class SharedSync(private val cloud: HitopCloud, private val library: Library, pr
         }
     }
 
-    private suspend fun refreshShares(ws: String) {
+    private suspend fun refreshShares(ws: String, collectionId: String) {
         val (opened, _) = openShares(ws)
+        library.setSharedValues(collectionId, opened.mapNotNull { o ->
+            val c = o.content as? JsonObject ?: return@mapNotNull null
+            c.strOrNull("environment")?.let { it to c.stringMap("values") }
+        }.toMap())
         if (opened.isNotEmpty()) resealShares(ws)
+    }
+
+    // ---- comments (shared collections): `comments/<request file>/<id>.yaml`, one file each, as the web app
+
+    data class Comment(val path: String, val author: String, val at: String, val text: String, val mine: Boolean)
+
+    /** The request's path in the folder (`orders/create-order`), as hitop-core names its file. */
+    private fun requestPath(id: String, requestId: String): String? {
+        val c = library.state.value.collection(id) ?: return null
+        c.request(requestId)?.file?.let { return it }
+        // Its file is the one that holds a mark put in its URL (names don't depend on the URL).
+        val mark = "https://mark.invalid/${SyncCore.randomId()}"
+        val marked = c.withRequests(c.requests.map { if (it.id == requestId) it.withUrl(mark) else it })
+        return SyncCore.toFiles(marked).entries.firstOrNull { it.key.startsWith("requests/") && it.value.contains(mark) }?.key?.removePrefix("requests/")?.removeSuffix(".yaml")
+    }
+
+    fun comments(id: String, requestId: String): List<Comment> {
+        val l = link(id) ?: return emptyList()
+        val file = runCatching { requestPath(id, requestId) }.getOrNull() ?: return emptyList()
+        val prefix = "comments/$file/"
+        val me = cloud.account?.email
+        return store.files(l.workspace).filterKeys { it.startsWith(prefix) && '/' !in it.removePrefix(prefix) }.map { (path, text) ->
+            // Written by hand: shown as text.
+            val o = runCatching { HitopJson.parseToJsonElement(text).jsonObject }.getOrNull() ?: JsonObject(mapOf("text" to JsonPrimitive(text)))
+            Comment(path, o.str("author", "?"), o.str("at"), o.str("text"), me != null && o.strOrNull("author") == me)
+        }.sortedWith(compareBy({ it.at }, { it.path }))
+    }
+
+    suspend fun addComment(id: String, requestId: String, text: String) {
+        val l = live(id)
+        if (l.role == "viewer") throw SharedException("Viewers can read comments but not write them")
+        val file = requestPath(id, requestId) ?: throw SharedException("Save the request first: comments belong to a saved request")
+        val body = text.trim()
+        if (body.isEmpty()) return
+        if (body.length > 10_000) throw SharedException("A comment is at most 10,000 characters")
+        val (a, _) = me()
+        val comment = buildJsonObject {
+            put("author", a.email); put("at", java.time.Instant.ofEpochMilli(System.currentTimeMillis()).toString())
+            put("request", library.state.value.collection(id)?.request(requestId)?.name.orEmpty()); put("text", body)
+        }
+        // YAML is a superset of JSON: the file is JSON, readable as YAML by every hitop.
+        val path = "comments/$file/${System.currentTimeMillis()}-${SyncCore.randomId().take(8)}.yaml"
+        store.saveFiles(l.workspace, localFiles(id) + (path to tech.rws8.hitop.core.PrettyJson.encodeToString(JsonObject.serializer(), comment) + "\n"))
+        syncNow(id)
+    }
+
+    suspend fun deleteComment(id: String, c: Comment) {
+        val l = live(id)
+        if (!c.mine) throw SharedException("Only your own comments can be deleted")
+        store.saveFiles(l.workspace, localFiles(id) - c.path)
+        syncNow(id)
+    }
+
+    /** Deletes the shared collection for everyone; it stays on this phone as an unshared one. */
+    suspend fun deleteWorkspace(id: String) {
+        val l = live(id)
+        api("DELETE", "/v1/workspaces/${l.workspace}")
+        forget(id)
+        library.onLibraryChange?.invoke()
+        runCatching { refreshWorkspaces() }
     }
 
     // ---- team environments (sync-server teamenvs.rs)
 
-    /** The current organization's team environments in the environment pill (read here; edited in the web app). */
-    suspend fun loadTeamEnvironments() {
+    /** What the server keeps of [e]: secret variables empty (each member keeps their own values). */
+    private fun teamData(e: Environment): JsonObject = buildJsonObject {
+        put("name", e.name)
+        put("variables", JsonObject(e.variables.mapValues { (n, v) -> JsonPrimitive(if (n in e.secrets) "" else v) }))
+        put("secrets", JsonArray(e.secrets.map(::JsonPrimitive)))
+    }
+
+    private fun sameData(a: JsonObject, b: JsonObject) = tech.rws8.hitop.cloud.LibrarySync.canonical(a) == tech.rws8.hitop.cloud.LibrarySync.canonical(b)
+
+    private fun teamEnvironment(id: String, org: String, data: JsonObject, updatedBy: String?): Environment {
+        var env = Environment(data)
+        val vars = LinkedHashMap(data.obj("variables") ?: EmptyObject)
+        env.secrets.forEach { vars[it] = JsonPrimitive("") }
+        env = env.set("id", JsonPrimitive(id)).set("variables", JsonObject(vars)).set("team", JsonPrimitive(org)).set("org", JsonPrimitive(org))
+        return updatedBy?.takeIf { it.isNotEmpty() }?.let { env.set("updatedBy", JsonPrimitive(it)) } ?: env
+    }
+
+    private fun team() = library.state.value.environments.filter { it.team != null }
+
+    private fun saveTeamState() = store.saveTeam(buildJsonObject {
+        put("account", cloud.accountKey)
+        put("environments", JsonArray(team().map { it.json }))
+        put("known", JsonObject(teamKnown.mapValues { (_, k) -> buildJsonObject { put("org", k.org); put("version", k.version); put("data", k.data) } }))
+    })
+
+    private fun loadTeamState() {
+        val o = store.loadTeam()
+        teamAccount = cloud.accountKey
+        if (!cloud.signedIn || o.str("account") != cloud.accountKey) return
+        o.obj("known")?.forEach { (id, v) -> (v as? JsonObject)?.let { teamKnown[id] = TeamKnown(it.str("org"), it.str("version", "0").toLongOrNull() ?: 0, it.obj("data") ?: EmptyObject) } }
+        val list = (o["environments"] as? JsonArray).orEmpty().mapNotNull { (it as? JsonObject)?.let(::Environment) }
+        if (list.isNotEmpty()) library.applyTeamEnvironments(list, null)
+    }
+
+    private fun scheduleTeam(delayMs: Long = pushDelayMs) {
+        if (!cloud.signedIn) return
+        teamJob?.cancel()
+        teamJob = scope.launch {
+            delay(delayMs)
+            runCatching { teamLock.withLock { pushTeam() } }
+                .onFailure { if (it is kotlinx.coroutines.CancellationException) throw it else notice(SharedNotice("Team environments aren't saved yet: ${it.message}. They go with the next sync.")) }
+        }
+    }
+
+    /** Sends what changed here: one PUT or DELETE per environment, each naming the version it saw. */
+    private suspend fun pushTeam() {
+        for (e in team()) {
+            val org = e.team ?: continue
+            val data = teamData(e)
+            val k = teamKnown[e.id]?.takeIf { it.org == org }
+            if (k != null && sameData(k.data, data)) continue
+            val r = api("PUT", "/v1/orgs/$org/environments/${e.id}", buildJsonObject { put("data", data); put("baseVersion", k?.version ?: 0) }, allow = setOf(409))
+            if (r.status == 409) {
+                val cur = r.json?.obj("current")
+                val theirs = cur?.obj("data")
+                if (cur != null && theirs != null) {
+                    teamKnown[e.id] = TeamKnown(org, cur.str("version", "0").toLong(), theirs)
+                    val by = cur.strOrNull("updatedBy")
+                    replaceTeam(e.id, teamEnvironment(e.id, org, theirs, by))
+                    notice(SharedNotice("${e.name} was changed by ${by?.takeIf { it.isNotEmpty() } ?: "someone in the organization"}: showing theirs."))
+                } else if (k != null) {
+                    // Deleted by someone else meanwhile.
+                    teamKnown.remove(e.id)
+                    replaceTeam(e.id, null)
+                    notice(SharedNotice("${e.name} was deleted by someone in the organization."))
+                }
+            } else {
+                teamKnown[e.id] = TeamKnown(org, r.json?.str("version", "0")?.toLongOrNull() ?: ((k?.version ?: 0) + 1), data)
+            }
+            saveTeamState()
+        }
+        val here = team().associate { it.id to it.team }
+        for ((id, k) in teamKnown.entries.map { it.key to it.value }) {
+            if (here[id] == k.org) continue
+            api("DELETE", "/v1/orgs/${k.org}/environments/$id?baseVersion=${k.version}", allow = setOf(403, 404, 409))
+            teamKnown.remove(id)
+            saveTeamState()
+        }
+    }
+
+    private fun replaceTeam(id: String, e: Environment?) = library.applyTeamEnvironments(team().mapNotNull { if (it.id == id) e else it }, null)
+
+    /** The current organization's team environments: edits made here first, then the server's. */
+    suspend fun loadTeamEnvironments() = teamLock.withLock {
+        checkTeamAccount()
         val org = cloud.currentOrg?.takeIf { cloud.signedIn && !it.personal }
+        if (cloud.signedIn) {
+            try {
+                pushTeam()
+            } catch (e: kotlinx.coroutines.CancellationException) {
+                throw e
+            } catch (_: Exception) {
+                // Offline: what is here stays.
+                return@withLock
+            }
+        }
         if (org == null) {
             library.applyTeamEnvironments(emptyList(), null)
-            return
+            teamKnown.clear()
+            saveTeamState()
+            return@withLock
         }
+        val before = team()
         val r = runCatching { api("GET", "/v1/orgs/${org.id}/environments", allow = setOf(400, 403, 404)) }.getOrNull()
         val j = r?.json
-        if (r?.status != 200 || j == null) return
+        if (r?.status != 200 || j == null) return@withLock
+        // Edited while the answer was on its way: those go first, with the next round.
+        if (team() != before) return@withLock scheduleTeam()
+        teamKnown.clear()
         val list = (j["environments"] as? JsonArray).orEmpty().mapNotNull { it as? JsonObject }.mapNotNull { e ->
             val id = e.strOrNull("id") ?: return@mapNotNull null
-            var env = Environment(e.obj("data") ?: EmptyObject)
-            val vars = LinkedHashMap(env.json.obj("variables") ?: EmptyObject)
-            env.secrets.forEach { vars[it] = JsonPrimitive("") }
-            env = env.set("id", JsonPrimitive(id)).set("variables", JsonObject(vars)).set("team", JsonPrimitive(org.id)).set("org", JsonPrimitive(org.id))
-            e.strOrNull("updatedBy")?.let { env = env.set("updatedBy", JsonPrimitive(it)) }
-            env
+            val data = e.obj("data") ?: EmptyObject
+            teamKnown[id] = TeamKnown(org.id, e.str("version", "0").toLongOrNull() ?: 0, data)
+            teamEnvironment(id, org.id, data, e.strOrNull("updatedBy"))
         }
         library.applyTeamEnvironments(list, org.id)
+        saveTeamState()
     }
 }

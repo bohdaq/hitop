@@ -116,6 +116,7 @@ fun RequestScreen(vm: AppViewModel, collectionId: String, requestId: String) {
                     })
                     DropdownMenuItem(text = { Text(if (requestId in s.pins) "Unpin" else "Pin", color = Hitop.text) }, onClick = { menu = false; vm.library.togglePin(requestId) })
                     DropdownMenuItem(text = { Text("Duplicate", color = Hitop.text) }, onClick = { menu = false; vm.library.duplicateRequest(requestId)?.let { vm.openRequest(collectionId, it.id) } })
+                    if (vm.shared.link(collectionId) != null) DropdownMenuItem(text = { Text("Comments", color = Hitop.text) }, onClick = { menu = false; dialog = { CommentsSheet(vm, collectionId, requestId) { dialog = null } } }, modifier = Modifier.testTag("comments-menu"))
                     if (r.examples.isNotEmpty()) DropdownMenuItem(text = { Text("Examples (${r.examples.size})", color = Hitop.text) }, onClick = { menu = false; dialog = { ExamplesSheet(vm, collectionId, requestId) { dialog = null } } }, modifier = Modifier.testTag("examples"))
                     if (dirty) DropdownMenuItem(text = { Text("Discard changes", color = Hitop.text) }, onClick = { menu = false; vm.discard(requestId) })
                     DropdownMenuItem(text = { Text("Delete", color = Hitop.error) }, onClick = {

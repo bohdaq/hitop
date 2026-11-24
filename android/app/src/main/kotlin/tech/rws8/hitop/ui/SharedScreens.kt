@@ -62,6 +62,8 @@ fun ShareSheet(vm: AppViewModel, collectionId: String, close: () -> Unit) {
     var role by remember { mutableStateOf("editor") }
     var code by remember { mutableStateOf<String?>(null) }
     var tick by remember { mutableStateOf(0) }
+    var confirm by remember { mutableStateOf<Triple<String, String, () -> Unit>?>(null) }
+    confirm?.let { (title, text, go) -> ConfirmDialog(title, text, title.substringBefore(' '), { confirm = null }) { confirm = null; go() } }
     val link = shared.link(collectionId)
     fun act(block: suspend () -> Unit) = scope.launch {
         busy = true
@@ -107,6 +109,12 @@ fun ShareSheet(vm: AppViewModel, collectionId: String, close: () -> Unit) {
                     Column(Modifier.fillMaxWidth().testTag("member-${m.email}")) {
                         Text("${m.email} · ${m.role}", style = HitopType.body, color = Hitop.text)
                         m.keys.forEach { KeyRow(it) }
+                        if (i.role == "owner" && !m.runner && m.email != vm.cloud.cloud.account?.email) Row(verticalAlignment = Alignment.CenterVertically) {
+                            listOf("viewer", "editor", "owner").forEach { r ->
+                                TextButton(onClick = { if (r == "owner") confirm = Triple("Make ${m.email} an owner?", "Owners invite and remove people, and can delete the shared collection.") { act { shared.setRole(collectionId, m.userId, r) } } else act { shared.setRole(collectionId, m.userId, r) } }, enabled = !busy && m.role != r, modifier = Modifier.testTag("set-$r-${m.email}")) { Text(if (m.role == r) "✓ $r" else r, color = if (m.role == r) Hitop.text else Hitop.accent) }
+                            }
+                            TextButton(onClick = { confirm = Triple("Remove ${m.email}?", "The collection gets a new key and is sealed again for everyone else. What they already have stays with them.") { act { shared.removeMember(collectionId, m.userId) } } }, enabled = !busy, modifier = Modifier.testTag("remove-${m.email}")) { Text("Remove", color = Hitop.error) }
+                        }
                     }
                 }
                 i.invites.forEach { inv ->
@@ -135,6 +143,7 @@ fun ShareSheet(vm: AppViewModel, collectionId: String, close: () -> Unit) {
                         Text(c, style = HitopType.monoSmall, color = Hitop.text, modifier = Modifier.testTag("invite-code"))
                         TextButton(onClick = { clipboard.setText(AnnotatedString(c)) }) { Text("Copy", color = Hitop.accent) }
                     }
+                    TextButton(onClick = { confirm = Triple("Delete the shared collection?", "It is deleted from the server for everyone it is shared with. It stays on this phone, no longer shared; other people keep the copy they have.") { act { shared.deleteWorkspace(collectionId); close() } } }, enabled = !busy, modifier = Modifier.testTag("delete-workspace")) { Text("Delete for everyone", color = Hitop.error) }
                 }
             }
         }
@@ -212,4 +221,50 @@ fun TrustPrompt(vm: AppViewModel) {
         confirmButton = { TextButton(onClick = { scope.launch { runCatching { shared.trustSender(refusal) }; shared.syncAll() } }) { Text("They match, trust", color = Hitop.accent) } },
         dismissButton = { TextButton(onClick = { shared.pendingTrust.value = null }) { Text("Not now", color = Hitop.textSecondary) } },
     )
+}
+
+/** Comments on a request of a shared collection: end-to-end encrypted files that sync with it. */
+@Composable
+fun CommentsSheet(vm: AppViewModel, collectionId: String, requestId: String, close: () -> Unit) {
+    val scope = rememberCoroutineScope()
+    var list by remember { mutableStateOf(vm.shared.comments(collectionId, requestId)) }
+    var text by remember { mutableStateOf("") }
+    var busy by remember { mutableStateOf(false) }
+    var error by remember { mutableStateOf<String?>(null) }
+    fun act(block: suspend () -> Unit) = scope.launch {
+        busy = true
+        error = null
+        try {
+            block()
+        } catch (e: kotlinx.coroutines.CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            error = e.message ?: e.toString()
+        } finally {
+            busy = false
+            list = vm.shared.comments(collectionId, requestId)
+        }
+    }
+    LaunchedEffect(Unit) { act { vm.shared.syncNow(collectionId) } }
+    val viewer = vm.library.isReadOnly(collectionId)
+    InputSheet("Comments", close, actions = {
+        TextButton(onClick = close) { Text("Done", color = Hitop.textSecondary) }
+        if (!viewer) TextButton(onClick = { act { vm.shared.addComment(collectionId, requestId, text); text = "" } }, enabled = !busy && text.isNotBlank(), modifier = Modifier.testTag("post-comment")) { Text("Comment", color = Hitop.accent) }
+    }) {
+        Text("Seen by the people this collection is shared with, end-to-end encrypted like the requests.", style = HitopType.caption, color = Hitop.textSecondary)
+        Column(Modifier.heightIn(max = 320.dp).verticalScroll(rememberScrollState()).testTag("comments"), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            if (list.isEmpty()) Text("No comments yet.", style = HitopType.caption, color = Hitop.textMuted)
+            list.forEach { c ->
+                Column(Modifier.fillMaxWidth().clip(RoundedCornerShape(12.dp)).background(Hitop.surface).padding(12.dp)) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Text("${c.author} · ${c.at.take(16).replace('T', ' ')}", Modifier.weight(1f), style = HitopType.caption, color = Hitop.textMuted)
+                        if (c.mine && !viewer) TextButton(onClick = { act { vm.shared.deleteComment(collectionId, c) } }, enabled = !busy) { Text("Delete", color = Hitop.error) }
+                    }
+                    Text(c.text, style = HitopType.bodySmall, color = Hitop.text)
+                }
+            }
+        }
+        if (!viewer) OutlinedTextField(text, { text = it }, label = { Text("Add a comment") }, colors = fieldColors(), maxLines = 4, modifier = Modifier.fillMaxWidth().testTag("comment-text"))
+        error?.let { Text(it, style = HitopType.caption, color = Hitop.errorText) }
+    }
 }

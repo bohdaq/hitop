@@ -63,7 +63,7 @@ fun EnvironmentsScreen(vm: AppViewModel) {
                         RadioButton(selected = s.activeEnvironmentId == e?.id, onClick = null, colors = RadioButtonDefaults.colors(selectedColor = Hitop.accent, unselectedColor = Hitop.textMuted), modifier = Modifier.padding(8.dp))
                         Column(Modifier.weight(1f)) {
                             Text(e?.name ?: "No environment", style = HitopType.body, color = Hitop.text)
-                            e?.let { Text("${it.variables.size} variables${if (it.secrets.isNotEmpty()) " · ${it.secrets.size} secret" else ""}", style = HitopType.caption, color = Hitop.textMuted) }
+                            e?.let { Text("${if (it.team != null) "Team · " else ""}${it.variables.size} variables${if (it.secrets.isNotEmpty()) " · ${it.secrets.size} secret" else ""}", style = HitopType.caption, color = Hitop.textMuted) }
                         }
                         if (e != null) IconButton(onClick = { vm.push(Screen.EnvironmentDetail(e.id)) }, modifier = Modifier.testTag("env-open-${e.name}")) {
                             Icon(HitopIcons.ChevronRight, "Edit ${e.name}", tint = Hitop.textSecondary)
@@ -158,6 +158,18 @@ fun EnvironmentDetailScreen(vm: AppViewModel, envId: String) {
             }
         }
         LazyColumn(contentPadding = PaddingValues(16.dp)) {
+            val org = vm.cloud.cloud.currentOrg?.takeIf { vm.cloud.cloud.signedIn && !it.personal }
+            if (e.team != null || org != null) item {
+                Card(Modifier.padding(bottom = 12.dp)) {
+                    Row(Modifier.padding(horizontal = 16.dp, vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
+                        Column(Modifier.weight(1f)) {
+                            Text("Shared with ${vm.cloud.cloud.settings.value.orgs.firstOrNull { it.id == (e.team ?: org?.id) }?.name ?: "the organization"}", style = HitopType.body, color = Hitop.text)
+                            Text("Its members see and edit the variables. Secret values stay on each member's device." + (e.json["updatedBy"] as? kotlinx.serialization.json.JsonPrimitive)?.let { " Last changed by ${it.content}." }.orEmpty(), style = HitopType.caption, color = Hitop.textMuted)
+                        }
+                        Switch(e.team != null, { on -> vm.library.setTeam(envId, if (on) org?.id else null) }, colors = SwitchDefaults.colors(checkedTrackColor = Hitop.accent, checkedThumbColor = Hitop.onAccent), modifier = Modifier.testTag("team-switch"))
+                    }
+                }
+            }
             item {
                 VariableEditor(e.variables, e.secrets, { vm.library.secretValue(envId, it) }, { n, v, sec -> vm.library.setVariable(envId, n, v, sec) }, { vm.library.removeVariable(envId, it) })
             }

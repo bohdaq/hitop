@@ -166,12 +166,12 @@ class CloudCredentials(private val store: SecretStore) {
     fun save(server: String, s: Secret?) = store.set(key(server), s?.let { buildJsonObject { it.session?.let { v -> put("session", v) }; put("secret", it.secret) }.toString() })
 }
 
-data class AuthMethods(val google: Boolean = false, val googleNative: Boolean = false, val github: Boolean = false, val apple: Boolean = false) {
+data class AuthMethods(val google: Boolean = false, val googleNative: Boolean = false, val github: Boolean = false, val apple: Boolean = false, val sso: Boolean = false) {
     /** In the order the sign-in sheet shows them. */
     val providers: List<String> get() = listOfNotNull("google".takeIf { google }, "github".takeIf { github }, "apple".takeIf { apple })
 
     companion object {
-        fun name(kind: String) = when (kind) { "google" -> "Google"; "github" -> "GitHub"; "apple" -> "Apple"; else -> kind }
+        fun name(kind: String) = when (kind) { "google" -> "Google"; "github" -> "GitHub"; "apple" -> "Apple"; "sso" -> "company SSO"; else -> kind }
     }
 }
 
@@ -325,23 +325,24 @@ class HitopCloud(
         val r = http(normalize(server), "GET", "/v1/auth/methods")
         val j = r.json ?: return null
         if (r.status != 200) return null
-        return AuthMethods(j.bool("google", false), j.bool("googleNative", false), j.bool("github", false), j.bool("apple", false))
+        return AuthMethods(j.bool("google", false), j.bool("googleNative", false), j.bool("github", false), j.bool("apple", false), j.bool("sso", false))
     }
 
     /**
      * Starts Continue with Google/GitHub/Apple in a Custom Tab: the provider page to open. `paste`:
      * the server didn't take the app's return address (an older server), so its page shows a code.
      */
-    suspend fun startBrowserSignIn(kind: String, server: String, returnTo: String? = RETURN_TO): Pair<String, Boolean> {
+    suspend fun startBrowserSignIn(kind: String, server: String, returnTo: String? = RETURN_TO, email: String? = null): Pair<String, Boolean> {
         val srv = normalize(server)
         val (verifier, challenge) = CloudCrypto.verifier()
-        fun body(withReturn: Boolean) = buildJsonObject { put("challenge", challenge); if (withReturn && returnTo != null) put("returnTo", returnTo) }
+        fun body(withReturn: Boolean) = buildJsonObject { put("challenge", challenge); email?.takeIf { kind == "sso" && it.isNotBlank() }?.let { put("email", it.trim()) }; if (withReturn && returnTo != null) put("returnTo", returnTo) }
         var r = http(srv, "POST", "/v1/auth/$kind/start", body(true))
         var paste = returnTo == null
         if (r.status == 400 && returnTo != null && r.json?.str("message").orEmpty().contains("returnTo", ignoreCase = true)) {
             r = http(srv, "POST", "/v1/auth/$kind/start", body(false))
             paste = true
         }
+        if (r.status == 404 && kind == "sso") throw CloudException(404, "no_sso", if (email.isNullOrBlank()) "This server has no single sign-on." else "There is no single sign-on for this address's organization here.")
         if (r.status == 404) throw CloudException(404, "no_provider", "This server has no sign-in with ${AuthMethods.name(kind)}.")
         if (r.status != 200) throw error(r)
         val url = r.json?.strOrNull("url")?.takeIf { it.startsWith("https://") || it.startsWith("http://") }

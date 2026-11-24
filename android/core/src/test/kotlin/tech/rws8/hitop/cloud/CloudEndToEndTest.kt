@@ -5,6 +5,10 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.runBlocking
+import tech.rws8.hitop.core.strOrNull
+import tech.rws8.hitop.core.obj
+import kotlinx.serialization.json.put
+import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.jsonObject
@@ -229,6 +233,41 @@ class CloudEndToEndTest {
         grace.ok("sync", "pull", "-c", folder.path)
         assertTrue(listFile.readText().contains("https://ada2.example.test/orders"))
 
+        // Comments, both ways: end-to-end encrypted files next to the requests.
+        val listId = req("List orders").id
+        shared.addComment(c.id, listId, "Page size?  ")
+        grace.ok("sync", "pull", "-c", folder.path)
+        val commentDir = File(folder, "comments").walkTopDown().first { it.isFile && it.readText().contains("Page size?") }.parentFile
+        File(commentDir, "2999-hand.yaml").writeText("author: $g\nat: '2999-01-01T00:00:00Z'\ntext: Fifty\n")
+        File(commentDir, "3000-json.yaml").writeText("{\"author\": \"$g\", \"at\": \"2999-01-01T00:00:00Z\", \"text\": \"Fifty\"}\n")
+        grace.ok("sync", "push", "-c", folder.path)
+        shared.syncNow(c.id)
+        val comments = shared.comments(c.id, listId)
+        assertEquals(comments.toString(), 3, comments.size)
+        assertEquals("Page size?", comments.first { it.mine }.text)
+        assertEquals("Fifty", comments.first { it.author == g }.text)
+        assertTrue(runCatching { shared.deleteComment(c.id, comments.first { it.author == g }) }.isFailure)
+        shared.deleteComment(c.id, comments.first { it.mine })
+        // An edit of the collection keeps the others' comments.
+        ada.library.saveRequest(c.id, req("List orders").withPost("pm.test('x', () => {})"))
+        shared.syncNow(c.id)
+        assertEquals(2, shared.comments(c.id, listId).size)
+        grace.ok("sync", "pull", "-c", folder.path)
+        assertEquals(2, commentDir.listFiles()!!.size)
+
+        // Roles: Grace reads only, then edits again.
+        val gid = shared.members(c.id).members.first { it.email == g }.userId
+        shared.setRole(c.id, gid, "viewer")
+        assertEquals("viewer", shared.members(c.id).members.first { it.email == g }.role)
+        edit(listFile, "https://ada2.example.test/orders", "https://refused.example.test/orders")
+        val viewerPush = grace.run("sync", "push", "-c", folder.path)
+        assertTrue(viewerPush.out + viewerPush.err, viewerPush.code != 0 || !viewerPush.out.contains("pushed"))
+        shared.syncNow(c.id)
+        assertEquals("https://ada2.example.test/orders", req("List orders").url)
+        edit(listFile, "https://refused.example.test/orders", "https://ada2.example.test/orders")
+        shared.setRole(c.id, gid, "editor")
+        assertTrue(runCatching { shared.setRole(c.id, shared.members(c.id).members.first { it.email == "ada@example.com" }.userId, "viewer") }.isFailure)
+
         // Grace's epoch-1 key as her device holds it, before she is removed.
         val secret = tech.rws8.hitop.core.HitopJson.parseToJsonElement(File(home, "sync-key.json").readText()).jsonObject
         val account = tech.rws8.hitop.core.HitopJson.parseToJsonElement(File(home, "config/hitop/sync/account.json").readText()).jsonObject
@@ -256,6 +295,59 @@ class CloudEndToEndTest {
         val refused = grace.run("sync", "pull", "-c", folder.path)
         assertTrue(refused.out + refused.err, refused.code != 0)
         assertFalse(requestFile(folder, "Create order").readText().contains("after removal"))
+
+        // Deleted for everyone: it stays here, unshared.
+        shared.deleteWorkspace(c.id)
+        assertNull(shared.link(c.id))
+        assertFalse(ada.library.isShared(c.id))
+        assertTrue(ada.library.state.value.collection(c.id)!!.requests.isNotEmpty())
+        assertEquals(404, ada.cloud.call("GET", "/v1/workspaces/$ws", allow = setOf(403, 404)).status)
+    }
+
+    @Test
+    fun teamEnvironmentsOnTwoPhones() = runBlocking {
+        fun team(p: Phone) = tech.rws8.hitop.sync.SharedSync(p.cloud, p.library, tech.rws8.hitop.sync.MemorySharedSyncStore(), scope).also { it.pushDelayMs = 3_600_000 }
+        val one = Phone("One").also { it.signIn("team@example.com") }
+        val two = Phone("Two").also { it.signIn("team@example.com") }
+        val org = one.cloud.call("POST", "/v1/orgs", buildJsonObject { put("name", "Acme") }).json!!.let { it.strOrNull("id") ?: it.obj("org")!!.str("id") }
+        for (p in listOf(one, two)) { p.cloud.loadOrgs(); p.cloud.selectOrg(org) }
+        val (a, b) = team(one) to team(two)
+        val env = one.library.addEnvironment("Team staging")
+        one.library.setVariable(env.id, "base", "https://one.test", secret = false)
+        one.library.setVariable(env.id, "token", "tok_mine", secret = true)
+        one.library.setTeam(env.id, org)
+        a.loadTeamEnvironments()
+        assertFalse(one.cloud.call("GET", "/v1/orgs/$org/environments").json.toString().contains("tok_mine"))
+        b.loadTeamEnvironments()
+        fun there() = two.library.state.value.environments.first { it.id == env.id }
+        assertEquals("https://one.test", there().variables["base"])
+        assertEquals(listOf("token"), there().secrets)
+        // Each keeps their own secret value; both change the same one: the second sees theirs.
+        two.library.setVariable(env.id, "token", "tok_theirs", secret = true)
+        two.library.setVariable(env.id, "base", "https://two.test", secret = false)
+        b.loadTeamEnvironments()
+        one.library.setVariable(env.id, "base", "https://late.test", secret = false)
+        a.loadTeamEnvironments()
+        assertEquals("https://two.test", one.library.state.value.environments.first { it.id == env.id }.variables["base"])
+        assertTrue(a.notices.value.first().text.contains("showing theirs"))
+        assertEquals("tok_mine", one.library.secretValue(env.id, "token"))
+        // Not in the personal library and not in this phone's own file.
+        assertFalse(one.library.state.value.environments.filter { it.team == null }.any { it.id == env.id })
+        // Another organization: nothing is deleted there.
+        one.cloud.selectOrg(null)
+        a.loadTeamEnvironments()
+        assertTrue(one.library.state.value.environments.none { it.team != null })
+        b.loadTeamEnvironments()
+        assertNotNull(there())
+        // Deleted by one: gone for both.
+        two.library.deleteEnvironment(env.id)
+        b.loadTeamEnvironments()
+        one.cloud.selectOrg(org)
+        a.loadTeamEnvironments()
+        assertTrue(one.library.state.value.environments.none { it.id == env.id })
+        // Company SSO on a server without it says so.
+        val e = runCatching { Phone("x").cloud.startBrowserSignIn("sso", server, email = "a@acme.test") }.exceptionOrNull() as CloudException
+        assertEquals("no_sso", e.code)
     }
 
     @Test

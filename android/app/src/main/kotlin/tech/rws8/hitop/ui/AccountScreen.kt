@@ -272,6 +272,13 @@ fun SignInSheet(vm: AppViewModel) {
                     Text("Continue with ${AuthMethods.name(kind)}", style = HitopType.body, color = Hitop.text)
                 }
             }
+            var sso by remember { mutableStateOf(false) }
+            var work by remember { mutableStateOf("") }
+            if (!sso) TextButton(onClick = { sso = true }, modifier = Modifier.testTag("company-sso")) { Text("Company SSO…", color = Hitop.accent) }
+            else {
+                OutlinedTextField(work, { work = it }, singleLine = true, label = { Text("Work email") }, colors = fieldColors(), modifier = Modifier.fillMaxWidth().testTag("sso-email"))
+                OutlinedButton(onClick = { m.signInSso(context, work) }, enabled = !m.busy && '@' in work, modifier = Modifier.fillMaxWidth().height(52.dp).testTag("continue-sso"), shape = RoundedCornerShape(26.dp)) { Text("Continue with company SSO", style = HitopType.body, color = Hitop.text) }
+            }
             m.pasteFor?.let { kind ->
                 Text("This server shows a code after you sign in with ${AuthMethods.name(kind)}: paste it here.", style = HitopType.caption, color = Hitop.textMuted)
                 OutlinedTextField(paste, { paste = it }, singleLine = true, label = { Text("Sign-in code") }, colors = fieldColors(), modifier = Modifier.fillMaxWidth())

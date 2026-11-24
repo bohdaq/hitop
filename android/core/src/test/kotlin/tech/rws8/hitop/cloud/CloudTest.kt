@@ -91,4 +91,20 @@ class CloudTest {
         assertTrue(cloud.retry(next))
         assertTrue(cloud.signedIn)
     }
+
+    @Test
+    fun companySsoSendsTheWorkAddressAndOnlyThen() = runBlocking {
+        val bodies = ArrayList<String>()
+        val t = object : CloudTransport {
+            override suspend fun send(request: CloudRequest): CloudResponse {
+                bodies.add(request.url.substringAfter("/v1") + " " + String(request.body!!))
+                return CloudResponse(200, """{"url":"https://idp.test/authorize"}""".toByteArray())
+            }
+        }
+        val cloud = HitopCloud(t, CloudCredentials(MemorySecretStore()), MemoryCloudSettingsStore(CloudSettings(server = FakeCloud.SERVER)))
+        cloud.startBrowserSignIn("sso", FakeCloud.SERVER, email = " ada@acme.test ")
+        cloud.startBrowserSignIn("github", FakeCloud.SERVER, email = "ada@acme.test")
+        assertTrue(bodies[0], bodies[0].startsWith("/auth/sso/start") && bodies[0].contains("\"email\":\"ada@acme.test\"") && bodies[0].contains("hitop://sign-in"))
+        assertFalse(bodies[1].contains("acme"))
+    }
 }

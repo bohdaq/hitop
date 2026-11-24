@@ -93,6 +93,18 @@ class Library(private val store: LibraryStore, private val secrets: SecretStore)
     var isShared: (String) -> Boolean = { id -> id in _state.value.sharedRoles }
     /** A shared collection changed here (SharedSync pushes it). */
     var onSharedChange: ((String) -> Unit)? = null
+    /** Team environments (`team: <org>`) changed here (SharedSync pushes them). */
+    var onTeamChange: (() -> Unit)? = null
+    /** Secret values shared end to end with a collection, by environment name: in memory only. */
+    private val sharedValues = java.util.concurrent.ConcurrentHashMap<String, Map<String, Map<String, String>>>()
+    fun setSharedValues(collectionId: String, byEnvironment: Map<String, Map<String, String>>) { sharedValues[collectionId] = byEnvironment }
+
+    /** They fill a secret of [e] only where it has no value of its own here (as the web app). */
+    private fun sharedFor(collectionId: String?, e: Environment?): Map<String, String> {
+        val v = collectionId?.let { sharedValues[it] }?.get(e?.name ?: return emptyMap()) ?: return emptyMap()
+        return v.filterKeys { n -> n in e!!.secrets && secrets.get(SecretStore.envKey(e.id, n)).isNullOrEmpty() }
+    }
+
     /** A collection was deleted here (SharedSync forgets its link). */
     var onCollectionDeleted: ((String) -> Unit)? = null
     /** The organization a new collection is filed under (null: personal). */
@@ -289,7 +301,7 @@ class Library(private val store: LibraryStore, private val secrets: SecretStore)
     }
 
     fun applyRemoteEnvironments(list: List<Environment>, active: String?) {
-        store.saveEnvironments(list, active)
+        store.saveEnvironments(list.filter { it.team == null }, active)
         _state.update { it.copy(environments = list, activeEnvironmentId = active) }
     }
 
@@ -458,9 +470,17 @@ class Library(private val store: LibraryStore, private val secrets: SecretStore)
     // ---- environments, globals, secrets
 
     private fun putEnvironments(list: List<Environment>, active: String?) {
+        fun team(l: List<Environment>) = l.filter { it.team != null }
+        val teamChanged = team(list) != team(_state.value.environments)
         applyRemoteEnvironments(list, active)
         changed()
+        if (teamChanged) onTeamChange?.invoke()
     }
+
+    /** Shares an environment with the team organization [org], or stops sharing it (it stays here). */
+    fun setTeam(envId: String, org: String?) = putEnvironments(_state.value.environments.map { e ->
+        if (e.id != envId) e else e.set("team", org?.let { JsonPrimitive(it) }).set("updatedBy", null).let { x -> org?.let { x.set("org", JsonPrimitive(it)) } ?: x }
+    }, _state.value.activeEnvironmentId)
 
     fun setActiveEnvironment(id: String?) = putEnvironments(_state.value.environments, id)
 
@@ -532,7 +552,7 @@ class Library(private val store: LibraryStore, private val secrets: SecretStore)
     private fun globalSecrets(g: Globals): Map<String, String> = g.secrets.mapNotNull { n -> secrets.get(SecretStore.globalKey(n))?.let { n to it } }.toMap()
 
     /** Every secret value the active environment and globals hold (masked out of what the on-device model sees). */
-    fun activeSecretValues(): List<String> = environmentSecrets(_state.value.activeEnvironment).values.toList() + globalSecrets(_state.value.globals).values
+    fun activeSecretValues(): List<String> = sharedValues.keys.flatMap { sharedFor(it, _state.value.activeEnvironment).values } + environmentSecrets(_state.value.activeEnvironment).values.toList() + globalSecrets(_state.value.globals).values
 
     /** A variable's value and where it comes from (the peek on a `${name}` chip). */
     fun peek(collectionId: String, name: String): Peek {
@@ -681,7 +701,7 @@ class Library(private val store: LibraryStore, private val secrets: SecretStore)
             put("collection", c.forEngine(requests).toString())
             filesArg(requests)?.let { put("files", it) }
             env?.let { put("environment", it.forEngine()) }
-            put("secrets", environmentSecrets(env).toJsonObject())
+            put("secrets", (environmentSecrets(env) + sharedFor(c.id, env)).toJsonObject())
             put("globals", s.globals.variables.filterKeys { it !in s.globals.secrets }.toJsonObject())
             put("globalSecrets", globalSecrets(s.globals).toJsonObject())
             if (sessionValues) {

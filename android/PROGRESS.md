@@ -135,5 +135,5 @@ Choices made without you, each reversible: `android/DECISIONS.md`.
 | B3 | built: Settings (time limit, user certificates, proxy, library sync, cookies); CI pending |
 | B4 | built: compare with examples and history, examples list, undo after delete and move; CI pending |
 | B5 | built: background sync, scheduled runs, data files; CI pending |
-| B6 | not started |
+| B6 | built: roles, remove, delete for everyone, comments, team environments (edit, offline), shared secret values in sends, company SSO; CI pending |
 | B7 | not started |

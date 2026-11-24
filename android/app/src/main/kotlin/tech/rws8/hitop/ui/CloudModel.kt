@@ -72,8 +72,11 @@ class CloudModel(val cloud: HitopCloud, val sync: LibrarySync, private val platf
         }
     }
 
-    private suspend fun browser(context: Context, kind: String, server: String) {
-        val (url, paste) = cloud.startBrowserSignIn(kind, server)
+    /** Company SSO: the organization is found by the work address's domain. */
+    fun signInSso(context: Context, email: String) = run { browser(context, "sso", cloud.settings.value.server, email) }
+
+    private suspend fun browser(context: Context, kind: String, server: String, email: String? = null) {
+        val (url, paste) = cloud.startBrowserSignIn(kind, server, email = email)
         if (paste) pasteFor = kind
         platform.openBrowser(context, url) { back -> handleReturn(back) }
     }
