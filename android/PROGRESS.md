@@ -133,7 +133,7 @@ Choices made without you, each reversible: `android/DECISIONS.md`.
 | B1 | built: import (Postman, OpenAPI file or address, HITOP JSON, folder zip), export (zip, HITOP, Postman), Sync with OpenAPI, Share to HITOP, multipart files; CI pending |
 | B2 | built: OAuth 2.0 (client credentials, password, code + PKCE on a loopback address), SigV4, Digest forms, collection auth; CI pending |
 | B3 | built: Settings (time limit, user certificates, proxy, library sync, cookies); CI pending |
-| B4 | not started |
+| B4 | built: compare with examples and history, examples list, undo after delete and move; CI pending |
 | B5 | not started |
 | B6 | not started |
 | B7 | not started |

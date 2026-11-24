@@ -78,6 +78,8 @@ fun ResponseContent(vm: AppViewModel, collectionId: String, requestId: String, r
 
     val clipboard = LocalClipboardManager.current
     val context = LocalContext.current
+    var comparing by remember { mutableStateOf(false) }
+    if (comparing) CompareSheet(vm, requestId, res) { comparing = false }
     Column(modifier.fillMaxWidth()) {
         Row(Modifier.padding(horizontal = 16.dp, vertical = 8.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
             val status = res.status
@@ -128,6 +130,7 @@ fun ResponseContent(vm: AppViewModel, collectionId: String, requestId: String, r
         }
         Row(Modifier.navigationBarsPadding().padding(16.dp), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
             SheetButton("Copy", Modifier.weight(1f)) { clipboard.setText(AnnotatedString(res.body)) }
+            if (vm.compareSources(requestId).isNotEmpty()) SheetButton("Compare", Modifier.weight(1f)) { comparing = true }
             SheetButton("Share", Modifier.weight(1f)) {
                 val send = Intent(Intent.ACTION_SEND).setType("text/plain").putExtra(Intent.EXTRA_TEXT, res.body)
                 context.startActivity(Intent.createChooser(send, "Share the response"))

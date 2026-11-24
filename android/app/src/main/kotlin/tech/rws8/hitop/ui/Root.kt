@@ -9,6 +9,7 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -60,10 +61,30 @@ fun HitopRoot(vm: AppViewModel, single: Boolean = false) {
         androidx.compose.foundation.layout.BoxWithConstraints(Modifier.fillMaxSize().onPreviewKeyEvent { shortcut(vm, it) }.focusRequester(rootFocus).focusable().testTag("root")) {
             val panes = Panes.of(maxWidth)
             if (panes == Panes.ONE) Screens(vm) else WideLayout(vm, panes)
+            vm.undo?.let { u -> UndoBar(u, Modifier.align(Alignment.BottomCenter)) { vm.undo = null } }
         }
         return
     }
     Screens(vm)
+}
+
+@Composable
+private fun UndoBar(u: AppViewModel.Undo, modifier: Modifier, done: () -> Unit) {
+    val context = androidx.compose.ui.platform.LocalContext.current
+    androidx.compose.runtime.LaunchedEffect(u) {
+        // As long as the person's accessibility settings ask for (a screen reader needs more time).
+        val ms = context.getSystemService(android.view.accessibility.AccessibilityManager::class.java)
+            ?.getRecommendedTimeoutMillis(8_000, android.view.accessibility.AccessibilityManager.FLAG_CONTENT_CONTROLS or android.view.accessibility.AccessibilityManager.FLAG_CONTENT_TEXT) ?: 8_000
+        kotlinx.coroutines.delay(ms.toLong())
+        done()
+    }
+    androidx.compose.foundation.layout.Row(
+        modifier.navigationBarsPadding().padding(start = 16.dp, end = 16.dp, bottom = 96.dp).clip(androidx.compose.foundation.shape.RoundedCornerShape(16.dp)).background(Hitop.surfaceHigh).padding(start = 16.dp).testTag("undo-bar"),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Text(u.label, Modifier.weight(1f, fill = false), style = HitopType.bodySmall, color = Hitop.text, maxLines = 1, overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis)
+        androidx.compose.material3.TextButton(onClick = { u.undo(); done() }, modifier = Modifier.testTag("undo")) { Text("Undo", color = Hitop.accent) }
+    }
 }
 
 /** Keyboard shortcuts (tablets, ChromeOS, desktop mode): Ctrl+Enter send, Ctrl+S save, Ctrl+K search, Ctrl+N new request. */

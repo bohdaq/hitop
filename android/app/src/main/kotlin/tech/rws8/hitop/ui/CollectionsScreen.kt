@@ -255,7 +255,7 @@ private fun CollectionCard(vm: AppViewModel, c: Collection, rows: List<Request>,
                     })
                     DropdownMenuItem(text = { Text("Delete", color = Hitop.error) }, onClick = {
                         menu = false
-                        showDialog { ConfirmDialog("Delete ${c.name}?", "Its ${c.requests.size} requests are deleted from this phone.", "Delete", { showDialog(null) }) { vm.library.deleteCollection(c.id); showDialog(null) } }
+                        showDialog { ConfirmDialog("Delete ${c.name}?", "Its ${c.requests.size} requests are deleted from this phone.", "Delete", { showDialog(null) }) { if (c.id in vm.library.state.value.sharedRoles) vm.library.deleteCollection(c.id) else vm.undoable("Deleted ${c.name}") { vm.library.deleteCollection(c.id) }; showDialog(null) } }
                     })
                 }
             }
@@ -310,7 +310,7 @@ fun RequestRow(vm: AppViewModel, c: Collection, r: Request, status: Int?, showDi
             DropdownMenuItem(text = { Text("Move…", color = Hitop.text) }, onClick = { menu = false; showDialog { MoveDialog(vm, r) { showDialog(null) } } })
             DropdownMenuItem(text = { Text("Delete", color = Hitop.error) }, onClick = {
                 menu = false
-                showDialog { ConfirmDialog("Delete ${r.name}?", "It is deleted from ${c.name} on this phone.", "Delete", { showDialog(null) }) { vm.library.deleteRequest(r.id); showDialog(null) } }
+                showDialog { ConfirmDialog("Delete ${r.name}?", "It is deleted from ${c.name} on this phone.", "Delete", { showDialog(null) }) { vm.undoable("Deleted ${r.name}") { vm.library.deleteRequest(r.id) }; showDialog(null) } }
             })
         }
     }
@@ -327,10 +327,10 @@ private fun MoveDialog(vm: AppViewModel, r: Request, done: () -> Unit) {
             LazyColumn {
                 s.collections.forEach { c ->
                     item {
-                        Text(c.name, Modifier.fillMaxWidth().clickable { vm.library.moveRequest(r.id, c.id, ""); done() }.heightIn(min = 48.dp).padding(vertical = 12.dp), style = HitopType.body, color = Hitop.text)
+                        Text(c.name, Modifier.fillMaxWidth().clickable { vm.undoable("Moved ${r.name}") { vm.library.moveRequest(r.id, c.id, "") }; done() }.heightIn(min = 48.dp).padding(vertical = 12.dp), style = HitopType.body, color = Hitop.text)
                     }
                     items(c.allFolders) { f ->
-                        Text("  $f", Modifier.fillMaxWidth().clickable { vm.library.moveRequest(r.id, c.id, f); done() }.heightIn(min = 48.dp).padding(start = 16.dp, top = 12.dp, bottom = 12.dp), style = HitopType.bodySmall, color = Hitop.textSecondary)
+                        Text("  $f", Modifier.fillMaxWidth().clickable { vm.undoable("Moved ${r.name}") { vm.library.moveRequest(r.id, c.id, f) }; done() }.heightIn(min = 48.dp).padding(start = 16.dp, top = 12.dp, bottom = 12.dp), style = HitopType.bodySmall, color = Hitop.textSecondary)
                     }
                 }
             }

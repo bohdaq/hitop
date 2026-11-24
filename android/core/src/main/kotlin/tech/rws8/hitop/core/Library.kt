@@ -387,6 +387,46 @@ class Library(private val store: LibraryStore, private val secrets: SecretStore)
         putCollection(to.withRequests(to.requests + moved))
     }
 
+    /**
+     * Runs [change] and returns what takes it back, or null when no collection lost or moved
+     * anything. Requests come back where they were (also when the collection changed since); a
+     * deleted collection comes back under a new id, since HITOP Cloud may have its deletion.
+     */
+    fun undoable(change: () -> Unit): (() -> Unit)? {
+        val before = _state.value.collections
+        val pins = _state.value.pins
+        change()
+        val after = _state.value.collections
+        if (before == after) return null
+        return {
+            before.forEach { old ->
+                val then = after.firstOrNull { it.id == old.id }
+                val now = _state.value.collection(old.id)
+                if (then == null) {
+                    if (now == null && !isShared(old.id)) putCollection(old.set("id", JsonPrimitive(Ids.next())))
+                } else if (then != old && now != null) {
+                    val changed = old.requests.filter { o -> then.request(o.id) != o }.associateBy { it.id }
+                    val added = then.requests.filter { old.request(it.id) == null }.map { it.id }.toSet()
+                    val list = now.requests.filter { it.id !in added }.map { changed[it.id] ?: it }.toMutableList()
+                    old.requests.forEachIndexed { i, r ->
+                        if (r.id in changed && list.none { it.id == r.id }) {
+                            val prev = old.requests.take(i).lastOrNull { p -> list.any { it.id == p.id } }
+                            list.add(if (prev == null) 0 else list.indexOfFirst { it.id == prev.id } + 1, r)
+                        }
+                    }
+                    val folders = old.folders.filter { it !in now.folders && it !in then.folders }
+                    val order = if (now.folders == then.folders) old.folders else now.folders + folders
+                    putCollection(now.withRequests(list).withFolders(order))
+                }
+            }
+            val lost = pins.filter { p -> p !in _state.value.pins && _state.value.find(p) != null }
+            if (lost.isNotEmpty()) {
+                _state.update { it.copy(pins = it.pins + lost) }
+                persistState()
+            }
+        }
+    }
+
     fun togglePin(requestId: String) {
         _state.update { s -> s.copy(pins = if (requestId in s.pins) s.pins - requestId else s.pins + requestId) }
         persistState()

@@ -64,6 +64,25 @@ class AppViewModel(val library: Library, cloud: tech.rws8.hitop.cloud.HitopCloud
         }
     }
 
+    /** The last delete or move, while it can be taken back. */
+    data class Undo(val label: String, val undo: () -> Unit)
+    var undo by mutableStateOf<Undo?>(null)
+
+    /** A delete or move with Undo. */
+    fun undoable(label: String, change: () -> Unit) {
+        undo = library.undoable(change)?.let { Undo(label, it) }
+    }
+
+    /** What a response can be compared with: the request's examples, then its history. */
+    fun compareSources(requestId: String): List<tech.rws8.hitop.core.ComparedResponse> {
+        val examples = draft(requestId)?.examples.orEmpty().filterIsInstance<kotlinx.serialization.json.JsonObject>().mapIndexed { i, e -> tech.rws8.hitop.core.ComparedResponse.ofExample("Example: ${(e["name"] as? kotlinx.serialization.json.JsonPrimitive)?.content ?: (i + 1)}", e) }
+        val history = library.state.value.history.filter { it.request.id == requestId && it.response != null }.map { h ->
+            tech.rws8.hitop.core.ComparedResponse.of("${tech.rws8.hitop.cloud.LibrarySync.ago(h.timestamp)} · ${h.response!!.status}", h.response!!)
+        }
+        // The newest history entry is the response on screen.
+        return examples + history.drop(1)
+    }
+
     fun secretValues(): List<String> = library.activeSecretValues()
 
     /** Starts a collection run: the foreground service on a device, in-process under Robolectric. */
