@@ -124,3 +124,16 @@ check widgets, sign-in and Gemini Nano on a real phone; promote tracks when read
 
 Choices made without you, each reversible: `android/DECISIONS.md`.
 
+
+## Work before 1.0.0 (`GOAL-1.0.md`, started 2026-11-24)
+
+| Tranche | Status |
+| --- | --- |
+| B0 | in progress |
+| B1 | not started |
+| B2 | not started |
+| B3 | not started |
+| B4 | not started |
+| B5 | not started |
+| B6 | not started |
+| B7 | not started |
