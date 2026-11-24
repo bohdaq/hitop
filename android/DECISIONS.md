@@ -58,3 +58,4 @@ Choices `android/GOAL.md` doesn't cover, each with its reason. The owner may ove
 | 2026-11-24 | UI text is in resources through `tr()` (works outside composition too); messages made in `core` (plain JVM) and in hitop-core stay English in code. | English only was the owner's choice; a translation needs core's messages moved later. |
 | 2026-11-24 | The startup profile is written by hand (baseline-prof.txt), not recorded, and cold start isn't measured. | Recording and measuring need a physical device or a macrobenchmark emulator; physical phones in CI were skipped. |
 | 2026-11-24 | Crash reports hold class and method names, versions and the phone model; exception messages are left out. | Messages can hold addresses, variables or secrets. |
+| 2026-11-24 | Gradle resolves from Google's Maven Central mirror, then Maven Central. | Central answered CI with 429 in several jobs; Gradle doesn't retry 429. Same artifacts, run by Google. |
