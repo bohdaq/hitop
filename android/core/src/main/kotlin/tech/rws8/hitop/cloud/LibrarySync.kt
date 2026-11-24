@@ -141,9 +141,12 @@ class LibrarySync(
 
     // ---- account
 
+    /** Off in Settings: nothing is pulled or pushed, and what waits stays here. */
+    @Volatile var enabled: () -> Boolean = { true }
+
     fun checkAccount(): Boolean {
         val key = cloud.accountKey
-        if (key.isEmpty()) {
+        if (key.isEmpty() || !enabled()) {
             _status.update { it.copy(on = false) }
             pushJob?.cancel()
             refreshBadges()
@@ -358,7 +361,7 @@ class LibrarySync(
     }
 
     fun schedulePush(delayMs: Long = pushDelayMs) {
-        if (!cloud.signedIn) return
+        if (!cloud.signedIn || !enabled()) return
         pushJob?.cancel()
         pushJob = scope.launch {
             delay(delayMs)
@@ -531,7 +534,7 @@ class LibrarySync(
     fun dismissNotice(text: String) = _notices.update { n -> n - text }
 
     fun refreshBadges() {
-        val on = cloud.signedIn && state.account == cloud.accountKey
+        val on = cloud.signedIn && enabled() && state.account == cloud.accountKey
         val out = HashMap<String, Badge>()
         library.state.value.collections.filter { !library.isShared(it.id) }.forEach { c ->
             val key = "collection/${c.id}"

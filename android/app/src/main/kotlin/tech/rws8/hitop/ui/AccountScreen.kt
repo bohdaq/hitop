@@ -193,6 +193,14 @@ fun AccountScreen(vm: AppViewModel) {
                     }
                 }
             }
+            item {
+                Card(Modifier.clickable { vm.push(Screen.Settings) }.testTag("settings")) {
+                    Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                        Text("Settings", style = HitopType.cardTitle, color = Hitop.text)
+                        Text("Time limit, cookies, network and sync.", style = HitopType.bodySmall, color = Hitop.textSecondary)
+                    }
+                }
+            }
             item { AboutCard() }
         }
     }

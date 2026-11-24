@@ -7,6 +7,7 @@ use serde_json::{json, Value};
 
 mod files;
 mod import;
+mod network;
 mod oauth;
 mod run;
 mod send;
@@ -46,6 +47,7 @@ fn call(op: &str, a: &Value) -> Option<R> {
         "import" => import::import(&Args(a)),
         "openapiSync" => import::openapi_sync(&Args(a)),
         "export" => import::export(&Args(a)),
+        "setNetwork" => network::set(&Args(a)),
         "oauthPending" => oauth::pending(&Args(a)),
         "oauthCancel" => oauth::cancel(&Args(a)),
         "oauthForget" => oauth::forget(),

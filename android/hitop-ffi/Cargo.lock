@@ -939,6 +939,7 @@ dependencies = [
  "hitop-sync-ffi",
  "jni",
  "reqwest",
+ "rustls",
  "serde",
  "serde_json",
  "tokio",

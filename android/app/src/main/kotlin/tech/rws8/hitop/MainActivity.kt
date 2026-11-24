@@ -23,7 +23,7 @@ class MainActivity : ComponentActivity() {
             @Suppress("UNCHECKED_CAST")
             override fun <T : ViewModel> create(modelClass: Class<T>): T {
                 val p = AppGraph.parts(applicationContext)
-                return AppViewModel(p.library, p.cloud, p.sync, p.shared, p.signIn, p.runs, p.assistant) as T
+                return AppViewModel(p.library, p.cloud, p.sync, p.shared, p.signIn, p.runs, p.settings, p.network, p.assistant) as T
             }
         }
     }

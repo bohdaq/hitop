@@ -16,6 +16,7 @@ enum class Tab(val label: String) { COLLECTIONS("Collections"), HISTORY("History
 
 sealed interface Screen {
     data object Account : Screen
+    data object Settings : Screen
     data class Run(val collectionId: String) : Screen
     data class Report(val id: Long) : Screen
     data class Request(val collectionId: String, val requestId: String) : Screen
@@ -28,7 +29,7 @@ sealed interface Screen {
  * survive navigation while the app runs, like iOS's one editor per request), responses and sends
  * in flight.
  */
-class AppViewModel(val library: Library, cloud: tech.rws8.hitop.cloud.HitopCloud, sync: tech.rws8.hitop.cloud.LibrarySync, val shared: tech.rws8.hitop.sync.SharedSync, signIn: tech.rws8.hitop.platform.SignInPlatform, val runs: tech.rws8.hitop.core.RunCenter, val assistant: tech.rws8.hitop.core.LanguageAssistant) : ViewModel() {
+class AppViewModel(val library: Library, cloud: tech.rws8.hitop.cloud.HitopCloud, sync: tech.rws8.hitop.cloud.LibrarySync, val shared: tech.rws8.hitop.sync.SharedSync, signIn: tech.rws8.hitop.platform.SignInPlatform, val runs: tech.rws8.hitop.core.RunCenter, val settings: tech.rws8.hitop.core.SettingsStore, val network: tech.rws8.hitop.platform.PhoneNetwork, val assistant: tech.rws8.hitop.core.LanguageAssistant) : ViewModel() {
     /** The on-device model is there (Explain, Suggest a test, request from text); hidden when not. */
     var aiReady by mutableStateOf(false)
         private set

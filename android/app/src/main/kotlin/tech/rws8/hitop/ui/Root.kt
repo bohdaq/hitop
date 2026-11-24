@@ -86,6 +86,7 @@ private fun Screens(vm: AppViewModel) {
         is Screen.EnvironmentDetail -> EnvironmentDetailScreen(vm, top.envId)
         Screen.Globals -> GlobalsScreen(vm)
         Screen.Account -> AccountScreen(vm)
+        Screen.Settings -> SettingsScreen(vm)
         is Screen.Run -> RunScreen(vm, top.collectionId)
         is Screen.Report -> ReportScreen(vm, top.id)
         null -> Tabs(vm)

@@ -28,7 +28,7 @@ import java.io.File
 
 /** The app's objects, made once per process. UI tests replace them with [useSeed] before launching. */
 object AppGraph {
-    class Parts(val library: Library, val cloud: HitopCloud, val sync: LibrarySync, val shared: SharedSync, val signIn: SignInPlatform, val runs: RunCenter, val assistant: tech.rws8.hitop.core.LanguageAssistant)
+    class Parts(val library: Library, val cloud: HitopCloud, val sync: LibrarySync, val shared: SharedSync, val signIn: SignInPlatform, val runs: RunCenter, val settings: tech.rws8.hitop.core.SettingsStore, val network: PhoneNetwork, val assistant: tech.rws8.hitop.core.LanguageAssistant)
 
     /** UI tests: the assistant's answers (FakeAssistant) and whether the model is there. */
     @Volatile var assistantReady = true
@@ -57,6 +57,10 @@ object AppGraph {
         val vault = secrets ?: KeystoreSecretStore(File(context.filesDir, "secrets.json"))
         val lib = Library(store, vault)
         lib.load()
+        val settings = tech.rws8.hitop.core.SettingsStore(store)
+        val network = PhoneNetwork(context)
+        lib.network = { network.args(settings.value) }
+        lib.timeoutMs = { settings.value.timeoutMs }
         if (seed) lib.seedShopApi(stub?.let { "ws://127.0.0.1:${it.port}" }) else lib.seedFirstVisit()
         val cloud = if (fake != null) {
             HitopCloud(fake, CloudCredentials(vault), MemoryCloudSettingsStore(CloudSettings(server = FakeCloud.SERVER)), deviceName = "HITOP on Pixel")
@@ -64,6 +68,12 @@ object AppGraph {
             HitopCloud(UrlConnectionTransport(), CloudCredentials(vault), FileCloudSettingsStore(File(root, "cloud.json")), deviceName = deviceName())
         }
         val sync = LibrarySync(cloud, lib, File(root, "library-sync.json"), scope)
+        sync.enabled = { settings.value.librarySync }
+        settings.onChange = { s ->
+            network.forget()
+            sync.refreshBadges()
+            if (s.librarySync) scope.launch { sync.sync() }
+        }
         sync.forgetDamaged(store)
         store.setAsideDamaged()
         val shared = SharedSync(cloud, lib, FileSharedSyncStore(root), scope)
@@ -75,7 +85,7 @@ object AppGraph {
         }
         val runs = RunCenter(lib, store, tech.rws8.hitop.BuildConfig.VERSION_NAME)
         val assistant = if (fake != null) tech.rws8.hitop.core.FakeAssistant(assistantReady) else GeminiNano()
-        return Parts(lib, cloud, sync, shared, if (fake != null) FakeSignIn(fake) else AndroidSignIn(), runs, assistant)
+        return Parts(lib, cloud, sync, shared, if (fake != null) FakeSignIn(fake) else AndroidSignIn(), runs, settings, network, assistant)
     }
 
     /**

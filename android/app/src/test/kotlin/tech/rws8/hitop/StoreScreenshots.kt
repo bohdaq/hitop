@@ -62,7 +62,7 @@ class StoreScreenshots {
         AppGraph.useSeed(ctx, MemorySecretStore())
         AppGraph.runsInProcess = true
         val p = AppGraph.parts(ctx)
-        val vm = AppViewModel(p.library, p.cloud, p.sync, p.shared, p.signIn, p.runs, p.assistant)
+        val vm = AppViewModel(p.library, p.cloud, p.sync, p.shared, p.signIn, p.runs, p.settings, p.network, p.assistant)
         compose.setContent {
             HitopTheme {
                 val top = vm.top as? Screen.Request

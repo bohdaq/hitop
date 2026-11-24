@@ -41,7 +41,7 @@ class LayoutTest {
         AppGraph.useSeed(ctx, if (Harness.robolectric) MemorySecretStore() else null)
         AppGraph.runsInProcess = Harness.robolectric
         val p = AppGraph.parts(ctx)
-        val vm = AppViewModel(p.library, p.cloud, p.sync, p.shared, p.signIn, p.runs, p.assistant)
+        val vm = AppViewModel(p.library, p.cloud, p.sync, p.shared, p.signIn, p.runs, p.settings, p.network, p.assistant)
         compose.setContent {
             DeviceConfigurationOverride(DeviceConfigurationOverride.ForcedSize(size) then DeviceConfigurationOverride.FontScale(fontScale)) {
                 HitopTheme { HitopRoot(vm) }

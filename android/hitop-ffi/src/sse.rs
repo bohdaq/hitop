@@ -58,7 +58,17 @@ pub(crate) fn start(a: &Args) -> Result<Value, String> {
     streams().lock().unwrap_or_else(|p| p.into_inner()).insert(id, Stream { events: rx, cancel: cancel.clone(), done: false });
     std::thread::spawn(move || {
         let fail = |e: String| json!({ "type": "error", "message": m.mask(&e) });
-        let client = match reqwest::blocking::Client::builder().use_rustls_tls().timeout(None::<Duration>).connect_timeout(Duration::from_secs(15)).build() {
+        let mut builder = reqwest::blocking::Client::builder().use_rustls_tls().timeout(None::<Duration>).connect_timeout(Duration::from_secs(15));
+        if let Some(n) = hitop_core::http::network() {
+            builder = match n.apply(builder) {
+                Ok(b) => b,
+                Err(e) => {
+                    let _ = tx.send(fail(format!("{e:#}")));
+                    return;
+                }
+            };
+        }
+        let client = match builder.build() {
             Ok(c) => c,
             Err(e) => {
                 let _ = tx.send(fail(e.to_string()));

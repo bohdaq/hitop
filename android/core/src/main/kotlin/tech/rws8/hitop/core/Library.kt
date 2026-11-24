@@ -612,9 +612,32 @@ class Library(private val store: LibraryStore, private val secrets: SecretStore)
     /** A run's arguments: the collection as saved, [env], secrets and globals; script values start afresh (as a run). */
     fun runArgs(c: Collection, env: Environment?, more: kotlinx.serialization.json.JsonObjectBuilder.() -> Unit = {}): JsonObject = scopeArgs(c, c.requests, env, sessionValues = false, more)
 
+    /** The network settings for hitop-ffi's `setNetwork` (the app sets it); empty = the engine's defaults. */
+    @Volatile var network: () -> JsonObject = { EmptyObject }
+    /** The time limit of one request in ms (Settings); 0 = the engine's own. */
+    @Volatile var timeoutMs: () -> Long = { 0 }
+    private var networkSet: JsonObject = EmptyObject
+
+    @Synchronized
+    private fun applyNetwork() {
+        val want = runCatching { network() }.getOrDefault(EmptyObject)
+        if (want == networkSet) return
+        // A setting that can't be used falls back to the defaults, never to less checking.
+        if (runCatching { Ffi.call("setNetwork", want) }.isFailure) runCatching { Ffi.call("setNetwork") }
+        networkSet = want
+    }
+
+    data class StoredCookie(val index: Int, val name: String, val domain: String, val path: String)
+
+    fun cookies(): List<StoredCookie> = store.loadJar().mapIndexedNotNull { i, e -> (e as? JsonObject)?.let { StoredCookie(i, it.str("name"), it.str("domain"), it.str("path", "/")) } }
+    fun deleteCookie(c: StoredCookie) = store.saveJar(JsonArray(store.loadJar().filterNot { e -> (e as? JsonObject)?.let { it.str("name") == c.name && it.str("domain") == c.domain && it.str("path", "/") == c.path } ?: false }))
+    fun clearCookies() = store.saveJar(JsonArray(emptyList()))
+
     private fun scopeArgs(c: Collection, requests: List<Request>, env: Environment?, sessionValues: Boolean, more: kotlinx.serialization.json.JsonObjectBuilder.() -> Unit): JsonObject {
         val s = _state.value
+        applyNetwork()
         return buildJsonObject {
+            timeoutMs().takeIf { it > 0 }?.let { put("timeoutMs", it) }
             put("collection", c.forEngine(requests).toString())
             filesArg(requests)?.let { put("files", it) }
             env?.let { put("environment", it.forEngine()) }

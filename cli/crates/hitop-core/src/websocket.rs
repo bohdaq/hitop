@@ -176,6 +176,9 @@ mod client {
     fn tls() -> Result<Arc<rustls::ClientConfig>> {
         let mut roots = rustls::RootCertStore::empty();
         roots.extend(webpki_roots::TLS_SERVER_ROOTS.iter().cloned());
+        for der in crate::http::network().map(|n| n.roots).unwrap_or_default() {
+            roots.add(rustls::pki_types::CertificateDer::from(der)).context("a certificate authority of this device")?;
+        }
         let provider = Arc::new(rustls::crypto::ring::default_provider());
         let config = rustls::ClientConfig::builder_with_provider(provider)
             .with_safe_default_protocol_versions()

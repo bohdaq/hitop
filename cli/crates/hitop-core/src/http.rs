@@ -38,18 +38,68 @@ pub fn install_client(c: Client) -> bool {
     CLIENT.set(c).is_ok()
 }
 
-fn client() -> &'static Client {
-    CLIENT.get_or_init(|| {
-        let recorder = RECORDER.get_or_init(Recorder::default).clone();
-        Client::builder()
-            .use_rustls_tls()
-            // Redirects are followed by `exchange` (src/redirects.rs), one hop at a time.
-            .redirect(reqwest::redirect::Policy::none())
-            .dns_resolver(std::sync::Arc::new(TimedResolver::new(recorder.clone())))
-            .connector_layer(TimedConnectLayer::new(recorder))
-            .build()
-            .expect("failed to build HTTP client")
-    })
+fn builder() -> reqwest::blocking::ClientBuilder {
+    let recorder = RECORDER.get_or_init(Recorder::default).clone();
+    Client::builder()
+        .use_rustls_tls()
+        // Redirects are followed by `exchange` (src/redirects.rs), one hop at a time.
+        .redirect(reqwest::redirect::Policy::none())
+        .dns_resolver(std::sync::Arc::new(TimedResolver::new(recorder.clone())))
+        .connector_layer(TimedConnectLayer::new(recorder))
+}
+
+/// A host's network settings, for a person who turned them on (the Android app): certificate
+/// authorities trusted beside the webpki roots (DER) and a proxy for HTTP requests.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct Network {
+    pub roots: Vec<Vec<u8>>,
+    /// `http://host:port`.
+    pub proxy: Option<String>,
+    /// Hosts that don't use the proxy, comma separated.
+    pub no_proxy: String,
+}
+
+impl Network {
+    /// `b` with these settings.
+    pub fn apply(&self, mut b: reqwest::blocking::ClientBuilder) -> Result<reqwest::blocking::ClientBuilder> {
+        for der in &self.roots {
+            b = b.add_root_certificate(reqwest::Certificate::from_der(der)?);
+        }
+        if let Some(p) = &self.proxy {
+            b = b.proxy(reqwest::Proxy::all(p)?.no_proxy(reqwest::NoProxy::from_string(&self.no_proxy)));
+        }
+        Ok(b)
+    }
+}
+
+static NETWORK: std::sync::RwLock<Option<(Network, Client)>> = std::sync::RwLock::new(None);
+
+/// Uses `n` from now on (None: the defaults, as when this is never called).
+pub fn set_network(n: Option<Network>) -> Result<()> {
+    if network() == n {
+        return Ok(());
+    }
+    let next = match n {
+        Some(n) => {
+            let c = n.apply(builder())?.build()?;
+            Some((n, c))
+        }
+        None => None,
+    };
+    *NETWORK.write().unwrap_or_else(|p| p.into_inner()) = next;
+    Ok(())
+}
+
+/// The settings in use, if any.
+pub fn network() -> Option<Network> {
+    NETWORK.read().unwrap_or_else(|p| p.into_inner()).as_ref().map(|(n, _)| n.clone())
+}
+
+fn client() -> Client {
+    if let Some((_, c)) = NETWORK.read().unwrap_or_else(|p| p.into_inner()).as_ref() {
+        return c.clone();
+    }
+    CLIENT.get_or_init(|| builder().build().expect("failed to build HTTP client")).clone()
 }
 
 /// The phases of a request to `url` (None with an installed client, which has no hooks).

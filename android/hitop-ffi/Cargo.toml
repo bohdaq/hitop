@@ -33,6 +33,10 @@ tokio = { version = "1.54.1", default-features = false, features = ["rt", "sync"
 # Server-Sent Events read as they arrive (src/sse.rs): hitop-core's HTTP client, the same version.
 reqwest = { version = "0.12", default-features = false, features = ["blocking", "rustls-tls"] }
 
+[dev-dependencies]
+# tests/network.rs: a TLS server with a private certificate authority.
+rustls = { version = "0.23", default-features = false, features = ["ring", "std", "tls12"] }
+
 [profile.release]
 opt-level = "s"
 panic = "unwind"

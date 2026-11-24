@@ -238,12 +238,23 @@ mod client {
             ep = ep.origin(parsed.clone());
         }
         if tls {
-            ep = ep.tls_config(ClientTlsConfig::new().with_webpki_roots().domain_name(host)).context("TLS setup")?;
+            let mut config = ClientTlsConfig::new().with_webpki_roots().domain_name(host);
+            if let Some(n) = crate::http::network() {
+                config = config.ca_certificates(n.roots.iter().map(|der| tonic::transport::Certificate::from_pem(pem(der))));
+            }
+            ep = ep.tls_config(config).context("TLS setup")?;
         }
         if let Some(t) = timeout {
             ep = ep.connect_timeout(t);
         }
         ep.connect().await.map_err(|e| anyhow!("couldn't connect to {uri}: {}", error_chain(&e)))
+    }
+
+    fn pem(der: &[u8]) -> String {
+        use base64::Engine;
+        let b64 = base64::engine::general_purpose::STANDARD.encode(der);
+        let lines: Vec<&str> = b64.as_bytes().chunks(64).map(|c| std::str::from_utf8(c).unwrap_or_default()).collect();
+        format!("-----BEGIN CERTIFICATE-----\n{}\n-----END CERTIFICATE-----\n", lines.join("\n"))
     }
 
     fn error_chain(e: &(dyn std::error::Error + 'static)) -> String {
