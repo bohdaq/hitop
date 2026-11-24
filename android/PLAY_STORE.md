@@ -85,7 +85,10 @@ HITOP is an HTTP API client for your phone that speaks the same collections as t
 • Pre-request and test scripts, including Postman's pm.* API
 • Run a whole collection with a live notification, then read or share its report (HTML, JUnit, JSON, the same as hitop run)
 • Widgets for the last run, failing requests and pinned requests; a Quick Settings tile and shortcuts
-• Paste a curl command to make a request
+• Import Postman collections, OpenAPI documents and HITOP folders; export them again
+• Share an address, a curl command or a file to HITOP from another app
+• OAuth 2.0 (with sign-in in the browser), AWS SigV4, Digest, API keys; file uploads
+• Compare responses, keep examples, run with a data file or on a schedule
 • On phones with Gemini Nano: explain a response and suggest tests that pass, on the device
 • Tablet and foldable layouts, keyboard shortcuts (Ctrl+Enter sends)
 
@@ -130,6 +133,7 @@ Play takes uploads through its API only after the app's first release was made i
 | News app | No |
 | Health / Financial features / Government | None / No / No |
 | Foreground service | **Data sync** (`FOREGROUND_SERVICE_DATA_SYNC`): "Runs a collection of HTTP requests the user started (Runs → Run), with a notification showing progress and a Stop button; it ends when the run ends." Attach a short screen recording: Collections → ▶ on a collection → Start run → the notification → Stop |
+| Permissions | Nothing to declare beyond the foreground service: WorkManager (background sync, scheduled runs) adds `RECEIVE_BOOT_COMPLETED`, `WAKE_LOCK` and `ACCESS_NETWORK_STATE`; no exact alarms, no file or media permission (the system picker) |
 | Data safety | Section 9 |
 
 ## 9. Data safety answers

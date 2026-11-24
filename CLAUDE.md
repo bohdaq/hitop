@@ -590,6 +590,14 @@ hitop/
   WebSocket/SSE/GraphQL/gRPC (`core/Protocols.kt`, `GraphQL.kt`), on-device AI (`platform/GeminiNano.kt` = ML Kit GenAI Prompt,
   `core/Intelligence.kt`: ModelInput masks secrets, CurlImport), layouts `ui/WideLayout.kt` (two panes ≥ 600 dp, three ≥ 1200 dp),
   shortcuts in `ui/Root.kt`
+- Since 1.0 work (B0–B7, plan `android/GOAL-1.0.md`): unsaved edits in `drafts.json`, `SafeFiles` atomic writes, damaged files set aside
+  (`LibrarySync.forgetDamaged`); `core/Importing.kt` (ffi `import`/`export`/`openapiSync`, zips), `platform/Incoming.kt` (Share to HITOP), uploads
+  (`uploads.json`, ffi `files`, core `form::install_file_source`); auth forms + OAuth sign-in (ffi `oauth*`, core `oauth2::install_sign_in`);
+  `core/Settings.kt` + ffi `setNetwork` (core `http::set_network`: user CAs, proxy; off by default, never HITOP Cloud); `core/ResponseDiff.kt`,
+  `Library.undoable`; `platform/BackgroundWork.kt` (WorkManager sync + scheduled runs); comments, roles, team environments, shared values in
+  `SharedSync`; `platform/CrashReport.kt` (local, no messages). UI text: `tr(R.string.…)`, `res/values/strings_ui.xml` (English only; core's
+  messages are still in Kotlin). Test doubles live in core `testFixtures` + `app/src/sharedTest/TestGraph.kt`. R8 on (`app/proguard-rules.pro`,
+  no obfuscation); build type `smoke` = release with the debug key, started on the emulators by `scripts/smoke-release.sh`
 - Release (A7, `android/PLAY_STORE.md`): signing only from env (`HITOP_UPLOAD_KEYSTORE`, `_PASSWORD`, `HITOP_UPLOAD_KEY_ALIAS`,
   `HITOP_VERSION_CODE`); `scripts/build-release.sh` + `check-release.sh` (bundletool validate, signature, both ABIs, 16 KB;
   BUNDLETOOL = jar, 1.18.3 sha256-pinned in workflows); CI job App does it with a throwaway key; `android-play.yml` (manual,

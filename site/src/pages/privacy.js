@@ -24,7 +24,7 @@ export function render() {
         <li>CLI on Linux: <code>~/.config/hitop/</code></li>
         <li>CLI on Windows: <code>%APPDATA%\\hitop\\</code></li>
         <li>iOS app: the app's own storage on your iPhone or iPad</li>
-        <li>Android app: the app's own storage on your phone or tablet (secret values sealed with a key in the Android Keystore); it is left out of Android's cloud backups and device transfers</li>
+        <li>Android app: the app's own storage on your phone or tablet (secret values sealed with a key in the Android Keystore); it is left out of Android's cloud backups and device transfers. Files you pick for an upload are copied there and never synced; a crash leaves a report there, with no requests or values in it, that is sent nowhere unless you share it yourself</li>
         <li>Web app and browser extensions: your browser's local storage</li>
       </ul>
       <p>None of it leaves your device unless you export it yourself, or sign in to HITOP Cloud and sync it (below).</p>
@@ -50,6 +50,8 @@ export function render() {
         <li>Turn it off at any time with <code>hitop telemetry off</code> or in the desktop app's settings. <code>hitop telemetry status</code> shows what would be sent.</li>
       </ul>
 
+      <h2>Network settings in the Android app</h2>
+      <p>Two settings, both off unless you turn them on, change how the Android app sends your requests: trusting certificate authorities installed on your phone, and using your phone's proxy. Whoever holds such a certificate, or runs the proxy, can see that traffic. They never apply to HITOP Cloud's certificates. When you are signed in, the app also syncs in the background; you can turn that off in Settings.</p>
       <h2>On-device AI in the Android app</h2>
       <p>On phones that have Gemini Nano, the Android app can explain a response, suggest tests and turn a description into a request. The model runs on the phone through Google's ML Kit and Android's on-device AI service: what it reads (the response, with secret values and credentials hidden) and what it answers stay on the phone. Turning a curl command into a request needs no model.</p>
       <p>ML Kit is Google's library, not HITOP's, and it sends Google diagnostics about its own use whenever the app checks for the model (at start) or uses it: the phone's model and Android version, HITOP's version, timings, sizes and error codes, and an identifier per installation. It doesn't send what the model reads or writes. Google describes this at <a href="https://developers.google.com/ml-kit/android-data-disclosure">ML Kit data disclosure</a>. The Android app's other Google library, for signing in with Google, is used only when you choose it.</p>

@@ -129,11 +129,11 @@ Choices made without you, each reversible: `android/DECISIONS.md`.
 
 | Tranche | Status |
 | --- | --- |
-| B0 | built: drafts on disk, Cancel, `onTimeout`, one run per service, atomic writes, damaged files kept (and never deleted from the cloud), undecryptable secrets kept; CI pending (PR 12) |
+| B0 | built: drafts on disk, Cancel, `onTimeout`, one run per service, atomic writes, damaged files kept (and never deleted from the cloud), undecryptable secrets kept; on main, every workflow green (https://github.com/bohdaq/hitop/actions/runs/45462134810) |
 | B1 | built: import (Postman, OpenAPI file or address, HITOP JSON, folder zip), export (zip, HITOP, Postman), Sync with OpenAPI, Share to HITOP, multipart files; CI pending |
 | B2 | built: OAuth 2.0 (client credentials, password, code + PKCE on a loopback address), SigV4, Digest forms, collection auth; CI pending |
 | B3 | built: Settings (time limit, user certificates, proxy, library sync, cookies); CI pending |
 | B4 | built: compare with examples and history, examples list, undo after delete and move; CI pending |
 | B5 | built: background sync, scheduled runs, data files; CI pending |
 | B6 | built: roles, remove, delete for everyone, comments, team environments (edit, offline), shared secret values in sends, company SSO; CI pending |
-| B7 | not started |
+| B7 | built: R8 + resource shrinking, test doubles out of production, startup profile, UI text in resources, local crash report, release smoke test, docs; CI and deploys pending |
