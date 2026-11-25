@@ -35,7 +35,16 @@ object Harness {
     }
 
     fun ComposeTestRule.waitFor(matcher: SemanticsMatcher, timeoutMs: Long = 20_000) {
-        waitUntil(timeoutMs) { onAllNodes(matcher, useUnmergedTree = true).fetchSemanticsNodes().isNotEmpty() }
+        try {
+            waitUntil(timeoutMs) { onAllNodes(matcher, useUnmergedTree = true).fetchSemanticsNodes().isNotEmpty() }
+        } catch (e: androidx.compose.ui.test.ComposeTimeoutException) {
+            // What was there instead: a timeout alone says nothing about the cause.
+            val shown = runCatching {
+                onAllNodes(androidx.compose.ui.test.SemanticsMatcher.keyIsDefined(androidx.compose.ui.semantics.SemanticsProperties.Text), useUnmergedTree = true).fetchSemanticsNodes()
+                    .flatMap { n -> n.config[androidx.compose.ui.semantics.SemanticsProperties.Text].map { it.text } }.joinToString(" | ").take(1500)
+            }.getOrElse { "unknown ($it)" }
+            throw AssertionError("not shown after $timeoutMs ms: ${matcher.description}; on screen: $shown", e)
+        }
     }
 
     fun ComposeTestRule.waitForTag(tag: String, timeoutMs: Long = 20_000) = waitFor(hasTestTag(tag), timeoutMs)
