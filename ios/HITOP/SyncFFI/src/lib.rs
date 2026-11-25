@@ -31,6 +31,8 @@ use serde_json::{json, Value};
 
 #[cfg(feature = "grpc")]
 mod auth;
+#[cfg(feature = "grpc")]
+mod network;
 mod import;
 #[path = "../../../../cli/crates/hitop/src/commands/data.rs"]
 #[allow(dead_code)]
@@ -316,6 +318,8 @@ fn call(op: &str, a: &Args) -> R {
             serde_json::to_value(files::plan_sync(&existing, &files).map_err(|e| format!("{e:#}"))?).map_err(err)
         }
         // hitop-core's `native` parts come with the `grpc` feature.
+        #[cfg(feature = "grpc")]
+        "certificates" | "networkRoots" => network::call(op, a),
         #[cfg(feature = "grpc")]
         "authSign" | "authDigest" | "oauthToken" | "oauthSignIn" | "oauthSignInNext" | "oauthSignInCancel" | "oauthForget" => auth::call(op, a),
         "import" => import::import(a),

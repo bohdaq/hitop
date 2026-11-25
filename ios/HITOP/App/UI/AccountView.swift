@@ -93,6 +93,8 @@ struct AccountView: View {
             List {
                 if cloud.signedIn { signedIn } else { signedOut }
                 Section {
+                    NavigationLink { SettingsView() } label: { Label("Settings", systemImage: "gearshape").foregroundStyle(Theme.text) }
+                        .accessibilityIdentifier("settings")
                     Button { about = true } label: { Label("About HITOP", systemImage: "info.circle").foregroundStyle(Theme.text) }
                         .frame(minHeight: 44)
                 }

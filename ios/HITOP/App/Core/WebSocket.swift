@@ -91,8 +91,10 @@ protocol WebSocketTransport: Sendable {
 #if canImport(Darwin)
 /// URLSessionWebSocketTask: handshake headers and subprotocols on the opening request.
 struct URLSessionWebSocketTransport: WebSocketTransport {
+    var settings: SettingsStore?
+
     func connect(_ target: WebSocketTarget, timeout: TimeInterval, events: AsyncStream<WebSocketEvent>.Continuation) -> WebSocketConnection {
-        let socket = URLSessionSocket(events: events)
+        let socket = URLSessionSocket(events: events, settings: settings)
         socket.start(target, timeout: timeout)
         return socket
     }
@@ -106,11 +108,18 @@ final class URLSessionSocket: NSObject, URLSessionWebSocketDelegate, WebSocketCo
     private var opened = false
     private var ended = false
 
-    init(events: AsyncStream<WebSocketEvent>.Continuation) {
+    private let settings: SettingsStore?
+
+    init(events: AsyncStream<WebSocketEvent>.Continuation, settings: SettingsStore? = nil) {
         self.events = events
+        self.settings = settings
     }
 
     func start(_ target: WebSocketTarget, timeout: TimeInterval) {
+        if let problem = settings?.problem {
+            end(.failed(problem), .closed(code: nil, reason: nil))
+            return
+        }
         guard let url = URL(string: target.url), url.host != nil else {
             end(.failed("'\(target.url)' is not a valid URL"), .closed(code: nil, reason: nil))
             return
@@ -128,6 +137,12 @@ final class URLSessionSocket: NSObject, URLSessionWebSocketDelegate, WebSocketCo
         }
         task.resume()
         receive(task)
+    }
+
+    func urlSession(_ session: URLSession, didReceive challenge: URLAuthenticationChallenge,
+                    completionHandler: @escaping @Sendable (URLSession.AuthChallengeDisposition, URLCredential?) -> Void) {
+        let (disposition, credential) = settings.map { TLSDelegate($0.value).answer(challenge) } ?? (.performDefaultHandling, nil)
+        completionHandler(disposition, credential)
     }
 
     private func receive(_ task: URLSessionWebSocketTask) {

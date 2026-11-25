@@ -40,6 +40,7 @@ struct RootView: View {
             if phase != .active { sync.model.saveDrafts() }
             if phase == .background { IntentBridge.services?.system.refreshWidgets() }
             if phase == .active {
+                if model.sender.settings?.problem != nil { model.sender.settings?.load() }
                 Task {
                     await sync.sync()
                     await shared.syncAll()

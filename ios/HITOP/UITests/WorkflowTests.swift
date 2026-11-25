@@ -81,4 +81,25 @@ final class WorkflowTests: XCTestCase {
         wait(app.el("request-Create order"))
         XCTAssertTrue(undo.waitForNonExistence(timeout: 10))
     }
+
+    @MainActor
+    func testSettingsOpenFromTheAccount() {
+        guard UIDevice.current.userInterfaceIdiom == .phone else { return }
+        let app = XCUIApplication.seeded()
+        app.launch()
+        wait(app.el("account-pill"))
+        app.el("account-pill").tap()
+        let settings = app.el("settings")
+        var swipes = 0
+        while !(settings.exists && settings.isHittable) && swipes < 5 {
+            app.swipeUp()
+            swipes += 1
+        }
+        wait(settings)
+        settings.tap()
+        wait(app.el("settings-timeout"))
+        wait(app.el("settings-add-ca"))
+        wait(app.el("settings-add-p12"))
+        shot(app, "44-settings")
+    }
 }

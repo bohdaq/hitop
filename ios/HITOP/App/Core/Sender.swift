@@ -76,6 +76,9 @@ struct Sender: Sendable {
     var browser: OAuthBrowser?
     /// The files picked for multipart rows.
     var uploads: Uploads?
+    /// The time limit and certificates of Settings.
+    var settings: SettingsStore?
+    var limit: TimeInterval { settings.map { TimeInterval($0.value.timeout) } ?? timeout }
 
     init(configuration: @escaping @Sendable () -> URLSessionConfiguration = Sender.defaultConfiguration) {
         self.configuration = configuration
@@ -125,7 +128,7 @@ struct Sender: Sendable {
             return SendResult(outcome: .failure(SendFailure(message: "\(what) from its request screen in HITOP, not sent from here.")),
                               variableUpdates: [:], globalUpdates: [:])
         }
-        let client = MeteredClient(configuration: configuration(), stream: stream)
+        let client = MeteredClient(configuration: configuration(), stream: stream, settings: settings)
         let kit = Self.kitRequest(request)
         // Collection, environment, script-set values (as run values), secrets: the CLI's order.
         let kitCollection = HitopKit.Collection(id: collection?.id ?? 0, name: collection?.name ?? "", requests: [kit],
@@ -139,7 +142,7 @@ struct Sender: Sendable {
             globals[k] = v
             globalSecrets.insert(k, v, origin: .keychain)
         }
-        var options = RunOptions(timeout: timeout, overrides: context.scriptSet, globals: globals, globalSecrets: globalSecrets)
+        var options = RunOptions(timeout: limit, overrides: context.scriptSet, globals: globals, globalSecrets: globalSecrets)
         ExtraAuth([request], collectionAuth: collection?.auth, browser: stream == nil ? nil : browser).install(&options)
         options.file = Uploads.source(uploads)
         let runner = Runner(engine: defaultScriptEngine, makeClient: { client })
@@ -186,8 +189,11 @@ final class MeteredClient: HTTPClient, @unchecked Sendable {
     /// The editor's hold on a live event stream (nil: runs, intents).
     let stream: StreamControl?
 
-    init(configuration: URLSessionConfiguration, stream: StreamControl? = nil) {
-        session = URLSession(configuration: configuration)
+    private let settings: SettingsStore?
+
+    init(configuration: URLSessionConfiguration, stream: StreamControl? = nil, settings: SettingsStore? = nil) {
+        self.settings = settings
+        session = URLSession(configuration: configuration, delegate: settings.map { TLSDelegate($0.value) }, delegateQueue: nil)
         self.stream = stream
     }
 
@@ -199,6 +205,7 @@ final class MeteredClient: HTTPClient, @unchecked Sendable {
     }
 
     func send(_ r: OutgoingRequest, timeout: TimeInterval?) async throws -> HTTPResponse {
+        if let problem = settings?.problem { throw HTTPError(description: problem) }
         guard let url = URL(string: r.url), let scheme = url.scheme?.lowercased(), scheme == "http" || scheme == "https", url.host != nil else {
             throw HTTPError(description: "builder error: invalid URL '\(r.url)'")
         }

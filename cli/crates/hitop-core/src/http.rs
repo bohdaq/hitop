@@ -98,6 +98,13 @@ impl Network {
     }
 }
 
+/// Whether `der` can be used as a certificate authority.
+pub fn check_root(der: &[u8]) -> Result<()> {
+    let one = Network { roots: vec![der.to_vec()], ..Default::default() };
+    one.apply(Client::builder().use_rustls_tls())?.build()?;
+    Ok(())
+}
+
 static NETWORK: std::sync::RwLock<Option<(Network, Client)>> = std::sync::RwLock::new(None);
 
 /// Uses `n` from now on (None: the defaults, as when this is never called).

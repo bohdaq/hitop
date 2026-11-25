@@ -258,11 +258,12 @@ extension Sender {
             globals[k] = v
             globalSecrets.insert(k, v, origin: .keychain)
         }
-        var options = RunOptions(stopOnFail: bail, timeout: timeout, globals: globals, globalSecrets: globalSecrets)
+        var options = RunOptions(stopOnFail: bail, timeout: limit, globals: globals, globalSecrets: globalSecrets)
         ExtraAuth(collection.requests, collectionAuth: collection.auth).install(&options)
         options.file = Uploads.source(uploads)
         let config = configuration
-        let runner = Runner(engine: defaultScriptEngine, makeClient: { MeteredClient(configuration: config()) })
+        let settings = settings
+        let runner = Runner(engine: defaultScriptEngine, makeClient: { MeteredClient(configuration: config(), settings: settings) })
         var builder = ReportBuilder()
         builder.collection(collection.name, environment: context.environmentName)
         let runnable = Self.runnable(collection).count
