@@ -10,7 +10,6 @@ use serde_json::{json, Value};
 #[allow(dead_code)]
 mod data;
 mod files;
-mod import;
 mod network;
 mod oauth;
 mod run;
@@ -48,10 +47,6 @@ fn call(op: &str, a: &Value) -> Option<R> {
         "version" => Ok(json!({ "ffi": env!("CARGO_PKG_VERSION") })),
         "echo" => Ok(a.get("text").cloned().unwrap_or(Value::Null)),
         "send" => send::send(&Args(a)),
-        "import" => import::import(&Args(a)),
-        "importFiles" => import::import_files(&Args(a)),
-        "openapiSync" => import::openapi_sync(&Args(a)),
-        "export" => import::export(&Args(a)),
         "setNetwork" => network::set(&Args(a)),
         "oauthPending" => oauth::pending(&Args(a)),
         "oauthCancel" => oauth::cancel(&Args(a)),

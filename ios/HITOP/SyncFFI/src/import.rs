@@ -12,12 +12,12 @@ fn text<T: serde::Serialize>(v: &T) -> Result<String, String> {
     serde_json::to_string(v).map_err(|e| e.to_string())
 }
 
-fn err(e: anyhow::Error) -> String {
+fn err(e: impl std::fmt::Display) -> String {
     format!("{e:#}")
 }
 
 fn options(a: &Args) -> Result<openapi::Options, String> {
-    Ok(openapi::Options { flat: false, source: a.opt_json("source")?, inline_auth: false })
+    Ok(openapi::Options { flat: false, source: a.opt("source")?, inline_auth: false })
 }
 
 pub(crate) fn import(a: &Args) -> Result<Value, String> {
@@ -72,7 +72,7 @@ fn converted(c: convert::Converted) -> Result<Value, String> {
 
 /// `importFiles {files: {path: text}}`: a Bruno collection folder.
 pub(crate) fn import_files(a: &Args) -> Result<Value, String> {
-    let files = a.opt_json("files")?.unwrap_or_default();
+    let files = a.json("files")?;
     let c = convert::convert_files(&files).map_err(err)?.ok_or("This isn't a Bruno collection (no bruno.json).")?;
     converted(c)
 }
@@ -104,7 +104,7 @@ mod tests {
         serde_json::from_str(&call_json(op, &args.to_string())).unwrap()
     }
     fn fixture(p: &str) -> String {
-        std::fs::read_to_string(format!("{}/../../cli/fixtures/{p}", env!("CARGO_MANIFEST_DIR"))).unwrap()
+        std::fs::read_to_string(format!("{}/../../../cli/fixtures/{p}", env!("CARGO_MANIFEST_DIR"))).unwrap()
     }
 
     #[test]

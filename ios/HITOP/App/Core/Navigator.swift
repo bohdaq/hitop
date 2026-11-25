@@ -3,6 +3,12 @@ import Observation
 
 enum AppTab: Hashable { case collections, history, environments, runs, search }
 
+/// What the Import sheet starts with.
+struct ImportTarget: Identifiable, Hashable, Sendable {
+    var id = UUID()
+    var file: URL?
+}
+
 /// The request whose response is being explained.
 struct ExplainTarget: Identifiable, Hashable, Sendable {
     var id: UInt64
@@ -40,6 +46,8 @@ final class Navigator {
 
     /// I5: "New request from text or curl" (Collections +, the iPad sidebar, ⇧⌘N).
     var showRequestFromText = false
+    /// The Import sheet: picked from a menu (nil file), or a file another app handed over.
+    var importing: ImportTarget?
     /// I5: the "Explain response" sheet of an open request (the response's button; ⇧⌘E on iPad).
     var explaining: ExplainTarget?
 
@@ -93,6 +101,11 @@ final class Navigator {
     /// hitop://runs (the failing widget) and hitop://run/<collection id> (the last-run widget, the
     /// Live Activity).
     func open(url: URL) {
+        // A file opened with HITOP (Files, Mail, another app's share sheet).
+        if url.isFileURL {
+            importing = ImportTarget(file: url)
+            return
+        }
         guard url.scheme == "hitop" else { return }
         switch url.host {
         case "runs":

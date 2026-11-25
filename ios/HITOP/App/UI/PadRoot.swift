@@ -117,6 +117,7 @@ struct PadRoot: View {
                         }
                         Button("Run collection", systemImage: "play.circle") { nav.run(collection: c.id) }
                             .disabled(Sender.runnable(c).isEmpty)
+                        ExportMenu(collection: c)
                         if cloud.signedIn {
                             Button(model.isShared(c.id) ? "People and sharing" : "Share…", systemImage: "person.2") { sharing = ShareTarget(id: c.id) }
                         }
@@ -142,6 +143,8 @@ struct PadRoot: View {
                 Menu {
                     Button("New request", systemImage: "plus") { newRequest() }
                     Button("New request from text or curl…", systemImage: "text.badge.plus") { nav.newRequestFromText() }
+                    Button("Import…", systemImage: "square.and.arrow.down") { nav.importing = ImportTarget() }
+                        .accessibilityIdentifier("import")
                         .accessibilityIdentifier("new-from-text")
                 } label: {
                     Image(systemName: "plus")

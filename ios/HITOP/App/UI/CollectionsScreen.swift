@@ -269,6 +269,8 @@ struct CollectionsScreen: View {
                     Button("New request from text or curl…", systemImage: "text.badge.plus") { nav.newRequestFromText() }
                         .accessibilityIdentifier("new-from-text")
                     Button("New collection", systemImage: "folder.badge.plus") { naming = .newCollection }
+                    Button("Import…", systemImage: "square.and.arrow.down") { nav.importing = ImportTarget() }
+                        .accessibilityIdentifier("import")
                 } label: {
                     Image(systemName: "plus").font(.system(size: 17, weight: .semibold))
                 } primaryAction: {
@@ -398,6 +400,7 @@ struct CollectionsScreen: View {
             Button("Run collection", systemImage: "play.circle") { nav.run(collection: c.id) }
                 .disabled(Sender.runnable(c).isEmpty)
             Button(model.isPinned(collection: c.id) ? "Unpin" : "Pin", systemImage: "pin") { model.togglePin(collection: c.id) }
+            ExportMenu(collection: c)
             if cloud.signedIn {
                 Button(model.isShared(c.id) ? "People and sharing" : "Share…", systemImage: "person.2") { sharing = ShareTarget(id: c.id) }
             }

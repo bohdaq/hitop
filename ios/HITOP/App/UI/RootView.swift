@@ -22,6 +22,7 @@ struct RootView: View {
         .sheet(isPresented: $nav.showAccount) { AccountView() }
         .sheet(item: $nav.runSheet) { RunSheet(target: $0) }
         .sheet(isPresented: $nav.showRequestFromText) { RequestFromTextSheet() }
+        .sheet(item: $nav.importing) { ImportSheet(target: $0) }
         .onAppear { nav.isPad = sizeClass == .regular }
         .onChange(of: sizeClass) { _, c in nav.isPad = c == .regular }
         // HITOP Cloud: pull on launch and whenever the app comes to the foreground.

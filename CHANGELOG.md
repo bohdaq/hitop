@@ -19,6 +19,10 @@ Releases before 1.2 are listed in ROADMAP.md (section 5) and on the GitHub Relea
 - `send`, `run`, `requests send`, `ws`, `grpc`: `--cacert`, `--cert`/`--key` (client certificates), `--proxy`/`--noproxy` (HTTP) and
   `-k/--insecure` (not gRPC; warns). For one command; nothing of it is stored in a collection. OAuth 2.0 token requests of that command use them too.
 
+### iOS
+
+- Import (Postman, Insomnia, Bruno, HAR, OpenAPI, HITOP files, a collection folder's zip; pasted, picked or opened from another app) and export.
+
 ### Web and desktop
 
 - Desktop: Settings → Network: certificate authorities, a client certificate and a proxy for requests (never HITOP Cloud). While they can't be

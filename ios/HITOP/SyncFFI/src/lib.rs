@@ -29,6 +29,8 @@ use hitop_sync_crypto::{self as crypto, BlobContext, Device, DeviceKeyPair, Rece
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 
+mod import;
+mod zip;
 #[cfg(feature = "grpc")]
 mod grpc;
 
@@ -60,6 +62,12 @@ impl Args<'_> {
     }
     fn u32(&self, k: &str) -> Result<u32, String> {
         u32::try_from(self.u64(k)?).map_err(|_| format!("argument {k}: too large"))
+    }
+    fn opt<T: for<'de> Deserialize<'de>>(&self, k: &str) -> Result<Option<T>, String> {
+        match self.0.get(k) {
+            None | Some(Value::Null) => Ok(None),
+            Some(_) => self.json(k).map(Some),
+        }
     }
     fn bool(&self, k: &str) -> bool {
         self.0.get(k).and_then(Value::as_bool).unwrap_or(false)
@@ -290,6 +298,15 @@ fn call(op: &str, a: &Args) -> R {
             let existing: Vec<String> = a.json("existing")?;
             let files: files::Files = a.json("files")?;
             serde_json::to_value(files::plan_sync(&existing, &files).map_err(|e| format!("{e:#}"))?).map_err(err)
+        }
+        "import" => import::import(a),
+        "importFiles" => import::import_files(a),
+        "openapiSync" => import::openapi_sync(a),
+        "export" => import::export(a),
+        "unzip" => zip::unzip(&a.bytes("data")?).map(|f| json!(f)),
+        "zip" => {
+            let files: std::collections::BTreeMap<String, String> = a.json("files")?;
+            Ok(b64(&zip::zip(&files)).into())
         }
         #[cfg(feature = "grpc")]
         other if other.starts_with("grpc") => grpc::call(other, a),
