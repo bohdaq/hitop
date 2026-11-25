@@ -268,7 +268,7 @@ hitop/
   collection_auth, vars, base_dir)` (no native deps), then feature `grpc` (default; tonic 0.14.6 pinned in the locks, tls-ring +
   webpki roots; prost-reflect 0.16 dynamic messages; protox 0.10 parses .proto at run time, no protoc): `connect`, `schema` (protos
   or reflection v1 → v1alpha, missing deps fetched by file name), `services`, `describe`, `template`, `call` (unary/server streaming
-  via one code path → `Event::{Headers, Message, Status}`; client/bidi streaming refused). Not in hitop-wasm. `hitop grpc <target>
+  via one code path → `Event::{Headers, Message, Status}`; client/bidi streaming = JSON messages one after another, `call_open` + `Sender` for an open stream). Not in hitop-wasm. `hitop grpc <target>
   <Service/Method> [-d json|@file|-] [-H] [--proto f]… [-I dir]… [--plaintext] [--max-time] [--json] [-v]`, `list [service]`,
   `describe <symbol>`, saved with `-c` (protos relative to the folder); exit 1 on non-OK. `run` skips, `requests send`/`snippet`/MCP
   `run_request` refuse; MCP `get_request` shows `grpc`. Test server `hitop-core/tests/support/grpc_server.rs` (dynamic Greeter service)

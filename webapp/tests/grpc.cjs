@@ -120,9 +120,10 @@ const FIXTURES = path.join(__dirname, '../../cli/crates/hitop-core/tests/fixture
     h.mock.grpcDelayMs = 20;
 
     await pick('RPC method', 'Chat (bidi)');
-    const warn = await p.locator('.editor-panel').innerText();
+    const note = await p.locator('.editor-panel').innerText();
+    await setMessage('{"name": "ann"}\n{"name": "zed"}');
     await send.click();
-    check('[tauri] a bidirectional method: a note, and refused before calling', warn.includes('streams from the client') && (await waitLog('bidirectional streaming')) && (await chip()) === 'Failed', await log());
+    check('[tauri] a bidirectional method: a note, every message sent and answered', note.includes('streams from the client') && (await waitLog('Hello, ann')) && (await waitLog('Hello, zed')) && (await chip()) === 'OK', await log());
 
     await pick('RPC method', 'SayHello');
     await setMessage('{"name": ');

@@ -426,7 +426,7 @@ struct GrpcFieldsEditor: View {
                             ForEach(listing.services) { s in
                                 Button(s.name) {
                                     editor.draft.grpc.service = s.name
-                                    if !(s.methods.contains { $0.name == editor.draft.grpc.method }) { editor.draft.grpc.method = s.methods.first { $0.callable }?.name ?? "" }
+                                    if !(s.methods.contains { $0.name == editor.draft.grpc.method }) { editor.draft.grpc.method = s.methods.first?.name ?? "" }
                                 }
                             }
                         } label: { menuLabel(editor.draft.grpc.service, placeholder: "Pick a service") }
@@ -445,7 +445,6 @@ struct GrpcFieldsEditor: View {
                                 } label: {
                                     Text("\(m.name) · \(m.shape)")
                                 }
-                                .disabled(!m.callable)
                             }
                         } label: { menuLabel(editor.draft.grpc.method, placeholder: "Pick a method") }
                         .accessibilityIdentifier("grpc-method")
@@ -455,9 +454,9 @@ struct GrpcFieldsEditor: View {
                 }
             }
             .card(radius: 18)
-            if let m = currentMethod, !m.callable {
-                Label("\(m.name) is \(m.shape): HITOP calls unary and server-streaming methods.", systemImage: "info.circle")
-                    .font(Typo.caption).foregroundStyle(Theme.warning)
+            if let m = currentMethod, m.clientStreaming {
+                Label("\(m.name) is \(m.shape): write its messages as JSON one after another.", systemImage: "info.circle")
+                    .font(Typo.caption).foregroundStyle(Theme.textMuted)
             }
 
             HStack {

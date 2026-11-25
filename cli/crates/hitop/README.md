@@ -82,7 +82,7 @@ hitop export MyAPI -o my-collection.json
 | `hitop collections list/add/delete/rename/duplicate` | Manage collections |
 | `hitop requests list/add/show/delete/rename/send` | Manage requests |
 | `hitop ws <url>` / `hitop ws <request> -c <collection>` | Open a WebSocket connection: send typed lines or `--send`/`--message` messages, print what arrives (see "WebSocket") |
-| `hitop grpc <host:port> <package.Service/Method>` / `list [service]` / `describe <symbol>`, `hitop grpc <request> -c <collection>` | Call a gRPC method (unary or server streaming), list and describe services; schema from reflection or `--proto` files (see "gRPC") |
+| `hitop grpc <host:port> <package.Service/Method>` / `list [service]` / `describe <symbol>`, `hitop grpc <request> -c <collection>` | Call a gRPC method (unary or streaming), list and describe services; schema from reflection or `--proto` files (see "gRPC") |
 | `hitop snippet <collection> <request> --lang <lang>` | Print a saved request as code: `curl`, `fetch`, `python`, `go`, `java`, `rust` (see "Code snippets") |
 | `hitop requests auth <collection> <request>` | Set (`--bearer`, `--basic`, `--api-key`) or clear (`--none`) a request's auth |
 | `hitop variables list/set/delete` | Manage collection variables |
@@ -248,6 +248,10 @@ hitop grpc localhost:50051 describe shop.v1.Orders/GetOrder --plaintext
 hitop grpc localhost:50051 shop.v1.Orders/GetOrder -d '{"id": "42"}' --plaintext -v
 hitop grpc localhost:50051 shop.v1.Orders/WatchOrders -d @watch.json --plaintext --json
 
+# Methods that stream from the client: JSON messages one after another; -i sends each one on stdin as it arrives
+hitop grpc localhost:50051 shop.v1.Orders/AddOrders -d '{"id": "1"} {"id": "2"}' --plaintext
+hitop grpc localhost:50051 shop.v1.Support/Chat -i --plaintext
+
 # Without reflection: the .proto files (a saved request's `protos` are relative to the collection folder)
 hitop grpc localhost:50051 shop.v1.Orders/GetOrder --proto protos/orders.proto -I protos/include --plaintext
 hitop grpc "Get order" -c ./my-api --env prod
@@ -257,7 +261,7 @@ Response messages go to stdout as JSON (proto3 JSON mapping, every field shown);
 with `-v`, the response headers go to stderr. `--json` prints one JSON object per event on stdout (`headers`,
 `message`, `status` with `code`, `name`, `message` and `trailers`). Exit code 1 when the status isn't `OK` or
 the server can't be reached (`UNAVAILABLE`). `--connect-timeout` limits connecting (default 10000 ms),
-`--max-time` is the call's deadline. Client-streaming and bidirectional methods are refused. `hitop run`
+`--max-time` is the call's deadline. `hitop run`
 skips gRPC requests, `requests send` and `snippet` refuse them; secret values are shown as `••••`.
 
 ## Globals

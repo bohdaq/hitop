@@ -596,10 +596,12 @@ class TauriMock {
     if (!svc) throw `no service '${a.service}' (the schema has: ${GRPC_SERVICES.map((s) => s.name).join(', ')})`;
     const m = svc.methods.find((x) => x.name === a.method);
     if (!m) throw `service ${svc.name} has no method '${a.method}' (it has: ${svc.methods.map((x) => x.name).join(', ')})`;
-    if (m.clientStreaming) throw `${m.fullName} is a bidirectional streaming method: hitop calls unary and server-streaming methods only`;
     let msg;
+    let msgs = [];
     try {
-      msg = JSON.parse(a.message.trim() || '{}');
+      // Messages one after another, as hitop-core's `request_messages` (here: one per line).
+      if (m.clientStreaming) msgs = a.message.split('\n').filter((l) => l.trim()).map((l) => JSON.parse(l));
+      else msg = JSON.parse(a.message.trim() || '{}');
     } catch (e) {
       throw `the message isn't a valid ${m.input}: ${e.message}`;
     }
@@ -614,7 +616,8 @@ class TauriMock {
       if (this.grpcCancelled.includes(id)) return;
       if (m.name === 'Fail') return emit({ type: 'status', code: 5, name: 'NOT_FOUND', message: `no user named ${msg.name || ''}`, trailers: [['x-reason', 'test']] });
       emit({ type: 'headers', metadata: [['x-served-by', 'hitop-test']] });
-      if (m.name === 'SayHello') emit({ type: 'message', data: { message: `Hello, ${msg.name || ''}`, tenant: meta('x-tenant'), authorization: meta('authorization'), index: 0 } });
+      if (m.name === 'Chat') msgs.forEach((x, i) => emit({ type: 'message', data: { message: `Hello, ${x.name || ''}`, index: i } }));
+      else if (m.name === 'SayHello') emit({ type: 'message', data: { message: `Hello, ${msg.name || ''}`, tenant: meta('x-tenant'), authorization: meta('authorization'), index: 0 } });
       else for (let i = 0; i < (msg.times || 0); i++) emit({ type: 'message', data: { message: `Hello #${i}, ${msg.name || ''}`, tenant: '', authorization: '', index: i } });
       emit(ok);
     }, this.grpcDelayMs ?? 20);

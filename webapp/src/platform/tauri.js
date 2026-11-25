@@ -489,7 +489,7 @@ export function createPlatform() {
     // Rust's client sends handshake headers and auth.
     websocketHeaders: true,
     websocket: rustWebSocket,
-    // gRPC calls (unary and server streaming) through hitop-core.
+    // gRPC calls (unary and streaming) through hitop-core.
     grpc: rustGrpc,
     // Git for collection folders (hitop-git over libgit2).
     git: gitApi(invoke),

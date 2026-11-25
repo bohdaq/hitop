@@ -248,7 +248,6 @@ final class ProtocolTests: XCTestCase {
         await editor.loadGrpcSchema()
         XCTAssertEqual(g.listing?.source, "reflection v1")
         XCTAssertEqual(g.listing?.services.first?.methods.map(\.shape), ["unary", "server streaming", "unary", "bidirectional"])
-        XCTAssertEqual(g.listing?.services.first?.methods.last?.callable, false)
         editor.draft.grpc.message = ""
         await editor.useGrpcTemplate()
         XCTAssertTrue(editor.draft.grpc.message.contains("\"times\": 0"))

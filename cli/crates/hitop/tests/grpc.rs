@@ -82,7 +82,8 @@ fn error_status_exits_1_with_trailers() {
     let closed = std::net::TcpListener::bind("127.0.0.1:0").unwrap().local_addr().unwrap().to_string();
     hitop(&home, tmp.path()).args(["grpc", &closed, "a.B/C", "--plaintext", "--connect-timeout", "2000"]).assert().code(1).stderr(contains("UNAVAILABLE"));
     // Problems found before calling.
-    hitop(&home, tmp.path()).args(["grpc", &addr, "hitop.test.Greeter/Chat", "--plaintext"]).assert().code(1).stderr(contains("bidirectional streaming"));
+    hitop(&home, tmp.path()).args(["grpc", &addr, "hitop.test.Greeter/Chat", "-d", "{} {nope", "--plaintext"]).assert().code(1).stderr(contains("message 2 isn't a valid"));
+    hitop(&home, tmp.path()).args(["grpc", &addr, "hitop.test.Greeter/SayHello", "-i", "--plaintext"]).assert().code(1).stderr(contains("takes one message"));
     hitop(&home, tmp.path()).args(["grpc", &addr, "hitop.test.Greeter/SayHello", "-d", "{nope", "--plaintext"]).assert().code(1).stderr(contains("isn't a valid hitop.test.HelloRequest"));
     hitop(&home, tmp.path()).args(["grpc", &addr, "SayHello", "--plaintext"]).assert().code(1).stderr(contains("package.Service/Method"));
 }
@@ -95,7 +96,7 @@ fn list_and_describe_over_reflection() {
         let a = hitop(&home, tmp.path()).args(["grpc", &addr, "list", "--plaintext"]).assert().success();
         assert!(stdout(&a).lines().any(|l| l == "hitop.test.Greeter"), "{}", stdout(&a));
         let a = hitop(&home, tmp.path()).args(["grpc", &addr, "list", "Greeter", "--plaintext"]).assert().success();
-        assert_eq!(stdout(&a).lines().collect::<Vec<_>>(), ["hitop.test.Greeter.SayHello", "hitop.test.Greeter.StreamHellos", "hitop.test.Greeter.Fail", "hitop.test.Greeter.Chat"]);
+        assert_eq!(stdout(&a).lines().collect::<Vec<_>>(), ["hitop.test.Greeter.SayHello", "hitop.test.Greeter.StreamHellos", "hitop.test.Greeter.Fail", "hitop.test.Greeter.Chat", "hitop.test.Greeter.CollectHellos"]);
     }
     let addr = start(Reflect::V1).to_string();
     let a = hitop(&home, tmp.path()).args(["grpc", &addr, "describe", "hitop.test.Greeter", "--plaintext"]).assert().success();
@@ -185,4 +186,48 @@ fn run_skips_and_send_and_snippet_refuse_grpc_requests() {
     hitop(&home, tmp.path()).args(["requests", "list", col]).assert().success().stdout(contains("GRPC"));
     hitop(&home, tmp.path()).args(["requests", "show", col, "Hello"]).assert().success().stdout(contains("hitop.test.Greeter/SayHello")).stdout(contains("protos/greeter.proto"));
     hitop(&home, tmp.path()).args(["snippet", col, "Hello", "--lang", "curl"]).assert().failure().stderr(contains("gRPC request"));
+}
+
+#[test]
+fn streams_from_the_client() {
+    use std::io::{BufRead, BufReader, Write};
+    let (home, tmp) = (TempDir::new().unwrap(), TempDir::new().unwrap());
+    let addr = start(Reflect::V1).to_string();
+    let a = hitop(&home, tmp.path())
+        .args(["grpc", &addr, "hitop.test.Greeter/CollectHellos", "-d", "-", "--var", "who=Bob", "--plaintext"])
+        .write_stdin("{\"name\": \"Ann\"}\n{\"name\": \"${who}\"}\n")
+        .assert()
+        .success();
+    assert!(stdout(&a).contains("Hello, Ann and Bob"), "{}", stdout(&a));
+
+    // Interactive: each answer arrives while stdin is still open.
+    let mut child = std::process::Command::new(env!("CARGO_BIN_EXE_hitop"))
+        .args(["grpc", &addr, "hitop.test.Greeter/Chat", "-i", "--json", "--var", "who=Zoe", "--plaintext"])
+        .env("HOME", home.path())
+        .env("XDG_CONFIG_HOME", home.path().join("config"))
+        .env("HITOP_KEYCHAIN", "off")
+        .stdin(std::process::Stdio::piped())
+        .stdout(std::process::Stdio::piped())
+        .spawn()
+        .unwrap();
+    let mut stdin = child.stdin.take().unwrap();
+    let mut lines = BufReader::new(child.stdout.take().unwrap()).lines().map(|l| serde_json::from_str::<Value>(&l.unwrap()).unwrap());
+    for (sent, got) in [("Ann", "Hello, Ann"), ("${who}", "Hello, Zoe")] {
+        stdin.write_all(format!("{{\"name\": \"{sent}\"}}").as_bytes()).unwrap();
+        stdin.flush().unwrap();
+        let m = lines.by_ref().find(|v| v["event"] == "message").unwrap();
+        assert_eq!(m["data"]["message"], got);
+    }
+    drop(stdin);
+    let s = lines.last().unwrap();
+    assert_eq!((s["event"].as_str(), s["code"].as_i64()), (Some("status"), Some(0)));
+    assert!(child.wait().unwrap().success());
+
+    // A bad message: an error, exit 1.
+    hitop(&home, tmp.path())
+        .args(["grpc", &addr, "hitop.test.Greeter/Chat", "-i", "--plaintext"])
+        .write_stdin("{\"nam\": 1}")
+        .assert()
+        .code(1)
+        .stderr(contains("isn't a valid hitop.test.HelloRequest"));
 }

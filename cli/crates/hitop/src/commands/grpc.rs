@@ -1,4 +1,4 @@
-//! `hitop grpc`: call a gRPC method (unary or server streaming) on a server
+//! `hitop grpc`: call a gRPC method (unary or streaming) on a server
 //! given as `host:port`, or a saved gRPC request; list and describe the
 //! server's services. The schema comes from server reflection, or from
 //! `.proto` files (`--proto`, or the saved request's `protos`). Response
@@ -49,9 +49,16 @@ pub struct GrpcArgs {
     env: Option<String>,
 
     /// The request message as JSON, @file, or - for stdin (${variables} work);
-    /// replaces a saved request's message. Default {}
+    /// replaces a saved request's message. Default {}. A method that streams from the client takes
+    /// any number of JSON messages one after another
     #[arg(short = 'd', long = "data", value_name = "JSON")]
     data: Option<String>,
+
+    /// Send each JSON message on stdin as it arrives (after those of --data or the saved request),
+    /// until stdin ends. Only for methods that stream from the client; secret manager references on
+    /// stdin aren't resolved
+    #[arg(short = 'i', long)]
+    interactive: bool,
 
     /// Metadata as "name: value" (repeatable; a name ending in -bin takes base64)
     #[arg(short = 'H', long = "header", value_name = "NAME: VALUE")]
@@ -179,6 +186,9 @@ pub fn run(args: GrpcArgs) -> Result<i32> {
         g.service = service;
         g.method = method;
     }
+    if args.interactive && args.data.as_deref() == Some("-") {
+        bail!("--interactive reads stdin itself: leave out --data -");
+    }
     if let Some(d) = &args.data {
         g.message = read_data(d)?;
     }
@@ -215,18 +225,78 @@ pub fn run(args: GrpcArgs) -> Result<i32> {
             Action::List(service) => list(&out, &pool, service.as_deref()).map(|()| 0),
             Action::Describe(symbol) => describe(&out, &pool, &symbol).map(|()| 0),
             Action::Call => {
-                let mut events = grpc::call(channel, &pool, &target, max_time).await.map_err(masked)?;
+                let fill = |text: &str| hitop_core::interpolation::interpolate(text, &vars);
+                let mut lines = None;
+                let mut sender = None;
+                let mut events = if args.interactive {
+                    let (events, s) = grpc::call_open(channel, &pool, &target, max_time).await.map_err(masked)?;
+                    sender = Some(s);
+                    lines = Some(stdin_messages());
+                    events
+                } else {
+                    grpc::call(channel, &pool, &target, max_time).await.map_err(masked)?
+                };
                 let mut code = 1;
-                while let Some(e) = events.recv().await {
+                let mut bad = false;
+                loop {
+                    let e = tokio::select! {
+                        e = events.recv() => match e {
+                            Some(e) => e,
+                            None => break,
+                        },
+                        // The sender goes when stdin ends: the server sees the client's side closed.
+                        m = next_message(&mut lines) => {
+                            match (m, &sender) {
+                                (Some(m), Some(s)) => {
+                                    if let Err(e) = m.and_then(|m| s.send(&fill(&m)?)) {
+                                        eprintln!("{} {}", "error:".red(), out.m(&format!("{e:#}")));
+                                        bad = true;
+                                        lines = None;
+                                        sender = None;
+                                    }
+                                }
+                                _ => {
+                                    lines = None;
+                                    sender = None;
+                                }
+                            }
+                            continue;
+                        }
+                    };
                     if let Event::Status(s) = &e {
                         code = i32::from(!s.is_ok());
                     }
                     out.event(&e);
                 }
-                Ok(code)
+                Ok(if bad { 1 } else { code })
             }
         }
     })
+}
+
+type Messages = tokio::sync::mpsc::UnboundedReceiver<Result<String>>;
+
+/// The JSON values on stdin, each as soon as it is complete. Its own thread, so a call that ends
+/// first doesn't wait for stdin.
+fn stdin_messages() -> Messages {
+    let (tx, rx) = tokio::sync::mpsc::unbounded_channel();
+    std::thread::spawn(move || {
+        for v in serde_json::Deserializer::from_reader(std::io::stdin().lock()).into_iter::<Value>() {
+            let failed = v.is_err();
+            if tx.send(v.map(|v| v.to_string()).map_err(|e| anyhow!("stdin isn't JSON messages: {e}"))).is_err() || failed {
+                return;
+            }
+        }
+    });
+    rx
+}
+
+/// The next message; never when there are none to wait for.
+async fn next_message(messages: &mut Option<Messages>) -> Option<Result<String>> {
+    match messages {
+        Some(m) => m.recv().await,
+        None => std::future::pending().await,
+    }
 }
 
 struct Out<'a> {

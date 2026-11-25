@@ -70,8 +70,8 @@ final class ProtocolEndToEndTests: XCTestCase {
         let v1 = try await client.list(server("grpc"))
         XCTAssertEqual(v1.source, "reflection v1")
         let greeter = try XCTUnwrap(v1.services.first { $0.name == "hitop.test.Greeter" })
-        XCTAssertEqual(greeter.methods.map(\.name), ["SayHello", "StreamHellos", "Fail", "Chat"])
-        XCTAssertEqual(greeter.methods.map(\.shape), ["unary", "server streaming", "unary", "bidirectional"])
+        XCTAssertEqual(greeter.methods.map(\.name), ["SayHello", "StreamHellos", "Fail", "Chat", "CollectHellos"])
+        XCTAssertEqual(greeter.methods.map(\.shape), ["unary", "server streaming", "unary", "bidirectional", "client streaming"])
         let alpha = try await client.list(server("grpcV1alpha"))
         XCTAssertEqual(alpha.source, "reflection v1alpha")
         do {
@@ -111,9 +111,11 @@ final class ProtocolEndToEndTests: XCTestCase {
         guard case let .status(code, name, message, trailers)? = fail.last else { return XCTFail("\(fail)") }
         XCTAssertEqual([String(code), name, message], ["5", "NOT_FOUND", "no user named Bo"])
         XCTAssertTrue(trailers.contains(["x-reason", "test"]), "\(trailers)")
-        let chat = await events(client.call(server("grpc"), service: "hitop.test.Greeter", method: "Chat", message: "{}", maxTimeMs: nil))
-        guard case let .error(e)? = chat.first else { return XCTFail("\(chat)") }
-        XCTAssertTrue(e.contains("bidirectional"), e)
+        let chat = await events(client.call(server("grpc"), service: "hitop.test.Greeter", method: "Chat", message: #"{"name": "Ada"} {"name": "Bo"}"#, maxTimeMs: nil))
+        XCTAssertEqual(chat.count, 4, "\(chat)")
+        guard case let .message(second) = chat[2] else { return XCTFail("\(chat)") }
+        XCTAssertTrue(second.contains("Hello, Bo"), second)
+        XCTAssertEqual(chat[3], .status(code: 0, name: "OK", message: "", trailers: []))
         let bad = await events(client.call(server("grpc"), service: "hitop.test.Greeter", method: "SayHello", message: "{not json", maxTimeMs: nil))
         guard case .error? = bad.first else { return XCTFail("\(bad)") }
 

@@ -41,7 +41,7 @@ struct GrpcMethodInfo: Codable, Hashable, Sendable, Identifiable {
     var serverStreaming: Bool
     var id: String { fullName }
 
-    /// "unary", "server streaming"… (client and bidirectional streaming are refused, as the CLI does).
+    /// "unary", "server streaming"…. A method that streams from the client gets the message text's JSON values one after another.
     var shape: String {
         switch (clientStreaming, serverStreaming) {
         case (false, false): "unary"
@@ -50,8 +50,6 @@ struct GrpcMethodInfo: Codable, Hashable, Sendable, Identifiable {
         case (true, true): "bidirectional"
         }
     }
-
-    var callable: Bool { !clientStreaming }
 }
 
 struct GrpcServiceInfo: Codable, Hashable, Sendable, Identifiable {
@@ -271,7 +269,9 @@ struct FakeGrpcClient: GrpcClient {
             case "Fail":
                 out.yield(.status(code: 5, name: "NOT_FOUND", message: "no user named \(name)", trailers: [["x-reason", "test"]]))
             case "Chat":
-                out.yield(.error("hitop.test.Greeter.Chat is a bidirectional streaming method: hitop calls unary and server-streaming methods only"))
+                out.yield(.headers(headers))
+                out.yield(.message("{\n  \"index\": 0,\n  \"message\": \"Hello, \(name)\"\n}"))
+                out.yield(.status(code: 0, name: "OK", message: "", trailers: []))
             default:
                 out.yield(.status(code: 12, name: "UNIMPLEMENTED", message: "\(method) is not served", trailers: []))
             }

@@ -125,6 +125,38 @@ where
                     });
                     grpc.unary(svc, req).await
                 }
+                "Chat" => {
+                    let svc = tower::service_fn(move |r: Request<tonic::Streaming<DynamicMessage>>| {
+                        let out = out.clone();
+                        async move {
+                            let replies = futures_util::stream::unfold((r.into_inner(), 0, out), |(mut input, i, out)| async move {
+                                let item = match input.message().await {
+                                    Ok(Some(m)) => Ok(reply(out.clone(), json!({ "message": format!("Hello, {}", text(&m, "name")), "index": i }))),
+                                    Ok(None) => return None,
+                                    Err(s) => Err(s),
+                                };
+                                Some((item, (input, i + 1, out)))
+                            });
+                            Ok::<_, Status>(Response::new(replies))
+                        }
+                    });
+                    grpc.streaming(svc, req).await
+                }
+                "CollectHellos" => {
+                    let svc = tower::service_fn(move |r: Request<tonic::Streaming<DynamicMessage>>| {
+                        let out = out.clone();
+                        async move {
+                            let mut input = r.into_inner();
+                            let mut names = vec![];
+                            while let Some(m) = input.message().await? {
+                                names.push(text(&m, "name"));
+                            }
+                            let body = json!({ "message": format!("Hello, {}", names.join(" and ")), "index": names.len() });
+                            Ok::<_, Status>(Response::new(reply(out, body)))
+                        }
+                    });
+                    grpc.client_streaming(svc, req).await
+                }
                 other => Status::unimplemented(format!("{other} is not served")).into_http(),
             })
         })

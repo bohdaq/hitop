@@ -163,11 +163,12 @@ async fn proto_files_without_reflection() {
 #[tokio::test]
 async fn refusals_before_sending() {
     let addr = start(Reflect::V1);
-    let t = target(addr, "Chat", "");
+    let t = target(addr, "Chat", r#"{"name": "a"} {"nam": 1}"#);
     let channel = grpc::connect(&t, T).await.unwrap();
     let (pool, _) = grpc::schema(&t, &channel, T).await.unwrap();
     let err = grpc::call(channel.clone(), &pool, &t, T).await.unwrap_err();
-    assert!(err.to_string().contains("bidirectional streaming"), "{err}");
+    assert!(err.to_string().contains("message 2 isn't a valid hitop.test.HelloRequest"), "{err}");
+    assert!(grpc::call_open(channel.clone(), &pool, &target(addr, "SayHello", "{}"), T).await.is_err());
     let err = grpc::call(channel.clone(), &pool, &target(addr, "SayHello", r#"{"nam": 1}"#), T).await.unwrap_err();
     assert!(err.to_string().contains("isn't a valid hitop.test.HelloRequest"), "{err}");
     let err = grpc::call(channel.clone(), &pool, &target(addr, "Nope", "{}"), T).await.unwrap_err();
@@ -218,4 +219,51 @@ async fn saved_request_to_call() {
     let ev = events(&t).await;
     let Some(Event::Message(m)) = ev.iter().find(|e| matches!(e, Event::Message(_))) else { panic!("{ev:?}") };
     assert_eq!((m["message"].as_str(), m["tenant"].as_str(), m["authorization"].as_str()), (Some("Hello, Kim"), Some("t1"), Some("Bearer abc")));
+}
+
+fn texts(events: &[Event]) -> Vec<String> {
+    events.iter().filter_map(|e| if let Event::Message(m) = e { m["message"].as_str().map(String::from) } else { None }).collect()
+}
+
+#[tokio::test]
+async fn client_and_bidirectional_streaming() {
+    let addr = start(Reflect::V1);
+    let two = "{\"name\": \"Ann\"}\n{\"name\": \"Bob\"}";
+    let ev = events(&target(addr, "CollectHellos", two)).await;
+    assert_eq!(texts(&ev), ["Hello, Ann and Bob"]);
+    assert!(status(&ev).is_ok());
+    let ev = events(&target(addr, "Chat", two)).await;
+    assert_eq!(texts(&ev), ["Hello, Ann", "Hello, Bob"]);
+    assert!(status(&ev).is_ok());
+    // No message at all.
+    let ev = events(&target(addr, "Chat", " ")).await;
+    assert!(texts(&ev).is_empty() && status(&ev).is_ok(), "{ev:?}");
+}
+
+#[tokio::test]
+async fn an_open_call_answers_each_message_before_the_next() {
+    let addr = start(Reflect::V1);
+    let t = target(addr, "Chat", r#"{"name": "first"}"#);
+    let channel = grpc::connect(&t, T).await.unwrap();
+    let (pool, _) = grpc::schema(&t, &channel, T).await.unwrap();
+    let (mut rx, sender) = grpc::call_open(channel, &pool, &t, T).await.unwrap();
+    let mut seen = vec![];
+    for next in ["second", "third"] {
+        loop {
+            let e = rx.recv().await.unwrap();
+            let message = matches!(e, Event::Message(_));
+            seen.push(e);
+            if message {
+                break;
+            }
+        }
+        assert!(sender.send(r#"{"nope": 1}"#).is_err());
+        sender.send(&format!("{{\"name\": \"{next}\"}}")).unwrap();
+    }
+    drop(sender);
+    while let Some(e) = rx.recv().await {
+        seen.push(e);
+    }
+    assert_eq!(texts(&seen), ["Hello, first", "Hello, second", "Hello, third"]);
+    assert!(status(&seen).is_ok());
 }

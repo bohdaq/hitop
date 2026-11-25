@@ -793,31 +793,72 @@ mod client {
         Ok(msg)
     }
 
+    /// The messages of a client-streaming or bidirectional call: JSON values one after another
+    /// (any whitespace between them, none at all for no messages).
+    pub fn request_messages(method: &MethodDescriptor, text: &str) -> Result<Vec<DynamicMessage>> {
+        let mut out = vec![];
+        for (i, v) in serde_json::Deserializer::from_str(text).into_iter::<Value>().enumerate() {
+            let invalid = |e: &dyn std::fmt::Display| anyhow!("message {} isn't a valid {}: {e}", i + 1, method.input().full_name());
+            let v = v.map_err(|e| invalid(&e))?;
+            out.push(DynamicMessage::deserialize(method.input(), v).map_err(|e| invalid(&e))?);
+        }
+        Ok(out)
+    }
+
+    /// Sends messages on an open client-streaming or bidirectional call. Dropping it ends the
+    /// client's side of the stream.
+    pub struct Sender {
+        method: MethodDescriptor,
+        tx: mpsc::UnboundedSender<DynamicMessage>,
+    }
+
+    impl Sender {
+        /// Sends the JSON messages in `text`. An error when one is invalid (nothing of the text is
+        /// sent then) or the call has ended.
+        pub fn send(&self, text: &str) -> Result<()> {
+            for m in request_messages(&self.method, text)? {
+                self.tx.send(m).map_err(|_| anyhow!("the call has ended"))?;
+            }
+            Ok(())
+        }
+    }
+
     /// A message in the JSON mapping, every field shown (defaults too).
     pub fn to_json(msg: &DynamicMessage) -> Value {
         let opts = SerializeOptions::new().skip_default_fields(false);
         msg.serialize_with_options(serde_json::value::Serializer, &opts).unwrap_or_else(|e| json!({ "error": e.to_string() }))
     }
 
-    /// Calls the target's method (unary or server streaming) with its
-    /// message and metadata, `timeout` as the call's deadline. Problems found
-    /// before anything is sent (no such method, a client-streaming method,
-    /// bad JSON, bad metadata) are errors; everything after arrives as
-    /// events, ending with the status (a failed connection is `UNAVAILABLE`).
+    /// Calls the target's method with its message (for a method that streams from the client: its
+    /// messages, all sent, then the client's side closed) and metadata, `timeout` as the call's
+    /// deadline. Problems found before anything is sent (no such method, bad JSON, bad metadata) are
+    /// errors; everything after arrives as events, ending with the status (a failed connection is
+    /// `UNAVAILABLE`).
     pub async fn call(channel: Channel, pool: &DescriptorPool, target: &Target, timeout: Option<Duration>) -> Result<mpsc::UnboundedReceiver<Event>> {
+        Ok(open(channel, pool, target, timeout)?.0)
+    }
+
+    /// As [`call`], keeping the client's side open: more messages go through the [`Sender`] until it
+    /// is dropped. The target's messages are sent first. Only for methods that stream from the client.
+    pub async fn call_open(channel: Channel, pool: &DescriptorPool, target: &Target, timeout: Option<Duration>) -> Result<(mpsc::UnboundedReceiver<Event>, Sender)> {
+        let (events, sender) = open(channel, pool, target, timeout)?;
+        Ok((events, sender.ok_or_else(|| anyhow!("{}/{} takes one message", target.service, target.method))?))
+    }
+
+    /// Starts a call; a [`Sender`] for a method that streams from the client.
+    fn open(channel: Channel, pool: &DescriptorPool, target: &Target, timeout: Option<Duration>) -> Result<(mpsc::UnboundedReceiver<Event>, Option<Sender>)> {
         if target.service.is_empty() || target.method.is_empty() {
             bail!("no gRPC method: give the service and method (package.Service/Method)");
         }
         let method = find_method(pool, &target.service, &target.method)?;
-        if method.is_client_streaming() {
-            bail!(
-                "{} is a {} method: hitop calls unary and server-streaming methods only",
-                method.full_name(),
-                if method.is_server_streaming() { "bidirectional streaming" } else { "client-streaming" }
-            );
+        let messages = if method.is_client_streaming() { request_messages(&method, &target.message)? } else { vec![request_message(&method, &target.message)?] };
+        let (out, outgoing) = mpsc::unbounded_channel();
+        for m in messages {
+            let _ = out.send(m);
         }
-        let message = request_message(&method, &target.message)?;
-        let mut request = tonic::Request::new(message);
+        let sender = method.is_client_streaming().then(|| Sender { method: method.clone(), tx: out });
+        let outgoing = futures_util::stream::unfold(outgoing, |mut rx| async move { rx.recv().await.map(|m| (m, rx)) });
+        let mut request = tonic::Request::new(outgoing);
         *request.metadata_mut() = metadata_map(&target.metadata)?;
         if let Some(t) = timeout {
             request.set_timeout(t);
@@ -834,9 +875,9 @@ mod client {
                 emit(Event::Status(Status { code: 14, name: code_name(14).into(), message: error_chain(&*Into::<Box<dyn std::error::Error + Send + Sync>>::into(e)), trailers: vec![] }));
                 return;
             }
-            // Unary and server-streaming calls look the same on the wire;
-            // reading a unary answer as a stream gives its trailers too.
-            let response = match grpc.server_streaming(request, path, codec).await {
+            // Every kind of call looks the same on the wire; reading a
+            // unary answer as a stream gives its trailers too.
+            let response = match grpc.streaming(request, path, codec).await {
                 Ok(r) => r,
                 Err(s) => {
                     emit(Event::Status(Status::of(&s)));
@@ -865,7 +906,7 @@ mod client {
             };
             emit(Event::Status(Status::ok(trailers)));
         });
-        Ok(rx)
+        Ok((rx, sender))
     }
 
     /// The template of a method's request message, for the desktop's editor.

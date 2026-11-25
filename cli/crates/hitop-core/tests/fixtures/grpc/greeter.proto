@@ -13,8 +13,10 @@ service Greeter {
   rpc StreamHellos(HelloRequest) returns (stream HelloReply);
   // Always fails: NOT_FOUND with an x-reason trailer.
   rpc Fail(HelloRequest) returns (HelloReply);
-  // Not served; hitop refuses bidirectional methods before calling.
+  // Answers each message at once with a greeting and its place.
   rpc Chat(stream HelloRequest) returns (stream HelloReply);
+  // Answers with every name it got, once the client is done.
+  rpc CollectHellos(stream HelloRequest) returns (HelloReply);
 }
 
 enum Mood {

@@ -384,8 +384,8 @@ kept but not used.
 | Key | Default | Meaning |
 | --- | --- | --- |
 | `grpc.service` | empty | The service's full name, `package.Service`. |
-| `grpc.method` | empty | The method's name in the service. Unary and server-streaming methods are called; client-streaming and bidirectional ones are refused. |
-| `grpc.message` | empty (`{}`) | The request message as JSON text in the proto3 JSON mapping (a string, usually a block scalar, so `${variables}` work anywhere in it). |
+| `grpc.method` | empty | The method's name in the service. Unary and streaming methods are called. |
+| `grpc.message` | empty (`{}`) | The request message as JSON text (for a method that streams from the client: its messages one after another; empty sends none) in the proto3 JSON mapping (a string, usually a block scalar, so `${variables}` work anywhere in it). |
 | `grpc.protos` | none | `.proto` files the schema comes from, relative to the collection folder (absolute paths work too). None means the schema comes from the server's reflection service (`grpc.reflection.v1`, then `v1alpha`). |
 | `grpc.importPaths` | none | Directories `import`s are looked up in, relative to the collection folder. Each listed file's own directory is always searched first; the well-known `google/protobuf/*.proto` files are built in. |
 | `grpc.plaintext` | `false` | HTTP/2 without TLS for a `host:port` address. |

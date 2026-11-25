@@ -48,7 +48,7 @@ Status is kept in the table at the end; choices made on the way go under "Decisi
 | C1 | built (server side; the web and CLI items of STATE_MACHINES.md are in C3 and C4); on main, checks green after one rerun of a flaky Android SSE test, cause open (PR 21) |
 | C2 | built: old iOS apps deleted (2.0.0 live since 2026-11-22, checked), the web e2e job split in five; on main 85975cc, every check green (PR 22) |
 | C3 | on main 193350a (PRs 23-27, every check green): run cancel, OAuth windows, desktop streams and OAuth, dialogs, portal (deployed), store.js and hitop-app.js split |
-| C4 | in progress: CLI TLS options built (CI pending); open: desktop TLS settings, iOS TLS, OAuth refresh in core, gRPC streaming, MCP gRPC, sync --json |
+| C4 | in progress: CLI TLS options (PR 28) and gRPC client/bidi streaming built (CI pending); open: interactive streaming in the apps (they send all messages, then close), desktop TLS settings, iOS TLS, OAuth refresh in core, MCP gRPC, sync --json, WebSocket and gRPC TLS tests |
 | C5–C9 | not started |
 
 ## Decisions
@@ -60,3 +60,5 @@ Status is kept in the table at the end; choices made on the way go under "Decisi
 | 2026-11-25 | The Mac App Store build doesn't get `com.apple.security.network.server`; OAuth sign-in there fails saying it can't listen. | A new entitlement changes App Review; the owner may add it. |
 | 2026-11-25 | A stopped desktop stream ends in Rust with its next piece of data. | hitop-core's blocking client can't be interrupted between reads. |
 | 2026-11-25 | `--insecure` is refused for gRPC. | tonic has no switch for it; a custom connector would replace its TLS. |
+| 2026-11-25 | A streaming call's messages are JSON values one after another in `grpc.message`; stdin message by message only with `-i`. | Additive to format v1 (a string stays a string); `-d -` still resolves secret references. |
+| 2026-11-25 | The iOS accessibility audit is tried up to 3 times when it did not finish (code -56). | A tool timeout says nothing about the screen; real issues and an audit that never finishes still fail. |
