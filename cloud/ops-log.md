@@ -443,3 +443,11 @@ and on hitop.rws8.tech/cloud/healthz. -->
 - Portal from 2f69a78 (`cloud/portal` dist only; the rest of /var/www/hitop checked byte for byte untouched; old assets kept). A `?server=`
   link asks before signing out and the sign-in page names a server that isn't HITOP Cloud: checked live in a browser.
   Backup `/var/www/hitop-cloud.bak-20261125-033333`.
+
+## 2026-11-25 Web app: shared collections never reach the library (security)
+
+- Web app only, from 8da867a (PR 40; the owner's OK the same day), 16:14 UTC; backup `/var/www/hitop-app.bak-20261125-161434`. Old assets
+  kept; the rest of /var/www/hitop checked untouched; every file live equals the build, which passed the `shared-library` and `library` suites.
+- It carries everything in the web app since 96f90df. gRPC calls with several client messages from the web need the newer hitop-server (C9).
+- Not cleaned: `request_history` rows of leaked copies, and backups.
+- Rollback (brings the leak back): `sudo rsync -a --delete /var/www/hitop-app.bak-20261125-161434/ /var/www/hitop/app/`.
