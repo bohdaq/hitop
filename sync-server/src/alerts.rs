@@ -267,6 +267,16 @@ fn enqueue(state: &State, tx: &mut Tx, ws: &str, s: &Settings, event: &str, coll
 /// changed (or a first run failed). Returns the channels queued.
 #[allow(clippy::too_many_arguments)]
 pub fn on_run(state: &State, tx: &mut Tx, ws: &str, run: &str, collection: &str, environment: &str, status: &str, names: &[String]) -> Result<Vec<String>, DbError> {
+    // A run that started before one already here (uploaded late) says nothing about now. A start
+    // later than its upload is a wrong clock and doesn't count: it must not silence later alerts.
+    let late = tx.query_one(
+        "SELECT n.id FROM runs r JOIN runs n ON n.workspace_id = r.workspace_id AND n.collection = r.collection AND n.environment = r.environment \
+         WHERE r.workspace_id = $1 AND r.id = $2 AND n.status IN ('passed', 'failed') AND n.started_at > r.started_at AND n.started_at <= n.created_at + 300 LIMIT 1",
+        &[ws.into(), run.into()],
+    )?;
+    if late.is_some() {
+        return Ok(vec![]);
+    }
     let previous = tx.query_one("SELECT last_status FROM alert_state WHERE workspace_id = $1 AND collection = $2 AND environment = $3", &[ws.into(), collection.into(), environment.into()])?.map(|r| r.text(0));
     tx.execute(
         "INSERT INTO alert_state (workspace_id, collection, environment, last_status, last_run_at, missed_alerted_at) VALUES ($1, $2, $3, $4, $5, 0)

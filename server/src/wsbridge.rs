@@ -43,6 +43,15 @@ pub struct Bridge {
     allow_private: bool,
 }
 
+/// One of the bridge's slots, until it is dropped.
+struct Slot(Arc<AtomicUsize>);
+
+impl Drop for Slot {
+    fn drop(&mut self) {
+        self.0.fetch_sub(1, Ordering::SeqCst);
+    }
+}
+
 impl Bridge {
     pub fn new(origins: impl Into<crate::origins::Origins>, deny: Vec<IpAddr>, allow_private: bool) -> Self {
         Bridge { origins: origins.into(), deny: Arc::new(deny), open: Arc::new(AtomicUsize::new(0)), allow_private }
@@ -84,8 +93,9 @@ impl Bridge {
             let _ = ws.close(1013, "busy");
             return;
         }
+        // Given back also when the bridge panics.
+        let _slot = Slot(self.open.clone());
         self.run(&mut ws);
-        self.open.fetch_sub(1, Ordering::SeqCst);
     }
 
     fn run(&self, ws: &mut WebSocketConnection) {

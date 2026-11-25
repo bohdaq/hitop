@@ -121,7 +121,7 @@ fn http_version(v: reqwest::Version) -> Option<&'static str> {
 #[derive(Clone)]
 pub struct Proxy {
     client: Arc<Client>,
-    // No total time limit (streams end on their own, or after STREAM_FOR).
+    // Streams end on their own, or after STREAM_FOR (also when nothing more arrives).
     stream_client: Arc<Client>,
     streams: Arc<AtomicUsize>,
     origins: Origins,
@@ -179,25 +179,22 @@ impl Proxy {
     pub fn new(origins: impl Into<Origins>, deny: Vec<IpAddr>) -> Self {
         let origins = origins.into();
         let timing = Recorder::default();
-        let builder = |total: Option<Duration>| {
+        let builder = |total: Duration| {
             // Redirects are followed in `start`, one hop at a time (hitop-core redirects.rs).
             let policy = redirect::Policy::none();
-            let mut b = Client::builder()
+            let b = Client::builder()
                 .use_rustls_tls()
                 .no_proxy()
                 .redirect(policy)
                 .dns_resolver(Arc::new(TimedResolver::wrapping(timing.clone(), Arc::new(PublicResolver { deny: deny.clone() }))))
                 .connector_layer(TimedConnectLayer::new(timing.clone()))
-                .connect_timeout(Duration::from_secs(10));
-            b = match total {
-                Some(t) => b.timeout(t),
-                None => b.timeout(None),
-            };
+                .connect_timeout(Duration::from_secs(10))
+                .timeout(total);
             b.build().expect("HTTP client")
         };
         Proxy {
-            client: Arc::new(builder(Some(TIME_LIMIT))),
-            stream_client: Arc::new(builder(None)),
+            client: Arc::new(builder(TIME_LIMIT)),
+            stream_client: Arc::new(builder(STREAM_FOR)),
             streams: Arc::new(AtomicUsize::new(0)),
             origins,
             deny: Arc::new(deny),

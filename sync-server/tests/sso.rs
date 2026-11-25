@@ -504,7 +504,7 @@ fn org_sso_required_owner_only_and_the_servers_own_sso_cant_get_around_it() {
     assert_eq!(orgsso::configure(&s, &cy, &a, cfg.clone()).status, 403, "admins don't change SSO");
     let token = s.call("POST", "/v1/me/tokens", Some(&ada.session), Some(json!({ "name": "ci", "scopes": ["read", "write"] }))).json["token"].as_str().unwrap().to_string();
     assert_eq!(s.call("PUT", &format!("/v1/orgs/{a}/sso"), Some(&token), Some(cfg.clone())).status, 403, "not with an access token");
-    assert_eq!(orgsso::configure(&s, &ada, &a, cfg).status, 200);
+    assert_eq!(orgsso::configure(&s, &ada, &a, cfg.clone()).status, 200);
 
     // The domain's addresses sign in only through the org's provider.
     let r = s.call("POST", "/v1/auth/email", None, Some(json!({ "email": "dee@a.test" })));
@@ -518,6 +518,15 @@ fn org_sso_required_owner_only_and_the_servers_own_sso_cant_get_around_it() {
     let session = org_sign_in(&s, &idp_a, json!({ "email": "ada@a.test" }), |f| idp_a.sign(&idp_a.claims("a-ada", "ada@a.test", &f.nonce))).unwrap();
     assert_eq!(email_of(&s, &session), "ada@a.test");
     // Turned off: mail sign-in comes back.
+    // Required needs it on; turned off, nothing is required.
+    let mut off = cfg.clone();
+    off["enabled"] = json!(false);
+    off["required"] = json!(true);
+    assert_eq!(s.call("PUT", &format!("/v1/orgs/{a}/sso"), Some(&ada.session), Some(off.clone())).status, 400);
+    off.as_object_mut().unwrap().remove("required");
+    assert_eq!(s.call("PUT", &format!("/v1/orgs/{a}/sso"), Some(&ada.session), Some(off)).status, 200);
+    let got = s.call("GET", &format!("/v1/orgs/{a}/sso"), Some(&ada.session), None).json;
+    assert_eq!((&got["config"]["enabled"], &got["config"]["required"]), (&json!(false), &json!(false)), "{got}");
     assert_eq!(s.call("DELETE", &format!("/v1/orgs/{a}/sso"), Some(&ada.session), None).status, 204);
     assert_eq!(s.call("POST", "/v1/auth/email", None, Some(json!({ "email": "dee@a.test" }))).status, 202);
     let events: Vec<String> = audit_rows(&s, &format!("org:{a}")).iter().map(|r| r["event"].as_str().unwrap().to_string()).collect();

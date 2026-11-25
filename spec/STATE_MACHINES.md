@@ -40,18 +40,8 @@ code says so. This file lists them, the rule new code follows, and what is still
 Ordered by risk. Each needs a decision or a wider change than a guard.
 
 **Sync server**
-- *Billing status* (`entitlements.status`, billing.rs, limits.rs): ten strings, no transition table.
-  `plan_in_force` is a deny-list (an unknown status keeps the paid plan); `trialing` (ours) and `on_trial`
-  (Stripe) both exist, `expire()` ends only `trialing`/`cancelled`; `set-plan` forces `active` from any state;
-  `orgs.plan` is written and never read. Turning the deny-list into an allow-list needs
-  `SELECT DISTINCT status FROM entitlements` on the hosted DB first.
-- *Alert series* (`alert_state.last_status`, alerts.rs `on_run`): failed/recovered follows upload order, not
-  `startedAt`; a late `hitop sync report` of an old run can alert wrongly.
 - *Runs* (`runs.status`): `sealed` (no status) sits next to passed/failed.
-- *Org SSO* (`org_sso.enabled` + `required`): `required=1, enabled=0` is stored and shown raw by the API.
-- *Workspace invites*: `accepted_by`/`accepted_at` can disagree; accept has no `AND accepted_by = ''` guard
-  (safe with one process: `Db` is one connection behind a mutex; not with several on Postgres).
-- *Org invites* (portal + SCIM writers), *domain claims* (never re-verified), *gitsync* `unsuspend` not handled.
+- *Org invites* (portal + SCIM writers), *domain claims* (never re-verified).
 
 **CLI and core**
 - *Sync per path* (`hitop_core::sync::State`): `entries` + `conflicts` + `losers` maps and an empty-path
@@ -64,8 +54,6 @@ Ordered by risk. Each needs a decision or a wider change than a guard.
   failed run (agents read `passed`; changing it to `isError` is a contract change, not done).
 - *Stream events*: CLI/MCP JSON key `event`, hitop-server bridges and desktop channels `type`; the gRPC
   bridge's time limit ends NDJSON without a `status` line; MCP `run_websocket` has no `open` event.
-- *Proxy streams* (`server/src/proxy.rs`): no read timeout, so a stalled upstream holds a slot past
-  `STREAM_FOR`; the wsbridge counter has no Drop guard.
 - *Telemetry*: `enabled: true, id: None` says "on" and never pings.
 
 **Web app and portal**
@@ -80,3 +68,12 @@ Ordered by risk. Each needs a decision or a wider change than a guard.
 - *App dialogs*: an async import writes into a dialog closed meanwhile.
 - *Portal sign-in*: buttons come back during the provider redirect; `?server=` signs out silently.
 - *Cloud library* (`library.js`): sign-out during a push throws into the retry path.
+
+## Fixed since (C1, 2026-11-25)
+
+- Billing: `plan_in_force` is an allow-list (`billing::LIVE`); the hosted database had only `active`.
+- Alerts: a run that started before one already uploaded changes nothing; a start later than its upload doesn't count.
+- Org SSO: "required" needs "enabled" (400), and turning it off clears "required".
+- Workspace invites: accepting is guarded in the UPDATE. Git sync: `suspend` keeps the installation, `unsuspend` takes its links up again.
+- hitop-server: a stalled proxy stream ends after `STREAM_FOR`; the WebSocket bridge's slot is given back on a panic; the gRPC
+  bridge's time limit ends with a `status` line (4, DEADLINE_EXCEEDED).

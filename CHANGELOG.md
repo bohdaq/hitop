@@ -4,6 +4,11 @@ Releases before 1.2 are listed in ROADMAP.md (section 5) and on the GitHub Relea
 
 ## Unreleased
 
+### Sync server and hitop-server
+
+- Only known live billing statuses keep a paid plan; runs uploaded late don't alert; "SSO required" needs SSO enabled; a suspended
+  GitHub App can be unsuspended without connecting again; stalled proxy streams end; the gRPC bridge reports its time limit.
+
 ### Data safety
 
 - Web, desktop, iOS, Android: stored collections, environments or globals that can't be read are kept aside and come back from

@@ -44,8 +44,8 @@ Status is kept in the table at the end; choices made on the way go under "Decisi
 
 | # | Status |
 | --- | --- |
-| C0 | built: core and CLI storage journal, damaged files kept (core, web, desktop, iOS) and never deleted from the cloud, iOS drafts; CI pending |
-| C1 | in progress: billing allow-list done (the hosted server has only `active`) |
+| C0 | on main 63864f9, every check green (PR 20): core and CLI storage journal, damaged files kept (core, web, desktop, iOS) and never deleted from the cloud, iOS drafts |
+| C1 | built (server side; the web and CLI items of STATE_MACHINES.md are in C3 and C4); CI pending |
 | C2–C9 | not started |
 
 ## Decisions

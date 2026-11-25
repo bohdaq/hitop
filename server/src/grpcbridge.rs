@@ -196,7 +196,7 @@ impl GrpcBridge {
         let (tx, rx) = mpsc::sync_channel::<Vec<u8>>(64);
         std::thread::spawn(move || {
             rt.block_on(async move {
-                let _ = tokio::time::timeout(CALL_FOR, async {
+                let ended = tokio::time::timeout(CALL_FOR, async {
                     while let Some(e) = events.recv().await {
                         let line: Value = match e {
                             Event::Headers(metadata) => json!({ "type": "headers", "metadata": metadata }),
@@ -212,6 +212,10 @@ impl GrpcBridge {
                     }
                 })
                 .await;
+                if ended.is_err() {
+                    let line = json!({ "type": "status", "code": 4, "name": "DEADLINE_EXCEEDED", "message": "the bridge's time limit ended the call", "trailers": [] });
+                    let _ = tx.send(format!("{line}\n").into_bytes());
+                }
             });
         });
         let mut response = Response::get_response(s.n200_ok, None, None);

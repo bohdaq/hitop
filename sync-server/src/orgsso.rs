@@ -388,6 +388,11 @@ pub fn put(state: &State, request: &Request, params: &PathParams) -> ApiResult {
         if c.sso_required && c.allowed_domains.is_empty() {
             return Err(ApiError::bad("\"SSO required\" needs a verified domain"));
         }
+        if c.sso_required && !enabled && input.required == Some(true) {
+            return Err(ApiError::bad("\"SSO required\" needs single sign-on to be enabled"));
+        }
+        // Turned off: nothing is required any more.
+        let c = OidcConfig { sso_required: c.sso_required && enabled, ..c };
         let now = state.now();
         tx.execute(
             "INSERT INTO org_sso (org_id, issuer, client_id, client_secret, scopes, name, groups_claim, required_groups, required, assume_verified, enabled, updated_by, updated_at) \

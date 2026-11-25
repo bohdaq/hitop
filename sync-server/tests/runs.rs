@@ -163,6 +163,30 @@ fn alert_mails(s: &Server) -> Vec<String> {
 }
 
 #[test]
+fn a_run_uploaded_late_changes_nothing() {
+    let s = open_limits("runs-late");
+    let ada = Device::new(&s, "ada@example.com");
+    let key = create_workspace(&s, &ada, WS);
+    let ci = runner(&s, &ada, WS, &key);
+    let now = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_secs() as i64;
+    let put = s.call("PUT", &format!("/v1/workspaces/{WS}/alerts"), Some(&ada.session), Some(json!({ "email": ["ada@example.com"] })));
+    assert_eq!(put.status, 200);
+    let post = |id: &str, at: i64, status: &str| {
+        let r = s.call("POST", &format!("/v1/workspaces/{WS}/runs"), Some(&ci), Some(json!({ "id": id, "startedAt": at, "collection": "C", "environment": "e", "status": status, "requests": 1, "failed": i64::from(status == "failed") })));
+        assert_eq!(r.status, 201, "{}", r.json);
+        hitop_sync_server::alerts::deliver_pending(s.app.state()).unwrap();
+        alert_mails(&s).len()
+    };
+    assert_eq!(post("a", now - 100, "passed"), 0);
+    assert_eq!(post("old", now - 500, "failed"), 0, "an older run uploaded late");
+    assert_eq!(post("b", now - 50, "failed"), 1);
+    assert_eq!(post("older", now - 300, "passed"), 1, "not a recovery");
+    // A clock far ahead doesn't silence what comes after it.
+    assert_eq!(post("future", now + 1_000_000, "passed"), 2);
+    assert_eq!(post("c", now - 10, "failed"), 3);
+}
+
+#[test]
 fn one_alert_per_status_change_with_no_bodies_or_values() {
     let s = open_limits("runs-alerts");
     let ada = Device::new(&s, "ada@example.com");

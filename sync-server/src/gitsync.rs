@@ -182,6 +182,9 @@ fn person(state: &State, tx: &mut Tx, request: &Request) -> Result<User, ApiErro
 
 // --- GitHub HTTP -------------------------------------------------------------------------------
 
+/// The message of links whose installation is suspended on GitHub (unsuspending takes them up again).
+const SUSPENDED: &str = "the HITOP Cloud App is suspended on GitHub: unsuspend it there";
+
 /// Why a sync stopped: `disconnected` (the App, repository or branch is gone: no retry) or
 /// `error` (GitHub unreachable or refusing: retried).
 #[derive(Debug)]
@@ -1070,7 +1073,16 @@ pub fn webhook(state: &State, request: &Request, _: &PathParams) -> ApiResult {
                     &[now.into(), installation.into(), repo.into(), branch.into(), after.into()],
                 )?
             }
-            "installation" if matches!(doc["action"].as_str(), Some("deleted" | "suspend")) => {
+            // Suspended on GitHub: the person can take it back, so the installation stays.
+            "installation" if doc["action"] == "suspend" => tx.execute(
+                "UPDATE git_links SET state = 'disconnected', message = $1, due_at = 0 WHERE installation_id = $2 AND state <> 'disconnected'",
+                &[SUSPENDED.into(), installation.into()],
+            )?,
+            "installation" if doc["action"] == "unsuspend" => tx.execute(
+                "UPDATE git_links SET state = 'pending', message = '', due_at = $1 WHERE installation_id = $2 AND state = 'disconnected' AND message = $3",
+                &[now.into(), installation.into(), SUSPENDED.into()],
+            )?,
+            "installation" if doc["action"] == "deleted" => {
                 tx.execute("DELETE FROM git_installations WHERE installation_id = $1", &[installation.into()])?;
                 tx.execute(
                     "UPDATE git_links SET state = 'disconnected', message = 'the HITOP Cloud App was removed from GitHub: connect GitHub again', due_at = 0 WHERE installation_id = $1",

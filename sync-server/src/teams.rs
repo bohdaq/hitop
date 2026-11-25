@@ -190,7 +190,11 @@ pub fn accept(state: &State, request: &Request, _: &PathParams) -> ApiResult {
         if tx.query_one("SELECT id FROM device_keys WHERE user_id = $1", &[(&user.id).into()])?.is_none() {
             return Err(ApiError::bad("register a device key first (POST /v1/me/keys)"));
         }
-        tx.execute("UPDATE invites SET accepted_by = $1, accepted_at = $2 WHERE id = $3", &[(&user.id).into(), now.into(), row.text(0).into()])?;
+        // Guarded: of two people accepting at once (several servers on one database) one wins.
+        let taken = tx.execute("UPDATE invites SET accepted_by = $1, accepted_at = $2 WHERE id = $3 AND (accepted_by = '' OR accepted_by = $1)", &[(&user.id).into(), now.into(), row.text(0).into()])?;
+        if taken == 0 {
+            return Err(ApiError::conflict("already_accepted", "someone else accepted this invite", json!({})));
+        }
         audit::record(tx, state, Event::new(&row.text(1), "invite_accepted", Some(&user)).target(&row.text(0)).detail(json!({ "role": row.text(3) })))?;
         Ok((200, json!({ "workspaceId": row.text(1), "role": row.text(3) })))
     })

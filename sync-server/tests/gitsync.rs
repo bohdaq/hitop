@@ -190,11 +190,19 @@ fn a_moving_branch_an_existing_folder_unlink_and_the_app_removed() {
 
     // The App removed from GitHub: links show as disconnected, the installation is gone.
     link(&s, &ada, "");
-    let body = json!({ "action": "deleted", "installation": { "id": ghapp::INSTALLATION } });
-    let raw = body.to_string().into_bytes();
-    let key = ring::hmac::Key::new(ring::hmac::HMAC_SHA256, ghapp::WEBHOOK_SECRET.as_bytes());
-    let sig: String = ring::hmac::sign(&key, &raw).as_ref().iter().map(|b| format!("{b:02x}")).collect();
-    let r = s.raw("POST", "/v1/git/github/webhook", None, raw, &[("X-Hub-Signature-256", &format!("sha256={sig}")), ("X-GitHub-Event", "installation")]);
+    let hook = |action: &str| {
+        let raw = json!({ "action": action, "installation": { "id": ghapp::INSTALLATION } }).to_string().into_bytes();
+        let key = ring::hmac::Key::new(ring::hmac::HMAC_SHA256, ghapp::WEBHOOK_SECRET.as_bytes());
+        let sig: String = ring::hmac::sign(&key, &raw).as_ref().iter().map(|b| format!("{b:02x}")).collect();
+        s.raw("POST", "/v1/git/github/webhook", None, raw, &[("X-Hub-Signature-256", &format!("sha256={sig}")), ("X-GitHub-Event", "installation")])
+    };
+    // Suspended on GitHub and taken back: the link goes on without connecting again.
+    assert_eq!(hook("suspend").status, 200);
+    assert_eq!(s.call("GET", "/v1/library/collection/1/git", Some(&ada), None).json["state"], json!("disconnected"));
+    assert_eq!(s.call("GET", "/v1/git", Some(&ada), None).json["installations"].as_array().unwrap().len(), 1);
+    assert_eq!(hook("unsuspend").status, 200);
+    assert_ne!(s.call("GET", "/v1/library/collection/1/git", Some(&ada), None).json["state"], json!("disconnected"));
+    let r = hook("deleted");
     assert_eq!(r.status, 200, "{}", r.json);
     assert_eq!(s.call("GET", "/v1/library/collection/1/git", Some(&ada), None).json["state"], json!("disconnected"));
     assert_eq!(s.call("GET", "/v1/git", Some(&ada), None).json["installations"], json!([]));
