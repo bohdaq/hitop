@@ -86,6 +86,9 @@ pub enum RequestsCmd {
 
         #[command(flatten)]
         cookies: super::cookies::CookieFlags,
+
+        #[command(flatten)]
+        network: super::network::NetworkFlags,
     },
 }
 
@@ -245,7 +248,8 @@ pub fn run(cmd: RequestsCmd) -> Result<()> {
             println!("{} Renamed '{}' → '{}'", "✓".green(), request.bold(), new_name.bold());
         }
 
-        RequestsCmd::Send { collection, request, show_headers, raw, env, secrets, cookies } => {
+        RequestsCmd::Send { collection, request, show_headers, raw, env, secrets, cookies, network } => {
+            network.apply()?;
             use hitop_core::{http, prepare::{prepare_in, variables, Draft, Scopes}, scripting::{run_post_request_script_with, PostRequestCtx}};
             use crate::output;
 

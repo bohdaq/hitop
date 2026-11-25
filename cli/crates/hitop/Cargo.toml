@@ -76,6 +76,8 @@ tempfile = "3"
 rusqlite = { version = "0.41", features = ["bundled"] }
 # tests/secret_managers.rs: seeds the Vault and LocalStack dev servers.
 reqwest = { workspace = true }
+# tests/tls.rs: a local TLS server that asks for a client certificate.
+rustls = { version = "0.23", default-features = false, features = ["ring", "std", "tls12"] }
 # tests/ws.rs: a local WebSocket echo server.
 tokio-tungstenite = { version = "0.30", default-features = false, features = ["handshake"] }
 futures-util = { version = "0.3", default-features = false, features = ["sink", "std"] }

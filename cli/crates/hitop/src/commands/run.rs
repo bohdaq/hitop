@@ -60,6 +60,9 @@ pub enum Reporter {
 #[derive(Args)]
 #[command(after_help = AFTER_HELP)]
 pub struct RunArgs {
+    #[command(flatten)]
+    network: super::network::NetworkFlags,
+
     /// Collection name, or path to a collection folder (omit to run all)
     collection: Option<String>,
 
@@ -234,6 +237,7 @@ fn request_files(dir: &Path, collection: &Collection) -> Result<Vec<String>> {
 /// Runs and reports. Ok(0) when everything passed, Ok(1) when a request or
 /// assertion failed; an Err is a usage or configuration error (exit 2).
 pub fn run(args: RunArgs) -> Result<i32> {
+    args.network.apply()?;
     let vars = var_pairs(&args.vars)?;
     let rows: Vec<Option<data::Row>> = match &args.data {
         Some(path) => data::read(path)?.into_iter().map(Some).collect(),

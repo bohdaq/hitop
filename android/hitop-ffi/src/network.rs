@@ -27,7 +27,7 @@ pub(crate) fn set(a: &Args) -> Result<Value, String> {
     if given > 0 && roots.is_empty() {
         return Err(format!("no usable certificate: {problem}"));
     }
-    let n = Network { roots, proxy: a.opt_json("proxy")?, no_proxy: a.opt_json("noProxy")?.unwrap_or_default() };
+    let n = Network { roots, proxy: a.opt_json("proxy")?, no_proxy: a.opt_json("noProxy")?.unwrap_or_default(), ..Default::default() };
     let n = (n != Network::default()).then_some(n);
     set_network(n).map_err(|e| format!("{e:#}"))?;
     Ok(Value::Bool(true))

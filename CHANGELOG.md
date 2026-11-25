@@ -4,6 +4,11 @@ Releases before 1.2 are listed in ROADMAP.md (section 5) and on the GitHub Relea
 
 ## Unreleased
 
+### CLI
+
+- `send`, `run`, `requests send`, `ws`, `grpc`: `--cacert`, `--cert`/`--key` (client certificates), `--proxy`/`--noproxy` (HTTP) and
+  `-k/--insecure` (not gRPC; warns). For one command; nothing of it is stored in a collection. OAuth 2.0 token requests of that command use them too.
+
 ### Web and desktop
 
 - Desktop: event streams show live (Stop ends them) and OAuth 2.0 authorization code signs in in the system browser (not in the Mac

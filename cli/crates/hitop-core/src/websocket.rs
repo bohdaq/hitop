@@ -183,9 +183,41 @@ mod client {
         let config = rustls::ClientConfig::builder_with_provider(provider)
             .with_safe_default_protocol_versions()
             .context("TLS setup")?
-            .with_root_certificates(roots)
-            .with_no_client_auth();
+            .with_root_certificates(roots);
+        let network = crate::http::network().unwrap_or_default();
+        let mut config = match &network.identity {
+            Some(pem) => {
+                use rustls::pki_types::pem::PemObject;
+                let chain = rustls::pki_types::CertificateDer::pem_slice_iter(pem).collect::<std::result::Result<Vec<_>, _>>().map_err(|e| anyhow::anyhow!("client certificate: {e}"))?;
+                let key = rustls::pki_types::PrivateKeyDer::from_pem_slice(pem).map_err(|e| anyhow::anyhow!("client key: {e}"))?;
+                config.with_client_auth_cert(chain, key).context("client certificate")?
+            }
+            None => config.with_no_client_auth(),
+        };
+        if network.insecure {
+            let schemes = rustls::crypto::ring::default_provider().signature_verification_algorithms.supported_schemes();
+            config.dangerous().set_certificate_verifier(Arc::new(AnyCertificate(schemes)));
+        }
         Ok(Arc::new(config))
+    }
+
+    /// `--insecure`: any server certificate, as reqwest's `danger_accept_invalid_certs`.
+    #[derive(Debug)]
+    struct AnyCertificate(Vec<rustls::SignatureScheme>);
+
+    impl rustls::client::danger::ServerCertVerifier for AnyCertificate {
+        fn verify_server_cert(&self, _: &rustls::pki_types::CertificateDer<'_>, _: &[rustls::pki_types::CertificateDer<'_>], _: &rustls::pki_types::ServerName<'_>, _: &[u8], _: rustls::pki_types::UnixTime) -> std::result::Result<rustls::client::danger::ServerCertVerified, rustls::Error> {
+            Ok(rustls::client::danger::ServerCertVerified::assertion())
+        }
+        fn verify_tls12_signature(&self, _: &[u8], _: &rustls::pki_types::CertificateDer<'_>, _: &rustls::DigitallySignedStruct) -> std::result::Result<rustls::client::danger::HandshakeSignatureValid, rustls::Error> {
+            Ok(rustls::client::danger::HandshakeSignatureValid::assertion())
+        }
+        fn verify_tls13_signature(&self, _: &[u8], _: &rustls::pki_types::CertificateDer<'_>, _: &rustls::DigitallySignedStruct) -> std::result::Result<rustls::client::danger::HandshakeSignatureValid, rustls::Error> {
+            Ok(rustls::client::danger::HandshakeSignatureValid::assertion())
+        }
+        fn supported_verify_schemes(&self) -> Vec<rustls::SignatureScheme> {
+            self.0.clone()
+        }
     }
 
     fn handshake_error(e: tungstenite::Error) -> anyhow::Error {

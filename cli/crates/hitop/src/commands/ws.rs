@@ -27,6 +27,9 @@ use super::source::Source;
 
 #[derive(Args)]
 pub struct WsArgs {
+    #[command(flatten)]
+    network: super::network::NetworkFlags,
+
     /// A ws:// or wss:// URL, or with -c the name of a saved WebSocket request
     target: String,
 
@@ -207,6 +210,7 @@ pub(crate) fn session_variables(source: Option<&Source>, env: Option<&str>, vars
 
 /// The exit code: 0, or 1 when the connection failed or --count wasn't reached.
 pub fn run(args: WsArgs) -> Result<i32> {
+    args.network.apply()?;
     let source = args.collection.as_deref().map(Source::open).transpose()?;
     let saved = source.as_ref().and_then(|s| s.collection.requests.iter().find(|r| r.name == args.target)).cloned();
     if let Some(r) = &saved {

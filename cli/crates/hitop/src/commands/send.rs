@@ -22,6 +22,9 @@ use crate::output;
 
 #[derive(Args)]
 pub struct SendArgs {
+    #[command(flatten)]
+    network: super::network::NetworkFlags,
+
     /// Target URL
     url: String,
 
@@ -103,6 +106,7 @@ pub struct SendArgs {
 }
 
 pub fn run(args: SendArgs) -> Result<()> {
+    args.network.apply()?;
     let mut collection_vars: HashMap<String, String> = HashMap::new();
     let mut context: HashMap<String, serde_json::Value> = HashMap::new();
 

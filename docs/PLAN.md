@@ -47,8 +47,9 @@ Status is kept in the table at the end; choices made on the way go under "Decisi
 | C0 | on main 63864f9, every check green (PR 20): core and CLI storage journal, damaged files kept (core, web, desktop, iOS) and never deleted from the cloud, iOS drafts |
 | C1 | built (server side; the web and CLI items of STATE_MACHINES.md are in C3 and C4); on main, checks green after one rerun of a flaky Android SSE test, cause open (PR 21) |
 | C2 | built: old iOS apps deleted (2.0.0 live since 2026-11-22, checked), the web e2e job split in five; on main 85975cc, every check green (PR 22) |
-| C3 | in progress: run cancel, OAuth windows on main 8cfd239 (PR 23); desktop live streams and OAuth on main 1608687 (PR 24); dialogs, portal, library on main 2f69a78 (PR 25), portal deployed 2026-11-25; store.js split into src/store/ on main fcaf9fe (PR 26); hitop-app.js split into src/views/app/ (CI pending) |
-| C4–C9 | not started |
+| C3 | on main 193350a (PRs 23-27, every check green): run cancel, OAuth windows, desktop streams and OAuth, dialogs, portal (deployed), store.js and hitop-app.js split |
+| C4 | in progress: CLI TLS options built (CI pending); open: desktop TLS settings, iOS TLS, OAuth refresh in core, gRPC streaming, MCP gRPC, sync --json |
+| C5–C9 | not started |
 
 ## Decisions
 
@@ -58,3 +59,4 @@ Status is kept in the table at the end; choices made on the way go under "Decisi
 | 2026-11-25 | A desktop keychain that fails marks its environments as damaged for the library. | Otherwise their empty secret values would be pushed. |
 | 2026-11-25 | The Mac App Store build doesn't get `com.apple.security.network.server`; OAuth sign-in there fails saying it can't listen. | A new entitlement changes App Review; the owner may add it. |
 | 2026-11-25 | A stopped desktop stream ends in Rust with its next piece of data. | hitop-core's blocking client can't be interrupted between reads. |
+| 2026-11-25 | `--insecure` is refused for gRPC. | tonic has no switch for it; a custom connector would replace its TLS. |

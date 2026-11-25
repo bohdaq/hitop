@@ -240,7 +240,13 @@ mod client {
         if tls {
             let mut config = ClientTlsConfig::new().with_webpki_roots().domain_name(host);
             if let Some(n) = crate::http::network() {
+                if n.insecure {
+                    anyhow::bail!("gRPC can't skip certificate verification: give the server's CA instead (--cacert)");
+                }
                 config = config.ca_certificates(n.roots.iter().map(|der| tonic::transport::Certificate::from_pem(pem(der))));
+                if let Some(identity) = &n.identity {
+                    config = config.identity(tonic::transport::Identity::from_pem(identity, identity));
+                }
             }
             ep = ep.tls_config(config).context("TLS setup")?;
         }

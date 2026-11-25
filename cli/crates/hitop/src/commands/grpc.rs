@@ -28,6 +28,9 @@ use super::ws::session_variables;
 
 #[derive(Args)]
 pub struct GrpcArgs {
+    #[command(flatten)]
+    network: super::network::NetworkFlags,
+
     /// The server (host:port, http://host:port or https://host:port), or with
     /// -c the name of a saved gRPC request
     target: String,
@@ -138,6 +141,7 @@ fn read_data(arg: &str) -> Result<String> {
 /// The exit code: 0, or 1 when the call ended with a status other than OK
 /// or the server couldn't be reached.
 pub fn run(args: GrpcArgs) -> Result<i32> {
+    args.network.apply()?;
     let source = args.collection.as_deref().map(Source::open).transpose()?;
     let saved = source.as_ref().and_then(|s| s.collection.requests.iter().find(|r| r.name == args.target)).cloned();
     if let Some(r) = &saved {

@@ -57,6 +57,26 @@ pub struct Network {
     pub proxy: Option<String>,
     /// Hosts that don't use the proxy, comma separated.
     pub no_proxy: String,
+    /// A client certificate and its key (PEM, one text), for servers that ask for one.
+    pub identity: Option<Vec<u8>>,
+    /// Takes any certificate: an explicit choice for one command, never stored anywhere.
+    pub insecure: bool,
+}
+
+/// The certificates of a PEM file (DER each).
+pub fn pem_certificates(pem: &[u8]) -> Result<Vec<Vec<u8>>> {
+    use base64::Engine;
+    let text = String::from_utf8_lossy(pem);
+    let mut out = vec![];
+    for part in text.split("-----BEGIN CERTIFICATE-----").skip(1) {
+        let Some((b64, _)) = part.split_once("-----END CERTIFICATE-----") else { anyhow::bail!("a certificate has no end line") };
+        let b64: String = b64.chars().filter(|c| !c.is_whitespace()).collect();
+        out.push(base64::engine::general_purpose::STANDARD.decode(b64).map_err(|e| anyhow::anyhow!("not a PEM certificate: {e}"))?);
+    }
+    if out.is_empty() {
+        anyhow::bail!("no certificate in it (a PEM file is expected)");
+    }
+    Ok(out)
 }
 
 impl Network {
@@ -67,6 +87,12 @@ impl Network {
         }
         if let Some(p) = &self.proxy {
             b = b.proxy(reqwest::Proxy::all(p)?.no_proxy(reqwest::NoProxy::from_string(&self.no_proxy)));
+        }
+        if let Some(pem) = &self.identity {
+            b = b.identity(reqwest::Identity::from_pem(pem).map_err(|e| anyhow::anyhow!("the client certificate or key can't be used: {e}"))?);
+        }
+        if self.insecure {
+            b = b.danger_accept_invalid_certs(true);
         }
         Ok(b)
     }

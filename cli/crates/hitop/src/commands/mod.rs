@@ -10,6 +10,7 @@ pub mod grpc;
 pub mod history;
 pub mod import_export;
 pub mod mcp;
+pub mod network;
 pub mod openapi;
 pub mod requests;
 pub mod run;
