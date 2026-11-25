@@ -6,6 +6,10 @@ Releases before 1.2 are listed in ROADMAP.md (section 5) and on the GitHub Relea
 
 ### CLI
 
+- **Security:** `hitop mcp` `run_websocket` no longer resolves `${secret:...}` references in a call's own `url` or `headers` (an MCP client
+  could have had a secret manager's value sent to an address of its choice). As documented, only references in the workspace files resolve.
+- `hitop mcp`: `describe_grpc` and `run_grpc` (bounded: 100 messages, 256 KiB, 60 s; .proto files only inside the workspace).
+- `hitop sync whoami|ls|status|pull|push --json`: one JSON object on stdout, the same exit codes.
 - `hitop grpc` calls client-streaming and bidirectional methods: JSON messages one after another, or `-i/--interactive` to send each one on
   stdin as it arrives. The apps send all the messages of a request, then close the client's side.
 - `send`, `run`, `requests send`, `ws`, `grpc`: `--cacert`, `--cert`/`--key` (client certificates), `--proxy`/`--noproxy` (HTTP) and

@@ -91,7 +91,7 @@ hitop/
 │               ├── commands/ws.rs  # `hitop ws <url|request> [-c]`: stdin or --send/--message, --count, --wait, --timeout, --json
 │               ├── commands/grpc.rs # `hitop grpc <target> <Service/Method> | list [service] | describe <symbol>`, saved requests with -c
 │               ├── commands/sync/ # `hitop sync ...`: mod.rs (commands, TOFU pins), client.rs (API + hitop-sync-crypto), store.rs (account, keychain/HITOP_SYNC_KEY_FILE, links, state, runner credential, audit-heads.json, audit-keys.json = pinned server audit keys), devices.rs (`hitop sync devices ls|rename|remove [--force]`), sso.rs (login --sso/--google/--github/--apple: loopback listener or paste), password.rs (login by password, signup, password set|forgot|reset|unlock, adopt = become the bundle's device), audit.rs (audit, local chain check; C5 org export --export/--file/--anchor: Ed25519 via ring, binary crate only)
-│               ├── commands/mcp.rs # `hitop mcp [folder]`: MCP server over stdio (rmcp), the twelve tools, masking, path confinement
+│               ├── commands/mcp.rs # `hitop mcp [folder]`: MCP server over stdio (rmcp), the fourteen tools, masking, path confinement
 │               ├── commands/telemetry.rs # `hitop telemetry on|off|status` and the background ping (feature `telemetry`)
 │               └── output.rs       # Colored output, syntect highlighting
 │   ├── fuzz/                   # cargo fuzz (nightly, own workspace): collection_yaml, postman, openapi; seed.sh <target> <secs> (corpora from fixtures, not in git); workflow fuzz.yml
@@ -293,7 +293,7 @@ hitop/
   the cron run. Core `hitop_core::sync` decides; `hitop-sync-crypto` (cli workspace, published before hitop by release-cli.yml when its version is new)
 - MCP: `hitop mcp [folder]` (rmcp 3.8 + tokio, binary crate only): stdio server, workspace = folder or global storage;
   tools list_collections, list_requests, get_request, run_request, run_collection, create_request, update_request,
-  list_environments, set_environment, and since 1.1 run_websocket (connect, send, collect until count/wait, close; URL mode
+  list_environments, set_environment, and after 1.2 describe_grpc and run_grpc, since 1.1 run_websocket (connect, send, collect until count/wait, close; URL mode
   gets no collection auth), import_openapi, sync_openapi (preview unless `apply`; `prune` deletes only with `apply`: the one
   way a tool deletes); spec/`to` paths confined to the served folder (cwd with global storage) (names and descriptions
   are a contract: change additively). Runs go through

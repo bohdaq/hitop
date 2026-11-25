@@ -48,7 +48,7 @@ Status is kept in the table at the end; choices made on the way go under "Decisi
 | C1 | built (server side; the web and CLI items of STATE_MACHINES.md are in C3 and C4); on main, checks green after one rerun of a flaky Android SSE test, cause open (PR 21) |
 | C2 | built: old iOS apps deleted (2.0.0 live since 2026-11-22, checked), the web e2e job split in five; on main 85975cc, every check green (PR 22) |
 | C3 | on main 193350a (PRs 23-27, every check green): run cancel, OAuth windows, desktop streams and OAuth, dialogs, portal (deployed), store.js and hitop-app.js split |
-| C4 | in progress: CLI TLS options (PR 28) and gRPC client/bidi streaming built (CI pending); open: interactive streaming in the apps (they send all messages, then close), desktop TLS settings, iOS TLS, OAuth refresh in core, MCP gRPC, sync --json, WebSocket and gRPC TLS tests |
+| C4 | in progress: CLI TLS options on main a9c1a18 (PR 28); gRPC client/bidi streaming (PR 29), MCP gRPC tools and sync --json built (CI pending); open: interactive streaming in the apps (they send all messages, then close), desktop TLS settings, iOS TLS, OAuth refresh in core, WebSocket and gRPC TLS tests |
 | C5–C9 | not started |
 
 ## Decisions

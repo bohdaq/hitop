@@ -319,6 +319,18 @@ fn two_clients_sync_a_folder_end_to_end() {
     assert!(c.stdout.contains("CONFLICT requests/list-orders.yaml"), "{}", c.stdout);
     assert_eq!(read(&b, "requests/list-orders.yaml"), request("List orders", "https://bob.example.test"), "mine stays");
     assert_eq!(bob.run(&["sync", "status", "-c", b.to_str().unwrap()]).code, 1);
+    // The same as JSON: exit codes unchanged, one object on stdout.
+    let json = |o: &Out| serde_json::from_str::<serde_json::Value>(&o.stdout).unwrap_or_else(|e| panic!("{e}: {}", o.stdout));
+    let s = bob.run(&["sync", "status", "--json", "-c", b.to_str().unwrap()]);
+    assert_eq!((s.code, &json(&s)["conflicts"]), (1, &serde_json::json!(["requests/list-orders.yaml"])));
+    let p = bob.run(&["sync", "push", "--json", "-c", b.to_str().unwrap()]);
+    assert_eq!((p.code, &json(&p)["conflicts"], &json(&p)["pulled"]), (1, &serde_json::json!(["requests/list-orders.yaml"]), &serde_json::json!([])));
+    let p = ada.run(&["sync", "pull", "--json", "-c", a.to_str().unwrap()]);
+    assert_eq!((p.code, &json(&p)["notPushed"]), (0, &serde_json::json!(0)));
+    let me = json(&ada.run(&["sync", "whoami", "--json"]));
+    assert_eq!((&me["email"], &me["otherDevices"]), (&serde_json::json!("ada@example.com"), &serde_json::json!([])));
+    assert!(me["device"]["fingerprint"].as_str().is_some_and(|f| !f.is_empty()));
+    assert_eq!(json(&ada.run(&["sync", "ls", "--json"]))["workspaces"][0]["role"], "owner");
     let both = bob.ok(&["sync", "resolve", "requests/list-orders.yaml", "--show", "-c", b.to_str().unwrap()]);
     assert!(both.contains("https://ada.example.test") && both.contains("https://bob.example.test") && both.contains("v2/orders"), "{both}");
     // Take theirs.

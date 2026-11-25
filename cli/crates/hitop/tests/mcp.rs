@@ -15,14 +15,16 @@ use tempfile::TempDir;
 const SECRET: &str = "s3cr3t-T0ken";
 const GLOBAL_SECRET: &str = "gl0bal-Pa55";
 
-const TOOLS: [&str; 12] = [
+const TOOLS: [&str; 14] = [
     "create_request",
+    "describe_grpc",
     "get_request",
     "import_openapi",
     "list_collections",
     "list_environments",
     "list_requests",
     "run_collection",
+    "run_grpc",
     "run_request",
     "run_websocket",
     "set_environment",
@@ -32,6 +34,9 @@ const TOOLS: [&str; 12] = [
 
 #[path = "support/ws_echo.rs"]
 mod ws_echo;
+
+#[path = "../../hitop-core/tests/support/grpc_server.rs"]
+mod grpc_server;
 
 struct Client {
     child: Child,
@@ -339,7 +344,7 @@ fn grpc_requests_are_shown_but_not_run() {
     assert_eq!(r["kind"], "grpc");
     assert_eq!(r["grpc"], json!({"service": "a.Greeter", "method": "SayHello", "message": "{}", "protos": [], "importPaths": [], "plaintext": true}));
     let e = c.err("run_request", json!({"request": "Hello", "environment": "other"}));
-    assert!(e.contains("gRPC request") && e.contains("hitop grpc"), "{e}");
+    assert!(e.contains("gRPC request") && e.contains("run_grpc") && e.contains("hitop grpc"), "{e}");
 }
 
 #[test]
@@ -621,4 +626,64 @@ fn run_request_and_run_collection_send_the_content_type_of_a_raw_body() {
     // get_request shows the request as saved: no added header.
     let saved = c.ok("get_request", json!({"request": "Json"}));
     assert_eq!(saved["headers"], json!([]), "{saved}");
+}
+
+#[test]
+fn grpc_tools_describe_call_mask_and_stay_inside() {
+    let addr = grpc_server::start(grpc_server::Reflect::V1);
+    let home = TempDir::new().unwrap();
+    let dir = home.path().join("g");
+    write(&dir, "hitop.yaml", "format: 1\nname: G\nauth:\n  type: bearer\n  token: ${token}\n");
+    write(&dir, "environments/mock.yaml", &format!("variables:\n  host: '{addr}'\n  token:\n    secret: true\n"));
+    write(&dir, "requests/hello.yaml", "name: Hello\nkind: grpc\nurl: ${host}\ngrpc:\n  service: hitop.test.Greeter\n  method: SayHello\n  message: '{\"name\": \"${who}\"}'\n  plaintext: true\n");
+    write(&dir, "requests/out.yaml", "name: Outside\nkind: grpc\nurl: ${host}\ngrpc:\n  service: a.B\n  method: C\n  protos: [/etc/passwd]\n  plaintext: true\n");
+    write(&dir, "requests/plain.yaml", "name: Plain\nmethod: GET\nurl: http://127.0.0.1:9/\n");
+    let mut c = Client::start(&home, &[dir.to_str().unwrap()], &[("HITOP_SECRET_MOCK_TOKEN", SECRET)]);
+    c.ok("set_environment", json!({"name": "mock"}));
+
+    let r = c.ok("describe_grpc", json!({"request": "Hello"}));
+    assert!(r["services"].to_string().contains("hitop.test.Greeter.CollectHellos"), "{r}");
+    let r = c.ok("describe_grpc", json!({"address": "${host}", "plaintext": true, "symbol": "hitop.test.Greeter/SayHello"}));
+    assert!(r["description"].as_str().unwrap().contains("rpc SayHello") && r["template"]["times"] == 0, "{r}");
+
+    // A saved request with the collection's auth: the reply echoes the token, masked.
+    let r = c.ok("run_grpc", json!({"request": "Hello", "variables": {"who": "Ann"}}));
+    assert_eq!((r["messages"][0]["message"].as_str(), r["messages"][0]["authorization"].as_str(), r["status"]["code"].as_i64()), (Some("Hello, Ann"), Some("Bearer ••••"), Some(0)), "{r}");
+    // Streaming from the client; another method of the saved request's server.
+    let r = c.ok("run_grpc", json!({"request": "Hello", "method": "hitop.test.Greeter/CollectHellos", "message": "{\"name\": \"a\"} {\"name\": \"b\"}"}));
+    assert_eq!(r["messages"][0]["message"], "Hello, a and b", "{r}");
+    // An address gets no auth; a status other than OK is a result; the number of messages is bounded.
+    let at = |m: &str, msg: &str| json!({"address": addr.to_string(), "plaintext": true, "method": format!("hitop.test.Greeter/{m}"), "message": msg});
+    let r = c.ok("run_grpc", at("SayHello", "{}"));
+    assert_eq!(r["messages"][0]["authorization"], "", "{r}");
+    let r = c.ok("run_grpc", at("Fail", "{}"));
+    assert_eq!((r["status"]["name"].as_str(), r["stopped"].as_str()), (Some("NOT_FOUND"), Some("ended")), "{r}");
+    let r = c.ok("run_grpc", at("StreamHellos", "{\"times\": 500}"));
+    assert_eq!((r["messages"].as_array().unwrap().len(), r["stopped"].as_str(), r["truncated"].as_bool()), (100, Some("messages"), Some(true)));
+
+    assert!(c.err("run_grpc", json!({"request": "Outside"})).contains("inside the workspace"));
+    assert!(c.err("run_grpc", json!({"request": "Plain"})).contains("run_request"));
+    assert!(c.err("run_grpc", json!({})).contains("give `request`"));
+    assert!(!c.transcript.join("\n").contains(SECRET));
+}
+
+#[test]
+fn references_in_a_calls_own_inputs_are_not_resolved() {
+    let home = TempDir::new().unwrap();
+    let dir = home.path().join("r");
+    write(&dir, "hitop.yaml", "format: 1\nname: R\n");
+    let vault = MockServer::start();
+    let read = vault.mock(|when, then| {
+        when.any_request();
+        then.status(200).json_body(json!({"data": {"data": {"k": "from-the-vault"}}}));
+    });
+    let (addr, seen) = ws_echo::echo_server();
+    let mut c = Client::start(&home, &[dir.to_str().unwrap()], &[("VAULT_ADDR", &vault.base_url()), ("VAULT_TOKEN", "t")]);
+    let reference = "${secret:vault:secret/app#k}";
+    c.err("run_websocket", json!({"url": format!("ws://{addr}/x"), "headers": [{"name": "X-Got", "value": reference}]}));
+    c.err("run_websocket", json!({"url": format!("ws://{addr}/{reference}")}));
+    c.err("run_grpc", json!({"address": addr.to_string(), "plaintext": true, "method": "a.B/C", "message": reference}));
+    c.err("run_grpc", json!({"address": addr.to_string(), "plaintext": true, "method": "a.B/C", "metadata": [{"name": "x-got", "value": reference}]}));
+    assert_eq!(read.calls(), 0, "the secret manager was asked");
+    assert!(seen.lock().unwrap().is_empty(), "nothing connected");
 }

@@ -89,9 +89,9 @@ pub enum SyncCmd {
     /// Sign out on this device (forgets the session and the device key)
     Logout,
     /// The account, this device and its key fingerprint
-    Whoami,
+    Whoami(JsonArg),
     /// Your workspaces on the server, with the organization each belongs to
-    Ls,
+    Ls(JsonArg),
     /// Share a collection folder: make a new end-to-end encrypted workspace and push it
     Init {
         /// Create it in this organization (name or id; default your personal one)
@@ -109,12 +109,27 @@ pub enum SyncCmd {
     /// Stop syncing a folder (nothing on the server changes)
     Unlink(FolderArgs),
     /// What a sync would pull and push, and the conflicts
-    Status(FolderArgs),
+    Status {
+        #[command(flatten)]
+        folder: FolderArgs,
+        #[command(flatten)]
+        json: JsonArg,
+    },
     /// Get the team's changes (yours stay unpushed). With HITOP_SYNC_RUNNER set, pulls the
     /// runner's workspace into the folder (scheduled runs)
-    Pull(FolderArgs),
+    Pull {
+        #[command(flatten)]
+        folder: FolderArgs,
+        #[command(flatten)]
+        json: JsonArg,
+    },
     /// Sync: pull, then push your changes
-    Push(FolderArgs),
+    Push {
+        #[command(flatten)]
+        folder: FolderArgs,
+        #[command(flatten)]
+        json: JsonArg,
+    },
     /// Resolve a conflict: keep mine, take theirs, or show both
     Resolve {
         /// Path in the folder, as `hitop sync status` shows it (requests/get-user.yaml)
@@ -430,6 +445,13 @@ pub enum RecoveryCmd {
     Remove,
 }
 
+#[derive(Args, Clone, Copy)]
+pub struct JsonArg {
+    /// Print one JSON object on stdout (notes and errors stay on stderr)
+    #[arg(long)]
+    json: bool,
+}
+
 #[derive(Args, Clone)]
 pub struct FolderArgs {
     /// The collection folder (default: the current directory)
@@ -492,8 +514,8 @@ fn run_cmd(cmd: SyncCmd) -> Result<i32> {
         SyncCmd::Password(PasswordCmd::Reset { code, password_stdin, server, name }) => password::reset(&code, password_stdin, server, name).map(|_| 0),
         SyncCmd::Password(PasswordCmd::Unlock { password_stdin }) => password::unlock(password_stdin).map(|_| 0),
         SyncCmd::Logout => logout().map(|_| 0),
-        SyncCmd::Whoami => whoami().map(|_| 0),
-        SyncCmd::Ls => ls().map(|_| 0),
+        SyncCmd::Whoami(j) => whoami(j.json).map(|_| 0),
+        SyncCmd::Ls(j) => ls(j.json).map(|_| 0),
         SyncCmd::Init { org, folder } => init(&folder.path(), org.as_deref()).map(|_| 0),
         SyncCmd::Link { workspace, folder } => link(&workspace, &folder.path()),
         SyncCmd::Unlink(f) => {
@@ -501,9 +523,9 @@ fn run_cmd(cmd: SyncCmd) -> Result<i32> {
             println!("{} no longer synced (the workspace is unchanged)", f.path().display());
             Ok(0)
         }
-        SyncCmd::Status(f) => status(&f.path()),
-        SyncCmd::Pull(f) => sync(&f.path(), false),
-        SyncCmd::Push(f) => sync(&f.path(), true),
+        SyncCmd::Status { folder, json } => status(&folder.path(), json.json),
+        SyncCmd::Pull { folder, json } => sync(&folder.path(), false, json.json),
+        SyncCmd::Push { folder, json } => sync(&folder.path(), true, json.json),
         SyncCmd::Resolve { path, mine, theirs, show, folder } => resolve(&folder.path(), &path, mine, theirs, show),
         SyncCmd::Members { trust, folder } => members(&folder.path(), &trust).map(|_| 0),
         SyncCmd::Invite { email, role, folder } => invite(&folder.path(), email.as_deref(), &role).map(|_| 0),
@@ -717,9 +739,23 @@ fn logout() -> Result<()> {
     Ok(())
 }
 
-fn whoami() -> Result<()> {
+fn whoami(json: bool) -> Result<()> {
     let s = session()?;
     let me = s.api.call("GET", "/v1/me", None)?;
+    if json {
+        let pins = store::load_pins()?;
+        let others = me["keys"].as_array().into_iter().flatten().filter(|k| k["id"] != s.device.key_id.as_str()).map(|k| {
+            let pk = unb64(k["publicKey"].as_str().unwrap_or(""))?;
+            let trust = match pins.get(k["id"].as_str().unwrap_or("")) {
+                Some(p) if *p == b64(&pk) => "trusted",
+                Some(_) => "changed",
+                None => "untrusted",
+            };
+            Ok(json!({ "id": k["id"], "name": k["name"], "fingerprint": crypto::fingerprint(&pk), "trust": trust }))
+        });
+        let device = json!({ "id": s.device.key_id, "name": s.account.device_name, "fingerprint": crypto::fingerprint(&s.device.keys.public_key()) });
+        return print_json(&json!({ "email": me["email"], "server": s.account.server, "device": device, "otherDevices": others.collect::<Result<Vec<_>>>()? }));
+    }
     println!("{} on {}", me["email"].as_str().unwrap_or(""), s.account.server);
     println!("This device: {} ({}), fingerprint {}", s.account.device_name, s.device.key_id, crypto::fingerprint(&s.device.keys.public_key()));
     let pins = store::load_pins()?;
@@ -734,10 +770,19 @@ fn whoami() -> Result<()> {
     Ok(())
 }
 
-fn ls() -> Result<()> {
+fn print_json(v: &Value) -> Result<()> {
+    println!("{}", serde_json::to_string_pretty(v)?);
+    Ok(())
+}
+
+fn ls(json: bool) -> Result<()> {
     let s = session()?;
     let r = s.api.call("GET", "/v1/workspaces", None)?;
     let list = r["workspaces"].as_array().cloned().unwrap_or_default();
+    if json {
+        let rows: Vec<Value> = list.iter().map(|w| json!({ "id": w["id"], "role": w["role"], "org": w["org"] })).collect();
+        return print_json(&json!({ "workspaces": rows }));
+    }
     if list.is_empty() {
         println!("No workspaces yet: `hitop sync init` shares a collection folder.");
     }
@@ -1101,7 +1146,7 @@ fn report(plan: &Plan, waiting: usize, pushed: bool) -> i32 {
     i32::from(!plan.conflicts.is_empty())
 }
 
-fn sync(dir: &Path, push: bool) -> Result<i32> {
+fn sync(dir: &Path, push: bool, json: bool) -> Result<i32> {
     let t = target(dir)?;
     if t.runner {
         if push {
@@ -1111,6 +1156,12 @@ fn sync(dir: &Path, push: bool) -> Result<i32> {
     }
     let (plan, waiting) = sync_folder(&t, dir, push)?;
     rotation_note(&t);
+    if json {
+        let written: Vec<&String> = plan.write.keys().collect();
+        let pushed: Vec<Value> = plan.push.iter().filter(|p| push && !p.path.is_empty()).map(|p| json!({ "path": p.path, "deleted": p.text.is_none() })).collect();
+        print_json(&json!({ "workspace": t.workspace, "pulled": written, "deleted": plan.remove, "merged": plan.merged, "pushed": pushed, "notPushed": waiting, "skipped": plan.skipped, "conflicts": plan.conflicts }))?;
+        return Ok(i32::from(!plan.conflicts.is_empty()));
+    }
     Ok(report(&plan, waiting, push))
 }
 
@@ -1127,13 +1178,19 @@ fn rotation_note(t: &Target) {
     }
 }
 
-fn status(dir: &Path) -> Result<i32> {
+fn status(dir: &Path, json: bool) -> Result<i32> {
     let t = target(dir)?;
     rotation_note(&t);
     let ws = Workspace::open(&t.api, &t.device, &t.workspace)?;
     let state = store::load_state(&t.workspace, dir)?;
     let (changes, _) = ws.changes(state.seq)?;
     let plan = engine::plan(&read_folder(dir)?, &state, &changes, &t.me, &mut new_blob_id);
+    if json {
+        let push: Vec<Value> = plan.push.iter().filter(|p| !p.path.is_empty()).map(|p| json!({ "path": p.path, "deleted": p.text.is_none() })).collect();
+        let incoming: Vec<&String> = plan.write.keys().collect();
+        print_json(&json!({ "workspace": t.workspace, "epoch": ws.epoch, "incoming": incoming, "incomingDeleted": plan.remove, "toPush": push, "conflicts": plan.conflicts }))?;
+        return Ok(i32::from(!plan.conflicts.is_empty()));
+    }
     println!("Workspace {} (epoch {})", t.workspace, ws.epoch);
     for p in plan.write.keys() {
         println!("  {} {p}", "incoming".green());

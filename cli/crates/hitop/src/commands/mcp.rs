@@ -35,9 +35,9 @@ use serde_json::{json, Value};
 
 use base64::Engine;
 use hitop_core::{
-    format,
+    format, grpc,
     interpolation::interpolate,
-    model::{Auth, Collection, Environment, Header, Request, WebSocket, WEBSOCKET},
+    model::{Auth, Collection, Environment, Grpc, Header, Request, WebSocket, GRPC, WEBSOCKET},
     openapi,
     prepare::Scopes,
     report::{ReportBuilder, RequestReport},
@@ -60,6 +60,8 @@ const DEFAULT_TIMEOUT_MS: u64 = 30_000;
 const WS_MAX_MESSAGES: usize = 100;
 const WS_MAX_TIME: Duration = Duration::from_secs(60);
 const WS_MAX_BYTES: usize = 256 * 1024;
+/// Connecting to a gRPC server, and reading its schema.
+const GRPC_CONNECT: Duration = Duration::from_secs(10);
 
 const INSTRUCTIONS: &str = "hitop: an HTTP API client. This server works on one workspace: a hitop \
 collection folder (hitop.yaml, requests/, environments/) or, without one, hitop's global storage. \
@@ -70,7 +72,7 @@ references already in the collection files) and every secret value \
 is shown as •••• in results. Variables, later ones win: globals, collection, environment, the call's \
 `variables`, variables set by scripts, secrets. Cookies that responses set are kept and sent like in \
 `hitop run`. run_websocket opens a WebSocket connection for one bounded exchange (send, collect replies, \
-close). import_openapi adds a collection from an OpenAPI spec; sync_openapi previews (and with `apply` \
+close). run_grpc makes one bounded gRPC call; describe_grpc shows a server's methods and message templates. import_openapi adds a collection from an OpenAPI spec; sync_openapi previews (and with `apply` \
 writes) a newer spec's changes, keeping your edits. There is no delete tool: sync_openapi removes requests \
 only when called with both `apply` and `prune`. File paths must be inside the workspace directory.";
 
@@ -522,6 +524,45 @@ pub struct SetEnvironmentParams {
     pub name: Option<String>,
 }
 
+/// Where a gRPC call goes.
+#[derive(Deserialize, JsonSchema)]
+pub struct GrpcServerParams {
+    #[schemars(description = COLLECTION)]
+    pub collection: Option<String>,
+    /// A saved gRPC request: its name (or file path in a folder). Give this or `address`.
+    pub request: Option<String>,
+    /// A server (host:port, http://host:port or https://host:port) instead of a saved request; may contain ${variables}. An address gets no auth.
+    pub address: Option<String>,
+    /// HTTP/2 without TLS for a host:port address.
+    pub plaintext: Option<bool>,
+    /// Extra metadata.
+    pub metadata: Option<Vec<HeaderInput>>,
+    /// Environment for this call only; the session's (set_environment) by default.
+    pub environment: Option<String>,
+    /// Variables for this call: they override globals, collection and environment variables, but not secrets.
+    pub variables: Option<BTreeMap<String, String>>,
+}
+
+#[derive(Deserialize, JsonSchema)]
+pub struct DescribeGrpcParams {
+    #[serde(flatten)]
+    pub server: GrpcServerParams,
+    /// A service, package.Service/Method, or message to describe; the list of services without it.
+    pub symbol: Option<String>,
+}
+
+#[derive(Deserialize, JsonSchema)]
+pub struct RunGrpcParams {
+    #[serde(flatten)]
+    pub server: GrpcServerParams,
+    /// package.Service/Method; a saved request's own method by default.
+    pub method: Option<String>,
+    /// The request message as JSON text (may contain ${variables}); a saved request's own by default.
+    pub message: Option<String>,
+    /// Time limit for the call in milliseconds (default 30000, at most 60000).
+    pub timeout_ms: Option<u64>,
+}
+
 #[derive(Deserialize, JsonSchema)]
 pub struct RunWebsocketParams {
     #[schemars(description = COLLECTION)]
@@ -674,7 +715,7 @@ impl Hitop {
                 bail!("'{}' is a WebSocket request: open it with run_websocket (or `hitop ws` in a terminal)", request.name);
             }
             if request.is_grpc() {
-                bail!("'{}' is a gRPC request: this server doesn't make gRPC calls (use `hitop grpc` in a terminal)", request.name);
+                bail!("'{}' is a gRPC request: call it with run_grpc (or `hitop grpc` in a terminal)", request.name);
             }
             col.requests = vec![request.clone()];
             let options = options(p.variables, p.timeout_ms, globals, global_secrets);
@@ -872,6 +913,44 @@ impl Hitop {
     }
 
     #[tool(
+        description = "List a gRPC server's services and methods (from its reflection service, or a saved request's .proto files), or with `symbol` describe a service, method or message and get a JSON template of the message to send. Give a saved gRPC request, or an address such as localhost:50051.",
+        annotations(read_only_hint = true, open_world_hint = true)
+    )]
+    async fn describe_grpc(&self, Parameters(p): Parameters<DescribeGrpcParams>) -> CallToolResult {
+        self.call(move |st| {
+            let (target, _) = grpc_target(st, p.server, None, Some(String::new()))?;
+            tokio::runtime::Handle::current().block_on(async {
+                let channel = grpc::connect(&target, Some(GRPC_CONNECT)).await?;
+                let (pool, _) = grpc::schema(&target, &channel, Some(GRPC_CONNECT)).await?;
+                let Some(symbol) = p.symbol.filter(|s| !s.is_empty()) else {
+                    return Ok(json!({ "services": grpc::services(&pool) }));
+                };
+                let template = pool
+                    .get_message_by_name(symbol.trim_start_matches('.'))
+                    .or_else(|| grpc::split_method(&symbol).and_then(|(s, m)| grpc::find_method(&pool, &s, &m).ok()).map(|m| m.input()))
+                    .map(|m| grpc::template(&m));
+                Ok(json!({ "symbol": symbol, "description": grpc::describe(&pool, &symbol)?, "template": template }))
+            })
+        })
+        .await
+    }
+
+    #[tool(
+        description = "Call a gRPC method (unary or streaming) of a saved gRPC request, or of an address with `method` (package.Service/Method). `message` is the request message as JSON; a method that streams from the client takes several JSON messages one after another. Returns the response headers, the messages and the status (a status other than OK is a result, not an error). Bounded: at most 100 messages, 256 KiB and 60 s; secret values are masked as ••••.",
+        annotations(read_only_hint = false, destructive_hint = false, idempotent_hint = false, open_world_hint = true)
+    )]
+    async fn run_grpc(&self, Parameters(p): Parameters<RunGrpcParams>) -> CallToolResult {
+        self.call(move |st| {
+            let (target, env) = grpc_target(st, p.server, p.method, p.message)?;
+            let limit = Duration::from_millis(p.timeout_ms.unwrap_or(DEFAULT_TIMEOUT_MS).max(1)).min(WS_MAX_TIME);
+            let mut r = tokio::runtime::Handle::current().block_on(grpc_exchange(target, limit))?;
+            r["environment"] = json!(env);
+            Ok(r)
+        })
+        .await
+    }
+
+    #[tool(
         description = "Open a WebSocket connection (a saved WebSocket request, or a ws:// or wss:// URL), send messages (the saved request's by name, then texts), collect what the server sends until `count` messages arrived or `wait_ms` passed, then close. Bounded: at most 100 messages, 256 KiB and 60 s; nothing stays open after the call. Returns every event (sent, received, closed, error) with the time since connecting; secret values are masked as ••••.",
         annotations(read_only_hint = false, destructive_hint = false, idempotent_hint = false, open_world_hint = true)
     )]
@@ -897,9 +976,12 @@ impl Hitop {
                     Request { name: url.to_string(), url: url.to_string(), method: "GET".into(), kind: Some(WEBSOCKET.into()), auth: Some(Auth::None), websocket: Some(WebSocket::default()), ..Default::default() }
                 }
             };
-            request.headers.extend(headers_of(p.headers.unwrap_or_default()));
+            // References come from the saved request only, never from the call's URL or headers.
             let mut refs = std::collections::BTreeSet::new();
-            hitop_core::secret_refs::find_in_request(&request, &mut refs);
+            if p.request.as_deref().is_some_and(|r| !r.is_empty()) {
+                hitop_core::secret_refs::find_in_request(&request, &mut refs);
+            }
+            request.headers.extend(headers_of(p.headers.unwrap_or_default()));
             refs_around(&source, env.as_ref(), &mut refs)?;
             let (secrets, globals, _) = st.resolve(&source, env.as_ref(), &refs)?;
             let mut upper = hitop_core::prepare::variables(&source.collection.variables, env.as_ref());
@@ -1014,6 +1096,85 @@ fn load_spec(st: &State, given: &str) -> Result<(String, Option<String>)> {
     let path = st.inside(given, "`source`")?;
     let text = std::fs::read_to_string(&path).with_context(|| format!("reading {given}"))?;
     Ok((text, None))
+}
+
+/// The call target of describe_grpc and run_grpc, and the environment's name. The .proto files must
+/// be inside the workspace directory; references are resolved only from the saved request.
+fn grpc_target(st: &mut State, p: GrpcServerParams, method: Option<String>, message: Option<String>) -> Result<(grpc::Target, Option<String>)> {
+    let source = st.open(p.collection.as_deref())?;
+    let env = st.environment(&source, p.environment.as_deref())?;
+    let mut refs = std::collections::BTreeSet::new();
+    let mut request = match (p.request.as_deref().filter(|r| !r.is_empty()), p.address.as_deref().filter(|a| !a.is_empty())) {
+        (Some(_), Some(_)) => bail!("give `request` or `address`, not both"),
+        (None, None) => bail!("give `request` (a saved gRPC request) or `address` (host:port)"),
+        (Some(name), None) => {
+            let r = find(&source.collection, name)?;
+            if !r.is_grpc() {
+                bail!("'{}' is not a gRPC request: use {}", r.name, if r.is_websocket() { "run_websocket" } else { "run_request" });
+            }
+            hitop_core::secret_refs::find_in_request(r, &mut refs);
+            r.clone()
+        }
+        // No auth for an address: the collection's credentials go only to its own requests.
+        (None, Some(a)) => Request { name: a.to_string(), url: a.to_string(), method: "GET".into(), kind: Some(GRPC.into()), auth: Some(Auth::None), ..Default::default() },
+    };
+    request.headers.extend(headers_of(p.metadata.unwrap_or_default()));
+    let g = request.grpc.get_or_insert_with(Grpc::default);
+    if let Some(m) = method.filter(|m| !m.is_empty()) {
+        let (service, method) = grpc::split_method(&m).with_context(|| format!("'{m}' is not a method: give package.Service/Method"))?;
+        g.service = service;
+        g.method = method;
+    }
+    if let Some(m) = message {
+        g.message = m;
+    }
+    if let Some(plain) = p.plaintext {
+        g.plaintext = plain;
+    }
+    refs_around(&source, env.as_ref(), &mut refs)?;
+    let (secrets, globals, _) = st.resolve(&source, env.as_ref(), &refs)?;
+    let mut upper = hitop_core::prepare::variables(&source.collection.variables, env.as_ref());
+    upper.extend(p.variables.unwrap_or_default());
+    secrets.apply(&mut upper);
+    let mut scopes = Scopes { globals, upper };
+    secret::fill_refs(&secrets, &mut scopes);
+    let mut target = grpc::target(&request, source.collection.auth.as_ref(), &scopes.merged(), None)?;
+    for path in target.protos.iter_mut().chain(target.import_paths.iter_mut()) {
+        *path = st.inside(&path.to_string_lossy(), "a .proto file or import path")?;
+    }
+    Ok((target, env.map(|e| e.name)))
+}
+
+/// One bounded gRPC call.
+async fn grpc_exchange(target: grpc::Target, limit: Duration) -> Result<Value> {
+    let stop = tokio::time::Instant::now() + limit;
+    let channel = grpc::connect(&target, Some(GRPC_CONNECT.min(limit))).await?;
+    let (pool, _) = grpc::schema(&target, &channel, Some(GRPC_CONNECT.min(limit))).await?;
+    let mut events = grpc::call(channel, &pool, &target, Some(limit)).await?;
+    let pairs = |p: &[(String, String)]| p.iter().map(|(k, v)| json!({ "name": k, "value": v })).collect::<Vec<_>>();
+    let (mut headers, mut messages, mut status, mut bytes) = (vec![], vec![], Value::Null, 0);
+    let stopped = loop {
+        match tokio::time::timeout_at(stop, events.recv()).await {
+            Err(_) => break "time",
+            Ok(None) => break "ended",
+            Ok(Some(grpc::Event::Headers(h))) => headers = pairs(&h),
+            Ok(Some(grpc::Event::Message(m))) => {
+                bytes += m.to_string().len();
+                if bytes > WS_MAX_BYTES {
+                    break "bytes";
+                }
+                if messages.len() == WS_MAX_MESSAGES {
+                    break "messages";
+                }
+                messages.push(m);
+            }
+            Ok(Some(grpc::Event::Status(s))) => {
+                status = json!({ "code": s.code, "name": s.name, "message": s.message, "trailers": pairs(&s.trailers) });
+                break "ended";
+            }
+        }
+    };
+    Ok(json!({ "headers": headers, "messages": messages, "status": status, "stopped": stopped, "truncated": stopped != "ended" }))
 }
 
 /// One bounded WebSocket exchange: connect, send `queue`, collect until

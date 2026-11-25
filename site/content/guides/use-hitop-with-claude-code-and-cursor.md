@@ -31,10 +31,12 @@ Requests run through the same code as `hitop run`: the same variables, scripts, 
 | `list_environments` | Environments and globals with their variables; secret variables by name only. |
 | `set_environment` | Picks the environment that later runs use, for this session only. |
 | `run_websocket` | Opens a saved WebSocket request (or a `ws://`/`wss://` URL, sent without the collection's auth), sends its saved messages by name and any texts, collects what the server sends until `count` messages or `wait_ms`, then closes. At most 100 messages, 256 KiB and 60 s; nothing stays open between calls. |
+| `describe_grpc` | Lists a gRPC server's services and methods (a saved gRPC request, or an address), or describes one symbol with a JSON template of its message. |
+| `run_grpc` | Calls a method, unary or streaming, and returns its messages and status. At most 100 messages, 256 KiB and 60 seconds; an address gets none of the collection's auth. |
 | `import_openapi` | Imports an OpenAPI 3.0 or 3.1 spec (a URL, or a file inside the workspace) as a new collection folder inside the workspace (`to`), or into global storage. |
 | `sync_openapi` | Brings a collection imported from a spec up to a newer one. Returns the diff (operations added, changed, removed; header and query rows one by one) without writing; `apply: true` writes it, keeping your edits. |
 
-The WebSocket and OpenAPI tools need hitop 1.1 or later.
+The WebSocket and OpenAPI tools need hitop 1.1 or later, the gRPC tools a version after 1.2.0.
 
 There is no delete tool: removing requests stays with you (`hitop requests delete`, or `git rm` in a folder). The one exception is `sync_openapi` called with both `apply` and `prune`, which deletes the requests of operations the spec dropped. In a folder every change the assistant makes is an ordinary file change, so `git diff` shows it and `git checkout` undoes it.
 
