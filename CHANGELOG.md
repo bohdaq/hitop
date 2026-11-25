@@ -31,6 +31,10 @@ Releases before 1.2 are listed in ROADMAP.md (section 5) and on the GitHub Relea
 
 ### Web and desktop
 
+- **Security, web app:** signed in, a page load could upload an end-to-end encrypted shared collection to your own library, which the server
+  can read, before the app knew it was shared (and then delete it there). Nothing is saved to the library now until shared collections are
+  open, and one that was shared never goes there by itself, also when its files or the list of shared collections are damaged.
+- A shared collection whose files are gone from the browser is read from the server again instead of being deleted for everyone.
 - Desktop: Settings → Network: certificate authorities, a client certificate and a proxy for requests (never HITOP Cloud). While they can't be
   used, requests fail with the reason. Certificate checks can be skipped only in the CLI (`--insecure`).
 - Desktop: event streams show live (Stop ends them) and OAuth 2.0 authorization code signs in in the system browser (not in the Mac

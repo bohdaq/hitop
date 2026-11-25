@@ -137,6 +137,19 @@ const splitComments = (files) => {
 
 // Folders under "hitop-sync:<ws>" refs next to the platform's own (disk, File System Access).
 export function withSyncFolders(base) {
+  // A list of shared collections that can't be read is kept beside before anything replaces it.
+  try {
+    const text = localStorage.getItem(STATE_KEY);
+    if (text) {
+      try {
+        JSON.parse(text);
+      } catch {
+        localStorage.setItem(`${STATE_KEY}_damaged`, text);
+      }
+    }
+  } catch {
+    // storage blocked
+  }
   const sync = {
     async read(ref) {
       const ws = ref.slice(SYNC_REF.length);
@@ -1094,6 +1107,9 @@ export class SyncClient {
       if (u.upgraded) this.notices.push({ kind: "upgraded", message: `Upgraded ${u.upgraded} workspace key wrap(s) to authenticated ones. Members confirm your fingerprint once.` });
       if (u.untrusted.length) this.notices.push({ kind: "notUpgraded", message: `Not upgraded, devices you haven't trusted: ${u.untrusted.join(", ")}` });
     }
+    // The files kept here are gone or damaged: start over from the server's, deleting nothing (an
+    // empty folder would read as everything deleted, for every member).
+    if (isSyncRef(l.ref) && !syncFiles.get(ws)["hitop.yaml"]) this.saveState(ws, { seq: 0, entries: {}, conflicts: {}, losers: {} });
     for (let attempt = 0; attempt < 5; attempt++) {
       let state = this.state(ws);
       const { remote, seq } = await this.changes(ws, state.seq, keys);

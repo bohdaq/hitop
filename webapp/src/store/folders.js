@@ -143,6 +143,16 @@ export const FoldersPart = (Base) =>
       await this.attachFolder(entry.ref, await f.read(entry.ref), { remember: false });
       this.notify(`Reconnected ${entry.label}`);
     } catch (e) {
+      // A shared collection's files here are gone: from the server again.
+      if (String(entry.ref).startsWith("hitop-sync:") && this.syncClient?.link?.(collectionId)) {
+        try {
+          await this.syncClient.syncNow(collectionId);
+          this.notify(`Reconnected ${entry.label}`);
+          return;
+        } catch {
+          // said below
+        }
+      }
       this.notify(`Couldn't read ${entry.label}: ${errorText(e)}`);
     }
   }
@@ -178,7 +188,10 @@ export const FoldersPart = (Base) =>
       try {
         await this.attachFolder(ref, await f.read(ref), { remember: false });
       } catch (e) {
-        f.forget(collectionId);
+        // Still a folder's (or a shared, end-to-end encrypted) collection: never taken for one of the
+        // person's own, which the library keeps.
+        if (this.collection(collectionId)) this.folders.set(collectionId, { ref, label: f.label(ref), connected: false, error: null, written: null, secrets: {} });
+        else f.forget(collectionId);
         this.notify(`Couldn't open the folder ${f.label(ref)}: ${errorText(e)}. Open it again with Open folder.`);
       }
     }

@@ -259,6 +259,16 @@ export class Library extends EventTarget {
 
   attach(store) {
     this.store = store;
+    // Which collections are in folders (shared ones are end-to-end encrypted): not known before they
+    // are restored, and nothing is pushed or pulled until then, nor if that fails.
+    this.settled = false;
+    this.foldersReady = Promise.resolve(store.ready).then(
+      () => {
+        this.settled = true;
+        this.keepSharedHere();
+      },
+      (e) => this.setStatus({ error: `Folders and shared collections couldn't be opened, so nothing is saved to HITOP Cloud: ${e?.message || e}` }),
+    );
     const st = platform().storage;
     // Every save goes through these three: push what changed a moment later.
     for (const name of ["saveCollections", "saveEnvironments", "saveGlobals"]) {
@@ -278,7 +288,19 @@ export class Library extends EventTarget {
     if (this.signedIn) this.schedulePush(0);
   }
 
+  /** What was shared and isn't open as a shared collection now stays in this browser only. */
+  keepSharedHere() {
+    const s = this.store;
+    if (!this.state) return;
+    const add = s.collections.filter((c) => s.sharedIds?.has(c.id) && !s.folders.has(c.id) && !this.state.localOnly.includes(idOf(c))).map(idOf);
+    if (!add.length) return;
+    this.state.localOnly = [...this.state.localOnly, ...add];
+    writeState(this.state);
+  }
+
   async checkAccount() {
+    await this.foldersReady;
+    if (!this.settled) return;
     const key = this.signedIn ? this.accountKey() : "";
     if (!key) {
       if (this.status.on) this.setStatus({ on: false, error: "" });
@@ -287,6 +309,7 @@ export class Library extends EventTarget {
     if (this.state?.account === key) return;
     // Signed in just now: link this browser's library and pull it into the app.
     this.state = this.loadState(this.store.collections.filter((c) => !this.store.folders.has(c.id)));
+    this.keepSharedHere();
     this.setStatus({ on: true, error: "" });
     await this.pull();
     this.schedulePush(0);
@@ -312,6 +335,9 @@ export class Library extends EventTarget {
   async upload(collectionId) {
     if (!this.state) return;
     this.state.localOnly = this.state.localOnly.filter((x) => x !== String(collectionId));
+    // The person's own choice: it isn't a shared one any more.
+    this.store?.sharedIds?.delete(collectionId);
+    this.store?.save();
     writeState(this.state);
     this.setStatus({});
     await this.flush();
@@ -331,7 +357,7 @@ export class Library extends EventTarget {
     const out = {};
     const localOnly = new Set(this.state.localOnly);
     for (const c of s.collections) {
-      if (s.folders.has(c.id) || localOnly.has(idOf(c))) continue;
+      if (s.folders.has(c.id) || s.sharedIds?.has(c.id) || localOnly.has(idOf(c))) continue;
       out[`collection/${idOf(c)}`] = { kind: "collection", id: idOf(c), data: c, secrets: {} };
     }
     const envs = s.environments.filter((e) => !s.folderEnvs.has(e.id) && !e.team);
@@ -342,6 +368,8 @@ export class Library extends EventTarget {
   }
 
   async push() {
+    await this.foldersReady;
+    if (!this.settled) return;
     if (!this.store || !this.signedIn || !this.state || this.state.account !== this.accountKey()) return;
     if (this.pushing) return this.schedulePush();
     this.pushing = true;
@@ -427,6 +455,8 @@ export class Library extends EventTarget {
     if (this.pulling) return this.pulling;
     this.pulling = (async () => {
       try {
+        await this.foldersReady;
+        if (!this.settled) return;
         const r = await this.pullRaw();
         const fresh = r.items.filter((it) => !(this.state.known[`${it.kind}/${it.id}`]?.version >= it.version));
         if (!fresh.length) return;

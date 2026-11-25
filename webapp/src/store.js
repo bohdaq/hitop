@@ -35,6 +35,9 @@ const Parts = [CookiesPart, FormFieldsPart, TabsPart, RequestsPart, Organization
 export class Store extends Parts {
   constructor() {
     super();
+    // Shared (end-to-end encrypted) collections by id, as saved (`sharedIn`): they never go to the
+    // library by themselves, also when the app's list of shared collections can't be read.
+    this.sharedIds = new Map((storage().loadCollections() || []).filter((c) => c?.sharedIn).map((c) => [c.id, c.sharedIn]));
     const s = initialState();
     this.collections = s.collections;
     this.tabs = s.tabs;
@@ -132,12 +135,19 @@ export class Store extends Parts {
     this.dispatchEvent(new Event("change"));
   }
 
+  /** The collections as they are saved: the shared ones say so. */
+  markShared(collections) {
+    const prefix = "hitop-sync:";
+    for (const [id, f] of this.folders) if (String(f.ref ?? "").startsWith(prefix)) this.sharedIds.set(id, f.ref.slice(prefix.length));
+    return collections.map((c) => (this.sharedIds.has(c.id) ? { ...c, sharedIn: this.sharedIds.get(c.id) } : c));
+  }
+
   save() {
     clearTimeout(this.saveTimer);
     const st = storage();
     // Adapters return false when the browser refused a write (storage full).
     const failed = [];
-    if (st.saveCollections(this.collections) === false) failed.push("collections");
+    if (st.saveCollections(this.markShared(this.collections)) === false) failed.push("collections");
     if (st.saveTabs(this.storedTabs()) === false) failed.push("tabs");
     st.saveCurrentTab(this.currentTab);
     if (st.saveHistory(this.history) === false) failed.push("history");

@@ -214,7 +214,7 @@ export function fileDrafts(collections, tabs) {
 }
 
 export function initialState() {
-  const collections = storage().loadCollections();
+  const collections = storage().loadCollections()?.map(({ sharedIn: _, ...c }) => c);
   const tabs = storage().loadTabs();
   const current = storage().loadCurrentTab();
   // FV1 first visit (nothing stored at all): the sample with "List posts" open, and an empty

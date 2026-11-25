@@ -11,7 +11,7 @@ const SUITES = [
   "e2e", "editing", "features", "extras", "folders", "postman",
   "settings", "globals", "graphql", "diff-code", "websocket", "grpc",
   "openapi", "git", "secret-refs", "ux", "ux12", "onboarding",
-  "sse", "ai", "sync", "library", "devices", "account-delete",
+  "sse", "ai", "sync", "library", "shared-library", "devices", "account-delete",
   "limits", "github", "next", "collections-ux", "stories", "first-visit",
   "ux2", "tree-dnd", "tabs-dnd", "ux3", "updater", "store-mode", "run-cancel",
 ];
