@@ -39,12 +39,23 @@ struct CompareSheet: View {
     }
 
     private func picker(_ title: String, _ id: Binding<String>, _ identifier: String) -> some View {
-        Picker(title, selection: id) {
-            ForEach(sources) { s in Text(s.label).tag(s.id) }
+        let chosen = sources.first { $0.id == id.wrappedValue }?.label ?? ""
+        return Menu {
+            Picker(title, selection: id) {
+                ForEach(sources) { s in Text(s.label).tag(s.id) }
+            }
+        } label: {
+            HStack(spacing: 10) {
+                Text(title).foregroundStyle(Theme.textSoft)
+                Spacer(minLength: 8)
+                Text(chosen).foregroundStyle(Theme.text).multilineTextAlignment(.trailing)
+                Image(systemName: "chevron.up.chevron.down").font(.system(size: 11, weight: .semibold)).foregroundStyle(Theme.textMuted)
+            }
+            .font(Typo.row)
+            .frame(minHeight: 48)
+            .contentShape(Rectangle())
         }
-        .pickerStyle(.navigationLink)
-        .font(Typo.row)
-        .frame(minHeight: 48)
+        .accessibilityLabel("\(title): \(chosen)")
         .accessibilityIdentifier(identifier)
     }
 }
