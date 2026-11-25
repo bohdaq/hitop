@@ -259,6 +259,74 @@ const rustGrpc = {
   },
 };
 
+// An event stream through Rust (send_stream in commands.rs), its pieces on a Tauri channel in order;
+// the same answer as the web adapter's `stream`.
+async function stream(url, options = {}, onText = () => {}) {
+  const { signal } = options;
+  if (signal?.aborted) throw signal.reason;
+  const started = performance.now();
+  const id = ++sendIds;
+  const binary = options.body instanceof Uint8Array;
+  let text = "";
+  let head = null;
+  let stopped = false;
+  await new Promise((resolve, reject) => {
+    const stop = () => {
+      stopped = true;
+      invoke("stop", { id }).catch(() => {});
+      if (head) resolve();
+      else reject(signal.reason);
+    };
+    const on = (e) => {
+      if (stopped) return;
+      if (e.type === "head") head = e;
+      else if (e.type === "chunk") {
+        text += e.text;
+        onText(e.text);
+      } else {
+        signal?.removeEventListener("abort", stop);
+        if (e.type === "error" && !head) reject(new Error(e.message));
+        else resolve();
+      }
+    };
+    signal?.addEventListener("abort", stop, { once: true });
+    const waiting = new Map();
+    let next = 0;
+    const callback = window.__TAURI_INTERNALS__.transformCallback((raw) => {
+      if (!("message" in raw)) return;
+      waiting.set(raw.index, raw.message);
+      for (; waiting.has(next); next++) {
+        const m = waiting.get(next);
+        waiting.delete(next);
+        on(m);
+      }
+    });
+    invoke("send_stream", {
+      args: { method: options.method || "GET", url, headers: headerPairs(options.headers), body: binary ? toBase64(options.body) : (options.body ?? null), ...(binary ? { bodyEncoding: "base64" } : {}), cookies: Boolean(options.cookies), id, ...(options.followRedirects === false ? { followRedirects: false } : {}) },
+      onEvent: `__CHANNEL__:${callback}`,
+    }).catch((e) => {
+      signal?.removeEventListener("abort", stop);
+      reject(e instanceof Error ? e : new Error(String(e)));
+    });
+  });
+  const lower = new Map(head.headers.map(([k, v]) => [k.toLowerCase(), v]));
+  return { status: head.status, statusText: head.statusText, ok: head.status >= 200 && head.status < 300, url: head.url, headers: { get: (k) => lower.get(k.toLowerCase()) ?? null, forEach: (fn) => head.headers.forEach(([k, v]) => fn(v, k)), pairs: head.headers }, text: async () => text, timeMs: Math.round(performance.now() - started), stopped };
+}
+
+// OAuth 2.0's sign-in page in the system browser (oauth_sign_in in commands.rs).
+async function oauthSignIn(auth, signal) {
+  const id = ++sendIds;
+  const stop = () => invoke("stop", { id }).catch(() => {});
+  signal?.addEventListener("abort", stop, { once: true });
+  try {
+    return await invoke("oauth_sign_in", { args: { id, auth } });
+  } catch (e) {
+    throw e instanceof Error ? e : new Error(String(e));
+  } finally {
+    signal?.removeEventListener("abort", stop);
+  }
+}
+
 export function createPlatform() {
   const cache = { collections: null, history: [], contexts: {}, environments: { environments: [], activeEnvironmentId: null }, cookies: [], globals: { variables: {}, secrets: [] } };
   // Secret globals' values, in the keychain as global/global/<name> (`hitop secret set --globals`).
@@ -416,6 +484,8 @@ export function createPlatform() {
       },
     },
     send,
+    stream,
+    oauthSignIn,
     // Rust's client sends handshake headers and auth.
     websocketHeaders: true,
     websocket: rustWebSocket,

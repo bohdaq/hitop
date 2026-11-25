@@ -300,6 +300,36 @@ pub fn send_with(method: &str, url: &str, headers: &[(String, String)], body: Ve
     })
 }
 
+/// [`send_with`] for an answer read as it arrives (Server-Sent Events): `on_head` gets the response
+/// without its body, then `on_chunk` each piece; either one ends the stream by answering false.
+/// Without a time limit in `opts` there is none (the client's own would cut the stream).
+pub fn stream_with(method: &str, url: &str, headers: &[(String, String)], body: Vec<u8>, mut opts: Options, on_head: &mut dyn FnMut(&Response) -> bool, on_chunk: &mut dyn FnMut(&[u8]) -> bool) -> Result<()> {
+    use std::io::Read;
+    opts.timeout.get_or_insert(Duration::from_secs(365 * 24 * 3600));
+    let Exchange { mut resp, hops, start, headers_at } = exchange(method, url, headers.to_vec(), body, &mut opts, true)?;
+    let head = Response {
+        status: resp.status().as_u16(),
+        status_text: resp.status().canonical_reason().unwrap_or("").to_string(),
+        url: resp.url().to_string(),
+        headers: resp.headers().iter().map(|(k, v)| (k.as_str().to_lowercase(), String::from_utf8_lossy(v.as_bytes()).into_owned())).collect(),
+        body: vec![],
+        duration_ms: headers_at.duration_since(start).as_millis() as u64,
+        timings: None,
+        http_version: version_name(resp.version()),
+        redirects: hops,
+    };
+    if !on_head(&head) {
+        return Ok(());
+    }
+    let mut buf = [0u8; 8192];
+    loop {
+        let n = resp.read(&mut buf)?;
+        if n == 0 || !on_chunk(&buf[..n]) {
+            return Ok(());
+        }
+    }
+}
+
 #[cfg(test)]
 mod send_tests {
     use super::*;
@@ -426,5 +456,29 @@ mod send_tests {
     #[test]
     fn send_refuses_invalid_headers() {
         assert!(send("GET", "http://127.0.0.1:9/", &[("Bad Name".into(), "x".into())], vec![]).unwrap_err().to_string().contains("invalid header name"));
+    }
+
+    #[test]
+    fn a_stream_is_handed_over_as_it_arrives_and_can_be_ended() {
+        let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+        let url = format!("http://{}", listener.local_addr().unwrap());
+        let (go, wait) = std::sync::mpsc::channel::<()>();
+        std::thread::spawn(move || {
+            let (mut s, _) = listener.accept().unwrap();
+            let _ = s.read(&mut [0u8; 4096]);
+            s.write_all(b"HTTP/1.1 200 OK\r\nContent-Type: text/event-stream\r\nConnection: close\r\n\r\ndata: 1\n\n").unwrap();
+            // The second event only once the first was read.
+            wait.recv().unwrap();
+            let _ = s.write_all(b"data: 2\n\n");
+            let _ = wait.recv();
+        });
+        let mut text = String::new();
+        let mut status = 0;
+        stream_with("GET", &url, &[], vec![], Options::default(), &mut |h| { status = h.status; true }, &mut |b| {
+            text.push_str(&String::from_utf8_lossy(b));
+            let _ = go.send(());
+            !text.contains("data: 2")
+        }).unwrap();
+        assert_eq!((status, text.as_str()), (200, "data: 1\n\ndata: 2\n\n"));
     }
 }

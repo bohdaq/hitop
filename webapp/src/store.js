@@ -2066,12 +2066,18 @@ export class Store extends EventTarget {
   // the code back through /app/oauth-callback.html (postMessage, this origin), traded through the
   // proxy. The token is kept in memory (a refresh token renews it); a page reload signs in again.
   async oauthSignIn(auth, fill, signal) {
-    if (platform().name === "tauri") throw new Error("OAuth 2.0 authorization code: use the web app or the CLI (hitop send, hitop run in a terminal); the desktop app can't receive the provider's redirect yet");
     this.oauthTokens ??= new Map();
     const key = `code\n${fill(auth.authUrl || "")}\n${fill(auth.clientId || "")}\n${fill(auth.scope || "")}`;
     const now = Date.now() / 1000;
     const have = this.oauthTokens.get(key);
     if (have && (have.until == null || now < have.until)) return { type: "bearer", token: have.token };
+    // Desktop: the system browser, the code back on a loopback address (Rust).
+    if (platform().oauthSignIn) {
+      const filled = Object.fromEntries(Object.entries(auth).map(([k, v]) => [k, typeof v === "string" ? fill(v) : v]));
+      const { token, lifetime } = await platform().oauthSignIn(filled, signal);
+      this.oauthTokens.set(key, { token, until: lifetime ? Date.now() / 1000 + Math.max(0, lifetime - 30) : null });
+      return { type: "bearer", token };
+    }
     const exchange = async (body, headers, url) => {
       const res = await platform().send(url, { method: "POST", headers, body });
       const text = await res.text();

@@ -428,6 +428,151 @@ fn send_now(args: SendArgs, cancelled: &std::sync::atomic::AtomicBool) -> Result
     Ok(SendResult { status: r.status, status_text: r.status_text, url: r.url, headers: r.headers, body, body_encoding, time_ms: r.duration_ms, timings: r.timings, cookies: jar, http_version: r.http_version, redirects: r.redirects })
 }
 
+/// What the page gets on the channel of `send_stream`; `end` and `error` are the last.
+#[derive(Serialize, Clone)]
+#[serde(tag = "type", rename_all = "camelCase")]
+pub enum StreamEvent {
+    Head { status: u16, #[serde(rename = "statusText")] status_text: String, url: String, headers: Vec<(String, String)>, #[serde(skip_serializing_if = "Option::is_none")] cookies: Option<Jar> },
+    Chunk { text: String },
+    End,
+    Error { message: String },
+}
+
+/// Live streams and OAuth sign-ins the page can stop, by its id.
+#[derive(Default)]
+pub struct Stops(std::sync::Mutex<HashMap<u64, std::sync::Arc<std::sync::atomic::AtomicBool>>>);
+
+impl Stops {
+    fn start(&self, id: u64) -> std::sync::Arc<std::sync::atomic::AtomicBool> {
+        let flag = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
+        self.0.lock().unwrap_or_else(|p| p.into_inner()).insert(id, flag.clone());
+        flag
+    }
+    fn end(&self, id: u64) {
+        self.0.lock().unwrap_or_else(|p| p.into_inner()).remove(&id);
+    }
+}
+
+/// Stops a `send_stream` or an `oauth_sign_in`.
+#[tauri::command]
+pub fn stop(state: tauri::State<'_, Stops>, id: u64) {
+    if let Some(flag) = state.0.lock().unwrap_or_else(|p| p.into_inner()).get(&id) {
+        flag.store(true, std::sync::atomic::Ordering::SeqCst);
+    }
+}
+
+/// The text of `bytes` up to the last whole character; the rest waits for the next piece.
+fn whole_text(pending: &mut Vec<u8>) -> String {
+    let cut = match std::str::from_utf8(pending) {
+        Ok(_) => pending.len(),
+        // A broken byte (not just a cut one) is shown as such.
+        Err(e) if e.error_len().is_some() => pending.len(),
+        Err(e) => e.valid_up_to(),
+    };
+    let text = String::from_utf8_lossy(&pending[..cut]).into_owned();
+    pending.drain(..cut);
+    text
+}
+
+/// An event stream (Server-Sent Events) read as it arrives: its events go to the channel until it
+/// ends or `stop {id}`. A stopped stream's thread ends with its next piece; the page hears nothing more.
+#[tauri::command(async)]
+pub fn send_stream(app: tauri::AppHandle, state: tauri::State<'_, Stops>, args: SendArgs, on_event: tauri::ipc::Channel<StreamEvent>) -> Result<(), String> {
+    use std::sync::atomic::Ordering::SeqCst;
+    use tauri::Manager;
+    let id = args.id.ok_or("id")?;
+    let stopped = state.start(id);
+    let body = match (args.body, args.body_encoding.as_deref()) {
+        (None, _) => vec![],
+        (Some(b), Some("base64")) => B64.decode(b).map_err(|e| format!("invalid base64 body: {e}"))?,
+        (Some(b), _) => b.into_bytes(),
+    };
+    std::thread::spawn(move || {
+        let mut jar = if args.cookies { Jar::load(GLOBAL_WORKSPACE).ok() } else { None };
+        let uses_jar = jar.is_some();
+        let mut pending = vec![];
+        let result = http::stream_with(
+            &args.method,
+            &args.url,
+            &args.headers,
+            body,
+            http::Options { timeout: None, jar: jar.as_mut(), no_redirects: args.follow_redirects == Some(false) },
+            &mut |h| {
+                if stopped.load(SeqCst) {
+                    return false;
+                }
+                on_event.send(StreamEvent::Head { status: h.status, status_text: h.status_text.clone(), url: h.url.clone(), headers: h.headers.clone(), cookies: None }).is_ok()
+            },
+            &mut |bytes| {
+                if stopped.load(SeqCst) {
+                    return false;
+                }
+                pending.extend_from_slice(bytes);
+                let text = whole_text(&mut pending);
+                text.is_empty() || on_event.send(StreamEvent::Chunk { text }).is_ok()
+            },
+        );
+        if !stopped.load(SeqCst) {
+            if let (true, Some(j)) = (uses_jar, &jar) {
+                let _ = j.save(GLOBAL_WORKSPACE);
+            }
+            let _ = on_event.send(match result {
+                Ok(()) => StreamEvent::End,
+                Err(e) => StreamEvent::Error { message: format!("{e:#}") },
+            });
+        }
+        app.state::<Stops>().end(id);
+    });
+    Ok(())
+}
+
+#[derive(Deserialize)]
+pub struct OauthArgs {
+    /// The page's id for `stop`.
+    pub id: u64,
+    /// The auth preset, variables filled in by the page.
+    pub auth: hitop_core::model::OAuth2,
+}
+
+#[derive(Serialize)]
+pub struct OauthToken {
+    pub token: String,
+    /// Seconds.
+    pub lifetime: Option<u64>,
+}
+
+/// OAuth 2.0 authorization code with PKCE: the sign-in page in the browser, the code back on a
+/// loopback address (hitop-core's, as `hitop send`). The Mac App Store build may not listen: the
+/// error says so.
+#[tauri::command(async)]
+pub fn oauth_sign_in(app: tauri::AppHandle, state: tauri::State<'_, Stops>, args: OauthArgs) -> Result<OauthToken, String> {
+    use std::sync::atomic::Ordering::SeqCst;
+    use tauri_plugin_shell::ShellExt;
+    let stopped = state.start(args.id);
+    let mut auth = args.auth;
+    // Only a loopback address comes back here (the web app's callback page doesn't).
+    if !(auth.redirect_uri.starts_with("http://127.0.0.1:") || auth.redirect_uri.starts_with("http://localhost:")) {
+        auth.redirect_uri = String::new();
+    }
+    let result = if auth.auth_url.starts_with("https://") || auth.auth_url.starts_with("http://") {
+        hitop_core::oauth2::sign_in_with(
+            &auth,
+            &|s| Ok(s.to_string()),
+            Some(std::time::Duration::from_secs(30)),
+            &mut |url| {
+                #[allow(deprecated)]
+                app.shell().open(url, None).map_err(|e| anyhow::anyhow!("couldn't open the browser: {e}"))
+            },
+            &|| stopped.load(SeqCst),
+        )
+        .map_err(|e| format!("{e:#}"))
+    } else {
+        Err("OAuth 2.0: the authorization URL must start with https:// or http://".to_string())
+    };
+    state.end(args.id);
+    result.map(|(token, lifetime)| OauthToken { token, lifetime })
+}
+
 /// The cookie jar the web app shows on its Cookies page (workspace `global`).
 #[tauri::command(async)]
 pub fn cookies_load() -> Result<Jar, String> {

@@ -321,6 +321,15 @@ class TauriMock {
         (this.cancels ??= []).push(args.id);
         this.inflight?.get(args.id)?.abort();
         return null;
+      case 'send_stream':
+        return this.sendStream(args.args, args.onEvent);
+      case 'stop':
+        (this.stops ??= []).push(args.id);
+        this.streams?.get(args.id)?.abort();
+        return null;
+      case 'oauth_sign_in':
+        (this.signIns ??= []).push(args.args.auth);
+        return { token: 'desktop-user-tok', lifetime: 3600 };
       case 'telemetry_status':
         return this.telemetryStatus();
       case 'telemetry_set':
@@ -460,6 +469,28 @@ class TauriMock {
       default:
         throw `unknown command ${cmd}`;
     }
+  }
+
+  // commands.rs send_stream: the answer's head, then each piece, on the page's channel callback.
+  async sendStream(a, channel) {
+    this.sent.push(a);
+    const cb = Number(String(channel).replace('__CHANNEL__:', ''));
+    let index = 0;
+    const emit = (message) => this.deliver?.(cb, { message, index: index++ });
+    const abort = new AbortController();
+    (this.streams ??= new Map()).set(a.id, abort);
+    (async () => {
+      try {
+        const res = await fetch(a.url, { method: a.method, headers: a.headers.filter(([k]) => k), signal: abort.signal });
+        emit({ type: 'head', status: res.status, statusText: res.statusText, url: res.url, headers: [...res.headers] });
+        const decoder = new TextDecoder();
+        for await (const piece of res.body) emit({ type: 'chunk', text: decoder.decode(piece, { stream: true }) });
+        emit({ type: 'end' });
+      } catch (e) {
+        if (!abort.signal.aborted) emit({ type: 'error', message: e.cause?.message ?? e.message });
+      }
+    })();
+    return null;
   }
 
   // http::send: the proxy's envelope in, header pairs and the body out.

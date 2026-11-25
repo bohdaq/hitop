@@ -47,7 +47,7 @@ Status is kept in the table at the end; choices made on the way go under "Decisi
 | C0 | on main 63864f9, every check green (PR 20): core and CLI storage journal, damaged files kept (core, web, desktop, iOS) and never deleted from the cloud, iOS drafts |
 | C1 | built (server side; the web and CLI items of STATE_MACHINES.md are in C3 and C4); on main, checks green after one rerun of a flaky Android SSE test, cause open (PR 21) |
 | C2 | built: old iOS apps deleted (2.0.0 live since 2026-11-22, checked), the web e2e job split in five; on main 85975cc, every check green (PR 22) |
-| C3 | in progress: run cancel, OAuth windows (PR open); open: desktop OAuth and live streams, dialogs, sign-in page, the refactor |
+| C3 | in progress: run cancel, OAuth windows on main 8cfd239 (PR 23); desktop live streams and OAuth built (CI pending); open: dialogs, sign-in page, portal, the refactor |
 | C4–C9 | not started |
 
 ## Decisions
@@ -56,3 +56,5 @@ Status is kept in the table at the end; choices made on the way go under "Decisi
 | --- | --- | --- |
 | 2026-11-25 | Core writes its JSON files in place with a journal next to them, not by rename. | The Microsoft Store build shares files with the CLI only while they are rewritten in place (CLAUDE.md MS1). |
 | 2026-11-25 | A desktop keychain that fails marks its environments as damaged for the library. | Otherwise their empty secret values would be pushed. |
+| 2026-11-25 | The Mac App Store build doesn't get `com.apple.security.network.server`; OAuth sign-in there fails saying it can't listen. | A new entitlement changes App Review; the owner may add it. |
+| 2026-11-25 | A stopped desktop stream ends in Rust with its next piece of data. | hitop-core's blocking client can't be interrupted between reads. |

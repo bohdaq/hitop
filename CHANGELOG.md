@@ -6,6 +6,8 @@ Releases before 1.2 are listed in ROADMAP.md (section 5) and on the GitHub Relea
 
 ### Web and desktop
 
+- Desktop: event streams show live (Stop ends them) and OAuth 2.0 authorization code signs in in the system browser (not in the Mac
+  App Store build, whose sandbox may not listen for the answer).
 - A collection run can be cancelled; OAuth 2.0 sign-in windows are per request and close on Cancel.
 
 ### Sync server and hitop-server

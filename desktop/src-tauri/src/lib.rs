@@ -26,6 +26,9 @@ pub fn run() {
             commands::run_collection_cmd,
             commands::send_request,
             commands::send_cancel,
+            commands::send_stream,
+            commands::oauth_sign_in,
+            commands::stop,
             commands::cookies_load,
             commands::cookies_save,
             commands::read_folder,
@@ -57,6 +60,7 @@ pub fn run() {
         .manage(commands::Sockets::default())
         .manage(commands::GrpcCalls::default())
         .manage(commands::HttpCalls::default())
+        .manage(commands::Stops::default())
         .setup(|app| {
             // The usage ping, when the user turned it on (off by default).
             #[cfg(feature = "telemetry")]
