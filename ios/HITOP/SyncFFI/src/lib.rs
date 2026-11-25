@@ -29,6 +29,8 @@ use hitop_sync_crypto::{self as crypto, BlobContext, Device, DeviceKeyPair, Rece
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 
+#[cfg(feature = "grpc")]
+mod auth;
 mod import;
 mod zip;
 #[cfg(feature = "grpc")]
@@ -299,6 +301,9 @@ fn call(op: &str, a: &Args) -> R {
             let files: files::Files = a.json("files")?;
             serde_json::to_value(files::plan_sync(&existing, &files).map_err(|e| format!("{e:#}"))?).map_err(err)
         }
+        // hitop-core's `native` parts come with the `grpc` feature.
+        #[cfg(feature = "grpc")]
+        "authSign" | "authDigest" | "oauthToken" | "oauthSignIn" | "oauthSignInNext" | "oauthSignInCancel" | "oauthForget" => auth::call(op, a),
         "import" => import::import(a),
         "importFiles" => import::import_files(a),
         "openapiSync" => import::openapi_sync(a),

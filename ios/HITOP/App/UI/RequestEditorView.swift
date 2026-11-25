@@ -615,11 +615,9 @@ struct AuthEditor: View {
     @Bindable var editor: RequestEditor
     var collectionAuth: AuthSpec?
 
-    private enum Kind: String, CaseIterable { case inherit = "From collection", none = "None", bearer = "Bearer token", basic = "Basic", apiKey = "API key", other = "Set in another app" }
-
-    private var isOther: Bool {
-        if case .other? = editor.draft.auth { return true }
-        return false
+    private enum Kind: String, CaseIterable {
+        case inherit = "From collection", none = "None", bearer = "Bearer token", basic = "Basic", apiKey = "API key"
+        case oauth2 = "OAuth 2.0", awsv4 = "AWS Signature", digest = "Digest", other = "Set in another app"
     }
 
     private var kind: Binding<Kind> {
@@ -630,7 +628,13 @@ struct AuthEditor: View {
             case .bearer?: .bearer
             case .basic?: .basic
             case .apiKey?: .apiKey
-            case .other?: .other
+            case let .other(type, _)?:
+                switch type {
+                case "oauth2": .oauth2
+                case "awsv4": .awsv4
+                case "digest": .digest
+                default: .other
+                }
             }
         }, set: { k in
             switch k {
@@ -640,14 +644,18 @@ struct AuthEditor: View {
             case .bearer: editor.draft.auth = .bearer(token: "")
             case .basic: editor.draft.auth = .basic(username: "", password: "")
             case .apiKey: editor.draft.auth = .apiKey(key: "X-API-Key", value: "", inQuery: false)
+            case .oauth2: editor.draft.auth = .other(type: "oauth2", fields: ["grant": .string("client_credentials")])
+            case .awsv4: editor.draft.auth = .other(type: "awsv4", fields: [:])
+            case .digest: editor.draft.auth = .other(type: "digest", fields: [:])
             }
         })
     }
 
     var body: some View {
+        let shown = kind.wrappedValue
         VStack(alignment: .leading, spacing: 12) {
             Picker("Auth", selection: kind) {
-                ForEach(Kind.allCases.filter { $0 != .other || isOther }, id: \.self) { Text($0.rawValue).tag($0) }
+                ForEach(Kind.allCases.filter { $0 != .other || shown == .other }, id: \.self) { Text($0.rawValue).tag($0) }
             }
             .pickerStyle(.menu)
             .accessibilityIdentifier("auth-kind")
@@ -657,8 +665,13 @@ struct AuthEditor: View {
                     note(collectionAuth.map { "The collection's \($0.kind == "apikey" ? "API key" : $0.kind) auth applies." } ?? "The collection has no auth.")
                 case .none?:
                     note("No Authorization is sent, even when the collection has auth.")
-                case let .other(type, _)?:
-                    note("\(type) auth, set in the web or desktop app. It is kept as it is; this version sends the request without it.")
+                case let .other(type, fields)?:
+                    switch type {
+                    case "oauth2": oauth2(fields)
+                    case "awsv4": rows(type, fields, [("accessKey", "Access key", false), ("secretKey", "Secret key", true), ("sessionToken", "Session token", true), ("region", "Region", false), ("service", "Service", false)])
+                    case "digest": rows(type, fields, [("username", "Username", false), ("password", "Password", true)])
+                    default: note("\(type) auth, set in another app. It is kept as it is; this version can't send it.")
+                    }
                 case let .bearer(token)?:
                     field("Token", token) { editor.draft.auth = .bearer(token: $0) }
                 case let .basic(u, p)?:
@@ -681,6 +694,46 @@ struct AuthEditor: View {
             .card(radius: 18)
             Text("Values can use ${variables}; keep tokens in an environment secret.").font(Typo.caption).foregroundStyle(Theme.textMuted)
         }
+    }
+
+    private func set(_ type: String, _ fields: [String: JSONAny], _ key: String, _ value: String) {
+        var f = fields
+        f[key] = value.isEmpty ? nil : .string(value)
+        editor.draft.auth = .other(type: type, fields: f)
+    }
+
+    private func rows(_ type: String, _ fields: [String: JSONAny], _ list: [(key: String, label: String, secure: Bool)]) -> some View {
+        ForEach(Array(list.enumerated()), id: \.element.key) { i, r in
+            if i > 0 { Divider().overlay(Theme.separator) }
+            field(r.label, fields[r.key]?.string ?? "", secure: r.secure) { set(type, fields, r.key, $0) }
+        }
+    }
+
+    @ViewBuilder
+    private func oauth2(_ fields: [String: JSONAny]) -> some View {
+        let grant = fields["grant"]?.string ?? "client_credentials"
+        Picker("Grant", selection: Binding(get: { grant }, set: { set("oauth2", fields, "grant", $0) })) {
+            Text("Client credentials").tag("client_credentials")
+            Text("Password").tag("password")
+            Text("Authorization code").tag("authorization_code")
+        }
+        .pickerStyle(.menu)
+        .frame(maxWidth: .infinity, minHeight: 48, alignment: .leading)
+        .padding(.horizontal, 2)
+        .accessibilityIdentifier("auth-grant")
+        Divider().overlay(Theme.separator)
+        if grant == "authorization_code" {
+            rows("oauth2", fields, [("authUrl", "Sign-in URL", false), ("tokenUrl", "Token URL", false), ("clientId", "Client id", false), ("clientSecret", "Client secret", true), ("scope", "Scope", false), ("redirectUri", "Redirect", false)])
+            note("Send opens the sign-in page; the answer comes back on http://127.0.0.1 (the redirect's port, when it names one). The token stays in memory until it expires.")
+        } else if grant == "password" {
+            rows("oauth2", fields, [("tokenUrl", "Token URL", false), ("clientId", "Client id", false), ("clientSecret", "Client secret", true), ("scope", "Scope", false), ("username", "Username", false), ("password", "Password", true)])
+        } else {
+            rows("oauth2", fields, [("tokenUrl", "Token URL", false), ("clientId", "Client id", false), ("clientSecret", "Client secret", true), ("scope", "Scope", false)])
+        }
+        Toggle("Client in the body", isOn: Binding(get: { fields["clientAuth"]?.string == "body" }, set: { set("oauth2", fields, "clientAuth", $0 ? "body" : "") }))
+            .font(Typo.caption)
+            .padding(.horizontal, 14)
+            .frame(minHeight: 48)
     }
 
     private func note(_ s: String) -> some View {

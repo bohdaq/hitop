@@ -58,7 +58,9 @@ struct HITOPApp: App {
             runStore = FileRunStore(root: root)
         } else {
             let root = FileLibraryStore.defaultRoot()
-            model = AppModel(store: FileLibraryStore(root: root), vault: KeychainVault())
+            var sender = Sender()
+            sender.browser = SystemOAuthBrowser()
+            model = AppModel(store: FileLibraryStore(root: root), vault: KeychainVault(), sender: sender)
             model.load(legacyDirectory: LegacyImport.defaultDirectory())
             cloud = HitopCloud(transport: URLSessionCloudTransport(), credentials: CloudCredentials(store: platformSecretStore()),
                                settingsStore: FileCloudSettingsStore(root: root), keyMaker: X25519KeyMaker(), deviceName: DeviceInfo.name)

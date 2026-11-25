@@ -72,6 +72,8 @@ struct Sender: Sendable {
     /// cookies). UI tests put `StubURLProtocol` into it.
     var configuration: @Sendable () -> URLSessionConfiguration
     var timeout: TimeInterval = 60
+    /// Where a person signs in for OAuth 2.0 (the editor's Send only).
+    var browser: OAuthBrowser?
 
     init(configuration: @escaping @Sendable () -> URLSessionConfiguration = Sender.defaultConfiguration) {
         self.configuration = configuration
@@ -93,7 +95,7 @@ struct Sender: Sendable {
         case let .bearer(t)?: .bearer(token: t)
         case let .basic(u, p)?: .basic(username: u, password: p)
         case let .apiKey(k, v, q)?: .apiKey(key: k, value: v, location: q ? .query : .header)
-        // OAuth 2, AWS Signature, Digest... (set in the web or desktop app): not sent from here yet.
+        // OAuth 2, AWS Signature, Digest: `ExtraAuth`.
         case .other?: Auth.none
         }
     }
@@ -135,7 +137,8 @@ struct Sender: Sendable {
             globals[k] = v
             globalSecrets.insert(k, v, origin: .keychain)
         }
-        let options = RunOptions(timeout: timeout, overrides: context.scriptSet, globals: globals, globalSecrets: globalSecrets)
+        var options = RunOptions(timeout: timeout, overrides: context.scriptSet, globals: globals, globalSecrets: globalSecrets)
+        ExtraAuth([request], collectionAuth: collection?.auth, browser: stream == nil ? nil : browser).install(&options)
         let runner = Runner(engine: defaultScriptEngine, makeClient: { client })
         let steps = await runner.run(kitCollection, environment: env, secrets: secrets, options: options)
         guard let step = steps.first else {

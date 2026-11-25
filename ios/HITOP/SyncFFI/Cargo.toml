@@ -27,6 +27,7 @@ serde_json = "1"
 base64 = "0.22"
 # Collection folder zips (src/zip.rs): DEFLATE.
 miniz_oxide = "0.8"
+anyhow = "1"
 # gRPC (feature `grpc`, I4): hitop-core's client (tonic + prost-reflect, rustls with ring), each
 # call on its own current-thread runtime (src/grpc.rs).
 tokio = { version = "1.54.1", default-features = false, features = ["rt", "sync", "macros"], optional = true }

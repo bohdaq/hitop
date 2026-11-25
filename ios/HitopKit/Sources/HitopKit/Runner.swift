@@ -58,6 +58,11 @@ public struct RunOptions: Sendable {
     public var globals: [String: String] = [:]
     /// The globals' secrets, for masking.
     public var globalSecrets = Secrets()
+    /// Auth this package doesn't have (OAuth 2.0, AWS Signature): the request as it goes out, with the
+    /// variables it sees, after scripts, auth and bodies.
+    public var authorize: (@Sendable (Request, OutgoingRequest, [String: String]) async throws -> OutgoingRequest)?
+    /// A second try after an answer (Digest's challenge); nil keeps the answer.
+    public var retry: (@Sendable (Request, OutgoingRequest, HTTPResponse, [String: String]) async throws -> OutgoingRequest?)?
 
     public init(stopOnFail: Bool = false, timeout: TimeInterval? = nil, overrides: [String: String] = [:], globals: [String: String] = [:], globalSecrets: Secrets = Secrets()) {
         self.stopOnFail = stopOnFail
@@ -112,7 +117,14 @@ public struct Runner: Sendable {
                     if let ref = SecretManagerReference.find(part) { throw SecretManagerReference(reference: ref) }
                 }
                 do {
-                    let response = try await client.send(OutgoingRequest(method: request.method, url: pre.url, headers: headers, body: body), timeout: options.timeout)
+                    var out = OutgoingRequest(method: request.method, url: pre.url, headers: headers, body: body)
+                    if let authorize = options.authorize { out = try await authorize(request, out, variables) }
+                    var response = try await client.send(out, timeout: options.timeout)
+                    if let again = try await options.retry?(request, out, response, variables) {
+                        out = again
+                        response = try await client.send(out, timeout: options.timeout)
+                    }
+                    let headers = out.headers
                     step.response = response
                     let post = request.postRequestScript.trimmingCharacters(in: .whitespacesAndNewlines)
                     if !post.isEmpty, let engine {

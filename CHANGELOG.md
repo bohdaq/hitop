@@ -21,6 +21,8 @@ Releases before 1.2 are listed in ROADMAP.md (section 5) and on the GitHub Relea
 
 ### iOS
 
+- OAuth 2.0 (client credentials, password, authorization code with PKCE and refresh), AWS Signature and Digest. Before, a request with one of
+  these was sent without it; a preset the app doesn't know now stops the request and says so.
 - Import (Postman, Insomnia, Bruno, HAR, OpenAPI, HITOP files, a collection folder's zip; pasted, picked or opened from another app) and export.
 
 ### Web and desktop
