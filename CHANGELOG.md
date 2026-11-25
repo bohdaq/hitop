@@ -24,6 +24,11 @@ Releases before 1.2 are listed in ROADMAP.md (section 5) and on the GitHub Relea
 
 - OAuth 2.0 (client credentials, password, authorization code with PKCE and refresh), AWS Signature and Digest. Before, a request with one of
   these was sent without it; a preset the app doesn't know now stops the request and says so.
+- HITOP in the share sheet (text, an address, a file), HITOP Cloud syncing in the background, and collection runs on a schedule with a
+  notification when one fails. iOS decides when background work happens.
+- **Security:** when the list of shared collections on the device can't be read, nothing is synced. Before, an end-to-end encrypted collection
+  could have been taken for an ordinary one and uploaded to the library, which the server can read. Secret values the Keychain can't show
+  at that moment are no longer pushed as deleted.
 - Settings: the time limit of a request, certificate authorities to trust for requests, and client certificates (.p12), each for one server.
 - File uploads: multipart rows take a file (a copy up to 50 MB stays on the device and goes out only with that request).
 - Compare two responses (the current one, saved examples, earlier answers), Undo after a delete or a move, and runs over a CSV or JSON data file.

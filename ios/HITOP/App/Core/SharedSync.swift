@@ -43,8 +43,60 @@ struct SharedState: Codable, Hashable, Sendable {
     var shareVersions: [String: [String: Int]] = [:]
 }
 
+// A key another version didn't write takes its default; a wrong type is a damaged file.
+extension SharedLink {
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        self.init(workspace: try c.decode(String.self, forKey: .workspace), role: try c.decode(String.self, forKey: .role),
+                  org: try c.decodeIfPresent(String.self, forKey: .org), orgName: try c.decodeIfPresent(String.self, forKey: .orgName),
+                  orgPersonal: try c.decodeIfPresent(Bool.self, forKey: .orgPersonal) ?? false, gone: try c.decodeIfPresent(Bool.self, forKey: .gone) ?? false)
+    }
+}
+
+extension SharedState {
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        self.init(account: try c.decodeIfPresent(String.self, forKey: .account) ?? "",
+                  pins: try c.decodeIfPresent([String: String].self, forKey: .pins) ?? [:],
+                  memory: try c.decodeIfPresent([String: JSONAny].self, forKey: .memory) ?? [:],
+                  links: try c.decode([String: SharedLink].self, forKey: .links),
+                  states: try c.decodeIfPresent([String: JSONAny].self, forKey: .states) ?? [:],
+                  shareVersions: try c.decodeIfPresent([String: [String: Int]].self, forKey: .shareVersions) ?? [:])
+    }
+}
+
+/// A sync's own file is there but can't be used. Never taken as empty: without the list of shared
+/// collections an end-to-end encrypted one would look like any other, and go to the library,
+/// which the server can read.
+enum StateFileProblem: Error, Equatable {
+    /// Can't be opened now (the phone hasn't been unlocked since it started): later.
+    case unreadable
+    /// Holds something else.
+    case damaged
+
+    /// The file's value; nil when there is no file.
+    static func read<T: Decodable>(_ type: T.Type, _ file: URL) throws -> T? {
+        let data: Data
+        do {
+            data = try Data(contentsOf: file)
+        } catch {
+            if FileManager.default.fileExists(atPath: file.path) { throw StateFileProblem.unreadable }
+            return nil
+        }
+        do { return try JSONDecoder().decode(type, from: data) } catch { throw StateFileProblem.damaged }
+    }
+
+    static func setAside(_ file: URL) throws {
+        let stamp = Int(Date().timeIntervalSince1970 * 1000)
+        try FileManager.default.moveItem(at: file, to: file.appendingPathExtension("damaged-\(stamp)"))
+    }
+}
+
 protocol SharedSyncStore: Sendable {
-    func load() -> SharedState
+    /// Throws `StateFileProblem`.
+    func load() throws -> SharedState
+    /// A damaged file out of the way, kept beside.
+    func setAsideDamaged() throws
     func save(_ state: SharedState) throws
     func files(_ workspace: String) -> [String: String]
     func saveFiles(_ workspace: String, _ files: [String: String]) throws
@@ -57,10 +109,9 @@ struct FileSharedSyncStore: SharedSyncStore {
     private var stateFile: URL { root.appendingPathComponent("shared-sync.json") }
     private func filesURL(_ ws: String) -> URL { root.appendingPathComponent("shared").appendingPathComponent("\(ws).json") }
 
-    func load() -> SharedState {
-        guard let data = try? Data(contentsOf: stateFile) else { return SharedState() }
-        return (try? JSONDecoder().decode(SharedState.self, from: data)) ?? SharedState()
-    }
+    func load() throws -> SharedState { try StateFileProblem.read(SharedState.self, stateFile) ?? SharedState() }
+
+    func setAsideDamaged() throws { try StateFileProblem.setAside(stateFile) }
 
     func save(_ state: SharedState) throws {
         let e = JSONEncoder()
@@ -91,7 +142,8 @@ final class MemorySharedSyncStore: SharedSyncStore, @unchecked Sendable {
 
     init() {}
 
-    func load() -> SharedState { lock.lock(); defer { lock.unlock() }; return state }
+    func load() throws -> SharedState { lock.lock(); defer { lock.unlock() }; return state }
+    func setAsideDamaged() throws {}
     func save(_ s: SharedState) throws { lock.lock(); defer { lock.unlock() }; state = s }
     func files(_ ws: String) -> [String: String] { lock.lock(); defer { lock.unlock() }; return all[ws] ?? [:] }
     func saveFiles(_ ws: String, _ files: [String: String]) throws { lock.lock(); defer { lock.unlock() }; all[ws] = files }
@@ -244,15 +296,36 @@ final class SharedSync {
         self.cloud = cloud
         self.model = model
         self.store = store
-        state = store.load()
+        state = SharedState()
+        loadState()
         model.onSharedChange = { [weak self] id in self?.schedule(id) }
         model.onCollectionDeleted = { [weak self] id in self?.forget(id) }
         cloud.onAccountDeleted = { [weak self] a in self?.accountDeleted(a) }
+        model.reloadSharing = { [weak self] in self?.loadState() }
+        model.startSharingOver = { [weak self] in
+            guard let self, model.sharingProblem == .damaged else { return }
+            try store.setAsideDamaged()
+            loadState()
+            notices.insert(SharedNotice("The list of shared collections on this device was damaged", detail: "Their copies here are kept on this device only. Open them again under Shared with you."), at: 0)
+        }
         applyRoles()
+    }
+
+    private func loadState() {
+        do {
+            state = try store.load()
+            model.sharingProblem = nil
+        } catch {
+            state = SharedState()
+            model.sharingProblem = error as? StateFileProblem ?? .unreadable
+        }
+        applyRoles()
+        conflicts = [:]
         for (id, l) in state.links { if let cid = UInt64(id) { conflicts[cid] = conflictList(cid, l) } }
     }
 
     private func save() {
+        guard model.sharingProblem == nil else { return }
         try? store.save(state)
     }
 
@@ -296,7 +369,8 @@ final class SharedSync {
     /// device's own key is pinned (it authenticates the wraps it makes and opens its own).
     @discardableResult
     func checkAccount() -> Bool {
-        guard let a = cloud.account, let secret = cloud.credentials.load(a.server)?.secret else { return false }
+        if model.sharingProblem == .unreadable { loadState() }
+        guard model.sharingProblem == nil, let a = cloud.account, let secret = cloud.credentials.load(a.server)?.secret else { return false }
         let key = cloud.accountKey
         if state.account != key {
             if !state.account.isEmpty {

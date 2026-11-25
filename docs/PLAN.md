@@ -50,7 +50,7 @@ Status is kept in the table at the end; choices made on the way go under "Decisi
 | C3 | on main 193350a (PRs 23-27, every check green): run cancel, OAuth windows, desktop streams and OAuth, dialogs, portal (deployed), store.js and hitop-app.js split |
 | C4 | in progress: CLI TLS options on main a9c1a18 (PR 28); gRPC client/bidi streaming on main 5801dac (PR 29); MCP gRPC tools and sync --json on main 2dc2dc8 (PR 30); OAuth refresh in core, Android and desktop (PR 31), desktop network settings and WebSocket/gRPC TLS tests built (CI pending); open: interactive streaming in the apps (they send all messages, then close), iOS TLS |
 | C5 | core, CLI, web, desktop and Android on main 17ab888 (PR 33); iOS in C6 |
-| C6 | in progress: import and export (PR 34), OAuth/SigV4/Digest (PR 35) on main; uploads, data files, compare/undo (PR 36) on main; settings and TLS built (CI pending); open: share extension, background sync, schedules, roles, comments, team environments, SSO |
+| C6 | in progress: import and export (PR 34), OAuth/SigV4/Digest (PR 35) on main; uploads, data files, compare/undo (PR 36) on main; settings and TLS (PR 37), share extension, background sync and schedules built (CI pending); open: roles, comments, team environments, SSO |
 | C7–C9 | not started |
 
 ## Decisions
@@ -69,3 +69,8 @@ Status is kept in the table at the end; choices made on the way go under "Decisi
 | 2026-11-25 | Insomnia, Bruno and HAR are turned into Postman's shape and go through its importer. | One importer and report for every app. Bruno's newer YAML layout (opencollection) is not read. |
 | 2026-11-25 | Bruno scripts are kept as comments; simple assertions become tests. | Its script API is not HITOP's; running it would fail every request. |
 | 2026-11-25 | Main b8a2300 (PR 34) was merged with a failed iOS check, against the rule: the merge command did not stop on it. Merges now go through a script that asks GitHub for every check run. | The failure was the new import UI test; fixed with PR 35. |
+- iOS schedules: BGTaskScheduler, so a run is "not before", often much later; a run known to take under 8 s also goes in the short refresh.
+  A run iOS stops is not recorded and counts as started (its requests aren't sent again at once). It never runs with another environment
+  or without secrets the Keychain can't show.
+- iOS share extension only puts the item in the app group (an extension can't open its app); the app shows it before anything is added.
+- A damaged list of shared collections is set aside only after every collection the library doesn't hold is marked "this device only".

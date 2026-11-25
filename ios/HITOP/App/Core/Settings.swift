@@ -30,6 +30,8 @@ struct AppSettings: Codable, Hashable, Sendable {
     var timeout = 60
     var authorities: [Authority] = []
     var clientCertificates: [ClientCertificate] = []
+    /// HITOP Cloud also syncs while the app is closed.
+    var backgroundSync = true
 
     static let timeouts = [10, 30, 60, 120, 300]
 
@@ -40,6 +42,7 @@ struct AppSettings: Codable, Hashable, Sendable {
         timeout = min(600, max(1, c.value("timeout", 60)))
         authorities = c.value("authorities", [])
         clientCertificates = c.value("clientCertificates", [])
+        backgroundSync = c.value("backgroundSync", true)
     }
 
     /// A host as people type it ("https://API.example:8443/x" → "api.example").

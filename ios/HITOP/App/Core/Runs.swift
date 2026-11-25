@@ -275,6 +275,7 @@ extension Sender {
             options.overrides = row ?? [:]
             let steps = await runner.run(kit, environment: env, secrets: secrets, options: options) { onStep($0) }
             builder.iteration(data: row, steps: steps)
+            if Task.isCancelled { break }
             if bail && steps.contains(where: { !$0.passed }) {
                 bailed = steps.count < runnable || round < rounds - 1
                 break
@@ -289,6 +290,8 @@ enum RunEvent: Sendable {
     case started(ActiveRun)
     case progress(ActiveRun)
     case finished(ActiveRun, RunRecord)
+    /// Cancelled before its end: no record.
+    case stopped(ActiveRun)
 }
 
 /// The run going on now.
@@ -362,6 +365,28 @@ final class RunCenter {
             continuation.finish()
             return report
         }
+        // A cancelled run (iOS took a background run's time back) ends after the request in flight.
+        // Not the stream's loop itself: what was done is still counted.
+        let record = await withTaskCancellationHandler {
+            await follow(stream, &run)
+            return RunRecord(collectionID: collectionID, report: await task.value)
+        } onCancel: { task.cancel() }
+        if Task.isCancelled {
+            active = nil
+            onEvent?(.stopped(run))
+            return nil
+        }
+        run.progress.elapsedMs = record.durationMs
+        runs.insert(record, at: 0)
+        if runs.count > FileRunStore.limit { runs.removeLast(runs.count - FileRunStore.limit) }
+        persist()
+        lastFinished = record
+        active = nil
+        onEvent?(.finished(run, record))
+        return record
+    }
+
+    private func follow(_ stream: AsyncStream<StepResult>, _ run: inout ActiveRun) async {
         for await step in stream {
             run.progress.done += 1
             if step.passed { run.progress.passed += 1 } else { run.progress.failed += 1 }
@@ -372,16 +397,6 @@ final class RunCenter {
             active = run
             onEvent?(.progress(run))
         }
-        let report = await task.value
-        let record = RunRecord(collectionID: collectionID, report: report)
-        run.progress.elapsedMs = report.durationMs
-        runs.insert(record, at: 0)
-        if runs.count > FileRunStore.limit { runs.removeLast(runs.count - FileRunStore.limit) }
-        persist()
-        lastFinished = record
-        active = nil
-        onEvent?(.finished(run, record))
-        return record
     }
 
     func delete(_ id: UInt64) {

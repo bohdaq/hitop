@@ -264,6 +264,7 @@ struct RunSheet: View {
             .padding(.horizontal, 14)
             .card(radius: 18)
             if let dataError { Text(dataError).font(Typo.caption).foregroundStyle(Theme.danger).accessibilityIdentifier("run-data-error") }
+            ScheduleCard(collectionID: target.id, environmentID: settings.environmentID)
             if let last = runs.lastRun(of: target.id) {
                 NavigationLink(value: RunRoute.report(last.id)) {
                     HStack { Text("Last run").foregroundStyle(Theme.textSoft); Spacer(); RunRow(record: last) }
@@ -589,5 +590,56 @@ struct RunReportView: View {
                 .padding(.bottom, 6)
             }
         }
+    }
+}
+
+/// Runs on a schedule, while HITOP is closed.
+struct ScheduleCard: View {
+    var collectionID: UInt64
+    var environmentID: String?
+    @Environment(AppModel.self) private var model
+    @Environment(Schedules.self) private var schedules
+    @State private var failure: String?
+    @State private var silent = false
+
+    private var mine: RunSchedule? { schedules.schedule(of: collectionID) }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 4) {
+            Picker(selection: Binding(get: { mine?.everyMinutes ?? 0 }, set: choose)) {
+                Text("Off").tag(0)
+                ForEach(RunSchedule.choices, id: \.minutes) { c in Text("Every \(c.name)").tag(c.minutes) }
+            } label: {
+                Label("Run on a schedule", systemImage: "calendar.badge.clock").foregroundStyle(Theme.text)
+            }
+            .frame(minHeight: 48)
+            .accessibilityIdentifier("run-schedule")
+            Text(words).font(Typo.caption).foregroundStyle(Theme.textMuted).accessibilityIdentifier("run-schedule-text")
+            if let note = mine?.note { Text(note).font(Typo.caption).foregroundStyle(Theme.warning) }
+            if silent && mine != nil { Text("Notifications are off for HITOP: failed runs only show in Runs.").font(Typo.caption).foregroundStyle(Theme.warning) }
+            if let failure { Text(failure).font(Typo.caption).foregroundStyle(Theme.danger) }
+        }
+        .font(Typo.row)
+        .tint(Theme.success)
+        .padding(.horizontal, 14)
+        .padding(.bottom, 12)
+        .card(radius: 18)
+    }
+
+    private var words: String {
+        guard let mine else { return "Runs in the background while HITOP is closed, and tells you when one fails." }
+        let env = mine.environmentID.map { id in model.environments.first { $0.id == id }?.name ?? "a deleted environment" } ?? "no environment"
+        return "With \(env). Not before the time is up; iOS decides when, often much later."
+    }
+
+    private func choose(_ minutes: Int) {
+        failure = nil
+        do {
+            try schedules.set(collectionID, environmentID: environmentID, everyMinutes: minutes == 0 ? nil : minutes)
+        } catch {
+            failure = "The schedule couldn't be saved: \(error.localizedDescription)"
+            return
+        }
+        if minutes > 0 { Task { silent = !(await Background.askToNotify()) } }
     }
 }

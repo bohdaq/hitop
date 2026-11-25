@@ -7,6 +7,7 @@ enum AppTab: Hashable { case collections, history, environments, runs, search }
 struct ImportTarget: Identifiable, Hashable, Sendable {
     var id = UUID()
     var file: URL?
+    var text: String?
 }
 
 /// The request whose response is being explained.
@@ -46,6 +47,8 @@ final class Navigator {
 
     /// I5: "New request from text or curl" (Collections +, the iPad sidebar, ⇧⌘N).
     var showRequestFromText = false
+    /// What it starts with (shared text).
+    var requestText = ""
     /// The Import sheet: picked from a menu (nil file), or a file another app handed over.
     var importing: ImportTarget?
     /// I5: the "Explain response" sheet of an open request (the response's button; ⇧⌘E on iPad).
@@ -96,6 +99,24 @@ final class Navigator {
     /// Opens the run sheet of a collection (`showLast`: on its last run).
     func run(collection id: UInt64, showLast: Bool = false) {
         runSheet = RunTarget(id: id, showLast: showLast)
+    }
+
+    /// What another app shared: a file or a document to import, a curl command, or an address, which
+    /// becomes a request (nothing is sent). Anything else starts as a request's text.
+    func receive(_ item: SharedInbox.Item, _ model: AppModel) {
+        switch item {
+        case let .file(url): importing = ImportTarget(file: url)
+        case let .text(text):
+            let t = text.trimmingCharacters(in: .whitespacesAndNewlines)
+            if !t.contains(where: \.isWhitespace), let u = URL(string: t), u.scheme == "https" || u.scheme == "http", u.host != nil {
+                open(request: model.newRequest(from: SavedRequest(name: AutoName.name(method: "GET", url: t), url: t, method: "GET")).id)
+            } else if t.hasPrefix("{") || t.hasPrefix("[") || t.hasPrefix("openapi:") || t.hasPrefix("swagger:") {
+                importing = ImportTarget(text: t)
+            } else {
+                requestText = t
+                showRequestFromText = true
+            }
+        }
     }
 
     /// hitop://runs (the failing widget) and hitop://run/<collection id> (the last-run widget, the
