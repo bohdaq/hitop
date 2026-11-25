@@ -59,6 +59,8 @@ Releases before 1.2 are listed in ROADMAP.md (section 5) and on the GitHub Relea
   WebAssembly in a worker, and can't reach the page, what it stores (session, device key) or the network; one that runs over 30 s is stopped.
   Before, a script in a collection someone shared or you imported could read all of that when you sent the request. Scripts that used browser
   APIs (`fetch`, `document`, timers) no longer find them, as in the CLI and desktop; an error names what failed, not its line.
+- OpenAPI editor (command palette, Import dialog): write a spec or open one from a file or URL, checked as you type with the rules of
+  `hitop openapi lint`; import it as a collection, update a collection from it, save it as a file. The text stays in the browser or app.
 - **Security, web app:** signed in, a page load could upload an end-to-end encrypted shared collection to your own library, which the server
   can read, before the app knew it was shared (and then delete it there). Nothing is saved to the library now until shared collections are
   open, and one that was shared never goes there by itself, also when its files or the list of shared collections are damaged.

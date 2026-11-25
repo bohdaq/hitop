@@ -51,7 +51,7 @@ Status is kept in the table at the end; choices made on the way go under "Decisi
 | C4 | done, last part on main edb2044 (PR 41): CLI TLS options on main a9c1a18 (PR 28); gRPC client/bidi streaming on main 5801dac (PR 29); MCP gRPC tools and sync --json on main 2dc2dc8 (PR 30); OAuth refresh in core, Android and desktop (PR 31), desktop network settings and WebSocket/gRPC TLS tests built (CI pending); gRPC messages one at a time in desktop, web (needs the newer hitop-server), iOS and Android built (CI pending) |
 | C5 | core, CLI, web, desktop and Android on main 17ab888 (PR 33); iOS in C6 |
 | C6 | on main dd7ff78 (PR 39, every check green on that commit; the run on main then failed one flaky Android UI test, see Open problems): import and export (PR 34), OAuth/SigV4/Digest (PR 35) on main; uploads, data files, compare/undo (PR 36) on main; settings and TLS (PR 37), share extension, background sync and schedules (PR 38), roles, comments, team environments, SSO built |
-| Security | PR 43 on main 3c22426: web scripts isolated from the page (wasm worker). Branch hitop-script-names: the guide's script names everywhere, the Chrome extension off its sandboxed page, the plugin threat model. Web deploy waits for the owner's OK |
+| Security | Web scripts isolated from the page (PR 43), the guide's script names everywhere and the Chrome extension's scripts in the worker (PR 44): on main fbb2ffc, web app deployed 2026-11-26 00:51 UTC; the extensions need the owner's release |
 | C7–C9 | C7 in PR 42 (OpenAPI lint and editor); plugins: threat model docs/PLUGINS_THREAT_MODEL.md, code next; C8–C9 not started |
 
 ## Decisions

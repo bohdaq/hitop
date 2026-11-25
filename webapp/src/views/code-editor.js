@@ -1,7 +1,7 @@
 // A CodeMirror 6 editor for scripts and request bodies: syntax highlighting
 // on the site's colours, and syntax errors marked as you type. CodeMirror
 // itself (code-editor-lib.js) loads with the first editor shown.
-//   <hitop-code-editor language="javascript|json|graphql|text" label="..." .value=${...} @input=${...}>
+//   <hitop-code-editor language="javascript|json|graphql|yaml|text" label="..." .value=${...} @input=${...}>
 // `.schema` (graphql): a GraphQLSchema for completion and checks.
 // Fires `input` (bubbling) with `.value` set after every edit.
 import { LitElement, html } from "lit";
@@ -15,6 +15,8 @@ export class HitopCodeEditor extends LitElement {
     // UX2: name → {value, scope} | null; when set, ${variables} are marked and peekable.
     variables: { attribute: false },
     schema: { attribute: false },
+    // [{ line, severity, message }] marked on their lines (checks made outside the editor).
+    problems: { attribute: false },
   };
 
   constructor() {
@@ -79,6 +81,15 @@ export class HitopCodeEditor extends LitElement {
         ],
       }),
     });
+    if (this.problems) cm.markProblems(this.view, this.problems);
+  }
+
+  // The caret on a line (1-based), in view.
+  goToLine(n) {
+    if (!this.view) return;
+    const line = this.view.state.doc.line(Math.min(Math.max(1, n), this.view.state.doc.lines));
+    this.view.dispatch({ selection: { anchor: line.from }, effects: this.cm.EditorView.scrollIntoView(line.from, { y: "center" }) });
+    this.view.focus();
   }
 
   // The language's extensions; GraphQL loads its own module first.
@@ -103,6 +114,7 @@ export class HitopCodeEditor extends LitElement {
     if (changed.has("value") && this.value !== this.lastEmitted && this.value !== this.view.state.doc.toString()) {
       this.view.dispatch({ changes: { from: 0, to: this.view.state.doc.length, insert: this.value ?? "" } });
     }
+    if (changed.has("problems") && this.problems) this.cm.markProblems(this.view, this.problems);
   }
 
   focus() {

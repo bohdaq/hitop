@@ -518,7 +518,8 @@ export const DialogsPart = (Base) =>
             <lit-material-textarea id="json" variant="outlined" label="Collection JSON, OpenAPI spec or curl command" placeholder="Paste a HITOP, Postman, Insomnia, Bruno or HAR file, an OpenAPI spec, or a curl command" rows="10" required autofocus
               ?error=${Boolean(d.error)} error-text=${d.error ?? ""}></lit-material-textarea>
           </div>
-          <lit-material-button variant="text" class="dialog-link" @click=${() => this.openDialog("openapi-import")}>${icon("globe")} Load an OpenAPI spec from a URL</lit-material-button>`;
+          <lit-material-button variant="text" class="dialog-link" @click=${() => this.openDialog("openapi-import")}>${icon("globe")} Load an OpenAPI spec from a URL</lit-material-button>
+          <lit-material-button variant="text" class="dialog-link" @click=${() => (this.closeDialog(), this.go("openapi"))}>${icon("pencil-simple")} Write or check a spec in the OpenAPI editor</lit-material-button>`;
         footer = replace ? actions("Replace and import", true) : actions("Import");
         break;
       }

@@ -458,3 +458,11 @@ and on hitop.rws8.tech/cloud/healthz. -->
   (the server's own database, checked against the running process). Nothing was deleted, so no dump was taken. Postgres' counters show
   144 `request_history` rows deleted earlier; by what wasn't looked into.
 - Not touched: the existing dumps (`/root/pre-deploy-*`), which may hold copies until they expire after 35 days.
+
+## 2026-11-26 Web app: scripts isolated from the page (security)
+
+- Web app only, from fbb2ffc (PRs 43, 44; the owner's OK), 00:51 UTC; backup `/var/www/hitop-app.bak-20261126-005141`. Old assets kept; the
+  rest of /var/www/hitop checked untouched; every file live equals the build, which passed script-isolation, e2e, features, ux3, ux12, library
+  and shared-library. Live check in a browser: a script before reads `method` and `url`, a script after finds no `fetch`, `localStorage`,
+  `document` or `XMLHttpRequest`; no page errors.
+- Rollback (brings back scripts in the page): `sudo rsync -a --delete /var/www/hitop-app.bak-20261126-005141/ /var/www/hitop/app/`.

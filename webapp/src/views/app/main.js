@@ -26,6 +26,9 @@ export const MainPart = (Base) =>
     if (kind === "org") {
       return html`<hitop-org .store=${s} .version=${s.version} .app=${this}></hitop-org>`;
     }
+    if (kind === "openapi") {
+      return html`<hitop-openapi-editor .store=${s} .version=${s.version} .app=${this}></hitop-openapi-editor>`;
+    }
     if (kind === "settings") {
       return html`<hitop-app-settings .store=${s} .version=${s.version} .app=${this}></hitop-app-settings>`;
     }

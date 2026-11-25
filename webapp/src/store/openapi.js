@@ -23,6 +23,11 @@ export const OpenapiPart = (Base) =>
     return (await loadFormat()).isOpenapi(text);
   }
 
+  // A spec's problems (hitop-core's `openapi lint`): { problems, errors, warnings }.
+  async lintOpenapi(text) {
+    return (await loadFormat()).lintOpenapi(text);
+  }
+
   // Adds an OpenAPI spec (text, or fetched from `url`) as a new collection,
   // through hitop-core's importer (hitop-wasm), as `hitop import openapi`
   // does. Returns the report: { name, mapped, skipped, warnings }.

@@ -16,6 +16,7 @@ import "./request-view.js";
 import "./collection-views.js";
 import "./settings-view.js";
 import "./history-view.js";
+import "./openapi-editor.js";
 import "./github-view.js";
 import "./limit-note.js";
 import "./org-view.js";

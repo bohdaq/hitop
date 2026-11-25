@@ -6,7 +6,8 @@ import { defaultKeymap, history, historyKeymap, indentWithTab } from "@codemirro
 import { HighlightStyle, bracketMatching, indentOnInput, syntaxHighlighting, syntaxTree } from "@codemirror/language";
 import { javascript } from "@codemirror/lang-javascript";
 import { json, jsonParseLinter } from "@codemirror/lang-json";
-import { linter, lintGutter } from "@codemirror/lint";
+import { yaml } from "@codemirror/lang-yaml";
+import { linter, lintGutter, setDiagnostics } from "@codemirror/lint";
 import { tags as t } from "@lezer/highlight";
 
 // Colours from theme.css, so light and dark both work.
@@ -63,9 +64,23 @@ export function languageExtensions(language) {
     const jsonLinter = linter((view) => (view.state.doc.length ? jsonParseLinter()(view) : []));
     return [json(), jsonLinter, lintGutter()];
   }
+  if (language === "yaml") return [yaml(), lintGutter()];
   return [];
 }
 
+// Problems found outside the editor ([{ line, severity, message }]), marked on their lines.
+export function markProblems(view, problems) {
+  const doc = view.state.doc;
+  const marks = problems
+    .filter((p) => p.line >= 1 && p.line <= doc.lines)
+    .map((p) => {
+      const line = doc.line(p.line);
+      const from = line.from + (line.text.length - line.text.trimStart().length);
+      return { from, to: line.to, severity: p.severity, message: p.message };
+    })
+    .sort((a, b) => a.from - b.from);
+  view.dispatch(setDiagnostics(view.state, marks));
+}
 
 // UX2: ${variables} in a body, marked as the URL field marks them (amber, red and dashed when nothing
 // defines one); hovering one shows its value and where it comes from. `resolve(name)` →

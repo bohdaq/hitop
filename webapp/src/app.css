@@ -502,6 +502,22 @@ lit-material-code-block::part(pre) { max-height: 60vh; overflow: auto; font-fami
 .history-item .method { font-family: var(--font-mono); font-size: var(--text-xs); line-height: var(--leading-xs); font-weight: 600; }
 .history-url { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: var(--text-sm); line-height: var(--leading-sm); }
 .history-item time { font-size: var(--text-xs); line-height: var(--leading-xs); color: var(--md-sys-color-on-surface-variant); }
+/* OpenAPI editor (views/openapi-editor.js) */
+.openapi-url { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-100); }
+.openapi-url lit-material-text-field { flex: 1 1 18rem; min-width: 0; }
+.openapi-sync { display: inline-flex; flex-wrap: wrap; align-items: center; gap: var(--space-100); font-size: var(--text-sm); }
+.openapi-panes { display: grid; grid-template-columns: minmax(0, 1fr); gap: var(--space-200); align-items: start; }
+@media (min-width: 1100px) { .openapi-panes { grid-template-columns: minmax(0, 2fr) minmax(16rem, 1fr); } }
+.openapi-check h2 { margin: 0; font-size: var(--text-md, 1rem); }
+.openapi-count { margin: var(--space-50) 0; color: var(--md-sys-color-on-surface-variant); }
+.openapi-problems { display: grid; gap: var(--space-50); max-height: 60vh; margin: 0; padding: 0; overflow: auto; list-style: none; }
+.openapi-problems button { display: grid; grid-template-columns: auto minmax(0, 1fr); gap: var(--space-25) var(--space-100); width: 100%; padding: var(--space-75); border: 0; border-radius: var(--md-sys-shape-corner-small); background: transparent; color: inherit; font: inherit; text-align: start; cursor: pointer; }
+.openapi-problems button:disabled { cursor: default; }
+.openapi-problems button:not(:disabled):hover, .openapi-problems button:focus-visible { background: var(--md-sys-color-surface-container-high); }
+.openapi-problems .hint { grid-column: 2; }
+.openapi-problem-text { overflow-wrap: anywhere; }
+.openapi-problems [data-severity="error"] button > :first-child { color: var(--md-sys-color-error); }
+
 /* History page (views/history-view.js): the page scrolls, not the list. */
 .history-page .history-list { max-height: none; overflow: visible; }
 .history-row { display: flex; align-items: center; gap: var(--space-50); }

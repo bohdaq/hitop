@@ -31,6 +31,7 @@ export function actions(app, shortcuts = {}) {
     ["code", "Copy as code (curl, fetch, Python…)", () => app.openDialog("code", { lang: "curl", showSecrets: false }), { keywords: ["snippet", "curl"], disabled: !onRequest || !s.tab?.url }],
     ["compare", "Compare responses", () => app.openDialog("compare"), { keywords: ["diff"], disabled: !onRequest }],
     ["import", "Import (Postman, Insomnia, Bruno, HAR, OpenAPI, HITOP)", () => app.openDialog("import"), { keywords: ["postman", "openapi"] }],
+    ["openapi-editor", "OpenAPI editor", () => app.go("openapi"), { keywords: ["spec", "lint", "swagger", "yaml"] }],
     ["export", "Export collections", () => app.openDialog("export") ],
     ["environments", "Manage environments", () => app.go("environments"), { keywords: ["variables", "secrets"] }],
     ["history", "Open history", () => app.go("history") ],

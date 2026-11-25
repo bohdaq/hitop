@@ -191,6 +191,52 @@ function api() {
   const run = await p.locator('.run').innerText();
   check(`${TAURI ? '[tauri] ' : ''}run sends the synced URL`, Boolean(listed), JSON.stringify(hits) + ' ' + run.replace(/\n/g, ' | ').slice(0, 400));
 
+  // 7. The OpenAPI editor: checked as you type, a problem leads to its line, kept over a reload,
+  // an earlier text can come back, imported and synced.
+  await p.keyboard.press('Control+k');
+  await p.keyboard.type('OpenAPI editor');
+  await settle(p);
+  await p.keyboard.press('Enter');
+  const ed = p.locator('hitop-openapi-editor');
+  await ed.getByRole('button', { name: 'Start from an example' }).click();
+  const count = ed.locator('.openapi-count');
+  const counted = (text) => count.filter({ hasText: text }).waitFor({ timeout: 10000 }).then(() => true, () => false);
+  check('editor: the example has no problems', (await counted('0 errors, 0 warnings')) && (await ed.innerText()).includes('No problems found.'), await ed.innerText());
+  await ed.locator('.cm-content').fill('openapi: 3.0.3\ninfo: {title: Ed, version: "1"}\npaths:\n  /a/{id}:\n    get:\n      operationId: a\n      summary: A\n      responses: {"200": {description: ok}}\n');
+  check('editor: problems as you type', await counted('1 error, 0 warnings'), await count.innerText());
+  const item = ed.locator('.openapi-problems li button');
+  check('editor: the problem names its line and rule', /path parameter id is not declared/.test(await item.innerText()) && /line 5 · path-parameter/.test(await item.innerText()), await item.innerText());
+  check('editor: the line is marked', (await ed.locator('.cm-lintRange-error, .cm-lint-marker-error').count()) > 0, '');
+  await item.click();
+  check('editor: the problem leads to its line', (await ed.locator('.cm-activeLine').innerText()).trim() === 'get:', await ed.locator('.cm-activeLine').innerText());
+  await p.reload({ waitUntil: 'networkidle' });
+  await p.keyboard.press('Control+k');
+  await p.keyboard.type('OpenAPI editor');
+  await settle(p);
+  await p.keyboard.press('Enter');
+  check('editor: the text is kept over a reload', (await counted('1 error, 0 warnings')) && (await ed.locator('.cm-content').innerText()).includes('title: Ed'), '');
+  await ed.locator('#openapi-url').evaluate((el, url) => (el.value = url), `${base}/openapi.yaml`);
+  await ed.getByRole('button', { name: 'Load', exact: true }).click();
+  await ed.locator('.cm-content', { hasText: 'title: Shop' }).waitFor({ timeout: 15000 });
+  await p.getByRole('button', { name: 'Undo' }).click();
+  await ed.locator('.cm-content', { hasText: 'title: Ed' }).waitFor({ timeout: 5000 });
+  check('editor: the earlier text comes back with Undo', true);
+  await ed.locator('select').selectOption({ label: 'Shop' });
+  await dialog.getByRole('button', { name: 'Preview' }).click();
+  await p.locator('#dialog .openapi-summary').waitFor({ timeout: 15000 });
+  check('editor: sync previews this text', (await dialog.innerText()).includes('GET /a/{id}'), (await dialog.innerText()).slice(0, 300));
+  await p.keyboard.press('Escape');
+  await settle(p);
+  await ed.getByRole('button', { name: 'Import as a collection' }).click();
+  await p.locator('#dialog .dialog-note', { hasText: 'Ed is imported from OpenAPI' }).waitFor({ timeout: 15000 });
+  await dialog.getByRole('button', { name: 'Done' }).click();
+  let saved = [];
+  for (let i = 0; i < 50 && !saved.includes('Ed'); i++) {
+    await p.waitForTimeout(100);
+    saved = (await h.stored.collections()).map((c) => c.name);
+  }
+  check('editor: imports as a collection', saved.includes('Ed'), saved.join(', '));
+
   check('no page errors', errors.length === 0, errors.join(' || '));
   server.close();
   await h.finish();
