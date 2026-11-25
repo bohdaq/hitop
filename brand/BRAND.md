@@ -14,13 +14,9 @@ Owner decision, 2026-11-01.
 - **`hitop`**, lowercase in code style, is the command and every identifier: the binary, crate and
   npm package names, `ghcr.io/bohdaq/hitop`, `bohdaq/hitop-action`, storage directories, keychain
   service, file names. Identifiers never change: bundle id `tech.rws8.hitop` (desktop),
-  `hitop.rws8.tech.HiTop` (iOS app), `hitop.rws8.tech.HitopCompanion` (+ `.Widget`), the extension
-  ids, Xcode target and folder names (`ios/HiTop`, `HiTopApp`). Renaming them breaks installs and
+  `hitop.rws8.tech.HiTop` (iOS app), the extension
+  ids, Xcode target and folder names (`ios/HITOP`). Renaming them breaks installs and
   store listings.
-- **HITOP Runs**: the iOS companion (`ios/HitopCompanion`) and its widget, while the companion is a
-  separate App Store app (its bundle id today). Two home-screen icons both labelled "HITOP" would be
-  indistinguishable. If the owner ships it as the next version of the existing iOS app instead
-  (ROADMAP T26 handoff), its display name becomes "HITOP".
 - The App Store listings are still called "HiTop API Client" (Mac) and "HiTop HTTP Client" (iOS)
   until the owner renames them in App Store Connect (ROADMAP section 6).
 
@@ -65,7 +61,7 @@ Not written by default:
 - `desktop/src-tauri/icons/` (icns, ico, Windows Store and mobile sets): made by Tauri's generator
   from the same master; `brand/export.sh --tauri` runs `npx @tauri-apps/cli icon brand/png/logo-1024.png`.
   Checked 2026-11-01: they match a fresh render (< 0.1 % of pixels differ, anti-aliasing only).
-- iOS `AppIcon.appiconset` (`ios/HiTop`, `ios/HitopCompanion`): 1024 × 1024 on an opaque
+- iOS `AppIcon.appiconset` (`ios/HITOP`): 1024 × 1024 on an opaque
   background (App Store icons may have no alpha), plus dark and tinted variants. Same mark; redo
   them in Xcode or an icon tool from `brand/png/logo-1024.png` if the master changes.
 - `site/public-assets/social-preview.png` (1280 × 640, GitHub social preview and `og:image`): the

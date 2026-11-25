@@ -15,7 +15,7 @@ Activity/Siri).
 | Protocols | HTTP (all methods, forms, files), GraphQL (schema introspection + completion), WebSocket (URLSessionWebSocketTask, message log), Server-Sent Events (streamed events view), gRPC (reflection, unary + server streaming). Scripts and tests via JavaScriptCore with the shared `pm-shim.js`. |
 | System | Widgets (last run, failing collections, pinned requests with an interactive Send), Live Activity + Dynamic Island for collection runs, App Intents (Siri, Shortcuts, Spotlight, Action button, Control Center), Apple Intelligence via the on-device Foundation Models framework (explain a response, suggest a test, request from text/curl). |
 
-After 2.0 is live: delete ios/HiTop and ios/HitopCompanion (owner approved 2026-11-21).
+2.0.0 is live since 2026-11-22: `ios/HiTop` and `ios/HitopCompanion` were deleted (2026-11-25; git history has them).
 
 ## Tranches
 

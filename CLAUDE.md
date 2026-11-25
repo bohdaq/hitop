@@ -162,10 +162,8 @@ hitop/
 │   │                           # backup.sh + s3.sh + hitop-sync-backup.{service,timer}, restore-drill.sh, backup.env.example
 │   └── THREAT_MODEL.md, README.md (self-host guide), Dockerfile
 ├── ios/
-│   ├── HiTop/                  # the live App Store iOS app (listed as "HiTop HTTP Client", shown as HITOP; editor, own JSON storage); frozen but for names
 │   ├── HITOP/                  # HITOP for iOS 26 (ios/HITOP_IOS.md), its replacement: XcodeGen project.yml, App/Core (Foundation only), App/UI (SwiftUI), UnitTests, UITests, SyncFFI (Rust: hitop-core sync + hitop-sync-crypto, C ABI)
 │   ├── HitopKit/               # Swift package (MIT): format v1 reader (Yams 6.2.2), variables, secrets, scripts, URLSession runner, report.json
-│   └── HitopCompanion/         # SwiftUI companion (T26): XcodeGen project.yml, app + App Intents, WidgetKit widget, Shared/ (app group)
 ├── spec/collection-format.md   # collection folder format v1, stable since 1.0 (CC BY 4.0); section 7 = compatibility promise
 ├── spec/compat/v1/             # compatibility suite: <case>/folder + expected.json (never changed, only added), run-report/report.json
 ├── shared/pm-shim.js           # the pm.* shim for Postman scripts, run by hitop-core (copy in the crate), the web app and HitopKit (copy in Resources/)
@@ -506,7 +504,7 @@ hitop/
 - hitop-core feature `native` (default): http, scripting, prepare, runner, report, storage; hitop-wasm builds without it,
   so a new core module using reqwest, boa, dirs or those modules starts with `#![cfg(feature = "native")]`
 
-### iOS companion (`ios/HitopKit`, `ios/HitopCompanion`)
+### iOS (`ios/HitopKit`, `ios/HITOP`)
 - HitopKit follows hitop-core: same reader rules and errors, ids (FNV-1a), interpolation (one pass), auth, GraphQL and
   form bodies, send rules (`Sending.swift`: raw-body Content-Type, URL scheme; `SendRulesTests` on spec/vectors/send.json), script preambles + `pm-shim.js`, masking, report.json shape. A change to any of these in the core needs the
   same change in HitopKit; `CLICompatibilityTests` runs one folder through both and diffs the wire requests and reports
@@ -559,8 +557,6 @@ hitop/
   the web app's `src/curl.js`, deterministic, no model; CurlTests read hitop-core's snippet goldens via `HITOP_SNIPPET_GOLDENS`/bundle);
   `App/Platform/AppleIntelligence.swift` = the only FoundationModels code (`@Generable` checks/request, availability, errors). Accessibility audits
   `UITests/AccessibilityTests.swift` (all issues reported at once; accepted kinds listed with reasons)
-- The app (no editing) is generated with `xcodegen` on a Mac; bundle ids `hitop.rws8.tech.HitopCompanion` (+ `.Widget`),
-  app group `group.hitop.rws8.tech.companion`; Swift 5 language mode for the app targets, Swift 6 for HitopKit
 
 ### Android (`android/`)
 - Plan and owner decisions `android/GOAL.md`; status `android/PROGRESS.md`; agent choices `android/DECISIONS.md`; owner steps

@@ -46,7 +46,8 @@ Status is kept in the table at the end; choices made on the way go under "Decisi
 | --- | --- |
 | C0 | on main 63864f9, every check green (PR 20): core and CLI storage journal, damaged files kept (core, web, desktop, iOS) and never deleted from the cloud, iOS drafts |
 | C1 | built (server side; the web and CLI items of STATE_MACHINES.md are in C3 and C4); CI pending |
-| C2–C9 | not started |
+| C2 | built: old iOS apps deleted (2.0.0 live since 2026-11-22, checked), the web e2e job split in five; CI pending |
+| C3–C9 | not started |
 
 ## Decisions
 

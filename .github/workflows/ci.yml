@@ -244,8 +244,18 @@ jobs:
         run: cloud/ops/test/postgres-setup-docker.sh
 
   web:
-    name: Site and web app (end to end)
+    name: Site and web app (${{ matrix.part }})
     runs-on: ubuntu-24.04
+    # The same checks as one job, in parallel (tests/run-e2e.mjs --shard: each suite in one part).
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { part: "checks and portal", checks: true, shard: "" }
+          - { part: "web 1/2", mode: web, shard: "1/2" }
+          - { part: "web 2/2", mode: web, shard: "2/2" }
+          - { part: "desktop 1/2", mode: tauri, shard: "1/2" }
+          - { part: "desktop 2/2", mode: tauri, shard: "2/2", telemetry: true }
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -268,12 +278,14 @@ jobs:
         run: ./deploy/build.sh
       # HITOP Cloud C3: the security page's sentences, no "no subscription" promise, legal drafts
       # stay drafts (site/scripts/check-pages.mjs).
-      - name: Site checks
+      - if: matrix.checks
+        name: Site checks
         working-directory: site
         run: node scripts/check-pages.mjs && node scripts/check-contrast.mjs
       # curl -fsSL https://hitop.rws8.tech/install.sh | sh: the newest CLI release and a pinned one,
       # under sh and dash, into a temporary folder (SHA-256 checked by the script).
-      - name: CLI install script
+      - if: matrix.checks
+        name: CLI install script
         env:
           GITHUB_TOKEN: ${{ github.token }}
         run: |
@@ -289,13 +301,15 @@ jobs:
           cargo build --locked --manifest-path sync-server/Cargo.toml
           echo "HITOP_SYNC_SERVER_BIN=$GITHUB_WORKSPACE/sync-server/target/debug/hitop-sync-server" >> "$GITHUB_ENV"
       # tests/sync.cjs: Sign in with SSO through Keycloak (the sync-server's test realm).
-      - name: Keycloak for tests/sync.cjs
+      - if: matrix.mode
+        name: Keycloak for tests/sync.cjs
         run: |
           docker run -d --name keycloak -p 127.0.0.1:18080:8080 \
             -v "$GITHUB_WORKSPACE/sync-server/tests/fixtures/keycloak:/opt/keycloak/data/import:ro" \
             quay.io/keycloak/keycloak:26.4.2 start-dev --import-realm
           echo "HITOP_SYNC_TEST_KEYCLOAK=http://127.0.0.1:18080" >> "$GITHUB_ENV"
-      - name: Unit checks
+      - if: matrix.checks
+        name: Unit checks
         working-directory: webapp
         run: npm run test:unit
       - name: Install Playwright's Chromium
@@ -308,7 +322,8 @@ jobs:
           HITOP_ALLOWED_ORIGINS=http://localhost:7879 ../hitop-server > ../server.log 2>&1 &
           for i in $(seq 30); do curl -fs http://127.0.0.1:7879/ > /dev/null && exit 0; sleep 1; done
           cat ../server.log; exit 1
-      - name: Wait for Keycloak
+      - if: matrix.mode
+        name: Wait for Keycloak
         run: |
           for i in $(seq 1 90); do
             curl -sf http://127.0.0.1:18080/realms/hitop/.well-known/openid-configuration >/dev/null && exit 0
@@ -316,24 +331,30 @@ jobs:
           done
           docker logs keycloak
           exit 1
-      - name: End-to-end checks (they call example.com, jsonplaceholder.typicode.com and httpbin.org)
+      - if: matrix.mode == 'web'
+        name: End-to-end checks (they call example.com, jsonplaceholder.typicode.com and httpbin.org)
         working-directory: webapp
-        run: BASE=http://localhost:7879 npm run test:e2e
+        run: BASE=http://localhost:7879 npm run test:e2e -- --shard ${{ matrix.shard }}
       # HITOP Cloud C1: the web app's sync flow, unchanged, against a server with the hosted Free
       # plan limits on.
-      - name: tests/sync.cjs against a server with plan limits
+      - if: matrix.shard == '2/2' && matrix.mode == 'web'
+        name: tests/sync.cjs against a server with plan limits
         working-directory: webapp
         run: HITOP_SYNC_LIMITS=plans BASE=http://localhost:7879 node tests/sync.cjs
-      - name: HITOP Cloud portal (cloud/portal, e2e against the sync server)
+      - if: matrix.checks
+        name: HITOP Cloud portal (cloud/portal, e2e against the sync server)
         working-directory: cloud/portal
         run: npm ci --no-audit --no-fund && npm test
-      - name: hitop-git for the mocked desktop (tests/git.cjs runs the Git panel through it)
+      - if: matrix.mode == 'tauri'
+        name: hitop-git for the mocked desktop (tests/git.cjs runs the Git panel through it)
         working-directory: cli
         run: cargo build --locked -p hitop-git --example git-json --no-default-features
-      - name: Web app built for the desktop (Tauri adapter, mocked invoke)
+      - if: matrix.mode == 'tauri'
+        name: Web app built for the desktop (Tauri adapter, mocked invoke)
         working-directory: webapp
-        run: npm run build:tauri && npm run test:e2e:tauri
-      - name: No usage ping in the web app (dist/ and the web adapter)
+        run: npm run build:tauri && HITOP_MODE=tauri npm run test:e2e -- --shard ${{ matrix.shard }}
+      - if: matrix.telemetry
+        name: No usage ping in the web app (dist/ and the web adapter)
         working-directory: webapp
         run: node scripts/check-no-telemetry.mjs
 

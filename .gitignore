@@ -70,7 +70,6 @@ ios/*/build/
 ios/*/DerivedData/
 ios/*/.build/
 ios/*/.swiftpm/
-ios/HitopCompanion/*.xcodeproj/
 ios/HITOP/HITOPApp.xcodeproj/
 # Built by ios/HITOP/scripts/build-sync-ffi.sh (Rust)
 ios/HITOP/Vendor/
