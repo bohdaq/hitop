@@ -83,5 +83,6 @@ Status is kept in the table at the end; choices made on the way go under "Decisi
   composition and a label was never redrawn. Reproduced locally (6 stale labels of 299 with v1, 0 of 299 with v2, which collects on the main thread
   as the app does); the UI tests now use the v2 rule. The earlier failures (the SSE test on PR 21; `grpcFieldsAndAnUnreachableServer` on main 8da867a,
   "Calling…" for more than 30 s) fit the same cause but were not reproduced themselves: if either comes back with v2, it is something else.
-- Leaked copies of shared collections (web app before PR 40): `request_history` on the server keeps them after the library item is deleted.
-  Nothing is done on production without the owner's answer.
+- Leaked copies of shared collections (web app before PR 40): checked on production 2026-11-25 with the owner's OK: `request_history` and
+  `library_items` are empty, so nothing was deleted. Dumps taken before that may hold copies; they expire after 35 days. No notice to users
+  (owner, 2026-11-25).

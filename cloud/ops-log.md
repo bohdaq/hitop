@@ -451,3 +451,10 @@ and on hitop.rws8.tech/cloud/healthz. -->
 - It carries everything in the web app since 96f90df. gRPC calls with several client messages from the web need the newer hitop-server (C9).
 - Not cleaned: `request_history` rows of leaked copies, and backups.
 - Rollback (brings the leak back): `sudo rsync -a --delete /var/www/hitop-app.bak-20261125-161434/ /var/www/hitop/app/`.
+
+## 2026-11-25 Leaked library copies: nothing to clean
+
+- Owner's OK to clean up; counted first in a read-only transaction: `request_history` 0 rows, `library_items` 0 rows, `workspaces` 0, `users` 1
+  (the server's own database, checked against the running process). Nothing was deleted, so no dump was taken. Postgres' counters show
+  144 `request_history` rows deleted earlier; by what wasn't looked into.
+- Not touched: the existing dumps (`/root/pre-deploy-*`), which may hold copies until they expire after 35 days.
