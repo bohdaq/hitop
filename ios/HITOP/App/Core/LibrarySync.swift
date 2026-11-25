@@ -349,7 +349,7 @@ final class LibrarySync {
             // Secret values: the server's, else the ones this device already has.
             for n in e.secrets {
                 // A value the server doesn't hold and the vault can't show now is left as it is.
-                if let value = secrets[e.id]?[n]?.string ?? kept(e.id, n, else: e.variables[n]) {
+                if let value = secrets[e.id]?[n]?.string ?? valueHere(e.id, n, else: e.variables[n]) {
                     model.vault.setValue(value, environment: e.id, name: n)
                 }
                 e.variables.removeValue(forKey: n)
@@ -365,7 +365,7 @@ final class LibrarySync {
     }
 
     /// The value this device has (nil: the vault can't be read now).
-    private func kept(_ environment: String, _ name: String, else other: String?) -> String? {
+    private func valueHere(_ environment: String, _ name: String, else other: String?) -> String? {
         do { return try model.vault.read(environment: environment, name: name) ?? other ?? "" } catch { return nil }
     }
 
@@ -375,7 +375,7 @@ final class LibrarySync {
         var variables: [String: String] = [:]
         for (k, v) in data["variables"]?.object ?? [:] { variables[k] = v.string ?? "" }
         for n in names {
-            if let value = it["secrets"]?[n]?.string ?? kept(globalsVaultID, n, else: variables[n]) {
+            if let value = it["secrets"]?[n]?.string ?? valueHere(globalsVaultID, n, else: variables[n]) {
                 model.vault.setValue(value, environment: globalsVaultID, name: n)
             }
             variables.removeValue(forKey: n)
