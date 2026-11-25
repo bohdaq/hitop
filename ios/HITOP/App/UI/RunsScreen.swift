@@ -128,6 +128,8 @@ struct RunSheet: View {
     @State private var settings = RunSettings()
     @State private var record: RunRecord?
     @State private var didSetUp = false
+    @State private var pickingData = false
+    @State private var dataError: String?
     @AppStorage(SystemBridge.liveActivityKey) private var liveActivity = true
 
     private var collection: SavedCollection? { model.collection(target.id) }
@@ -182,6 +184,22 @@ struct RunSheet: View {
 
     private var envName: String { model.environments.first { $0.id == settings.environmentID }?.name ?? "No environment" }
 
+    private func readData(_ result: Result<URL, any Error>) {
+        dataError = nil
+        do {
+            let url = try result.get()
+            let scoped = url.startAccessingSecurityScopedResource()
+            defer { if scoped { url.stopAccessingSecurityScopedResource() } }
+            // Not a whole huge file into memory to say it is too large.
+            if let n = try url.resourceValues(forKeys: [.fileSizeKey]).fileSize, n > RunData.maxBytes {
+                throw Uploads.Failure(message: "The data file is larger than \(RunData.maxBytes / 1024 / 1024) MB.")
+            }
+            settings.data = try RunData(name: url.lastPathComponent, data: Data(contentsOf: url))
+        } catch {
+            dataError = error.localizedDescription
+        }
+    }
+
     // MARK: Options
 
     private var options: some View {
@@ -216,6 +234,25 @@ struct RunSheet: View {
                 }
                 .frame(minHeight: 48)
                 .accessibilityIdentifier("run-iterations")
+                .disabled(settings.data != nil)
+                Divider().overlay(Theme.separator)
+                HStack {
+                    Button { pickingData = true } label: {
+                        Label(settings.data.map { "\($0.name): \($0.rows.count) row\($0.rows.count == 1 ? "" : "s")" } ?? "Data file (CSV or JSON)", systemImage: "tablecells")
+                            .foregroundStyle(Theme.text)
+                            .frame(maxWidth: .infinity, minHeight: 48, alignment: .leading)
+                            .contentShape(Rectangle())
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityIdentifier("run-data")
+                    if settings.data != nil {
+                        Button("Remove the data file", systemImage: "xmark.circle.fill") { settings.data = nil }
+                            .labelStyle(.iconOnly)
+                            .foregroundStyle(Theme.textMuted)
+                            .frame(width: 44, height: 44)
+                    }
+                }
+                .fileImporter(isPresented: $pickingData, allowedContentTypes: [.commaSeparatedText, .json, .plainText]) { readData($0) }
                 Divider().overlay(Theme.separator)
                 Toggle(isOn: $liveActivity) {
                     Label("Live Activity on the Lock Screen", systemImage: "rectangle.inset.filled.and.person.filled").foregroundStyle(Theme.text)
@@ -226,6 +263,7 @@ struct RunSheet: View {
             .tint(Theme.success)
             .padding(.horizontal, 14)
             .card(radius: 18)
+            if let dataError { Text(dataError).font(Typo.caption).foregroundStyle(Theme.danger).accessibilityIdentifier("run-data-error") }
             if let last = runs.lastRun(of: target.id) {
                 NavigationLink(value: RunRoute.report(last.id)) {
                     HStack { Text("Last run").foregroundStyle(Theme.textSoft); Spacer(); RunRow(record: last) }

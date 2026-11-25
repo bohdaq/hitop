@@ -181,6 +181,26 @@ struct RunSettings: Hashable, Sendable {
     var environmentID: String?
     var bail = false
     var iterations = 1
+    /// One iteration per row instead of `iterations`.
+    var data: RunData?
+    var rounds: Int { data?.rows.count ?? max(1, iterations) }
+}
+
+/// A data file's rows (`hitop run --data`): each one's values are variables of its iteration.
+struct RunData: Hashable, Sendable {
+    var name: String
+    var rows: [[String: String]]
+    static let maxBytes = 5 * 1024 * 1024
+
+    init(name: String, data: Data) throws {
+        guard data.count <= Self.maxBytes else { throw Uploads.Failure(message: "The data file is larger than \(Self.maxBytes / 1024 / 1024) MB.") }
+        guard let text = String(data: data, encoding: .utf8) else { throw Uploads.Failure(message: "The data file isn't UTF-8 text.") }
+        self.name = name
+        rows = (try SyncCore.call("dataRows", ["data": .string(text), "dataName": .string(name)]).array ?? []).map { row in
+            guard case let .object(o) = row else { return [:] }
+            return o.compactMapValues(\.string)
+        }
+    }
 }
 
 /// The Runs tab's and the run sheet's pages.
@@ -225,7 +245,7 @@ extension Sender {
     /// Runs `collection` `iterations` times the way `hitop run --env <e> [--bail] [--iterations n]`
     /// does: one report (HitopKit's `ReportBuilder`), steps masked by the runner, `onStep` after
     /// each request (from the runner's task).
-    func run(_ collection: SavedCollection, context: VariableContext, bail: Bool = false, iterations: Int = 1,
+    func run(_ collection: SavedCollection, context: VariableContext, bail: Bool = false, iterations: Int = 1, data: RunData? = nil,
              onStep: @escaping @Sendable (StepResult) -> Void = { _ in }) async -> Report {
         let kit = HitopKit.Collection(id: collection.id, name: collection.name, requests: collection.requests.map(Self.kitRequest),
                                       variables: context.collection, auth: Self.kitAuth(collection.auth))
@@ -240,17 +260,20 @@ extension Sender {
         }
         var options = RunOptions(stopOnFail: bail, timeout: timeout, globals: globals, globalSecrets: globalSecrets)
         ExtraAuth(collection.requests, collectionAuth: collection.auth).install(&options)
+        options.file = Uploads.source(uploads)
         let config = configuration
         let runner = Runner(engine: defaultScriptEngine, makeClient: { MeteredClient(configuration: config()) })
         var builder = ReportBuilder()
         builder.collection(collection.name, environment: context.environmentName)
         let runnable = Self.runnable(collection).count
         var bailed = false
-        let rounds = max(1, iterations)
+        let rounds = data?.rows.count ?? max(1, iterations)
         for round in 0..<rounds {
             builder.startIteration()
+            let row = data?.rows[round]
+            options.overrides = row ?? [:]
             let steps = await runner.run(kit, environment: env, secrets: secrets, options: options) { onStep($0) }
-            builder.iteration(steps: steps)
+            builder.iteration(data: row, steps: steps)
             if bail && steps.contains(where: { !$0.passed }) {
                 bailed = steps.count < runnable || round < rounds - 1
                 break
@@ -325,7 +348,7 @@ final class RunCenter {
     func start(collectionID: UInt64, settings: RunSettings) async -> RunRecord? {
         guard active == nil, let collection = model.collection(collectionID) else { return nil }
         let context = model.runContext(for: collectionID, environmentID: settings.environmentID)
-        let total = Sender.runnable(collection).count * max(1, settings.iterations)
+        let total = Sender.runnable(collection).count * settings.rounds
         var run = ActiveRun(collectionID: collectionID, collectionName: collection.name, environmentName: context.environmentName,
                             settings: settings, progress: RunProgress(total: total))
         active = run
@@ -334,7 +357,7 @@ final class RunCenter {
         let (stream, continuation) = AsyncStream.makeStream(of: StepResult.self)
         let sender = model.sender
         let task = Task.detached {
-            let report = await sender.run(collection, context: context, bail: settings.bail, iterations: settings.iterations) { continuation.yield($0) }
+            let report = await sender.run(collection, context: context, bail: settings.bail, iterations: settings.iterations, data: settings.data) { continuation.yield($0) }
             continuation.finish()
             return report
         }

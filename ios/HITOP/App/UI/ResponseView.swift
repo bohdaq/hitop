@@ -64,6 +64,8 @@ struct ResponseContent: View {
     var requestID: UInt64?
     @State private var tab: ResponseTab
     @State private var raw = false
+    @State private var comparing = false
+    @Environment(AppModel.self) private var model
     @Environment(Intelligence.self) private var ai
     @Environment(\.dynamicTypeSize) private var typeSize
 
@@ -160,6 +162,16 @@ struct ResponseContent: View {
             case .tests: TestsList(tests: outcome.tests)
             case .cookies: cookiesView
             }
+            let sources = compareSources
+            if sources.count > 1 {
+                Button { comparing = true } label: {
+                    Label("Compare", systemImage: "arrow.left.arrow.right").font(Typo.caption).frame(minHeight: 44).contentShape(Rectangle())
+                }
+                .hoverEffect(.highlight)
+                .accessibilityLabel("Compare with another response")
+                .accessibilityIdentifier("compare")
+                .sheet(isPresented: $comparing) { CompareSheet(sources: sources) }
+            }
             ForEach(outcome.notes, id: \.self) { n in
                 Label(n, systemImage: "info.circle").font(Typo.caption).foregroundStyle(Theme.textMuted)
             }
@@ -167,6 +179,11 @@ struct ResponseContent: View {
                 ExplainWideButton(requestID: requestID).padding(.top, 4)
             }
         }
+    }
+
+    private var compareSources: [ComparedResponse] {
+        guard let requestID, let r = model.request(requestID) else { return [] }
+        return ComparedResponse.sources(r, outcome: outcome, history: model.history)
     }
 
     /// iPhone sheet: Explain in the header when Apple Intelligence is on (else Share stays there).

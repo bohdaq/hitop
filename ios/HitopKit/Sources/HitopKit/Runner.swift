@@ -64,6 +64,10 @@ public struct RunOptions: Sendable {
     /// A second try after an answer (Digest's challenge); nil keeps the answer.
     public var retry: (@Sendable (Request, OutgoingRequest, HTTPResponse, [String: String]) async throws -> OutgoingRequest?)?
 
+    /// The file of a multipart file row (a collection carries none); nil sends an empty part named
+    /// after the row's `fileName`, as the other hitop tools do.
+    public var file: (@Sendable (Request, FormField) throws -> FormFile?)?
+
     public init(stopOnFail: Bool = false, timeout: TimeInterval? = nil, overrides: [String: String] = [:], globals: [String: String] = [:], globalSecrets: Secrets = Secrets()) {
         self.stopOnFail = stopOnFail
         self.timeout = timeout
@@ -112,8 +116,9 @@ public struct Runner: Sendable {
                 step.variableUpdates.merge(pre.variables) { _, new in new }
                 step.globalUpdates.merge(pre.globals) { _, new in new }
                 let variables = scopes.merged
-                let (headers, body) = try FormBody.outgoing(request, headers: pre.headers, body: pre.body, variables)
-                for part in [pre.url] + headers.flatMap({ [$0.0, $0.1] }) + [String(decoding: body, as: UTF8.self)] {
+                let (headers, body, text) = try FormBody.outgoing(request, headers: pre.headers, body: pre.body, variables, file: options.file)
+                // A file's own bytes may say anything: only what was written in the request is looked at.
+                for part in [pre.url] + headers.flatMap({ [$0.0, $0.1] }) + [text] {
                     if let ref = SecretManagerReference.find(part) { throw SecretManagerReference(reference: ref) }
                 }
                 do {

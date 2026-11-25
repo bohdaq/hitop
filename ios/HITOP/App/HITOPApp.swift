@@ -33,7 +33,9 @@ struct HITOPApp: App {
             // included (FakeCloud at cloud.hitop.test, signed out, the provider page approving at once).
             StubURLProtocol.enabled = true
             let root = FileManager.default.temporaryDirectory.appendingPathComponent("hitop-uitest-\(UUID().uuidString)")
-            model = AppModel(store: FileLibraryStore(root: root), vault: MemoryVault(), sender: Sender(configuration: StubURLProtocol.configuration),
+            var sender = Sender(configuration: StubURLProtocol.configuration)
+            sender.uploads = Uploads(root: root)
+            model = AppModel(store: FileLibraryStore(root: root), vault: MemoryVault(), sender: sender,
                              webSockets: EchoWebSocketTransport(), grpcClient: FakeGrpcClient())
             model.load()
             model.seed()
@@ -60,6 +62,7 @@ struct HITOPApp: App {
             let root = FileLibraryStore.defaultRoot()
             var sender = Sender()
             sender.browser = SystemOAuthBrowser()
+            sender.uploads = Uploads(root: root)
             model = AppModel(store: FileLibraryStore(root: root), vault: KeychainVault(), sender: sender)
             model.load(legacyDirectory: LegacyImport.defaultDirectory())
             cloud = HitopCloud(transport: URLSessionCloudTransport(), credentials: CloudCredentials(store: platformSecretStore()),

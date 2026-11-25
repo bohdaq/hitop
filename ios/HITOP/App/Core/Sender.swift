@@ -74,6 +74,8 @@ struct Sender: Sendable {
     var timeout: TimeInterval = 60
     /// Where a person signs in for OAuth 2.0 (the editor's Send only).
     var browser: OAuthBrowser?
+    /// The files picked for multipart rows.
+    var uploads: Uploads?
 
     init(configuration: @escaping @Sendable () -> URLSessionConfiguration = Sender.defaultConfiguration) {
         self.configuration = configuration
@@ -107,7 +109,7 @@ struct Sender: Sendable {
                        headers: r.headers.map { HitopKit.Header($0.name, $0.value, enabled: $0.enabled) },
                        body: r.body, preRequestScript: r.preRequestScript, postRequestScript: r.postRequestScript,
                        auth: kitAuth(r.auth), bodyMode: form,
-                       formFields: r.formFields.map { FormField(key: $0.key, value: $0.value, type: $0.type, enabled: $0.enabled) },
+                       formFields: r.formFields.map { FormField(key: $0.key, value: $0.value, type: $0.type, enabled: $0.enabled, fileName: $0.fileName, fileToken: $0.fileToken) },
                        disabledParams: r.disabledParams.map { Param(key: $0.key, value: $0.value) },
                        bodyType: r.bodyType == "graphql" ? "graphql" : nil, graphql: gql, kind: r.kind,
                        path: r.file ?? "request")
@@ -139,6 +141,7 @@ struct Sender: Sendable {
         }
         var options = RunOptions(timeout: timeout, overrides: context.scriptSet, globals: globals, globalSecrets: globalSecrets)
         ExtraAuth([request], collectionAuth: collection?.auth, browser: stream == nil ? nil : browser).install(&options)
+        options.file = Uploads.source(uploads)
         let runner = Runner(engine: defaultScriptEngine, makeClient: { client })
         let steps = await runner.run(kitCollection, environment: env, secrets: secrets, options: options)
         guard let step = steps.first else {

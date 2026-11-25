@@ -82,6 +82,19 @@ public enum GraphQLBody {
     }
 }
 
+/// A file of a multipart file row.
+public struct FormFile: Sendable {
+    public var filename: String
+    public var contentType: String
+    public var data: Data
+
+    public init(filename: String, contentType: String, data: Data) {
+        self.filename = filename
+        self.contentType = contentType
+        self.data = data
+    }
+}
+
 /// Form bodies (hitop-core `form.rs`, the web app's `urlEncodedBody` and
 /// `multipartBody`).
 public enum FormBody {
@@ -145,21 +158,35 @@ public enum FormBody {
     }
 
     /// A saved request's form body with variables filled in; nil for a text
-    /// body. File rows carry no file in a collection, so they go out as empty
-    /// parts named after the row's `fileName`, as the other hitop tools send them.
-    static func requestBody(_ r: Request, _ variables: [String: String]) throws -> (body: Data, contentType: String)? {
+    /// body. File rows carry no file in a collection: `file` finds it, else they go out as
+    /// empty parts named after the row's `fileName`, as the other hitop tools send them.
+    /// `text` is the body without the files' bytes.
+    static func requestBody(_ r: Request, _ variables: [String: String],
+                            file: ((Request, FormField) throws -> FormFile?)? = nil) throws -> (body: Data, contentType: String, text: String)? {
         guard let mode = r.bodyMode, mode == "urlencoded" || mode == "multipart" else { return nil }
         let rows = r.formFields.filter { $0.enabled && !$0.key.isEmpty }
         if mode == "urlencoded" {
-            return urlencoded(try rows.map { (try Interpolation.interpolate($0.key, variables), try Interpolation.interpolate($0.value, variables)) })
+            let b = urlencoded(try rows.map { (try Interpolation.interpolate($0.key, variables), try Interpolation.interpolate($0.value, variables)) })
+            return (b.body, b.contentType, String(decoding: b.body, as: UTF8.self))
         }
-        return multipart(try rows.map { f in
+        let parts: [Part] = try rows.map { f in
             let name = try Interpolation.interpolate(f.key, variables)
             if f.type == "file" {
+                if let picked = try file?(r, f) {
+                    return .file(name: name, filename: picked.filename, contentType: picked.contentType, data: picked.data)
+                }
                 return .file(name: name, filename: f.fileName ?? "", contentType: "application/octet-stream", data: Data())
             }
             return .text(name: name, value: try Interpolation.interpolate(f.value, variables))
-        })
+        }
+        let built = multipart(parts)
+        let text = parts.map { p in
+            switch p {
+            case let .text(name, value): "\(name)\n\(value)"
+            case let .file(name, filename, _, _): "\(name)\n\(filename)"
+            }
+        }.joined(separator: "\n")
+        return (built.body, built.contentType, text)
     }
 
     /// The headers and body a request goes out with after its pre-request
@@ -167,17 +194,18 @@ public enum FormBody {
     /// when it has one and the script didn't replace the body, else the
     /// prepared text body with the Content-Type its text implies, unless a
     /// header sets one (`Sending.addContentType`).
-    static func outgoing(_ r: Request, headers: [(String, String)], body: String, _ variables: [String: String]) throws -> ([(String, String)], Data) {
+    static func outgoing(_ r: Request, headers: [(String, String)], body: String, _ variables: [String: String],
+                         file: ((Request, FormField) throws -> FormFile?)? = nil) throws -> (headers: [(String, String)], body: Data, text: String) {
         var headers = headers
         let unchanged = (try? Interpolation.interpolate(r.body, variables)) == body
-        if let built = try requestBody(r, variables), unchanged {
+        if unchanged, let built = try requestBody(r, variables, file: file) {
             if !headers.contains(where: { $0.0.lowercased() == "content-type" && !$0.1.isEmpty }) {
                 headers.append(("Content-Type", built.contentType))
             }
-            return (headers, built.body)
+            return (headers, built.body, built.text)
         }
         // A raw body (or one the script replaced) says what it is.
         Sending.addContentType(method: r.method, headers: &headers, body: body)
-        return (headers, Data(body.utf8))
+        return (headers, Data(body.utf8), body)
     }
 }

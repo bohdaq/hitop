@@ -18,6 +18,7 @@ struct RootView: View {
                 PhoneRoot()
             }
         }
+        .modifier(UndoBar())
         .sheet(isPresented: $nav.showAbout) { AboutView() }
         .sheet(isPresented: $nav.showAccount) { AccountView() }
         .sheet(item: $nav.runSheet) { RunSheet(target: $0) }

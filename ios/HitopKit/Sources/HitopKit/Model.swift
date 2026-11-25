@@ -37,13 +37,16 @@ public struct FormField: Codable, Hashable, Sendable {
     public var enabled: Bool
     /// A file row's file name (the row's `fileName` key).
     public var fileName: String?
+    /// A file row's file on this device (an app's own key; `RunOptions.file` finds it).
+    public var fileToken: String?
 
-    public init(key: String, value: String, type: String = "text", enabled: Bool = true, fileName: String? = nil) {
+    public init(key: String, value: String, type: String = "text", enabled: Bool = true, fileName: String? = nil, fileToken: String? = nil) {
         self.key = key
         self.value = value
         self.type = type
         self.enabled = enabled
         self.fileName = fileName
+        self.fileToken = fileToken
     }
 }
 

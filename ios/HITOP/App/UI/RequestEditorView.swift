@@ -1,5 +1,6 @@
 import SwiftUI
 import UIKit
+import UniformTypeIdentifiers
 
 enum EditorTab: String, Hashable {
     case params = "Params", headers = "Headers", body = "Body", auth = "Auth", scripts = "Scripts", tests = "Tests"
@@ -64,7 +65,7 @@ struct RequestScreen: View {
                     }
                     if !readOnly {
                         Button("Delete", systemImage: "trash", role: .destructive) {
-                            model.deleteRequest(id)
+                            model.undoable("Deleted \(editor.saved.name)") { model.deleteRequest(id) }
                             dismiss()
                         }
                     }
@@ -551,7 +552,7 @@ struct BodyEditor: View {
                 }
                 if kind == .json { symbolRow.disabled(readOnly) }
             case .form, .multipart:
-                FormRowsEditor(rows: $editor.draft.formFields).disabled(readOnly)
+                FormRowsEditor(rows: $editor.draft.formFields, requestID: editor.id, files: kind == .multipart).disabled(readOnly)
             case .graphql:
                 GraphQLSchemaBar(editor: editor)
                 Text("QUERY").font(Typo.label).tracking(0.9).foregroundStyle(Theme.textFaint).accessibilityAddTraits(.isHeader)
@@ -592,13 +593,24 @@ struct BodyEditor: View {
 }
 
 struct FormRowsEditor: View {
+    @Environment(AppModel.self) private var model
     @Binding var rows: [FormRow]
+    var requestID: UInt64
+    /// Multipart: rows may hold files.
+    var files: Bool
+    @State private var target: UUID?
+    @State private var picking = false
+    @State private var failure: String?
 
     var body: some View {
         VStack(spacing: 0) {
             ForEach($rows) { $r in
-                KeyValueRow(key: $r.key, value: $r.value, enabled: $r.enabled, keyPlaceholder: "Field", valuePlaceholder: "Value") {
-                    rows.removeAll { $0.id == r.id }
+                if files && r.isFile {
+                    fileRow($r)
+                } else {
+                    KeyValueRow(key: $r.key, value: $r.value, enabled: $r.enabled, keyPlaceholder: "Field", valuePlaceholder: "Value") {
+                        rows.removeAll { $0.id == r.id }
+                    }
                 }
                 Divider().overlay(Theme.separator)
             }
@@ -607,7 +619,67 @@ struct FormRowsEditor: View {
             }
         }
         .card(radius: 18)
-        SmallChipButton(title: "Add field") { rows.append(FormRow()) }
+        if let failure { Text(failure).font(Typo.caption).foregroundStyle(Theme.danger) }
+        HStack(spacing: 8) {
+            SmallChipButton(title: "Add field") { rows.append(FormRow()) }
+            if files {
+                SmallChipButton(title: "Add file") { rows.append(FormRow(type: "file")) }
+                    .accessibilityIdentifier("add-file")
+            }
+        }
+        .fileImporter(isPresented: $picking, allowedContentTypes: [.data]) { pick($0) }
+    }
+
+    private func fileRow(_ r: Binding<FormRow>) -> some View {
+        let row = r.wrappedValue
+        let here = row.fileToken.map { model.sender.uploads?.has($0, request: requestID) == true } ?? false
+        let title = row.fileName.flatMap { $0.isEmpty ? nil : $0 }
+        return HStack(spacing: 10) {
+            Toggle("", isOn: r.enabled).labelsHidden().tint(Theme.accent).accessibilityLabel(row.enabled ? "On" : "Off")
+            VStack(alignment: .leading, spacing: 6) {
+                TextField("Field", text: r.key)
+                    .font(Typo.mono(14, .medium))
+                    .foregroundStyle(row.enabled ? Theme.text : Theme.textMuted)
+                    .autocorrectionDisabled()
+                    .textInputAutocapitalization(.never)
+                Divider().overlay(Theme.separator)
+                Button {
+                    target = row.id
+                    picking = true
+                } label: {
+                    Label(title.map { here ? $0 : "\($0): choose it again" } ?? "Choose a file", systemImage: "doc")
+                        .font(Typo.mono(14))
+                        .foregroundStyle(Theme.accentText)
+                        .frame(maxWidth: .infinity, minHeight: 44, alignment: .leading)
+                        .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .accessibilityIdentifier("pick-file")
+            }
+            Button(role: .destructive) { rows.removeAll { $0.id == row.id } } label: {
+                Image(systemName: "minus.circle.fill").foregroundStyle(Theme.danger).frame(width: 44, height: 44).contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel("Remove \(row.key.isEmpty ? "row" : row.key)")
+        }
+        .padding(.horizontal, 12)
+        .padding(.vertical, 6)
+    }
+
+    private func pick(_ result: Result<URL, any Error>) {
+        failure = nil
+        do {
+            let url = try result.get()
+            guard let uploads = model.sender.uploads, let i = rows.firstIndex(where: { $0.id == target }) else { return }
+            let scoped = url.startAccessingSecurityScopedResource()
+            defer { if scoped { url.stopAccessingSecurityScopedResource() } }
+            let type = UTType(filenameExtension: url.pathExtension)?.preferredMIMEType ?? ""
+            let token = try uploads.add(url, name: url.lastPathComponent, type: type, request: requestID)
+            rows[i].extras["fileName"] = .string(url.lastPathComponent)
+            rows[i].extras["fileToken"] = .string(token)
+        } catch {
+            failure = error.localizedDescription
+        }
     }
 }
 

@@ -32,6 +32,9 @@ use serde_json::{json, Value};
 #[cfg(feature = "grpc")]
 mod auth;
 mod import;
+#[path = "../../../../cli/crates/hitop/src/commands/data.rs"]
+#[allow(dead_code)]
+mod data;
 mod zip;
 #[cfg(feature = "grpc")]
 mod grpc;
@@ -92,6 +95,16 @@ impl Args<'_> {
     fn keys(&self, k: &str) -> Result<BTreeMap<String, Vec<u8>>, String> {
         let m: BTreeMap<String, String> = self.json(k)?;
         m.into_iter().map(|(id, pk)| Ok((id, unb64(k, &pk)?))).collect()
+    }
+}
+
+/// The rows of `data` (a CSV or JSON file's text) named `dataName`, as `hitop run --data` reads them.
+fn data_rows(a: &Args) -> R {
+    let rows = data::parse(a.str("data")?, std::path::Path::new(a.str("dataName")?)).map_err(|e| format!("{e:#}"))?;
+    match rows.len() {
+        0 => Err("The data file has no rows.".into()),
+        n if n > 1000 => Err(format!("The data file has {n} rows; at most 1000 run on this device.")),
+        _ => Ok(json!(rows)),
     }
 }
 
@@ -173,6 +186,7 @@ fn accept_wraps(a: &Args) -> R {
 fn call(op: &str, a: &Args) -> R {
     match op {
         // ---- device keys and fingerprints
+        "dataRows" => data_rows(a),
         "keygen" => {
             let k = DeviceKeyPair::generate();
             Ok(json!({ "secret": b64(&k.secret_bytes()), "publicKey": b64(&k.public_key()) }))

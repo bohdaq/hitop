@@ -96,10 +96,10 @@ struct PadRoot: View {
                             Button("Duplicate", systemImage: "plus.square.on.square") { model.duplicateRequest(r.id) }
                             Button("Move to…", systemImage: "folder") { moving = r.id }
                             Button(model.isPinned(request: r.id) ? "Unpin" : "Pin", systemImage: "pin") { model.togglePin(request: r.id) }
-                            Button("Delete", systemImage: "trash", role: .destructive) { model.deleteRequest(r.id) }
+                            Button("Delete", systemImage: "trash", role: .destructive) { model.undoable("Deleted \(r.name)") { model.deleteRequest(r.id) } }
                         }
                         .swipeActions {
-                            Button("Delete", systemImage: "trash", role: .destructive) { model.deleteRequest(r.id) }
+                            Button("Delete", systemImage: "trash", role: .destructive) { model.undoable("Deleted \(r.name)") { model.deleteRequest(r.id) } }
                             Button("Move", systemImage: "folder") { moving = r.id }.tint(Theme.info)
                         }
                     }

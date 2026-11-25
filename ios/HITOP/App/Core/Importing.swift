@@ -139,7 +139,12 @@ enum Importing {
     }
 
     private static func json(_ c: SavedCollection) throws -> String {
-        String(decoding: try JSONEncoder().encode(c), as: UTF8.self)
+        // Without what only means something on this device (picked files).
+        var c = c
+        for i in c.requests.indices {
+            for j in c.requests[i].formFields.indices { c.requests[i].formFields[j].extras["fileToken"] = nil }
+        }
+        return String(decoding: try JSONEncoder().encode(c), as: UTF8.self)
     }
 
     static func export(_ c: SavedCollection, as format: Format) throws -> (name: String, data: Data) {

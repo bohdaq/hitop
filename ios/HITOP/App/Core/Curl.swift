@@ -368,7 +368,7 @@ enum CurlImport {
 
 extension CurlImport.Request {
     /// The request as HITOP keeps it (web app `store.applyCurl`): headers, auth, body; a JSON body is
-    /// JSON, multipart file fields stay as rows to fill in (this version sends text fields only).
+    /// JSON, multipart file fields stay as rows to pick a file for.
     var savedRequest: SavedRequest {
         var r = SavedRequest(name: AutoName.untitled, url: url, method: method)
         r.headers = headers.map { KeyValue($0.name, $0.value) }
@@ -379,7 +379,7 @@ extension CurlImport.Request {
         }
         if bodyMode == "multipart" {
             r.bodyMode = "multipart"
-            r.formFields = formFields.map { FormRow($0.key, $0.type == "file" ? $0.fileName : $0.value, type: $0.type) }
+            r.formFields = formFields.map { $0.type == "file" ? FormRow($0.key, type: "file", extras: ["fileName": .string($0.fileName)]) : FormRow($0.key, $0.value) }
         } else if !body.isEmpty {
             r.body = body
             let start = body.drop(while: { $0.isWhitespace }).first

@@ -106,6 +106,7 @@ final class AppModel {
             persist(mine)
         }
         sortCollections()
+        pruneUploads()
     }
 
     func importLegacy(_ legacy: LegacyImport.Result) {
@@ -270,6 +271,73 @@ final class AppModel {
         guard !isReadOnly(id), let i = collections.firstIndex(where: { $0.id == id }) else { return }
         change(&collections[i])
         persist(collections[i])
+    }
+
+    // MARK: - Undo
+
+    /// What can be taken back now ("Deleted Create order").
+    struct UndoOffer: Identifiable {
+        let id: UInt64
+        let label: String
+        fileprivate let before: [SavedCollection]
+        fileprivate let after: [SavedCollection]
+        fileprivate let pins: AppState
+        fileprivate let shared: Set<UInt64>
+    }
+
+    private(set) var undoOffer: UndoOffer?
+
+    /// Makes a change to collections that can be taken back.
+    func undoable(_ label: String, _ change: () -> Void) {
+        let (before, pins, shared) = (collections, state, Set(sharedRoles.keys))
+        change()
+        guard collections != before else { return }
+        undoOffer = UndoOffer(id: IDs.next(), label: label, before: before, after: collections, pins: pins, shared: shared)
+    }
+
+    func dismissUndo(_ id: UInt64) {
+        if undoOffer?.id == id { undoOffer = nil }
+    }
+
+    /// Takes the last change back, keeping what was done since: requests come back where they were; a
+    /// deleted collection comes back under a new id, since HITOP Cloud may have its deletion. A
+    /// shared one that left this device isn't brought back (its members still have it).
+    func undo() {
+        guard let u = undoOffer else { return }
+        undoOffer = nil
+        for old in u.before {
+            let then = u.after.first { $0.id == old.id }
+            if then == nil {
+                guard collection(old.id) == nil, !u.shared.contains(old.id) else { continue }
+                var c = old
+                c.id = IDs.next()
+                // Requests that are somewhere else by now stay there.
+                c.requests.removeAll { request($0.id) != nil }
+                addCollectionCopy(c)
+                if u.pins.pinnedCollections.contains(old.id) { togglePin(collection: c.id) }
+            } else if let then, then != old {
+                let changed = old.requests.filter { o in then.requests.first { $0.id == o.id } != o }
+                let ids = Set(changed.map(\.id))
+                let added = Set(then.requests.map(\.id)).subtracting(old.requests.map(\.id))
+                update(collection: old.id) { now in
+                    var list = now.requests.filter { !added.contains($0.id) }.map { r in changed.first { $0.id == r.id } ?? r }
+                    for (i, r) in old.requests.enumerated() where ids.contains(r.id) && !list.contains(where: { $0.id == r.id }) {
+                        let prev = old.requests[..<i].last { p in list.contains { $0.id == p.id } }
+                        let at = prev.flatMap { p in list.firstIndex { $0.id == p.id } }.map { $0 + 1 } ?? 0
+                        list.insert(r, at: at)
+                    }
+                    let missing = old.folders.filter { !now.folders.contains($0) && !then.folders.contains($0) }
+                    now.folders = now.folders == then.folders ? old.folders : now.folders + missing
+                    now.requests = list
+                }
+                ids.forEach(syncEditor)
+            }
+        }
+        let lost = u.pins.pinnedRequests.filter { !state.pinnedRequests.contains($0) && request($0) != nil }
+        if !lost.isEmpty {
+            state.pinnedRequests += lost
+            persistState()
+        }
     }
 
     // MARK: - Lookups

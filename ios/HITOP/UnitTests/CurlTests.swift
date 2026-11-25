@@ -93,7 +93,7 @@ final class CurlTests: XCTestCase {
         let form = try CurlImport.parse("curl https://x.test/up -F 'title=Hello' -F 'avatar=@me.png'").savedRequest
         XCTAssertEqual(form.bodyKind, .multipart)
         XCTAssertEqual(form.formFields.map(\.type), ["text", "file"])
-        XCTAssertEqual(form.formFields.last?.value, "me.png")
+        XCTAssertEqual(form.formFields.last?.fileName, "me.png")
         let text = try CurlImport.parse("curl https://x.test -H 'Content-Type: text/plain' -d hello").savedRequest
         XCTAssertEqual(text.bodyKind, .text)
         XCTAssertEqual(try CurlImport.parse("curl https://x.test").savedRequest.bodyKind, .none)

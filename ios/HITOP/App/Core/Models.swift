@@ -146,16 +146,24 @@ struct FormRow: Codable, Hashable, Sendable, Identifiable {
     var value: String
     var type: String
     var enabled: Bool
+    /// Keys this version has no field for, and a file row's `fileName` and `fileToken` (`Uploads`).
+    var extras: [String: JSONAny]
+    static let known: Set<String> = ["key", "value", "type", "enabled"]
 
-    init(_ key: String = "", _ value: String = "", type: String = "text", enabled: Bool = true) {
+    var isFile: Bool { type == "file" }
+    var fileName: String? { extras["fileName"]?.string }
+    var fileToken: String? { extras["fileToken"]?.string }
+
+    init(_ key: String = "", _ value: String = "", type: String = "text", enabled: Bool = true, extras: [String: JSONAny] = [:]) {
         self.key = key
         self.value = value
         self.type = type
         self.enabled = enabled
+        self.extras = extras
     }
 
-    static func == (a: FormRow, b: FormRow) -> Bool { a.key == b.key && a.value == b.value && a.type == b.type && a.enabled == b.enabled }
-    func hash(into h: inout Hasher) { h.combine(key); h.combine(value); h.combine(type); h.combine(enabled) }
+    static func == (a: FormRow, b: FormRow) -> Bool { a.key == b.key && a.value == b.value && a.type == b.type && a.enabled == b.enabled && a.extras == b.extras }
+    func hash(into h: inout Hasher) { h.combine(key); h.combine(value); h.combine(type); h.combine(enabled); h.combine(extras) }
 
     init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: AnyKey.self)
@@ -163,6 +171,7 @@ struct FormRow: Codable, Hashable, Sendable, Identifiable {
         value = c.value("value", "")
         type = c.value("type", "text")
         enabled = c.value("enabled", true)
+        extras = c.extras(Self.known)
     }
 
     func encode(to encoder: Encoder) throws {
@@ -171,6 +180,7 @@ struct FormRow: Codable, Hashable, Sendable, Identifiable {
         try c.put("value", value)
         try c.put("type", type)
         try c.put("enabled", enabled)
+        try c.putExtras(extras, skipping: Self.known)
     }
 }
 

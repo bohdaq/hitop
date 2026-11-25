@@ -80,8 +80,8 @@ struct LibraryActions: ViewModifier {
 
     private func delete() {
         switch deleting {
-        case let .collection(id)?: model.deleteCollection(id)
-        case let .folder(cid, path)?: model.deleteFolder(path, in: cid)
+        case let .collection(id)?: model.undoable("Deleted \(model.collection(id)?.name ?? "the collection")") { model.deleteCollection(id) }
+        case let .folder(cid, path)?: model.undoable("Deleted \(path)") { model.deleteFolder(path, in: cid) }
         default: break
         }
         deleting = nil
@@ -113,7 +113,7 @@ struct MoveSheet: View {
     private func target(_ c: SavedCollection, _ folder: String) -> some View {
         let here = model.collectionOf(request: requestID)?.id == c.id && model.request(requestID)?.folder == folder
         return Button {
-            model.moveRequest(requestID, to: c.id, folder: folder)
+            model.undoable("Moved \(model.request(requestID)?.name ?? "the request")") { model.moveRequest(requestID, to: c.id, folder: folder) }
             dismiss()
         } label: {
             HStack {
@@ -475,7 +475,7 @@ struct CollectionsScreen: View {
         .listRowInsets(EdgeInsets(top: 0, leading: indent + CGFloat(depth) * 14, bottom: 0, trailing: 16))
         .accessibilityIdentifier("request-\(r.name)")
         .swipeActions(edge: .trailing) {
-            Button("Delete", systemImage: "trash", role: .destructive) { model.deleteRequest(r.id) }
+            Button("Delete", systemImage: "trash", role: .destructive) { model.undoable("Deleted \(r.name)") { model.deleteRequest(r.id) } }
             Button("Move", systemImage: "folder") { moving = r.id }.tint(Theme.info)
             Button("Rename", systemImage: "pencil") { naming = .request(r.id) }.tint(Theme.accentDeep)
         }
@@ -487,7 +487,7 @@ struct CollectionsScreen: View {
             Button("Duplicate", systemImage: "plus.square.on.square") { model.duplicateRequest(r.id) }
             Button("Move to…", systemImage: "folder") { moving = r.id }
             Button(model.isPinned(request: r.id) ? "Unpin" : "Pin", systemImage: "pin") { model.togglePin(request: r.id) }
-            Button("Delete", systemImage: "trash", role: .destructive) { model.deleteRequest(r.id) }
+            Button("Delete", systemImage: "trash", role: .destructive) { model.undoable("Deleted \(r.name)") { model.deleteRequest(r.id) } }
         }
     }
 }
