@@ -561,7 +561,7 @@ pub fn oauth_sign_in(app: tauri::AppHandle, state: tauri::State<'_, Stops>, args
             Some(std::time::Duration::from_secs(30)),
             &mut |url| {
                 #[allow(deprecated)]
-                app.shell().open(url, None).map_err(|e| anyhow::anyhow!("couldn't open the browser: {e}"))
+                app.shell().open(url, None).map_err(|e| std::io::Error::other(format!("couldn't open the browser: {e}")).into())
             },
             &|| stopped.load(SeqCst),
         )
