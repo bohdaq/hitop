@@ -37,6 +37,8 @@ pub fn run() {
             commands::secret_set,
             commands::secret_delete,
             commands::secret_refs_resolve,
+            commands::network_settings,
+            commands::network_settings_set,
             commands::secret_manager_settings,
             commands::secret_manager_settings_set,
             commands::write_file,
@@ -62,6 +64,7 @@ pub fn run() {
         .manage(commands::HttpCalls::default())
         .manage(commands::Stops::default())
         .setup(|app| {
+            commands::use_network_settings();
             // The usage ping, when the user turned it on (off by default).
             #[cfg(feature = "telemetry")]
             commands::ping_in_background(app.package_info().version.to_string());

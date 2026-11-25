@@ -103,6 +103,7 @@ static NETWORK: std::sync::RwLock<Option<(Network, Client)>> = std::sync::RwLock
 /// Uses `n` from now on (None: the defaults, as when this is never called).
 pub fn set_network(n: Option<Network>) -> Result<()> {
     if network() == n {
+        *BLOCKED.write().unwrap_or_else(|p| p.into_inner()) = None;
         return Ok(());
     }
     let next = match n {
@@ -113,7 +114,25 @@ pub fn set_network(n: Option<Network>) -> Result<()> {
         None => None,
     };
     *NETWORK.write().unwrap_or_else(|p| p.into_inner()) = next;
+    *BLOCKED.write().unwrap_or_else(|p| p.into_inner()) = None;
     Ok(())
+}
+
+static BLOCKED: std::sync::RwLock<Option<String>> = std::sync::RwLock::new(None);
+
+/// Requests, WebSocket and gRPC connections fail with `reason` until [`set_network`] succeeds
+/// (except [`Options::plain`] ones).
+pub fn block_network(reason: String) {
+    *BLOCKED.write().unwrap_or_else(|p| p.into_inner()) = Some(reason);
+}
+
+/// Why requests don't go out, if they don't.
+pub fn blocked() -> Option<String> {
+    BLOCKED.read().unwrap_or_else(|p| p.into_inner()).clone()
+}
+
+pub(crate) fn check_blocked() -> Result<()> {
+    blocked().map_or(Ok(()), |why| Err(anyhow::anyhow!(why)))
 }
 
 /// The settings in use, if any.
@@ -125,6 +144,10 @@ fn client() -> Client {
     if let Some((_, c)) = NETWORK.read().unwrap_or_else(|p| p.into_inner()).as_ref() {
         return c.clone();
     }
+    plain_client()
+}
+
+fn plain_client() -> Client {
     CLIENT.get_or_init(|| builder().build().expect("failed to build HTTP client")).clone()
 }
 
@@ -164,6 +187,8 @@ pub struct Options<'a> {
     pub jar: Option<&'a mut Jar>,
     /// Answer with the first response, even a redirect (the request's "Follow redirects" off).
     pub no_redirects: bool,
+    /// Without [`set_network`]'s settings (HITOP Cloud: the app's own traffic).
+    pub plain: bool,
 }
 
 /// One request with its redirects: each hop is sent with redirects off and read by a
@@ -210,7 +235,10 @@ fn exchange(method: &str, url: &str, headers: Vec<(String, String)>, body: Vec<u
             Err(_) => reqwest::Method::GET,
         };
         check_url(step.url.as_str())?;
-        let mut req = client().request(m, step.url.clone()).headers(header_map);
+        if !opts.plain {
+            check_blocked()?;
+        }
+        let mut req = if opts.plain { plain_client() } else { client() }.request(m, step.url.clone()).headers(header_map);
         if let Some(t) = opts.timeout {
             req = req.timeout(t.saturating_sub(start.elapsed()).max(Duration::from_millis(1)));
         }

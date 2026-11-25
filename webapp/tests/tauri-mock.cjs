@@ -213,6 +213,10 @@ class TauriMock {
     this.smShell = [];
   }
 
+  networkView() {
+    return { settings: JSON.parse(this.read('network.json', '{}')), path: this.file('network.json'), error: null };
+  }
+
   // hitop-core secret_managers::settings_view: settings from
   // secret-managers.json, which secrets the keychain holds, never values.
   smView() {
@@ -365,6 +369,12 @@ class TauriMock {
         if (missing.length) throw missing.map((r) => `\${${r}} (${r.split(':')[1]}): not found`).join('\n');
         return Object.fromEntries(args.refs.map((r) => [r, this.secretManager.get(r)]));
       }
+      case 'network_settings':
+        return this.networkView();
+      case 'network_settings_set':
+        if (/@/.test(args.settings.proxy)) throw "the proxy address can't hold a password: it would be stored in a file";
+        fs.writeFileSync(this.file('network.json'), JSON.stringify(Object.fromEntries(Object.entries(args.settings).map(([k, v]) => [k, v.trim()]).filter(([, v]) => v))));
+        return this.networkView();
       case 'secret_manager_settings':
         return this.smView();
       case 'secret_manager_settings_set':

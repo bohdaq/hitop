@@ -241,6 +241,7 @@ mod client {
     /// within `timeout`, then a task that reads and writes until either side
     /// closes. Events arrive on `Connection::events`.
     pub async fn connect(target: &Target, timeout: Option<Duration>) -> Result<Connection> {
+        crate::http::check_blocked()?;
         let mut request = target.url.as_str().into_client_request().with_context(|| format!("bad WebSocket URL '{}'", target.url))?;
         let headers = request.headers_mut();
         for (name, value) in &target.headers {

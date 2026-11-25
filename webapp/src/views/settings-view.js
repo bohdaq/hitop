@@ -187,7 +187,7 @@ class HitopAppSettings extends LitElement {
           </label>
           <ul class="settings-notes">
             ${desktop
-              ? html`<li>Requests go straight from this computer: no proxy, no CORS.</li>`
+              ? html`<li>Requests go straight from this computer, or through the proxy you set under Network: no CORS.</li>`
               : html`<li>Requests to public hosts go through the HITOP proxy, so CORS doesn't block them; the proxy gives each one up to 20 s. Requests to localhost and private networks go straight from your browser.</li>`}
             <li>Redirects are followed. TLS certificates are always checked: there is no switch to turn that off.</li>
           </ul>

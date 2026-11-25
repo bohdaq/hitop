@@ -76,6 +76,8 @@ async function send(url, options = {}) {
       cookies: Boolean(options.cookies),
       ...(signal ? { id } : {}),
       ...(options.timeoutMs ? { timeoutMs: options.timeoutMs } : {}),
+      // HITOP Cloud: never through the person's proxy or certificate authorities.
+      ...(options.plain ? { plain: true } : {}),
       ...(options.followRedirects === false ? { followRedirects: false } : {}),
     },
     // Rust answers an error as a plain string: an Error, so the response pane can say it (UX2).
@@ -363,6 +365,10 @@ export function createPlatform() {
     load: () => invoke("secret_manager_settings"),
     save: (settings, secrets) => invoke("secret_manager_settings_set", { settings, secrets }),
   };
+  const network = {
+    load: () => invoke("network_settings"),
+    save: (settings) => invoke("network_settings_set", { settings }),
+  };
   const platform = {
     name: "tauri",
     // ST1: set by init() from Rust's `build_info`; true until then (no purchase links by default).
@@ -417,7 +423,7 @@ export function createPlatform() {
       // The Settings page: secret managers, and the usage ping where the build has it (not the Mac App Store one).
       // Self-update, in the GitHub Release builds only (null elsewhere): Settings → Updates and the bar.
       const updates = await desktopUpdates(invoke);
-      const settings = await settingsSections(telemetry, managers, updates);
+      const settings = await settingsSections(telemetry, managers, updates, network);
       // The Git panel for collection folders; the desktop's sections of the Settings page.
       platform.pages = gitPages(platform.git);
       platform.settingsSections = settings.sections;

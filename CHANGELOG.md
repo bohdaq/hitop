@@ -19,6 +19,8 @@ Releases before 1.2 are listed in ROADMAP.md (section 5) and on the GitHub Relea
 
 ### Web and desktop
 
+- Desktop: Settings → Network: certificate authorities, a client certificate and a proxy for requests (never HITOP Cloud). While they can't be
+  used, requests fail with the reason. Certificate checks can be skipped only in the CLI (`--insecure`).
 - Desktop: event streams show live (Stop ends them) and OAuth 2.0 authorization code signs in in the system browser (not in the Mac
   App Store build, whose sandbox may not listen for the answer).
 - **Security, portal:** a `?server=` link no longer signs you out silently, and the sign-in page names a server that isn't HITOP Cloud.

@@ -51,18 +51,7 @@ impl Env {
 
     /// A TLS server; with `mtls` it wants a client certificate of the test CA.
     fn serve(&self, mtls: bool) -> String {
-        let provider = Arc::new(rustls::crypto::ring::default_provider());
-        let chain = vec![CertificateDer::from_pem_file(self.dir.join("server.pem")).unwrap()];
-        let key = PrivateKeyDer::from_pem_file(self.dir.join("server.key")).unwrap();
-        let b = rustls::ServerConfig::builder_with_provider(provider.clone()).with_safe_default_protocol_versions().unwrap();
-        let config = if mtls {
-            let mut roots = rustls::RootCertStore::empty();
-            roots.add(CertificateDer::from_pem_file(self.dir.join("ca.pem")).unwrap()).unwrap();
-            b.with_client_cert_verifier(rustls::server::WebPkiClientVerifier::builder_with_provider(Arc::new(roots), provider).build().unwrap())
-        } else {
-            b.with_no_client_auth()
-        };
-        let config = Arc::new(config.with_single_cert(chain, key).unwrap());
+        let config = self.tls(mtls);
         let l = TcpListener::bind("127.0.0.1:0").unwrap();
         let url = format!("https://127.0.0.1:{}/", l.local_addr().unwrap().port());
         std::thread::spawn(move || {
@@ -166,4 +155,75 @@ fn a_proxy_gets_the_requests_but_not_those_of_noproxy() {
     assert!(ok(&e.hitop(&["send", "http://api.invalid/x", "--proxy", &proxy])));
     assert!(seen.lock().unwrap().starts_with("GET http://api.invalid/x "));
     assert!(!ok(&e.hitop(&["send", "http://direct.invalid/x", "--proxy", &proxy, "--noproxy", "direct.invalid"])));
+}
+
+impl Env {
+    fn tls(&self, mtls: bool) -> Arc<rustls::ServerConfig> {
+        let provider = Arc::new(rustls::crypto::ring::default_provider());
+        let chain = vec![CertificateDer::from_pem_file(self.dir.join("server.pem")).unwrap()];
+        let key = PrivateKeyDer::from_pem_file(self.dir.join("server.key")).unwrap();
+        let b = rustls::ServerConfig::builder_with_provider(provider.clone()).with_safe_default_protocol_versions().unwrap();
+        let config = if mtls {
+            let mut roots = rustls::RootCertStore::empty();
+            roots.add(CertificateDer::from_pem_file(self.dir.join("ca.pem")).unwrap()).unwrap();
+            b.with_client_cert_verifier(rustls::server::WebPkiClientVerifier::builder_with_provider(Arc::new(roots), provider).build().unwrap())
+        } else {
+            b.with_no_client_auth()
+        };
+        Arc::new(config.with_single_cert(chain, key).unwrap())
+    }
+}
+
+#[test]
+fn websocket_uses_the_ca_the_client_certificate_and_insecure() {
+    let e = Env::new("ws");
+    let l = TcpListener::bind("127.0.0.1:0").unwrap();
+    let url = format!("wss://127.0.0.1:{}/", l.local_addr().unwrap().port());
+    let config = e.tls(true);
+    std::thread::spawn(move || {
+        for s in l.incoming() {
+            let (s, config) = (s.unwrap(), config.clone());
+            std::thread::spawn(move || {
+                let stream = rustls::StreamOwned::new(rustls::ServerConnection::new(config).unwrap(), s);
+                if let Ok(mut ws) = tokio_tungstenite::tungstenite::accept(stream) {
+                    if let Ok(m) = ws.read() {
+                        let _ = ws.send(m);
+                        let _ = ws.flush();
+                    }
+                    while ws.read().is_ok() {}
+                }
+            });
+        }
+    });
+    let (ca, cert, key) = (e.file("ca.pem"), e.file("client.pem"), e.file("client.key"));
+    let code = |more: &[&str]| e.hitop(&[&["ws", &url, "-s", "hi", "-n", "1", "--wait", "5000"], more].concat());
+    let o = code(&["--cacert", &ca, "--cert", &cert, "--key", &key]);
+    assert!(o.status.success() && String::from_utf8_lossy(&o.stdout).contains("hi"), "{}", String::from_utf8_lossy(&o.stderr));
+    assert!(code(&["-k", "--cert", &cert, "--key", &key]).status.success());
+    assert!(!code(&["--cert", &cert, "--key", &key]).status.success(), "unknown authority");
+    assert!(!code(&["--cacert", &ca]).status.success(), "no client certificate");
+}
+
+#[test]
+fn grpc_uses_the_ca_and_the_client_certificate() {
+    use tonic::transport::{Certificate, Identity, Server, ServerTlsConfig};
+    let e = Env::new("grpc");
+    let read = |f: &str| std::fs::read(e.dir.join(f)).unwrap();
+    let tls = ServerTlsConfig::new().identity(Identity::from_pem(read("server.pem"), read("server.key"))).client_ca_root(Certificate::from_pem(read("ca.pem")));
+    let (tx, rx) = std::sync::mpsc::channel();
+    std::thread::spawn(move || {
+        tokio::runtime::Runtime::new().unwrap().block_on(async move {
+            let l = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+            tx.send(l.local_addr().unwrap().to_string()).unwrap();
+            let reflection = tonic_reflection::server::Builder::configure().build_v1().unwrap();
+            Server::builder().tls_config(tls).unwrap().add_service(reflection).serve_with_incoming(tonic::transport::server::TcpIncoming::from(l)).await.unwrap();
+        });
+    });
+    let addr = rx.recv().unwrap();
+    let (ca, cert, key) = (e.file("ca.pem"), e.file("client.pem"), e.file("client.key"));
+    let list = |more: &[&str]| e.hitop(&[&["grpc", &addr, "list"], more].concat());
+    let o = list(&["--cacert", &ca, "--cert", &cert, "--key", &key]);
+    assert!(String::from_utf8_lossy(&o.stdout).contains("grpc.reflection.v1.ServerReflection"), "{}", String::from_utf8_lossy(&o.stderr));
+    assert!(!list(&["--cert", &cert, "--key", &key]).status.success(), "unknown authority");
+    assert!(!list(&["--cacert", &ca]).status.success(), "no client certificate");
 }

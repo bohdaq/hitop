@@ -46,7 +46,7 @@ fn read_json<T: serde::de::DeserializeOwned>(path: &Path) -> Result<T> {
 /// Writes a file in place (the Microsoft Store build shares it with the CLI only that way), with
 /// the new text in a journal first. A file that isn't `T` any more is copied to
 /// `<file>.damaged-<time>` before it is replaced.
-fn write_json<T: serde::Serialize + serde::de::DeserializeOwned>(path: &Path, text: &str) -> Result<()> {
+pub(crate) fn write_json<T: serde::Serialize + serde::de::DeserializeOwned>(path: &Path, text: &str) -> Result<()> {
     if let Ok(old) = fs::read(path) {
         if !old.is_empty() && serde_json::from_slice::<T>(&old).is_err() {
             let ms = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map_or(0, |d| d.as_millis());

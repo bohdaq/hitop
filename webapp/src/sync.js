@@ -295,7 +295,7 @@ export class SyncClient {
     // The desktop goes through Rust (no CORS); the browser straight to the server (its CORS
     // allows the web app), never through the web proxy.
     const p = platform();
-    const res = p.name === "tauri" ? await p.send(url, opts) : await fetch(url, opts);
+    const res = p.name === "tauri" ? await p.send(url, { ...opts, plain: true }) : await fetch(url, opts);
     const text = await res.text();
     let json;
     try {

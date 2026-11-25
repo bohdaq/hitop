@@ -64,12 +64,25 @@ const GROUPS = [
   ["AZURE_TENANT_ID", "AZURE_CLIENT_ID", "AZURE_CLIENT_SECRET"],
 ];
 
+// The network settings (hitop-core network_settings): [key, label, placeholder].
+const NETWORK = [
+  ["caFile", "Certificate authorities (PEM file)", "/path/to/company-ca.pem"],
+  ["certFile", "Client certificate (PEM file)", "optional"],
+  ["keyFile", "Client key (PEM file)", "when the certificate file doesn't hold it"],
+  ["proxy", "HTTP proxy", "http://proxy.example.com:3128"],
+  ["noProxy", "Hosts without the proxy", "localhost, .internal"],
+];
+
 const fieldId = (name) => `sm-${name.toLowerCase().replace(/_/g, "-")}`;
 
 class HitopSettings extends LitElement {
   static properties = {
     telemetry: { attribute: false },
     managers: { attribute: false },
+    network: { attribute: false },
+    net: { state: true },
+    netError: { state: true },
+    netNote: { state: true },
     status: { state: true },
     error: { state: true },
     sm: { state: true },
@@ -90,6 +103,10 @@ class HitopSettings extends LitElement {
         (e) => (this.error = String(e)),
       );
     }
+    this.network?.load().then(
+      (n) => ((this.net = n), (this.netError = n.error)),
+      (e) => (this.netError = String(e)),
+    );
     this.managers?.load().then(
       (s) => (this.sm = s),
       (e) => (this.smError = String(e)),
@@ -134,6 +151,38 @@ class HitopSettings extends LitElement {
     } finally {
       this.smBusy = false;
     }
+  }
+
+  async saveNetwork() {
+    const settings = Object.fromEntries(NETWORK.map(([key]) => [key, this.querySelector(`#net-${key}`)?.value ?? ""]));
+    this.netError = null;
+    this.netNote = "";
+    try {
+      this.net = await this.network.save(settings);
+      this.netNote = "Saved. Requests use these settings from now on.";
+    } catch (e) {
+      this.netError = String(e);
+    }
+  }
+
+  renderNetwork() {
+    const n = this.net;
+    return html`<section aria-label="Network">
+      <h2>Network</h2>
+      <p class="page-lead">
+        For the requests you send; HITOP Cloud never uses them. The proxy is for HTTP only: WebSocket and gRPC connect directly. Only the files' paths are kept, in ${n?.path ?? "network.json in hitop's settings folder"}.
+      </p>
+      ${n
+        ? html`<form class="sm-form" @submit=${(e) => (e.preventDefault(), this.saveNetwork())}>
+            ${NETWORK.map(([key, label, placeholder]) => html`<lit-material-text-field id=${`net-${key}`} variant="outlined" label=${label} placeholder=${placeholder} .value=${n.settings?.[key] ?? ""}></lit-material-text-field>`)}
+            <div class="sm-actions">
+              <lit-material-button variant="filled" type="submit">Save network settings</lit-material-button>
+              ${this.netNote ? html`<span class="hint" role="status">${this.netNote}</span>` : nothing}
+            </div>
+          </form>`
+        : nothing}
+      ${this.netError ? html`<p class="hint" role="alert">${this.netError}</p>` : n ? nothing : html`<p class="hint">Loading…</p>`}
+    </section>`;
   }
 
   renderField([name, key, label, placeholder]) {
@@ -194,6 +243,7 @@ class HitopSettings extends LitElement {
                   `
                 : html`<p class="hint">${this.error ?? "Loading…"}</p>`}`
           : nothing}
+        ${this.network ? this.renderNetwork() : nothing}
         ${this.managers ? this.renderManagers() : nothing}`;
   }
 }
@@ -205,14 +255,14 @@ customElements.define("hitop-settings", HitopSettings);
 // in builds that don't update themselves). Returns the desktop's sections of the
 // Settings page (the usage ping part only when this build has the ping, Updates
 // only when it updates itself) and the ping's status.
-export async function settingsSections(telemetry, managers, updates = null) {
+export async function settingsSections(telemetry, managers, updates = null, network = null) {
   let status = null;
   try {
     status = await telemetry.status();
   } catch {
     telemetry = null;
   }
-  const sections = () => html`${updates ? updates.section() : nothing}<hitop-settings class="desktop-settings" .telemetry=${telemetry} .managers=${managers}></hitop-settings>`;
+  const sections = () => html`${updates ? updates.section() : nothing}<hitop-settings class="desktop-settings" .telemetry=${telemetry} .managers=${managers} .network=${network}></hitop-settings>`;
   return { sections, status };
 }
 

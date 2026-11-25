@@ -48,7 +48,7 @@ Status is kept in the table at the end; choices made on the way go under "Decisi
 | C1 | built (server side; the web and CLI items of STATE_MACHINES.md are in C3 and C4); on main, checks green after one rerun of a flaky Android SSE test, cause open (PR 21) |
 | C2 | built: old iOS apps deleted (2.0.0 live since 2026-11-22, checked), the web e2e job split in five; on main 85975cc, every check green (PR 22) |
 | C3 | on main 193350a (PRs 23-27, every check green): run cancel, OAuth windows, desktop streams and OAuth, dialogs, portal (deployed), store.js and hitop-app.js split |
-| C4 | in progress: CLI TLS options on main a9c1a18 (PR 28); gRPC client/bidi streaming on main 5801dac (PR 29); MCP gRPC tools and sync --json (PR 30), OAuth refresh in core, Android and desktop built (CI pending); open: interactive streaming in the apps (they send all messages, then close), desktop TLS settings, iOS TLS, WebSocket and gRPC TLS tests |
+| C4 | in progress: CLI TLS options on main a9c1a18 (PR 28); gRPC client/bidi streaming on main 5801dac (PR 29); MCP gRPC tools and sync --json on main 2dc2dc8 (PR 30); OAuth refresh in core, Android and desktop (PR 31), desktop network settings and WebSocket/gRPC TLS tests built (CI pending); open: interactive streaming in the apps (they send all messages, then close), iOS TLS |
 | C5–C9 | not started |
 
 ## Decisions
@@ -62,3 +62,5 @@ Status is kept in the table at the end; choices made on the way go under "Decisi
 | 2026-11-25 | `--insecure` is refused for gRPC. | tonic has no switch for it; a custom connector would replace its TLS. |
 | 2026-11-25 | A streaming call's messages are JSON values one after another in `grpc.message`; stdin message by message only with `-i`. | Additive to format v1 (a string stays a string); `-d -` still resolves secret references. |
 | 2026-11-25 | The iOS accessibility audit is tried up to 3 times when it did not finish (code -56). | A tool timeout says nothing about the screen; real issues and an audit that never finishes still fail. |
+| 2026-11-25 | The desktop has no switch that skips certificate verification. | The owner allowed it per command only; a desktop setting would last, and its Settings page promises there is none. |
+| 2026-11-25 | Desktop network settings hold file paths; a proxy address with a password is refused; unusable settings block requests. | No secret in a file; a request never goes around a proxy silently. |

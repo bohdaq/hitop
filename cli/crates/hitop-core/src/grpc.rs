@@ -226,6 +226,7 @@ mod client {
     /// Connects to the target's server (must run inside a tokio runtime),
     /// within `timeout`. TLS uses the webpki roots, as reqwest does.
     pub async fn connect(target: &Target, timeout: Option<Duration>) -> Result<Channel> {
+        crate::http::check_blocked()?;
         let (uri, tls) = endpoint(&target.address, target.plaintext)?;
         let parsed: tonic::codegen::http::Uri = uri.parse().with_context(|| format!("bad gRPC address '{}'", target.address))?;
         let host = parsed.host().unwrap_or_default().trim_matches(['[', ']']).to_string();

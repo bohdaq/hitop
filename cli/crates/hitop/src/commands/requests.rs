@@ -306,12 +306,12 @@ pub fn run(cmd: RequestsCmd) -> Result<()> {
             let (sent_headers, sent_body) = (headers.clone(), String::from_utf8(body.clone()).unwrap_or_default());
             let workspace = source.workspace();
             let mut jar = super::cookies::open(&workspace, cookies)?;
-            let opts = http::Options { timeout, jar: jar.as_mut(), no_redirects };
+            let opts = http::Options { timeout, jar: jar.as_mut(), no_redirects, ..Default::default() };
             let mut result = http::execute_opts(&req.method, &pre.url, &headers, body.clone(), opts).map_err(masked)?;
             // Digest: the server's 401 challenge answered once.
             let fill = |s: &str| hitop_core::interpolation::interpolate(s, &vars);
             if let Some(h2) = hitop_core::digest_auth::retry_headers(req.auth.as_ref().or(col.auth.as_ref()), &fill, result.status, &result.headers, &req.method, &pre.url, &headers).map_err(masked)? {
-                result = http::execute_opts(&req.method, &pre.url, &h2, body, http::Options { timeout, jar: jar.as_mut(), no_redirects }).map_err(masked)?;
+                result = http::execute_opts(&req.method, &pre.url, &h2, body, http::Options { timeout, jar: jar.as_mut(), no_redirects, ..Default::default() }).map_err(masked)?;
             }
             super::cookies::save(&workspace, jar.as_ref())?;
 

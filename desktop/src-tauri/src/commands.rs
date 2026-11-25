@@ -334,6 +334,9 @@ pub struct SendArgs {
     /// False: answer with a redirect instead of following it (the request's "Follow redirects").
     #[serde(default)]
     pub follow_redirects: Option<bool>,
+    /// The app's own traffic (HITOP Cloud): without the person's network settings.
+    #[serde(default)]
+    pub plain: bool,
 }
 
 /// Requests the page can cancel, by its id: how to answer the waiting
@@ -414,7 +417,7 @@ fn send_now(args: SendArgs, cancelled: &std::sync::atomic::AtomicBool) -> Result
     };
     let timeout = args.timeout_ms.filter(|ms| *ms > 0).map(std::time::Duration::from_millis);
     let mut jar = if args.cookies { Some(Jar::load(GLOBAL_WORKSPACE).map_err(|e| format!("{e:#}"))?) } else { None };
-    let r = http::send_with(&args.method, &args.url, &args.headers, body, http::Options { timeout, jar: jar.as_mut(), no_redirects: args.follow_redirects == Some(false) }).map_err(|e| format!("{e:#}"))?;
+    let r = http::send_with(&args.method, &args.url, &args.headers, body, http::Options { timeout, jar: jar.as_mut(), no_redirects: args.follow_redirects == Some(false), plain: args.plain }).map_err(|e| format!("{e:#}"))?;
     if cancelled.load(std::sync::atomic::Ordering::SeqCst) {
         return Err("cancelled".to_string());
     }
@@ -496,7 +499,7 @@ pub fn send_stream(app: tauri::AppHandle, state: tauri::State<'_, Stops>, args: 
             &args.url,
             &args.headers,
             body,
-            http::Options { timeout: None, jar: jar.as_mut(), no_redirects: args.follow_redirects == Some(false) },
+            http::Options { timeout: None, jar: jar.as_mut(), no_redirects: args.follow_redirects == Some(false), plain: args.plain },
             &mut |h| {
                 if stopped.load(SeqCst) {
                     return false;
@@ -649,6 +652,36 @@ pub fn secret_refs_resolve(refs: Vec<String>) -> Result<HashMap<String, String>,
         return Err(errors.join("\n"));
     }
     Ok(values.into_iter().collect())
+}
+
+/// The network settings (hitop-core network_settings), and why they aren't in use, if they aren't.
+#[derive(Serialize)]
+pub struct NetworkView {
+    pub settings: hitop_core::network_settings::NetworkSettings,
+    pub path: String,
+    pub error: Option<String>,
+}
+
+/// Uses the saved network settings (at start).
+pub fn use_network_settings() {
+    match hitop_core::network_settings::NetworkSettings::path() {
+        Ok(p) => hitop_core::network_settings::NetworkSettings::start(&p),
+        Err(e) => http::block_network(format!("no settings folder: {e:#}")),
+    }
+}
+
+#[tauri::command(async)]
+pub fn network_settings() -> Result<NetworkView, String> {
+    use hitop_core::network_settings::NetworkSettings;
+    let path = NetworkSettings::path().map_err(|e| format!("{e:#}"))?;
+    Ok(NetworkView { settings: NetworkSettings::load(&path).unwrap_or_default(), path: path.display().to_string(), error: http::blocked() })
+}
+
+#[tauri::command(async)]
+pub fn network_settings_set(settings: hitop_core::network_settings::NetworkSettings) -> Result<NetworkView, String> {
+    let path = hitop_core::network_settings::NetworkSettings::path().map_err(|e| format!("{e:#}"))?;
+    settings.save(&path).map_err(|e| format!("{e:#}"))?;
+    network_settings()
 }
 
 /// The Settings page's "Secret managers" section: `{settings, secrets:

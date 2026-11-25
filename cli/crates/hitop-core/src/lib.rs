@@ -11,6 +11,8 @@ pub mod grpc;
 pub mod http;
 pub mod interpolation;
 pub mod model;
+#[cfg(feature = "native")]
+pub mod network_settings;
 pub mod openapi;
 pub mod oauth2;
 pub mod params;

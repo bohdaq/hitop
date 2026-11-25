@@ -86,6 +86,21 @@ const settle = (p) => p.waitForTimeout(400);
     await settle(p);
     check('[tauri] Remove deletes it from the keychain', !h.mock.keychain.has('secret-managers/VAULT_TOKEN') && (await section.innerText()).includes('Removed VAULT_TOKEN'));
 
+    // Network: saved to network.json; a refused value says why and changes nothing.
+    const net = p.locator('section[aria-label="Network"]');
+    const netSave = async () => {
+      await p.getByRole('button', { name: 'Save network settings' }).click();
+      await settle(p);
+    };
+    await fill('net-caFile', ' /certs/ca.pem ');
+    await fill('net-proxy', 'http://proxy.test:3128');
+    await netSave();
+    check('[tauri] network settings are saved', h.mock.read('network.json', '') === '{"caFile":"/certs/ca.pem","proxy":"http://proxy.test:3128"}' && (await net.innerText()).includes('Saved.'), h.mock.read('network.json', ''));
+    await fill('net-proxy', 'http://ann:pw@proxy.test:3128');
+    await netSave();
+    check('[tauri] a proxy with a password is refused', (await net.getByRole('alert').innerText()).includes('password') && !h.mock.read('network.json', '').includes('pw'));
+    check('[tauri] nothing skips certificate checks', !/insecure|skip/i.test(await net.innerText()));
+
     // A variable the app's environment sets wins, and the page says so.
     h.mock.smShell = ['AWS_DEFAULT_REGION', 'VAULT_ADDR'];
     await p.reload({ waitUntil: 'networkidle' });
