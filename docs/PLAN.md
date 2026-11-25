@@ -45,12 +45,12 @@ Status is kept in the table at the end; choices made on the way go under "Decisi
 | # | Status |
 | --- | --- |
 | C0 | on main 63864f9, every check green (PR 20): core and CLI storage journal, damaged files kept (core, web, desktop, iOS) and never deleted from the cloud, iOS drafts |
-| C1 | built (server side; the web and CLI items of STATE_MACHINES.md are in C3 and C4); on main, checks green after one rerun of a flaky Android SSE test, cause open (PR 21) |
+| C1 | built (server side; the web and CLI items of STATE_MACHINES.md are in C3 and C4); on main, checks green after one rerun of a flaky Android SSE test (PR 21; see Open problems) |
 | C2 | built: old iOS apps deleted (2.0.0 live since 2026-11-22, checked), the web e2e job split in five; on main 85975cc, every check green (PR 22) |
 | C3 | on main 193350a (PRs 23-27, every check green): run cancel, OAuth windows, desktop streams and OAuth, dialogs, portal (deployed), store.js and hitop-app.js split |
 | C4 | in progress: CLI TLS options on main a9c1a18 (PR 28); gRPC client/bidi streaming on main 5801dac (PR 29); MCP gRPC tools and sync --json on main 2dc2dc8 (PR 30); OAuth refresh in core, Android and desktop (PR 31), desktop network settings and WebSocket/gRPC TLS tests built (CI pending); gRPC messages one at a time in desktop, web (needs the newer hitop-server), iOS and Android built (CI pending) |
 | C5 | core, CLI, web, desktop and Android on main 17ab888 (PR 33); iOS in C6 |
-| C6 | in progress: import and export (PR 34), OAuth/SigV4/Digest (PR 35) on main; uploads, data files, compare/undo (PR 36) on main; settings and TLS (PR 37), share extension, background sync and schedules (PR 38), roles, comments, team environments, SSO built (CI pending) |
+| C6 | on main dd7ff78 (PR 39, every check green on that commit; the run on main then failed one flaky Android UI test, see Open problems): import and export (PR 34), OAuth/SigV4/Digest (PR 35) on main; uploads, data files, compare/undo (PR 36) on main; settings and TLS (PR 37), share extension, background sync and schedules (PR 38), roles, comments, team environments, SSO built |
 | C7–C9 | not started |
 
 ## Decisions
@@ -77,7 +77,10 @@ Status is kept in the table at the end; choices made on the way go under "Decisi
 
 ## Open problems
 
-- Android `ProtocolFlowTest.grpcFieldsAndAnUnreachableServer` (API 31 emulator), failed once on main 8da867a (2026-11-25): "Calling…" for more than
-  30 s although hitop-core's connect limit is 10 s (6c94353). Not reproduced and not explained; not to be hidden by a longer wait.
+- Android `ProtocolFlowTest` on API 31: `eventStreamsLiveAndStop` failed on main dd7ff78 (2026-11-25) with "Live · 0 events" above the three events
+  it had received. Cause found: the old Compose test rule (v1) collects flows on the thread that emits, so state was written in the middle of a
+  composition and a label was never redrawn. Reproduced locally (6 stale labels of 299 with v1, 0 of 299 with v2, which collects on the main thread
+  as the app does); the UI tests now use the v2 rule. The earlier failures (the SSE test on PR 21; `grpcFieldsAndAnUnreachableServer` on main 8da867a,
+  "Calling…" for more than 30 s) fit the same cause but were not reproduced themselves: if either comes back with v2, it is something else.
 - Leaked copies of shared collections (web app before PR 40): `request_history` on the server keeps them after the library item is deleted.
   Nothing is done on production without the owner's answer.

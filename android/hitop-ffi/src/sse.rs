@@ -24,9 +24,9 @@ use crate::send::{inputs, masker};
 use crate::Args;
 
 struct Stream {
-    events: Receiver<Value>,
+    // Its own lock: waiting for one stream's events never holds up another's, or a cancel.
+    events: Arc<Mutex<Receiver<Value>>>,
     cancel: Arc<AtomicBool>,
-    done: bool,
 }
 
 fn streams() -> &'static Mutex<HashMap<u64, Stream>> {
@@ -55,7 +55,7 @@ pub(crate) fn start(a: &Args) -> Result<Value, String> {
     let id = NEXT.fetch_add(1, Ordering::Relaxed);
     let cancel = Arc::new(AtomicBool::new(false));
     let (tx, rx) = channel();
-    streams().lock().unwrap_or_else(|p| p.into_inner()).insert(id, Stream { events: rx, cancel: cancel.clone(), done: false });
+    streams().lock().unwrap_or_else(|p| p.into_inner()).insert(id, Stream { events: Arc::new(Mutex::new(rx)), cancel: cancel.clone() });
     std::thread::spawn(move || {
         let fail = |e: String| json!({ "type": "error", "message": m.mask(&e) });
         let mut builder = reqwest::blocking::Client::builder().use_rustls_tls().timeout(None::<Duration>).connect_timeout(Duration::from_secs(15));
@@ -125,19 +125,18 @@ pub(crate) fn start(a: &Args) -> Result<Value, String> {
 pub(crate) fn next(a: &Args) -> Result<Value, String> {
     let id = a.u64("id")?;
     let wait = Duration::from_millis(a.0.get("waitMs").and_then(Value::as_u64).unwrap_or(300));
-    let mut map = streams().lock().unwrap_or_else(|p| p.into_inner());
-    let s = map.get_mut(&id).ok_or("no such stream")?;
+    let rx = streams().lock().unwrap_or_else(|p| p.into_inner()).get(&id).map(|s| s.events.clone()).ok_or("no such stream")?;
+    let rx = rx.lock().unwrap_or_else(|p| p.into_inner());
     let mut events = vec![];
-    if let Ok(e) = s.events.recv_timeout(wait) {
+    if let Ok(e) = rx.recv_timeout(wait) {
         events.push(e);
-        while let Ok(e) = s.events.try_recv() {
+        while let Ok(e) = rx.try_recv() {
             events.push(e);
         }
     }
-    s.done |= events.iter().any(|e| e["type"] == "end" || e["type"] == "error");
-    let done = s.done;
+    let done = events.iter().any(|e| e["type"] == "end" || e["type"] == "error");
     if done {
-        map.remove(&id);
+        streams().lock().unwrap_or_else(|p| p.into_inner()).remove(&id);
     }
     Ok(json!({ "events": events, "done": done }))
 }
@@ -167,4 +166,37 @@ pub(crate) fn grpc_target(a: &Args) -> Result<Value, String> {
     let g = request.grpc.clone().unwrap_or_default();
     let message = hitop_core::interpolation::interpolate(&g.message, &vars).map_err(|e| m.mask(&format!("{e:#}")))?;
     Ok(json!({ "address": t.address, "plaintext": t.plaintext, "metadata": t.metadata, "service": g.service, "method": g.method, "message": message }))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn waiting_for_one_stream_holds_up_neither_a_cancel_nor_another_stream() {
+        let add = |id: u64| {
+            let (tx, rx) = channel();
+            let cancel = Arc::new(AtomicBool::new(false));
+            streams().lock().unwrap().insert(id, Stream { events: Arc::new(Mutex::new(rx)), cancel: cancel.clone() });
+            (tx, cancel)
+        };
+        // Ids no stream started by `start` reaches.
+        let (a, b) = (u64::MAX - 1, u64::MAX);
+        let (tx_a, cancel_a) = add(a);
+        let (tx_b, _) = add(b);
+        let waiting = std::thread::spawn(move || next(&Args(&json!({ "id": a, "waitMs": 60_000 }))));
+        tx_b.send(json!({ "type": "end" })).unwrap();
+        // Were the lock held, these would wait for the other stream's 60 s.
+        let started = std::time::Instant::now();
+        // The waiting thread has taken its receiver once a try_lock on it fails.
+        while streams().lock().unwrap()[&a].events.try_lock().is_ok() {
+            std::thread::yield_now();
+        }
+        assert_eq!(next(&Args(&json!({ "id": b, "waitMs": 0 }))).unwrap()["done"], true);
+        cancel(&Args(&json!({ "id": a }))).unwrap();
+        assert!(cancel_a.load(Ordering::Relaxed));
+        assert!(started.elapsed() < Duration::from_secs(30));
+        tx_a.send(json!({ "type": "end" })).unwrap();
+        assert_eq!(waiting.join().unwrap().unwrap()["done"], true);
+    }
 }

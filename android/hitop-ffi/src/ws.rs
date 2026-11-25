@@ -16,7 +16,7 @@
 use std::collections::HashMap;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::mpsc::{channel, Receiver, Sender as StdSender};
-use std::sync::{Mutex, OnceLock};
+use std::sync::{Arc, Mutex, OnceLock};
 use std::time::Duration;
 
 use base64::engine::general_purpose::STANDARD;
@@ -30,12 +30,12 @@ use crate::send::{inputs, masker};
 use crate::Args;
 
 struct Socket {
-    events: Receiver<Value>,
+    // Its own lock: waiting for events never holds up a send, a close or another connection.
+    events: Arc<Mutex<Receiver<Value>>>,
     sender: Option<Sender>,
     request: hitop_core::model::Request,
     vars: HashMap<String, String>,
     masker: Masker,
-    done: bool,
 }
 
 fn sockets() -> &'static Mutex<HashMap<u64, Socket>> {
@@ -66,7 +66,7 @@ pub(crate) fn connect_op(a: &Args) -> Result<Value, String> {
     std::thread::spawn(move || run(target, timeout, tx, sender_tx, mask));
     // The sender arrives once the handshake succeeded (or never: the error is an event).
     let sender = sender_rx.recv_timeout(wait + Duration::from_secs(1)).ok();
-    sockets().lock().unwrap_or_else(|p| p.into_inner()).insert(id, Socket { events: rx, sender, request, vars, masker: m, done: false });
+    sockets().lock().unwrap_or_else(|p| p.into_inner()).insert(id, Socket { events: Arc::new(Mutex::new(rx)), sender, request, vars, masker: m });
     Ok(json!({ "id": id }))
 }
 
@@ -139,17 +139,16 @@ pub(crate) fn send_saved(a: &Args) -> Result<Value, String> {
 pub(crate) fn next(a: &Args) -> Result<Value, String> {
     let id = a.u64("id")?;
     let wait = Duration::from_millis(a.0.get("waitMs").and_then(Value::as_u64).unwrap_or(300));
-    let (events, done) = with(id, |s| {
-        let mut events = vec![];
-        if let Ok(e) = s.events.recv_timeout(wait) {
+    let rx = with(id, |s| Ok(s.events.clone()))?;
+    let rx = rx.lock().unwrap_or_else(|p| p.into_inner());
+    let mut events = vec![];
+    if let Ok(e) = rx.recv_timeout(wait) {
+        events.push(e);
+        while let Ok(e) = rx.try_recv() {
             events.push(e);
-            while let Ok(e) = s.events.try_recv() {
-                events.push(e);
-            }
         }
-        s.done |= events.iter().any(|e| e["type"] == "closed" || e["type"] == "error");
-        Ok((events, s.done))
-    })?;
+    }
+    let done = events.iter().any(|e| e["type"] == "closed" || e["type"] == "error");
     if done {
         sockets().lock().unwrap_or_else(|p| p.into_inner()).remove(&id);
     }

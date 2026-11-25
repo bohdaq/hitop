@@ -19,7 +19,7 @@ use crate::send::{inputs, masker, step_json};
 use crate::Args;
 
 struct Run {
-    events: Receiver<Value>,
+    events: Arc<Mutex<Receiver<Value>>>,
     cancel: Arc<AtomicBool>,
 }
 
@@ -50,7 +50,7 @@ pub(crate) fn start(a: &Args) -> Result<Value, String> {
     let id = NEXT.fetch_add(1, Ordering::Relaxed);
     let cancel = Arc::new(AtomicBool::new(false));
     let (tx, rx) = channel();
-    runs().lock().unwrap_or_else(|p| p.into_inner()).insert(id, Run { events: rx, cancel: cancel.clone() });
+    runs().lock().unwrap_or_else(|p| p.into_inner()).insert(id, Run { events: Arc::new(Mutex::new(rx)), cancel: cancel.clone() });
     std::thread::spawn(move || {
         let _files = crate::files::Scope::new(files);
         // A run never opens a browser: it uses a token from an earlier send, or fails saying so.
@@ -127,13 +127,14 @@ pub(crate) fn next(a: &Args) -> Result<Value, String> {
     let mut events = vec![];
     let mut done = false;
     {
-        let map = runs().lock().unwrap_or_else(|p| p.into_inner());
-        let run = map.get(&id).ok_or("no such run")?;
+        // Only this run's receiver stays locked: a cancel or another run never waits for it.
+        let rx = runs().lock().unwrap_or_else(|p| p.into_inner()).get(&id).map(|r| r.events.clone()).ok_or("no such run")?;
+        let rx = rx.lock().unwrap_or_else(|p| p.into_inner());
         // The first event may take a while (a request); then whatever else is ready.
-        if let Ok(e) = run.events.recv_timeout(wait) {
+        if let Ok(e) = rx.recv_timeout(wait) {
             done |= e["type"] == "done";
             events.push(e);
-            while let Ok(e) = run.events.try_recv() {
+            while let Ok(e) = rx.try_recv() {
                 done |= e["type"] == "done";
                 events.push(e);
             }

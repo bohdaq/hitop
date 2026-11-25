@@ -40,6 +40,8 @@ Releases before 1.2 are listed in ROADMAP.md (section 5) and on the GitHub Relea
 
 ### Android
 
+- Stop, sending on a WebSocket and cancelling a run no longer wait for the moment the app is listening for events, and streams,
+  sockets and runs open at the same time no longer wait for each other.
 - **Security:** when the list of shared collections on the phone can't be read, nothing is synced, and a shared collection deleted for everyone
   stays on this phone only. Before, such an end-to-end encrypted collection could have been uploaded to the library, which the server can read.
 
