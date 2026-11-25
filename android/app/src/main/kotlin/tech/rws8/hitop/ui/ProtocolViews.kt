@@ -86,6 +86,8 @@ fun GrpcTab(vm: AppViewModel, collectionId: String, r: Request, edit: ((Request)
     val methods by session.methods.collectAsState()
     val error by session.schemaError.collectAsState()
     val source by session.source.collectAsState()
+    val clientStreaming by session.clientStreaming.collectAsState()
+    val keepOpen by session.keepOpen.collectAsState()
     val scope = rememberCoroutineScope()
     SmallField(g.service, { v -> edit { it.withGrpc(g.copy(service = v)) } }, tr(R.string.s_service), Modifier.fillMaxWidth())
     SmallField(g.method, { v -> edit { it.withGrpc(g.copy(method = v)) } }, tr(R.string.s_method), Modifier.fillMaxWidth())
@@ -107,6 +109,10 @@ fun GrpcTab(vm: AppViewModel, collectionId: String, r: Request, edit: ((Request)
                 tech.rws8.hitop.ui.theme.HitopChip("${s.substringAfterLast('.')}/$m", s == g.service && m == g.method, Modifier.clickable { edit { it.withGrpc(g.copy(service = s, method = m)) } })
             } }
         }
+    }
+    if ("${g.service}/${g.method}" in clientStreaming) Row(verticalAlignment = Alignment.CenterVertically) {
+        Text(tr(R.string.s_send_one_at_a_time), Modifier.weight(1f), style = HitopType.body, color = Hitop.text)
+        Switch(keepOpen, { session.keepOpen.value = it }, colors = SwitchDefaults.colors(checkedTrackColor = Hitop.accent, checkedThumbColor = Hitop.onAccent), modifier = Modifier.testTag("grpc-keep-open"))
     }
     SectionLabel(tr(R.string.s_message_json))
     CodeEditor(g.message, { v -> edit { it.withGrpc(g.copy(message = v)) } }, json = true, label = tr(R.string.s_grpc_message), placeholder = "{ }", minHeight = 160)
@@ -232,6 +238,7 @@ fun SseSheet(vm: AppViewModel, r: Request, close: () -> Unit) {
 @Composable
 fun GrpcSheet(vm: AppViewModel, r: Request, close: () -> Unit) {
     val s = vm.grpc(r.id)
+    val scope = rememberCoroutineScope()
     val c by s.call.collectAsState()
     ModalBottomSheet(onDismissRequest = close, containerColor = Hitop.surface, sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true), modifier = Modifier.testTag("grpc-sheet")) {
         Column(Modifier.fillMaxHeight(0.9f).padding(horizontal = 16.dp).navigationBarsPadding(), verticalArrangement = Arrangement.spacedBy(10.dp)) {
@@ -241,6 +248,16 @@ fun GrpcSheet(vm: AppViewModel, r: Request, close: () -> Unit) {
                 if (c.running) TextButton(onClick = { s.cancel() }) { Text(tr(R.string.s_cancel), color = Hitop.error) }
             }
             c.error?.let { Text(it, style = HitopType.caption, color = Hitop.errorText, modifier = Modifier.testTag("grpc-call-error")) }
+            if (c.open) {
+                val now = vm.draft(r.id) ?: r
+                CodeEditor(now.grpcFields.message, { v -> vm.edit(r.id) { it.withGrpc(it.grpcFields.copy(message = v)) } }, json = true, label = tr(R.string.s_grpc_message), placeholder = "{ }", minHeight = 80)
+                c.notSent?.let { Text(tr(R.string.s_not_sent, it), style = HitopType.caption, color = Hitop.errorText, modifier = Modifier.testTag("grpc-not-sent")) }
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Button(onClick = { scope.launch { s.send(vm.collectionOf(r.id) ?: return@launch, vm.draft(r.id) ?: r) } }, enabled = !c.sending,
+                        colors = ButtonDefaults.buttonColors(containerColor = Hitop.accent, contentColor = Hitop.onAccent), modifier = Modifier.testTag("grpc-send-message")) { Text(tr(R.string.s_send_message)) }
+                    OutlinedButton(onClick = { scope.launch { s.finish() } }, enabled = !c.sending, modifier = Modifier.testTag("grpc-finish")) { Text(tr(R.string.s_finish_sending), color = Hitop.text) }
+                }
+            }
             LazyColumn(Modifier.weight(1f).fillMaxWidth().clip(RoundedCornerShape(16.dp)).background(Hitop.codeDeep).padding(12.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
                 items(c.messages) { m -> Text(m, style = HitopType.monoSmall, color = Hitop.text) }
             }

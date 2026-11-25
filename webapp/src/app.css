@@ -679,6 +679,7 @@ lit-material-dialog.wide::part(container) { width: min(1100px, calc(100vw - 32px
 .ws-event.received .ws-dir { color: #9fcf86; }
 .ws-event.system .ws-text { color: var(--md-sys-color-on-surface-variant); }
 .ws-event.error .ws-text, .ws-event.error .ws-dir { color: var(--md-sys-color-error); }
+.grpc-open { display: flex; flex-wrap: wrap; gap: var(--space-100); margin: var(--space-100) 0; }
 .grpc-target { display: flex; flex-wrap: wrap; gap: var(--space-100); align-items: center; margin-bottom: var(--space-100); }
 .grpc-target .grpc-service { flex: 2 1 14rem; min-width: 0; }
 .grpc-target .grpc-method { flex: 1 1 10rem; min-width: 0; }

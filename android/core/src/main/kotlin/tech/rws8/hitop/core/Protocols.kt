@@ -234,12 +234,17 @@ class SseSession(private val library: Library, private val scope: CoroutineScope
 
 /** gRPC through hitop-core's client (SyncFFI's grpc* ops): reflection, unary and server streaming. */
 class GrpcSession(private val library: Library, private val scope: CoroutineScope) {
-    data class Call(val running: Boolean = false, val messages: List<String> = emptyList(), val headers: List<Pair<String, String>> = emptyList(), val status: String? = null, val statusMessage: String? = null, val error: String? = null)
+    data class Call(val running: Boolean = false, val messages: List<String> = emptyList(), val headers: List<Pair<String, String>> = emptyList(), val status: String? = null, val statusMessage: String? = null, val error: String? = null, val open: Boolean = false, val sending: Boolean = false, val notSent: String? = null)
 
     private val _services = MutableStateFlow<List<String>>(emptyList())
     val services: StateFlow<List<String>> = _services.asStateFlow()
     private val _methods = MutableStateFlow<Map<String, List<String>>>(emptyMap())
     val methods: StateFlow<Map<String, List<String>>> = _methods.asStateFlow()
+    /** `service/method` of the methods that stream from the client. */
+    private val _clientStreaming = MutableStateFlow<Set<String>>(emptySet())
+    val clientStreaming: StateFlow<Set<String>> = _clientStreaming.asStateFlow()
+    /** Send messages one at a time: the next call of such a method stays open. */
+    val keepOpen = MutableStateFlow(false)
     val source = MutableStateFlow<String?>(null)
     val schemaError = MutableStateFlow<String?>(null)
     private val _call = MutableStateFlow(Call())
@@ -261,6 +266,7 @@ class GrpcSession(private val library: Library, private val scope: CoroutineScop
             source.value = r.strOrNull("source")
             val list = (r["services"] as? JsonArray).orEmpty().map { it.jsonObject }
             _services.value = list.map { it.str("name") }
+            _clientStreaming.value = list.flatMap { s -> (s["methods"] as? JsonArray).orEmpty().mapNotNull { it as? JsonObject }.filter { it.bool("clientStreaming", false) }.map { "${s.str("name")}/${it.str("name")}" } }.toSet()
             _methods.value = list.associate { s -> s.str("name") to (s["methods"] as? JsonArray).orEmpty().map { m -> (m as? JsonObject)?.str("name") ?: (m as JsonPrimitive).content } }
         } catch (e: Exception) {
             val m = e.message.orEmpty()
@@ -279,9 +285,12 @@ class GrpcSession(private val library: Library, private val scope: CoroutineScop
         scope.launch(Dispatchers.IO) {
             val cid = try {
                 val t = target(collectionId, request)
+                val open = keepOpen.value && "${t.str("service")}/${t.str("method")}" in _clientStreaming.value
                 Ffi.call("grpcStart", buildJsonObject {
-                    put("server", server(t)); put("service", t.str("service")); put("method", t.str("method")); put("message", t.str("message").ifBlank { "{}" }); put("maxTimeMs", 60_000)
-                }).jsonObject.str("id").toLong()
+                    put("open", open)
+                    put("server", server(t)); put("service", t.str("service")); put("method", t.str("method")); put("message", t.str("message").ifBlank { if (open) "" else "{}" })
+                    if (!open) put("maxTimeMs", 60_000) // an open call lasts until it is finished or cancelled
+                }).jsonObject.str("id").toLong().also { if (open) _call.update { c -> c.copy(open = true) } }
             } catch (e: Exception) {
                 _call.value = Call(error = e.message)
                 return@launch
@@ -300,8 +309,28 @@ class GrpcSession(private val library: Library, private val scope: CoroutineScop
                 if (r.bool("done", false)) break
             }
             id = null
-            _call.update { it.copy(running = false) }
+            _call.update { it.copy(running = false, open = false, sending = false) }
         }
+    }
+
+    /** Sends the request's message on the open call (variables filled in), one at a time so that they arrive in order. */
+    suspend fun send(collectionId: String, request: Request) = withContext(Dispatchers.IO) {
+        val cid = id ?: return@withContext
+        if (!_call.value.open || _call.value.sending) return@withContext
+        _call.update { it.copy(sending = true, notSent = null) }
+        val problem = runCatching {
+            val message = target(collectionId, request).str("message").ifBlank { "{}" }
+            Ffi.call("grpcSend", buildJsonObject { put("id", cid); put("message", message) })
+        }.exceptionOrNull()?.message
+        if (id == cid) _call.update { it.copy(sending = false, notSent = problem) }
+    }
+
+    /** Closes the client's side of the open call: the server's answer still arrives. */
+    suspend fun finish() = withContext(Dispatchers.IO) {
+        val cid = id ?: return@withContext
+        if (!_call.value.open || _call.value.sending) return@withContext
+        _call.update { it.copy(open = false) }
+        runCatching { Ffi.call("grpcFinish", buildJsonObject { put("id", cid) }) }.onFailure { e -> if (id == cid) _call.update { it.copy(open = true, notSent = e.message) } }
     }
 
     private fun metadata(e: JsonElement?): List<Pair<String, String>> = (e as? JsonArray).orEmpty().mapNotNull { (it as? JsonArray)?.let { a -> (a[0] as JsonPrimitive).content to (a[1] as JsonPrimitive).content } }

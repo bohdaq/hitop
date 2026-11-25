@@ -125,6 +125,23 @@ const FIXTURES = path.join(__dirname, '../../cli/crates/hitop-core/tests/fixture
     await send.click();
     check('[tauri] a bidirectional method: a note, every message sent and answered', note.includes('streams from the client') && (await waitLog('Hello, ann')) && (await waitLog('Hello, zed')) && (await chip()) === 'OK', await log());
 
+    // One at a time: the call stays open, each answer comes before the next message is sent.
+    await p.getByRole('switch', { name: 'Send messages one at a time' }).click();
+    await setMessage('{"name": "one"}');
+    await p.getByRole('button', { name: 'Clear' }).click();
+    await send.click();
+    const more = p.getByRole('button', { name: 'Send message' });
+    await more.waitFor({ timeout: 10000 });
+    check('[tauri] an open call sends the first message and stays open', (await waitLog('Hello, one')) && (await chip()) === 'Calling', await log());
+    await setMessage('{"name": "${who}"}');
+    await more.click();
+    check('[tauri] the next message goes on the same call, variables filled in', (await waitLog('Hello, ada')) && (await chip()) === 'Calling', await log());
+    await setMessage('{"name": ');
+    await more.click();
+    check('[tauri] an invalid message is not sent and the call goes on', (await waitLog('Not sent:')) && (await chip()) === 'Calling', await log());
+    await p.getByRole('button', { name: 'Finish sending' }).click();
+    check('[tauri] Finish ends it with the status', (await waitLog('Status OK')) && (await chip()) === 'OK' && (await more.count()) === 0, await log());
+
     await pick('RPC method', 'SayHello');
     await setMessage('{"name": ');
     await send.click();

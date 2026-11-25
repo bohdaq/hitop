@@ -281,6 +281,7 @@ const bridgeGrpc = GRPC_BASE
       call(args, h) {
         const ctl = new AbortController();
         let cancelled = false;
+        let open = null; // the id of an open call (`args.open`)
         (async () => {
           try {
             const r = await grpcPost("call", args, ctl.signal);
@@ -297,7 +298,10 @@ const bridgeGrpc = GRPC_BASE
                 buf = buf.slice(at + 1);
                 if (!line.trim() || cancelled) continue;
                 const e = JSON.parse(line);
-                if (e.type === "headers") h.onHeaders(e.metadata || []);
+                if (e.type === "open") {
+                  open = e.id;
+                  h.onOpen?.();
+                } else if (e.type === "headers") h.onHeaders(e.metadata || []);
                 else if (e.type === "message") h.onMessage(e.data);
                 else if (e.type === "status") h.onStatus(e);
               }
@@ -311,6 +315,8 @@ const bridgeGrpc = GRPC_BASE
             cancelled = true;
             ctl.abort();
           },
+          send: (message) => grpcPost("send", { id: open, message }),
+          finish: () => grpcPost("finish", { id: open }),
         };
       },
     }

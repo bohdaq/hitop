@@ -5,11 +5,14 @@
 //! - `grpcList {server}` → `{source, services}` (the desktop's `grpc_list`);
 //! - `grpcDescribe {server, symbol}` → `{description, template}` (`grpc_describe`; `template` is
 //!   JSON *text*, pretty, so the field order survives Swift);
-//! - `grpcStart {server, service, method, message, maxTimeMs}` → `{id}`: the call runs on its own
+//! - `grpcStart {server, service, method, message, maxTimeMs, open}` → `{id}`: the call runs on its own
 //!   thread and runtime; everything after the start arrives as events, problems found before
 //!   sending as one `error` event;
 //! - `grpcNext {id, waitMs}` → `{events, done}`: the events so far (waits up to `waitMs` for one),
 //!   `done` once the call ended and every event was taken;
+//! - `grpcSend {id, message}` (a call started with `open: true`, for a method that streams from the
+//!   client): sends the JSON messages in the text; `grpcFinish {id}` closes the client's side (the
+//!   call ends when the server ends it). Messages sent before the call is connected wait for it;
 //! - `grpcCancel {id}`: stops the call (its runtime is dropped, so a server stream that never
 //!   ends stops too).
 //!
@@ -70,6 +73,15 @@ struct Call {
     events: Mutex<(VecDeque<Value>, bool)>,
     ready: Condvar,
     cancel: Mutex<Option<tokio::sync::oneshot::Sender<()>>>,
+    outgoing: Mutex<Outgoing>,
+}
+
+/// The client's side of a call.
+enum Outgoing {
+    /// Open, not connected yet: what was sent, and whether the side was closed already.
+    Waiting(Vec<String>, bool),
+    Open(grpc::Sender),
+    Closed,
 }
 
 impl Call {
@@ -107,8 +119,10 @@ fn start(a: &Args) -> R {
     t.message = a.0.get("message").and_then(Value::as_str).unwrap_or_default().to_string();
     let connect_timeout = timeout(a);
     let max_time = a.0.get("maxTimeMs").and_then(Value::as_u64).map(Duration::from_millis);
+    let keep_open = a.0.get("open").and_then(Value::as_bool).unwrap_or(false);
+    let outgoing = Mutex::new(if keep_open { Outgoing::Waiting(vec![], false) } else { Outgoing::Closed });
     let (tx, rx) = tokio::sync::oneshot::channel::<()>();
-    let call = Arc::new(Call { events: Mutex::new((VecDeque::new(), false)), ready: Condvar::new(), cancel: Mutex::new(Some(tx)) });
+    let call = Arc::new(Call { events: Mutex::new((VecDeque::new(), false)), ready: Condvar::new(), cancel: Mutex::new(Some(tx)), outgoing });
     let id = NEXT.fetch_add(1, Ordering::Relaxed);
     calls().lock().map_err(|e| e.to_string())?.insert(id, call.clone());
     let rt = runtime()?;
@@ -121,10 +135,31 @@ fn start(a: &Args) -> R {
                     Ok(x) => x,
                     Err(e) => return c.push(json!({ "type": "error", "message": e })),
                 };
-                let mut events = match grpc::call(channel, &pool, &t, max_time).await {
-                    Ok(rx) => rx,
+                let started = if keep_open {
+                    grpc::call_open(channel, &pool, &t, max_time).await.map(|(e, s)| (e, Some(s)))
+                } else {
+                    grpc::call(channel, &pool, &t, max_time).await.map(|e| (e, None))
+                };
+                let (mut events, sender) = match started {
+                    Ok(x) => x,
                     Err(e) => return c.push(json!({ "type": "error", "message": format!("{e:#}") })),
                 };
+                if let Some(s) = sender {
+                    let mut out = c.outgoing.lock().unwrap_or_else(|p| p.into_inner());
+                    let mut closed = false;
+                    if let Outgoing::Waiting(texts, finished) = &*out {
+                        closed = *finished;
+                        for text in texts {
+                            if let Err(e) = s.send(text) {
+                                c.push(json!({ "type": "error", "message": format!("{e:#}") }));
+                                // Nothing more is sent: a half sent list would be another call than asked for.
+                                *out = Outgoing::Closed;
+                                return;
+                            }
+                        }
+                    }
+                    *out = if closed { Outgoing::Closed } else { Outgoing::Open(s) };
+                }
                 while let Some(e) = events.recv().await {
                     c.push(event(e));
                 }
@@ -138,6 +173,7 @@ fn start(a: &Args) -> R {
             // Dropping the runtime stops the call's own task (a stream that never ends).
             // A name lookup that hangs isn't waited for.
             rt.shutdown_background();
+            *call.outgoing.lock().unwrap_or_else(|p| p.into_inner()) = Outgoing::Closed;
             call.finish();
         })
         .map_err(|e| format!("no thread: {e}"))?;
@@ -161,6 +197,31 @@ fn next(a: &Args) -> R {
         calls().lock().map_err(|e| e.to_string())?.remove(&id);
     }
     Ok(json!({ "events": events, "done": done }))
+}
+
+fn send(a: &Args) -> R {
+    let id = a.u64("id")?;
+    let message = a.0.get("message").and_then(Value::as_str).unwrap_or_default().to_string();
+    let call = calls().lock().map_err(|e| e.to_string())?.get(&id).cloned().ok_or("the call has ended")?;
+    let mut out = call.outgoing.lock().unwrap_or_else(|p| p.into_inner());
+    match &mut *out {
+        Outgoing::Open(s) => s.send(&message).map_err(|e| format!("{e:#}"))?,
+        Outgoing::Waiting(texts, false) => texts.push(message),
+        _ => return Err("the sending side of this call is closed".into()),
+    }
+    Ok(Value::Null)
+}
+
+fn finish(a: &Args) -> R {
+    let id = a.u64("id")?;
+    if let Some(call) = calls().lock().map_err(|e| e.to_string())?.get(&id) {
+        let mut out = call.outgoing.lock().unwrap_or_else(|p| p.into_inner());
+        match &mut *out {
+            Outgoing::Waiting(_, finished) => *finished = true,
+            other => *other = Outgoing::Closed,
+        }
+    }
+    Ok(Value::Null)
 }
 
 fn cancel(a: &Args) -> R {
@@ -199,6 +260,8 @@ pub fn call(op: &str, a: &Args) -> R {
         }
         "grpcStart" => start(a),
         "grpcNext" => next(a),
+        "grpcSend" => send(a),
+        "grpcFinish" => finish(a),
         "grpcCancel" => cancel(a),
         other => Err(format!("unknown operation {other}")),
     }
@@ -243,6 +306,32 @@ mod tests {
         let kinds: Vec<&str> = events.iter().map(|e| e["type"].as_str().unwrap()).collect();
         assert_eq!(kinds, ["headers", "message", "message", "message", "status"], "{events:?}");
         assert_eq!(events[4]["name"], "OK");
+        // One at a time: an answer arrives before the next message is sent.
+        let started = ok("grpcStart", &format!(r#"{{"server":{server},"service":"hitop.test.Greeter","method":"Chat","message":"","open":true}}"#));
+        let id = started["id"].as_u64().unwrap();
+        let mut got: Vec<Value> = vec![];
+        for name in ["Ada", "Grace"] {
+            ok("grpcSend", &format!(r#"{{"id":{id},"message":"{{\"name\":\"{name}\"}}"}}"#));
+            let until = std::time::Instant::now() + std::time::Duration::from_secs(20);
+            while !got.iter().any(|e| e["data"].as_str().is_some_and(|d| d.contains(name))) {
+                assert!(std::time::Instant::now() < until, "no answer to {name}: {got:?}");
+                let v = ok("grpcNext", &format!(r#"{{"id":{id},"waitMs":1000}}"#));
+                assert_eq!(v["done"], false, "{v} {got:?}");
+                got.extend(v["events"].as_array().unwrap().clone());
+            }
+        }
+        ok("grpcFinish", &format!(r#"{{"id":{id}}}"#));
+        let refused: Value = serde_json::from_str(&call_json("grpcSend", &format!(r#"{{"id":{id},"message":"{{}}"}}"#))).unwrap();
+        assert!(refused["error"].is_string(), "{refused}");
+        got.extend(drain(id));
+        assert_eq!(got.last().unwrap()["name"], "OK", "{got:?}");
+        // Closed before it is connected: everything sent by then still goes.
+        let started = ok("grpcStart", &format!(r#"{{"server":{server},"service":"hitop.test.Greeter","method":"Chat","open":true}}"#));
+        let id = started["id"].as_u64().unwrap();
+        ok("grpcSend", &format!(r#"{{"id":{id},"message":"{{\"name\":\"Early\"}}"}}"#));
+        ok("grpcFinish", &format!(r#"{{"id":{id}}}"#));
+        let events = drain(id);
+        assert!(events.iter().any(|e| e["data"].as_str().is_some_and(|d| d.contains("Early"))) && events.last().unwrap()["name"] == "OK", "{events:?}");
         // Cancel stops a call at once.
         let started = ok("grpcStart", &format!(r#"{{"server":{server},"service":"hitop.test.Greeter","method":"StreamHellos","message":"{{\"times\":100000}}"}}"#));
         let id = started["id"].as_u64().unwrap();

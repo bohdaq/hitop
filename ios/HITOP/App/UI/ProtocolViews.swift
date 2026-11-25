@@ -457,6 +457,17 @@ struct GrpcFieldsEditor: View {
             if let m = currentMethod, m.clientStreaming {
                 Label("\(m.name) is \(m.shape): write its messages as JSON one after another.", systemImage: "info.circle")
                     .font(Typo.caption).foregroundStyle(Theme.textMuted)
+                Toggle(isOn: Binding(get: { g.keepOpen }, set: { on in g.keepOpen = on })) {
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("Send one at a time").font(Typo.geist(14, .medium)).foregroundStyle(Theme.text)
+                        Text("The call stays open until you finish").font(Typo.caption).foregroundStyle(Theme.textMuted)
+                    }
+                }
+                .tint(Theme.accent)
+                .disabled(g.calling)
+                .accessibilityIdentifier("grpc-keep-open")
+                .padding(.horizontal, 14).padding(.vertical, 10)
+                .card(radius: 18)
             }
 
             HStack {
@@ -557,6 +568,19 @@ struct GrpcPanel: View {
                 Spacer()
                 if !g.log.isEmpty { Button { g.clear() } label: { Text("Clear").frame(minWidth: 44, minHeight: 44).contentShape(Rectangle()) }.font(Typo.caption) }
             }
+            if g.open {
+                CodeEditor(text: Binding(get: { editor.draft.grpc.message }, set: { text in editor.draft.grpc.message = text }), placeholder: "{ }", minHeight: 80, identifier: "grpc-next-message")
+                HStack(spacing: 10) {
+                    Button("Send message") { Task { await editor.sendGrpcMessage() } }
+                        .buttonStyle(.glassProminent)
+                        .disabled(g.sending)
+                        .accessibilityIdentifier("grpc-send-message")
+                    Button("Finish") { Task { await g.finish() } }
+                        .buttonStyle(.glass)
+                        .disabled(g.sending)
+                        .accessibilityIdentifier("grpc-finish")
+                }
+            }
             if g.log.isEmpty {
                 Text("Call the method: the response headers, each message and the final status are listed here.")
                     .font(Typo.caption).foregroundStyle(Theme.textMuted).frame(maxWidth: .infinity, minHeight: 80)
@@ -585,7 +609,9 @@ struct GrpcLogRow: View {
             }
             switch entry.event {
             case let .headers(pairs): pairList(pairs, empty: "No headers")
-            case let .message(json): CodeBlock(text: json, json: true, fill: .clear)
+            case let .message(json), let .sent(json): CodeBlock(text: json, json: true, fill: .clear)
+            case .finished: EmptyView()
+            case let .notSent(message): Text(message).font(Typo.mono(13)).foregroundStyle(Theme.danger).textSelection(.enabled)
             case let .status(_, _, message, trailers):
                 if !message.isEmpty { Text(message).font(Typo.mono(13)).foregroundStyle(Theme.codeText).textSelection(.enabled) }
                 if !trailers.isEmpty { pairList(trailers, empty: "") }
@@ -601,6 +627,9 @@ struct GrpcLogRow: View {
     private var kind: String {
         switch entry.event {
         case .headers: "headers"
+        case .sent: "sent"
+        case .finished: "finished"
+        case .notSent: "not-sent"
         case .message: "message"
         case .status: "status"
         case .error: "error"
@@ -610,6 +639,9 @@ struct GrpcLogRow: View {
     private var title: String {
         switch entry.event {
         case .headers: "HEADERS"
+        case .sent: "SENT"
+        case .finished: "FINISHED SENDING"
+        case .notSent: "NOT SENT"
         case .message: "MESSAGE"
         case let .status(code, name, _, _): "STATUS \(code) \(name)"
         case .error: "NOT CALLED"
@@ -618,7 +650,8 @@ struct GrpcLogRow: View {
 
     private var color: Color {
         switch entry.event {
-        case .headers: Theme.textFaint
+        case .headers, .sent, .finished: Theme.textFaint
+        case .notSent: Theme.danger
         case .message: Theme.accentText
         case let .status(code, _, _, _): code == 0 ? Theme.success : Theme.danger
         case .error: Theme.danger

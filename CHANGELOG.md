@@ -16,7 +16,8 @@ Releases before 1.2 are listed in ROADMAP.md (section 5) and on the GitHub Relea
 - `hitop mcp`: `describe_grpc` and `run_grpc` (bounded: 100 messages, 256 KiB, 60 s; .proto files only inside the workspace).
 - `hitop sync whoami|ls|status|pull|push --json`: one JSON object on stdout, the same exit codes.
 - `hitop grpc` calls client-streaming and bidirectional methods: JSON messages one after another, or `-i/--interactive` to send each one on
-  stdin as it arrives. The apps send all the messages of a request, then close the client's side.
+  stdin as it arrives. The desktop, web, iOS and
+  Android apps send all the messages of a request and close the client's side, or keep the call open and send them one at a time.
 - `send`, `run`, `requests send`, `ws`, `grpc`: `--cacert`, `--cert`/`--key` (client certificates), `--proxy`/`--noproxy` (HTTP) and
   `-k/--insecure` (not gRPC; warns). For one command; nothing of it is stored in a collection. OAuth 2.0 token requests of that command use them too.
 

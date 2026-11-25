@@ -249,9 +249,20 @@ final class RequestEditor: Identifiable {
                 grpcSession.setFailure("No gRPC method: pick the service and method (load them from the server, or type package.Service and Method).")
                 return
             }
-            grpcSession.call(server, service: g.service, method: g.method, message: message, client: model.grpcClient)
+            grpcSession.call(server, service: g.service, method: g.method, message: message, client: model.grpcClient,
+                             open: grpcSession.keepOpen && grpcSession.streamsFromClient(service: g.service, method: g.method))
         } catch {
             grpcSession.setFailure("Not called: \(error.localizedDescription)")
+        }
+    }
+
+    /// Sends the message on the open call, variables filled in.
+    func sendGrpcMessage() async {
+        do {
+            let message = try HitopKitBridge.fill(draft.grpc.message, variables)
+            await grpcSession.send(message.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? "{}" : message)
+        } catch {
+            grpcSession.setNotSent(error.localizedDescription)
         }
     }
 

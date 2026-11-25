@@ -91,8 +91,15 @@ export const GrpcPart = (Base) =>
     }
   }
 
+  // The tab's method streams from the client, so its messages can be sent one at a time.
+  grpcStreamsFromClient(tab = this.tab) {
+    const service = this.grpcState(tab.id).schema?.services.find((s) => s.name === tab.grpcService);
+    return !!service?.methods.find((m) => m.name === tab.grpcMethod)?.clientStreaming;
+  }
+
   // Calls the tab's method with its message, variables filled in; the
-  // headers, messages and status go to the tab's log.
+  // headers, messages and status go to the tab's log. With `keepOpen` on a method that streams
+  // from the client, its side stays open for grpcSendMessage until grpcFinish.
   async grpcCall() {
     const tab = this.tab;
     const id = tab.id;
@@ -102,21 +109,23 @@ export const GrpcPart = (Base) =>
     if (!tab.grpcService || !tab.grpcMethod) return this.notify("Pick a service and method first (Load schema).");
     // This call's identity: events of a cancelled call never touch a newer one.
     const token = {};
-    this.grpcSet(id, { status: "running", token });
+    this.grpcSet(id, { status: "running", token, open: false, sending: false });
     const current = () => this.grpcState(id).token === token;
     let args;
     try {
       await this.resolveRefs({ url: tab.url, headers: tab.headers, auth: tab.auth, grpcMessage: tab.grpcMessage }, tab.loadedCollectionId);
       const fill = (text) => (text ? interpolateVariables(text, this.variables(tab.loadedCollectionId)) : text);
       args = { ...this.grpcServer(tab), service: tab.grpcService, method: tab.grpcMethod, message: fill(tab.grpcMessage || "") };
+      if (this.grpcState(id).keepOpen && this.grpcStreamsFromClient(tab)) args.open = true;
     } catch (e) {
       if (current()) this.grpcSet(id, { status: "done", token: null });
       return this.notify(`Not sent: ${errorText(e)}`);
     }
     if (!current()) return; // cancelled while references resolved
-    this.grpcLog(id, { kind: "sent", text: `${args.service}/${args.method} ${args.message.trim() || "{}"}` });
-    const done = () => this.grpcSet(id, { status: "done", call: null, token: null });
+    this.grpcLog(id, { kind: "sent", text: `${args.service}/${args.method} ${args.message.trim() || (args.open ? "(open, nothing sent yet)" : "{}")}` });
+    const done = () => this.grpcSet(id, { status: "done", call: null, token: null, open: false, sending: false });
     const call = g.call(args, {
+      onOpen: () => current() && this.grpcSet(id, { open: true }),
       onHeaders: (metadata) => current() && metadata.length && this.grpcLog(id, { kind: "headers", text: metadata.map(([k, v]) => `${k}: ${v}`).join("\n") }),
       onMessage: (data) => current() && this.grpcLog(id, { kind: "message", text: JSON.stringify(data, null, 2) }),
       onStatus: ({ code, name, message, trailers }) => {
@@ -136,11 +145,55 @@ export const GrpcPart = (Base) =>
     else call?.cancel?.();
   }
 
+  // Sends the tab's message on its open call. One at a time, so they arrive in the order sent.
+  async grpcSendMessage() {
+    const tab = this.tab;
+    const id = tab.id;
+    const { open, sending, call, token } = this.grpcState(id);
+    if (!open || sending || !call) return;
+    const current = () => this.grpcState(id).token === token;
+    this.grpcSet(id, { sending: true });
+    try {
+      await this.resolveRefs({ grpcMessage: tab.grpcMessage }, tab.loadedCollectionId);
+      const variables = this.variables(tab.loadedCollectionId);
+      const message = tab.grpcMessage?.trim() ? interpolateVariables(tab.grpcMessage, variables) : "{}";
+      if (!current()) return;
+      const time = new Date().toISOString();
+      await call.send(message);
+      // The answer can be there before we know it was sent: it is listed at the time it was sent.
+      if (current()) {
+        const log = [...this.grpcState(id).log];
+        const after = log.findIndex((e) => e.time > time);
+        log.splice(after < 0 ? log.length : after, 0, { time, kind: "sent", text: message });
+        this.grpcSet(id, { log: log.slice(-GRPC_LOG_MAX) });
+      }
+    } catch (e) {
+      if (current()) this.grpcLog(id, { kind: "system", text: `Not sent: ${errorText(e)}` });
+    }
+    if (current()) this.grpcSet(id, { sending: false });
+  }
+
+  // Closes the client's side of the open call: the server's answer still arrives.
+  async grpcFinish() {
+    const id = this.tab.id;
+    const { open, call, token } = this.grpcState(id);
+    if (!open || !call) return;
+    const current = () => this.grpcState(id).token === token;
+    this.grpcSet(id, { open: false });
+    try {
+      await call.finish();
+      if (current()) this.grpcLog(id, { kind: "system", text: "Finished sending" });
+    } catch (e) {
+      if (current()) this.grpcSet(id, { open: true });
+      if (current()) this.grpcLog(id, { kind: "system", text: `Not finished: ${errorText(e)}` });
+    }
+  }
+
   grpcCancel(tabId = this.tab?.id) {
     const g = this.grpcState(tabId);
     if (g.status !== "running") return;
     g.call?.cancel();
-    this.grpcSet(tabId, { status: "done", call: null, token: null });
+    this.grpcSet(tabId, { status: "done", call: null, token: null, open: false, sending: false });
     // `cancelled` marks the call's outcome for the status chip (grpc-view.js), next to status and error.
     this.grpcLog(tabId, { kind: "system", text: "Cancelled", cancelled: true });
   }

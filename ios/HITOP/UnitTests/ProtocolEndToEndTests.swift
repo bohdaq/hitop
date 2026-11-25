@@ -116,6 +116,17 @@ final class ProtocolEndToEndTests: XCTestCase {
         guard case let .message(second) = chat[2] else { return XCTFail("\(chat)") }
         XCTAssertTrue(second.contains("Hello, Bo"), second)
         XCTAssertEqual(chat[3], .status(code: 0, name: "OK", message: "", trailers: []))
+        // One at a time: each answer before the next message.
+        let live = GrpcSession()
+        live.call(server("grpc"), service: "hitop.test.Greeter", method: "Chat", message: #"{"name": "One"}"#, client: client, open: true)
+        let heard = { (name: String) in live.log.contains { if case let .message(m) = $0.event { m.contains(name) } else { false } } }
+        await until("the first answer") { heard("One") }
+        await live.send(#"{"name": "Two"}"#)
+        await until("the second answer") { heard("Two") }
+        XCTAssertTrue(live.calling)
+        await live.finish()
+        await until("the end") { !live.calling }
+        XCTAssertEqual(live.lastStatus, .status(code: 0, name: "OK", message: "", trailers: []))
         let bad = await events(client.call(server("grpc"), service: "hitop.test.Greeter", method: "SayHello", message: "{not json", maxTimeMs: nil))
         guard case .error? = bad.first else { return XCTFail("\(bad)") }
 

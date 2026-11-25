@@ -226,6 +226,33 @@ final class ProtocolTests: XCTestCase {
 
     // MARK: gRPC
 
+    func testGrpcMessagesOneAtATime() async throws {
+        let s = GrpcSession()
+        let server = GrpcServer(address: "x:1", plaintext: true, metadata: [])
+        let client = FakeGrpcClient()
+        await s.loadSchema(server, client: client)
+        XCTAssertTrue(s.streamsFromClient(service: "hitop.test.Greeter", method: "Chat"))
+        XCTAssertFalse(s.streamsFromClient(service: "hitop.test.Greeter", method: "SayHello"))
+        s.call(server, service: "hitop.test.Greeter", method: "Chat", message: "", client: client, open: true)
+        let answers = { s.log.filter { if case .message = $0.event { true } else { false } }.count }
+        await s.send(#"{"name": "Ada"}"#)
+        await until("the first answer") { answers() == 1 }
+        XCTAssertTrue(s.calling && s.open)
+        await s.send("{nope")
+        XCTAssertTrue(s.log.contains { if case .notSent = $0.event { true } else { false } })
+        XCTAssertFalse(s.sending)
+        await s.send(#"{"name": "Grace"}"#)
+        await until("the second answer") { answers() == 2 }
+        await s.finish()
+        await until("the end") { !s.calling }
+        XCTAssertFalse(s.open)
+        XCTAssertEqual(s.lastStatus, .status(code: 0, name: "OK", message: "", trailers: []))
+        // Cancel closes it too.
+        s.call(server, service: "hitop.test.Greeter", method: "Chat", message: "{}", client: client, open: true)
+        s.cancel()
+        XCTAssertFalse(s.open || s.calling)
+    }
+
     func testGrpcServerMetadata() throws {
         let r = try XCTUnwrap(model.request(1404))
         let s = try GrpcServer.of(r, collectionAuth: model.collection(1004)?.auth, variables: model.context(for: 1004).merged)

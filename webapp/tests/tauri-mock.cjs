@@ -200,6 +200,7 @@ class TauriMock {
     // The gRPC server the mock pretends to reach, and every call made.
     this.grpcServer = { address: '127.0.0.1:50051', reflection: true };
     this.grpcCalls = [];
+    this.grpcOpenCalls = new Map();
     this.grpcCancelled = [];
     this.telemetry = { enabled: false, asked: true, id: null, lastPing: null };
     // Self-update: null = a build without it (the default, as the Mac App Store's).
@@ -416,6 +417,15 @@ class TauriMock {
         return this.grpcDescribe(args.args, args.symbol);
       case 'grpc_call':
         return this.grpcCall(args.args, args.onEvent);
+      case 'grpc_send': {
+        const open = this.grpcOpenCalls.get(args.id);
+        if (!open) throw 'the sending side of this call is closed';
+        open.send(args.message);
+        return null;
+      }
+      case 'grpc_finish':
+        this.grpcOpenCalls.get(args.id)?.finish();
+        return null;
       case 'grpc_cancel':
         this.grpcCancelled.push(args.id);
         return null;
@@ -622,6 +632,31 @@ class TauriMock {
     const emit = (message) => this.deliver?.(cb, { message, index: index++ });
     const meta = (name) => (a.metadata || []).find(([k]) => k.toLowerCase() === name)?.[1] ?? '';
     const ok = { type: 'status', code: 0, name: 'OK', message: '', trailers: [] };
+    if (a.open) {
+      if (!m.clientStreaming) throw `${svc.name}/${m.name} takes one message`;
+      let n = 0;
+      const answer = (x) => emit({ type: 'message', data: { message: `Hello, ${x.name || ''}`, index: n++ } });
+      this.grpcOpenCalls.set(id, {
+        send: (text) => {
+          let x;
+          try {
+            x = JSON.parse(text);
+          } catch (e) {
+            throw `message 1 isn't a valid ${m.input}: ${e.message}`;
+          }
+          answer(x);
+        },
+        finish: () => {
+          this.grpcOpenCalls.delete(id);
+          emit(ok);
+        },
+      });
+      setTimeout(() => {
+        emit({ type: 'headers', metadata: [['x-served-by', 'hitop-test']] });
+        msgs.forEach(answer);
+      }, this.grpcDelayMs ?? 20);
+      return { id };
+    }
     setTimeout(() => {
       if (this.grpcCancelled.includes(id)) return;
       if (m.name === 'Fail') return emit({ type: 'status', code: 5, name: 'NOT_FOUND', message: `no user named ${msg.name || ''}`, trailers: [['x-reason', 'test']] });

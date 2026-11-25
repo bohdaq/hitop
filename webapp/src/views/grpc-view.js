@@ -92,7 +92,17 @@ export function grpcMessage(view) {
     </div>
     ${g.schemaError ? html`<p class="error-text grpc-schema-error" role="alert">${g.schemaError}</p>` : nothing}
     ${g.schema ? html`<p class="hint grpc-schema-source">${services.length} service${services.length === 1 ? "" : "s"} from ${g.schema.source === "protos" ? ".proto files" : `server ${g.schema.source}`}${method ? `. ${method.input} → ${method.serverStreaming ? "stream " : ""}${method.output}` : ""}</p>` : nothing}
-    ${method?.clientStreaming ? html`<p class="hint" role="note">This method streams from the client: write its messages as JSON one after another. All are sent, then the client's side is closed.</p>` : nothing}
+    ${method?.clientStreaming ? html`<p class="hint" role="note">This method streams from the client: write its messages as JSON one after another. ${g.keepOpen ? "Send opens the call with them; then change the message and send more, until you finish." : "All are sent, then the client's side is closed."}</p>
+          <label class="switch-row">
+            <lit-material-switch aria-label="Send messages one at a time" ?checked=${!!g.keepOpen} ?disabled=${g.status === "running"} @change=${(e) => store.grpcSet(t.id, { keepOpen: e.target.checked })}></lit-material-switch>
+            <span>Send messages one at a time: the call stays open until you finish</span>
+          </label>` : nothing}
+    ${g.open
+      ? html`<div class="grpc-open" role="group" aria-label="Open call">
+          <lit-material-button variant="filled" ?disabled=${!!g.sending} @click=${() => store.grpcSendMessage()}>${icon("paper-plane-tilt")} Send message</lit-material-button>
+          <lit-material-button variant="outlined" ?disabled=${!!g.sending} @click=${() => store.grpcFinish()}>${icon("check-circle")} Finish sending</lit-material-button>
+        </div>`
+      : nothing}
     <hitop-code-editor class="grpc-message" label="Message (JSON)" language="json" placeholder='{"name": "\${user}"}' .value=${t.grpcMessage || ""}
       @input=${(e) => view.set({ grpcMessage: e.target.value })}></hitop-code-editor>
     <p class="hint">The request message in the proto3 JSON mapping; \${variables} are filled in when sent. ${method?.clientStreaming ? "Empty sends no message." : "Empty sends {}."}</p>`;

@@ -329,7 +329,7 @@ hitop/
   `{type: message|closed|error}` (binary as base64) on the channel; `ws_send {id, data, binary?}`, `ws_close {id}` (state `Sockets`).
   gRPC: `grpc_list {args: {address, plaintext, metadata, protos, importPaths, baseDir, timeoutMs}}` → `{source, services}`,
   `grpc_describe {args, symbol}` → `{description, template}`, `grpc_call {args: {...server, service, method, message, maxTimeMs},
-  onEvent: Channel}` → `{id}`, events `{type: headers|message|status}`; `grpc_cancel {id}` (state `GrpcCalls`).
+  onEvent: Channel}` → `{id}`, events `{type: headers|message|status}`; `grpc_cancel {id}` (state `GrpcCalls`); `open: true` on a client-streaming call keeps it open: `grpc_send {id, message}`, `grpc_finish {id}` (SyncFFI `grpcSend`/`grpcFinish`; bridge: first event `{type: open, id}`, `POST /api/grpc/send|finish`).
   Web app commands: `send_request` (proxy envelope; `cookies: true` uses hitop-core's `global` jar and returns it; optional `timeoutMs`,
   and `id` for `send_cancel {id}`: the exchange then runs on its own thread, cancel answers at once and drops its response and cookies),
   `cookies_load|save`, `load_globals|save_globals`, `read_folder`, `write_folder` (optional `globals`), `secret_get|set|delete`, `secret_refs_resolve {refs}` (inner texts → values; errors one line per reference; Settings layered in),

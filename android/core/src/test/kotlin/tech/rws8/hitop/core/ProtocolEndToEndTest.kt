@@ -108,6 +108,7 @@ class ProtocolEndToEndTest {
             call(servers.str("grpc"), "StreamHellos", "{\"name\": \"Ada\", \"times\": 3}"),
             call(servers.str("grpcV1alpha"), "SayHello", "{\"name\": \"Ada\"}"),
             call(servers.str("grpcNone"), "SayHello", "{\"name\": \"Ada\"}"),
+            call(servers.str("grpc"), "Chat", "{\"name\": \"\${who}\"}"),
         ))
         lib.state.value.collection(cid)!!.let { lib.applyRemote(it.withVariables(mapOf("who" to "Grace", "tenant" to "acme"))) }
         val (hello, stream, alpha, none) = lib.state.value.collection(cid)!!.requests
@@ -128,6 +129,21 @@ class ProtocolEndToEndTest {
         val n = GrpcSession(lib, scope)
         n.load(cid, none)
         assertTrue(n.schemaError.value!!, n.schemaError.value!!.contains("reflection"))
+        // One at a time: each answer before the next message.
+        val chat = lib.state.value.collection(cid)!!.requests[4]
+        val o = GrpcSession(lib, scope)
+        o.load(cid, chat)
+        o.keepOpen.value = true
+        o.start(cid, chat)
+        until("the first answer") { o.call.value.messages.size == 1 }
+        assertTrue(o.call.value.open && o.call.value.messages[0].contains("Grace"))
+        o.send(cid, chat.withGrpc(chat.grpcFields.copy(message = "{nope")))
+        assertTrue(o.call.value.toString(), o.call.value.notSent != null && o.call.value.running)
+        o.send(cid, chat.withGrpc(chat.grpcFields.copy(message = "{\"name\": \"Two\"}")))
+        until("the second answer") { o.call.value.messages.size == 2 }
+        assertTrue(o.call.value.messages[1].contains("Two"))
+        o.finish()
+        until("OK") { !o.call.value.running && o.call.value.status == "OK" }
         @Suppress("UNUSED_VARIABLE") val unused = buildJsonObject { put("x", 1) }
     }
 }

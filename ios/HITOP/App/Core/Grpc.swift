@@ -72,6 +72,12 @@ struct GrpcDescription: Equatable, Sendable {
 
 enum GrpcEvent: Hashable, Sendable {
     case headers([[String]])
+    /// A message sent on an open call, as JSON text.
+    case sent(String)
+    /// The client's side was closed.
+    case finished
+    /// A message that wasn't sent; the call goes on.
+    case notSent(String)
     /// A response message as JSON text.
     case message(String)
     case status(code: Int, name: String, message: String, trailers: [[String]])
@@ -108,13 +114,24 @@ struct GrpcFailure: Error, LocalizedError, Equatable, Sendable {
 struct GrpcCallHandle: Sendable {
     var events: AsyncStream<GrpcEvent>
     var cancel: @Sendable () -> Void
+    /// An open call: sends the JSON messages in the text; throws when one is invalid or the side is closed.
+    var send: @Sendable (String) async throws -> Void = { _ in throw GrpcFailure(message: "the sending side of this call is closed") }
+    /// An open call: closes the client's side.
+    var finish: @Sendable () async throws -> Void = {}
 }
 
 /// Lists, describes and calls: hitop-core through SyncFFI in the app, a canned Greeter in UI tests.
 protocol GrpcClient: Sendable {
     func list(_ server: GrpcServer) async throws -> GrpcListing
     func describe(_ server: GrpcServer, symbol: String) async throws -> GrpcDescription
-    func call(_ server: GrpcServer, service: String, method: String, message: String, maxTimeMs: Int?) -> GrpcCallHandle
+    /// `open` keeps the client's side of a method that streams from the client open for `send`.
+    func call(_ server: GrpcServer, service: String, method: String, message: String, maxTimeMs: Int?, open: Bool) -> GrpcCallHandle
+}
+
+extension GrpcClient {
+    func call(_ server: GrpcServer, service: String, method: String, message: String, maxTimeMs: Int?) -> GrpcCallHandle {
+        call(server, service: service, method: method, message: message, maxTimeMs: maxTimeMs, open: false)
+    }
 }
 
 /// hitop-core's gRPC client (SyncFFI `grpcList`, `grpcDescribe`, `grpcStart`/`grpcNext`/`grpcCancel`).
@@ -149,11 +166,12 @@ struct FFIGrpcClient: GrpcClient {
         }
     }
 
-    func call(_ server: GrpcServer, service: String, method: String, message: String, maxTimeMs: Int?) -> GrpcCallHandle {
+    func call(_ server: GrpcServer, service: String, method: String, message: String, maxTimeMs: Int?, open: Bool) -> GrpcCallHandle {
         let (stream, out) = AsyncStream<GrpcEvent>.makeStream()
         let state = CallState()
         var args: [String: JSONAny] = ["server": server.json, "service": .string(service), "method": .string(method), "message": .string(message)]
         if let maxTimeMs { args["maxTimeMs"] = .number(Double(maxTimeMs)) }
+        if open { args["open"] = .bool(true) }
         let startArgs = args
         Self.queue.async {
             guard let id = (try? Self.ffi("grpcStart", startArgs))?["id"]?.int else {
@@ -173,9 +191,15 @@ struct FFIGrpcClient: GrpcClient {
             }
             out.finish()
         }
-        return GrpcCallHandle(events: stream) {
+        return GrpcCallHandle(events: stream, cancel: {
             if let id = state.cancel() { Self.queue.async { _ = try? Self.ffi("grpcCancel", ["id": .number(Double(id))]) } }
-        }
+        }, send: { text in
+            guard let id = state.startedID else { throw GrpcFailure(message: "the call hasn't started yet") }
+            try await Self.run { _ = try Self.ffi("grpcSend", ["id": .number(Double(id)), "message": .string(text)]) }
+        }, finish: {
+            guard let id = state.startedID else { throw GrpcFailure(message: "the call hasn't started yet") }
+            try await Self.run { _ = try Self.ffi("grpcFinish", ["id": .number(Double(id))]) }
+        })
     }
 
     private final class CallState: @unchecked Sendable {
@@ -183,6 +207,7 @@ struct FFIGrpcClient: GrpcClient {
         private var id: Int?
         private var cancelled = false
         var isCancelled: Bool { lock.withLock { cancelled } }
+        var startedID: Int? { lock.withLock { id } }
         /// False when cancelled before it started.
         func started(_ id: Int) -> Bool { lock.withLock { self.id = id; return !cancelled } }
         func cancel() -> Int? { lock.withLock { cancelled = true; return id } }
@@ -230,7 +255,7 @@ struct FakeGrpcClient: GrpcClient {
         return GrpcDescription(description: "rpc \(symbol.split(separator: "/").last ?? "")(hitop.test.HelloRequest) returns (hitop.test.HelloReply);", template: Self.template)
     }
 
-    func call(_ server: GrpcServer, service: String, method: String, message: String, maxTimeMs: Int?) -> GrpcCallHandle {
+    func call(_ server: GrpcServer, service: String, method: String, message: String, maxTimeMs: Int?, open: Bool) -> GrpcCallHandle {
         let (stream, out) = AsyncStream<GrpcEvent>.makeStream()
         let json = (try? JSONDecoder().decode(JSONAny.self, from: Data(message.utf8))) ?? .object([:])
         let name = json["name"]?.string ?? ""
@@ -268,6 +293,10 @@ struct FakeGrpcClient: GrpcClient {
                 if !Task.isCancelled { out.yield(.status(code: 0, name: "OK", message: "", trailers: [])) }
             case "Fail":
                 out.yield(.status(code: 5, name: "NOT_FOUND", message: "no user named \(name)", trailers: [["x-reason", "test"]]))
+            case "Chat" where open:
+                out.yield(.headers(headers))
+                if !message.isEmpty { out.yield(.message("{\n  \"index\": 0,\n  \"message\": \"Hello, \(name)\"\n}")) }
+                return // open until `finish`
             case "Chat":
                 out.yield(.headers(headers))
                 out.yield(.message("{\n  \"index\": 0,\n  \"message\": \"Hello, \(name)\"\n}"))
@@ -277,10 +306,16 @@ struct FakeGrpcClient: GrpcClient {
             }
             out.finish()
         }
-        return GrpcCallHandle(events: stream) {
+        return GrpcCallHandle(events: stream, cancel: {
             task.cancel()
             out.finish()
-        }
+        }, send: { text in
+            guard let sent = try? JSONDecoder().decode(JSONAny.self, from: Data(text.utf8)) else { throw GrpcFailure(message: "message 1 isn't a valid hitop.test.HelloRequest") }
+            out.yield(.message("{\n  \"message\": \"Hello, \(sent["name"]?.string ?? "")\"\n}"))
+        }, finish: {
+            out.yield(.status(code: 0, name: "OK", message: "", trailers: []))
+            out.finish()
+        })
     }
 }
 
@@ -299,6 +334,11 @@ final class GrpcSession {
     /// The server answered that it has no reflection service.
     private(set) var noReflection = false
     private(set) var calling = false
+    /// Send messages one at a time: the next call of a method that streams from the client stays open.
+    var keepOpen = false
+    /// The call in flight takes more messages.
+    private(set) var open = false
+    private(set) var sending = false
     private(set) var log: [GrpcLogEntry] = []
     private(set) var lastStatus: GrpcEvent?
 
@@ -338,21 +378,34 @@ final class GrpcSession {
         add(.error(message))
     }
 
-    private func add(_ e: GrpcEvent) {
+    func setNotSent(_ message: String) {
+        add(.notSent(message))
+    }
+
+    /// The method's streams-from-the-client flag, known once the services are loaded.
+    func streamsFromClient(service: String, method: String) -> Bool {
+        listing?.services.first { $0.name == service }?.methods.first { $0.name == method }?.clientStreaming ?? false
+    }
+
+    @discardableResult
+    private func add(_ e: GrpcEvent) -> Int {
         log.append(GrpcLogEntry(id: nextID, time: Date(), event: e))
         nextID += 1
         if log.count > Self.logLimit { log.removeFirst(log.count - Self.logLimit) }
         if case .status = e { lastStatus = e }
         if case .error = e { lastStatus = e }
+        return nextID - 1
     }
 
-    func call(_ server: GrpcServer, service: String, method: String, message: String, client: GrpcClient, maxTimeMs: Int? = nil) {
+    func call(_ server: GrpcServer, service: String, method: String, message: String, client: GrpcClient, maxTimeMs: Int? = nil, open: Bool = false) {
         guard !calling else { return }
         token += 1
         let mine = token
         calling = true
         lastStatus = nil
-        let handle = client.call(server, service: service, method: method, message: message, maxTimeMs: maxTimeMs)
+        self.open = open
+        if open, !message.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty { add(.sent(message)) }
+        let handle = client.call(server, service: service, method: method, message: message, maxTimeMs: maxTimeMs, open: open)
         self.handle = handle
         Task { [weak self] in
             for await e in handle.events {
@@ -361,7 +414,38 @@ final class GrpcSession {
             }
             guard let self, self.token == mine else { return }
             self.calling = false
+            self.open = false
+            self.sending = false
             self.handle = nil
+        }
+    }
+
+    /// Sends a message on the open call, one at a time so that they arrive in order.
+    func send(_ message: String) async {
+        guard open, !sending, let handle else { return }
+        let mine = token
+        sending = true
+        let line = add(.sent(message))
+        do {
+            try await handle.send(message)
+        } catch {
+            if token == mine, let i = log.firstIndex(where: { $0.id == line }) { log[i].event = .notSent(error.localizedDescription) }
+        }
+        if token == mine { sending = false }
+    }
+
+    /// Closes the client's side: the server's answer still arrives.
+    func finish() async {
+        guard open, !sending, let handle else { return }
+        let mine = token
+        open = false
+        do {
+            try await handle.finish()
+            if token == mine, calling { add(.finished) }
+        } catch {
+            guard token == mine, calling else { return }
+            open = true
+            add(.notSent(error.localizedDescription))
         }
     }
 
@@ -371,6 +455,8 @@ final class GrpcSession {
         handle?.cancel()
         handle = nil
         calling = false
+        open = false
+        sending = false
         add(.status(code: 1, name: "CANCELLED", message: "Cancelled", trailers: []))
     }
 

@@ -3,14 +3,18 @@
 //! .proto files to give). Checked as the HTTP proxy checks a request: the web app's Origin, and
 //! the address resolved here, all public, then connected to directly (hitop-core grpc
 //! `Target::connect_to`). `call` streams one JSON event per line (`headers`, `message`, then
-//! `status`) as the server sends them; closing the response cancels it. At most `MAX_CALLS` at
+//! `status`) as the server sends them; closing the response cancels it. A call with `open` (a method
+//! that streams from the client) starts with `{"type": "open", "id"}`: `POST /api/grpc/send {id,
+//! message}` sends JSON messages on it and `POST /api/grpc/finish {id}` closes the client's side. The
+//! id is 128 random bits and gone with the call; a call takes `SEND_MAX` bytes in all. At most `MAX_CALLS` at
 //! once, each for `CALL_FOR`; nothing is logged.
 
+use std::collections::HashMap;
 use std::io::Read;
 use std::net::IpAddr;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::mpsc;
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 use hitop_core::grpc::{self, Event, Reflection, Source, Target};
@@ -22,6 +26,8 @@ use serde_json::{json, Value};
 
 pub const MAX_CALLS: usize = 16;
 pub const CALL_FOR: Duration = Duration::from_secs(5 * 60);
+/// How much an open call takes over its life (a server that reads slowly must not fill our memory).
+pub const SEND_MAX: usize = 4 * 1024 * 1024;
 const CONNECT_FOR: Duration = Duration::from_secs(10);
 
 #[derive(Deserialize)]
@@ -42,6 +48,38 @@ struct Args {
     message: String,
     #[serde(default)]
     max_time_ms: Option<u64>,
+    #[serde(default)]
+    open: bool,
+}
+
+#[derive(Deserialize)]
+struct SendArgs {
+    id: String,
+    #[serde(default)]
+    message: String,
+}
+
+/// The client's side of an open call and how many more bytes it takes.
+struct OpenCall {
+    sender: grpc::Sender,
+    left: usize,
+}
+
+type OpenCalls = Arc<Mutex<HashMap<String, OpenCall>>>;
+
+/// An open call's entry, taken out when the call or its response ends.
+struct Entry(OpenCalls, String);
+
+impl Drop for Entry {
+    fn drop(&mut self) {
+        self.0.lock().unwrap_or_else(|p| p.into_inner()).remove(&self.1);
+    }
+}
+
+fn random_id() -> Result<String, Box<Response>> {
+    let mut b = [0u8; 16];
+    getrandom::fill(&mut b).map_err(|e| Box::new(error(STATUS_CODE_REASON_PHRASE.n500_internal_server_error, &e.to_string())))?;
+    Ok(b.iter().map(|x| format!("{x:02x}")).collect())
 }
 
 fn error(status: &'static rust_web_server::response::StatusCodeReasonPhrase, message: &str) -> Response {
@@ -53,6 +91,7 @@ pub struct GrpcBridge {
     origins: crate::origins::Origins,
     deny: Arc<Vec<IpAddr>>,
     calls: Arc<AtomicUsize>,
+    open: OpenCalls,
     allow_private: bool,
 }
 
@@ -70,6 +109,7 @@ struct Lines {
     rx: mpsc::Receiver<Vec<u8>>,
     buf: Vec<u8>,
     _slot: Slot,
+    _open: Option<Entry>,
 }
 
 impl Read for Lines {
@@ -89,7 +129,7 @@ impl Read for Lines {
 
 impl GrpcBridge {
     pub fn new(origins: impl Into<crate::origins::Origins>, deny: Vec<IpAddr>, allow_private: bool) -> Self {
-        GrpcBridge { origins: origins.into(), deny: Arc::new(deny), calls: Arc::new(AtomicUsize::new(0)), allow_private }
+        GrpcBridge { origins: origins.into(), deny: Arc::new(deny), calls: Arc::new(AtomicUsize::new(0)), open: OpenCalls::default(), allow_private }
     }
 
     pub fn from_env() -> Self {
@@ -98,8 +138,8 @@ impl GrpcBridge {
         GrpcBridge::new(crate::origins::Origins::from_env(), deny, std::env::var("HITOP_BRIDGE_ALLOW_PRIVATE").as_deref() == Ok("1"))
     }
 
-    /// The request's arguments and a target that connects only to a checked address.
-    fn accept(&self, request: &Request) -> Result<(Args, Target), Box<Response>> {
+    /// The request came from the web app and isn't too large.
+    fn allowed(&self, request: &Request) -> Result<(), Box<Response>> {
         let s = STATUS_CODE_REASON_PHRASE;
         let origin = request.header("origin").map(|h| h.value.to_string()).unwrap_or_default();
         if !self.origins.allows(&origin) {
@@ -108,6 +148,13 @@ impl GrpcBridge {
         if request.body.len() > 1024 * 1024 {
             return Err(Box::new(error(s.n413_payload_too_large, "the request is over 1 MB")));
         }
+        Ok(())
+    }
+
+    /// The request's arguments and a target that connects only to a checked address.
+    fn accept(&self, request: &Request) -> Result<(Args, Target), Box<Response>> {
+        let s = STATUS_CODE_REASON_PHRASE;
+        self.allowed(request)?;
         let args: Args = serde_json::from_slice(&request.body).map_err(|e| Box::new(error(s.n400_bad_request, &format!("invalid request JSON: {e}"))))?;
         let (uri, tls) = grpc::endpoint(&args.address, args.plaintext).map_err(|e| Box::new(error(s.n400_bad_request, &format!("{e:#}"))))?;
         let u = url::Url::parse(&uri).map_err(|e| Box::new(error(s.n400_bad_request, &format!("invalid address: {e}"))))?;
@@ -187,14 +234,33 @@ impl GrpcBridge {
         let events = rt.block_on(async {
             let channel = grpc::connect(&target, Some(CONNECT_FOR)).await?;
             let (pool, _) = grpc::schema(&target, &channel, Some(CONNECT_FOR)).await?;
-            grpc::call(channel, &pool, &target, Some(max)).await
+            if args.open {
+                grpc::call_open(channel, &pool, &target, Some(max)).await.map(|(e, s)| (e, Some(s)))
+            } else {
+                grpc::call(channel, &pool, &target, Some(max)).await.map(|e| (e, None))
+            }
         });
-        let mut events = match events {
+        let (mut events, sender) = match events {
             Ok(e) => e,
             Err(e) => return error(s.n502_bad_gateway, &format!("{e:#}")),
         };
         let (tx, rx) = mpsc::sync_channel::<Vec<u8>>(64);
+        let entry = match sender {
+            None => None,
+            Some(sender) => {
+                let id = match random_id() {
+                    Ok(id) => id,
+                    Err(r) => return *r,
+                };
+                let _ = tx.send(format!("{}\n", json!({ "type": "open", "id": id })).into_bytes());
+                self.open.lock().unwrap_or_else(|p| p.into_inner()).insert(id.clone(), OpenCall { sender, left: SEND_MAX });
+                Some(Entry(self.open.clone(), id))
+            }
+        };
+        // Whichever ends first (the call, or the page's reading of it) closes the client's side.
+        let ended_entry = entry.as_ref().map(|e| Entry(e.0.clone(), e.1.clone()));
         std::thread::spawn(move || {
+            let _entry = ended_entry;
             rt.block_on(async move {
                 let ended = tokio::time::timeout(CALL_FOR, async {
                     while let Some(e) = events.recv().await {
@@ -221,8 +287,45 @@ impl GrpcBridge {
         let mut response = Response::get_response(s.n200_ok, None, None);
         response.headers.push(Header::new(Header::_CONTENT_TYPE, "application/x-ndjson"));
         response.headers.push(Header::new(Header::_CACHE_CONTROL, "no-store"));
-        response.stream_pipe = Some(Box::new(Lines { rx, buf: Vec::new(), _slot: slot }));
+        response.stream_pipe = Some(Box::new(Lines { rx, buf: Vec::new(), _slot: slot, _open: entry }));
         response
+    }
+
+    pub fn send(&self, request: &Request) -> Response {
+        let s = STATUS_CODE_REASON_PHRASE;
+        if let Err(r) = self.allowed(request) {
+            return *r;
+        }
+        let args: SendArgs = match serde_json::from_slice(&request.body) {
+            Ok(a) => a,
+            Err(e) => return error(s.n400_bad_request, &format!("invalid request JSON: {e}")),
+        };
+        let mut open = self.open.lock().unwrap_or_else(|p| p.into_inner());
+        let Some(call) = open.get_mut(&args.id) else { return error(s.n404_not_found, "the call has ended or its sending side is closed") };
+        if args.message.len() > call.left {
+            return error(s.n413_payload_too_large, "this call sent too much through the bridge: use the desktop app or the CLI");
+        }
+        match call.sender.send(&args.message) {
+            Ok(()) => {
+                call.left -= args.message.len();
+                Response::json(s.n200_ok, b"{}".to_vec())
+            }
+            Err(e) => error(s.n400_bad_request, &format!("{e:#}")),
+        }
+    }
+
+    pub fn finish(&self, request: &Request) -> Response {
+        let s = STATUS_CODE_REASON_PHRASE;
+        if let Err(r) = self.allowed(request) {
+            return *r;
+        }
+        match serde_json::from_slice::<SendArgs>(&request.body) {
+            Ok(a) => {
+                self.open.lock().unwrap_or_else(|p| p.into_inner()).remove(&a.id);
+                Response::json(s.n200_ok, b"{}".to_vec())
+            }
+            Err(e) => error(s.n400_bad_request, &format!("invalid request JSON: {e}")),
+        }
     }
 }
 
@@ -250,8 +353,63 @@ mod tests {
             App::with_state(b)
                 .post("/api/grpc/list", |r, _, _, b| b.list(r))
                 .post("/api/grpc/describe", |r, _, _, b| b.describe(r))
-                .post("/api/grpc/call", |r, _, _, b| b.call(r)),
+                .post("/api/grpc/call", |r, _, _, b| b.call(r))
+                .post("/api/grpc/send", |r, _, _, b| b.send(r))
+                .post("/api/grpc/finish", |r, _, _, b| b.finish(r)),
         )
+    }
+
+    #[test]
+    fn messages_one_at_a_time() {
+        let addr = grpc_server::start(grpc_server::Reflect::V1);
+        let c = client(true);
+        let body = |message: &str, method: &str| json!({ "address": addr.to_string(), "plaintext": true, "service": "hitop.test.Greeter", "method": method, "message": message, "open": true }).to_string();
+        let post = |path: &str, v: Value| c.post(path).header("Origin", "https://hitop.test").body_json(&v.to_string()).send().status();
+        assert_eq!(c.post("/api/grpc/call").header("Origin", "https://hitop.test").body_json(&body("{}", "SayHello")).send().status(), 502, "a unary method takes one message");
+        let mut call = c.post("/api/grpc/call").header("Origin", "https://hitop.test").body_json(&body("", "Chat")).send();
+        assert_eq!(call.status(), 200);
+        let mut stream = std::io::BufReader::new(call.take_stream().expect("a streamed body"));
+        let mut line = || -> Value {
+            let mut l = String::new();
+            std::io::BufRead::read_line(&mut stream, &mut l).unwrap();
+            if l.is_empty() { Value::Null } else { serde_json::from_str(&l).unwrap() }
+        };
+        let open = line();
+        let id = open["id"].as_str().expect("the open event").to_string();
+        assert_eq!((open["type"].as_str(), id.len()), (Some("open"), 32));
+        assert_eq!(c.post("/api/grpc/send").body_json(&json!({ "id": id, "message": "{}" }).to_string()).send().status(), 403, "another origin");
+        assert_eq!(post("/api/grpc/send", json!({ "id": "0", "message": "{}" })), 404);
+        assert_eq!(post("/api/grpc/send", json!({ "id": id, "message": "{\"nope\": 1" })), 400);
+        for name in ["Ada", "Grace"] {
+            assert_eq!(post("/api/grpc/send", json!({ "id": id, "message": json!({ "name": name }).to_string() })), 200);
+            // The answer comes before anything else is sent.
+            let mut e = line();
+            if e["type"] == "headers" {
+                e = line();
+            }
+            assert!(e["type"] == "message" && e.to_string().contains(name), "{e}");
+        }
+        for _ in 0..4 {
+            assert_eq!(post("/api/grpc/send", json!({ "id": id, "message": " ".repeat(1000 * 1000) })), 200);
+        }
+        assert_eq!(post("/api/grpc/send", json!({ "id": id, "message": " ".repeat(1000 * 1000) })), 413);
+        assert_eq!(post("/api/grpc/finish", json!({ "id": id })), 200);
+        let last = line();
+        assert_eq!((last["type"].as_str(), last["name"].as_str()), (Some("status"), Some("OK")), "{last}");
+        assert_eq!(line(), Value::Null);
+        assert_eq!(post("/api/grpc/send", json!({ "id": id, "message": "{}" })), 404);
+    }
+
+    #[test]
+    fn a_page_that_goes_away_closes_its_open_call() {
+        let addr = grpc_server::start(grpc_server::Reflect::V1);
+        let b = GrpcBridge::new(vec!["https://hitop.test".into()], vec![], true);
+        let c = TestClient::new(App::with_state(b.clone()).post("/api/grpc/call", |r, _, _, b| b.call(r)));
+        let mut call = c.post("/api/grpc/call").header("Origin", "https://hitop.test").body_json(&json!({ "address": addr.to_string(), "plaintext": true, "service": "hitop.test.Greeter", "method": "Chat", "open": true }).to_string()).send();
+        let stream = call.take_stream().expect("a streamed body");
+        assert_eq!(b.open.lock().unwrap().len(), 1);
+        drop(stream);
+        assert!(b.open.lock().unwrap().is_empty());
     }
 
     #[test]

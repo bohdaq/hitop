@@ -43,6 +43,8 @@ pub fn app(state: State) -> AppWithState<State> {
         .post("/api/grpc/list", |request, _, _, state| state.grpc.list(request))
         .post("/api/grpc/describe", |request, _, _, state| state.grpc.describe(request))
         .post("/api/grpc/call", |request, _, _, state| state.grpc.call(request))
+        .post("/api/grpc/send", |request, _, _, state| state.grpc.send(request))
+        .post("/api/grpc/finish", |request, _, _, state| state.grpc.finish(request))
         .post("/api/ping", |request, _, _, state| state.telemetry.ping(request))
         .get("/api/stats", |request, _, _, state| state.telemetry.stats(request))
         // The guides moved from /terms/<name>.html to /guides/<name>/ (legacy.rs).

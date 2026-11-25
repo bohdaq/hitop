@@ -52,6 +52,8 @@ pub fn run() {
             commands::grpc_list,
             commands::grpc_describe,
             commands::grpc_call,
+            commands::grpc_send,
+            commands::grpc_finish,
             commands::grpc_cancel,
             bookmarks::folder_forget,
             git::git,

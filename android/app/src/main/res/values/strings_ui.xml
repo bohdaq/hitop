@@ -135,6 +135,10 @@
     <string name="s_globals_variables">Globals · %1$s variables</string>
     <string name="s_graphql_query">GraphQL query</string>
     <string name="s_graphql_variables">GraphQL variables</string>
+    <string name="s_send_one_at_a_time">Send messages one at a time (the call stays open)</string>
+    <string name="s_send_message">Send message</string>
+    <string name="s_finish_sending">Finish sending</string>
+    <string name="s_not_sent">Not sent: %1$s</string>
     <string name="s_grpc_message">gRPC message</string>
     <string name="s_header">Header</string>
     <string name="s_headers">Headers</string>

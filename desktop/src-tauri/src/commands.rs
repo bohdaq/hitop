@@ -896,13 +896,20 @@ pub fn ws_close(state: tauri::State<'_, Sockets>, id: u64) -> Result<(), String>
 // taken from `baseDir`, the collection's folder). `grpc_list` and
 // `grpc_describe` read the schema; `grpc_call` streams the response headers,
 // messages and final status to the page on a channel; `grpc_cancel` stops a
-// call. Variables are filled in by the page.
+// call. A call started with `open` takes more messages (`grpc_send`) until
+// `grpc_finish` closes the client's side. Variables are filled in by the page.
 
 /// Calls in flight, by id.
 #[derive(Default)]
 pub struct GrpcCalls {
     next: std::sync::atomic::AtomicU64,
-    running: std::sync::Mutex<HashMap<u64, tauri::async_runtime::JoinHandle<()>>>,
+    running: std::sync::Mutex<HashMap<u64, GrpcRunning>>,
+}
+
+pub struct GrpcRunning {
+    handle: tauri::async_runtime::JoinHandle<()>,
+    /// The client's side of an `open` call, until `grpc_finish`.
+    sender: Option<hitop_core::grpc::Sender>,
 }
 
 /// Where the server is and where its schema comes from.
@@ -941,6 +948,9 @@ pub struct GrpcCallArgs {
     /// Deadline for the call (none by default).
     #[serde(default)]
     pub max_time_ms: Option<u64>,
+    /// Keep the client's side open for `grpc_send` (a method that streams from the client).
+    #[serde(default)]
+    pub open: bool,
 }
 
 fn grpc_target(a: &GrpcServerArgs) -> hitop_core::grpc::Target {
@@ -1031,7 +1041,7 @@ pub struct GrpcStarted {
     pub id: u64,
 }
 
-/// Starts a unary or server-streaming call. Problems found before sending
+/// Starts a call. Problems found before sending
 /// (no server, no such method, bad JSON) are errors; the rest arrives on
 /// the channel.
 #[tauri::command]
@@ -1049,7 +1059,14 @@ pub async fn grpc_call(
     target.message = args.message;
     let (channel, pool, _) = grpc_open(&target, args.server.timeout_ms).await?;
     let max_time = args.max_time_ms.map(std::time::Duration::from_millis);
-    let mut events = grpc::call(channel, &pool, &target, max_time).await.map_err(|e| format!("{e:#}"))?;
+    let (mut events, sender) = if args.open {
+        grpc::call_open(channel, &pool, &target, max_time).await.map(|(e, s)| (e, Some(s)))
+    } else {
+        grpc::call(channel, &pool, &target, max_time).await.map(|e| (e, None))
+    }
+    .map_err(|e| format!("{e:#}"))?;
+    // Held until the call is in the map: a call that ends at once must not be put there afterwards.
+    let mut running = state.running.lock().map_err(|e| e.to_string())?;
     let id = state.next.fetch_add(1, std::sync::atomic::Ordering::Relaxed) + 1;
     let handle = tauri::async_runtime::spawn(async move {
         while let Some(e) = events.recv().await {
@@ -1063,15 +1080,32 @@ pub async fn grpc_call(
             running.remove(&id);
         }
     });
-    state.running.lock().map_err(|e| e.to_string())?.insert(id, handle);
+    running.insert(id, GrpcRunning { handle, sender });
     Ok(GrpcStarted { id })
+}
+
+/// Sends the JSON messages in `message` on an open call.
+#[tauri::command]
+pub fn grpc_send(state: tauri::State<'_, GrpcCalls>, id: u64, message: String) -> Result<(), String> {
+    let running = state.running.lock().map_err(|e| e.to_string())?;
+    let call = running.get(&id).ok_or("the call has ended")?;
+    call.sender.as_ref().ok_or("the sending side of this call is closed")?.send(&message).map_err(|e| format!("{e:#}"))
+}
+
+/// Closes the client's side of an open call; the server's answer still arrives.
+#[tauri::command]
+pub fn grpc_finish(state: tauri::State<'_, GrpcCalls>, id: u64) -> Result<(), String> {
+    if let Some(call) = state.running.lock().map_err(|e| e.to_string())?.get_mut(&id) {
+        call.sender = None;
+    }
+    Ok(())
 }
 
 /// Stops a call; the page gets no more events for it.
 #[tauri::command]
 pub fn grpc_cancel(state: tauri::State<'_, GrpcCalls>, id: u64) -> Result<(), String> {
     if let Some(h) = state.running.lock().map_err(|e| e.to_string())?.remove(&id) {
-        h.abort();
+        h.handle.abort();
     }
     Ok(())
 }

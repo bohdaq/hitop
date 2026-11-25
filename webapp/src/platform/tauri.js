@@ -249,6 +249,7 @@ const rustGrpc = {
       (started) => {
         id = started.id;
         if (cancelled) invoke("grpc_cancel", { id });
+        else if (args.open) h.onOpen?.();
       },
       (e) => !cancelled && h.onError(String(e)),
     );
@@ -257,6 +258,8 @@ const rustGrpc = {
         cancelled = true;
         if (id !== null) invoke("grpc_cancel", { id });
       },
+      send: (message) => invoke("grpc_send", { id, message }),
+      finish: () => invoke("grpc_finish", { id }),
     };
   },
 };
