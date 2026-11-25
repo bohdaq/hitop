@@ -4,6 +4,10 @@ Releases before 1.2 are listed in ROADMAP.md (section 5) and on the GitHub Relea
 
 ## Unreleased
 
+### Web and desktop
+
+- A collection run can be cancelled; OAuth 2.0 sign-in windows are per request and close on Cancel.
+
 ### Sync server and hitop-server
 
 - Only known live billing statuses keep a paid plan; runs uploaded late don't alert; "SSO required" needs SSO enabled; a suspended

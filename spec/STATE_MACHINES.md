@@ -57,14 +57,10 @@ Ordered by risk. Each needs a decision or a wider change than a guard.
 - *Telemetry*: `enabled: true, id: None` says "on" and never pings.
 
 **Web app and portal**
-- *Collection run* (`store.run`): `summary` of the last run-all stays during a single run; no cancel;
-  `running` not reset in a finally.
 - *Sync account page* (`views/sync-view.js`): `mode` + `continued` + `awaitingCode` + `resetSent` + `ssoUrl`
   and four `pending*` slots in `SyncClient`; Back/Cancel stay enabled while busy, so a finishing request
   overrides the mode; `SyncClient.status` is declared and never used; a failed `loadTeam` leaves
   "Loading members…" with `aria-busy` (blocks e2e waits).
-- *OAuth 2 pop-up*: Cancel and the time limit don't reach it; one window name for every tab.
-- *AI dialog*: switching action while streaming doesn't abort; Escape doesn't abort.
 - *App dialogs*: an async import writes into a dialog closed meanwhile.
 - *Portal sign-in*: buttons come back during the provider redirect; `?server=` signs out silently.
 - *Cloud library* (`library.js`): sign-out during a push throws into the retry path.
@@ -77,3 +73,9 @@ Ordered by risk. Each needs a decision or a wider change than a guard.
 - Workspace invites: accepting is guarded in the UPDATE. Git sync: `suspend` keeps the installation, `unsuspend` takes its links up again.
 - hitop-server: a stalled proxy stream ends after `STREAM_FOR`; the WebSocket bridge's slot is given back on a panic; the gRPC
   bridge's time limit ends with a `status` line (4, DEADLINE_EXCEEDED).
+
+## Fixed since (C3, 2026-11-25)
+
+- Web app collection run: Cancel, one run at a time, `running` reset in a finally, an earlier run-all's summary cleared.
+- OAuth 2 pop-up: Cancel closes it, each sign-in has its own window and ignores another's answer; the time limit doesn't run while a
+  person signs in. The AI sheet already aborted on a new action, on close and on Escape (the note was out of date).

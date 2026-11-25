@@ -38,6 +38,7 @@ export class HitopCollections extends LightElement {
             <lit-material-button variant="outlined" ?disabled=${!s.visibleCollections.length || run.running} @click=${() => s.runAll()}>
               ${icon("play")} ${run.running ? `Running ${run.completed + 1} of ${s.visibleCollections.filter((c) => c.requests?.length).length}` : "Run all"}
             </lit-material-button>
+            ${run.running ? html`<lit-material-button variant="text" class="cancel-run" @click=${() => s.cancelRun()}>Cancel</lit-material-button>` : nothing}
             ${platform().folders?.pick
               ? html`<lit-material-button variant="outlined" @click=${() => s.openFolder()}>${icon("folder-open")} Open folder</lit-material-button>`
               : nothing}
@@ -54,8 +55,8 @@ export class HitopCollections extends LightElement {
         <p class="page-lead">A collection folder holds one YAML file per request, for git and for <code>hitop run</code> in CI.
           ${platform().folders?.pick ? "Open one to work on its files directly, or import a .zip of one." : "Import a .zip of one here; to work on a folder directly, use Chrome, Edge or the desktop app."}</p>
         ${summary
-          ? html`<lit-material-alert variant=${summary.failedCount ? "warning" : "success"}>
-              <span slot="title">${summary.failedCount ? "The run stopped at a failed request" : "Every request succeeded"}</span>
+          ? html`<lit-material-alert variant=${run.cancelled || summary.failedCount ? "warning" : "success"}>
+              <span slot="title">${run.cancelled ? "The run was cancelled" : summary.failedCount ? "The run stopped at a failed request" : "Every request succeeded"}</span>
               ${count(summary.totalCollections, "collection")}, ${summary.totalRequests} of ${count(summary.plannedRequests ?? summary.totalRequests, "request")} sent:
               ${summary.successCount} succeeded, ${summary.failedCount} failed${summary.assertions ? `; ${summary.assertions - summary.assertionsFailed} of ${summary.assertions} tests passed` : ""}, in ${summary.duration} ms.
             </lit-material-alert>`
@@ -126,6 +127,7 @@ export class HitopCollection extends LightElement {
             <lit-material-button variant=${n ? "filled" : "outlined"} ?disabled=${!n || run.running} @click=${() => s.runCollection(c.id)}>
               ${icon("play")} ${mine && run.running ? "Running" : "Run collection"}
             </lit-material-button>
+            ${mine && run.running ? html`<lit-material-button variant="text" class="cancel-run" @click=${() => s.cancelRun()}>Cancel</lit-material-button>` : nothing}
             <lit-material-button variant="outlined" @click=${() => this.app.go("variables", c.id)}>${icon("sliders-horizontal")} Variables</lit-material-button>
             <lit-material-button variant="outlined" @click=${() => this.app.openShare(c, "people")}>${icon("users-three")} Share</lit-material-button>
             ${syncButton(this.app, c)}
