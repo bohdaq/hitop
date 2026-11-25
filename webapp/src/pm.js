@@ -14,7 +14,8 @@ export const usesPostmanApi = (script) => WORDS.test(script || "");
 
 const NAMES = ["pm", "tests", "postman", "environment", "globals", "responseBody", "responseCode", "responseTime"];
 
-// Runs `script` with(ctx), plus `pm` and Postman's legacy names when it may
+// Tests only (tests/pm.mjs checks the shim in Node): the app never runs a person's script in its
+// page; platform().scripts runs them isolated. Runs `script` with(ctx), plus `pm` and Postman's legacy names when it may
 // use them. `api` is the shim's host object (see shared/pm-shim.js).
 export function runScript(shim, script, ctx, api) {
   if (!usesPostmanApi(script)) {

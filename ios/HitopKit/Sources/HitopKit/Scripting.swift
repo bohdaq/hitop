@@ -148,6 +148,13 @@ public enum Scripts {
         return out
     }
 
+    /// hitop-core `readable_names`: the guide's names as global properties a script's own `let`,
+    /// `var` or `function` of the same name replaces.
+    static func readableNames(_ names: [(String, String)]) -> String {
+        let list = names.map { "[\(JSONValue.quote($0.0)), () => \($0.1)]" }.joined(separator: ", ")
+        return "for (const [__n, __get] of [\(list)]) if (!Object.prototype.hasOwnProperty.call(globalThis, __n)) try { Object.defineProperty(globalThis, __n, { get: __get, set(v) { Object.defineProperty(globalThis, __n, { value: v, writable: true, configurable: true, enumerable: true }); }, configurable: true }); } catch (__e) {}\n"
+    }
+
     public static func runPreRequest(_ script: String, _ input: PreRequestInput, engine: ScriptEngine) throws -> PreRequestResult {
         if script.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
             return PreRequestResult(url: input.url, headers: input.headers, body: input.body, contextUpdates: [:], variables: [:], globals: [:])
@@ -194,7 +201,8 @@ public enum Scripts {
             body = script
         }
         let text: String
-        do { text = try engine.evaluate("\(preamble)\n\(body)\n\(postamble)") } catch {
+        let names = readableNames([("url", "__url"), ("method", "__method"), ("body", "__body"), ("headers", "__headers.map((h) => ({ name: h[0], value: h[1] }))"), ("variables", "__vars"), ("context", "__ctx")])
+        do { text = try engine.evaluate("\(preamble)\n\(names)\(body)\n\(postamble)") } catch {
             throw ScriptError("pre-request script error: \(error)")
         }
         guard let out = try? JSONValue.parse(text) else { throw ScriptError("pre-request script returned invalid JSON") }
@@ -273,7 +281,8 @@ public enum Scripts {
             body = script
         }
         let text: String
-        do { text = try engine.evaluate("\(preamble)\n\(body)\n\(postamble)") } catch {
+        let names = readableNames([("variables", "__vars"), ("context", "__ctx")])
+        do { text = try engine.evaluate("\(preamble)\n\(names)\(body)\n\(postamble)") } catch {
             throw ScriptError("post-request script error: \(error)")
         }
         let out = (try? JSONValue.parse(text)) ?? .null

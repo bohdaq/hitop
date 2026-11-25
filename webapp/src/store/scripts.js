@@ -63,7 +63,7 @@ export const ScriptsPart = (Base) =>
     for (const [k, v] of Object.entries(r.contextUpdates ?? {})) this.setContext(collectionId, k, v);
     this.setScriptVariables(collectionId, r.variables ?? {});
     this.setScriptGlobals(collectionId, r.globals ?? {});
-    // The extension's sandbox answers a script that threw with `error` (the desktop never does).
+    // A script that threw answers with `error` and what it did before.
     return { tests: r.tests ?? [], logs: r.logs ?? [], error: r.error ?? null };
   }
 

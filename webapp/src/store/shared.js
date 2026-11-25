@@ -14,7 +14,7 @@ import { platform } from "../platform/index.js";
 
 // Postman's pm.* API for scripts (the shim the CLI and desktop run too).
 // The pm.* shim, loaded on first use. The browser extensions may not evaluate code in their pages
-// (HITOP Next A8): there scripts run in the sandboxed page, and the Postman import report goes
+// (HITOP Next A8): there the Postman import report goes
 // without its unsupported-call notes.
 let shimCache = null;
 export function pmShim() {

@@ -62,6 +62,17 @@ fn logs(v: &Value) -> Vec<LogLine> {
     serde_json::from_value(v.clone()).unwrap_or_default()
 }
 
+/// The guide's readable names (`url`, `headers`, `variables`...): global properties a script's own
+/// `let`, `var` or `function` of the same name replaces, as the web app's `with(ctx)` let them.
+fn readable_names(names: &[(&str, &str)]) -> String {
+    let list: Vec<String> = names.iter().map(|(n, get)| format!("[{n:?}, () => {get}]")).collect();
+    format!(
+        // A name the script declares itself is already there (declarations come first): it stays the script's.
+        "for (const [__n, __get] of [{}]) if (!Object.prototype.hasOwnProperty.call(globalThis, __n)) try {{ Object.defineProperty(globalThis, __n, {{ get: __get, set(v) {{ Object.defineProperty(globalThis, __n, {{ value: v, writable: true, configurable: true, enumerable: true }}); }}, configurable: true }}); }} catch (__e) {{}}\n",
+        list.join(", ")
+    )
+}
+
 /// Outputs after running a pre-request script.
 #[derive(Debug, Clone)]
 pub struct PreRequestResult {
@@ -253,7 +264,8 @@ JSON.stringify({ url: __url, body: __body, headers: __headers, ctx: __ctxUpdates
     } else {
         script.to_string()
     };
-    let full_script = format!("{}\n{}\n{}\n{}", CONSOLE_JS, preamble, body, postamble);
+    let names = readable_names(&[("url", "__url"), ("method", "__method"), ("body", "__body"), ("headers", "__headers.map((h) => ({ name: h[0], value: h[1] }))"), ("variables", "__vars"), ("context", "__ctx")]);
+    let full_script = format!("{}\n{}\n{}{}\n{}", CONSOLE_JS, preamble, names, body, postamble);
 
     let result = engine
         .eval(Source::from_bytes(full_script.as_bytes()))
@@ -418,8 +430,8 @@ const assert = {{
     };
     // The script runs in a try block: what it did before throwing is kept, the error is reported.
     let full_script = format!(
-        "{}\n{}\nlet __error = null;\ntry {{\n{}\n}} catch (__e) {{ __error = (__e && __e.name && __e.message !== undefined) ? __e.name + \": \" + __e.message : String(__e); }}\n{}",
-        CONSOLE_JS, preamble, body, postamble
+        "{}\n{}\n{}let __error = null;\ntry {{\n{}\n}} catch (__e) {{ __error = (__e && __e.name && __e.message !== undefined) ? __e.name + \": \" + __e.message : String(__e); }}\n{}",
+        CONSOLE_JS, preamble, readable_names(&[("variables", "__vars"), ("context", "__ctx")]), body, postamble
     );
 
     let result = engine
@@ -459,6 +471,32 @@ mod tests {
             context: HashMap::new(),
             globals: HashMap::new(),
         }
+    }
+
+    // --- the guide's names ---
+
+    #[test]
+    fn a_script_before_reads_the_request_and_may_reuse_the_names() {
+        let mut ctx = empty_pre_ctx("https://a.test/x");
+        ctx.headers = vec![("Accept".into(), "json".into())];
+        ctx.body = "b".into();
+        ctx.variables.insert("v".into(), "1".into());
+        let r = run_pre_request_script("setHeader('X', [method, url, body, headers[0].name + '=' + headers[0].value, variables.v, typeof context].join(' ')); setUrl(url + '?y'); setHeader('Y', url);", ctx.clone()).unwrap();
+        assert_eq!(r.headers[1].1, "GET https://a.test/x b Accept=json 1 object");
+        assert_eq!((r.url.as_str(), r.headers[2].1.as_str()), ("https://a.test/x?y", "https://a.test/x?y"), "url follows setUrl");
+        // A script's own declarations of the same names still work.
+        for script in ["let url = 'mine'; setBody(url);", "var url = 'mine'; setBody(url);", "const body = 'mine'; setBody(body);", "function headers() { return 'mine'; } setBody(headers());", "url = 'mine'; setBody(url);"] {
+            assert_eq!(run_pre_request_script(script, ctx.clone()).unwrap().body, "mine", "{script}");
+        }
+    }
+
+    #[test]
+    fn a_script_after_reads_variables_and_context() {
+        let h = HashMap::new();
+        let v = HashMap::from([("v".to_string(), "1".to_string())]);
+        let c = HashMap::from([("k".to_string(), Value::from(2))]);
+        let r = run_post_request_script("assert.equal(variables.v + context.k, '12', 'names');", "", &h, 200, 1, &v, &c);
+        assert!(r.is_ok_and(|r| r.tests.len() == 1 && r.tests[0].pass));
     }
 
     // --- console and scripts that throw ---

@@ -1,6 +1,7 @@
-// Scripts in the web app and the Firefox extension. A script may come from someone else (a shared
-// or imported collection), so it never runs in the page, which holds the session and the device key;
-// Firefox has no sandboxed extension pages either (sandbox-scripts.js is Chrome's). Scripts run in boa compiled to WebAssembly
+// Scripts in the web app and the browser extensions. A script may come from someone else (a shared
+// or imported collection), so it never runs in the page, which holds the session, the device key and
+// the variables, nor where it could reach the network (the Chrome extension's sandboxed page could:
+// gone since). Scripts run in boa compiled to WebAssembly
 // (hitop-scripts-wasm) in a worker (src/scripts-worker.js) instead, in the desktop's
 // run_pre_script / run_post_script shapes, mapped here the way tauri.js maps them. A script that
 // runs longer than LIMIT_MS is stopped (the worker is replaced) and reported as an error.

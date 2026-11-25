@@ -25,6 +25,16 @@ final class ScriptTests: XCTestCase {
         XCTAssertTrue(out.variables.isEmpty)
     }
 
+    /// hitop-core `a_script_before_reads_the_request_and_may_reuse_the_names`.
+    func testTheGuidesNamesAndScriptsOwnDeclarations() throws {
+        let out = try pre("setHeader('X', [method, url, headers[0].name + '=' + headers[0].value, variables.v, typeof context].join(' ')); setUrl(url + '?y'); setHeader('Y', url);",
+                          url: "https://a.test/x", headers: [("Accept", "json")], variables: ["v": "1"])
+        XCTAssertEqual(out.headers.map { $0.1 }, ["json", "GET https://a.test/x Accept=json 1 object", "https://a.test/x?y"])
+        for script in ["let url = 'mine'; setBody(url);", "var url = 'mine'; setBody(url);", "const body = 'mine'; setBody(body);", "function headers() { return 'mine'; } setBody(headers());", "url = 'mine'; setBody(url);"] {
+            XCTAssertEqual(try pre(script).body, "mine", script)
+        }
+    }
+
     func testPostmanVariablesAndHeaders() throws {
         let out = try pre("pm.environment.set('ts', 42); pm.variables.set('v', 'new'); pm.environment.unset('gone'); pm.request.headers.remove('X-Old')",
                           headers: [("X-Old", "1"), ("Keep", "2")], variables: ["gone": "x"])

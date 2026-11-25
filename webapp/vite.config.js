@@ -5,7 +5,7 @@ import { defineConfig } from "vite";
 // ../shared/services (plain JS, the old React app's keys and shapes).
 //
 // `--mode extension` (npm run build:extension, HITOP Next A8): the browser extensions' pages.
-// Relative paths, a second page (sandbox.html, the script runner) and no inline script: an
+// Relative paths and no inline script: an
 // extension page's CSP allows only its own files, so index.html's theme boot script becomes boot.js.
 const inlineBoot = {
   name: "hitop-extension-boot",
@@ -48,7 +48,7 @@ export default defineConfig(({ mode }) =>
         build: {
           outDir: "dist-extension",
           emptyOutDir: true,
-          rollupOptions: { input: { index: "index.html", sandbox: "sandbox.html" } },
+          rollupOptions: { input: { index: "index.html" } },
         },
         server: { port: 3002, fs: { allow: [".."] } },
       }

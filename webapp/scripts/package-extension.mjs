@@ -17,7 +17,7 @@ if (!["chrome", "firefox", "store"].includes(kind) || !out) {
   process.exit(2);
 }
 const dist = path.join(root, "webapp/dist-extension");
-if (!fs.existsSync(path.join(dist, "sandbox.html"))) {
+if (!fs.existsSync(path.join(dist, "index.html"))) {
   console.error("webapp/dist-extension is missing: run npm run build:extension in webapp/ first");
   process.exit(2);
 }
@@ -32,10 +32,8 @@ if (!/^\d+(\.\d+){0,3}$/.test(VERSION ?? "")) {
   console.error(`webapp/package.json extensionVersion must be like 5.0.1 (found: ${VERSION})`);
   process.exit(2);
 }
-// Extension pages: own files only, plus WebAssembly (hitop-wasm). Scripts run in the sandbox.
+// Extension pages: own files only, plus WebAssembly (hitop-wasm, and the script runner's boa in a worker).
 const CSP_PAGES = "script-src 'self' 'wasm-unsafe-eval'; object-src 'self'";
-// The sandboxed script runner may evaluate scripts; it has no extension APIs and its own origin.
-const CSP_SANDBOX = "sandbox allow-scripts; script-src 'self' 'unsafe-eval'; object-src 'none'";
 
 const outDir = path.resolve(out);
 const appDir = kind === "store" ? outDir : path.join(outDir, "app");
@@ -87,8 +85,7 @@ if (kind === "firefox") {
     icons: { 16: "icons/icon-16.png", 48: "icons/icon-48.png", 128: "icons/icon-128.png" },
     background: { service_worker: "background.js" },
     host_permissions: ["<all_urls>"],
-    sandbox: { pages: [`${prefix}sandbox.html`] },
-    content_security_policy: { extension_pages: CSP_PAGES, sandbox: CSP_SANDBOX },
+    content_security_policy: { extension_pages: CSP_PAGES },
   };
 }
 fs.writeFileSync(path.join(outDir, "manifest.json"), `${JSON.stringify(manifest, null, 2)}\n`);

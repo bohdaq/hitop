@@ -1,5 +1,4 @@
-// The Firefox extension's script runner (a module Worker; HITOP Next). Firefox has no sandboxed
-// extension pages and its extension CSP forbids eval, so scripts run in hitop-scripts-wasm:
+// The script runner of the web app and the browser extensions (a module Worker): scripts run in hitop-scripts-wasm:
 // boa, hitop-core's JavaScript interpreter, compiled to WebAssembly ('wasm-unsafe-eval' is
 // allowed). The same engine and pm.* shim as the desktop app and the CLI. A script never runs as
 // browser JavaScript: it sees only the request and variables it's given, no DOM, extension APIs

@@ -1,7 +1,7 @@
 // The Chrome extension built from the web app (HITOP Next A8), loaded unpacked in Chromium: the
 // page opens without a CSP violation, a request goes to a server that sends no CORS headers (host
-// permissions, no proxy), and the scripts before and after it run in the sandboxed page (an
-// extension page may not evaluate code).
+// permissions, no proxy), and the scripts before and after it run in the script worker (boa in wasm), where they reach
+// nothing of the page or the network.
 //   npm run build:extension && node scripts/package-extension.mjs chrome <dir> && EXTENSION_DIR=<dir> node tests/extension.cjs
 const http = require('http');
 const os = require('os');
@@ -64,8 +64,14 @@ const check = (name, ok, detail = '') => {
     await p.waitForFunction(() => document.querySelector('hitop-app').store.tab.tests?.length === 2, null, { timeout: 15000 }).catch(() => {});
     const tab = await p.evaluate(() => { const t = document.querySelector('hitop-app').store.tab; return { status: t.statusCode, tests: t.tests, response: String(t.response).slice(0, 200) }; });
     check('a host without CORS answers the extension (host permissions, no proxy)', tab.status === 200 && tab.response.includes('paid'), JSON.stringify(tab));
-    check('the script before ran in the sandbox', seen?.headers['x-from-script'] === 'pre-2', JSON.stringify(seen?.headers));
-    check('the script after ran in the sandbox: 2 of 2 tests pass', tab.tests?.length === 2 && tab.tests.every((t) => t.pass), JSON.stringify(tab.tests));
+    check('the script before ran', seen?.headers['x-from-script'] === 'pre-2', JSON.stringify(seen?.headers));
+    check('the script after ran: 2 of 2 tests pass', tab.tests?.length === 2 && tab.tests.every((t) => t.pass), JSON.stringify(tab.tests));
+    // Scripts may be someone else's: they find neither the page nor a network.
+    const reach = await p.evaluate(async () => {
+      const r = await document.querySelector('hitop-app').store.runPostScriptFull('const seen = []; for (const n of ["fetch", "XMLHttpRequest", "WebSocket", "importScripts", "localStorage", "document", "chrome", "postMessage"]) if ((0, eval)("typeof " + n) !== "undefined") seen.push(n); assert.equal(seen.join(","), "", "reach");', null, '', {}, 200, 1, {});
+      return r.tests[0];
+    });
+    check('a script reaches neither the page nor the network', reach?.pass === true, JSON.stringify(reach));
     // Owner decision 2026-11-10: public hosts through hitop.rws8.tech's proxy, limits said in the app.
     const bundles = fs.readdirSync(path.join(dir, 'app/assets')).filter((f) => f.endsWith('.js')).map((f) => fs.readFileSync(path.join(dir, 'app/assets', f), 'utf8')).join('\n');
     check('public hosts go through the HITOP proxy (built in)', bundles.includes('https://hitop.rws8.tech/api/proxy'));

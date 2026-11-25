@@ -47,6 +47,12 @@ Releases before 1.2 are listed in ROADMAP.md (section 5) and on the GitHub Relea
 
 ### Web and desktop
 
+- Security, Chrome extension: scripts no longer run in the extension's sandboxed page, which could reach the network with the
+  variables a script is given (secret values included). They run in the same isolated worker as the web app and Firefox.
+- Scripts (CLI, desktop, web, iOS, Android): the script before a request can read `url`, `method`, `headers` (a list of
+  `{name, value}`) and `body`, and both scripts `variables` and `context`, as the scripts guide says; before, only the web
+  app had them. A script's own variable of the same name still wins. In the web app a non-JSON response's `response` is
+  now null, as everywhere else (`responseText` has the text).
 - Security, web app: scripts before and after a request no longer run in the page. They run in the same engine as the CLI and the desktop, in
   WebAssembly in a worker, and can't reach the page, what it stores (session, device key) or the network; one that runs over 30 s is stopped.
   Before, a script in a collection someone shared or you imported could read all of that when you sent the request. Scripts that used browser

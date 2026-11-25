@@ -244,21 +244,6 @@ assert.equal(rankItems(more, "auth")[0].key, "col:2");
   assert.deepEqual([li.headline, li.org, li.message], ["The Free plan has used its 3 shared collections", "o1", "Free allows 3 workspaces"]);
 }
 
-// The scripts as the extension's sandbox runs them (script-run.js; the web build runs the same).
-{
-  const fs = await import("node:fs");
-  const { loadShim } = await import("../src/pm.js");
-  const { runPre, runPost } = await import("../src/script-run.js");
-  const shim = loadShim(fs.readFileSync(new URL("../../shared/pm-shim.js", import.meta.url), "utf8"));
-  const pre = runPre(shim, { script: 'setHeader("X-A", "1"); setContext("k", "v"); pm.environment.set("e", "2");', url: "https://x/", method: "GET", headers: [], body: "", variables: {}, context: {}, globals: {} });
-  assert.deepEqual([pre.headers, pre.contextUpdates, pre.variables], [[{ name: "X-A", value: "1" }], { k: "v" }, { e: "2" }]);
-  const post = runPost(shim, { script: 'pm.test("ok", () => pm.response.to.have.status(200));\nthrow new Error("boom")', text: "{}", headers: {}, status: 200, durationMs: 1, variables: {}, context: {}, globals: {} });
-  assert.deepEqual([post.tests.length, post.tests[0].pass, post.error], [1, true, "boom (line 2, column 7)"], "a throwing script keeps what it set and says where it stopped");
-  const logged = runPost(shim, { script: 'console.log("n", 1, { a: 2 });\nconsole.warn("careful");\nfoo.bar();', text: "{}", headers: {}, status: 200, durationMs: 1, variables: {}, context: {}, globals: {} });
-  assert.deepEqual(logged.logs, [{ level: "log", text: 'n 1 {\n  "a": 2\n}' }, { level: "warn", text: "careful" }], "console.* goes to the Console tab");
-  assert.equal(logged.error, "foo is not defined (line 3, column 1)", "a thrown error names its line and column");
-  assert.ok(JSON.parse(JSON.stringify(post)), "plain data: crosses postMessage");
-}
 
 // The request page's facts (request-facts.js): HTTP version labels, body kind, JSON check with line/col.
 {

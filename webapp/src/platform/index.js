@@ -27,33 +27,25 @@
 //   settingsSections(store, app)  optional: the adapter's own sections of the Settings page (desktop:
 //                            secret managers, the usage ping where built); views/settings-view.js has the rest
 //   onStart(app)             optional: runs once the app is on screen
-//   scripts                  { pre(args), post(args) }, async, isolated from the page (Rust, a sandboxed page or wasm in a worker)
+//   scripts                  { pre(args), post(args) }, async, isolated from the page (Rust, or wasm in a worker)
 //   folders                  null, or { pick, create, read, write, restore, remember, forget, label }
 //   saveFile(name, data, type)  data is text or bytes
 //   secretsNote              where secret values are kept, for the environments page
 export const IS_TAURI = import.meta.env.VITE_HITOP_PLATFORM === "tauri";
 // The browser extensions (HITOP Next A8): the web adapter without a proxy (host permissions
-// let the page fetch any host), scripts in the extension's sandboxed page.
+// let the page fetch any host), scripts as in the web app.
 export const IS_EXTENSION = import.meta.env.VITE_HITOP_PLATFORM === "extension";
 
 let current = null;
-
-function useWasmScripts() {
-  return location.protocol === "moz-extension:" || new URLSearchParams(location.search).has("wasm-scripts");
-}
 
 export async function initPlatform() {
   const mod = IS_TAURI ? await import("./tauri.js") : await import("./web.js");
   current = mod.createPlatform();
   if (IS_EXTENSION) {
-    // Chrome: the manifest's sandboxed page. Firefox has none: boa in WebAssembly in a worker
-    // (wasm-scripts.js). `?wasm-scripts` picks the Firefox runner anywhere (its e2e, tests/firefox.cjs).
-    current.scripts = useWasmScripts() ? (await import("./wasm-scripts.js")).wasmScripts : (await import("./sandbox-scripts.js")).sandboxScripts;
     current.extension = true;
-  } else if (!IS_TAURI) {
-    // The web app: never in the page (wasm-scripts.js says why).
-    current.scripts = (await import("./wasm-scripts.js")).wasmScripts;
   }
+  // The web app and both extensions: never in the page (wasm-scripts.js says why); the desktop: Rust.
+  if (!IS_TAURI) current.scripts = (await import("./wasm-scripts.js")).wasmScripts;
   await current.init();
   return current;
 }
