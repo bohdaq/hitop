@@ -11,7 +11,6 @@ import { isBinaryType, toBase64 } from "../binary.js";
 import { loadShim } from "../pm.js";
 import { platform } from "../platform/index.js";
 
-export { applyPathVariables, inheritDefaults, inheritedAuth, pathVariableNames, requestTimeout } from "./defaults.js";
 
 // Postman's pm.* API for scripts (the shim the CLI and desktop run too).
 // The pm.* shim, loaded on first use. The browser extensions may not evaluate code in their pages

@@ -26,6 +26,7 @@ import { WebsocketPart } from "./store/websocket.js";
 import { GrpcPart } from "./store/grpc.js";
 import { FoldersPart } from "./store/folders.js";
 
+export { applyPathVariables, inheritDefaults, inheritedAuth, pathVariableNames, requestTimeout } from "./defaults.js";
 export { isGraphql, isWebsocket, isGrpc, methodLabel, wsUrl, METHODS, BODY_METHODS, KEEP_BODY, KEEP_HEAD, storedTab, INLINE_BODY, STORED_HEAD, storedTabInDb } from "./store/shared.js";
 
 // The parts by subject (src/store/); this file keeps the start, saving and views.
