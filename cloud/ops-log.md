@@ -437,3 +437,9 @@ and on hitop.rws8.tech/cloud/healthz. -->
   native routes answer 404 `google_native_off` until `HITOP_SYNC_GOOGLE_ANDROID_CLIENT_IDS` is set; `hitop://sign-in` still accepted,
   `hitop://evil` refused. Rollback: `/usr/local/bin/hitop-sync-server.bak-20261124-213326`.
 - Site pages only (site/dist without app/ and cloud/, checked byte for byte untouched) from 3a30dbe; backup `/var/www/hitop.bak-20261124-*`.
+
+## 2026-11-25 Portal: `?server=` links (security)
+
+- Portal from 2f69a78 (`cloud/portal` dist only; the rest of /var/www/hitop checked byte for byte untouched; old assets kept). A `?server=`
+  link asks before signing out and the sign-in page names a server that isn't HITOP Cloud: checked live in a browser.
+  Backup `/var/www/hitop-cloud.bak-20261125-033333`.
