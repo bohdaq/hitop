@@ -606,7 +606,7 @@ struct ScheduleCard: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 4) {
-            Picker(selection: Binding(get: { mine?.everyMinutes ?? 0 }, set: choose)) {
+            Picker(selection: Binding(get: { mine?.everyMinutes ?? 0 }, set: { m in choose(m) })) {
                 Text("Off").tag(0)
                 ForEach(RunSchedule.choices, id: \.minutes) { c in Text("Every \(c.name)").tag(c.minutes) }
             } label: {
