@@ -24,11 +24,14 @@ use crate::model::{ApiKeyLocation, Auth, Collection, FormField, Header, Param, R
 use crate::postman::Issue;
 
 pub mod example;
+mod lines;
+pub mod lint;
 pub mod refs;
 mod sync;
 #[cfg(test)]
 mod tests;
 
+pub use lint::{lint, Lint, Problem, Severity};
 pub use refs::parse;
 pub use sync::{sync, CollectionChange, OpChange, RowChange, SyncDiff, Synced};
 

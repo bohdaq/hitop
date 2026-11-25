@@ -33,6 +33,32 @@ pub enum OpenapiCmd {
     /// added, changed ones updated where you didn't edit them, removed ones
     /// listed (and deleted only with --prune)
     Sync(SyncArgs),
+    /// Check a spec: what breaks OpenAPI 3.x (errors) and what makes it hard
+    /// to use (warnings). Exit 1 when there are errors
+    Lint(LintArgs),
+}
+
+#[derive(Args)]
+pub struct LintArgs {
+    /// The spec: a file (YAML or JSON) or an http(s) URL
+    #[arg(required_unless_present = "rules")]
+    source: Option<String>,
+
+    /// Leave a rule out (can be given several times)
+    #[arg(long, value_name = "RULE")]
+    off: Vec<String>,
+
+    /// Exit 1 on warnings too
+    #[arg(long)]
+    strict: bool,
+
+    /// Print the result as JSON
+    #[arg(long)]
+    json: bool,
+
+    /// List the rules
+    #[arg(long)]
+    rules: bool,
 }
 
 #[derive(Args)]
@@ -56,6 +82,7 @@ pub fn run(cmd: OpenapiCmd) -> Result<()> {
     match cmd {
         OpenapiCmd::Import(args) => run_import(args),
         OpenapiCmd::Sync(args) => run_sync(args),
+        OpenapiCmd::Lint(args) => run_lint(args),
     }
 }
 
@@ -216,5 +243,43 @@ pub fn run_sync(args: SyncArgs) -> Result<()> {
     }
     format::write_collection(dir, &synced.collection)?;
     println!("{} Updated {}", "✓".green(), dir.display());
+    Ok(())
+}
+
+fn run_lint(args: LintArgs) -> Result<()> {
+    use openapi::lint::RULES;
+    use openapi::Severity;
+    let word = |s: Severity| if s == Severity::Error { "error" } else { "warning" };
+    let Some(source) = args.source.filter(|_| !args.rules) else {
+        for (rule, severity) in RULES {
+            println!("{rule}  {}", word(*severity));
+        }
+        return Ok(());
+    };
+    if let Some(r) = args.off.iter().find(|r| !RULES.iter().any(|(n, _)| n == r)) {
+        eprintln!("--off {r}: no such rule (see `hitop openapi lint --rules`)");
+        std::process::exit(2);
+    }
+    let text = match load(&source) {
+        Ok((text, _)) => text,
+        Err(e) => {
+            eprintln!("{e:#}");
+            std::process::exit(2);
+        }
+    };
+    let result = openapi::lint(&text, &args.off);
+    if args.json {
+        println!("{}", serde_json::to_string_pretty(&result)?);
+    } else {
+        for p in &result.problems {
+            let at = p.line.map_or(source.clone(), |l| format!("{source}:{l}"));
+            let kind = if p.severity == Severity::Error { "error".red() } else { "warning".yellow() };
+            println!("{at}  {kind}  {}  [{}]", p.message, p.rule);
+        }
+        println!("{}, {}", plural(result.errors, "error"), plural(result.warnings, "warning"));
+    }
+    if result.errors > 0 || (args.strict && result.warnings > 0) {
+        std::process::exit(1);
+    }
     Ok(())
 }

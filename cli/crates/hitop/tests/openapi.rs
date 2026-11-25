@@ -220,3 +220,19 @@ fn sync_keeps_edits_to_the_files() {
     hitop(&home).args(["init", arg(&plain)]).assert().success();
     hitop(&home).args(["openapi", "sync", arg(&spec2), arg(&plain)]).assert().failure().stderr(contains("wasn't imported from an OpenAPI spec"));
 }
+
+#[test]
+fn lint_lists_problems_with_lines_and_exit_codes() {
+    let home = TempDir::new().unwrap();
+    let spec = home.path().join("s.yaml");
+    fs::write(&spec, "openapi: 3.1.0\ninfo: {title: T, version: '1'}\npaths:\n  /a:\n    get:\n      responses: {'20': {description: d}}\n").unwrap();
+    hitop(&home).args(["openapi", "lint", "s.yaml"]).assert().code(1).stdout(contains("s.yaml:6").and(contains("[responses]")).and(contains("1 error, 2 warnings")));
+    hitop(&home).args(["openapi", "lint", "s.yaml", "--off", "responses"]).assert().success();
+    hitop(&home).args(["openapi", "lint", "s.yaml", "--off", "responses", "--strict"]).assert().code(1);
+    hitop(&home).args(["openapi", "lint", "s.yaml", "--off", "nope"]).assert().code(2);
+    hitop(&home).args(["openapi", "lint", "missing.yaml"]).assert().code(2);
+    hitop(&home).args(["openapi", "lint", "--rules"]).assert().success().stdout(contains("ref-external  warning"));
+    let out = hitop(&home).args(["openapi", "lint", "s.yaml", "--json"]).output().unwrap();
+    let v: serde_json::Value = serde_json::from_slice(&out.stdout).unwrap();
+    assert_eq!((v["errors"].as_u64(), v["problems"][0]["location"].as_str()), (Some(1), Some("/paths/~1a/get/responses/20")));
+}

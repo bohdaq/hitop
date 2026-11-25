@@ -11,6 +11,7 @@ fuzz_target!(|data: &[u8]| {
     let Ok(text) = std::str::from_utf8(rest) else { return };
     let opts = Options { flat: flags & 1 != 0, inline_auth: flags & 2 != 0, source: (flags & 4 != 0).then(|| "https://api.example.test/v1/spec.json".to_string()) };
     let _ = openapi::detect(text);
+    let _ = openapi::lint(text, &[]);
     if let Ok((collection, _)) = openapi::import(text, &opts) {
         let _ = openapi::sync(&collection, text, &opts, flags & 8 != 0);
     }

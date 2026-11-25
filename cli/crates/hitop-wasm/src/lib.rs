@@ -170,6 +170,13 @@ pub fn sync_openapi(collection_json: &str, text: &str, options_json: &str, prune
     sync_openapi_json(collection_json, text, options_json, prune).map_err(chain)
 }
 
+/// An OpenAPI spec's problems (hitop-core `openapi::lint`): `off` = a JSON list of rules left out.
+#[wasm_bindgen(js_name = lintOpenapi)]
+pub fn lint_openapi(text: &str, off_json: &str) -> Result<String, JsError> {
+    let off: Vec<String> = if off_json.trim().is_empty() { vec![] } else { serde_json::from_str(off_json).map_err(|e| JsError::new(&e.to_string()))? };
+    serde_json::to_string(&hitop_core::openapi::lint(text, &off)).map_err(|e| JsError::new(&e.to_string()))
+}
+
 /// True when the text is an OpenAPI (or Swagger) document.
 #[wasm_bindgen(js_name = isOpenapi)]
 pub fn is_openapi(text: &str) -> bool {

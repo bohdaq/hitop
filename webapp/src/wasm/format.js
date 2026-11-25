@@ -23,6 +23,8 @@ function api(m) {
     importOpenapi: (text, options) => call(m.importOpenapi, String(text ?? ""), options ?? {}),
     // An imported collection + newer spec text → { collection, diff: { added, changed, removed, unchanged, collection }, report }.
     syncOpenapi: (collection, text, options, prune) => JSON.parse(m.syncOpenapi(JSON.stringify(collection), String(text ?? ""), JSON.stringify(options ?? {}), Boolean(prune))),
+    // A spec's problems: { problems: [{ rule, severity, location, line?, message }], errors, warnings }.
+    lintOpenapi: (text, off = []) => JSON.parse(m.lintOpenapi(String(text ?? ""), JSON.stringify(off))),
     isOpenapi: (text) => m.isOpenapi(String(text ?? "")),
     // A GraphQL request's JSON body (variables filled in), as hitop-core
     // builds it: text, not parsed. Throws when the variables aren't an object.
