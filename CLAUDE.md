@@ -114,6 +114,7 @@ hitop/
 │       └── Entitlements.mas.inherit.plist  # MAS child process entitlements
 ├── webapp/                     # hitop.rws8.tech/app/: Lit + lit-material, storage/request services from shared/services
 │   ├── src/store.js            # the app store: start, saving, views; its subjects are mixins in src/store/ (tabs, requests, sending, environments, folders, grpc...; shared.js = helpers): all app logic (started as a port of the old React App.jsx), same localStorage keys; folders, zip
+│   ├── src/views/hitop-app.js  # the app shell: properties, start, keys, render; its subjects are mixins in src/views/app/ (dialogs, sidebar, tabs, account, bars...)
 │   ├── src/platform/           # adapters: web.js (fetch/proxy, localStorage, File System Access), tauri.js (invoke), history.js;
 │   │                           # tauri-settings.js: desktop-only sections of the Settings page (secret managers; usage ping where built) + first-run usage ping question
 │   │                           # response-store.js: large response bodies in IndexedDB (both adapters), storage usage for Settings

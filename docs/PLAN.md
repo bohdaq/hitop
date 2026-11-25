@@ -47,7 +47,7 @@ Status is kept in the table at the end; choices made on the way go under "Decisi
 | C0 | on main 63864f9, every check green (PR 20): core and CLI storage journal, damaged files kept (core, web, desktop, iOS) and never deleted from the cloud, iOS drafts |
 | C1 | built (server side; the web and CLI items of STATE_MACHINES.md are in C3 and C4); on main, checks green after one rerun of a flaky Android SSE test, cause open (PR 21) |
 | C2 | built: old iOS apps deleted (2.0.0 live since 2026-11-22, checked), the web e2e job split in five; on main 85975cc, every check green (PR 22) |
-| C3 | in progress: run cancel, OAuth windows on main 8cfd239 (PR 23); desktop live streams and OAuth on main 1608687 (PR 24); dialogs, portal, library on main 2f69a78 (PR 25), portal deployed 2026-11-25; store.js split into src/store/ (CI pending); open: hitop-app.js |
+| C3 | in progress: run cancel, OAuth windows on main 8cfd239 (PR 23); desktop live streams and OAuth on main 1608687 (PR 24); dialogs, portal, library on main 2f69a78 (PR 25), portal deployed 2026-11-25; store.js split into src/store/ on main fcaf9fe (PR 26); hitop-app.js split into src/views/app/ (CI pending) |
 | C4–C9 | not started |
 
 ## Decisions
