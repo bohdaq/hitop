@@ -27,7 +27,7 @@
 //   settingsSections(store, app)  optional: the adapter's own sections of the Settings page (desktop:
 //                            secret managers, the usage ping where built); views/settings-view.js has the rest
 //   onStart(app)             optional: runs once the app is on screen
-//   scripts                  null (scripts run in the page) or { pre(args), post(args) }, async
+//   scripts                  { pre(args), post(args) }, async, isolated from the page (Rust, a sandboxed page or wasm in a worker)
 //   folders                  null, or { pick, create, read, write, restore, remember, forget, label }
 //   saveFile(name, data, type)  data is text or bytes
 //   secretsNote              where secret values are kept, for the environments page
@@ -50,6 +50,9 @@ export async function initPlatform() {
     // (wasm-scripts.js). `?wasm-scripts` picks the Firefox runner anywhere (its e2e, tests/firefox.cjs).
     current.scripts = useWasmScripts() ? (await import("./wasm-scripts.js")).wasmScripts : (await import("./sandbox-scripts.js")).sandboxScripts;
     current.extension = true;
+  } else if (!IS_TAURI) {
+    // The web app: never in the page (wasm-scripts.js says why).
+    current.scripts = (await import("./wasm-scripts.js")).wasmScripts;
   }
   await current.init();
   return current;

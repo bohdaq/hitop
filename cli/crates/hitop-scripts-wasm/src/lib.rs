@@ -12,7 +12,7 @@
 use std::collections::HashMap;
 
 use hitop_core::model::TestResult;
-use hitop_core::scripting::{run_post_request_script_with, run_pre_request_script, PostRequestCtx, PreRequestCtx, SentRequest, VariableUpdates};
+use hitop_core::scripting::{run_post_request_script_full, run_pre_request_script, LogLine, PostRequestCtx, PreRequestCtx, SentRequest, VariableUpdates};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use wasm_bindgen::prelude::*;
@@ -38,6 +38,7 @@ pub struct PreScriptResult {
     pub context_updates: HashMap<String, Value>,
     pub variables: VariableUpdates,
     pub globals: VariableUpdates,
+    pub logs: Vec<LogLine>,
 }
 
 #[derive(Deserialize)]
@@ -74,6 +75,9 @@ pub struct PostScriptResult {
     pub tests: Vec<TestResult>,
     pub variables: VariableUpdates,
     pub globals: VariableUpdates,
+    pub logs: Vec<LogLine>,
+    /// Why the script stopped, when it threw: what it did before that is kept.
+    pub error: Option<String>,
 }
 
 /// The pre-request script: `args` and the answer are JSON (see the module docs).
@@ -81,7 +85,7 @@ pub fn pre(args: &str) -> Result<String, String> {
     let a: PreScriptArgs = serde_json::from_str(args).map_err(|e| format!("bad arguments: {e}"))?;
     let ctx = PreRequestCtx { url: a.url, method: a.method, headers: a.headers, body: a.body, variables: a.variables, context: a.context, globals: a.globals };
     let r = run_pre_request_script(&a.script, ctx).map_err(|e| e.to_string())?;
-    let out = PreScriptResult { url: r.url, headers: r.headers, body: r.body, context_updates: r.context_updates, variables: r.variables, globals: r.globals };
+    let out = PreScriptResult { url: r.url, headers: r.headers, body: r.body, context_updates: r.context_updates, variables: r.variables, globals: r.globals, logs: r.logs };
     serde_json::to_string(&out).map_err(|e| e.to_string())
 }
 
@@ -99,8 +103,8 @@ pub fn post(args: &str) -> Result<String, String> {
         request: sent.as_ref(),
         globals: a.globals.as_ref(),
     };
-    let r = run_post_request_script_with(&a.script, &ctx).map_err(|e| e.to_string())?;
-    let out = PostScriptResult { context_updates: r.context_updates, tests: r.tests, variables: r.variables, globals: r.globals };
+    let r = run_post_request_script_full(&a.script, &ctx).map_err(|e| e.to_string())?;
+    let out = PostScriptResult { context_updates: r.context_updates, tests: r.tests, variables: r.variables, globals: r.globals, logs: r.logs, error: r.error };
     serde_json::to_string(&out).map_err(|e| e.to_string())
 }
 
@@ -142,6 +146,14 @@ mod tests {
         assert_eq!(tests.len(), 2, "{out}");
         assert_eq!(tests[0]["pass"], true);
         assert_eq!(tests[1]["pass"], false);
+    }
+
+    #[test]
+    fn a_post_script_that_throws_keeps_its_results_and_logs() {
+        let args = serde_json::json!({"script": "console.log('hi'); pm.test('one', () => {}); throw new Error('stop');", "response_body": "", "response_headers": {}, "status_code": 200, "variables": {}, "context": {}});
+        let out: Value = serde_json::from_str(&post(&args.to_string()).unwrap()).unwrap();
+        assert_eq!((out["tests"].as_array().unwrap().len(), out["logs"][0]["text"].as_str()), (1, Some("hi")), "{out}");
+        assert!(out["error"].as_str().unwrap().contains("stop"), "{out}");
     }
 
     #[test]

@@ -5,9 +5,9 @@
   "type": "module",
   "scripts": {
     "wasm": "node scripts/build-wasm.mjs",
-    "dev": "npm run wasm && vite",
+    "dev": "npm run wasm -- --scripts && vite",
     "dev:tauri": "npm run wasm && vite --mode tauri --port 1421 --strictPort",
-    "build": "npm run wasm && VITE_HITOP_PROXY=/api/proxy vite build",
+    "build": "npm run wasm -- --scripts && VITE_HITOP_PROXY=/api/proxy vite build",
     "build:tauri": "npm run wasm && vite build --mode tauri --outDir dist-tauri --base ./",
     "preview": "vite preview",
     "test:unit": "npm run wasm && node tests/unit.mjs && node tests/unit-ux.mjs && node tests/unit-ux2.mjs && node tests/unit-tree.mjs && node tests/unit-ux3.mjs && node tests/pm.mjs && node tests/unit-shared.mjs && node tests/cws-publish.mjs",

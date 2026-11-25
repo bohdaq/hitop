@@ -497,6 +497,7 @@ hitop/
   `platform().resolveSecretRefs` (tauri.js → `secret_refs_resolve`; web.js `null` → the request isn't sent, the note names them);
   values in `store.refValues` (memory, reset per send/run), merged by `variables()`, masked via `secretValuesFor()`; Code dialog keeps placeholders
 - Lint: `npm run lint` (ESLint 10 flat config `eslint.config.js`: recommended + eslint-plugin-lit, browser globals for src/, Node for tests/scripts) in webapp/, site/ and cloud/portal/; CI job `lint`. Fix findings, don't disable rules
+- Scripts (`platform().scripts`, every adapter has one; nothing runs a person's script in the page): web app and Firefox = `platform/wasm-scripts.js` (boa in wasm in a worker, 30 s limit; `npm run build` builds it with `--scripts`), Chrome extension = the sandboxed page, desktop = Rust. e2e `tests/script-isolation.cjs`
 - No telemetry in the web build: telemetry UI lives only in `platform/tauri-settings.js` (imported by tauri.js);
   `node scripts/check-no-telemetry.mjs` after both builds checks it. Adapter hooks `pages`/`onStart` add desktop-only pages
 - Builds need the wasm32 target and the wasm-bindgen CLI 0.2.126 (`cargo install wasm-bindgen-cli --version 0.2.126 --locked`):

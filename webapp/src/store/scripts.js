@@ -4,10 +4,9 @@ import { applyAuth, oauthAuthorizeUrl, oauthCodeRequest, oauthParseToken, oauthT
 import { applyPathVariables, inheritDefaults } from "../defaults.js";
 import { fillVariables, usesPostmanApi } from "../pm.js";
 import { interpolateVariables } from "../../../shared/services/variableInterpolation.js";
-import { isGraphql, pmShim } from "./shared.js";
+import { isGraphql } from "./shared.js";
 import { loadFormat } from "../wasm/format.js";
 import { platform } from "../platform/index.js";
-import { runPost, runPre } from "../script-run.js";
 
 export const ScriptsPart = (Base) =>
   class extends Base {
@@ -15,22 +14,13 @@ export const ScriptsPart = (Base) =>
     this.contexts = contextService.updateCollectionContext(this.contexts, collectionId, key, value);
   }
 
-  // Scripts run in this page, as in the React web build (`with(ctx)`); the
-  // extension build keeps its sandboxed iframe.
+  // Scripts may be someone else's (a shared or imported collection): they run isolated from this
+  // page, in the adapter's runner, and there is no other way to run one.
   async runPreScript(script, collectionId, method, url, headers, body) {
     if (!script?.trim()) return { url, headers, body };
     const context = contextService.getCollectionContext(this.contexts, collectionId);
     const variables = this.variables(collectionId);
-    const native = platform().scripts;
-    if (native) {
-      // The desktop runs scripts in Rust (boa), as the CLI does.
-      const r = await native.pre({ script, url, method, headers, body, variables, context, globals: this.globalsFor(collectionId) });
-      for (const [k, v] of Object.entries(r.contextUpdates)) this.setContext(collectionId, k, v);
-      this.setScriptVariables(collectionId, r.variables);
-      this.setScriptGlobals(collectionId, r.globals);
-      return { url: r.url, headers: r.headers, body: r.body, logs: r.logs ?? [] };
-    }
-    const r = runPre(pmShim(), { script, url, method, headers, body, variables, context, globals: this.globalsFor(collectionId) });
+    const r = await platform().scripts.pre({ script, url, method, headers, body, variables, context, globals: this.globalsFor(collectionId) });
     for (const [k, v] of Object.entries(r.contextUpdates)) this.setContext(collectionId, k, v);
     this.setScriptVariables(collectionId, r.variables);
     this.setScriptGlobals(collectionId, r.globals);
@@ -69,10 +59,7 @@ export const ScriptsPart = (Base) =>
   // {tests, logs, error}: the results, what console.* printed, and why it stopped (or null).
   async runPostScriptFull(script, collectionId, text, headers, status, durationMs, sent) {
     if (!script?.trim()) return { tests: [], logs: [], error: null };
-    const native = platform().scripts;
-    const r = native
-      ? await native.post({ script, text, headers, status, durationMs, sent, variables: this.variables(collectionId), globals: this.globalsFor(collectionId), context: contextService.getCollectionContext(this.contexts, collectionId) })
-      : runPost(pmShim(), { script, text, headers, status, durationMs, sent, variables: this.variables(collectionId), context: contextService.getCollectionContext(this.contexts, collectionId), globals: this.globalsFor(collectionId) });
+    const r = await platform().scripts.post({ script, text, headers, status, durationMs, sent, variables: this.variables(collectionId), context: contextService.getCollectionContext(this.contexts, collectionId), globals: this.globalsFor(collectionId) });
     for (const [k, v] of Object.entries(r.contextUpdates ?? {})) this.setContext(collectionId, k, v);
     this.setScriptVariables(collectionId, r.variables ?? {});
     this.setScriptGlobals(collectionId, r.globals ?? {});

@@ -64,8 +64,8 @@ function server() {
   await send();
   const tests = (await store('return app.store.tab.tests;')).value;
   check('a throwing script keeps the tests before it', tests?.[0]?.pass === true && tests.length === 2, JSON.stringify(tests));
-  // The web app's scripts give the line; the desktop's engine (boa) names the error only.
-  check('the error says what failed', TAURI ? /ReferenceError: foo is not defined/.test(tests?.[1]?.detail ?? '') : /line 3, column 1/.test(tests?.[1]?.detail ?? ''), tests?.[1]?.detail);
+  // Scripts run in hitop-core's engine (boa), which names the error, not the line.
+  check('the error says what failed', /ReferenceError: foo is not defined/.test(tests?.[1]?.detail ?? ''), tests?.[1]?.detail);
   const consoleTab = p.locator('hitop-request .response lit-material-tab', { hasText: 'Console' });
   check('a Console tab shows what console.log printed', (await consoleTab.count()) === 1);
   await consoleTab.click();

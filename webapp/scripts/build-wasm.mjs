@@ -47,8 +47,8 @@ const build = (dir, file, dest, label) => {
   console.log(`${label} → ${dest}`);
 };
 build(crate, "hitop_wasm.wasm", out, "hitop-wasm");
-// --scripts: also hitop-scripts-wasm (boa + the pm.* shim) → src/wasm/pkg-scripts/, the Firefox
-// extension's script runner (npm run build:extension).
+// --scripts: also hitop-scripts-wasm (boa + the pm.* shim) → src/wasm/pkg-scripts/, the script runner of
+// the web app (npm run build) and the Firefox extension (npm run build:extension).
 if (process.argv.includes("--scripts")) {
   const scripts = join(here, "../../cli/crates/hitop-scripts-wasm");
   const spin = readFileSync(join(scripts, "Cargo.toml"), "utf8").match(/wasm-bindgen = "=([^"]+)"/)?.[1];

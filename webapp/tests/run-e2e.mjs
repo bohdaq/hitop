@@ -13,7 +13,7 @@ const SUITES = [
   "openapi", "git", "secret-refs", "ux", "ux12", "onboarding",
   "sse", "ai", "sync", "library", "shared-library", "devices", "account-delete",
   "limits", "github", "next", "collections-ux", "stories", "first-visit",
-  "ux2", "tree-dnd", "tabs-dnd", "ux3", "updater", "store-mode", "run-cancel",
+  "ux2", "tree-dnd", "tabs-dnd", "ux3", "updater", "store-mode", "run-cancel", "script-isolation",
 ];
 // Helpers, screenshots (visual.cjs too), and the extension and Firefox checks (their own CI jobs).
 const OTHERS = ["harness", "fake-github", "tauri-mock", "shots-fv1", "shots-ux2", "store-shots", "extension", "firefox", "visual"];

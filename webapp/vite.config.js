@@ -22,11 +22,11 @@ const inlineBoot = {
   },
 };
 
-// The Firefox extension's script runner (src/platform/wasm-scripts.js): hitop-scripts-wasm, built
-// into src/wasm/pkg-scripts/ only by npm run build:extension; the other builds get a stub.
-const scriptsWasm = (extension) => {
+// The web app's and the Firefox extension's script runner (src/platform/wasm-scripts.js): hitop-scripts-wasm, built
+// into src/wasm/pkg-scripts/ by build-wasm.mjs --scripts; the desktop build (Rust runs its scripts) gets a stub.
+const scriptsWasm = (built) => {
   const dir = fileURLToPath(new URL("./src/wasm/", import.meta.url));
-  return extension
+  return built
     ? [
         { find: /^hitop-scripts-wasm\/wasm/, replacement: `${dir}pkg-scripts/hitop_scripts_wasm_bg.wasm` },
         { find: /^hitop-scripts-wasm$/, replacement: `${dir}pkg-scripts/hitop_scripts_wasm.js` },
@@ -54,7 +54,7 @@ export default defineConfig(({ mode }) =>
       }
     : {
         base: "/app/",
-        resolve: { alias: scriptsWasm(false) },
+        resolve: { alias: scriptsWasm(mode !== "tauri") },
         worker: { format: "es" },
         build: { outDir: "dist", emptyOutDir: true },
         server: { port: 3001, fs: { allow: [".."] } },
