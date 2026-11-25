@@ -35,6 +35,9 @@ data class ImportPlan(
             "environment" -> "Postman environment"
             "globals" -> "Postman globals"
             "folder" -> "HITOP collection folder"
+            "insomnia" -> "Insomnia"
+            "bruno" -> "Bruno collection"
+            "har" -> "HAR recording"
             else -> "HITOP collections"
         }
     val isEmpty: Boolean get() = collections.isEmpty() && environments.isEmpty() && globals == null
@@ -49,16 +52,24 @@ object Importing {
 
     /** Blocking. [source]: the address it came from (OpenAPI's relative servers resolve against it). */
     fun read(bytes: ByteArray, name: String = "Imported", source: String? = null): ImportPlan =
-        if (isZip(bytes)) folder(unzip(bytes), name.removeSuffix(".zip")) else read(String(bytes, Charsets.UTF_8), source)
+        if (isZip(bytes)) unzip(bytes).let { files -> if ("hitop.yaml" in files) folder(files, name.removeSuffix(".zip")) else bruno(files) } else read(String(bytes, Charsets.UTF_8), source)
 
     fun read(text: String, source: String? = null): ImportPlan {
         val o = Ffi.call("import", buildJsonObject { put("text", text); source?.let { put("source", it) } }).jsonObject
+        return plan(o)
+    }
+
+    /** A Bruno collection's zip. */
+    private fun bruno(files: Map<String, String>): ImportPlan =
+        plan(Ffi.call("importFiles", buildJsonObject { put("files", files.filterKeys { it.endsWith(".bru") || it.endsWith("bruno.json") }.toJsonObject()) }).jsonObject)
+
+    private fun plan(o: JsonObject): ImportPlan {
         val env = o.obj("environment")?.let { ImportedEnvironment(Environment(it), o.stringMap("secretValues")) }
         val kind = o.str("kind")
         return ImportPlan(
             kind,
             o.arr("collections").orEmpty().map { Collection(HitopJson.parseToJsonElement(it.jsonPrimitive.content).jsonObject) },
-            listOfNotNull(env.takeIf { kind == "environment" }),
+            listOfNotNull(env.takeIf { kind == "environment" }) + o.arr("environments").orEmpty().map { it.jsonObject }.mapNotNull { e -> e.obj("environment")?.let { ImportedEnvironment(Environment(it), e.stringMap("secretValues")) } },
             env.takeIf { kind == "globals" },
             o.stringList("issues"),
         )
@@ -88,7 +99,10 @@ object Importing {
                 out[path] = b.toString("UTF-8")
             }
         }
-        val marker = out.keys.filter { it == "hitop.yaml" || it.endsWith("/hitop.yaml") }.minByOrNull { it.length } ?: throw IllegalArgumentException("The zip has no hitop.yaml: it isn't a HITOP collection folder.")
+        val marker = out.keys.filter { it == "hitop.yaml" || it.endsWith("/hitop.yaml") }.minByOrNull { it.length } ?: run {
+            require(out.keys.any { it == "bruno.json" || it.endsWith("/bruno.json") }) { "The zip has no hitop.yaml or bruno.json: it isn't a collection folder." }
+            return out
+        }
         val root = marker.removeSuffix("hitop.yaml")
         return out.filterKeys { it.startsWith(root) }.mapKeys { it.key.removePrefix(root) }
     }

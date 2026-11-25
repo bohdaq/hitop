@@ -5,7 +5,7 @@ use serde_json::Value;
 use std::path::{Path, PathBuf};
 
 use hitop_core::{
-    export, format,
+    convert, export, format,
     model::Collection,
     postman::{self, ImportReport, ImportedEnvironment},
     secrets, storage,
@@ -23,8 +23,9 @@ pub struct ImportArgs {
     #[command(subcommand)]
     kind: Option<ImportKind>,
 
-    /// JSON files: HITOP or Postman collections, Postman environments and
-    /// globals (detected from the content), or one OpenAPI spec
+    /// HITOP or Postman collections, Postman environments and globals, Insomnia
+    /// exports (v4, v5), Bruno collections (the folder, or its JSON export), HAR
+    /// files (detected from the content), or one OpenAPI spec
     #[arg(required = true)]
     files: Vec<PathBuf>,
 
@@ -70,7 +71,7 @@ pub fn run_import(args: ImportArgs) -> Result<()> {
     }
     // An OpenAPI spec given like any other file.
     if args.format.is_none() {
-        for file in &args.files {
+        for file in args.files.iter().filter(|f| !f.is_dir()) {
             let raw = std::fs::read_to_string(file).with_context(|| format!("reading {}", file.display()))?;
             if hitop_core::openapi::detect(&raw) {
                 if args.files.len() > 1 {
@@ -84,7 +85,19 @@ pub fn run_import(args: ImportArgs) -> Result<()> {
     let mut environments: Vec<ImportedEnvironment> = vec![];
     let mut globals: Vec<ImportedEnvironment> = vec![];
     for file in &args.files {
+        if file.is_dir() {
+            let converted = convert::convert_files(&bru_files(file)?).with_context(|| file.display().to_string())?;
+            let Some(c) = converted else { bail!("{} is a folder without a bruno.json: only Bruno collections import from a folder", file.display()) };
+            add_converted(c, &mut collections, &mut environments)?;
+            continue;
+        }
         let raw = std::fs::read_to_string(file).with_context(|| format!("reading {}", file.display()))?;
+        if args.format.is_none() {
+            if let Some(c) = convert::convert_text(&raw).with_context(|| file.display().to_string())? {
+                add_converted(c, &mut collections, &mut environments)?;
+                continue;
+            }
+        }
         let raw = raw.trim_start_matches('\u{feff}');
         let v: Value = serde_json::from_str(raw).with_context(|| format!("{} is not JSON", file.display()))?;
         let kind = match args.format {
@@ -121,6 +134,40 @@ pub fn run_import(args: ImportArgs) -> Result<()> {
     }
     for (c, report) in &collections {
         print_report(&c.name, report);
+    }
+    Ok(())
+}
+
+/// A Bruno collection folder's files, by path in it; links are not followed.
+fn bru_files(dir: &Path) -> Result<std::collections::BTreeMap<String, String>> {
+    fn walk(dir: &Path, at: &str, out: &mut std::collections::BTreeMap<String, String>) -> Result<()> {
+        for e in std::fs::read_dir(dir).with_context(|| format!("reading {}", dir.display()))? {
+            let e = e?;
+            let name = e.file_name().to_string_lossy().into_owned();
+            let path = if at.is_empty() { name.clone() } else { format!("{at}/{name}") };
+            let kind = e.file_type()?;
+            if kind.is_dir() && name != "node_modules" && name != ".git" {
+                walk(&e.path(), &path, out)?;
+            } else if kind.is_file() && (name.ends_with(".bru") || name == "bruno.json") {
+                out.insert(path, std::fs::read_to_string(e.path()).with_context(|| format!("reading {}", e.path().display()))?);
+            }
+        }
+        Ok(())
+    }
+    let mut out = Default::default();
+    walk(dir, "", &mut out)?;
+    Ok(out)
+}
+
+fn add_converted(c: convert::Converted, collections: &mut Vec<(Collection, ImportReport)>, environments: &mut Vec<ImportedEnvironment>) -> Result<()> {
+    let mut issues = c.issues;
+    for v in &c.collections {
+        let (col, mut report) = postman::import_collection(&v.to_string())?;
+        report.issues.splice(0..0, std::mem::take(&mut issues));
+        collections.push((col, report));
+    }
+    for v in &c.environments {
+        environments.push(postman::import_environment(&v.to_string())?);
     }
     Ok(())
 }

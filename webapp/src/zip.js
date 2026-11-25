@@ -37,6 +37,20 @@ export function zipToFiles(bytes, zipName = "collection.zip") {
   return { files, name };
 }
 
+// A Bruno collection's text files when the zip holds one (a bruno.json, no hitop.yaml), else null.
+export function bruFiles(bytes) {
+  let entries;
+  const wanted = (p) => (p.endsWith(".bru") || p === "bruno.json" || p.endsWith("/bruno.json") || p === "hitop.yaml" || p.endsWith("/hitop.yaml")) && !p.split("/").some((s) => s === "node_modules" || s === "__MACOSX" || s.startsWith("."));
+  try {
+    entries = unzipSync(bytes, { filter: (f) => wanted(f.name) });
+  } catch {
+    return null;
+  }
+  const names = Object.keys(entries);
+  if (names.some((n) => n.endsWith("hitop.yaml")) || !names.some((n) => n.endsWith("bruno.json"))) return null;
+  return Object.fromEntries(names.map((n) => [n, strFromU8(entries[n])]));
+}
+
 export async function zipToFolder(bytes, zipName) {
   const { files, name } = zipToFiles(bytes, zipName);
   const format = await loadFormat();

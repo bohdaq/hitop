@@ -66,7 +66,7 @@ export const SidePanePart = (Base) =>
               ? html`<li class="tree-empty" role="none">
                   <p class="hint">${s.currentOrgInfo && !s.currentOrgInfo.personal ? `No collections in ${s.currentOrgInfo.name} yet.` : "No collections yet. A collection groups requests to run and share together."}</p>
                   <button type="button" class="tree-row" @click=${() => this.openDialog("add-collection")}>${icon("folder-simple-plus")}<span>New collection</span></button>
-                  <button type="button" class="tree-row" @click=${() => this.openDialog("import")}>${icon("file-arrow-up")}<span>Import Postman, OpenAPI or HITOP</span></button>
+                  <button type="button" class="tree-row" @click=${() => this.openDialog("import")}>${icon("file-arrow-up")}<span>Import Postman, Insomnia, Bruno, OpenAPI…</span></button>
                 </li>`
               : nothing}
             ${s.visibleCollections.map((c) => {

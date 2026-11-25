@@ -2,7 +2,9 @@
 // Node server (no public host): the import report, then a collection run
 // whose scripts use pm.test, pm.expect and pm.environment.set.
 //   BASE=http://localhost:7879 node tests/postman.cjs
+const fs = require('fs');
 const http = require('http');
+const path = require('path');
 const { launch, checker, TAURI } = require('./harness.cjs');
 const { results, check } = checker();
 const settle = (p) => p.waitForTimeout(400);
@@ -76,6 +78,39 @@ function api() {
   const passed = (run.match(/1 of 1 tests passed/g) || []).length;
   // In the desktop the script commands (Rust) pass script-set variables back too.
   check(`${TAURI ? '[tauri] ' : ''}pm.environment.set carries the token to the next request`, passed === 2 && !/\b401\b/.test(run), run.replace(/\n/g, ' | ').slice(0, 300));
+
+  // Insomnia, HAR and a Bruno folder's zip: the same importer (hitop-core convert.rs).
+  const fixture = (f) => fs.readFileSync(path.join(__dirname, '../../cli/fixtures/imports', f), 'utf8');
+  const importText = async (text) => {
+    await p.evaluate(() => document.querySelector('hitop-app').openDialog('import'));
+    await p.locator('#dialog #json').waitFor();
+    await p.locator('#dialog #json').evaluate((el, t) => (el.value = t), text);
+    await p.locator('#dialog').getByRole('button', { name: 'Import', exact: true }).click();
+  };
+  const closeReport = async () => {
+    await p.locator('#dialog .import-report').waitFor({ timeout: 10000 });
+    const text = await p.locator('#dialog').innerText();
+    await p.locator('#dialog').getByRole('button', { name: 'Done' }).click();
+    await settle(p);
+    return text;
+  };
+  await importText(fixture('insomnia/environments.yaml'));
+  await p.waitForFunction(() => document.querySelector('hitop-app').store.collections.some((c) => c.name === 'environments'), null, { timeout: 10000 });
+  await settle(p);
+  const ins = await p.evaluate(() => { const s = document.querySelector('hitop-app').store; return { body: s.collections.find((c) => c.name === 'environments').requests[0].body, env: s.environments.find((e) => e.name === 'ExampleA')?.variables.exampleString }; });
+  check('Insomnia YAML: the request, its variables and the sub environment', ins.body.includes('${exampleObject.anotherString}') && ins.env?.startsWith('sube'), JSON.stringify(ins));
+  await importText(fixture('har/recording.har'));
+  const harReport = await closeReport();
+  const harText = await p.evaluate(() => JSON.stringify(document.querySelector('hitop-app').store.collections));
+  check('HAR: requests without the recorded credentials, and the report says so', harText.includes('https://shop.test/orders?page=1') && !harText.includes('recorded-s3cret') && harReport.includes('left out'), harReport.slice(0, 200));
+  const { zipSync, strToU8 } = await import('fflate');
+  const bru = { 'api/bruno.json': strToU8(fixture('bruno/testbench/bruno.json')), 'api/echo/echo json.bru': strToU8(fixture('bruno/testbench/echo/echo json.bru')), 'api/environments/Prod.bru': strToU8(fixture('bruno/testbench/environments/Prod.bru')) };
+  await p.evaluate(() => document.querySelector('hitop-app').store.show('collections'));
+  await settle(p);
+  await p.locator('#zip-input').setInputFiles({ name: 'api.zip', mimeType: 'application/zip', buffer: Buffer.from(zipSync(bru)) });
+  const bruReport = await closeReport();
+  const bruReq = await p.evaluate(() => document.querySelector('hitop-app').store.collections.find((c) => c.name === 'bruno-testbench')?.requests[0]);
+  check('Bruno zip: the request, its folder, assertions as tests; scripts reported', bruReq?.url === '${host}/api/echo/json' && bruReq.file === 'echo/echo-json' && bruReq.postRequestScript.includes('status eq 200') && bruReport.includes("Bruno's script API"), JSON.stringify(bruReq).slice(0, 300));
 
   check('no page errors', errors.length === 0, errors.join(' || '));
   server.close();

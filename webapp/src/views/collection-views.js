@@ -47,13 +47,14 @@ export class HitopCollections extends LightElement {
               @change=${async (e) => {
                 const file = e.target.files?.[0];
                 e.target.value = "";
-                if (file) await s.importZip(file);
+                const done = file && (await s.importZip(file));
+                if (done?.report?.issues.length) this.app.openDialog("import-report", { report: done.report });
               }} />
             <lit-material-button variant="filled" @click=${() => this.app.openDialog("add-collection")}>${icon("plus")} New collection</lit-material-button>
           </div>
         </header>
         <p class="page-lead">A collection folder holds one YAML file per request, for git and for <code>hitop run</code> in CI.
-          ${platform().folders?.pick ? "Open one to work on its files directly, or import a .zip of one." : "Import a .zip of one here; to work on a folder directly, use Chrome, Edge or the desktop app."}</p>
+          ${platform().folders?.pick ? "Open one to work on its files directly, or import a .zip of one (or of a Bruno collection)." : "Import a .zip of one (or of a Bruno collection) here; to work on a folder directly, use Chrome, Edge or the desktop app."}</p>
         ${summary
           ? html`<lit-material-alert variant=${run.cancelled || summary.failedCount ? "warning" : "success"}>
               <span slot="title">${run.cancelled ? "The run was cancelled" : summary.failedCount ? "The run stopped at a failed request" : "Every request succeeded"}</span>

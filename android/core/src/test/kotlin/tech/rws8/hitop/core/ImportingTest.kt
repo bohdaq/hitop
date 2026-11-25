@@ -47,6 +47,18 @@ class ImportingTest {
     }
 
     @Test
+    fun aBrunoZipAndAnInsomniaFile() {
+        val bru = "meta {\n  name: Hello\n  type: http\n}\n\nget {\n  url: {{host}}/hi\n  auth: none\n}\n\nassert {\n  res.status: eq 200\n}\n"
+        val plan = Importing.read(zip(mapOf("api/bruno.json" to """{"version":"1","name":"Api"}""".toByteArray(), "api/hello.bru" to bru.toByteArray(), "api/environments/Dev.bru" to "vars {\n  host: http://h\n}\n".toByteArray())))
+        assertEquals("Bruno collection", plan.title)
+        assertEquals("\${host}/hi", plan.collections.single().requests.single().url)
+        assertEquals("http://h", plan.environments.single().environment.variables["host"])
+        val ins = Importing.read("type: collection.insomnia.rest/5.0\nname: I\ncollection:\n  - name: A\n    url: \"{{ _.base }}/a\"\n    method: GET\n")
+        assertEquals("insomnia", ins.kind)
+        assertEquals("\${base}/a", ins.collections.single().requests.single().url)
+    }
+
+    @Test
     fun zipsAreBoundedAndMustBeCollectionFolders() {
         val one = ByteArray(1024 * 1024)
         assertTrue(runCatching { Importing.unzip(zip((0..30).associate { "f$it" to one })) }.exceptionOrNull()!!.message!!.contains("too large"))

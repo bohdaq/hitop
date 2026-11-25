@@ -125,6 +125,20 @@ pub fn import_postman(json: &str, scans_json: &str) -> Result<String, JsError> {
     import_postman_json(json, scans_json).map_err(chain)
 }
 
+/// An Insomnia, Bruno (JSON export) or HAR file as Postman collections and environments
+/// (hitop-core convert.rs), or `null` when it is something else.
+#[wasm_bindgen(js_name = convertImport)]
+pub fn convert_import(text: &str) -> Result<String, JsError> {
+    hitop_core::convert::convert_text(text).and_then(|c| Ok(serde_json::to_string(&c)?)).map_err(chain)
+}
+
+/// The same for a Bruno collection folder (`{path: text}`).
+#[wasm_bindgen(js_name = convertImportFiles)]
+pub fn convert_import_files(files_json: &str) -> Result<String, JsError> {
+    let files = serde_json::from_str(files_json).map_err(err)?;
+    hitop_core::convert::convert_files(&files).and_then(|c| Ok(serde_json::to_string(&c)?)).map_err(chain)
+}
+
 /// An OpenAPI 3.0 or 3.1 spec (YAML or JSON text) through hitop-core's
 /// importer, as `{collection, report}`. `options_json`: `{flat, source,
 /// inlineAuth}` (the web app passes `inlineAuth: true`: it has no collection auth).

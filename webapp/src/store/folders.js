@@ -1,7 +1,7 @@
 // The store's collection folders and zip files (a part of Store, src/store.js).
 import { GLOBALS_ENV, account, errorText, withoutSecretValues, workspaceOf } from "./shared.js";
 import { buildReport, previousRun, rememberRun, runCommand, runStats } from "../run-report.js";
-import { folderToZip, zipToFolder } from "../zip.js";
+import { bruFiles, folderToZip, zipToFolder } from "../zip.js";
 import { generateUniqueId } from "../../../shared/services/idGenerator.js";
 import { loadFormat } from "../wasm/format.js";
 import { platform } from "../platform/index.js";
@@ -303,6 +303,8 @@ export const FoldersPart = (Base) =>
   async importZip(file) {
     let folder;
     try {
+      const bru = bruFiles(new Uint8Array(await file.arrayBuffer()));
+      if (bru) return { report: await this.importConverted((await loadFormat()).convertImportFiles(bru)) };
       folder = await zipToFolder(new Uint8Array(await file.arrayBuffer()), file.name);
     } catch (e) {
       this.notify(`Couldn't import ${file.name}: ${errorText(e)}`);

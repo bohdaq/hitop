@@ -11,6 +11,7 @@ import { html, nothing } from "lit";
 import { icon } from "../../icons.js";
 import { isCurl, parseCurl } from "../../curl.js";
 import { issueText } from "../../pm.js";
+import { loadFormat } from "../../wasm/format.js";
 import { planLabel, storeBuild } from "../../store-mode.js";
 import { shortcutList } from "../shortcut-list.js";
 import { signInDialog } from "../sign-in-dialog.js";
@@ -194,7 +195,8 @@ export const DialogsPart = (Base) =>
       }
       const replace = d.mode === "replace";
       const collections = async () => {
-        JSON.parse(text.replace(/^\uFEFF/, "")); // bad JSON says so before anything is asked
+        // A file that can't be read says so before anything is asked.
+        if (!(await loadFormat()).convertImport(text)) JSON.parse(text.replace(/^\uFEFF/, ""));
         // "Replace all" deletes every collection: ask first when that deletes something.
         if (replace && !(await this.confirmReplace())) return { cancelled: true };
         return { report: await s.importJson(text, { replace }) };
@@ -500,20 +502,20 @@ export const DialogsPart = (Base) =>
           <span><strong>${label}</strong><span class="hint">${help}</span></span>
         </label>`;
         body = html`
-          <p class="dialog-note">Choose a file, drop one here or paste HITOP, Postman v2.1 or Bruno JSON, an OpenAPI 3 spec (YAML or JSON, always added as a new collection) or a curl command (one new request).</p>
+          <p class="dialog-note">Choose a file, drop one here or paste a HITOP, Postman v2.1, Insomnia, Bruno or HAR file, an OpenAPI 3 spec (YAML or JSON, always added as a new collection) or a curl command (one new request).</p>
           <fieldset class="import-mode">
             <legend>Imported collections</legend>
             ${mode("add", "Add to my collections", "A name you already have gets (2) added.")}
             ${mode("replace", "Replace all my collections", "Deletes the ones you have now (you're asked first).")}
           </fieldset>
           <label class="file-pick">
-            <input type="file" class="visually-hidden" accept=".json,.yaml,.yml,application/json,application/yaml,text/yaml"
+            <input type="file" class="visually-hidden" accept=".json,.yaml,.yml,.har,application/json,application/yaml,text/yaml"
               @change=${(e) => this.importFile(e.target.files?.[0])} />
             <span class="file-button">${icon("file-arrow-up")} Choose a file</span>
             <span class="file-name">${d.file ?? "No file chosen"}</span>
           </label>
           <div class="drop-zone" @dragover=${(e) => e.preventDefault()} @drop=${(e) => (e.preventDefault(), this.importFile(e.dataTransfer?.files?.[0]))}>
-            <lit-material-textarea id="json" variant="outlined" label="Collection JSON, OpenAPI spec or curl command" placeholder="Paste HITOP, Postman or Bruno JSON, an OpenAPI spec, or a curl command" rows="10" required autofocus
+            <lit-material-textarea id="json" variant="outlined" label="Collection JSON, OpenAPI spec or curl command" placeholder="Paste a HITOP, Postman, Insomnia, Bruno or HAR file, an OpenAPI spec, or a curl command" rows="10" required autofocus
               ?error=${Boolean(d.error)} error-text=${d.error ?? ""}></lit-material-textarea>
           </div>
           <lit-material-button variant="text" class="dialog-link" @click=${() => this.openDialog("openapi-import")}>${icon("globe")} Load an OpenAPI spec from a URL</lit-material-button>`;

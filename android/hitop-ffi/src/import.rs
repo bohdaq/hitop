@@ -2,7 +2,7 @@
 //! `export`: hitop-core's importers and exporters, as the CLI and the web app use them.
 
 use hitop_core::model::Collection;
-use hitop_core::{export as core_export, openapi, postman};
+use hitop_core::{convert, export as core_export, openapi, postman};
 use serde_json::{json, Value};
 
 use crate::Args;
@@ -30,7 +30,10 @@ pub(crate) fn import(a: &Args) -> Result<Value, String> {
         let issues: Vec<String> = r.skipped.iter().map(|i| format!("Not imported: {i}")).chain(r.warnings.iter().map(|i| format!("Check: {i}"))).collect();
         return Ok(json!({ "kind": "openapi", "collections": [text(&c)?], "issues": issues }));
     }
-    let v: Value = serde_json::from_str(t).map_err(|e| format!("This isn't a Postman, OpenAPI or HITOP file ({e})."))?;
+    if let Some(c) = convert::convert_text(t).map_err(err)? {
+        return converted(c);
+    }
+    let v: Value = serde_json::from_str(t).map_err(|e| format!("This isn't a Postman, Insomnia, Bruno, HAR, OpenAPI or HITOP file ({e})."))?;
     match postman::detect(&v) {
         Some(postman::Kind::Collection) => {
             let (c, r) = postman::import_collection(t).map_err(err)?;
@@ -47,6 +50,31 @@ pub(crate) fn import(a: &Args) -> Result<Value, String> {
             Ok(json!({ "kind": "hitop", "collections": list, "issues": [] }))
         }
     }
+}
+
+/// Insomnia, Bruno and HAR: several collections and environments at once.
+fn converted(c: convert::Converted) -> Result<Value, String> {
+    let mut issues: Vec<String> = c.issues.iter().map(|i| i.to_string()).collect();
+    let mut collections = vec![];
+    for v in &c.collections {
+        let (col, r) = postman::import_collection(&v.to_string()).map_err(err)?;
+        collections.push(text(&col)?);
+        issues.extend(r.issues.iter().map(|i| i.to_string()));
+    }
+    let mut environments = vec![];
+    for v in &c.environments {
+        let e = postman::import_environment(&v.to_string()).map_err(err)?;
+        let secrets: std::collections::HashMap<_, _> = e.secret_values.into_iter().collect();
+        environments.push(json!({ "environment": e.environment, "secretValues": secrets }));
+    }
+    Ok(json!({ "kind": c.format, "collections": collections, "environments": environments, "issues": issues }))
+}
+
+/// `importFiles {files: {path: text}}`: a Bruno collection folder.
+pub(crate) fn import_files(a: &Args) -> Result<Value, String> {
+    let files = a.opt_json("files")?.unwrap_or_default();
+    let c = convert::convert_files(&files).map_err(err)?.ok_or("This isn't a Bruno collection (no bruno.json).")?;
+    converted(c)
 }
 
 pub(crate) fn openapi_sync(a: &Args) -> Result<Value, String> {
@@ -113,5 +141,17 @@ mod tests {
         assert_eq!(s["ok"]["diff"]["added"][0]["operationId"], "b");
         assert!(call("import", json!({ "text": "hello" }))["error"].as_str().unwrap().contains("isn't"));
         assert!(call("import", json!({ "text": "[1]" })).get("error").is_some());
+    }
+
+    #[test]
+    fn insomnia_har_and_a_bruno_folder() {
+        let out = call("import", json!({ "text": fixture("imports/insomnia/environments.yaml") }));
+        assert_eq!(out["ok"]["kind"], "insomnia", "{out}");
+        assert_eq!(out["ok"]["environments"][0]["environment"]["name"], "ExampleA");
+        let out = call("import", json!({ "text": fixture("imports/har/recording.har") }));
+        assert!(out["ok"]["kind"] == "har" && !out.to_string().contains("recorded-s3cret"), "{out}");
+        let files = json!({ "x/bruno.json": fixture("imports/bruno/testbench/bruno.json"), "x/ping.bru": fixture("imports/bruno/testbench/ping.bru") });
+        let out = call("importFiles", json!({ "files": files }));
+        assert!(out["ok"]["collections"][0].as_str().unwrap().contains("${host}/ping"), "{out}");
     }
 }

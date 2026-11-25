@@ -2,6 +2,7 @@
 import collectionService from "../../../shared/services/collectionService.js";
 import { addCollections } from "../collection-tree.js";
 import { numericId, pmShim, tabForRequest } from "./shared.js";
+import { parseEnvironments } from "../features.js";
 import { forWebApp, isPostmanCollection, scriptScans } from "../pm.js";
 import { generateUniqueId } from "../../../shared/services/idGenerator.js";
 import { loadFormat } from "../wasm/format.js";
@@ -24,6 +25,8 @@ export const ImportExportPart = (Base) =>
   async importJson(json, { replace = false } = {}) {
     let imported;
     let report = null;
+    const converted = (await loadFormat()).convertImport(json);
+    if (converted) return this.importConverted(converted, { replace });
     const parsed = JSON.parse(json.replace(/^\uFEFF/, "")); // throws on bad JSON
     if (isPostmanCollection(parsed)) {
       // hitop-core's importer (hitop-wasm), as `hitop import` runs it.
@@ -33,6 +36,38 @@ export const ImportExportPart = (Base) =>
     } else {
       imported = collectionService.importCollections(json);
     }
+    return this.addImported(imported, report, replace);
+  }
+
+  // Insomnia, Bruno and HAR (hitop-core convert.rs): Postman's shapes, through the same importer.
+  async importConverted(converted, { replace = false } = {}) {
+    const format = await loadFormat();
+    const issues = [...converted.issues];
+    const imported = [];
+    for (const c of converted.collections) {
+      const out = format.importPostman(JSON.stringify(c), scriptScans(pmShim(), c));
+      imported.push(forWebApp(out.collection));
+      issues.push(...(out.report.issues || []));
+    }
+    const environments = converted.environments.flatMap((e) => parseEnvironments(JSON.stringify(e)));
+    if (environments.length) {
+      const names = new Set(this.environments.map((e) => e.name));
+      for (const e of environments) {
+        const base = e.name;
+        for (let n = 2; names.has(e.name); n++) e.name = `${base} (${n})`;
+        names.add(e.name);
+      }
+      this.environments = [...this.environments, ...environments];
+    }
+    const name = imported.map((c) => c.name).join(", ") || environments.map((e) => e.name).join(", ");
+    const report = { name, issues };
+    if (imported.length) return this.addImported(imported, report, replace);
+    this.emit();
+    this.notify(`Imported ${environments.length} environment${environments.length === 1 ? "" : "s"}`);
+    return report;
+  }
+
+  addImported(imported, report, replace) {
     // The desktop keeps ids as numbers (Rust's model); give string ids new ones.
     if (platform().name === "tauri") imported = imported.map((c) => ({ ...c, id: numericId(c.id), requests: (c.requests || []).map((r) => ({ ...r, id: numericId(r.id) })) }));
     if (!replace) {

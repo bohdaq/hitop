@@ -16,6 +16,9 @@ function api(m) {
     normalize: (kind, value) => call(m.normalize, kind, value),
     // Postman collection JSON + { script: [[line, call, text]] } → { collection, report }.
     importPostman: (json, scans) => call(m.importPostman, json, scans),
+    // Insomnia, Bruno and HAR files as { format, collections, environments, issues } in Postman's shapes; null for others.
+    convertImport: (text) => JSON.parse(m.convertImport(String(text ?? ""))),
+    convertImportFiles: (files) => call(m.convertImportFiles, files),
     // OpenAPI 3 text (YAML or JSON) + { flat, source, inlineAuth } → { collection, report: { mapped, skipped, warnings } }.
     importOpenapi: (text, options) => call(m.importOpenapi, String(text ?? ""), options ?? {}),
     // An imported collection + newer spec text → { collection, diff: { added, changed, removed, unchanged, collection }, report }.
