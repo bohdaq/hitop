@@ -105,6 +105,14 @@ class Library(private val store: LibraryStore, private val secrets: SecretStore)
         return v.filterKeys { n -> n in e!!.secrets && secrets.get(SecretStore.envKey(e.id, n)).isNullOrEmpty() }
     }
 
+    /** Which collections are shared isn't known: nothing syncs until it is. */
+    @Volatile var sharingProblem: tech.rws8.hitop.sync.SharedListProblem? = null
+    var reloadSharing: (() -> Unit)? = null
+    /** Sets a damaged list aside (LibrarySync, once no collection can reach the library by it). */
+    var startSharingOver: (() -> Unit)? = null
+    /** A collection that stays on this phone only (LibrarySync). */
+    var keepHere: ((String) -> Unit)? = null
+
     /** A collection was deleted here (SharedSync forgets its link). */
     var onCollectionDeleted: ((String) -> Unit)? = null
     /** The organization a new collection is filed under (null: personal). */

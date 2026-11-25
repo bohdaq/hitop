@@ -88,8 +88,17 @@ data class SharedState(
     }
 }
 
+/**
+ * The list of shared collections is there but can't be used. Never taken as empty: an end-to-end
+ * encrypted collection would look like any other and go to the library, which the server can read.
+ */
+class SharedListProblem(val damaged: Boolean, cause: Throwable) : Exception("The list of shared collections can't be read, so nothing is synced.", cause)
+
 interface SharedSyncStore {
+    /** Throws [SharedListProblem]. */
     fun load(): SharedState
+    /** A damaged list out of the way, kept beside. */
+    fun setAsideDamaged() {}
     fun save(s: SharedState)
     fun files(ws: String): Map<String, String>
     fun saveFiles(ws: String, files: Map<String, String>)
@@ -107,7 +116,18 @@ class FileSharedSyncStore(private val root: File) : SharedSyncStore {
         tech.rws8.hitop.core.SafeFiles.write(f, text)
     }
 
-    override fun load() = SharedState.of(runCatching { HitopJson.parseToJsonElement(stateFile.readText()).jsonObject }.getOrNull())
+    override fun load(): SharedState {
+        if (!stateFile.exists()) return SharedState()
+        val text = try { stateFile.readText() } catch (e: java.io.IOException) { throw SharedListProblem(false, e) }
+        return try {
+            val o = HitopJson.parseToJsonElement(text).jsonObject
+            o.getValue("links").jsonObject.values.forEach { require(it.jsonObject.str("workspace").isNotEmpty()) }
+            SharedState.of(o)
+        } catch (e: RuntimeException) {
+            throw SharedListProblem(true, e)
+        }
+    }
+    override fun setAsideDamaged() { tech.rws8.hitop.core.SafeFiles.setAside(stateFile) }
     override fun save(s: SharedState) = write(stateFile, s.toJson().toString())
     override fun files(ws: String) = runCatching { HitopJson.parseToJsonElement(filesFile(ws).readText()).jsonObject.mapValues { (it.value as JsonPrimitive).content } }.getOrDefault(emptyMap())
     override fun saveFiles(ws: String, files: Map<String, String>) = write(filesFile(ws), JsonObject(files.mapValues { JsonPrimitive(it.value) }).toString())
@@ -182,7 +202,7 @@ class SharedSync(private val cloud: HitopCloud, private val library: Library, pr
     val pendingTrust = MutableStateFlow<SyncCore.KeyRefusal?>(null)
 
     var pushDelayMs = 1_000L
-    var state: SharedState = store.load()
+    var state: SharedState = SharedState()
         private set
     private val pending = HashMap<String, Job>()
     private val running = HashSet<String>()
@@ -204,7 +224,25 @@ class SharedSync(private val cloud: HitopCloud, private val library: Library, pr
         saveTeamState()
     }
 
+    private fun loadList() {
+        try {
+            state = store.load()
+            library.sharingProblem = null
+        } catch (e: SharedListProblem) {
+            state = SharedState()
+            library.sharingProblem = e
+        }
+        applyRoles()
+    }
+
     init {
+        loadList()
+        library.reloadSharing = { loadList() }
+        library.startSharingOver = {
+            store.setAsideDamaged()
+            loadList()
+            notice(SharedNotice("The list of shared collections on this phone was damaged", "Their copies here are kept on this phone only. Open them again under Shared with you."))
+        }
         loadTeamState()
         library.onTeamChange = { saveTeamState(); scheduleTeam() }
         library.onSharedChange = { schedule(it) }
@@ -214,7 +252,7 @@ class SharedSync(private val cloud: HitopCloud, private val library: Library, pr
         state.links.forEach { (id, l) -> setConflicts(id, conflictList(id, l)) }
     }
 
-    private fun save() = store.save(state)
+    private fun save() { if (library.sharingProblem == null) store.save(state) }
     private fun status(id: String, f: (Status) -> Status) = _statuses.update { it + (id to f(it[id] ?: Status())) }
     private fun setConflicts(id: String, list: List<SharedConflict>?) = _conflicts.update { if (list == null) it - id else it + (id to list) }
     private fun notice(n: SharedNotice) = _notices.update { if (n in it) it else listOf(n) + it }
@@ -252,6 +290,8 @@ class SharedSync(private val cloud: HitopCloud, private val library: Library, pr
 
     /** The signed-in account's links; another account's are kept, not synced (`gone`). This device's own key is pinned. */
     fun checkAccount(): Boolean {
+        if (library.sharingProblem?.damaged == false) loadList()
+        if (library.sharingProblem != null) return false
         val a = cloud.account ?: return false
         val secret = cloud.deviceSecret() ?: return false
         val key = cloud.accountKey
@@ -1006,10 +1046,11 @@ class SharedSync(private val cloud: HitopCloud, private val library: Library, pr
         syncNow(id)
     }
 
-    /** Deletes the shared collection for everyone; it stays on this phone as an unshared one. */
+    /** Deletes the shared collection for everyone. It was end-to-end encrypted: it stays on this phone only, not in the library. */
     suspend fun deleteWorkspace(id: String) {
         val l = live(id)
         api("DELETE", "/v1/workspaces/${l.workspace}")
+        library.keepHere?.invoke(id)
         forget(id)
         library.onLibraryChange?.invoke()
         runCatching { refreshWorkspaces() }

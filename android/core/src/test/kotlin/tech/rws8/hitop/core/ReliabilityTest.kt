@@ -116,4 +116,68 @@ class ReliabilityTest {
         assertNotNull(other.lib.state.value.collection(c.id))
         assertEquals(2, dir.walkTopDown().count { it.name.contains(".damaged-") })
     }
+
+    /** A list of shared collections that can't be used never lets one reach the readable library. */
+    @Test
+    fun aDamagedListOfSharedCollectionsUploadsNone() = runBlocking {
+        val dir = Files.createTempDirectory("lib").toFile()
+        val fake = FakeCloud()
+        val secrets = MemorySecretStore()
+        val settings = MemoryCloudSettingsStore(CloudSettings(server = FakeCloud.SERVER))
+        fun shared(p: Phone) = tech.rws8.hitop.sync.SharedSync(p.cloud, p.lib, tech.rws8.hitop.sync.FileSharedSyncStore(dir), CoroutineScope(SupervisorJob() + Dispatchers.Default)).also { it.pushDelayMs = 3_600_000 }
+        val one = Phone(dir, fake, secrets, settings)
+        one.lib.seedShopApi()
+        one.cloud.startBrowserSignIn("github", FakeCloud.SERVER)
+        one.cloud.finishBrowserSignIn(fake.approve())
+        one.sync.sync()
+        one.sync.flush()
+        val plain = one.lib.state.value.collections.first { it.name == "shop-api" }.id
+        val secret = one.lib.addCollection("secret")
+        val store = tech.rws8.hitop.sync.FileSharedSyncStore(dir)
+        store.save(tech.rws8.hitop.sync.SharedState(account = one.cloud.accountKey, links = mapOf(secret.id to tech.rws8.hitop.sync.SharedLink("ws", "owner"))))
+        val file = File(dir, "shared-sync.json")
+        val good = file.readText()
+
+        // Can't be opened now (a folder in its place): nothing syncs until it can.
+        file.delete()
+        file.mkdir()
+        val two = Phone(dir, fake, secrets, settings)
+        shared(two)
+        assertEquals(false, two.lib.sharingProblem?.damaged)
+        two.sync.sync()
+        assertFalse("collection/${secret.id}" in two.sync.state.known)
+        file.delete()
+        file.writeText(good)
+        two.sync.sync()
+        assertNull(two.lib.sharingProblem)
+        assertTrue(two.lib.isShared(secret.id))
+        assertFalse("collection/${secret.id}" in two.sync.state.known)
+
+        // Damaged: kept beside, and the collection stays on this phone only, also after another start.
+        for (bad in listOf("{", "{}", """{"links":{"1":3}}""")) {
+            file.writeText(bad)
+            val three = Phone(dir, fake, secrets, settings)
+            val s = shared(three)
+            assertEquals(true, three.lib.sharingProblem?.damaged)
+            three.sync.sync()
+            three.sync.flush()
+            assertNull(three.lib.sharingProblem)
+            assertTrue(s.notices.value.isNotEmpty())
+            assertFalse("collection/${secret.id}" in three.sync.state.known)
+            assertTrue(three.sync.isLocalOnly(secret.id))
+            assertTrue("collection/$plain" in three.sync.state.known)
+            assertFalse(three.sync.isLocalOnly(plain))
+        }
+        assertEquals(3, dir.listFiles()!!.count { it.name.startsWith("shared-sync.json.damaged-") })
+        // The library's own state damaged: nothing new goes by itself.
+        val mine = two.lib.addCollection("only here")
+        File(dir, "library-sync.json").writeText("{")
+        val four = Phone(dir, fake, secrets, settings)
+        shared(four)
+        four.sync.sync()
+        four.sync.flush()
+        assertFalse("collection/${mine.id}" in four.sync.state.known)
+        assertFalse("collection/${secret.id}" in four.sync.state.known)
+        assertTrue("collection/$plain" in four.sync.state.known)
+    }
 }

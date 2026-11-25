@@ -105,20 +105,38 @@ class LibrarySync(
 
     var pushDelayMs = 1_000L
     var retryDelayMs = 15_000L
-    var state: State = State.of(stateFile?.takeIf { it.exists() }?.let { runCatching { HitopJson.parseToJsonElement(it.readText()).jsonObject }.getOrNull() })
+    var state: State = State()
         private set
+    /** The state file can't be opened now: nothing syncs and nothing is written over it. */
+    private var stateUnreadable = false
+
+    private fun loadState() {
+        stateUnreadable = false
+        val f = stateFile?.takeIf { it.exists() } ?: return
+        val text = try { f.readText() } catch (_: java.io.IOException) { stateUnreadable = true; return }
+        // Damaged: which collections stay on this phone only isn't known any more. As for another
+        // account, none is uploaded by itself (what the library has comes back by the pull).
+        state = runCatching { State.of(HitopJson.parseToJsonElement(text).jsonObject) }.getOrElse { State(account = "damaged") }
+    }
     private var pushJob: Job? = null
     private val roundLock = Mutex()
     private var pushAgain = false
 
     init {
+        loadState()
+        library.keepHere = { id ->
+            if (!isLocalOnly(id)) {
+                state = state.copy(localOnly = state.localOnly + id)
+                save()
+            }
+        }
         _status.update { it.copy(lastSync = state.lastSync) }
         library.onLibraryChange = { changed() }
         refreshBadges()
     }
 
     private fun save() {
-        val f = stateFile ?: return
+        val f = stateFile?.takeIf { !stateUnreadable } ?: return
         tech.rws8.hitop.core.SafeFiles.write(f, state.toJson().toString())
     }
 
@@ -152,9 +170,21 @@ class LibrarySync(
             refreshBadges()
             return false
         }
+        if (stateUnreadable) loadState()
+        if (library.sharingProblem?.damaged == false) library.reloadSharing?.invoke()
+        if (stateUnreadable || library.sharingProblem?.damaged == false) return false
         if (state.account != key) {
             state = firstLink(key, state, library.state.value.collections)
             save()
+        }
+        library.sharingProblem?.let { p ->
+            // Every collection the library doesn't hold already may be a shared one: it stays on this
+            // phone only, and that is saved before the damaged list goes.
+            state = state.copy(localOnly = (state.localOnly + library.state.value.collections.map { it.id }.filter { "collection/$it" !in state.known }).distinct())
+            if (runCatching { save(); library.startSharingOver?.invoke() }.isFailure || library.sharingProblem != null) {
+                _status.update { it.copy(on = false, error = p.message) }
+                return false
+            }
         }
         _status.update { it.copy(on = true) }
         return true

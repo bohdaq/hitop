@@ -37,6 +37,11 @@ Releases before 1.2 are listed in ROADMAP.md (section 5) and on the GitHub Relea
 - Compare two responses (the current one, saved examples, earlier answers), Undo after a delete or a move, and runs over a CSV or JSON data file.
 - Import (Postman, Insomnia, Bruno, HAR, OpenAPI, HITOP files, a collection folder's zip; pasted, picked or opened from another app) and export.
 
+### Android
+
+- **Security:** when the list of shared collections on the phone can't be read, nothing is synced, and a shared collection deleted for everyone
+  stays on this phone only. Before, such an end-to-end encrypted collection could have been uploaded to the library, which the server can read.
+
 ### Web and desktop
 
 - **Security, web app:** signed in, a page load could upload an end-to-end encrypted shared collection to your own library, which the server
