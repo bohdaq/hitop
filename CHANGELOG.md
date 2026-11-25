@@ -6,6 +6,7 @@ Releases before 1.2 are listed in ROADMAP.md (section 5) and on the GitHub Relea
 
 ### CLI
 
+- `hitop sync login --code <code>` takes a code that starts with `-` (about one in 64 codes was refused as an option).
 - gRPC: the connect time limit covers the name lookup and TLS too, so a call can't hang on them.
 - `hitop import` takes Insomnia exports (v4, v5), Bruno collections (the folder or its JSON export) and HAR recordings; the web, desktop and
   Android apps too (a Bruno folder as a .zip). What doesn't come over is listed; Bruno scripts stay as comments; a HAR's credentials are left out.

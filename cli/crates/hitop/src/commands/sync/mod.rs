@@ -652,11 +652,23 @@ fn login(email: &str, code: Option<String>, server: Option<String>, name: Option
 }
 
 /// `--code` with nothing after it swallowed the next flag (`--code --server ...`).
+/// True when `--code` took one of `login`'s own options as its value (`--code --server x`). Not every
+/// value starting with `--`: codes are base64url, so a real one may start with `-` too.
 fn code_is_flag(code: &str) -> bool {
-    code.starts_with("--")
+    const OPTIONS: [&str; 9] = ["--email", "--sso", "--google", "--github", "--apple", "--no-browser", "--password-stdin", "--server", "--name"];
+    let name = code.split('=').next().unwrap_or(code);
+    OPTIONS.contains(&name)
 }
 
 /// `--sso`, `--google`, `--github`: a browser sign-in through the server.
+#[cfg(test)]
+#[test]
+fn a_code_that_starts_with_a_dash_is_a_code() {
+    assert!(!code_is_flag("--X_flJ1B5GxDBH7HsRldFhYouoEswVGuI4RFv9btEQ"));
+    assert!(!code_is_flag("-abc"));
+    assert!(code_is_flag("--server") && code_is_flag("--name=laptop") && code_is_flag("--password-stdin"));
+}
+
 fn browser_login(kind: &str, email: Option<&str>, no_browser: bool, server: Option<String>, name: Option<String>) -> Result<()> {
     let server = server.unwrap_or_else(default_server);
     let anon = Api::new(&server, None)?;
