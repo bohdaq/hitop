@@ -18,6 +18,7 @@ export class SignInPage extends LitElement {
   static styles = [
     pageStyles,
     css`
+    .other-server { margin: 0 0 16px; padding: 12px 16px; border: 1px solid var(--md-sys-color-error, #f2b8b5); border-radius: 12px; color: var(--md-sys-color-on-surface); }
       :host {
         display: grid;
         place-items: center;
@@ -129,8 +130,16 @@ export class SignInPage extends LitElement {
     } catch (e) {
       this.error = describeError(e).message;
     } finally {
-      this.busy = false;
+      // On the way to a provider's page the buttons stay off (back again: pageshow).
+      if (!this.leaving) this.busy = false;
     }
+  }
+
+  /** Goes to a provider's sign-in page. */
+  leave(url) {
+    this.leaving = true;
+    addEventListener("pageshow", () => ((this.leaving = false), (this.busy = false)), { once: true });
+    location.assign(url);
   }
 
   async finishSso(code) {
@@ -144,6 +153,7 @@ export class SignInPage extends LitElement {
     if (this.step) return this.codeStep();
     const providers = this.methods?.google || this.methods?.github || this.methods?.apple || this.sso?.enabled;
     return html`<main class="wrap">
+      ${session.hosted ? nothing : html`<p class="other-server" role="note" aria-label="Other server">You are signing in to <b>${session.server}</b>, not to HITOP Cloud. Go on only if it is your own or your organization's sync server.</p>`}
       ${this.view.mode === "forgot"
         ? html`<lit-material-alert variant="warning" aria-label="Reset warning">
             A reset signs you in again, but it can't unlock your end-to-end encrypted workspaces on a new device: your old password sealed their keys, and nobody, the server included, can open them without it. Keep your recovery phrase or a device that is still signed in.
@@ -199,7 +209,7 @@ export class SignInPage extends LitElement {
         throw new Error("Enter your work address first: it tells the server which organization's single sign-on to use.");
       }
       session.remember(s, email);
-      location.assign(await ssoStart(new Api(s), email, kind));
+      this.leave(await ssoStart(new Api(s), email, kind));
     });
   }
 

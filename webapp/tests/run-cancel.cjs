@@ -38,6 +38,23 @@ const { results, check } = checker();
   await h.page.waitForFunction(() => document.querySelector('hitop-app').store.run.report, null, { timeout: 15000 });
   r = await run();
   check('the next run goes through', !r.cancelled && !r.running && r.n === 3, JSON.stringify({ n: r.n }));
+  // An import that answers after its dialog was closed doesn't open or change a dialog.
+  await h.page.evaluate(() => {
+    const app = document.querySelector('hitop-app');
+    app.store.importJson = () => new Promise((_, reject) => (window.failImport = () => reject(new Error('late answer'))));
+    app.openDialog('import');
+  });
+  await h.page.locator('#dialog #json').waitFor();
+  await h.page.evaluate(() => {
+    document.querySelector('#dialog #json').value = '[]';
+    document.querySelector('#dialog-form').requestSubmit();
+  });
+  await h.page.waitForFunction(() => window.failImport, null, { timeout: 10000 });
+  await h.page.evaluate(() => document.querySelector('hitop-app').closeDialog());
+  await h.page.waitForFunction(() => !document.querySelector('hitop-app').dialog, null, { timeout: 10000 });
+  await h.page.evaluate(() => window.failImport());
+  await h.page.waitForTimeout(300);
+  check('a late answer leaves a closed dialog closed', await h.page.evaluate(() => !document.querySelector('hitop-app').dialog));
   check('no page errors', errors.length === 0, errors.join(' | '));
   server.closeAllConnections?.();
   server.close();

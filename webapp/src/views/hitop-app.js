@@ -441,7 +441,7 @@ export class HitopApp extends LitElement {
       await Promise.race([this.dialogClosing, new Promise((r) => setTimeout(r, 1000))]);
       this.dialogClosing = this.dialogClosed = null; // also when it never came (the element was replaced)
     }
-    this.dialog = { kind, ...data };
+    this.dialog = { kind, ...data, opened: (this.dialogsOpened = (this.dialogsOpened ?? 0) + 1) };
     if (kind === "code") refreshCode(this);
     await this.updateComplete;
     const dlg = this.querySelector("#dialog");
@@ -449,6 +449,11 @@ export class HitopApp extends LitElement {
     // The dialog focuses itself as it opens; move focus to the first field after.
     await dlg?.updateComplete;
     requestAnimationFrame(() => dlg?.querySelector("[autofocus]")?.focus());
+  }
+
+  /** The dialog `d` was opened as is still the one on screen (an answer that comes late changes nothing). */
+  stillOpen(d) {
+    return Boolean(this.dialog) && this.dialog.opened === d.opened;
   }
 
   // The form is novalidate: empty required fields get their message on the
@@ -611,12 +616,14 @@ export class HitopApp extends LitElement {
         .then(async (openapi) => (openapi ? { openapi: await s.importOpenapi({ text }) } : collections()))
         .then(
         ({ openapi, report, cancelled }) => {
+          if (!this.stillOpen(d)) return;
           if (cancelled) this.dialog = { ...d, submitted: false };
-          else if (openapi) this.dialog = { kind: "openapi-report", report: openapi };
-          else if (report?.issues.length) this.dialog = { kind: "import-report", report };
+          else if (openapi) this.dialog = { kind: "openapi-report", report: openapi, opened: d.opened };
+          else if (report?.issues.length) this.dialog = { kind: "import-report", report, opened: d.opened };
           else this.closeDialog();
         },
-        (err) => (this.dialog = { ...d, submitted: false, error: readableError(err, "a collection file") }),
+        // Closed meanwhile: said as a notice instead.
+        (err) => (this.stillOpen(d) ? (this.dialog = { ...d, submitted: false, error: readableError(err, "a collection file") }) : this.toast(readableError(err, "a collection file"))),
       );
       return;
     }
@@ -639,13 +646,16 @@ export class HitopApp extends LitElement {
   async importFile(file) {
     if (!file) return;
     const field = this.querySelector("#dialog #json");
-    if (!field) return;
+    const d = this.dialog;
+    if (!field || !d) return;
     try {
-      field.value = await file.text();
+      const text = await file.text();
+      if (!this.stillOpen(d)) return;
+      field.value = text;
       this.clearFieldError(field);
       this.dialog = { ...this.dialog, file: file.name, error: null };
     } catch (e) {
-      this.dialog = { ...this.dialog, error: `Couldn't read ${file.name}: ${e?.message ?? e}` };
+      if (this.stillOpen(d)) this.dialog = { ...this.dialog, error: `Couldn't read ${file.name}: ${e?.message ?? e}` };
     }
   }
 
@@ -1195,13 +1205,14 @@ export class HitopApp extends LitElement {
           await client.api("POST", `/v1/orgs/${encodeURIComponent(s.currentOrg)}/members`, { email, role });
           added.push(email);
         }
-        this.dialog = { ...d, submitted: false, error: null, added, draft: "" };
+        if (this.stillOpen(d)) this.dialog = { ...d, submitted: false, error: null, added, draft: "" };
         this.querySelector("hitop-org")?.load();
       }
     } catch (err) {
       const limit = limitInfo(err);
       if (limit) return this.openLimit(limit, s.currentOrgInfo);
-      this.dialog = { ...d, submitted: false, error: err?.message || String(err) };
+      if (this.stillOpen(d)) this.dialog = { ...d, submitted: false, error: err?.message || String(err) };
+      else this.toast(err?.message || String(err));
     }
   }
 

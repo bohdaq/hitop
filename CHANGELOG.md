@@ -8,6 +8,7 @@ Releases before 1.2 are listed in ROADMAP.md (section 5) and on the GitHub Relea
 
 - Desktop: event streams show live (Stop ends them) and OAuth 2.0 authorization code signs in in the system browser (not in the Mac
   App Store build, whose sandbox may not listen for the answer).
+- **Security, portal:** a `?server=` link no longer signs you out silently, and the sign-in page names a server that isn't HITOP Cloud.
 - A collection run can be cancelled; OAuth 2.0 sign-in windows are per request and close on Cancel.
 
 ### Sync server and hitop-server

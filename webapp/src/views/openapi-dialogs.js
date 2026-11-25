@@ -151,13 +151,13 @@ export async function submitOpenapi(app, d) {
   try {
     if (d.kind === "openapi-import") {
       const report = await s.importOpenapi({ url, text: url ? "" : text });
-      app.dialog = { kind: "openapi-report", report };
+      if (app.stillOpen(d)) app.dialog = { kind: "openapi-report", report, opened: d.opened };
     } else {
       const preview = await s.previewOpenapiSync(d.id, { url, text: url ? "" : text }, prune);
-      app.dialog = { ...d, url, text, prune, preview, submitted: false };
+      if (app.stillOpen(d)) app.dialog = { ...d, url, text, prune, preview, submitted: false };
     }
   } catch (e) {
-    app.dialog = { ...d, url, text, prune, submitted: false, error: `Couldn't read the spec: ${errorText(e)}` };
+    if (app.stillOpen(d)) app.dialog = { ...d, url, text, prune, submitted: false, error: `Couldn't read the spec: ${errorText(e)}` };
   }
 }
 

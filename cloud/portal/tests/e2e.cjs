@@ -381,6 +381,7 @@ const TEXT_OF = `(root) => {
     await page.goto(`${origin}/?server=${encodeURIComponent(server.url)}`);
     await page.getByRole("heading", { name: "Sign in", exact: true }).waitFor({ timeout: 10000 });
     check("a signed-out visitor lands on /sign-in", page.url().startsWith(`${origin}/sign-in`), page.url());
+    check("the sign-in page names a server that isn't HITOP Cloud", (await app.getByLabel("Other server").innerText()).includes(server.url));
     await axe("sign-in");
     await shoot("sign-in");
     await app.getByRole("button", { name: "Email me a code instead" }).click();
@@ -390,6 +391,15 @@ const TEXT_OF = `(root) => {
     await idle();
     await app.getByLabel("Code from the mail").fill(await server.code("ada@example.com"));
     await app.getByRole("button", { name: "Sign in", exact: true }).click();
+    // A link to another server asks first; dismissed, the session stays.
+    const signedInHere = () => page.evaluate((url) => { const a = JSON.parse(localStorage.getItem("hitop_cloud") || "{}"); return a.server === url && Boolean(a.session); }, server.url);
+    await page.waitForFunction(() => JSON.parse(localStorage.getItem("hitop_cloud") || "{}").session, null, { timeout: 10000 });
+    const here = page.url();
+    let asked = "";
+    page.once("dialog", (d) => ((asked = d.message()), d.dismiss()));
+    await page.goto(`${origin}/?server=${encodeURIComponent("https://other.example")}`);
+    check("a ?server= link doesn't sign a signed-in person out by itself", asked.includes("https://other.example") && (await signedInHere()), asked);
+    await page.goto(here);
     await idle();
     await heading("Home").waitFor({ timeout: 10000 });
     check("signed in: home shows the account and the personal org", (await pageText()).includes("ada@example.com") && (await textOf(page.getByRole("button", { name: "Switch organization" }))).includes("Personal"), await alertText());

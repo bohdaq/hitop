@@ -48,7 +48,8 @@ class Session extends EventTarget {
     this.pending = 0;
     // ?server=<url> picks another sync server (self-hosted, tests); the hosted one otherwise.
     const asked = new URLSearchParams(location.search).get("server");
-    if (asked && asked !== this.account.server) {
+    // A link must not sign a signed-in person out (or into another server) without their saying so.
+    if (asked && asked !== this.account.server && (!this.account.session || confirm(`Sign out here and use the sync server ${asked}?`))) {
       this.account = { server: asked };
       save(this.account);
     }

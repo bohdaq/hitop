@@ -378,6 +378,8 @@ export class Library extends EventTarget {
       }
       this.setStatus({ saving: false, savedAt: Date.now(), error: this.status.error.includes("over 5 MB") || this.status.error.includes("storage is full") ? this.status.error : "" });
     } catch (e) {
+      // Signed out (or into another account) meanwhile: nothing to try again.
+      if (!this.signedIn || this.state?.account !== this.accountKey()) return this.setStatus({ saving: false, error: "" });
       this.setStatus({ saving: false, error: `Couldn't save to HITOP Cloud: ${e.message || e}. Saved in this browser; trying again.` });
       this.schedulePush(15_000);
     } finally {

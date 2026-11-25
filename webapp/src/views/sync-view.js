@@ -176,11 +176,14 @@ class HitopSync extends LitElement {
   async loadTeam() {
     const c = this.collection;
     if (!c || !this.sync.account() || !this.sync.link(c.id)) return;
+    this.teamFailed = false;
     try {
       this.selected = c.id;
       this.team = await this.sync.members(c.id);
     } catch (e) {
       this.error = errorText(e);
+      this.teamFailed = true;
+      this.requestUpdate();
     }
   }
 
@@ -430,7 +433,7 @@ class HitopSync extends LitElement {
         <lit-material-button variant="outlined" ?disabled=${Boolean(this.busy)} @click=${() => this.syncOne(c)}>${icon("arrows-clockwise")} Sync now</lit-material-button>
       </div>
       ${conflicts.length ? html`<ul class="sync-conflicts" aria-label=${`Conflicts in ${c.name}`}>${conflicts.map((k) => this.renderConflict(c, k))}</ul>` : nothing}
-      ${this.team ? this.renderTeam(c) : html`<p class="hint" aria-busy="true">Loading members…</p>`}
+      ${this.team ? this.renderTeam(c) : this.teamFailed ? html`<p class="hint">Couldn't load the members. <lit-material-button variant="text" @click=${() => this.loadTeam()}>Try again</lit-material-button></p>` : html`<p class="hint" aria-busy="true">Loading members…</p>`}
       <details class="sync-advanced" @toggle=${(e) => e.target.open && !this.history && role && this.openHistory(c)}>
         <summary>Advanced: run history, CI runner, audit log</summary>
         ${this.history?.id === c.id ? this.renderHistory(c, role) : nothing}

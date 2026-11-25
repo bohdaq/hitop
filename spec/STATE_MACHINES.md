@@ -57,13 +57,7 @@ Ordered by risk. Each needs a decision or a wider change than a guard.
 - *Telemetry*: `enabled: true, id: None` says "on" and never pings.
 
 **Web app and portal**
-- *Sync account page* (`views/sync-view.js`): `mode` + `continued` + `awaitingCode` + `resetSent` + `ssoUrl`
-  and four `pending*` slots in `SyncClient`; Back/Cancel stay enabled while busy, so a finishing request
-  overrides the mode; `SyncClient.status` is declared and never used; a failed `loadTeam` leaves
-  "Loading members…" with `aria-busy` (blocks e2e waits).
-- *App dialogs*: an async import writes into a dialog closed meanwhile.
-- *Portal sign-in*: buttons come back during the provider redirect; `?server=` signs out silently.
-- *Cloud library* (`library.js`): sign-out during a push throws into the retry path.
+- *Sync account page* (`views/sync-view.js`): its sign-in modes are gone (the Sign in dialog has them); a failed `loadTeam` offers Try again.
 
 ## Fixed since (C1, 2026-11-25)
 
@@ -79,3 +73,6 @@ Ordered by risk. Each needs a decision or a wider change than a guard.
 - Web app collection run: Cancel, one run at a time, `running` reset in a finally, an earlier run-all's summary cleared.
 - OAuth 2 pop-up: Cancel closes it, each sign-in has its own window and ignores another's answer; the time limit doesn't run while a
   person signs in. The AI sheet already aborted on a new action, on close and on Escape (the note was out of date).
+- App dialogs: an answer that comes after its dialog was closed (or another opened) doesn't write into it (`stillOpen`).
+- Portal: buttons stay off on the way to a provider; `?server=` asks before signing a signed-in person out, and the sign-in page names
+  a server that isn't HITOP Cloud. Cloud library: signing out during a push ends it instead of retrying.
