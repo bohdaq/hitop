@@ -12,7 +12,18 @@ async function desktop() {
   let streams = 0;
   let closed = 0;
   let auth;
+  const tokenBodies = [];
   const server = http.createServer((req, res) => {
+    if (req.url.startsWith('/token')) {
+      let body = '';
+      req.on('data', (d) => (body += d));
+      req.on('end', () => {
+        tokenBodies.push(body);
+        res.setHeader('Content-Type', 'application/json');
+        res.end('{"access_token":"refreshed-tok","expires_in":3600}');
+      });
+      return;
+    }
     if (req.url === '/me') {
       auth = req.headers.authorization;
       return res.end('{"me":"ada"}');
@@ -49,6 +60,21 @@ async function desktop() {
     check(`desktop: OAuth sign-in, send ${i + 1}`, auth === 'Bearer desktop-user-tok', String(auth));
   }
   check('desktop: one sign-in for both', h.mock.signIns.length === 1 && h.mock.signIns[0].clientId === 'app', JSON.stringify(h.mock.signIns));
+  // Expired: the refresh token, without a browser; with another token URL a new sign-in, never this refresh token.
+  await tab({ auth: { type: 'oauth2', grant: 'authorization_code', authUrl: 'https://idp.test/authorize', tokenUrl: `${base}/token`, clientId: 'app', scope: 'read' } });
+  const send = async () => {
+    auth = null;
+    await p.getByRole('button', { name: 'Send', exact: true }).click();
+    for (let k = 0; k < 200 && !auth; k++) await settle(p, 50);
+    return auth;
+  };
+  await send();
+  const signedIn = h.mock.signIns.length;
+  await p.evaluate(() => { for (const t of document.querySelector('hitop-app').store.oauthTokens.values()) t.until = 1; });
+  check('desktop: an expired token is refreshed without a sign-in', (await send()) === 'Bearer refreshed-tok' && h.mock.signIns.length === signedIn && tokenBodies.length === 1 && tokenBodies[0] === 'grant_type=refresh_token&refresh_token=desktop-refresh&client_id=app', `${auth} ${JSON.stringify(tokenBodies)}`);
+  await p.evaluate(() => { for (const t of document.querySelector('hitop-app').store.oauthTokens.values()) t.until = 1; });
+  await tab({ auth: { type: 'oauth2', grant: 'authorization_code', authUrl: 'https://idp.test/authorize', tokenUrl: `${base}/token?other`, clientId: 'app', scope: 'read' } });
+  check('desktop: another token URL signs in, without this refresh token', (await send()) === 'Bearer desktop-user-tok' && h.mock.signIns.length === signedIn + 1 && tokenBodies.length === 1, JSON.stringify(tokenBodies));
   check('no page errors', errors.length === 0, errors.join(' | '));
   server.closeAllConnections?.();
   server.close();

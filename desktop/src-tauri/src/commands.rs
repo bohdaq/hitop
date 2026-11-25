@@ -539,6 +539,8 @@ pub struct OauthToken {
     pub token: String,
     /// Seconds.
     pub lifetime: Option<u64>,
+    /// Kept in the page's memory only.
+    pub refresh: Option<String>,
 }
 
 /// OAuth 2.0 authorization code with PKCE: the sign-in page in the browser, the code back on a
@@ -570,7 +572,7 @@ pub fn oauth_sign_in(app: tauri::AppHandle, state: tauri::State<'_, Stops>, args
         Err("OAuth 2.0: the authorization URL must start with https:// or http://".to_string())
     };
     state.end(args.id);
-    result.map(|(token, lifetime)| OauthToken { token, lifetime })
+    result.map(|t| OauthToken { token: t.access, lifetime: t.lifetime, refresh: t.refresh })
 }
 
 /// The cookie jar the web app shows on its Cookies page (workspace `global`).

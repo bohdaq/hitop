@@ -10,7 +10,7 @@ use std::time::{Duration, Instant};
 
 use anyhow::{bail, Result};
 use hitop_core::model::OAuth2;
-use hitop_core::oauth2;
+use hitop_core::oauth2::{self, Token};
 use serde_json::Value;
 
 use crate::Args;
@@ -18,7 +18,7 @@ use crate::Args;
 #[derive(Default)]
 struct State {
     /// key → (token, until)
-    tokens: HashMap<String, (String, Option<Instant>)>,
+    tokens: HashMap<String, (Token, Option<Instant>)>,
     /// send id → the page to open (taken once)
     pages: HashMap<u64, Option<String>>,
 }
@@ -32,15 +32,22 @@ thread_local! {
     static SEND: Cell<Option<u64>> = const { Cell::new(None) };
 }
 
-fn sign_in(o: &OAuth2, fill: &dyn Fn(&str) -> Result<String>, timeout: Option<Duration>) -> Result<(String, Option<u64>)> {
+fn sign_in(o: &OAuth2, fill: &dyn Fn(&str) -> Result<String>, timeout: Option<Duration>) -> Result<Token> {
     let mut key = String::new();
     for part in [&o.auth_url, &o.token_url, &o.client_id, &o.client_secret, &o.scope] {
         key.push_str(&fill(part)?);
         key.push('\n');
     }
-    if let Some((token, until)) = state().tokens.get(&key) {
-        if until.is_none_or(|u| Instant::now() < u) {
-            return Ok((token.clone(), None));
+    let have = state().tokens.get(&key).cloned();
+    if let Some((token, until)) = have {
+        let left = until.map(|u| u.saturating_duration_since(Instant::now()));
+        if left.is_none_or(|l| !l.is_zero()) {
+            // What is left of it (it is taken again 30 s early), so a long run comes back here.
+            return Ok(Token { lifetime: left.map(|l| l.as_secs() + 30), refresh: None, ..token });
+        }
+        // Expired: the refresh token first, also in a run; a refusal signs in again.
+        if let Some(t) = token.refresh.as_deref().and_then(|r| oauth2::refresh_with(o, fill, r, timeout).ok()) {
+            return Ok(keep(key, t));
         }
     }
     let Some(id) = SEND.get() else {
@@ -56,15 +63,20 @@ fn sign_in(o: &OAuth2, fill: &dyn Fn(&str) -> Result<String>, timeout: Option<Du
     if !(page.starts_with("https://") || page.starts_with("http://")) {
         bail!("OAuth 2.0: the authorization URL must start with https:// or http://");
     }
-    let (token, lifetime) = oauth2::sign_in_with(&o, fill, timeout, &mut |url| {
+    let token = oauth2::sign_in_with(&o, fill, timeout, &mut |url| {
         if let Some(p) = state().pages.get_mut(&id) {
             *p = Some(url.to_string());
         }
         Ok(())
     }, &|| !state().pages.contains_key(&id))?;
-    let until = lifetime.map(|l| Instant::now() + Duration::from_secs(l.saturating_sub(30)));
-    state().tokens.insert(key, (token.clone(), until));
-    Ok((token, lifetime))
+    Ok(keep(key, token))
+}
+
+/// Remembers `t` here; its refresh token stays here.
+fn keep(key: String, t: Token) -> Token {
+    let until = t.lifetime.map(|l| Instant::now() + Duration::from_secs(l.saturating_sub(30)));
+    state().tokens.insert(key, (t.clone(), until));
+    Token { refresh: None, ..t }
 }
 
 /// This thread's send (None: nobody to ask), until it is dropped.
@@ -120,6 +132,10 @@ mod tests {
 
     /// A token endpoint and an API on one port; the heads and bodies it got.
     fn server() -> (u16, Arc<Mutex<Vec<String>>>) {
+        server_with(r#"{"access_token":"tok-1","expires_in":3600}"#)
+    }
+
+    fn server_with(token: &'static str) -> (u16, Arc<Mutex<Vec<String>>>) {
         let l = TcpListener::bind("127.0.0.1:0").unwrap();
         let port = l.local_addr().unwrap().port();
         let seen = Arc::new(Mutex::new(vec![]));
@@ -138,7 +154,7 @@ mod tests {
                         break;
                     }
                 }
-                let body = if all.starts_with("POST /token") { r#"{"access_token":"tok-1","expires_in":3600}"# } else { "{}" };
+                let body = if all.starts_with("POST /token") { token } else { "{}" };
                 s2.lock().unwrap().push(all);
                 write!(s, "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}", body.len()).unwrap();
             }
@@ -204,5 +220,25 @@ mod tests {
         let mut a = args(port, "three", 0);
         a.as_object_mut().unwrap().remove("sendId");
         assert!(call("send", a)["ok"]["error"].as_str().unwrap().contains("sign in first"));
+    }
+
+    #[test]
+    fn an_expired_token_is_refreshed_also_in_a_run() {
+        // Expired at once (taken again 30 s early).
+        let (port, seen) = server_with(r#"{"access_token":"tok-1","expires_in":30,"refresh_token":"ref-1"}"#);
+        let a = args(port, "four", 301);
+        let t = std::thread::spawn(move || call("send", a));
+        let page = wait_page(301);
+        let host = param(&page, "redirect_uri").trim_start_matches("http://").split('/').next().unwrap().to_string();
+        let mut s = TcpStream::connect(&host).unwrap();
+        write!(s, "GET /callback?code=c1&state={} HTTP/1.1\r\nHost: x\r\n\r\n", param(&page, "state")).unwrap();
+        let mut out = String::new();
+        s.read_to_string(&mut out).unwrap();
+        assert_eq!(t.join().unwrap()["ok"]["response"]["status"], 200);
+        let mut a = args(port, "four", 0);
+        a.as_object_mut().unwrap().remove("sendId");
+        let out = call("send", a);
+        assert_eq!(out["ok"]["response"]["status"], 200, "{out}");
+        assert!(seen.lock().unwrap().join("\n").contains("grant_type=refresh_token&refresh_token=ref-1"));
     }
 }

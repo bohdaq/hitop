@@ -329,7 +329,7 @@ class TauriMock {
         return null;
       case 'oauth_sign_in':
         (this.signIns ??= []).push(args.args.auth);
-        return { token: 'desktop-user-tok', lifetime: 3600 };
+        return { token: 'desktop-user-tok', lifetime: 3600, refresh: 'desktop-refresh' };
       case 'telemetry_status':
         return this.telemetryStatus();
       case 'telemetry_set':

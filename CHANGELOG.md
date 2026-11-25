@@ -6,6 +6,8 @@ Releases before 1.2 are listed in ROADMAP.md (section 5) and on the GitHub Relea
 
 ### CLI
 
+- OAuth 2.0 authorization code: an expired token is renewed with its refresh token in runs (CLI, Android) and in the desktop app; a refresh
+  token only goes to the token URL it came from (web app too).
 - **Security:** `hitop mcp` `run_websocket` no longer resolves `${secret:...}` references in a call's own `url` or `headers` (an MCP client
   could have had a secret manager's value sent to an address of its choice). As documented, only references in the workspace files resolve.
 - `hitop mcp`: `describe_grpc` and `run_grpc` (bounded: 100 messages, 256 KiB, 60 s; .proto files only inside the workspace).

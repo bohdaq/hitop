@@ -153,17 +153,11 @@ export const ScriptsPart = (Base) =>
   // proxy. The token is kept in memory (a refresh token renews it); a page reload signs in again.
   async oauthSignIn(auth, fill, signal) {
     this.oauthTokens ??= new Map();
-    const key = `code\n${fill(auth.authUrl || "")}\n${fill(auth.clientId || "")}\n${fill(auth.scope || "")}`;
+    // With the token URL: a refresh token goes only where it came from.
+    const key = `code\n${fill(auth.authUrl || "")}\n${fill(auth.tokenUrl || "")}\n${fill(auth.clientId || "")}\n${fill(auth.scope || "")}`;
     const now = Date.now() / 1000;
     const have = this.oauthTokens.get(key);
     if (have && (have.until == null || now < have.until)) return { type: "bearer", token: have.token };
-    // Desktop: the system browser, the code back on a loopback address (Rust).
-    if (platform().oauthSignIn) {
-      const filled = Object.fromEntries(Object.entries(auth).map(([k, v]) => [k, typeof v === "string" ? fill(v) : v]));
-      const { token, lifetime } = await platform().oauthSignIn(filled, signal);
-      this.oauthTokens.set(key, { token, until: lifetime ? Date.now() / 1000 + Math.max(0, lifetime - 30) : null });
-      return { type: "bearer", token };
-    }
     const exchange = async (body, headers, url) => {
       const res = await platform().send(url, { method: "POST", headers, body });
       const text = await res.text();
@@ -181,11 +175,20 @@ export const ScriptsPart = (Base) =>
     if (have?.refresh) {
       try {
         const base = oauthCodeRequest(auth, fill, "", "", "");
-        const body = new URLSearchParams({ grant_type: "refresh_token", refresh_token: have.refresh, client_id: fill(auth.clientId || "") }).toString();
+        const params = { grant_type: "refresh_token", refresh_token: have.refresh, client_id: fill(auth.clientId || "") };
+        if (auth.clientAuth === "body" && auth.clientSecret) params.client_secret = fill(auth.clientSecret);
+        const body = new URLSearchParams(params).toString();
         return await exchange(body, base.headers, base.url);
       } catch {
         // sign in again below
       }
+    }
+    // Desktop: the system browser, the code back on a loopback address (Rust).
+    if (platform().oauthSignIn) {
+      const filled = Object.fromEntries(Object.entries(auth).map(([k, v]) => [k, typeof v === "string" ? fill(v) : v]));
+      const { token, lifetime, refresh } = await platform().oauthSignIn(filled, signal);
+      this.oauthTokens.set(key, { token, refresh: refresh ?? null, until: lifetime ? Date.now() / 1000 + Math.max(0, lifetime - 30) : null });
+      return { type: "bearer", token };
     }
     const redirect = fill(auth.redirectUri || "") || `${location.origin}${import.meta.env.BASE_URL}oauth-callback.html`;
     const { verifier, challenge } = await pkcePair();

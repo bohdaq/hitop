@@ -104,6 +104,18 @@ pub fn code_request(o: &OAuth2, interpolate: &dyn Fn(&str) -> Result<String>, co
     Ok(TokenRequest { key: format!("{url}\n{client_id}\n{}\ncode", interpolate(&o.scope)?), url, headers, body: form(&refs) })
 }
 
+/// The token request that trades a refresh token for a new access token (RFC 6749 section 6).
+pub fn refresh_request(o: &OAuth2, interpolate: &dyn Fn(&str) -> Result<String>, refresh: &str) -> Result<TokenRequest> {
+    let mut r = code_request(o, interpolate, "", "", "")?;
+    let mut pairs = vec![("grant_type", "refresh_token".to_string()), ("refresh_token", refresh.to_string()), ("client_id", interpolate(&o.client_id)?)];
+    if o.client_auth == "body" {
+        pairs.push(("client_secret", interpolate(&o.client_secret)?));
+    }
+    let refs: Vec<(&str, &str)> = pairs.iter().map(|(k, v)| (*k, v.as_str())).collect();
+    r.body = form(&refs);
+    Ok(r)
+}
+
 #[cfg(feature = "native")]
 fn pct_decode(s: &str) -> String {
     let b = s.as_bytes();
@@ -140,13 +152,53 @@ pub fn parse_token(status: u16, body: &str) -> Result<(String, Option<u64>)> {
     Ok((token.to_string(), json["expires_in"].as_u64().or_else(|| json["expires_in"].as_str().and_then(|s| s.parse().ok()))))
 }
 
-/// A person signs in for the authorization code grant: (access token, lifetime in seconds).
-pub type SignIn = Box<dyn FnMut(&OAuth2, &dyn Fn(&str) -> Result<String>) -> Result<(String, Option<u64>)>>;
+/// A token endpoint's answer.
+#[derive(Clone, Default, PartialEq)]
+pub struct Token {
+    pub access: String,
+    /// Seconds.
+    pub lifetime: Option<u64>,
+    pub refresh: Option<String>,
+}
 
-/// Tokens by `TokenRequest::key`: (token, valid until, as seconds of `now`). `sign_in` handles the
+impl Token {
+    pub fn parse(status: u16, body: &str) -> Result<Token> {
+        let (access, lifetime) = parse_token(status, body)?;
+        let json: Value = serde_json::from_str(body).unwrap_or(Value::Null);
+        Ok(Token { access, lifetime, refresh: json["refresh_token"].as_str().filter(|t| !t.is_empty()).map(String::from) })
+    }
+
+    /// This answer to a refresh with `old`, which stays good when the answer brings no new one.
+    pub fn after(mut self, old: &str) -> Token {
+        self.refresh.get_or_insert_with(|| old.to_string());
+        self
+    }
+}
+
+/// A person signs in for the authorization code grant.
+pub type SignIn = Box<dyn FnMut(&OAuth2, &dyn Fn(&str) -> Result<String>) -> Result<Token>>;
+
+struct Cached {
+    token: String,
+    until: Option<u64>,
+    refresh: Option<String>,
+}
+
+impl Cached {
+    /// Taken again 30 s before it runs out.
+    fn new(t: Token, now: u64) -> Cached {
+        Cached { token: t.access, until: t.lifetime.map(|l| now + l.saturating_sub(30)), refresh: t.refresh }
+    }
+
+    fn valid(&self, now: u64) -> bool {
+        self.until.is_none_or(|u| now < u)
+    }
+}
+
+/// Tokens by `TokenRequest::key` (valid until: seconds of `now`). `sign_in` handles the
 /// authorization code grant ([`Tokens::interactive`]: in a browser, when a person is at the terminal).
 #[derive(Default)]
-pub struct Tokens(HashMap<String, (String, Option<u64>)>, Option<SignIn>);
+pub struct Tokens(HashMap<String, Cached>, Option<SignIn>);
 
 impl Tokens {
     /// For `auth` when it is OAuth 2.0: a Bearer preset with a token from the cache or from
@@ -160,27 +212,36 @@ impl Tokens {
     ) -> Result<Option<Auth>> {
         let Some(Auth::OAuth2(o)) = auth else { return Ok(None) };
         if o.grant == "authorization_code" {
-            let key = format!("code\n{}\n{}\n{}", interpolate(&o.auth_url)?, interpolate(&o.client_id)?, interpolate(&o.scope)?);
-            if let Some((token, until)) = self.0.get(&key) {
-                if until.is_none_or(|u| now < u) {
-                    return Ok(Some(Auth::Bearer { token: token.clone() }));
+            // With the token URL: a refresh token goes only where it came from.
+            let key = format!("code\n{}\n{}\n{}\n{}", interpolate(&o.auth_url)?, interpolate(&o.token_url)?, interpolate(&o.client_id)?, interpolate(&o.scope)?);
+            if let Some(have) = self.0.get(&key) {
+                if have.valid(now) {
+                    return Ok(Some(Auth::Bearer { token: have.token.clone() }));
+                }
+                // Expired: the refresh token first; a refusal signs in again.
+                if let Some(old) = have.refresh.clone() {
+                    let req = refresh_request(o, interpolate, &old)?;
+                    if let Ok(t) = fetch(&req).and_then(|(status, body)| Token::parse(status, &body)) {
+                        let token = t.access.clone();
+                        self.0.insert(key, Cached::new(t.after(&old), now));
+                        return Ok(Some(Auth::Bearer { token }));
+                    }
                 }
             }
             let sign_in = self.1.as_mut().ok_or_else(|| anyhow::anyhow!("OAuth 2.0: the authorization code grant needs a person to sign in in a browser: run hitop send or hitop requests send in a terminal, or use client credentials in CI"))?;
-            let (token, lifetime) = sign_in(o, interpolate)?;
-            self.0.insert(key, (token.clone(), lifetime.map(|l| now + l.saturating_sub(30))));
+            let t = sign_in(o, interpolate)?;
+            let token = t.access.clone();
+            self.0.insert(key, Cached::new(t, now));
             return Ok(Some(Auth::Bearer { token }));
         }
         let req = token_request(o, interpolate)?;
-        if let Some((token, until)) = self.0.get(&req.key) {
-            if until.is_none_or(|u| now < u) {
-                return Ok(Some(Auth::Bearer { token: token.clone() }));
-            }
+        if let Some(have) = self.0.get(&req.key).filter(|h| h.valid(now)) {
+            return Ok(Some(Auth::Bearer { token: have.token.clone() }));
         }
         let (status, body) = fetch(&req)?;
-        let (token, lifetime) = parse_token(status, &body)?;
-        // Taken again 30 s before it runs out.
-        self.0.insert(req.key, (token.clone(), lifetime.map(|l| now + l.saturating_sub(30))));
+        let t = Token::parse(status, &body)?;
+        let token = t.access.clone();
+        self.0.insert(req.key, Cached::new(t, now));
         Ok(Some(Auth::Bearer { token }))
     }
 
@@ -196,7 +257,7 @@ impl Tokens {
 
 /// How a person signs in where there is no terminal (the Android app).
 #[cfg(feature = "native")]
-pub type InstalledSignIn = fn(&OAuth2, &dyn Fn(&str) -> Result<String>, Option<std::time::Duration>) -> Result<(String, Option<u64>)>;
+pub type InstalledSignIn = fn(&OAuth2, &dyn Fn(&str) -> Result<String>, Option<std::time::Duration>) -> Result<Token>;
 
 #[cfg(feature = "native")]
 static SIGN_IN: std::sync::OnceLock<InstalledSignIn> = std::sync::OnceLock::new();
@@ -212,7 +273,7 @@ pub fn install_sign_in(f: InstalledSignIn) -> bool {
 /// `HITOP_OAUTH_OPENER <url>`, tests), the code caught on a loopback address, traded for a token.
 /// Only with a person at the terminal (stderr is one), unless an opener is set.
 #[cfg(feature = "native")]
-pub fn browser_sign_in(o: &OAuth2, interpolate: &dyn Fn(&str) -> Result<String>, timeout: Option<std::time::Duration>) -> Result<(String, Option<u64>)> {
+pub fn browser_sign_in(o: &OAuth2, interpolate: &dyn Fn(&str) -> Result<String>, timeout: Option<std::time::Duration>) -> Result<Token> {
     use std::io::IsTerminal;
     let opener = std::env::var("HITOP_OAUTH_OPENER").ok().filter(|s| !s.is_empty());
     if opener.is_none() && !std::io::stderr().is_terminal() {
@@ -235,7 +296,7 @@ pub fn browser_sign_in(o: &OAuth2, interpolate: &dyn Fn(&str) -> Result<String>,
 
 /// [`browser_sign_in`] with the sign-in page opened by `open`; gives up when `cancelled` says so.
 #[cfg(feature = "native")]
-pub fn sign_in_with(o: &OAuth2, interpolate: &dyn Fn(&str) -> Result<String>, timeout: Option<std::time::Duration>, open: &mut dyn FnMut(&str) -> Result<()>, cancelled: &dyn Fn() -> bool) -> Result<(String, Option<u64>)> {
+pub fn sign_in_with(o: &OAuth2, interpolate: &dyn Fn(&str) -> Result<String>, timeout: Option<std::time::Duration>, open: &mut dyn FnMut(&str) -> Result<()>, cancelled: &dyn Fn() -> bool) -> Result<Token> {
     use std::io::{Read, Write};
     use std::time::{Duration, Instant};
     let rand = ring::rand::SystemRandom::new();
@@ -285,7 +346,15 @@ pub fn sign_in_with(o: &OAuth2, interpolate: &dyn Fn(&str) -> Result<String>, ti
     };
     let req = code_request(o, interpolate, &code, &verifier, &redirect)?;
     let res = crate::http::execute_opts("POST", &req.url, &req.headers, req.body.into_bytes(), crate::http::Options { timeout, jar: None, ..Default::default() })?;
-    parse_token(res.status, &res.body)
+    Token::parse(res.status, &res.body)
+}
+
+/// A new token for `refresh`.
+#[cfg(feature = "native")]
+pub fn refresh_with(o: &OAuth2, interpolate: &dyn Fn(&str) -> Result<String>, refresh: &str, timeout: Option<std::time::Duration>) -> Result<Token> {
+    let req = refresh_request(o, interpolate, refresh)?;
+    let res = crate::http::execute_opts("POST", &req.url, &req.headers, req.body.into_bytes(), crate::http::Options { timeout, jar: None, ..Default::default() })?;
+    Ok(Token::parse(res.status, &res.body)?.after(refresh))
 }
 
 /// One request's OAuth 2.0 token, fetched now (`hitop send`, `hitop requests send`): a Bearer
@@ -346,5 +415,35 @@ mod tests {
         assert_eq!(again, first, "cached while valid");
         assert_eq!(later, Some(Auth::Bearer { token: "tok2".into() }), "taken again 30 s before it runs out");
         assert_eq!(tokens.resolve(Some(&Auth::None), &same, 0, &mut fetch).unwrap(), None);
+    }
+
+    #[test]
+    fn an_expired_sign_in_is_refreshed_and_a_refusal_signs_in_again() {
+        let o = OAuth2 { grant: "authorization_code".into(), auth_url: "https://id.test/auth".into(), ..cc() };
+        let auth = Auth::OAuth2(Box::new(o.clone()));
+        let signed = std::rc::Rc::new(std::cell::Cell::new(0));
+        let n = signed.clone();
+        let mut tokens = Tokens(HashMap::new(), Some(Box::new(move |_, _| {
+            n.set(n.get() + 1);
+            Ok(Token { access: format!("signed{}", n.get()), lifetime: Some(100), refresh: Some("r1".into()) })
+        })));
+        let mut bodies: Vec<String> = vec![];
+        let mut answers = vec![(400, r#"{"error":"invalid_grant"}"#), (200, r#"{"access_token":"new2","expires_in":100,"refresh_token":"r2"}"#), (200, r#"{"access_token":"new1","expires_in":100}"#)];
+        let mut fetch = |r: &TokenRequest| -> Result<(u16, String)> {
+            bodies.push(format!("{} {}", r.url, r.body));
+            let (s, b) = answers.pop().unwrap();
+            Ok((s, b.to_string()))
+        };
+        let got: Vec<_> = [0, 69, 70, 140, 210].iter().map(|now| match tokens.resolve(Some(&auth), &same, *now, &mut fetch).unwrap() {
+            Some(Auth::Bearer { token }) => token,
+            other => panic!("{other:?}"),
+        }).collect();
+        assert_eq!(got, ["signed1", "signed1", "new1", "new2", "signed2"]);
+        // Another token URL: never this one's refresh token.
+        let other = Auth::OAuth2(Box::new(OAuth2 { token_url: "https://evil.test/token".into(), ..o }));
+        tokens.resolve(Some(&other), &same, 9999, &mut fetch).unwrap();
+        assert_eq!(signed.get(), 3);
+        let b = |r: &str| format!("https://id.test/token grant_type=refresh_token&refresh_token={r}&client_id=app");
+        assert_eq!(bodies, [b("r1"), b("r1"), b("r2")]);
     }
 }
