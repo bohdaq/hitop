@@ -136,7 +136,8 @@ fn start(a: &Args) -> R {
                 }
             });
             // Dropping the runtime stops the call's own task (a stream that never ends).
-            drop(rt);
+            // A name lookup that hangs isn't waited for.
+            rt.shutdown_background();
             call.finish();
         })
         .map_err(|e| format!("no thread: {e}"))?;

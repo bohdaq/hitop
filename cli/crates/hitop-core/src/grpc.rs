@@ -254,7 +254,12 @@ mod client {
         if let Some(t) = timeout {
             ep = ep.connect_timeout(t);
         }
-        ep.connect().await.map_err(|e| anyhow!("couldn't connect to {uri}: {}", error_chain(&e)))
+        // tonic's limit is the TCP connection's: this one also holds the lookup of the name and TLS.
+        let connected = match timeout {
+            Some(t) => tokio::time::timeout(t, ep.connect()).await.map_err(|_| anyhow!("couldn't connect to {uri}: no connection within {} ms", t.as_millis()))?,
+            None => ep.connect().await,
+        };
+        connected.map_err(|e| anyhow!("couldn't connect to {uri}: {}", error_chain(&e)))
     }
 
     fn pem(der: &[u8]) -> String {

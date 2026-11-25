@@ -179,6 +179,17 @@ async fn refusals_before_sending() {
 }
 
 #[tokio::test]
+async fn a_server_that_never_finishes_tls_is_given_up() {
+    // Accepts and says nothing: the TCP connection is there at once, TLS never is.
+    let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+    let t = Target { plaintext: false, ..target(listener.local_addr().unwrap(), "SayHello", "{}") };
+    let started = std::time::Instant::now();
+    let e = grpc::connect(&t, Some(std::time::Duration::from_millis(300))).await.err().unwrap().to_string();
+    assert!(e.contains("couldn't connect"), "{e}");
+    assert!(started.elapsed() < std::time::Duration::from_secs(10));
+}
+
+#[tokio::test]
 async fn refused_connection() {
     // A port nothing listens on.
     let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();

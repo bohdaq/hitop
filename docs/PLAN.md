@@ -68,3 +68,4 @@ Status is kept in the table at the end; choices made on the way go under "Decisi
 | 2026-11-25 | Desktop network settings hold file paths; a proxy address with a password is refused; unusable settings block requests. | No secret in a file; a request never goes around a proxy silently. |
 | 2026-11-25 | Insomnia, Bruno and HAR are turned into Postman's shape and go through its importer. | One importer and report for every app. Bruno's newer YAML layout (opencollection) is not read. |
 | 2026-11-25 | Bruno scripts are kept as comments; simple assertions become tests. | Its script API is not HITOP's; running it would fail every request. |
+| 2026-11-25 | Main b8a2300 (PR 34) was merged with a failed iOS check, against the rule: the merge command did not stop on it. Merges now go through a script that asks GitHub for every check run. | The failure was the new import UI test; fixed with PR 35. |

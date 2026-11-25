@@ -37,7 +37,9 @@ class ProtocolFlowTest {
             compose.onNodeWithTag("send").performClick()
             compose.waitFor(hasText("Connected · stock.v2"))
             compose.onNodeWithTag("ws-saved-subscribe").performClick()
-            compose.waitFor(hasText("{\"op\": \"subscribe\", \"symbol\": \"TEE-0193\"}"), 15_000)
+            // Sent and echoed: a line that arrives later would move the buttons under the next tap.
+            compose.waitUntil(15_000) { compose.onAllNodes(hasText("{\"op\": \"subscribe\", \"symbol\": \"TEE-0193\"}")).fetchSemanticsNodes().size == 2 }
+            compose.waitForIdle()
             compose.onNodeWithTag("ws-saved-binary").performClick()
             compose.waitFor(hasText("binary 2 bytes", substring = true))
             compose.screenshot("19-websocket-log")

@@ -23,6 +23,15 @@ final class ImportFlowTests: XCTestCase {
         wait(app.el("import-summary"))
         shot(app, "40-import")
         app.el("import-add").tap()
-        wait(app.el("collection-Imported API"))
+        // Below the others in the list, which makes only the rows on screen.
+        let added = app.el("collection-Imported API")
+        let deadline = Date().addingTimeInterval(40)
+        while !added.exists && Date() < deadline {
+            app.swipeUp()
+            RunLoop.current.run(until: Date().addingTimeInterval(0.3))
+        }
+        shot(app, "41-imported")
+        let seen = app.descendants(matching: .any).matching(NSPredicate(format: "identifier BEGINSWITH 'collection-'")).allElementsBoundByIndex.map(\.identifier)
+        XCTAssertTrue(added.exists, "not in the list; on screen: \(seen)")
     }
 }
