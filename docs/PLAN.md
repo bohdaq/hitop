@@ -74,3 +74,10 @@ Status is kept in the table at the end; choices made on the way go under "Decisi
   or without secrets the Keychain can't show.
 - iOS share extension only puts the item in the app group (an extension can't open its app); the app shows it before anything is added.
 - A damaged list of shared collections is set aside only after every collection the library doesn't hold is marked "this device only".
+
+## Open problems
+
+- Android `ProtocolFlowTest.grpcFieldsAndAnUnreachableServer` (API 31 emulator), failed once on main 8da867a (2026-11-25): "Calling…" for more than
+  30 s although hitop-core's connect limit is 10 s (6c94353). Not reproduced and not explained; not to be hidden by a longer wait.
+- Leaked copies of shared collections (web app before PR 40): `request_history` on the server keeps them after the library item is deleted.
+  Nothing is done on production without the owner's answer.
