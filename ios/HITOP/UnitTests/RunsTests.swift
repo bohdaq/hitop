@@ -47,6 +47,7 @@ final class RunsTests: XCTestCase {
             case .started: events.append("started")
             case .progress: events.append("progress")
             case .finished: events.append("finished")
+            case .stopped: events.append("stopped")
             }
         }
         let record = try await runShop(staging())

@@ -102,6 +102,8 @@ public struct Runner: Sendable {
         var results: [StepResult] = []
 
         for request in collection.requests where !request.isWebSocket && !request.isGRPC {
+            // Cancelled (the system took the time back): nothing more is sent.
+            if Task.isCancelled { break }
             let started = Date()
             var step = StepResult(requestName: request.name, method: request.method, url: request.url, response: nil, error: nil,
                                   tests: [], durationMs: 0, notes: [], path: request.path, fileExtension: request.fileExtension)

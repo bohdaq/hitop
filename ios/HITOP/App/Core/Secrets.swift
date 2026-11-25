@@ -6,9 +6,13 @@ import HitopKit
 protocol SecretVault: Sendable {
     func value(environment: String, name: String) -> String?
     func setValue(_ value: String?, environment: String, name: String)
+    /// `value`, but a vault that can't be read now throws (it isn't "no value").
+    func read(environment: String, name: String) throws -> String?
 }
 
 extension SecretVault {
+    func read(environment: String, name: String) throws -> String? { value(environment: environment, name: name) }
+
     static func account(_ environment: String, _ name: String) -> String { "ios/\(environment)/\(name)" }
 }
 
@@ -20,6 +24,8 @@ struct KeychainVault: SecretVault {
     func value(environment: String, name: String) -> String? {
         (try? store.get(account: Self.account(environment, name))) ?? nil
     }
+
+    func read(environment: String, name: String) throws -> String? { try store.get(account: Self.account(environment, name)) }
 
     func setValue(_ value: String?, environment: String, name: String) {
         let account = Self.account(environment, name)

@@ -46,8 +46,9 @@ unsigned Release archive (job `archive`). Signing, upload and App Store Connect 
 - **XcodeGen**: `brew install xcodegen`.
 - **Signing**: automatic. With `-allowProvisioningUpdates` Xcode makes the Apple Distribution
   certificate (if there is none) and the App Store profiles for `hitop.rws8.tech.HiTop` and the
-  widget extension `hitop.rws8.tech.HiTop.Widgets`. The app group `group.hitop.rws8.tech.HiTop` was
-  registered on 2026-11-19; App Groups must be on for both ids (developer.apple.com → Identifiers).
+  widget extension `hitop.rws8.tech.HiTop.Widgets` and the share extension
+  `hitop.rws8.tech.HiTop.Share` (new: register it, with the app group). The app group `group.hitop.rws8.tech.HiTop` was
+  registered on 2026-11-19; App Groups must be on for all three ids (developer.apple.com → Identifiers).
 
 ## 2. Build and upload
 

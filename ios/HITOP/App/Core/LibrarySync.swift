@@ -89,7 +89,8 @@ final class LibrarySync {
         self.model = model
         self.stateStore = stateStore
         self.deviceLabel = deviceLabel
-        state = stateStore.load()
+        state = State()
+        loadState()
         forgetDamaged()
         status.lastSync = state.lastSync
         model.onLibraryChange = { [weak self] in self?.changed() }
@@ -100,8 +101,26 @@ final class LibrarySync {
         refreshBadges()
     }
 
+    /// The state file can't be opened now: nothing syncs and nothing is written over it.
+    @ObservationIgnored private var stateUnreadable = false
+
+    private func loadState() {
+        do {
+            state = try stateStore.load()
+            stateUnreadable = false
+        } catch StateFileProblem.damaged {
+            // Which collections stay on this device only isn't known any more: as for another
+            // account, none is uploaded by itself (what the library has comes back by the pull).
+            state = State(account: "damaged")
+            stateUnreadable = false
+        } catch {
+            state = State()
+            stateUnreadable = true
+        }
+    }
+
     private func save() {
-        try? stateStore.save(state)
+        if !stateUnreadable { try? stateStore.save(state) }
     }
 
     /// Files on this device that couldn't be used (`LibraryStore.damagedFiles`) aren't deleted data:
@@ -133,6 +152,14 @@ final class LibrarySync {
             forgetDamaged()
             if !model.store.unreadableFiles.isEmpty { return false }
         }
+        if stateUnreadable {
+            loadState()
+            if stateUnreadable { return false }
+        }
+        if model.sharingProblem == .unreadable {
+            model.reloadSharing?()
+            if model.sharingProblem == .unreadable { return false }
+        }
         guard !key.isEmpty else {
             if status.on { status.on = false }
             pushTask?.cancel()
@@ -143,8 +170,28 @@ final class LibrarySync {
             state = Self.firstLink(account: key, previous: state, collections: model.collections)
             save()
         }
+        if model.sharingProblem == .damaged && !startSharingOver() {
+            status.error = "The list of shared collections can't be read, so nothing is synced."
+            return false
+        }
         status.on = true
         return true
+    }
+
+    /// The list of shared collections is damaged: every collection the library doesn't hold already
+    /// stays on this device only (it may be a shared one), and that is saved before the list goes.
+    private func startSharingOver() -> Bool {
+        let keep = model.collections.map { String($0.id) }.filter { state.known["collection/\($0)"] == nil && !state.localOnly.contains($0) }
+        var next = state
+        next.localOnly += keep
+        do {
+            try stateStore.save(next)
+            state = next
+            try model.startSharingOver?()
+        } catch {
+            return false
+        }
+        return model.sharingProblem == nil
     }
 
     /// A new account's state. The first account this device links uploads what is here, except
@@ -163,6 +210,8 @@ final class LibrarySync {
         var id: String
         var data: JSONAny
         var secrets: [String: JSONAny]
+        /// A secret's value couldn't be read now: not pushed, or the library would lose it.
+        var incomplete = false
 
         var key: String { "\(kind)/\(id)" }
 
@@ -192,41 +241,53 @@ final class LibrarySync {
     }
 
     /// An environment as the library keeps it: secret values empty, the values apart.
-    private func split(_ e: SavedEnvironment, vaultID: String) -> (JSONAny, [String: JSONAny]) {
+    private func split(_ e: SavedEnvironment, vaultID: String) -> (JSONAny, [String: JSONAny], Bool) {
         var json = ((try? JSONAny.from(e)) ?? .null).object ?? [:]
         var variables = json["variables"]?.object ?? [:]
         var secrets: [String: JSONAny] = [:]
+        var incomplete = false
         for n in e.secrets {
             variables[n] = .string("")
-            if let v = model.vault.value(environment: vaultID, name: n), !v.isEmpty { secrets[n] = .string(v) }
+            do {
+                if let v = try model.vault.read(environment: vaultID, name: n), !v.isEmpty { secrets[n] = .string(v) }
+            } catch {
+                incomplete = true
+            }
         }
         json["variables"] = .object(variables)
-        return (.object(json), secrets)
+        return (.object(json), secrets, incomplete)
     }
 
     var environmentsItem: Item {
         let envs = model.environments.filter { !isTeam($0) }
         var list: [JSONAny] = []
         var secrets: [String: JSONAny] = [:]
+        var incomplete = false
         for e in envs {
-            let (data, s) = split(e, vaultID: e.id)
+            let (data, s, missing) = split(e, vaultID: e.id)
+            incomplete = incomplete || missing
             list.append(data)
             if !s.isEmpty { secrets[e.id] = .object(s) }
         }
         let activeEnv = envs.first { $0.id == model.state.activeEnvironmentID }
         let active: JSONAny = activeEnv.map { e in e.numericID ? .number(Double(e.id) ?? 0) : .string(e.id) } ?? .null
-        return Item(kind: "environments", id: "all", data: .object(["environments": .array(list), "activeEnvironmentId": active]), secrets: secrets)
+        return Item(kind: "environments", id: "all", data: .object(["environments": .array(list), "activeEnvironmentId": active]), secrets: secrets, incomplete: incomplete)
     }
 
     var globalsItem: Item {
         let g = model.globals
         var variables = g.variables.mapValues(JSONAny.string)
         var secrets: [String: JSONAny] = [:]
+        var incomplete = false
         for n in g.secrets {
             variables[n] = .string("")
-            if let v = model.vault.value(environment: globalsVaultID, name: n), !v.isEmpty { secrets[n] = .string(v) }
+            do {
+                if let v = try model.vault.read(environment: globalsVaultID, name: n), !v.isEmpty { secrets[n] = .string(v) }
+            } catch {
+                incomplete = true
+            }
         }
-        return Item(kind: "globals", id: "all", data: .object(["variables": .object(variables), "secrets": .array(g.secrets.map(JSONAny.string))]), secrets: secrets)
+        return Item(kind: "globals", id: "all", data: .object(["variables": .object(variables), "secrets": .array(g.secrets.map(JSONAny.string))]), secrets: secrets, incomplete: incomplete)
     }
 
     /// What the library should hold now, by key.
@@ -287,8 +348,10 @@ final class LibrarySync {
             guard var e = try? j.decode(SavedEnvironment.self) else { return nil }
             // Secret values: the server's, else the ones this device already has.
             for n in e.secrets {
-                let value = secrets[e.id]?[n]?.string ?? model.vault.value(environment: e.id, name: n) ?? e.variables[n] ?? ""
-                model.vault.setValue(value, environment: e.id, name: n)
+                // A value the server doesn't hold and the vault can't show now is left as it is.
+                if let value = secrets[e.id]?[n]?.string ?? kept(e.id, n, else: e.variables[n]) {
+                    model.vault.setValue(value, environment: e.id, name: n)
+                }
                 e.variables.removeValue(forKey: n)
             }
             return e
@@ -301,14 +364,20 @@ final class LibrarySync {
         model.applyRemote(environments: list + kept, active: active)
     }
 
+    /// The value this device has (nil: the vault can't be read now).
+    private func kept(_ environment: String, _ name: String, else other: String?) -> String? {
+        do { return try model.vault.read(environment: environment, name: name) ?? other ?? "" } catch { return nil }
+    }
+
     private func applyGlobals(_ it: JSONAny) {
         let data = it["data"] ?? .null
         let names = (data["secrets"]?.array ?? []).compactMap(\.string)
         var variables: [String: String] = [:]
         for (k, v) in data["variables"]?.object ?? [:] { variables[k] = v.string ?? "" }
         for n in names {
-            let value = it["secrets"]?[n]?.string ?? model.vault.value(environment: globalsVaultID, name: n) ?? variables[n] ?? ""
-            model.vault.setValue(value, environment: globalsVaultID, name: n)
+            if let value = it["secrets"]?[n]?.string ?? kept(globalsVaultID, n, else: variables[n]) {
+                model.vault.setValue(value, environment: globalsVaultID, name: n)
+            }
             variables.removeValue(forKey: n)
         }
         var g = model.globals
@@ -441,6 +510,7 @@ final class LibrarySync {
                 let known = state.known[key]
                 if known?.hash == h || state.refused[key] == h { continue }
                 if known == nil && item.isEmptySettings { continue }
+                if item.incomplete { continue }
                 let body = JSONAny.object(["data": item.data, "secrets": .object(item.secrets), "baseVersion": .number(Double(known?.version ?? 0))])
                 let r = try await send("PUT", "/v1/library/\(item.kind)/\(item.id)", body)
                 switch r.status {
@@ -643,8 +713,20 @@ enum LibraryRules {
     ]
 }
 
+extension LibrarySync.State {
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        self.init(account: try c.decode(String.self, forKey: .account), cursor: try c.decodeIfPresent(Int.self, forKey: .cursor),
+                  known: try c.decodeIfPresent([String: LibrarySync.Known].self, forKey: .known) ?? [:],
+                  localOnly: try c.decodeIfPresent([String].self, forKey: .localOnly) ?? [],
+                  refused: try c.decodeIfPresent([String: String].self, forKey: .refused) ?? [:],
+                  lastSync: try c.decodeIfPresent(Date.self, forKey: .lastSync))
+    }
+}
+
 protocol LibrarySyncStateStore: Sendable {
-    func load() -> LibrarySync.State
+    /// Throws `StateFileProblem`.
+    func load() throws -> LibrarySync.State
     func save(_ state: LibrarySync.State) throws
 }
 
@@ -653,10 +735,7 @@ struct FileLibrarySyncStateStore: LibrarySyncStateStore {
 
     init(root: URL) { file = root.appendingPathComponent("library-sync.json") }
 
-    func load() -> LibrarySync.State {
-        guard let data = try? Data(contentsOf: file) else { return LibrarySync.State() }
-        return (try? JSONDecoder().decode(LibrarySync.State.self, from: data)) ?? LibrarySync.State()
-    }
+    func load() throws -> LibrarySync.State { try StateFileProblem.read(LibrarySync.State.self, file) ?? LibrarySync.State() }
 
     func save(_ state: LibrarySync.State) throws {
         let e = JSONEncoder()
@@ -672,6 +751,6 @@ final class MemoryLibrarySyncStateStore: LibrarySyncStateStore, @unchecked Senda
 
     init() {}
 
-    func load() -> LibrarySync.State { lock.lock(); defer { lock.unlock() }; return value }
+    func load() throws -> LibrarySync.State { lock.lock(); defer { lock.unlock() }; return value }
     func save(_ state: LibrarySync.State) throws { lock.lock(); defer { lock.unlock() }; value = state }
 }

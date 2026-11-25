@@ -68,6 +68,16 @@
 	</dict>
 	<key>NSLocalNetworkUsageDescription</key>
 	<string>HITOP sends the requests you write, including to servers on your local network.</string>
+	<key>UIBackgroundModes</key>
+	<array>
+		<string>fetch</string>
+		<string>processing</string>
+	</array>
+	<key>BGTaskSchedulerPermittedIdentifiers</key>
+	<array>
+		<string>hitop.rws8.tech.HiTop.sync</string>
+		<string>hitop.rws8.tech.HiTop.runs</string>
+	</array>
 	<key>NSSupportsLiveActivities</key>
 	<true/>
 	<key>CFBundleDocumentTypes</key>

@@ -15,7 +15,7 @@
 # Needs: Xcode 26 (xcode-select), rustup's Rust (not Homebrew's; this adds the two iOS targets),
 #   XcodeGen (brew install xcodegen), Xcode signed in to the team's Apple ID (Settings → Accounts):
 #   automatic signing makes the distribution certificate and the App Store profiles for the app and
-#   the widget extension (-allowProvisioningUpdates). The app group group.hitop.rws8.tech.HiTop is
+#   the widget and share extensions (-allowProvisioningUpdates). The app group group.hitop.rws8.tech.HiTop is
 #   registered (2026-11-19).
 set -euo pipefail
 BUILD="${1:?build number, e.g. 2}"
@@ -60,8 +60,9 @@ grep -q 'ARCHIVE SUCCEEDED' build/archive.log || { echo "archive failed: see ios
 
 APP=build/HITOP.xcarchive/Products/Applications/HITOP.app
 EXT="$APP/PlugIns/HITOPWidgets.appex"
+SHARE="$APP/PlugIns/HITOPShare.appex"
 plist() { /usr/libexec/PlistBuddy -c "Print :$2" "$1/Info.plist"; }
-for b in "$APP" "$EXT"; do
+for b in "$APP" "$EXT" "$SHARE"; do
   test -d "$b" || { echo "missing $b" >&2; exit 1; }
   test "$(plist "$b" CFBundleShortVersionString)" = "$VERSION" || { echo "$b: version $(plist "$b" CFBundleShortVersionString), want $VERSION" >&2; exit 1; }
   test "$(plist "$b" CFBundleVersion)" = "$BUILD" || { echo "$b: build $(plist "$b" CFBundleVersion), want $BUILD" >&2; exit 1; }
@@ -76,8 +77,8 @@ if [ "$MODE" = --unsigned ]; then
   exit 0
 fi
 
-# Signed with the app group (widgets, intents) in both targets.
-for b in "$APP" "$EXT"; do
+# Signed with the app group (widgets, intents) in every target.
+for b in "$APP" "$EXT" "$SHARE"; do
   codesign -d --entitlements - "$b" 2>/dev/null | grep -q group.hitop.rws8.tech.HiTop \
     || { echo "$b is not signed with the app group group.hitop.rws8.tech.HiTop" >&2; exit 1; }
 done

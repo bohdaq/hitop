@@ -63,6 +63,12 @@ final class SystemBridge {
                 self.activity = nil
             }
             refreshWidgets()
+        case let .stopped(run):
+            guard let activity else { return }
+            let content = ActivityContent(state: Self.state(run, finished: true), staleDate: nil)
+            nonisolated(unsafe) let a = activity
+            Task { await a.end(content, dismissalPolicy: .immediate) }
+            self.activity = nil
         }
     }
 

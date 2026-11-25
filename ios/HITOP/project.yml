@@ -44,6 +44,8 @@ targets:
         embed: false
       - target: HITOPWidgets
         embed: true
+      - target: HITOPShare
+        embed: true
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: hitop.rws8.tech.HiTop
@@ -80,6 +82,24 @@ targets:
         PRODUCT_MODULE_NAME: HITOPWidgets
         INFOPLIST_FILE: Widgets/Info.plist
         CODE_SIGN_ENTITLEMENTS: Widgets/HITOPWidgets.entitlements
+        CODE_SIGN_STYLE: Automatic
+        SKIP_INSTALL: YES
+        APPLICATION_EXTENSION_API_ONLY: YES
+        ASSETCATALOG_COMPILER_GENERATE_SWIFT_ASSET_SYMBOL_EXTENSIONS: NO
+  # HITOP in the share sheet: leaves what was shared in the app group for the app.
+  HITOPShare:
+    type: app-extension
+    platform: iOS
+    sources:
+      - path: Share
+      - path: App/Core/SharedInbox.swift
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: hitop.rws8.tech.HiTop.Share
+        PRODUCT_NAME: HITOPShare
+        PRODUCT_MODULE_NAME: HITOPShare
+        INFOPLIST_FILE: Share/Info.plist
+        CODE_SIGN_ENTITLEMENTS: Share/HITOPShare.entitlements
         CODE_SIGN_STYLE: Automatic
         SKIP_INSTALL: YES
         APPLICATION_EXTENSION_API_ONLY: YES

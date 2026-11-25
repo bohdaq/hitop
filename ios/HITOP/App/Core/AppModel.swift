@@ -53,6 +53,12 @@ final class AppModel {
     /// Called when a collection is deleted here (a shared one stops syncing on this device).
     @ObservationIgnored var onCollectionDeleted: (@MainActor (UInt64) -> Void)?
 
+    /// Which collections are shared isn't known (the list can't be used): nothing syncs until it is.
+    var sharingProblem: StateFileProblem?
+    @ObservationIgnored var reloadSharing: (@MainActor () -> Void)?
+    /// Sets a damaged list aside (LibrarySync, once no collection can reach the library by it).
+    @ObservationIgnored var startSharingOver: (@MainActor () throws -> Void)?
+
     func isShared(_ collectionID: UInt64?) -> Bool { collectionID.map { sharedRoles[$0] != nil } ?? false }
 
     /// A collection this account may only read (a viewer of its shared workspace).

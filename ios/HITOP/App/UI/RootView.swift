@@ -8,6 +8,7 @@ struct RootView: View {
     @Environment(HitopCloud.self) private var cloud
     @Environment(LibrarySync.self) private var sync
     @Environment(SharedSync.self) private var shared
+    @Environment(\.backgroundWork) private var background
 
     var body: some View {
         @Bindable var nav = nav
@@ -28,6 +29,7 @@ struct RootView: View {
         .onChange(of: sizeClass) { _, c in nav.isPad = c == .regular }
         // HITOP Cloud: pull on launch and whenever the app comes to the foreground.
         .task {
+            takeShared()
             applyScope()
             await sync.sync()
             if cloud.signedIn { _ = try? await cloud.loadOrgs() }
@@ -38,8 +40,10 @@ struct RootView: View {
         .onChange(of: scenePhase) { _, phase in
             // Widgets and intents see what changed here (pins, environment, sends) when the app leaves.
             if phase != .active { sync.model.saveDrafts() }
+            if phase == .background { background?.left() }
             if phase == .background { IntentBridge.services?.system.refreshWidgets() }
             if phase == .active {
+                takeShared()
                 if model.sender.settings?.problem != nil { model.sender.settings?.load() }
                 Task {
                     await sync.sync()
@@ -51,6 +55,13 @@ struct RootView: View {
             applyScope()
             if old.org != new.org || old.orgs != new.orgs { Task { await shared.loadTeamEnvironments() } }
         }
+    }
+
+    /// What the share extension left: one at a time, when no sheet is in the way.
+    private func takeShared() {
+        guard nav.importing == nil, !nav.showRequestFromText, nav.runSheet == nil, !nav.showAccount, !nav.showAbout,
+              model.store.unreadableFiles.isEmpty, let root = SharedContainer.directory(), let item = SharedInbox(root: root).take() else { return }
+        nav.receive(item, model)
     }
 
     /// Collections shows the current organization's collections (the web app's `visibleCollections`).

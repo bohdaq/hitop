@@ -289,6 +289,10 @@ struct RequestFromTextSheet: View {
                 .padding(16)
             }
             .background(Theme.ground.ignoresSafeArea())
+            .onAppear {
+                if text.isEmpty { text = nav.requestText }
+                nav.requestText = ""
+            }
             .navigationTitle("New request from text")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {

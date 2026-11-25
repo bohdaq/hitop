@@ -50,6 +50,16 @@ struct SettingsView: View {
         }
         .listRowBackground(Theme.surface)
         Section {
+            Toggle("Sync in the background", isOn: Binding(get: { store.shown.backgroundSync }, set: { on in attempt { try store.update { $0.backgroundSync = on } } }))
+                .tint(Theme.success)
+                .accessibilityIdentifier("settings-background-sync")
+        } header: {
+            Text("HITOP Cloud")
+        } footer: {
+            Text("While you are signed in. iOS decides when, often a few times a day.")
+        }
+        .listRowBackground(Theme.surface)
+        Section {
             ForEach(store.shown.authorities) { a in
                 row(a.name, nil) { attempt { try store.update { $0.authorities.removeAll { $0.id == a.id } } } }
             }

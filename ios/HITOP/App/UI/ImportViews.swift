@@ -56,6 +56,7 @@ struct ImportSheet: View {
             case let .failure(e): failure = e.localizedDescription
             }
         }
+        .task { if let t = target.text, plan == nil { text = t; readText() } }
         .task { if let f = target.file, plan == nil { readFile(f) } }
     }
 

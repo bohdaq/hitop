@@ -45,6 +45,27 @@ final class WorkflowTests: XCTestCase {
     }
 
     @MainActor
+    func testARunIsPutOnASchedule() {
+        guard UIDevice.current.userInterfaceIdiom == .phone else { return }
+        let app = XCUIApplication.seeded()
+        app.launch()
+        app.tabBars.buttons["Runs"].tap()
+        let run = app.el("run-collection-shop-api")
+        wait(run)
+        run.tap()
+        let picker = app.el("run-schedule")
+        wait(picker)
+        if !picker.isHittable { app.swipeUp() }
+        picker.tap()
+        let hour = app.buttons["Every hour"].firstMatch
+        wait(hour)
+        hour.tap()
+        let chosen = expectation(for: NSPredicate(format: "label CONTAINS 'Not before the time is up'"), evaluatedWith: app.el("run-schedule-text"))
+        wait(for: [chosen], timeout: 15)
+        shot(app, "44-schedule")
+    }
+
+    @MainActor
     func testAFileRowAsksForItsFile() {
         guard UIDevice.current.userInterfaceIdiom == .phone else { return }
         let app = XCUIApplication.seeded()

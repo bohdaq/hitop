@@ -11,6 +11,8 @@ struct HITOPApp: App {
     @State private var cloudUI: CloudUI
     @State private var shared: SharedSync
     @State private var runs: RunCenter
+    @State private var schedules: Schedules
+    private let background: Background
     @State private var ai: Intelligence
     private let system: SystemBridge
     /// UI tests of shared collections: the scenario prepared before the first sync.
@@ -27,12 +29,13 @@ struct HITOPApp: App {
         let syncState: LibrarySyncStateStore
         let sharedStore: SharedSyncStore
         let runStore: RunStore
+        let root: URL
         if uiTest {
             // UI tests and screenshots: a fresh library, the shop-api sample, secrets in memory and
             // every request answered in-process by StubURLProtocol (no network), HITOP Cloud
             // included (FakeCloud at cloud.hitop.test, signed out, the provider page approving at once).
             StubURLProtocol.enabled = true
-            let root = FileManager.default.temporaryDirectory.appendingPathComponent("hitop-uitest-\(UUID().uuidString)")
+            root = FileManager.default.temporaryDirectory.appendingPathComponent("hitop-uitest-\(UUID().uuidString)")
             var sender = Sender(configuration: StubURLProtocol.configuration)
             sender.uploads = Uploads(root: root)
             sender.settings = SettingsStore(root: root)
@@ -60,7 +63,7 @@ struct HITOPApp: App {
             sharedStore = MemorySharedSyncStore()
             runStore = FileRunStore(root: root)
         } else {
-            let root = FileLibraryStore.defaultRoot()
+            root = FileLibraryStore.defaultRoot()
             var sender = Sender()
             sender.browser = SystemOAuthBrowser()
             sender.uploads = Uploads(root: root)
@@ -86,14 +89,21 @@ struct HITOPApp: App {
         scenario = uiTest ? ["-UITestSharedInvite", "-UITestSharedJoined"].first { args.contains($0) } : nil
         _model = State(initialValue: model)
         _cloud = State(initialValue: cloud)
-        _sync = State(initialValue: LibrarySync(cloud: cloud, model: model, stateStore: syncState, deviceLabel: DeviceInfo.label))
+        let sync = LibrarySync(cloud: cloud, model: model, stateStore: syncState, deviceLabel: DeviceInfo.label)
+        _sync = State(initialValue: sync)
         _cloudUI = State(initialValue: CloudUI(web: web))
-        _shared = State(initialValue: SharedSync(cloud: cloud, model: model, store: sharedStore))
+        let shared = SharedSync(cloud: cloud, model: model, store: sharedStore)
+        _shared = State(initialValue: shared)
         let runs = RunCenter(model: model, store: runStore)
         _runs = State(initialValue: runs)
+        let schedules = Schedules(store: FileScheduleStore(root: root), runs: runs)
+        _schedules = State(initialValue: schedules)
         system = SystemBridge(model: model, runs: runs)
         // UI tests: no Live Activity over the screenshots, no snapshot for the real widgets.
         system.liveActivities = !uiTest
+        background = Background(model: model, cloud: cloud, sync: sync, shared: shared, schedules: schedules, system: system, nav: nav)
+        // UI tests never sync or run by themselves.
+        if !uiTest { background.register() }
         IntentBridge.services = IntentBridge.Services(model: model, runs: runs, system: system, nav: nav)
         Self.styleNavigationBars()
     }
@@ -130,6 +140,8 @@ struct HITOPApp: App {
                 .environment(sync)
                 .environment(cloudUI)
                 .environment(runs)
+                .environment(schedules)
+                .environment(\.backgroundWork, background)
                 .environment(ai)
                 .onOpenURL { nav.open(url: $0) }
                 .preferredColorScheme(.dark)
