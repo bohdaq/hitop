@@ -344,7 +344,7 @@ final class LibrarySync {
     private func applyEnvironments(_ it: JSONAny) {
         let data = it["data"] ?? .null
         let secrets = it["secrets"] ?? .null
-        let list: [SavedEnvironment] = (data["environments"]?.array ?? []).compactMap { j in
+        let list: [SavedEnvironment] = (data["environments"]?.array ?? []).compactMap { j -> SavedEnvironment? in
             guard var e = try? j.decode(SavedEnvironment.self) else { return nil }
             // Secret values: the server's, else the ones this device already has.
             for n in e.secrets {
