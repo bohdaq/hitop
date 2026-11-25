@@ -210,17 +210,18 @@ final class FakeCloud: CloudTransport, @unchecked Sendable {
             } else if at("GET /v1/auth/methods") != nil {
                 return reply(200, .object(["password": .object(["enabled": .bool(false)]), "emailCode": .bool(true), "passkey": .bool(true), "sso": .null,
                                            "google": .bool(methods.google), "github": .bool(methods.github), "apple": .bool(methods.apple)]))
-            } else if let a = at("POST /v1/auth/:/start"), case let kind = a[0], ["google", "github", "apple"].contains(kind) {
-                guard let b = body?.object, Set(b.keys).isSubset(of: ["challenge", "returnTo"]), let challenge = b["challenge"]?.string else {
+            } else if let a = at("POST /v1/auth/:/start"), case let kind = a[0], ["google", "github", "apple", "sso"].contains(kind) {
+                guard let b = body?.object, Set(b.keys).isSubset(of: kind == "sso" ? ["challenge", "returnTo", "email"] : ["challenge", "returnTo"]), let challenge = b["challenge"]?.string else {
                     return fail(400, "bad_request", "invalid JSON body")
                 }
-                let off = kind == "google" ? !methods.google : kind == "github" ? !methods.github : !methods.apple
+                if kind == "sso", !(b["email"]?.string ?? "").hasSuffix("@acme.test") { return fail(404, "org_sso_off", "no organization signs in with single sign-on for this address") }
+                let off = kind == "sso" ? false : kind == "google" ? !methods.google : kind == "github" ? !methods.github : !methods.apple
                 if off { return fail(404, "provider_off", "sign-in with \(kind) isn't configured on this server") }
                 if let r = b["returnTo"]?.string, !r.isEmpty, refusesAppReturn || r != HitopCloud.returnTo {
                     return fail(400, "bad_request", "returnTo must be http://127.0.0.1:<port>/... or a page of an allowed web origin")
                 }
                 let code = "code-\(next())"
-                flows[code] = (challenge, signInEmail)
+                flows[code] = (challenge, kind == "sso" ? b["email"]!.string! : signInEmail)
                 return reply(200, .object(["url": .string("\(Self.server)/authorize/\(kind)?code=\(code)"), "expiresAt": .number(Double(now + 600))]))
             } else if let a = at("POST /v1/auth/:/finish"), case let kind = a[0] {
                 guard let b = body?.object, Set(b.keys) == ["code", "verifier"], let code = b["code"]?.string, let verifier = b["verifier"]?.string else {
@@ -648,6 +649,14 @@ extension FakeCloud {
                 }
             }
         }
+        if let a = at("DELETE /v1/workspaces/:") {
+            switch space(a[0], "owner") {
+            case let .failure(r): return r
+            case .success:
+                spaces[a[0]] = nil
+                return reply(200, .object(["deleted": .string(a[0])]))
+            }
+        }
         if let a = at("DELETE /v1/workspaces/:/members/:") {
             guard keys(["epoch", "wraps"], required: ["epoch", "wraps"]) == nil else {
                 return fail(400, "bad_request", "removing a member needs the rotated key: {\"epoch\": current + 1, \"wraps\": [...]}")
@@ -788,6 +797,26 @@ extension FakeCloud {
         if let a = at("GET /v1/orgs/:/environments") {
             if a[0].hasPrefix("personal-") { return fail(400, "bad_request", "a personal organization has no team environments: your own are in your library") }
             return reply(200, .object(["environments": .array(a[0] == "org-acme" ? teamEnvironments : [])]))
+        }
+        if let a = at("PUT /v1/orgs/:/environments/:") ?? at("DELETE /v1/orgs/:/environments/:") {
+            if a[0] != "org-acme" { return fail(404, "not_found", "no such organization") }
+            let i = teamEnvironments.firstIndex { $0["id"]?.string == a[1] }
+            let cur = i.map { teamEnvironments[$0] }
+            let seen = cur?["version"]?.int ?? 0
+            if at("DELETE /v1/orgs/:/environments/:") != nil {
+                guard let i else { return reply(200, .object(["deleted": .bool(true)])) }
+                if query["baseVersion"].flatMap({ Int($0) }) != seen { return fail(409, "conflict", "changed", ["current": cur!]) }
+                teamEnvironments.remove(at: i)
+                return reply(200, .object(["deleted": .bool(true)]))
+            }
+            guard let data = body?["data"] else { return fail(400, "bad_request", "data") }
+            for n in data["secrets"]?.array ?? [] {
+                if let n = n.string, let v = data["variables"]?[n]?.string, !v.isEmpty { return fail(400, "bad_request", "secret values stay on your devices: send secret variables empty") }
+            }
+            if body?["baseVersion"]?.int != seen { return fail(409, "conflict", "changed", ["current": cur ?? .null]) }
+            let item: JSONAny = .object(["id": .string(a[1]), "version": .number(Double(seen + 1)), "updatedBy": .string(users[uid]?.email ?? ""), "data": data])
+            if let i { teamEnvironments[i] = item } else { teamEnvironments.append(item) }
+            return reply(200, .object(["id": .string(a[1]), "version": .number(Double(seen + 1))]))
         }
         return nil
     }

@@ -98,6 +98,7 @@ struct ShareSheet: View {
     @State private var code: String?
     @State private var removing: WorkspaceMember?
     @State private var trusting: MemberKey?
+    @State private var deleting = false
 
     private var name: String { model.collection(collectionID)?.name ?? "Collection" }
     private var link: SharedLink? { shared.link(collectionID) }
@@ -122,6 +123,24 @@ struct ShareSheet: View {
                         if owner { inviteSection }
                         membersSection(info)
                         if owner { invitesSection(info) }
+                        if owner {
+                            Section {
+                                Button("Delete for everyone", role: .destructive) { deleting = true }.frame(minHeight: 44).disabled(busy)
+                                    .accessibilityIdentifier("delete-shared")
+                                    .confirmationDialog("Delete \(name) for everyone?", isPresented: $deleting, titleVisibility: .visible) {
+                                        Button("Delete for everyone", role: .destructive) {
+                                            run("delete") {
+                                                try await shared.deleteWorkspace(collectionID)
+                                                note = "Deleted for everyone. It stays on this device only."
+                                                self.info = nil
+                                            }
+                                        }
+                                    } message: {
+                                        Text("It is gone from the server for every member. Copies on their devices stay there. Here it stays on this device only.")
+                                    }
+                            }
+                            .listRowBackground(Theme.surface)
+                        }
                     } else if link?.gone ?? false {
                         Text("This collection is no longer shared with you: its copy stays on this device.").font(Typo.caption).foregroundStyle(Theme.textMuted)
                             .listRowBackground(Theme.surface)
@@ -254,7 +273,22 @@ struct ShareSheet: View {
                     HStack {
                         Text(m.email).font(Typo.row).foregroundStyle(Theme.textRow)
                         Spacer()
-                        Text(m.role.capitalized).font(Typo.geist(12, .semibold)).foregroundStyle(Theme.textMuted)
+                        if owner && !m.runner && m.email != cloud.account?.email {
+                            Menu {
+                                Picker("Role", selection: Binding(get: { m.role }, set: { r in changeRole(m, r) })) {
+                                    Text("Editor").tag("editor")
+                                    Text("Viewer").tag("viewer")
+                                    Text("Owner").tag("owner")
+                                }
+                            } label: {
+                                Text("\(m.role.capitalized) ▾").font(Typo.geist(12, .semibold)).frame(minWidth: 44, minHeight: 44)
+                            }
+                            .disabled(busy)
+                            .accessibilityLabel("Role of \(m.email): \(m.role)")
+                            .accessibilityIdentifier("role-\(m.email)")
+                        } else {
+                            Text(m.role.capitalized).font(Typo.geist(12, .semibold)).foregroundStyle(Theme.textMuted)
+                        }
                     }
                     ForEach(m.keys) { k in keyRow(k, owner: m.email) }
                 }
@@ -352,6 +386,14 @@ struct ShareSheet: View {
             }
         } catch {
             self.error = StoreText.withoutPlanLink(error.localizedDescription)
+        }
+    }
+
+    private func changeRole(_ m: WorkspaceMember, _ role: String) {
+        guard role != m.role else { return }
+        run("role") {
+            try await shared.setRole(collectionID, userId: m.userId, role: role)
+            note = "\(m.email) is now \(role)."
         }
     }
 
@@ -675,5 +717,92 @@ struct NoticeText: View {
             }
         }
         .accessibilityElement(children: .combine)
+    }
+}
+
+// MARK: - Comments
+
+/// Comments on a request of a shared collection: end-to-end encrypted files that sync with it.
+struct CommentsSheet: View {
+    var collectionID: UInt64
+    var requestID: UInt64
+    @Environment(SharedSync.self) private var shared
+    @Environment(AppModel.self) private var model
+    @Environment(\.dismiss) private var dismiss
+    @State private var list: [SharedSync.Comment] = []
+    @State private var text = ""
+    @State private var error: String?
+    @State private var busy = false
+
+    private var viewer: Bool { model.isReadOnly(collectionID) || (shared.link(collectionID)?.gone ?? true) }
+
+    var body: some View {
+        NavigationStack {
+            List {
+                if let error {
+                    Text(error).font(Typo.caption).foregroundStyle(Theme.danger).accessibilityIdentifier("comment-error").listRowBackground(Theme.surface)
+                }
+                Section {
+                    if list.isEmpty { Text("No comments yet.").font(Typo.caption).foregroundStyle(Theme.textMuted).frame(minHeight: 44) }
+                    ForEach(list) { c in
+                        VStack(alignment: .leading, spacing: 4) {
+                            HStack {
+                                Text(c.author).font(Typo.geist(12, .semibold)).foregroundStyle(Theme.textSoft)
+                                Spacer()
+                                Text(when(c.at)).font(Typo.caption).foregroundStyle(Theme.textMuted)
+                            }
+                            Text(c.text).font(Typo.body).foregroundStyle(Theme.text).textSelection(.enabled)
+                            if c.mine && !viewer {
+                                Button("Delete", role: .destructive) { act { try await shared.deleteComment(collectionID, c) } }
+                                    .font(Typo.caption).buttonStyle(.borderless).frame(minHeight: 44).disabled(busy)
+                                    .accessibilityLabel("Delete your comment")
+                            }
+                        }
+                        .accessibilityElement(children: .contain)
+                        .accessibilityIdentifier("comment")
+                    }
+                }
+                .listRowBackground(Theme.surface)
+                if !viewer {
+                    Section {
+                        TextField("Add a comment", text: $text, axis: .vertical).lineLimit(2...6).accessibilityIdentifier("comment-text")
+                        Button("Send") { act { try await shared.addComment(collectionID, request: requestID, text); text = "" } }
+                            .frame(minHeight: 44)
+                            .disabled(busy || text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                            .accessibilityIdentifier("comment-send")
+                    } footer: {
+                        Text("Everyone the collection is shared with reads it. End-to-end encrypted.").font(Typo.caption)
+                    }
+                    .listRowBackground(Theme.surface)
+                }
+            }
+            .scrollContentBackground(.hidden)
+            .background(Theme.ground.ignoresSafeArea())
+            .navigationTitle("Comments")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar { ToolbarItem(placement: .confirmationAction) { Button("Done") { dismiss() }.accessibilityIdentifier("comments-done") } }
+            .task {
+                load()
+                _ = try? await shared.syncNow(collectionID)
+                load()
+            }
+        }
+    }
+
+    private func load() { list = shared.comments(collectionID, request: requestID) }
+
+    private func when(_ at: String) -> String {
+        guard let d = try? Date(at, strategy: Date.ISO8601FormatStyle(includingFractionalSeconds: true)) else { return at }
+        return d.formatted(date: .abbreviated, time: .shortened)
+    }
+
+    private func act(_ f: @escaping @MainActor () async throws -> Void) {
+        busy = true
+        error = nil
+        Task {
+            do { try await f() } catch { self.error = StoreText.withoutPlanLink(error.localizedDescription) }
+            busy = false
+            load()
+        }
     }
 }

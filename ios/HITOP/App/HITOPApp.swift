@@ -92,7 +92,7 @@ struct HITOPApp: App {
         let sync = LibrarySync(cloud: cloud, model: model, stateStore: syncState, deviceLabel: DeviceInfo.label)
         _sync = State(initialValue: sync)
         _cloudUI = State(initialValue: CloudUI(web: web))
-        let shared = SharedSync(cloud: cloud, model: model, store: sharedStore)
+        let shared = SharedSync(cloud: cloud, model: model, store: sharedStore, teamFile: root.appendingPathComponent("team-environments.json"))
         _shared = State(initialValue: shared)
         let runs = RunCenter(model: model, store: runStore)
         _runs = State(initialValue: runs)

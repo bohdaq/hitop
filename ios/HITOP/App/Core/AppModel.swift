@@ -55,6 +55,14 @@ final class AppModel {
 
     /// Which collections are shared isn't known (the list can't be used): nothing syncs until it is.
     var sharingProblem: StateFileProblem?
+    /// A team environment was changed or deleted here (`TeamEnvironments` sends it).
+    @ObservationIgnored var onTeamChange: (@MainActor (String) -> Void)?
+    @ObservationIgnored var onTeamGone: (@MainActor (String) -> Void)?
+    /// A collection that stays on this device only (LibrarySync).
+    @ObservationIgnored var keepHere: (@MainActor (UInt64) -> Void)?
+    /// Secret values shared end to end with a collection, by environment name: in memory only. They
+    /// fill a secret only where this device has no value of its own (as the web app).
+    @ObservationIgnored var sharedValues: [UInt64: [String: [String: String]]] = [:]
     @ObservationIgnored var reloadSharing: (@MainActor () -> Void)?
     /// Sets a damaged list aside (LibrarySync, once no collection can reach the library by it).
     @ObservationIgnored var startSharingOver: (@MainActor () throws -> Void)?
@@ -574,14 +582,45 @@ final class AppModel {
             return
         }
         guard let i = environments.firstIndex(where: { $0.id == e.id }) else { return }
+        let before = environments[i]
         environments[i] = e
         persistEnvironments()
+        if e.extras["team"] != nil && TeamEnvironments.data(of: e, over: nil) != TeamEnvironments.data(of: before, over: nil) { onTeamChange?(e.id) }
+    }
+
+    /// The team's version, or none, in place of the one here.
+    func replaceTeam(_ id: String, with e: SavedEnvironment?) {
+        guard let i = environments.firstIndex(where: { $0.id == id }) else { return }
+        fromCloud {
+            if let e { environments[i] = e } else { environments.remove(at: i) }
+            if e == nil && state.activeEnvironmentID == id {
+                state.activeEnvironmentID = nil
+                persistState()
+            }
+            persistEnvironments()
+        }
+        // One that is this person's own again goes to their library.
+        if let e, e.extras["team"] == nil { onLibraryChange?() }
+    }
+
+    /// Shares an environment with an organization (nil: stops; it stays this person's own). Secret
+    /// values stay on this device.
+    func share(environment id: String, with org: String?) {
+        guard let i = environments.firstIndex(where: { $0.id == id }), environments[i].extras["team"]?.string != org else { return }
+        let stopped = environments[i].extras["team"] != nil
+        environments[i].extras["team"] = org.map(JSONAny.string)
+        environments[i].extras["org"] = org.map(JSONAny.string)
+        environments[i].extras["updatedBy"] = nil
+        if org != nil { environments[i].numericID = false }
+        persistEnvironments()
+        if org != nil { onTeamChange?(id) } else if stopped { onTeamGone?(id) }
     }
 
     func deleteEnvironment(_ id: String) {
         guard let e = environments.first(where: { $0.id == id }) else { return }
         for name in e.secrets { vault.setValue(nil, environment: id, name: name) }
         environments.removeAll { $0.id == id }
+        if e.extras["team"] != nil { onTeamGone?(id) }
         if state.activeEnvironmentID == id { state.activeEnvironmentID = nil }
         persistEnvironments()
         persistState()
@@ -641,7 +680,8 @@ final class AppModel {
             ctx.environmentName = env.name
             ctx.environment = env.variables
             for n in env.secrets {
-                ctx.environmentSecrets[n] = vault.value(environment: env.id, name: n) ?? ""
+                let own = vault.value(environment: env.id, name: n) ?? ""
+                ctx.environmentSecrets[n] = own.isEmpty ? collectionID.flatMap { sharedValues[$0]?[env.name]?[n] } ?? "" : own
                 ctx.environment.removeValue(forKey: n)
             }
             ctx.secretNames = Set(env.secrets)

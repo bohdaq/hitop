@@ -93,6 +93,11 @@ final class LibrarySync {
         loadState()
         forgetDamaged()
         status.lastSync = state.lastSync
+        model.keepHere = { [weak self] id in
+            guard let self, !isLocalOnly(id) else { return }
+            state.localOnly.append(String(id))
+            save()
+        }
         model.onLibraryChange = { [weak self] in self?.changed() }
         cloud.onAccountChange = { [weak self] in
             guard let self else { return }

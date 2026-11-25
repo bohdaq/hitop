@@ -407,4 +407,174 @@ final class SharedSyncTests: XCTestCase {
         XCTAssertEqual(ada.model.collection(aid), before)
         XCTAssertFalse(ada.model.collections.contains { $0.name.contains("(this iPhone)") })
     }
+
+    // MARK: Roles, comments, team environments, company sign-in
+
+    func testCommentsGoBothWaysAndOnlyTheAuthorDeletes() async throws {
+        let (aid, gid, _) = try await shareWithGrace()
+        let mine = try XCTUnwrap(request(ada, aid, "List orders"))
+        let hers = try XCTUnwrap(request(grace, gid, "List orders"))
+        try await ada.shared.addComment(aid, request: mine.id, "  Why \"GET\"?\nhttps://x.example ")
+        try await grace.shared.syncNow(gid)
+        let seen = grace.shared.comments(gid, request: hers.id)
+        XCTAssertEqual(seen.map(\.text), ["Why \"GET\"?\nhttps://x.example"])
+        XCTAssertEqual(seen.map(\.author), [ada.email])
+        XCTAssertEqual(seen.map(\.mine), [false])
+        XCTAssertTrue(grace.shared.comments(gid, request: request(grace, gid, "Create order")!.id).isEmpty)
+        do {
+            try await grace.shared.deleteComment(gid, seen[0])
+            XCTFail("another person's comment")
+        } catch {}
+        try await grace.shared.addComment(gid, request: hers.id, "Because")
+        try await ada.shared.syncNow(aid)
+        let both = ada.shared.comments(aid, request: mine.id)
+        XCTAssertEqual(both.map(\.text), ["Why \"GET\"?\nhttps://x.example", "Because"])
+        // Editing the request keeps them.
+        var edited = mine
+        edited.url = "https://api.example.com/v2/orders"
+        ada.model.save(edited)
+        try await ada.shared.syncNow(aid)
+        XCTAssertEqual(ada.shared.comments(aid, request: mine.id).count, 2)
+        try await ada.shared.deleteComment(aid, both[0])
+        try await grace.shared.syncNow(gid)
+        XCTAssertEqual(grace.shared.comments(gid, request: hers.id).map(\.text), ["Because"])
+        XCTAssertEqual(grace.model.collection(gid)?.requests.count, 2, "comments are not requests")
+    }
+
+    func testAViewerReadsCommentsOnly() async throws {
+        let (aid, gid, _) = try await shareWithGrace("viewer")
+        try await ada.shared.addComment(aid, request: request(ada, aid, "List orders")!.id, "hello")
+        try await grace.shared.syncNow(gid)
+        let r = request(grace, gid, "List orders")!.id
+        XCTAssertEqual(grace.shared.comments(gid, request: r).count, 1)
+        do {
+            try await grace.shared.addComment(gid, request: r, "no")
+            XCTFail("a viewer wrote")
+        } catch {}
+    }
+
+    func testARoleChangesAndTheCollectionIsDeletedForEveryone() async throws {
+        let (aid, gid, _) = try await shareWithGrace("viewer")
+        let info = try await ada.shared.members(aid)
+        let g = try XCTUnwrap(info.members.first { $0.email == grace.email })
+        try await ada.shared.setRole(aid, userId: g.userId, role: "editor")
+        try await grace.shared.refreshWorkspaces()
+        XCTAssertFalse(grace.model.isReadOnly(gid))
+        do {
+            try await grace.shared.deleteWorkspace(gid)
+            XCTFail("an editor deleted it")
+        } catch {}
+        try await ada.shared.deleteWorkspace(aid)
+        XCTAssertNotNil(ada.model.collection(aid))
+        XCTAssertFalse(ada.model.isShared(aid))
+        await ada.library.sync()
+        XCTAssertTrue(ada.library.isLocalOnly(aid))
+        XCTAssertNil(ada.library.state.known["collection/\(aid)"], "it was end-to-end encrypted: not uploaded by itself")
+    }
+
+    private func acme(_ p: Phone) async throws {
+        try await p.signIn()
+        try await p.cloud.loadOrgs()
+        p.cloud.selectOrg("org-acme")
+        await p.shared.loadTeamEnvironments()
+    }
+
+    private func teamEnv(_ p: Phone) -> SavedEnvironment? { p.model.environments.first { $0.extras["team"] != nil } }
+
+    func testATeamEnvironmentIsSharedChangedAndDeleted() async throws {
+        try await acme(ada)
+        let e = ada.model.addEnvironment(name: "Staging")
+        ada.model.setVariable(e, name: "baseUrl", value: "https://one.test", secret: false)
+        ada.model.setVariable(ada.model.environments.first { $0.id == e.id }!, name: "token", value: "ada-only-secret", secret: true)
+        ada.model.share(environment: e.id, with: "org-acme")
+        await ada.shared.team.flush()
+        XCTAssertFalse(String(decoding: fake.teamEnvironments[0].canonical, as: UTF8.self).contains("ada-only-secret"))
+        XCTAssertFalse((ada.library.environmentsItem.data["environments"]?.array ?? []).contains { $0["id"]?.string == e.id })
+
+        try await acme(grace)
+        var g = try XCTUnwrap(teamEnv(grace))
+        XCTAssertEqual(g.variables["baseUrl"], "https://one.test")
+        XCTAssertEqual(g.secrets, ["token"])
+        XCTAssertEqual(grace.model.secretValue(g, "token"), "")
+        grace.model.setVariable(g, name: "baseUrl", value: "https://two.test", secret: false)
+        await grace.shared.team.flush()
+        await ada.shared.loadTeamEnvironments()
+        XCTAssertEqual(teamEnv(ada)?.variables["baseUrl"], "https://two.test")
+        XCTAssertEqual(ada.model.secretValue(teamEnv(ada)!, "token"), "ada-only-secret")
+
+        // Both change it: the first one stays, the other is told.
+        grace.model.setVariable(teamEnv(grace)!, name: "baseUrl", value: "https://grace.test", secret: false)
+        ada.model.setVariable(teamEnv(ada)!, name: "baseUrl", value: "https://ada.test", secret: false)
+        await grace.shared.team.flush()
+        await ada.shared.team.flush()
+        XCTAssertEqual(teamEnv(ada)?.variables["baseUrl"], "https://grace.test")
+        XCTAssertTrue(ada.shared.notices.contains { $0.text.contains("changed by \(grace.email)") })
+
+        g = teamEnv(grace)!
+        grace.model.deleteEnvironment(g.id)
+        await grace.shared.team.flush()
+        XCTAssertTrue(fake.teamEnvironments.isEmpty)
+        await ada.shared.loadTeamEnvironments()
+        XCTAssertNil(teamEnv(ada))
+    }
+
+    func testStoppingLeavesItToThePersonAndOthersLoseIt() async throws {
+        try await acme(ada)
+        let e = ada.model.addEnvironment(name: "Mine")
+        ada.model.share(environment: e.id, with: "org-acme")
+        await ada.shared.team.flush()
+        XCTAssertEqual(fake.teamEnvironments.count, 1)
+        ada.model.share(environment: e.id, with: nil)
+        await ada.shared.team.flush()
+        XCTAssertTrue(fake.teamEnvironments.isEmpty)
+        XCTAssertTrue((ada.library.environmentsItem.data["environments"]?.array ?? []).contains { $0["id"]?.string == e.id })
+    }
+
+    func testARefusedTeamEnvironmentStaysThePersonsOwn() async throws {
+        try await acme(ada)
+        let e = ada.model.addEnvironment(name: "Mine")
+        ada.model.share(environment: e.id, with: "org-other")
+        await ada.shared.team.flush()
+        XCTAssertNil(teamEnv(ada))
+        XCTAssertNotNil(ada.model.environments.first { $0.id == e.id })
+        XCTAssertTrue(ada.shared.notices.contains { $0.text.contains("wasn't saved") })
+    }
+
+    /// A team environment missing here (a lost file) is never deleted for the team.
+    func testNothingIsDeletedForTheTeamByALostFile() async throws {
+        fake.teamEnvironments = [.object(["id": .string("t1"), "version": .number(1), "data": .object(["name": .string("Acme"), "variables": .object([:]), "extra": .string("kept")])])]
+        try await acme(ada)
+        ada.model.applyTeam(environments: [], org: "org-acme")
+        await ada.shared.team.flush()
+        await ada.shared.loadTeamEnvironments()
+        XCTAssertEqual(fake.teamEnvironments.count, 1)
+        XCTAssertNotNil(teamEnv(ada))
+        ada.model.setVariable(teamEnv(ada)!, name: "a", value: "b", secret: false)
+        await ada.shared.team.flush()
+        XCTAssertEqual(fake.teamEnvironments[0]["data"]?["extra"]?.string, "kept", "keys this app doesn't know stay")
+    }
+
+    func testSharedValuesFillOnlyMissingSecrets() async throws {
+        let c = ada.model.addCollection(name: "c")
+        let e = ada.model.addEnvironment(name: "Prod")
+        ada.model.setVariable(e, name: "token", value: "", secret: true)
+        ada.model.sharedValues[c.id] = ["Prod": ["token": "from-share", "plain": "x"]]
+        let env = ada.model.environments.first { $0.id == e.id }!
+        let ctx = ada.model.context(for: c.id, environment: env)
+        XCTAssertEqual(ctx.environmentSecrets, ["token": "from-share"])
+        XCTAssertEqual(ada.model.context(for: nil, environment: env).environmentSecrets["token"], "")
+        ada.model.setVariable(env, name: "token", value: "own", secret: true)
+        XCTAssertEqual(ada.model.context(for: c.id, environment: env).environmentSecrets["token"], "own")
+    }
+
+    func testCompanySignInGoesByTheAddress() async throws {
+        do {
+            _ = try await ada.cloud.startBrowserSignIn("sso", server: FakeCloud.server, email: "ada@nowhere.test")
+            XCTFail("no such organization")
+        } catch let e as CloudError { XCTAssertEqual(e.code, "no_sso") }
+        let start = try await ada.cloud.startBrowserSignIn("sso", server: FakeCloud.server, email: "ada@acme.test")
+        let code = URLComponents(url: start.url, resolvingAgainstBaseURL: false)!.queryItems!.first { $0.name == "code" }!.value!
+        try await ada.cloud.finishBrowserSignIn(code)
+        XCTAssertEqual(ada.cloud.account?.email, "ada@acme.test")
+    }
 }

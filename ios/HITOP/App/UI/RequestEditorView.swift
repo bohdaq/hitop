@@ -14,6 +14,7 @@ struct RequestScreen: View {
     @Environment(AppModel.self) private var model
     @Environment(\.dismiss) private var dismiss
     @State private var showResponse = false
+    @State private var commenting = false
     @State private var detent: PresentationDetent = .fraction(0.86)
     @State private var naming: NameTarget?
     @State private var moving: UInt64?
@@ -58,6 +59,9 @@ struct RequestScreen: View {
                         Button("Rename", systemImage: "pencil") { naming = .request(id) }
                         Button("Duplicate", systemImage: "plus.square.on.square") { model.duplicateRequest(id) }
                         Button("Move to…", systemImage: "folder") { moving = id }
+                    }
+                    if model.isShared(model.collectionOf(request: id)?.id) {
+                        Button("Comments", systemImage: "bubble.left") { commenting = true }
                     }
                     Button(model.isPinned(request: id) ? "Unpin" : "Pin", systemImage: "pin") { model.togglePin(request: id) }
                     if editor.isDirty {
@@ -105,6 +109,9 @@ struct RequestScreen: View {
         }
         .safeAreaBar(edge: .bottom) {
             if !keyboardUp { bottomBar(editor) }
+        }
+        .sheet(isPresented: $commenting) {
+            if let c = model.collectionOf(request: id) { CommentsSheet(collectionID: c.id, requestID: id) }
         }
         .sheet(isPresented: $showResponse) {
             ResponseSheet(editor: editor)

@@ -251,6 +251,7 @@ struct AuthMethods: Hashable, Sendable {
         case "apple": "Apple"
         case "google": "Google"
         case "github": "GitHub"
+        case "sso": "your company"
         default: kind
         }
     }
@@ -457,10 +458,12 @@ final class HitopCloud {
     /// Starts Continue with Apple/Google/GitHub: the provider page to open. `paste`: the server
     /// didn't take the app's return address (one older than this app), so its page shows a code to
     /// paste instead.
-    func startBrowserSignIn(_ kind: String, server: String, returnTo: String? = HitopCloud.returnTo) async throws -> (url: URL, paste: Bool) {
+    func startBrowserSignIn(_ kind: String, server: String, returnTo: String? = HitopCloud.returnTo, email: String? = nil) async throws -> (url: URL, paste: Bool) {
         let server = try Self.normalize(server)
         let (verifier, challenge) = CloudCrypto.verifier()
         var body: [String: JSONAny] = ["challenge": .string(challenge)]
+        // Company sign-in: the address finds the organization's provider.
+        if kind == "sso", let email, !email.isEmpty { body["email"] = .string(email) }
         if let returnTo { body["returnTo"] = .string(returnTo) }
         var r = try await http(server, "POST", "/v1/auth/\(kind)/start", body: .object(body))
         var paste = returnTo == nil
@@ -468,6 +471,9 @@ final class HitopCloud {
             body.removeValue(forKey: "returnTo")
             r = try await http(server, "POST", "/v1/auth/\(kind)/start", body: .object(body))
             paste = true
+        }
+        if r.status == 404, kind == "sso" {
+            throw CloudError.http(status: 404, code: "no_sso", message: (email ?? "").isEmpty ? "This server has no single sign-on." : "There is no single sign-on for this address's organization here.")
         }
         if r.status == 404 { throw CloudError.http(status: 404, code: "no_provider", message: "This server has no sign-in with \(AuthMethods.name(kind)).") }
         guard r.status == 200 else { throw Self.error(r) }

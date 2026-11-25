@@ -90,6 +90,30 @@ final class SharedFlowTests: XCTestCase {
     }
 
     @MainActor
+    func testACommentIsWritten() {
+        guard UIDevice.current.userInterfaceIdiom == .phone else { return }
+        let app = launch("-UITestSharedJoined")
+        let team = app.el("collection-Team API")
+        wait(team, 60)
+        waitLabel(team, contains: "Shared with Acme")
+        if team.value as? String != "expanded" { team.tap() }
+        let list = app.el("request-List orders")
+        wait(list)
+        list.tap()
+        app.buttons["More"].firstMatch.tap()
+        let comments = app.buttons["Comments"].firstMatch
+        wait(comments)
+        comments.tap()
+        let field = app.el("comment-text")
+        wait(field)
+        field.tap()
+        field.typeText("Looks right")
+        app.el("comment-send").tap()
+        wait(app.staticTexts["Looks right"].firstMatch, 30)
+        shot(app, "45-comments")
+    }
+
+    @MainActor
     func testAConflictChoiceAndAViewerReadsOnly() {
         guard UIDevice.current.userInterfaceIdiom == .phone else { return }
         let app = launch("-UITestSharedJoined")

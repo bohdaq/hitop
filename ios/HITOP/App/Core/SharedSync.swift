@@ -292,11 +292,17 @@ final class SharedSync {
     @ObservationIgnored private var running: Set<UInt64> = []
     @ObservationIgnored private var again: Set<UInt64> = []
 
-    init(cloud: HitopCloud, model: AppModel, store: SharedSyncStore) {
+    @ObservationIgnored private(set) var team: TeamEnvironments!
+
+    /// `teamFile`: team-environments.json (nil: in memory, tests).
+    init(cloud: HitopCloud, model: AppModel, store: SharedSyncStore, teamFile: URL? = nil) {
         self.cloud = cloud
         self.model = model
         self.store = store
         state = SharedState()
+        team = TeamEnvironments(cloud: cloud, model: model, file: teamFile) { [weak self] n in
+            if let self, !notices.contains(n) { notices.insert(n, at: 0) }
+        }
         loadState()
         model.onSharedChange = { [weak self] id in self?.schedule(id) }
         model.onCollectionDeleted = { [weak self] id in self?.forget(id) }
@@ -359,6 +365,7 @@ final class SharedSync {
         for (id, l) in state.links {
             guard let cid = UInt64(id) else { continue }
             roles[cid] = l.gone ? "removed" : l.role
+            if l.gone { model.sharedValues[cid] = nil }
             orgs[cid] = .some(l.org.flatMap { teams.contains($0) ? $0 : nil })
         }
         if model.sharedRoles != roles { model.sharedRoles = roles }
@@ -700,7 +707,7 @@ final class SharedSync {
                 }
                 if !retry {
                     synced(cid)
-                    try? await refreshShares(ws)
+                    try? await refreshShares(ws, id)
                     return result
                 }
             }
@@ -917,6 +924,7 @@ final class SharedSync {
         pending[id]?.cancel()
         statuses[id] = nil
         conflicts[id] = nil
+        model.sharedValues[id] = nil
         save()
     }
 
@@ -1026,6 +1034,82 @@ final class SharedSync {
     func setRole(_ id: UInt64, userId: String, role: String) async throws {
         let ws = try live(id).workspace
         _ = try await api("PUT", "/v1/workspaces/\(ws)/members/\(userId)", .object(["role": .string(role)]))
+        try? await refreshWorkspaces()
+    }
+
+    /// Deletes the shared collection for everyone. It stays on this device only: it was end-to-end
+    /// encrypted, so it doesn't go to the library by itself.
+    func deleteWorkspace(_ id: UInt64) async throws {
+        let ws = try live(id).workspace
+        _ = try await api("DELETE", "/v1/workspaces/\(ws)")
+        model.keepHere?(id)
+        forget(id)
+        applyRoles()
+        try? await refreshWorkspaces()
+    }
+
+    // MARK: Comments (`comments/<request file>/<id>.yaml`, one file each, as the web app)
+
+    struct Comment: Hashable, Sendable, Identifiable {
+        var path: String
+        var author: String
+        var at: String
+        var text: String
+        var mine: Bool
+        var id: String { path }
+    }
+
+    static let maxComment = 10_000
+
+    /// The request's path in the folder (`orders/create-order`), as hitop-core names its file.
+    private func requestPath(_ id: UInt64, _ request: UInt64) throws -> String? {
+        guard var c = model.collection(id), let i = c.requests.firstIndex(where: { $0.id == request }) else { return nil }
+        if let f = c.requests[i].file, !f.isEmpty { return f }
+        // Its file is the one that holds a mark put in its URL (names don't depend on the URL).
+        let mark = "https://mark.invalid/\(try SyncCore.randomId())"
+        c.requests[i].url = mark
+        return try SyncCore.toFiles(c).first { $0.key.hasPrefix("requests/") && $0.value.contains(mark) }.map { String($0.key.dropFirst("requests/".count).dropLast(".yaml".count)) }
+    }
+
+    func comments(_ id: UInt64, request: UInt64) -> [Comment] {
+        guard let l = link(id), let file = (try? requestPath(id, request)) ?? nil else { return [] }
+        let prefix = "comments/\(file)/"
+        let me = cloud.account?.email
+        return store.files(l.workspace).filter { $0.key.hasPrefix(prefix) && !$0.key.dropFirst(prefix.count).contains("/") }.map { path, text in
+            // Written by hand: shown as text.
+            let o = (try? JSONDecoder().decode(JSONAny.self, from: Data(text.utf8))).flatMap { $0.object != nil ? $0 : nil } ?? .object(["text": .string(text)])
+            let author = o["author"]?.string
+            return Comment(path: path, author: author ?? "?", at: o["at"]?.string ?? "", text: o["text"]?.string ?? "", mine: me != nil && author == me)
+        }.sorted { ($0.at, $0.path) < ($1.at, $1.path) }
+    }
+
+    func addComment(_ id: UInt64, request: UInt64, _ text: String) async throws {
+        let l = try live(id)
+        guard l.role != "viewer" else { throw SharedError.message("Viewers can read comments but not write them") }
+        guard let file = try requestPath(id, request) else { throw SharedError.message("Save the request first: comments belong to a saved request") }
+        let body = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !body.isEmpty else { return }
+        guard body.count <= Self.maxComment else { throw SharedError.message("A comment is at most 10,000 characters") }
+        let (a, _) = try me()
+        let now = Date()
+        let comment: JSONAny = .object(["author": .string(a.email), "at": .string(now.formatted(Date.ISO8601FormatStyle(includingFractionalSeconds: true))),
+                                        "request": .string(model.request(request)?.name ?? ""), "text": .string(body)])
+        // YAML is a superset of JSON: the file is JSON, readable as YAML by every hitop.
+        let e = JSONEncoder()
+        e.outputFormatting = [.prettyPrinted, .sortedKeys, .withoutEscapingSlashes]
+        var files = try localFiles(id)
+        files["comments/\(file)/\(Int(now.timeIntervalSince1970 * 1000))-\(try SyncCore.randomId().prefix(8)).yaml"] = String(decoding: try e.encode(comment), as: UTF8.self) + "\n"
+        try store.saveFiles(l.workspace, files)
+        try await syncNow(id)
+    }
+
+    func deleteComment(_ id: UInt64, _ c: Comment) async throws {
+        let l = try live(id)
+        guard c.mine, l.role != "viewer" else { throw SharedError.message("Only your own comments can be deleted") }
+        var files = try localFiles(id)
+        files[c.path] = nil
+        try store.saveFiles(l.workspace, files)
+        try await syncNow(id)
     }
 
     // MARK: Shared environment values (HITOP Cloud C4)
@@ -1127,33 +1211,20 @@ final class SharedSync {
     }
 
     /// After a sync: as a sharer, hand shared environment values to new devices.
-    private func refreshShares(_ ws: String) async throws {
+    private func refreshShares(_ ws: String, _ id: UInt64) async throws {
         let (opened, _) = try await openShares(ws)
+        model.sharedValues[id] = Dictionary(opened.compactMap { o in
+            o.content["environment"]?.string.map { ($0, (o.content["values"]?.object ?? [:]).compactMapValues(\.string)) }
+        }) { _, newer in newer }
         if !opened.isEmpty { _ = try await resealShares(ws) }
     }
 
     // MARK: Team environments (sync-server teamenvs.rs)
 
-    /// The current organization's team environments (`GET /v1/orgs/:org/environments`, secret
-    /// values never there: each member keeps theirs in this device's Keychain), shown in the
-    /// environment pill. Read here; edited in the web app.
+    /// The current organization's team environments (`TeamEnvironments`), in the environment pill.
     func loadTeamEnvironments() async {
-        // Only the current organization's team environments are in the pill.
-        let current = cloud.signedIn ? cloud.currentOrg.flatMap { $0.personal ? nil : $0.id } : nil
-        model.dropTeamEnvironments(except: current)
-        guard cloud.signedIn, let org = cloud.currentOrg, !org.personal else { return }
-        guard let r = try? await api("GET", "/v1/orgs/\(org.id)/environments", allow: [400, 403, 404]), r.status == 200, let j = r.json else { return }
-        let list: [SavedEnvironment] = (j["environments"]?.array ?? []).compactMap { e in
-            guard let id = e["id"]?.string, var env = try? (e["data"] ?? .object([:])).decode(SavedEnvironment.self) else { return nil }
-            env.id = id
-            env.numericID = false
-            for n in env.secrets { env.variables[n] = nil }
-            env.extras["team"] = .string(org.id)
-            env.extras["org"] = .string(org.id)
-            if let by = e["updatedBy"]?.string { env.extras["updatedBy"] = .string(by) }
-            return env
-        }
-        model.applyTeam(environments: list, org: org.id)
+        team.pushDelay = pushDelay
+        await team.load()
     }
 
     func dismissNotice(_ notice: SharedNotice) { notices.removeAll { $0 == notice } }

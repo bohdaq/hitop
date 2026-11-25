@@ -399,7 +399,7 @@ struct SignInSheet: View {
     @Environment(CloudUI.self) private var ui
     @Environment(\.dismiss) private var dismiss
 
-    enum Step: Equatable { case providers, server, paste, finishing, devices }
+    enum Step: Equatable { case providers, server, sso, paste, finishing, devices }
 
     @State private var step: Step = .providers
     @State private var methods: AuthMethods?
@@ -410,6 +410,7 @@ struct SignInSheet: View {
     @State private var pageURL: URL?
     @State private var code = ""
     @State private var serverText = ""
+    @State private var workEmail = ""
     @State private var limit: DeviceLimit?
     @State private var deviceErrors: [String: String] = [:]
     @State private var busy = false
@@ -421,6 +422,7 @@ struct SignInSheet: View {
                     switch step {
                     case .providers: providers
                     case .server: serverStep
+                    case .sso: ssoStep
                     case .paste: pasteStep
                     case .finishing: finishing
                     case .devices: devicesStep
@@ -464,10 +466,17 @@ struct SignInSheet: View {
                 ForEach(methods.providers, id: \.self) { k in providerButton(k) }
             }
         } else {
-            Text("\(host) offers no sign-in this app has (Apple, Google or GitHub). Company single sign-on comes in a later version; until then sign in with the web or desktop app.")
+            Text("\(host) offers no sign-in this app has (Apple, Google or GitHub). If your company has single sign-on here, use that.")
                 .font(Typo.caption).foregroundStyle(Theme.textMuted)
                 .accessibilityIdentifier("no-methods")
         }
+        Button("Company single sign-on…") {
+            error = nil
+            step = .sso
+        }
+        .font(Typo.geist(14, .medium))
+        .frame(minHeight: 44)
+        .accessibilityIdentifier("company-sso")
         if let error {
             Text(error).font(Typo.caption).foregroundStyle(Theme.danger).accessibilityIdentifier("sign-in-error")
         }
@@ -527,6 +536,26 @@ struct SignInSheet: View {
         }
         .buttonStyle(.glassProminent).tint(Theme.accent)
         .accessibilityIdentifier("use-server")
+    }
+
+    @ViewBuilder
+    private var ssoStep: some View {
+        Button("‹ Back") { step = .providers }.font(Typo.geist(14, .medium))
+        Text("Company single sign-on").font(Typo.geist(22, .bold))
+        Text("Your work email finds your company's sign-in on \(host).")
+            .font(Typo.caption).foregroundStyle(Theme.textMuted)
+        TextField("you@company.com", text: $workEmail)
+            .textInputAutocapitalization(.never).autocorrectionDisabled().keyboardType(.emailAddress).textContentType(.emailAddress)
+            .font(Typo.mono(14))
+            .padding(12).card(radius: 14)
+            .accessibilityIdentifier("work-email")
+        if let error { Text(error).font(Typo.caption).foregroundStyle(Theme.danger).accessibilityIdentifier("sign-in-error") }
+        Button { Task { await begin("sso") } } label: {
+            Text("Continue").frame(maxWidth: .infinity, minHeight: 44)
+        }
+        .buttonStyle(.glassProminent).tint(Theme.accent)
+        .disabled(!workEmail.contains("@") || busy)
+        .accessibilityIdentifier("sso-continue")
     }
 
     @ViewBuilder
@@ -612,7 +641,7 @@ struct SignInSheet: View {
         busy = true
         defer { busy = false }
         do {
-            let start = try await cloud.startBrowserSignIn(k, server: cloud.settings.server)
+            let start = try await cloud.startBrowserSignIn(k, server: cloud.settings.server, email: k == "sso" ? workEmail.trimmingCharacters(in: .whitespaces) : nil)
             pageURL = start.url
             if start.paste {
                 step = .paste
@@ -642,7 +671,7 @@ struct SignInSheet: View {
             step = .devices
         } catch {
             self.error = error.localizedDescription
-            step = was == .paste ? .paste : .providers
+            step = was == .paste || was == .sso ? was : .providers
         }
     }
 

@@ -24,6 +24,9 @@ Releases before 1.2 are listed in ROADMAP.md (section 5) and on the GitHub Relea
 
 - OAuth 2.0 (client credentials, password, authorization code with PKCE and refresh), AWS Signature and Digest. Before, a request with one of
   these was sent without it; a preset the app doesn't know now stops the request and says so.
+- Shared collections: comments on requests, changing a member's role, deleting one for everyone (it stays on this device only), and secret
+  values shared with the collection fill secrets that have no value here. Team environments can be shared, changed and deleted.
+- Company single sign-on (by work email).
 - HITOP in the share sheet (text, an address, a file), HITOP Cloud syncing in the background, and collection runs on a schedule with a
   notification when one fails. iOS decides when background work happens.
 - **Security:** when the list of shared collections on the device can't be read, nothing is synced. Before, an end-to-end encrypted collection
