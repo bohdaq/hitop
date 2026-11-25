@@ -59,17 +59,27 @@ final class AccessibilityTests: XCTestCase {
 
     @MainActor
     private func audit(_ app: XCUIApplication, _ screen: String) {
-        do {
-            try app.performAccessibilityAudit { issue in
-                if !self.accepted(issue) {
-                    let e = issue.element
-                    self.found.append("[\(screen)] \(issue.auditType.debugName): \(issue.compactDescription) — "
-                        + "\(e.map { "\($0.elementType.rawValue) id=\($0.identifier) label=\($0.label)" } ?? "no element")")
+        // A busy simulator can fail to finish an audit (code -56). That says nothing about the
+        // screen, so only that error is tried again; an audit that never finishes still fails,
+        // and issues found by an unfinished attempt are kept.
+        for attempt in 1...3 {
+            do {
+                try app.performAccessibilityAudit { issue in
+                    if !self.accepted(issue) {
+                        let e = issue.element
+                        let text = "[\(screen)] \(issue.auditType.debugName): \(issue.compactDescription) — "
+                            + "\(e.map { "\($0.elementType.rawValue) id=\($0.identifier) label=\($0.label)" } ?? "no element")"
+                        if !self.found.contains(text) { self.found.append(text) }
+                    }
+                    return true
                 }
-                return true
+                return
+            } catch let error as NSError where error.domain == "com.apple.xcode.xctest.accessibilityAudit" && error.code == -56 && attempt < 3 {
+                continue
+            } catch {
+                found.append("[\(screen)] audit failed: \(error)")
+                return
             }
-        } catch {
-            found.append("[\(screen)] audit failed: \(error)")
         }
     }
 
