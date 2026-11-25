@@ -106,6 +106,8 @@ function api() {
   // IndexedDB full: said once, then the 1.1 way.
   await flag('__idbfull', true);
   await p.locator('.tab-strip lit-material-tab').nth(0).click();
+  // The first tab's script (the sample's) fails on this body and its toast would replace the one checked here.
+  await p.evaluate(() => document.querySelector('hitop-app').store.updateTab({ postRequestScript: '' }));
   await url.fill(`${base}/big?again`);
   await sendAndWait();
   await settle(p);
