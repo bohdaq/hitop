@@ -1654,6 +1654,7 @@ dependencies = [
  "hitop-sync-crypto",
  "httpmock",
  "indicatif",
+ "libc",
  "predicates",
  "prost-reflect",
  "reqwest",

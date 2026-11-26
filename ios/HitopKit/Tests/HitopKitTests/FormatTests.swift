@@ -234,6 +234,17 @@ final class ParamsAndInterpolationTests: XCTestCase {
         XCTAssertEqual(try Interpolation.interpolate("${v}", ["v": "${a}"]), "${a}")
         XCTAssertThrowsError(try Interpolation.interpolate("${missing}", [:])) { XCTAssertEqual("\($0)", "variable 'missing' is not defined") }
         var missing: [String] = []
+        XCTAssertThrowsError(try Interpolation.interpolate("a ${plugin.sig(key)}", ["key": "k"])) { e in
+            XCTAssertEqual("\(e)", "this request uses plugin 'sig', which can't run here: plugins run only where they are installed (hitop CLI: hitop plugin install <file>)")
+        }
+        XCTAssertEqual(try Interpolation.interpolate("${plugin.sig}", ["plugin.sig": "v"]), "v")
+        XCTAssertThrowsError(try Interpolation.interpolate("${plugin.sig}", [:])) { e in XCTAssertEqual("\(e)", "variable 'plugin.sig' is not defined") }
+        XCTAssertNil(Interpolation.plugin("plugin.Sig()"))
+        XCTAssertThrowsError(try Interpolation.interpolate("${nonce}", ["nonce": "n-${plugin.nonce()}"])) { e in
+            XCTAssertTrue("\(e)".contains("plugin 'nonce'"), "\(e)")
+        }
+        XCTAssertEqual(try Interpolation.interpolate("${a}", ["a": "${b} ${plugin.x}"]), "${b} ${plugin.x}")
+        XCTAssertThrowsError(try Interpolation.refusePlugins(["ok", "x ${plugin.sig(\"t\")}"]))
         XCTAssertEqual(Interpolation.lenient("${a}/${b}/${b}/${c}", ["a": "1"], missing: &missing), "1/${b}/${b}/${c}")
         XCTAssertEqual(missing, ["b", "c"])
         XCTAssertEqual(try Interpolation.fill("${b}-${x}", names: missing, ["b": "2"]), "2-${x}")

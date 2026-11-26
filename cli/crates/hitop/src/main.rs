@@ -76,6 +76,12 @@ enum Cmd {
     /// Share a collection folder with your team, end-to-end encrypted (hitop sync server; secret values never sync)
     #[command(subcommand)]
     Sync(commands::sync::SyncCmd),
+    /// Plugins: install, list, remove, call (they run sandboxed: no network, files, environment or secrets)
+    #[command(subcommand)]
+    Plugin(commands::plugin::PluginCmd),
+    /// Runs one plugin hook (the sandboxed child process `hitop plugin` starts)
+    #[command(hide = true)]
+    PluginRun,
     /// Generate shell completions
     Completions {
         #[arg(value_enum)]
@@ -85,6 +91,10 @@ enum Cmd {
 
 fn main() {
     let cli = Cli::parse();
+    if let Cmd::PluginRun = cli.command {
+        std::process::exit(commands::plugin::child());
+    }
+    hitop_core::plugins::install_host(Box::new(commands::plugin::host));
     #[cfg(feature = "telemetry")]
     let ping = match &cli.command {
         Cmd::Telemetry(_) | Cmd::Completions { .. } => None,
@@ -164,6 +174,8 @@ fn dispatch(command: Cmd) -> i32 {
         Cmd::Export(args) => commands::import_export::run_export(args),
         Cmd::Docs(args) => commands::docs::run(args),
         Cmd::Mcp(args) => commands::mcp::run(args),
+        Cmd::Plugin(cmd) => commands::plugin::run(cmd),
+        Cmd::PluginRun => return commands::plugin::child(),
         #[cfg(feature = "telemetry")]
         Cmd::Telemetry(cmd) => commands::telemetry::run(cmd),
         Cmd::Completions { shell } => {

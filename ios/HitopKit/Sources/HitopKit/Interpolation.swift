@@ -5,8 +5,45 @@ import Foundation
 public enum Interpolation {
     public struct MissingVariable: Error, CustomStringConvertible, LocalizedError, Sendable {
         public let name: String
-        public var description: String { "variable '\(name)' is not defined" }
+        /// A plugin call (`${plugin.name(args)}`, spec section 5c) can't run
+        /// here: the request is refused with the plugin's name, as hitop-core
+        /// refuses it where no plugin host is installed.
+        public var description: String {
+            if let plugin = Interpolation.plugin(name) {
+                return "this request uses plugin '\(plugin)', which can't run here: plugins run only where they are installed (hitop CLI: hitop plugin install <file>)"
+            }
+            return "variable '\(name)' is not defined"
+        }
         public var errorDescription: String? { description }
+    }
+
+    /// The plugin a `${...}`'s inner text calls (`plugin.name(args)`), or nil.
+    public static func plugin(_ inner: String) -> String? {
+        let t = inner.trimmingCharacters(in: .whitespaces)
+        guard t.hasPrefix("plugin."), t.hasSuffix(")"), let open = t.firstIndex(of: "(") else { return nil }
+        let name = t[t.index(t.startIndex, offsetBy: 7)..<open]
+        guard let first = name.first, first.isASCII, first.isLowercase, name.count <= 64,
+              name.allSatisfy({ $0.isASCII && ($0.isLowercase || $0.isNumber || $0 == "-" || $0 == "_") }) else { return nil }
+        return String(name)
+    }
+
+    /// The first plugin call in a text (a variable's value may hold one), as
+    /// its inner text, or nil.
+    public static func pluginCall(in text: String) -> String? {
+        guard text.contains("${plugin.") else { return nil }
+        var found: String?
+        _ = scan(text) { name, whole in
+            if found == nil, plugin(name) != nil { found = name }
+            return whole
+        }
+        return found
+    }
+
+    /// Throws the refusal when a text still holds a plugin call: one is never sent as text.
+    public static func refusePlugins(_ texts: [String]) throws {
+        for t in texts {
+            if let call = pluginCall(in: t) { throw MissingVariable(name: call) }
+        }
     }
 
     /// Calls `replace` for every `${name}` and joins the pieces.
@@ -36,7 +73,10 @@ public enum Interpolation {
     public static func interpolate(_ template: String, _ variables: [String: String]) throws -> String {
         var missing: String?
         let out = scan(template) { name, whole in
-            if let v = variables[name] { return v }
+            if let v = variables[name] {
+                if let call = pluginCall(in: v) { missing = call }
+                return v
+            }
             missing = name
             return whole
         }
@@ -63,7 +103,10 @@ public enum Interpolation {
         var missing: String?
         let out = scan(template) { name, whole in
             guard names.contains(name) else { return whole }
-            if let v = variables[name] { return v }
+            if let v = variables[name] {
+                if missing == nil, let call = pluginCall(in: v) { missing = call }
+                return v
+            }
             if missing == nil { missing = name }
             return whole
         }

@@ -12,6 +12,7 @@ pub mod import_export;
 pub mod mcp;
 pub mod network;
 pub mod openapi;
+pub mod plugin;
 pub mod requests;
 pub mod run;
 pub mod schedule;

@@ -2,6 +2,8 @@
 // same file hitop-core runs in the CLI and desktop; this module loads it and
 // runs scripts with it, and finds the script checks for the import report.
 
+import { pluginIn, pluginOf, pluginUnavailable } from "../../shared/services/variableInterpolation.js";
+
 // The shim's two functions from its source text.
 export function loadShim(text) {
   return new Function(`${text}\nreturn { create: __hitopPm, unsupported: __hitopPmUnsupported };`)();
@@ -31,7 +33,18 @@ export function runScript(shim, script, ctx, api) {
 // script to set.
 export function fillVariables(text, variables) {
   if (typeof text !== "string") return text;
-  return text.replace(/\$\{([^}]+)\}/g, (whole, name) => (Object.prototype.hasOwnProperty.call(variables, name.trim()) ? String(variables[name.trim()]) : whole));
+  return text.replace(/\$\{([^}]+)\}/g, (whole, name) => {
+    if (Object.prototype.hasOwnProperty.call(variables, name.trim())) {
+      const value = String(variables[name.trim()]);
+      const inValue = pluginIn(value);
+      if (inValue) throw new Error(pluginUnavailable(inValue));
+      return value;
+    }
+    // An unknown name is sent as written (Postman's rule), but never a plugin call.
+    const plugin = pluginOf(name);
+    if (plugin) throw new Error(pluginUnavailable(plugin));
+    return whole;
+  });
 }
 
 // The `prerequest` and `test` scripts of an `event` list, joined exactly as

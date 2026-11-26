@@ -17,6 +17,7 @@ pub mod network_settings;
 pub mod openapi;
 pub mod oauth2;
 pub mod params;
+pub mod plugins;
 pub mod postman;
 pub mod prepare;
 pub mod redirects;

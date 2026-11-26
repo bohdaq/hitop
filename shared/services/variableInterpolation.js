@@ -6,6 +6,33 @@
  */
 
 /**
+ * The plugin a `${...}`'s inner text calls (`plugin.name(args)`), or null.
+ * @param {string} inner
+ * @returns {string|null}
+ */
+export const pluginOf = (inner) => {
+  const m = /^\s*plugin\.([a-z][a-z0-9_-]{0,63})\(.*\)\s*$/s.exec(String(inner));
+  return m ? m[1] : null;
+};
+
+/**
+ * The first plugin a text calls (a variable's value may hold a call), or null.
+ * @param {string} text
+ * @returns {string|null}
+ */
+export const pluginIn = (text) => {
+  for (const m of String(text).matchAll(/\$\{([^}]+)\}/g)) {
+    const p = pluginOf(m[1]);
+    if (p) return p;
+  }
+  return null;
+};
+
+/** The refusal for a request that calls a plugin, which this app can't run. */
+export const pluginUnavailable = (plugin) =>
+  `This request uses plugin '${plugin}', which can't run here: plugins run only where they are installed (hitop CLI: hitop plugin install <file>)`;
+
+/**
  * Interpolates variables in a string template
  * 
  * @param {string} template - String containing ${variable} placeholders
@@ -46,6 +73,11 @@ export const interpolateVariables = (template, variables = {}) => {
     }
   }
 
+  // A plugin call (`${plugin.name(args)}`, spec section 5c) can't run here:
+  // the request is refused and the plugin named, never sent with the call as text.
+  const call = missingVariables.map(pluginOf).find(Boolean);
+  if (call) throw new Error(pluginUnavailable(call));
+
   // If there are missing variables, throw an error
   if (missingVariables.length > 0) {
     const uniqueMissing = [...new Set(missingVariables)];
@@ -63,8 +95,11 @@ export const interpolateVariables = (template, variables = {}) => {
     if (value === null || value === undefined) {
       return '';
     }
-    
-    return String(value);
+
+    const text = String(value);
+    const plugin = pluginIn(text);
+    if (plugin) throw new Error(pluginUnavailable(plugin));
+    return text;
   });
 };
 
@@ -165,6 +200,9 @@ export const validateVariables = (template, variables = {}) => {
 export default {
   interpolateVariables,
   safeInterpolateVariables,
+  pluginOf,
+  pluginIn,
+  pluginUnavailable,
   extractVariableNames,
   validateVariables
 };

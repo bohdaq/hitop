@@ -10,7 +10,7 @@ use serde_json::Value;
 use crate::{
     auth,
     graphql::{self, Operation},
-    interpolation::{fill, interpolate, interpolate_lenient},
+    interpolation::{fill, interpolate, interpolate_lenient_in, undefined},
     model::{Auth, Environment, Header, Request},
     scripting::{run_pre_request_script, PreRequestCtx, PreRequestResult, VariableUpdates},
     sending::with_scheme,
@@ -95,7 +95,7 @@ pub fn prepare_in(draft: &Draft, scopes: &Scopes, context: &HashMap<String, Valu
     // A `${name}` with no value yet is kept for the script: a Postman
     // pre-request script often sets the variable the same request uses.
     let missing = std::cell::RefCell::new(Vec::new());
-    let lenient = |s: &str| -> Result<String> { Ok(interpolate_lenient(s, variables, &mut missing.borrow_mut())) };
+    let lenient = |s: &str| -> Result<String> { interpolate_lenient_in(s, variables, &mut missing.borrow_mut()) };
     // GraphQL variables with a `${name}` still missing may not be JSON yet:
     // that waits for the script too.
     let first = build(draft, &lenient, &|| !missing.borrow().is_empty())?;
@@ -114,7 +114,7 @@ pub fn prepare_in(draft: &Draft, scopes: &Scopes, context: &HashMap<String, Valu
     )?;
     if pre.variables.is_empty() && pre.globals.is_empty() {
         if let Some(name) = missing.first() {
-            bail!("variable '{name}' is not defined");
+            bail!(undefined(name, variables));
         }
         pre.url = with_scheme(&pre.url)?;
         return Ok(pre);

@@ -1,0 +1,9 @@
+format: 1
+name: Plugins
+variables:
+  base: https://api.example.test
+  nonce: ${plugin.nonce()}
+  plugin.legacy: kept as a variable
+auth:
+  type: bearer
+  token: ${plugin.jwt(key, "HS256")}

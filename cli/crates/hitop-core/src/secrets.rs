@@ -367,10 +367,19 @@ pub fn resolve(req: &Lookup) -> Result<Resolved> {
 #[derive(Debug, Clone, Default)]
 pub struct Masker {
     values: Vec<String>,
+    /// The values as given, for answers plugins computed from them.
+    given: Vec<String>,
 }
 
 impl Masker {
     pub fn new<'a>(values: impl IntoIterator<Item = &'a str>) -> Self {
+        let given: Vec<String> = values.into_iter().filter(|v| !v.is_empty()).map(str::to_string).collect();
+        Masker { values: Self::forms(given.iter().map(String::as_str)), given }
+    }
+
+    /// Each value and its percent-encoded form, longest first, so a value
+    /// containing another is masked whole.
+    fn forms<'a>(values: impl IntoIterator<Item = &'a str>) -> Vec<String> {
         let mut all: Vec<String> = vec![];
         for v in values.into_iter().filter(|v| !v.is_empty()) {
             all.push(v.to_string());
@@ -379,10 +388,9 @@ impl Masker {
                 all.push(enc);
             }
         }
-        // Longest first, so a value containing another is masked whole.
         all.sort_by(|a, b| b.len().cmp(&a.len()).then_with(|| a.cmp(b)));
         all.dedup();
-        Masker { values: all }
+        all
     }
 
     pub fn is_empty(&self) -> bool {
@@ -391,7 +399,18 @@ impl Masker {
 
     pub fn mask(&self, text: &str) -> String {
         let mut out = text.to_string();
-        for v in &self.values {
+        // A plugin answer computed from a secret (its base64, an HMAC) is
+        // masked like the secret (threat T11), also when it was computed
+        // after this masker was made.
+        let derived = crate::plugins::derived_from(&self.given);
+        let with_derived;
+        let values = if derived.is_empty() {
+            &self.values
+        } else {
+            with_derived = Self::forms(self.given.iter().chain(derived.iter()).map(String::as_str));
+            &with_derived
+        };
+        for v in values {
             if out.contains(v.as_str()) {
                 out = out.replace(v.as_str(), MASK);
             }
@@ -528,6 +547,19 @@ mod tests {
         assert_eq!(s.get("a").unwrap().as_deref(), Some("1"));
         assert!(s.delete("a").unwrap());
         assert!(!s.delete("a").unwrap());
+    }
+
+    #[test]
+    fn masker_hides_plugin_answers_computed_from_a_secret() {
+        let masker = Masker::new(["pw-for-plugins"]);
+        // The plugin answers after the masker was made (as in a run).
+        let call = crate::plugins::parse_call("plugin.none(a)").unwrap();
+        let _ = crate::plugins::evaluate(&call, &HashMap::from([("a".into(), "x".into())]));
+        assert_eq!(masker.mask("a b64:cHctZm9yLXBsdWdpbnM="), "a b64:cHctZm9yLXBsdWdpbnM=");
+        crate::plugins::tests_remember(vec!["user:pw-for-plugins".into()], "dXNlcjpwdy1mb3ItcGx1Z2lucw==");
+        assert_eq!(masker.mask("Basic dXNlcjpwdy1mb3ItcGx1Z2lucw=="), format!("Basic {MASK}"));
+        assert_eq!(masker.mask("q=dXNlcjpwdy1mb3ItcGx1Z2lucw%3D%3D"), format!("q={MASK}"));
+        assert_eq!(Masker::new(["other"]).mask("dXNlcjpwdy1mb3ItcGx1Z2lucw=="), "dXNlcjpwdy1mb3ItcGx1Z2lucw==");
     }
 
     #[test]

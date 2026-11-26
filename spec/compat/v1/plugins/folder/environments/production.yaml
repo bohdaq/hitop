@@ -1,0 +1,6 @@
+name: Production
+id: prod
+variables:
+  key:
+    secret: true
+  user: shop

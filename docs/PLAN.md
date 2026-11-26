@@ -52,7 +52,8 @@ Status is kept in the table at the end; choices made on the way go under "Decisi
 | C5 | core, CLI, web, desktop and Android on main 17ab888 (PR 33); iOS in C6 |
 | C6 | on main dd7ff78 (PR 39, every check green on that commit; the run on main then failed one flaky Android UI test, see Open problems): import and export (PR 34), OAuth/SigV4/Digest (PR 35) on main; uploads, data files, compare/undo (PR 36) on main; settings and TLS (PR 37), share extension, background sync and schedules (PR 38), roles, comments, team environments, SSO built |
 | Security | Web scripts isolated from the page (PR 43), the guide's script names everywhere and the Chrome extension's scripts in the worker (PR 44): on main fbb2ffc, web app deployed 2026-11-26 00:51 UTC; the extensions need the owner's release |
-| C7–C9 | C7 in PR 42 (OpenAPI lint and editor); plugins: threat model docs/PLUGINS_THREAT_MODEL.md, code next; C8–C9 not started |
+| C7 | OpenAPI lint and editor on main ee2ec6d (PR 42, every check green). Plugins, part 1 (spec 5c, core grammar and refusals in core, web and HitopKit, CLI `hitop plugin` with the sandboxed child, `value` hook): built on branch hitop-c7-plugins. Part 2: the web worker, extensions and desktop; part 3: viewer, importer, snippet hooks |
+| C8–C9 | not started |
 
 ## Decisions
 

@@ -1,0 +1,50 @@
+{
+  "collection": {
+    "auth": {
+      "token": "${plugin.jwt(key, \"HS256\")}",
+      "type": "bearer"
+    },
+    "id": 7933078317743042,
+    "name": "Plugins",
+    "requests": [
+      {
+        "body": "{\"user\": \"${user}\", \"id\": \"${plugin.uuid()}\", \"note\": \"${plugin.b64(\"say \\\"hi\\\" \\\\ bye\")}\"}\n",
+        "bodyType": "json",
+        "headers": [
+          {
+            "name": "X-Date",
+            "value": "${plugin.now(\"rfc1123\")}"
+          },
+          {
+            "name": "X-Legacy",
+            "value": "${plugin.legacy}"
+          }
+        ],
+        "id": 6004163854501724,
+        "method": "POST",
+        "name": "Signed",
+        "postRequestScript": "",
+        "preRequestScript": "",
+        "url": "${base}/orders?sig=${plugin.hmac-sha256(key, user)}"
+      }
+    ],
+    "variables": {
+      "base": "https://api.example.test",
+      "nonce": "${plugin.nonce()}",
+      "plugin.legacy": "kept as a variable"
+    }
+  },
+  "environments": [
+    {
+      "id": "prod",
+      "name": "Production",
+      "secrets": [
+        "key"
+      ],
+      "variables": {
+        "user": "shop"
+      }
+    }
+  ],
+  "globals": null
+}

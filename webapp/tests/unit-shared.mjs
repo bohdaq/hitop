@@ -42,6 +42,15 @@ describe('interpolateVariables', () => {
     }).toThrow("Variables 'greeting', 'name' not found in variables object");
   });
 
+  test('refuses a plugin call by name (spec 5c) and keeps plugin.x without parentheses a variable', () => {
+    assert.throws(() => interpolateVariables('a ${plugin.sig(key, "t")} ${other}', { key: 'k' }), /plugin 'sig', which can't run here/);
+    assert.equal(interpolateVariables('${plugin.sig}', { 'plugin.sig': 'v' }), 'v');
+    assert.equal(interpolateVariables('${plugin.sig()}', { 'plugin.sig()': 'w' }), 'w');
+    assert.throws(() => interpolateVariables('${plugin.sig}', {}), /Variable 'plugin.sig' not found/);
+    assert.throws(() => interpolateVariables('${nonce}', { nonce: 'n-${plugin.nonce()}' }), /plugin 'nonce', which can't run here/);
+    assert.equal(interpolateVariables('${a}', { a: '${b} ${plugin.x}' }), '${b} ${plugin.x}');
+  });
+
   test('should handle empty string', () => {
     const result = interpolateVariables('', {});
     expect(result).toBe('');

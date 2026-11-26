@@ -42,6 +42,7 @@ hitop/
 │       │       ├── secrets.rs      # secret variables: resolve order, keychain (keyring), Masker (••••)
 │       │       ├── sending.rs      # what every surface adds when sending (spec/sending.md): raw-body Content-Type, URL scheme (no deps, also in hitop-wasm, mirrored by HitopKit)
 │       │       ├── secret_refs.rs  # ${secret:vault|aws|azure|op:...} references: find, parse, expand (no deps, also in hitop-wasm)
+│       │       ├── plugins.rs      # ${plugin.name(args)} (spec 5c): parse calls and manifests, process-wide Host (`install_host`; none = refused by name), answers from secrets → Masker (T11); scripting.rs `run_plugin_hook` = one hook in a fresh engine
 │       │       ├── sync.rs         # hitop sync, client side (no deps, also in hitop-wasm): plan() three-way pull/push/conflicts per file, key-by-key merge of hitop.yaml/env/globals, path allowlist; sync/tests.rs
 │       │       ├── secret_managers.rs # feature `secret-managers`: Resolver for Vault/OpenBao KV, AWS (SigV4 on ring), Azure Key Vault, `op read`;
 │       │       │                      # Settings (secret-managers.json + keychain `secret-managers/<NAME>`), layered under the env (GROUPS)
@@ -92,6 +93,7 @@ hitop/
 │               ├── commands/grpc.rs # `hitop grpc <target> <Service/Method> | list [service] | describe <symbol>`, saved requests with -c
 │               ├── commands/sync/ # `hitop sync ...`: mod.rs (commands, TOFU pins), client.rs (API + hitop-sync-crypto), store.rs (account, keychain/HITOP_SYNC_KEY_FILE, links, state, runner credential, audit-heads.json, audit-keys.json = pinned server audit keys), devices.rs (`hitop sync devices ls|rename|remove [--force]`), sso.rs (login --sso/--google/--github/--apple: loopback listener or paste), password.rs (login by password, signup, password set|forgot|reset|unlock, adopt = become the bundle's device), audit.rs (audit, local chain check; C5 org export --export/--file/--anchor: Ed25519 via ring, binary crate only)
 │               ├── commands/mcp.rs # `hitop mcp [folder]`: MCP server over stdio (rmcp), the fourteen tools, masking, path confinement
+│               ├── commands/plugin.rs # `hitop plugin install|ls|rm|call` (<config>/hitop/plugins/: <name>.js + plugins.json with sha256), the host, hidden `hitop plugin-run` child (env cleared, 5 s kill, setrlimit on unix; none on Windows)
 │               ├── commands/telemetry.rs # `hitop telemetry on|off|status` and the background ping (feature `telemetry`)
 │               └── output.rs       # Colored output, syntect highlighting
 │   ├── fuzz/                   # cargo fuzz (nightly, own workspace): collection_yaml, postman, openapi; seed.sh <target> <secs> (corpora from fixtures, not in git); workflow fuzz.yml

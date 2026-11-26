@@ -549,6 +549,29 @@ manager. A reference is never resolved inside a script or a saved example.
   `credential_process`, the AWS CLI for SSO) and region; `AZURE_TENANT_ID`, `AZURE_CLIENT_ID`,
   `AZURE_CLIENT_SECRET` or the `az` CLI; and the `op` CLI. A web app in a browser can't, and says so.
 
+## 5c. Plugin calls
+
+Wherever a `${variable}` can be filled in (section 5b's list, and variable values), a string may
+call a plugin's `value` hook: `${plugin.<name>(<arguments>)}`.
+
+- `<name>`: a lowercase letter, then lowercase letters, digits, `-` or `_` (64 at most).
+- `<arguments>`: none, or a comma-separated list. Each argument is a variable name (letters, digits,
+  `_`, `-`, `.`), whose value is passed, or a text in double quotes, with `\"` and `\\` as the only
+  escapes. Spaces around arguments are ignored. A text can't hold `}` (it would end the `${...}`).
+- The parentheses are what make a call: `${plugin.name}` is a variable named `plugin.name`, as it
+  was before plugins. A variable named exactly like a call (`plugin.sig(key)`) is used as that
+  variable.
+- A plugin is a file a person installs on one device; it is never part of a collection folder, an
+  export or sync. A tool calls the installed plugin with the arguments' values and puts its answer
+  (text) where the call was. An argument variable with no value is an error that names it, as for
+  `${variable}`.
+- A tool that can't run plugins, or doesn't have the one called, never sends the request: it is an
+  error that names the plugin. It never sends the call as text.
+- An answer computed from an argument whose value holds a secret is treated as a secret (`••••`
+  wherever a secret would be masked, section 5).
+- Files keep the call as written; how a tool runs plugins (hitop: `hitop plugin install`, a
+  sandboxed child process, docs/PLUGINS_THREAT_MODEL.md in the repository) is the tool's concern.
+
 ## 6. Ids and the JSON model
 
 hitop's JSON storage (`collections.json`, the web app's localStorage, HITOP

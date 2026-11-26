@@ -1,0 +1,12 @@
+name: Signed
+method: POST
+url: ${base}/orders?sig=${plugin.hmac-sha256(key, user)}
+headers:
+- name: X-Date
+  value: ${plugin.now("rfc1123")}
+- name: X-Legacy
+  value: ${plugin.legacy}
+body:
+  type: json
+  content: |
+    {"user": "${user}", "id": "${plugin.uuid()}", "note": "${plugin.b64("say \"hi\" \\ bye")}"}

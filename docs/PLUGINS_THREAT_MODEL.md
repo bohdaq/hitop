@@ -1,6 +1,7 @@
 # Plugins: design and threat model
 
-Status: design, before any code (owner's rule: plugins get a written threat model first). Plan item C7.
+Status: written before any code (owner's rule: plugins get a written threat model first). Plan item C7. Part 1 is built: spec section 5c,
+the refusals in every interpolator, and the CLI (`hitop plugin`, the `hitop plugin-run` child, the `value` hook).
 
 ## What a plugin is
 
@@ -56,7 +57,7 @@ Each call gets a fresh engine with only the call's input, a loop limit, a call-d
 | T9 | A viewer's answer injects markup | Rendered as text or a table of text, never HTML. |
 | T10 | An importer answer breaks hitop (huge, deep, wrong types) | Size and depth limits; parsed by the same code as a HITOP file; shown in the import report. |
 | T11 | A `value` plugin turns a secret into something the masker doesn't know (base64, an HMAC), which then shows in history, reports or MCP output | An answer computed from an argument that held a secret value is added to the masker as a secret for that send or run. |
-| T12 | A client without plugins sends `${plugin.x()}` as text (released CLI, iOS, monitors, MCP) | The syntax needs a spec section and a compat case (format v1 is additive). Today's interpolation leaves an unknown `${...}` as it is, so released clients would send the text. Every current interpolator (hitop-core, `variableInterpolation.js`, HitopKit, MCP, monitors) learns to refuse to send a request that uses a plugin it can't run, naming it, in the same release that adds plugins. |
+| T12 | A client without plugins sends `${plugin.x()}` as text (released CLI, iOS, monitors, MCP) | The syntax is spec section 5c (format v1 is additive; compat case `plugins`). Checked 2026-11-26: released interpolators already refuse an unknown `${...}` ("variable 'plugin.x()' is not defined"), except the web app's Postman-script mode, which sent it as text, and a variable whose value holds a call (one pass, sent as text everywhere). Since part 1, core, the web app (both modes) and HitopKit refuse both cases and name the plugin; hitop-core refuses when no plugin host is installed, which covers MCP without one, monitors, the Android app and SyncFFI. |
 
 ## Left out on purpose
 
@@ -71,7 +72,10 @@ Each call gets a fresh engine with only the call's input, a loop limit, a call-d
 - Desktop and CLI: an escape from boa in the child process runs as the person (files). Boa is pure Rust with little
   `unsafe`; request scripts there have the same exposure today, in process.
 - Browser: boa has no heap limit; a plugin can make a tab use a lot of memory for up to 5 s.
-- Released clients that never learn plugins send `${plugin.x()}` as text (T12).
+- Released clients refuse a plugin call as an unknown variable (T12), except a call in a variable's value and the web app's Postman-script
+  mode before part 1, which send it as text.
+- Windows: the child has no memory cap yet (a Job object); the 5 s limit still ends it, and the engine's loop and depth limits apply.
+- macOS: the cap is `RLIMIT_DATA`, which macOS enforces loosely; the 5 s limit is the stop that always holds.
 - A person can still pass a secret to a `value` plugin; hitop warns but doesn't stop it.
 
 ## Tests the code must have

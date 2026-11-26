@@ -27,6 +27,34 @@ fn new_engine() -> Context {
     engine
 }
 
+/// Runs one hook of a plugin (docs/PLUGINS_THREAT_MODEL.md) in a fresh engine
+/// that has nothing but the plugin's own code and `args`: no console, no
+/// request, variables or host functions. The engine limits of
+/// [`set_limits`] apply; time and memory are the caller's to limit (the CLI
+/// runs this in a child process it ends after 5 s). The answer is the
+/// hook's return value as JSON.
+pub fn run_plugin_hook(source: &str, hook: &str, args: &[Value]) -> Result<Value> {
+    if !crate::plugins::HOOKS.contains(&hook) {
+        return Err(anyhow!("unknown hook '{hook}'"));
+    }
+    let mut engine = new_engine();
+    engine.eval(Source::from_bytes(source.as_bytes())).map_err(|e| anyhow!("the plugin's code failed: {e}"))?;
+    let call = format!(
+        "(function () {{ const f = globalThis[{hook}]; if (typeof f !== 'function') throw new Error('it has no ' + {hook} + ' function'); const a = f.apply(undefined, {args}); return a === undefined ? undefined : JSON.stringify(a); }})()",
+        hook = serde_json::to_string(hook)?,
+        args = serde_json::to_string(args)?,
+    );
+    let answer = engine.eval(Source::from_bytes(call.as_bytes())).map_err(|e| anyhow!("the plugin failed: {e}"))?;
+    let text = answer
+        .as_string()
+        .map(|s| s.to_std_string().unwrap_or_default())
+        .ok_or_else(|| anyhow!("the plugin's {hook} function returned nothing"))?;
+    if text.len() > crate::plugins::MAX_BYTES + 2 {
+        return Err(anyhow!("the plugin answered more than {} bytes", crate::plugins::MAX_BYTES));
+    }
+    serde_json::from_str(&text).map_err(|_| anyhow!("the plugin's answer isn't data"))
+}
+
 /// Inputs the pre-request script can mutate.
 #[derive(Debug, Clone, Default)]
 pub struct PreRequestCtx {
@@ -906,4 +934,27 @@ pm.expect(1).to.equal(2);"#,
         );
         assert!(unsupported_calls("pm.environment.set('a', 1); pm.expect(x).to.equal(1); tests['a'] = true").is_empty());
     }
+    #[test]
+    fn a_plugin_hook_gets_its_arguments_and_nothing_else() {
+        let src = "/* hitop-plugin {} */ function value(a, b) { return a + ':' + b + ':' + [typeof console, typeof fetch, typeof require, typeof process, typeof localStorage, typeof document, typeof pm, typeof variables, typeof __vars].join(','); }";
+        let out = run_plugin_hook(src, "value", &[Value::from("x"), Value::from("y")]).unwrap();
+        assert_eq!(out, Value::from("x:y:undefined,undefined,undefined,undefined,undefined,undefined,undefined,undefined,undefined"));
+        // Answers are data: a table for a viewer.
+        let out = run_plugin_hook("function viewer(r) { return {columns: ['s'], rows: [[r.status]]}; }", "viewer", &[serde_json::json!({"status": 200})]).unwrap();
+        assert_eq!(out, serde_json::json!({"columns": ["s"], "rows": [[200]]}));
+        for (src, hook, says) in [
+            ("function value() {}", "value", "returned nothing"),
+            ("function viewer() { return 1 }", "value", "has no value function"),
+            ("function value() { throw new Error('nope') }", "value", "nope"),
+            ("function value( {", "value", "plugin's code failed"),
+            ("function value() { return 1 }", "fetch", "unknown hook"),
+        ] {
+            let e = run_plugin_hook(src, hook, &[]).unwrap_err().to_string();
+            assert!(e.contains(says), "{src}: {e}");
+        }
+        // The hook name can't break out of the call.
+        let e = run_plugin_hook("function value() { return 1 }", "value'); globalThis.x = ('", &[]).unwrap_err().to_string();
+        assert!(e.contains("unknown hook"), "{e}");
+    }
+
 }

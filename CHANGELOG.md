@@ -6,6 +6,13 @@ Releases before 1.2 are listed in ROADMAP.md (section 5) and on the GitHub Relea
 
 ### CLI
 
+- Plugins (`value` hook): `hitop plugin install <file> [--force]`, `ls [--json]`, `rm`, `call`. A request calls one as
+  `${plugin.name(variable, "text")}` (spec section 5c). Each call runs in a child process with no environment, network, files or secrets,
+  ended after 5 s, its memory capped on Linux and macOS; a plugin file changed after install is refused. An answer computed from a secret is
+  masked like the secret. docs/PLUGINS_THREAT_MODEL.md.
+- A request that calls a plugin a client can't run (the web, desktop, iOS and Android apps for now, MCP and monitors without one installed)
+  is refused with the plugin's name, never sent with the call as text; also when a variable's value holds the call. Before, the web app's
+  Postman-script mode sent it as text.
 - `hitop sync login --code <code>` takes a code that starts with `-` (about one in 64 codes was refused as an option).
 - `hitop openapi lint <file|url>` checks an OpenAPI 3.x spec: each problem with its line and rule (`--rules`, `--off`, `--strict`, `--json`; exit 1 on errors).
 - gRPC: the connect time limit covers the name lookup and TLS too, so a call can't hang on them.

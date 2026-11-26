@@ -73,6 +73,9 @@ enum Prepare {
         var missing: [String] = []
         let first = try build(r, auth: auth, { Interpolation.lenient($0, variables, missing: &missing) }, deferred: { !missing.isEmpty })
         let hasScript = !r.preRequestScript.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        // A plugin call (or a variable whose value holds one) can't run here:
+        // refused by name, never sent as text.
+        try Interpolation.refusePlugins([first.url, first.body] + first.headers.flatMap { [$0.0, $0.1] })
         guard let engine, hasScript else {
             if let name = missing.first { throw Interpolation.MissingVariable(name: name) }
             return (PreRequestResult(url: try Sending.withScheme(first.url), headers: first.headers, body: first.body, contextUpdates: [:], variables: [:], globals: [:]), hasScript)
@@ -98,6 +101,7 @@ enum Prepare {
         } else {
             pre.headers = try pre.headers.map { (try Interpolation.fill($0.0, names: missing, vars), try Interpolation.fill($0.1, names: missing, vars)) }
         }
+        try Interpolation.refusePlugins([pre.url, pre.body] + pre.headers.flatMap { [$0.0, $0.1] })
         pre.url = try Sending.withScheme(pre.url)
         return (pre, false)
     }

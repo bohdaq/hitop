@@ -66,6 +66,8 @@ assert.equal(ctx.url, "http://x/a?q=1");
 assert.deepEqual(ctx.headers, [{ name: "X-New", value: "v" }]);
 assert.deepEqual(preVars, { ts: "7" });
 assert.equal(fillVariables("${a}/${b}", { a: 1 }), "1/${b}");
+assert.throws(() => fillVariables("${plugin.sig(a)}", { a: 1 }), /plugin 'sig', which can't run here/);
+assert.throws(() => fillVariables("${n}", { n: "${plugin.nonce()}" }), /plugin 'nonce', which can't run here/);
 assert.ok(!usesPostmanApi("assert.status(200); setContext('pmx', 1)"), "hitop scripts run without the shim");
 
 // Import: hitop-core's importer, the shim's checks, the same report as `hitop import`.

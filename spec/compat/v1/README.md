@@ -32,6 +32,7 @@ Each case directory holds:
 | `openapi` | an OpenAPI import (`spec.yaml`, by `hitop import openapi`): the `openapi` records and `source: openapi` examples |
 | `openapi-rows` | an OpenAPI import by hitop 1.1: the request record's per-row hashes (`openapi.rows`) for headers and query parameters |
 | `secrets` | secret variables in environments and globals, `globals.yaml`, secret manager references (`${secret:vault|aws|azure|op:...}`) |
+| `plugins` | plugin calls (`${plugin.name(args)}`, section 5c) in a URL, header, body, auth and variable values, kept as written; `${plugin.name}` without parentheses as a variable |
 | `examples` | saved responses with extra keys |
 | `folders` | `folders` in `hitop.yaml`: stored folder paths, one empty and one nested empty, next to `order` |
 | `unknown-keys` | unknown keys on the collection, a request, an environment and rows (kept and written back) |
