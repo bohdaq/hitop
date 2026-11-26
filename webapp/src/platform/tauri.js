@@ -216,6 +216,32 @@ function rustWebSocket(url, { headers = [], protocols = [] } = {}, h) {
   };
 }
 
+// Plugins through Rust (desktop/src-tauri/src/plugins.rs): the CLI's store in
+// <config>/hitop/plugins/ (so a plugin installed with `hitop plugin install` is here
+// too), each call in a sandboxed child process of the app (5 s, no environment).
+// Rust answers a refusal as a string; the Settings page and the store read `.message`.
+const pluginInvoke = (cmd, args) =>
+  invoke(cmd, args).catch((e) => {
+    throw e instanceof Error ? e : new Error(String(e));
+  });
+export const rustPlugins = {
+  where: "on this computer, shared with the hitop CLI",
+  list: () => pluginInvoke("plugins_list"),
+  async install(source, { force = false } = {}) {
+    const r = await pluginInvoke("plugin_install", { source, force });
+    if (r.exists) {
+      const { exists: old, manifest } = r;
+      const e = new Error(`A plugin named '${old.name}' is installed already (version ${old.version}, hooks: ${old.hooks.join(", ")}); this file is version ${manifest.version} (hooks: ${manifest.hooks.join(", ")})`);
+      throw Object.assign(e, { installed: old, manifest });
+    }
+    return r.installed;
+  },
+  async remove(name) {
+    await pluginInvoke("plugin_remove", { name });
+  },
+  call: (name, hook, args) => pluginInvoke("plugin_call", { name, hook, args }),
+};
+
 // gRPC through Rust (grpc_* in commands.rs). A call's events come on a
 // Tauri channel as { message, index } (or { end, index }), put back in
 // order as for WebSocket; the last one is the status.

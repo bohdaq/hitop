@@ -114,6 +114,7 @@ export async function sha256(text) {
 const summary = (p) => ({ ...p.manifest, sha256: p.sha256 });
 
 export const wasmPlugins = {
+  where: "in this browser",
   async list() {
     const all = (await tx("readonly", (s) => s.getAll())) ?? [];
     return all.map(summary).sort((a, b) => a.name.localeCompare(b.name));

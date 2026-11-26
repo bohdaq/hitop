@@ -1,10 +1,15 @@
 mod bookmarks;
 mod commands;
 mod git;
+pub mod plugins;
 mod updates;
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
+    // The plugin child: run one hook and exit, before Tauri starts anything.
+    if std::env::args().nth(1).as_deref() == Some(plugins::CHILD_ARG) {
+        std::process::exit(hitop_core::plugin_host::child_main());
+    }
     tauri::Builder::default()
         .plugin(tauri_plugin_shell::init())
         .plugin(tauri_plugin_dialog::init())
@@ -60,6 +65,10 @@ pub fn run() {
             git::git_token_status,
             git::git_token_set,
             git::git_token_delete,
+            plugins::plugins_list,
+            plugins::plugin_install,
+            plugins::plugin_remove,
+            plugins::plugin_call,
         ])
         .manage(commands::Sockets::default())
         .manage(commands::GrpcCalls::default())
@@ -67,6 +76,7 @@ pub fn run() {
         .manage(commands::Stops::default())
         .setup(|app| {
             commands::use_network_settings();
+            plugins::install_host();
             // The usage ping, when the user turned it on (off by default).
             #[cfg(feature = "telemetry")]
             commands::ping_in_background(app.package_info().version.to_string());

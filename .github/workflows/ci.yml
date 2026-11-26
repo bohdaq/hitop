@@ -350,6 +350,10 @@ jobs:
         working-directory: cli
         run: cargo build --locked -p hitop-git --example git-json --no-default-features
       - if: matrix.mode == 'tauri'
+        name: hitop-core's plugin store for the mocked desktop (tests/plugins.cjs runs plugins through it)
+        working-directory: cli
+        run: cargo build --locked -p hitop-core --example plugin-json
+      - if: matrix.mode == 'tauri'
         name: Web app built for the desktop (Tauri adapter, mocked invoke)
         working-directory: webapp
         run: npm run build:tauri && HITOP_MODE=tauri npm run test:e2e -- --shard ${{ matrix.shard }}

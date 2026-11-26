@@ -31,6 +31,11 @@
 //             under git/<host>/token, as git.rs keeps them. Build it first:
 //             cargo build --manifest-path cli/Cargo.toml -p hitop-git --example git-json --no-default-features
 //             (or point HITOP_GIT_JSON at the binary)
+//   plugins   plugins_list/plugin_install/plugin_remove/plugin_call run hitop-core's
+//             plugin_host::command (example plugin-json, as desktop/src-tauri/src/plugins.rs):
+//             the real store under this mock's temp dir and the real sandboxed child.
+//             Build: cargo build --manifest-path cli/Cargo.toml -p hitop-core --example plugin-json
+//             (or point HITOP_PLUGIN_JSON at the binary)
 const fs = require('fs');
 const os = require('os');
 const path = require('path');
@@ -38,6 +43,8 @@ const vm = require('vm');
 const { execFile } = require('child_process');
 
 const GIT_JSON = process.env.HITOP_GIT_JSON || path.join(__dirname, '../../cli/target/debug/examples/git-json');
+
+const PLUGIN_JSON = process.env.HITOP_PLUGIN_JSON || path.join(__dirname, '../../cli/target/debug/examples/plugin-json');
 
 const WASM = path.join(__dirname, '../src/wasm/pkg/hitop_wasm_bg.wasm');
 
@@ -387,6 +394,14 @@ class TauriMock {
         return null;
       case 'secret_delete':
         return this.keychain.delete(args.account);
+      case 'plugins_list':
+        return this.plugins('list', {});
+      case 'plugin_install':
+        return this.plugins('install', { source: args.source, force: args.force });
+      case 'plugin_remove':
+        return this.plugins('remove', { name: args.name });
+      case 'plugin_call':
+        return this.plugins('call', { name: args.name, hook: args.hook, args: args.args });
       case 'folder_forget':
         // Mac App Store bookmarks: nothing to do outside the sandbox.
         return null;
@@ -680,6 +695,17 @@ class TauriMock {
     }
     const env = { ...process.env, ...(token ? { HITOP_GIT_TOKEN: token } : {}) };
     const out = await new Promise((resolve, reject) => execFile(GIT_JSON, [cmd, JSON.stringify(args)], { env }, (e, stdout) => (e ? reject(`git-json failed: ${e.message}`) : resolve(stdout))));
+    const answer = JSON.parse(out);
+    if ('error' in answer) throw answer.error;
+    return answer.ok;
+  }
+
+  // hitop-core's plugin store in this mock's temp dir (XDG_CONFIG_HOME/HOME), its child included.
+  async plugins(cmd, args) {
+    const env = { ...process.env, XDG_CONFIG_HOME: path.join(this.dir, 'xdg'), HOME: this.dir };
+    const out = await new Promise((resolve, reject) =>
+      execFile(PLUGIN_JSON, [cmd, JSON.stringify(args)], { env, maxBuffer: 8 * 1024 * 1024 }, (e, stdout) => (e ? reject(`plugin-json failed: ${e.message}`) : resolve(stdout))),
+    );
     const answer = JSON.parse(out);
     if ('error' in answer) throw answer.error;
     return answer.ok;

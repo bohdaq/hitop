@@ -77,7 +77,7 @@ class HitopAppSettings extends LitElement {
     this.loadPlugins();
   }
 
-  // Plugins (docs/PLUGINS_THREAT_MODEL.md): files the person installs in this browser, run sandboxed.
+  // Plugins (docs/PLUGINS_THREAT_MODEL.md): files the person installs on this device, run sandboxed.
   renderPlugins() {
     if (!platform().plugins) return nothing;
     if (this.plugins === undefined) {
@@ -87,7 +87,7 @@ class HitopAppSettings extends LitElement {
     const list = this.plugins ?? [];
     return html`<section aria-label="Plugins" class="settings-section plugins-section">
       <h2>Plugins</h2>
-      <p class="hint">A plugin adds functions to requests: <code>\${plugin.name(variable, "text")}</code> in a URL, header or body. It runs sandboxed, with only the arguments you pass: no network, storage, page, other requests or secrets, and it is stopped after 5 s. Plugins stay in this browser: they are never part of a collection, an export or sync. Install only files you trust.</p>
+      <p class="hint">A plugin adds functions to requests: <code>\${plugin.name(variable, "text")}</code> in a URL, header or body. It runs sandboxed, with only the arguments you pass: no network, storage, page, other requests or secrets, and it is stopped after 5 s. Plugins stay ${platform().plugins.where}: they are never part of a collection, an export or sync. Install only files you trust.</p>
       ${list.length
         ? html`<ul class="plugin-list">
             ${list.map(

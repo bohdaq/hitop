@@ -17,6 +17,8 @@ pub mod network_settings;
 pub mod openapi;
 pub mod oauth2;
 pub mod params;
+#[cfg(feature = "native")]
+pub mod plugin_host;
 pub mod plugins;
 pub mod postman;
 pub mod prepare;

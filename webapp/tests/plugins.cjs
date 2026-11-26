@@ -1,7 +1,7 @@
-// Plugins in the web app (docs/PLUGINS_THREAT_MODEL.md, part 2): installed from Settings into this
-// browser, `${plugin.name(args)}` answered in their own worker before a send, masked when computed from
-// a secret, stopped after 5 s, never in localStorage or exports. The desktop has no plugins yet: a
-// request that calls one is refused and names it.
+// Plugins in the web app and the desktop (docs/PLUGINS_THREAT_MODEL.md, part 2): installed from
+// Settings, `${plugin.name(args)}` answered before a send (web: their own worker; desktop: hitop-core's
+// sandboxed child, run for real by the mock's plugin-json), masked when computed from a secret, stopped
+// after 5 s, never in localStorage or exports.
 //   BASE=http://localhost:7879 node tests/plugins.cjs   (HITOP_MODE=tauri: the desktop build)
 const http = require('http');
 const { launch, checker, TAURI } = require('./harness.cjs');
@@ -75,13 +75,7 @@ const PROBE = `${manifest('probe')}function value() { return [typeof process, ty
   };
   const signed = { url: '${base}/p?sig=${plugin.b64(cred)}&n=${plugin.nonce()}', headers: [{ name: 'X-Nonce', value: '${plugin.nonce()}', enabled: true }] };
 
-  if (TAURI) {
-    const r = await sendRefused(signed);
-    check('the desktop refuses a request that calls a plugin, naming it', r.sent === 0 && /plugin '(b64|nonce)'/.test(r.said), JSON.stringify(r));
-    await p.evaluate(() => document.querySelector('hitop-app').go('settings'));
-    await p.waitForSelector('.settings-page .settings-section[aria-label="Requests"]', { timeout: 10000 });
-    check('the Settings page has no Plugins section on the desktop yet', (await p.locator('.plugins-section').count()) === 0);
-  } else {
+  {
     // Install from Settings: a file chooser.
     await p.evaluate(() => document.querySelector('hitop-app').go('settings'));
     await p.waitForSelector('.plugins-section', { timeout: 10000 });
@@ -106,11 +100,8 @@ const PROBE = `${manifest('probe')}function value() { return [typeof process, ty
     check('the next request calls it again', a?.n !== b?.n, JSON.stringify([a, b]));
     // T11: an answer computed from a secret is masked like one: the response snapshots in History
     // (the server echoed it). History keeps the request as written, with the call.
-    const history = await p.evaluate(() => {
-      const s = document.querySelector('hitop-app').store;
-      s.save();
-      return localStorage.getItem('hitop_history') ?? '';
-    });
+    await p.evaluate(() => document.querySelector('hitop-app').store.save());
+    const history = JSON.stringify(await h.stored.history());
     check('History has no answer computed from the secret, masked in the response', !history.includes(SECRET_B64) && history.includes('echo ••••') && history.includes('${plugin.b64(cred)}'), (history.match(/.{0,60}(echo|plugin\.b64).{0,40}/g) ?? ['none']).join(' | '));
     const stored = await p.evaluate(() => Object.keys(localStorage).map((k) => localStorage.getItem(k)).join('\n'));
     // Plugins are never in localStorage or exports.
@@ -174,7 +165,11 @@ const PROBE = `${manifest('probe')}function value() { return [typeof process, ty
     check('the next call works', new URL(hits.at(-1).url, base).searchParams.get('sig') === SECRET_B64, JSON.stringify(hits.at(-1)));
 
     // A changed plugin (its stored text) is refused until installed again.
-    await p.evaluate(() => new Promise((ok, no) => {
+    if (TAURI) {
+      const file = require('path').join(h.mock.dir, 'xdg', 'hitop', 'plugins', 'b64.js');
+      const fs = require('fs');
+      fs.writeFileSync(file, fs.readFileSync(file, 'utf8').replace('return o;', 'return o + "x";'));
+    } else await p.evaluate(() => new Promise((ok, no) => {
       const req = indexedDB.open('hitop-plugins');
       req.onsuccess = () => {
         const t = req.result.transaction('plugins', 'readwrite');

@@ -2,7 +2,9 @@
 
 Status: written before any code (owner's rule: plugins get a written threat model first). Plan item C7. Part 1 is built: spec section 5c,
 the refusals in every interpolator, and the CLI (`hitop plugin`, the `hitop plugin-run` child, the `value` hook). Part 2a is built: the
-web app and both extensions (`platform/wasm-plugins.js`, `plugins-worker.js`, Settings → Plugins). The desktop still refuses plugin calls.
+web app and both extensions (`platform/wasm-plugins.js`, `plugins-worker.js`, Settings → Plugins). Part 2b is built: the desktop
+(hitop-core `plugin_host`, shared with the CLI: the store in `<config>/hitop/plugins/` and the child, which in the desktop is the app's own
+executable started with `--hitop-plugin-run`).
 
 ## What a plugin is
 
@@ -28,7 +30,7 @@ In hitop-core's JavaScript engine (boa), the one that runs request scripts:
   `plugins-worker.js`; its own wasm instance, so its engine limits aren't the scripts worker's), one call at a time. The worker
   itself is same-origin and has `fetch`, IndexedDB and `postMessage`; the boundary is boa: the plugin's code runs in the
   interpreter, which has no host functions and imports nothing from the worker. Plugins are kept in IndexedDB (`hitop-plugins`);
-- desktop and CLI: a child process (`hitop plugin-run`, as the sync server's `monitor-run`): input on stdin, answer on
+- desktop and CLI: a child process (`hitop plugin-run`; the desktop app's own executable with `--hitop-plugin-run`, as the sync server's `monitor-run`): input on stdin, answer on
   stdout, killed at the time limit, memory capped (`setrlimit` on Linux and macOS; a Job object on Windows), its own
   engine limits. Not a thread: boa can't be interrupted, and a string or regex blow-up isn't a loop the loop limit
   counts; nor `scripting::set_limits`, which is process-wide and would limit people's own scripts too;
@@ -80,6 +82,8 @@ Each call gets a fresh engine with only the call's input, a loop limit, a call-d
   sets is reported as missing (the CLI reads them after the script).
 - Released clients refuse a plugin call as an unknown variable (T12), except a call in a variable's value and the web app's Postman-script
   mode before part 1, which send it as text.
+- Mac App Store and Microsoft Store builds: the child is the app's own executable started again inside the store sandbox (MAS: it
+  inherits the app's sandbox); not yet tried on either store build (owner checklist).
 - Windows: the child has no memory cap yet (a Job object); the 5 s limit still ends it, and the engine's loop and depth limits apply.
 - macOS: the cap is `RLIMIT_DATA`, which macOS enforces loosely; the 5 s limit is the stop that always holds.
 - A person can still pass a secret to a `value` plugin; hitop warns but doesn't stop it.

@@ -914,6 +914,7 @@ dependencies = [
  "boa_engine",
  "dirs",
  "futures-util",
+ "libc",
  "prost",
  "prost-reflect",
  "prost-types",

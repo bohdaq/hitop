@@ -2021,6 +2021,7 @@ dependencies = [
  "dirs 5.0.1",
  "futures-util",
  "keyring",
+ "libc",
  "prost",
  "prost-reflect",
  "prost-types",
