@@ -52,6 +52,10 @@ pub fn ws_url(url: &str) -> Result<String> {
 /// (URL, enabled headers, auth, subprotocols) and the auth applied, the
 /// collection's `default_auth` when the request has none of its own.
 pub fn target(request: &Request, default_auth: Option<&Auth>, variables: &HashMap<String, String>) -> Result<Target> {
+    crate::plugins::one_request(|| target_one(request, default_auth, variables))
+}
+
+fn target_one(request: &Request, default_auth: Option<&Auth>, variables: &HashMap<String, String>) -> Result<Target> {
     let fill = |s: &str| interpolate(s, variables);
     let url = ws_url(&fill(&request.url)?)?;
     let headers = request

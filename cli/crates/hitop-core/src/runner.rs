@@ -200,7 +200,13 @@ pub fn run_collection_jar(
 /// inherited, OAuth 2.0 tokens, the pre-request script, the request, Digest's retry, the
 /// post-request script and its assertions, with `state` carried in and out. The step is not
 /// masked: mask it with the run's [`Masker`] before anything shows or keeps it.
-pub fn run_step(collection: &Collection, saved: &crate::model::Request, state: &mut RunState, options: &RunOptions, mut jar: Option<&mut Jar>) -> RunStepResult {
+pub fn run_step(collection: &Collection, saved: &crate::model::Request, state: &mut RunState, options: &RunOptions, jar: Option<&mut Jar>) -> RunStepResult {
+    // One request (spec 5c): a plugin call is answered once across the URL, headers, body, form
+    // fields and signing.
+    crate::plugins::one_request(|| step(collection, saved, state, options, jar))
+}
+
+fn step(collection: &Collection, saved: &crate::model::Request, state: &mut RunState, options: &RunOptions, mut jar: Option<&mut Jar>) -> RunStepResult {
     // Folder and collection auth and headers, inherited (model.rs `Collection::effective`).
     let inherited = collection.effective(saved);
     let request = &inherited;

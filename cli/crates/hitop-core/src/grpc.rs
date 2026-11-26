@@ -75,6 +75,10 @@ pub fn endpoint(address: &str, plaintext: bool) -> Result<(String, bool)> {
 /// its own. Relative `.proto` paths and import paths are taken from `base`
 /// (the collection folder) when given.
 pub fn target(request: &Request, default_auth: Option<&Auth>, variables: &HashMap<String, String>, base: Option<&Path>) -> Result<Target> {
+    crate::plugins::one_request(|| target_one(request, default_auth, variables, base))
+}
+
+fn target_one(request: &Request, default_auth: Option<&Auth>, variables: &HashMap<String, String>, base: Option<&Path>) -> Result<Target> {
     let fill = |s: &str| interpolate(s, variables);
     let address = fill(&request.url)?;
     let metadata = request

@@ -83,6 +83,9 @@ Each call gets a fresh engine with only the call's input, a loop limit, a call-d
 - Windows: the child has no memory cap yet (a Job object); the 5 s limit still ends it, and the engine's loop and depth limits apply.
 - macOS: the cap is `RLIMIT_DATA`, which macOS enforces loosely; the 5 s limit is the stop that always holds.
 - A person can still pass a secret to a `value` plugin; hitop warns but doesn't stop it.
+- Not built yet (parts 2b/3): the editor's warning when a secret is passed to a plugin (T1) and the request preview showing
+  plugin answers before sending (T2, T3). Until then an answer is seen only in what was sent (masked when it came from a secret).
+- Web app: a plugin call in a WebSocket message sent from the log (not the connect URL or headers) is refused.
 
 ## Tests the code must have
 

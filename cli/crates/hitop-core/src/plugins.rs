@@ -294,19 +294,27 @@ thread_local! {
 /// values is made once, and its answer is used everywhere it appears (a
 /// nonce in a header and in the body is the same nonce).
 pub fn one_request<T>(f: impl FnOnce() -> T) -> T {
-    let outer = ONE_REQUEST.with(|m| m.borrow().is_some());
-    if outer {
-        return f();
+    let _scope = request_scope();
+    f()
+}
+
+/// [`one_request`] until the guard is dropped (none when one is open already).
+#[must_use]
+pub fn request_scope() -> Option<RequestScope> {
+    if ONE_REQUEST.with(|m| m.borrow().is_some()) {
+        return None;
     }
     ONE_REQUEST.with(|m| *m.borrow_mut() = Some(HashMap::new()));
-    struct Reset;
-    impl Drop for Reset {
-        fn drop(&mut self) {
-            ONE_REQUEST.with(|m| *m.borrow_mut() = None);
-        }
+    Some(RequestScope(()))
+}
+
+/// Ends a [`request_scope`] when dropped.
+pub struct RequestScope(());
+
+impl Drop for RequestScope {
+    fn drop(&mut self) {
+        ONE_REQUEST.with(|m| *m.borrow_mut() = None);
     }
-    let _reset = Reset;
-    f()
 }
 
 /// Answers and the arguments they were computed from, newest last: a

@@ -175,6 +175,8 @@ pub fn run(args: SendArgs) -> Result<()> {
     if let Some(a) = &oauth {
         draft.auth = Some(a);
     }
+    // One request (spec 5c): a plugin call is one answer here and in signing.
+    let _one = hitop_core::plugins::request_scope();
     let pre = prepare_in(&draft, &scopes, &context).map_err(|e| anyhow::anyhow!(masker.mask(&format!("{e:#}"))))?;
     context.extend(pre.context_updates.clone());
     scopes.apply(&pre.variables, &pre.globals);

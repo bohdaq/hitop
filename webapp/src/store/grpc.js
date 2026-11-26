@@ -5,6 +5,7 @@ import { applyAuth, maskSecrets } from "../features.js";
 import { interpolateVariables } from "../../../shared/services/variableInterpolation.js";
 import { platform } from "../platform/index.js";
 import { snapshotResponse } from "../diff.js";
+import { withPluginValues } from "../plugin-calls.js";
 
 export const GrpcPart = (Base) =>
   class extends Base {
@@ -113,8 +114,9 @@ export const GrpcPart = (Base) =>
     const current = () => this.grpcState(id).token === token;
     let args;
     try {
-      await this.resolveRefs({ url: tab.url, headers: tab.headers, auth: tab.auth, grpcMessage: tab.grpcMessage }, tab.loadedCollectionId);
-      const fill = (text) => (text ? interpolateVariables(text, this.variables(tab.loadedCollectionId)) : text);
+      const answers = await this.resolveRefs({ url: tab.url, headers: tab.headers, auth: tab.auth, grpcMessage: tab.grpcMessage }, tab.loadedCollectionId);
+      const variables = withPluginValues(this.variables(tab.loadedCollectionId), answers);
+      const fill = (text) => (text ? interpolateVariables(text, variables) : text);
       args = { ...this.grpcServer(tab), service: tab.grpcService, method: tab.grpcMethod, message: fill(tab.grpcMessage || "") };
       if (this.grpcState(id).keepOpen && this.grpcStreamsFromClient(tab)) args.open = true;
     } catch (e) {
@@ -154,8 +156,8 @@ export const GrpcPart = (Base) =>
     const current = () => this.grpcState(id).token === token;
     this.grpcSet(id, { sending: true });
     try {
-      await this.resolveRefs({ grpcMessage: tab.grpcMessage }, tab.loadedCollectionId);
-      const variables = this.variables(tab.loadedCollectionId);
+      const answers = await this.resolveRefs({ grpcMessage: tab.grpcMessage }, tab.loadedCollectionId);
+      const variables = withPluginValues(this.variables(tab.loadedCollectionId), answers);
       const message = tab.grpcMessage?.trim() ? interpolateVariables(tab.grpcMessage, variables) : "{}";
       if (!current()) return;
       const time = new Date().toISOString();

@@ -293,6 +293,8 @@ pub fn run(cmd: RequestsCmd) -> Result<()> {
                 .map(|m| m.iter().map(|(k, v)| (k.clone(), v.clone())).collect())
                 .unwrap_or_default();
 
+            // One request (spec 5c): a plugin call is one answer here and in form fields and signing.
+            let _one = hitop_core::plugins::request_scope();
             let mut draft = Draft::of(&req, col.auth.as_ref());
             let oauth = hitop_core::oauth2::fetch_once(draft.auth, &scopes.merged(), None).map_err(masked)?;
             if let Some(a) = &oauth {

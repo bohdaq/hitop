@@ -1,6 +1,5 @@
 // The store's environments (a part of Store, src/store.js).
 import collectionService from "../../../shared/services/collectionService.js";
-import { withPluginValues } from "../plugin-calls.js";
 import { exportableEnvironments, exportableGlobals, isPostmanGlobals, mergeGlobals, parseEnvironments, parseGlobals, secretNames, withSecretRefs } from "../features.js";
 
 export const EnvironmentsPart = (Base) =>
@@ -59,7 +58,7 @@ export const EnvironmentsPart = (Base) =>
       if (v === null) delete out[k];
       else out[k] = v;
     }
-    return withRefs ? withPluginValues(withSecretRefs(out, this.refValues), this.pluginValues?.[collectionId]) : out;
+    return withRefs ? withSecretRefs(out, this.refValues) : out;
   }
 
   /**

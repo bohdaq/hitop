@@ -19,6 +19,10 @@ const B64 = `${manifest('b64', ', "description": "base64"')}function value(text)
 }`;
 const NONCE = `${manifest('nonce')}function value() { return String(Math.random()).slice(2); }`;
 const SPIN = `${manifest('spin')}function value() { for (;;) {} }`;
+const DEEP = `${manifest('deep')}function value() { return value(); }`;
+const HUGE = `${manifest('huge')}function value() { return 'a'.repeat(1e9); }`;
+const BIG = `${manifest('big')}function value() { return 'a'.repeat(2 * 1024 * 1024); }`;
+const NUM = `${manifest('num')}function value() { return 42; }`;
 // Not a loop the engine's loop limit counts: only the 5 s stop ends it.
 const REGEX = `${manifest('regex')}function value() { return String(/^(a+)+$/.test('a'.repeat(40) + 'b')); }`;
 const PROBE = `${manifest('probe')}function value() { return [typeof process, typeof require, typeof fetch, typeof console, typeof localStorage, typeof indexedDB, typeof document, typeof self, typeof postMessage, typeof importScripts, typeof XMLHttpRequest, typeof WebSocket, typeof BroadcastChannel].filter((t) => t !== "undefined").join(",") || "nothing"; }`;
@@ -48,7 +52,6 @@ const PROBE = `${manifest('probe')}function value() { return [typeof process, ty
     env.secrets = ['cred'];
     s.emit();
   }, [base, SECRET]);
-  const toast = () => p.locator('#toast').evaluate((el) => [el.message, el.textContent, el.shadowRoot?.textContent].filter(Boolean).join(' ')).catch(() => '');
   // Sends the current tab with these fields; the toast text when it wasn't sent.
   const send = (fields) =>
     p.evaluate(async (fields) => {
@@ -57,18 +60,27 @@ const PROBE = `${manifest('probe')}function value() { return [typeof process, ty
       await s.send();
       return { status: s.tab.statusCode ?? null };
     }, fields);
+  // What the app told the person (its notify events), so a refusal is waited for, not slept on.
+  await p.evaluate(() => {
+    window.__notes = [];
+    document.querySelector('hitop-app').store.addEventListener('notify', (e) => window.__notes.push(typeof e.detail === 'string' ? e.detail : JSON.stringify(e.detail)));
+  });
   const sendRefused = async (fields) => {
     const before = hits.length;
+    const seen = await p.evaluate(() => window.__notes.length);
     await send(fields);
-    await p.waitForTimeout(300);
-    return { said: await toast(), sent: hits.length - before };
+    await p.waitForFunction((n) => window.__notes.slice(n).some((t) => /wasn't sent/.test(t)), seen, { timeout: 30000 });
+    const said = await p.evaluate((n) => window.__notes.slice(n).find((t) => /wasn't sent/.test(t)), seen);
+    return { said, sent: hits.length - before };
   };
   const signed = { url: '${base}/p?sig=${plugin.b64(cred)}&n=${plugin.nonce()}', headers: [{ name: 'X-Nonce', value: '${plugin.nonce()}', enabled: true }] };
 
   if (TAURI) {
     const r = await sendRefused(signed);
     check('the desktop refuses a request that calls a plugin, naming it', r.sent === 0 && /plugin '(b64|nonce)'/.test(r.said), JSON.stringify(r));
-    check('the Settings page has no Plugins section on the desktop yet', await p.evaluate(() => (document.querySelector('hitop-app').go('settings'), new Promise((ok) => setTimeout(() => ok(!document.querySelector('.plugins-section')), 500)))));
+    await p.evaluate(() => document.querySelector('hitop-app').go('settings'));
+    await p.waitForSelector('.settings-page .settings-section[aria-label="Requests"]', { timeout: 10000 });
+    check('the Settings page has no Plugins section on the desktop yet', (await p.locator('.plugins-section').count()) === 0);
   } else {
     // Install from Settings: a file chooser.
     await p.evaluate(() => document.querySelector('hitop-app').go('settings'));
@@ -104,15 +116,47 @@ const PROBE = `${manifest('probe')}function value() { return [typeof process, ty
     // Plugins are never in localStorage or exports.
     const exported = await p.evaluate(() => {
       const s = document.querySelector('hitop-app').store;
-      return ['hitop', 'postman'].map((f) => { try { return String(s.exportJson(f) ?? ''); } catch (e) { return ''; } }).join('\n');
+      return ['hitop', 'postman'].map((f) => String(s.exportJson(f) ?? '')).join('\n');
     });
-    check('no plugin is in localStorage or an export', !/hitop-plugin|charCodeAt/.test(stored + exported));
+    check('no plugin is in localStorage or an export', exported.length > 200 && /"requests"|"item"/.test(exported) && !/hitop-plugin|charCodeAt/.test(stored + exported), `export ${exported.length} chars`);
+
+    // Postman-script mode (fillVariables): the answer is filled in there too.
+    await send({ ...signed, preRequestScript: "pm.environment.set('seen', 'yes');" });
+    check('a request with a Postman script sends the answer', new URL(hits.at(-1).url, base).searchParams.get('sig') === SECRET_B64, JSON.stringify(hits.at(-1)));
+
+    // A collection run: each request calls again; within one, one answer; results masked.
+    const run = await p.evaluate(async () => {
+      const s = document.querySelector('hitop-app').store;
+      const c = s.addCollection('Signed');
+      const req = (name) => ({ id: Math.floor(Math.random() * 1e12), name, method: 'GET', url: '${base}/p?sig=${plugin.b64(cred)}&n=${plugin.nonce()}', headers: [{ name: 'X-Nonce', value: '${plugin.nonce()}', enabled: true }] });
+      s.collections = s.collections.map((x) => (x.id === c.id ? { ...x, requests: [req('one'), req('two')] } : x));
+      s.emit();
+      const results = await s.runCollection(c.id);
+      return JSON.stringify(results);
+    });
+    const ran = hits.slice(-2).map((x) => ({ sig: new URL(x.url, base).searchParams.get('sig'), n: new URL(x.url, base).searchParams.get('n'), nonce: x.nonce }));
+    check('a run sends the answers, one per request', ran.length === 2 && ran.every((x) => x.sig === SECRET_B64 && x.n === x.nonce) && ran[0].n !== ran[1].n, JSON.stringify(ran));
+    check('run results have no answer computed from the secret', !run.includes(SECRET_B64) && run.includes('echo ••••'), run.slice(0, 400));
 
     // The plugin sees nothing of the worker (boa, not browser JavaScript).
     await installFile('probe', PROBE);
     await send({ url: '${base}/probe', headers: [{ name: 'X-Probe', value: '${plugin.probe()}', enabled: true }] });
     check('a plugin reaches nothing (fetch, storage, the worker, the page)', hits.at(-1)?.probe === 'nothing', JSON.stringify(hits.at(-1)));
 
+    // Deep recursion, a huge or too big answer, an answer that isn't text: each refused with the reason,
+    // and the next call works (the worker is replaced after a trap).
+    for (const [name, text, says] of [
+      ['deep', DEEP, /plugin 'deep' failed/],
+      ['huge', HUGE, /plugin 'huge' (stopped|was stopped|failed)/],
+      ['big', BIG, /plugin 'big' .*answered more than 1048576 bytes/],
+      ['num', NUM, /plugin 'num' answered something other than text/],
+    ]) {
+      await installFile(name, text);
+      const r = await sendRefused({ url: `\${base}/${name}?x=\${plugin.${name}()}` });
+      check(`${name}: refused with the reason, nothing sent`, r.sent === 0 && says.test(r.said), JSON.stringify(r).slice(0, 400));
+      await send(signed);
+      check(`${name}: the next call works`, new URL(hits.at(-1).url, base).searchParams.get('sig') === SECRET_B64, JSON.stringify(hits.at(-1)));
+    }
     // A loop is stopped by the engine's loop limit; a catastrophic regex after 5 s. The page stays
     // usable, the next call works.
     await installFile('spin', SPIN);

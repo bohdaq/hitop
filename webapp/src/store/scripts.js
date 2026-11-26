@@ -7,6 +7,7 @@ import { interpolateVariables } from "../../../shared/services/variableInterpola
 import { isGraphql } from "./shared.js";
 import { loadFormat } from "../wasm/format.js";
 import { platform } from "../platform/index.js";
+import { withPluginValues } from "../plugin-calls.js";
 
 export const ScriptsPart = (Base) =>
   class extends Base {
@@ -71,8 +72,8 @@ export const ScriptsPart = (Base) =>
   // request as sent. Auth comes before the script, so a script can override it.
   async prepare(source, collectionId, signal) {
     source = inheritDefaults(source, this.collection(collectionId));
-    await this.resolveRefs(source, collectionId);
-    const variables = this.variables(collectionId);
+    const answers = await this.resolveRefs(source, collectionId);
+    const variables = withPluginValues(this.variables(collectionId), answers);
     // A Postman script may set variables this request uses: the ones still
     // missing are filled in after it runs.
     const postman = usesPostmanApi(source.preRequestScript);
@@ -106,7 +107,7 @@ export const ScriptsPart = (Base) =>
     const authed = applyAuth(auth, { url, headers, body }, interpolate);
     const out = await this.runPreScript(source.preRequestScript, collectionId, source.method, authed.url, authed.headers, authed.body);
     if (!postman) return out;
-    const after = this.variables(collectionId);
+    const after = withPluginValues(this.variables(collectionId), answers);
     this.checkSecrets(source, collectionId, after);
     const strict = (text) => (text ? interpolateVariables(text, after) : text);
     const sentBody = gql && out.body === authed.body ? graphqlBody(strict) : strict(out.body);

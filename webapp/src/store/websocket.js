@@ -3,6 +3,7 @@ import { WS_LOG_MAX, errorText, wsUrl } from "./shared.js";
 import { applyAuth } from "../features.js";
 import { interpolateVariables } from "../../../shared/services/variableInterpolation.js";
 import { platform } from "../platform/index.js";
+import { withPluginValues } from "../plugin-calls.js";
 
 export const WebsocketPart = (Base) =>
   class extends Base {
@@ -35,8 +36,8 @@ export const WebsocketPart = (Base) =>
     const current = () => this.socket(id).token === token;
     let url, headers, protocols;
     try {
-      await this.resolveRefs({ url: tab.url, headers: tab.headers, auth: tab.auth, subprotocols: tab.subprotocols, wsMessages: tab.wsMessages }, tab.loadedCollectionId);
-      const variables = this.variables(tab.loadedCollectionId);
+      const answers = await this.resolveRefs({ url: tab.url, headers: tab.headers, auth: tab.auth, subprotocols: tab.subprotocols, wsMessages: tab.wsMessages }, tab.loadedCollectionId);
+      const variables = withPluginValues(this.variables(tab.loadedCollectionId), answers);
       const fill = (text) => (text ? interpolateVariables(text, variables) : text);
       const authed = applyAuth(tab.auth, { url: fill(tab.url.trim()), headers: (tab.headers || []).filter((h) => h.name && h.enabled !== false).map((h) => ({ name: fill(h.name), value: fill(h.value || "") })), body: "" }, fill);
       url = wsUrl(authed.url);
