@@ -28,6 +28,7 @@
 //                            secret managers, the usage ping where built); views/settings-view.js has the rest
 //   onStart(app)             optional: runs once the app is on screen
 //   scripts                  { pre(args), post(args) }, async, isolated from the page (Rust, or wasm in a worker)
+//   plugins                  null, or { list(), install(source, { force }), remove(name), call(name, hook, args) → text }
 //   folders                  null, or { pick, create, read, write, restore, remember, forget, label }
 //   saveFile(name, data, type)  data is text or bytes
 //   secretsNote              where secret values are kept, for the environments page
@@ -46,6 +47,9 @@ export async function initPlatform() {
   }
   // The web app and both extensions: never in the page (wasm-scripts.js says why); the desktop: Rust.
   if (!IS_TAURI) current.scripts = (await import("./wasm-scripts.js")).wasmScripts;
+  // Plugins (docs/PLUGINS_THREAT_MODEL.md): the web app and both extensions run them in their own
+  // worker; the desktop has none yet (a request that calls one is refused, naming it).
+  current.plugins = IS_TAURI ? null : (await import("./wasm-plugins.js")).wasmPlugins;
   await current.init();
   return current;
 }

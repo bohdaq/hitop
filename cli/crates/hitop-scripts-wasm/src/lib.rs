@@ -118,6 +118,27 @@ pub fn run_post_script(args: &str) -> Result<String, JsError> {
     post(args).map_err(|e| JsError::new(&e))
 }
 
+/// One plugin hook (docs/PLUGINS_THREAT_MODEL.md) in a fresh engine: `args` is a JSON array,
+/// the answer the hook's value as JSON. Only the plugins worker calls it, after [`plugin_limits`].
+pub fn plugin(source: &str, hook: &str, args: &str) -> Result<String, String> {
+    let args: Vec<Value> = serde_json::from_str(args).map_err(|e| format!("bad arguments: {e}"))?;
+    let answer = hitop_core::scripting::run_plugin_hook(source, hook, &args).map_err(|e| e.to_string())?;
+    serde_json::to_string(&answer).map_err(|e| e.to_string())
+}
+
+#[wasm_bindgen(js_name = runPluginHook)]
+pub fn run_plugin_hook(source: &str, hook: &str, args: &str) -> Result<String, JsError> {
+    plugin(source, hook, args).map_err(|e| JsError::new(&e))
+}
+
+/// The plugin engine's loop and call-depth limits, as the CLI's `hitop plugin-run` child sets
+/// them. Process-wide in hitop-core, so per wasm instance here: the plugins worker has its own
+/// instance, and people's scripts (the scripts worker) keep theirs.
+#[wasm_bindgen(js_name = setPluginLimits)]
+pub fn plugin_limits() {
+    hitop_core::scripting::set_limits(10_000_000, 400);
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -154,6 +175,13 @@ mod tests {
         let out: Value = serde_json::from_str(&post(&args.to_string()).unwrap()).unwrap();
         assert_eq!((out["tests"].as_array().unwrap().len(), out["logs"][0]["text"].as_str()), (1, Some("hi")), "{out}");
         assert!(out["error"].as_str().unwrap().contains("stop"), "{out}");
+    }
+
+    #[test]
+    fn a_plugin_hook_answers_from_its_arguments() {
+        let src = "/* hitop-plugin {\"name\": \"up\", \"version\": \"1\", \"hooks\": [\"value\"]} */\nfunction value(a, b) { return a.toUpperCase() + b + typeof fetch; }";
+        assert_eq!(plugin(src, "value", r#"["ab", "-"]"#).unwrap(), r#""AB-undefined""#);
+        assert!(plugin(src, "viewer", "[]").unwrap_err().contains("no viewer function"));
     }
 
     #[test]

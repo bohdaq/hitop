@@ -1,7 +1,8 @@
 # Plugins: design and threat model
 
 Status: written before any code (owner's rule: plugins get a written threat model first). Plan item C7. Part 1 is built: spec section 5c,
-the refusals in every interpolator, and the CLI (`hitop plugin`, the `hitop plugin-run` child, the `value` hook).
+the refusals in every interpolator, and the CLI (`hitop plugin`, the `hitop plugin-run` child, the `value` hook). Part 2a is built: the
+web app and both extensions (`platform/wasm-plugins.js`, `plugins-worker.js`, Settings → Plugins). The desktop still refuses plugin calls.
 
 ## What a plugin is
 
@@ -23,8 +24,10 @@ shows like its own data.
 
 In hitop-core's JavaScript engine (boa), the one that runs request scripts:
 
-- web app, Chrome and Firefox extensions: WebAssembly in a worker (`platform/wasm-scripts.js`), which has no network
-  and nothing of the page (the Chrome extension's sandboxed page could reach the network and was removed for that);
+- web app, Chrome and Firefox extensions: boa compiled to WebAssembly in its own worker (`platform/wasm-plugins.js`,
+  `plugins-worker.js`; its own wasm instance, so its engine limits aren't the scripts worker's), one call at a time. The worker
+  itself is same-origin and has `fetch`, IndexedDB and `postMessage`; the boundary is boa: the plugin's code runs in the
+  interpreter, which has no host functions and imports nothing from the worker. Plugins are kept in IndexedDB (`hitop-plugins`);
 - desktop and CLI: a child process (`hitop plugin-run`, as the sync server's `monitor-run`): input on stdin, answer on
   stdout, killed at the time limit, memory capped (`setrlimit` on Linux and macOS; a Job object on Windows), its own
   engine limits. Not a thread: boa can't be interrupted, and a string or regex blow-up isn't a loop the loop limit
@@ -50,7 +53,7 @@ Each call gets a fresh engine with only the call's input, a loop limit, a call-d
 | T2 | It sends data out | No network or file APIs in the engine. Its answer is the only output: a `value` answer goes into the request the person sends; its preview shows the filled-in value. Viewer answers are shown as text (escaped, never HTML); importer answers are a collection the person reviews before it's added. |
 | T3 | It hides data in its answer (a request that leaks a secret) | Only via T1's case (the person passed the secret to it). Answers are shown before sending in the request preview. |
 | T4 | It runs forever or uses all memory | Time limit enforced from outside: the worker or the child process is ended. Memory: the child's cap; in the browser the worker's own heap (a tab can still grow until the 5 s limit). |
-| T5 | It escapes the engine (a boa bug) | Web and extensions: the worker has no access to the app's storage or the network. Desktop and CLI: a child process with only stdin and stdout, no secrets in its environment (the environment is cleared), memory capped; it still runs as the person, so a full escape there could reach their files (residual risk). |
+| T5 | It escapes the engine (a boa bug) | Web and extensions: an escape from boa into the worker's JavaScript would reach what a same-origin worker has (`fetch`, IndexedDB, the app's origin), but not the page's localStorage, DOM or memory; the worker is ended after 5 s or a trap. Desktop and CLI: a child process with only stdin and stdout, no secrets in its environment (the environment is cleared), memory capped; it still runs as the person, so a full escape there could reach their files (residual risk). |
 | T6 | A plugin arrives without the person choosing it (in a shared or imported collection, through sync) | Never: plugins are installed from a file by the person, per device, and are not part of collections, sync, the library or exports. A collection that uses `${plugin.x()}` without it installed sends nothing and says which plugin is missing. |
 | T7 | A plugin changes after install (an update replaces it) | No auto-update: a new version is a new install, shown with what changed in its manifest. Its SHA-256 is kept and checked before each use. |
 | T8 | A plugin pretends to be another (name clash) | Names are unique per device; installing a second with the same name asks to replace the first. |
@@ -71,7 +74,10 @@ Each call gets a fresh engine with only the call's input, a loop limit, a call-d
 
 - Desktop and CLI: an escape from boa in the child process runs as the person (files). Boa is pure Rust with little
   `unsafe`; request scripts there have the same exposure today, in process.
-- Browser: boa has no heap limit; a plugin can make a tab use a lot of memory for up to 5 s.
+- Browser: boa has no heap limit; a plugin can make a tab use a lot of memory for up to 5 s. An escape from boa there runs as
+  the app's origin in a worker (T5).
+- Web app, Postman-script mode: a plugin call's arguments are read before the pre-request script runs, so an argument the script
+  sets is reported as missing (the CLI reads them after the script).
 - Released clients refuse a plugin call as an unknown variable (T12), except a call in a variable's value and the web app's Postman-script
   mode before part 1, which send it as text.
 - Windows: the child has no memory cap yet (a Job object); the 5 s limit still ends it, and the engine's loop and depth limits apply.

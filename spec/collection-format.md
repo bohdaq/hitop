@@ -565,6 +565,9 @@ call a plugin's `value` hook: `${plugin.<name>(<arguments>)}`.
   export or sync. A tool calls the installed plugin with the arguments' values and puts its answer
   (text) where the call was. An argument variable with no value is an error that names it, as for
   `${variable}`.
+- In one request, the same call with the same argument values is made once and its answer used
+  everywhere it appears (a nonce in the URL and in a header is one nonce). The next request, or the
+  next iteration of a run, calls it again.
 - A tool that can't run plugins, or doesn't have the one called, never sends the request: it is an
   error that names the plugin. It never sends the call as text.
 - An answer computed from an argument whose value holds a secret is treated as a secret (`••••`

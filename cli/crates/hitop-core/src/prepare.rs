@@ -91,6 +91,10 @@ pub fn prepare(draft: &Draft, variables: &HashMap<String, String>, context: &Has
 }
 
 pub fn prepare_in(draft: &Draft, scopes: &Scopes, context: &HashMap<String, Value>) -> Result<PreRequestResult> {
+    crate::plugins::one_request(|| prepare_one(draft, scopes, context))
+}
+
+fn prepare_one(draft: &Draft, scopes: &Scopes, context: &HashMap<String, Value>) -> Result<PreRequestResult> {
     let variables = &scopes.merged();
     // A `${name}` with no value yet is kept for the script: a Postman
     // pre-request script often sets the variable the same request uses.

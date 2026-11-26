@@ -10,7 +10,9 @@ Releases before 1.2 are listed in ROADMAP.md (section 5) and on the GitHub Relea
   `${plugin.name(variable, "text")}` (spec section 5c). Each call runs in a child process with no environment, network, files or secrets,
   ended after 5 s, its memory capped on Linux and macOS; a plugin file changed after install is refused. An answer computed from a secret is
   masked like the secret. docs/PLUGINS_THREAT_MODEL.md.
-- A request that calls a plugin a client can't run (the web, desktop, iOS and Android apps for now, MCP and monitors without one installed)
+- Plugins: in one request, the same call with the same argument values is made once (a nonce in the URL and a header is one nonce;
+  spec section 5c).
+- A request that calls a plugin a client can't run (the desktop, iOS and Android apps for now, MCP and monitors without one installed)
   is refused with the plugin's name, never sent with the call as text; also when a variable's value holds the call. Before, the web app's
   Postman-script mode sent it as text.
 - `hitop sync login --code <code>` takes a code that starts with `-` (about one in 64 codes was refused as an option).
@@ -55,6 +57,11 @@ Releases before 1.2 are listed in ROADMAP.md (section 5) and on the GitHub Relea
   stays on this phone only. Before, such an end-to-end encrypted collection could have been uploaded to the library, which the server can read.
 
 ### Web and desktop
+
+- Plugins in the web app and the browser extensions: Settings → Plugins installs a plugin file into this browser (IndexedDB, never
+  localStorage, exports, the library or sync; its SHA-256 is checked before each call). `${plugin.name(args)}` is answered in its own worker
+  (boa in WebAssembly, with only the call's arguments), stopped after 5 s; an answer computed from a secret is masked like one. The desktop
+  app refuses a request that calls a plugin, naming it, until its own plugins come.
 
 - Security, Chrome extension: scripts no longer run in the extension's sandboxed page, which could reach the network with the
   variables a script is given (secret values included). They run in the same isolated worker as the web app and Firefox.

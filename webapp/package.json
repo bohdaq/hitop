@@ -10,7 +10,7 @@
     "build": "npm run wasm -- --scripts && VITE_HITOP_PROXY=/api/proxy vite build",
     "build:tauri": "npm run wasm && vite build --mode tauri --outDir dist-tauri --base ./",
     "preview": "vite preview",
-    "test:unit": "npm run wasm && node tests/unit.mjs && node tests/unit-ux.mjs && node tests/unit-ux2.mjs && node tests/unit-tree.mjs && node tests/unit-ux3.mjs && node tests/pm.mjs && node tests/unit-shared.mjs && node tests/cws-publish.mjs",
+    "test:unit": "npm run wasm && node tests/unit.mjs && node tests/unit-ux.mjs && node tests/unit-ux2.mjs && node tests/unit-tree.mjs && node tests/unit-ux3.mjs && node tests/pm.mjs && node tests/unit-shared.mjs && node tests/unit-plugins.mjs && node tests/cws-publish.mjs",
     "test:e2e": "node tests/run-e2e.mjs",
     "test:e2e:tauri": "HITOP_MODE=tauri npm run test:e2e",
     "visual": "node tests/visual.cjs",

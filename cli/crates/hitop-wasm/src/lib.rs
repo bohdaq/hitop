@@ -340,3 +340,32 @@ mod tests {
         assert!(snippet_languages().contains(r#""id":"rust""#));
     }
 }
+
+/// A `${...}`'s inner text as a plugin call (spec 5c, hitop-core's grammar):
+/// `{"plugin", "args": [{"variable": name} | {"text": text}]}`, or `null`.
+#[wasm_bindgen(js_name = pluginCall)]
+pub fn plugin_call(inner: &str) -> String {
+    use hitop_core::plugins::{parse_call, Arg};
+    match parse_call(inner) {
+        None => "null".into(),
+        Some(c) => {
+            let args: Vec<serde_json::Value> = c
+                .args
+                .iter()
+                .map(|a| match a {
+                    Arg::Variable(v) => serde_json::json!({ "variable": v }),
+                    Arg::Text(t) => serde_json::json!({ "text": t }),
+                })
+                .collect();
+            serde_json::json!({ "plugin": c.plugin, "args": args }).to_string()
+        }
+    }
+}
+
+/// A plugin file's manifest, checked as `hitop plugin install` checks it:
+/// `{name, version, hooks, description?}`.
+#[wasm_bindgen(js_name = pluginManifest)]
+pub fn plugin_manifest(source: &str) -> Result<String, JsError> {
+    let m = hitop_core::plugins::manifest(source).map_err(|e| JsError::new(&e))?;
+    serde_json::to_string(&m).map_err(|e| JsError::new(&e.to_string()))
+}

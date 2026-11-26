@@ -261,16 +261,52 @@ pub fn evaluate(call: &Call, variables: &HashMap<String, String>) -> Outcome {
     let Some(host) = HOST.get() else {
         return Outcome::Failed(unavailable(&call.plugin));
     };
+    let key = (call.plugin.clone(), args.clone());
+    if let Some(answer) = ONE_REQUEST.with(|m| m.borrow().as_ref().and_then(|m| m.get(&key).cloned())) {
+        return Outcome::Value(answer);
+    }
     match host(&call.plugin, "value", &args) {
         Ok(answer) if answer.len() > MAX_BYTES => {
             Outcome::Failed(format!("plugin '{}' answered more than {} bytes", call.plugin, MAX_BYTES))
         }
         Ok(answer) => {
+            ONE_REQUEST.with(|m| {
+                if let Some(m) = m.borrow_mut().as_mut() {
+                    m.insert(key, answer.clone());
+                }
+            });
             remember(args, &answer);
             Outcome::Value(answer)
         }
         Err(e) => Outcome::Failed(e),
     }
+}
+
+/// Answers by plugin and argument values.
+type Answers = HashMap<(String, Vec<String>), String>;
+
+thread_local! {
+    /// The answers of the request being prepared ([`one_request`]).
+    static ONE_REQUEST: std::cell::RefCell<Option<Answers>> = const { std::cell::RefCell::new(None) };
+}
+
+/// Runs `f` as one request (spec 5c): the same call with the same argument
+/// values is made once, and its answer is used everywhere it appears (a
+/// nonce in a header and in the body is the same nonce).
+pub fn one_request<T>(f: impl FnOnce() -> T) -> T {
+    let outer = ONE_REQUEST.with(|m| m.borrow().is_some());
+    if outer {
+        return f();
+    }
+    ONE_REQUEST.with(|m| *m.borrow_mut() = Some(HashMap::new()));
+    struct Reset;
+    impl Drop for Reset {
+        fn drop(&mut self) {
+            ONE_REQUEST.with(|m| *m.borrow_mut() = None);
+        }
+    }
+    let _reset = Reset;
+    f()
 }
 
 /// Answers and the arguments they were computed from, newest last: a

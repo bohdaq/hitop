@@ -5,6 +5,8 @@ import { exampleResponse, snapshotResponse } from "../diff.js";
 import { isEmptyMyRequests, isPristineSample } from "../new-request.js";
 import { loadFormat } from "../wasm/format.js";
 import { platform } from "../platform/index.js";
+import { callArguments, fromSecret, pluginCallTexts } from "../plugin-calls.js";
+import { pluginUnavailable } from "../../../shared/services/variableInterpolation.js";
 
 export const ComparePart = (Base) =>
   class extends Base {
@@ -51,6 +53,11 @@ export const ComparePart = (Base) =>
   // variables it sees use, through the desktop (hitop-core's secret managers).
   // The browser can't reach them: a request that uses one fails with a note.
   async resolveRefs(source, collectionId) {
+    await this.resolveSecretManagerRefs(source, collectionId);
+    await this.resolvePlugins(source, collectionId);
+  }
+
+  async resolveSecretManagerRefs(source, collectionId) {
     const wanted = [...new Set([...secretRefs(source), ...secretRefs(Object.values(this.variables(collectionId)))])].filter((r) => !(r in this.refValues));
     if (!wanted.length) return;
     const p = platform();
@@ -59,6 +66,36 @@ export const ComparePart = (Base) =>
     const values = await p.resolveSecretRefs(wanted);
     this.refValues = { ...this.refValues, ...values };
     for (const v of Object.values(values ?? {})) if (typeof v === "string" && v) this.refSeen.add(v);
+  }
+
+  // Plugin calls (spec 5c) in what a request sends and in the variables it sees: answered by the
+  // installed plugins (platform().plugins: the plugins worker on the web; none yet on the desktop)
+  // before the request is built, once per call and argument values, and kept for this request only
+  // (`pluginValues` by collection, replaced on each request). An answer computed from a secret is
+  // masked like one (threat T11). A call nothing answered is refused by the interpolators.
+  async resolvePlugins(source, collectionId) {
+    this.pluginValues ??= {};
+    delete this.pluginValues[collectionId];
+    const variables = this.variables(collectionId);
+    const texts = [...pluginCallTexts(source), ...pluginCallTexts(Object.values(variables))].filter((t) => !(t in variables));
+    if (!texts.length) return;
+    const format = await loadFormat();
+    const calls = [...new Set(texts)].map((text) => ({ text, call: format.pluginCall(text) })).filter((c) => c.call);
+    if (!calls.length) return;
+    const plugins = platform().plugins;
+    if (!plugins) throw new Error(pluginUnavailable(calls[0].call.plugin));
+    const secrets = this.secretValuesFor(collectionId);
+    const answers = {};
+    const once = new Map();
+    for (const { text, call } of calls) {
+      const args = callArguments(call, variables);
+      const key = JSON.stringify([call.plugin, args]);
+      if (!once.has(key)) once.set(key, await plugins.call(call.plugin, "value", args));
+      const answer = once.get(key);
+      if (answer && fromSecret(args, secrets)) this.refSeen.add(answer);
+      answers[text] = answer;
+    }
+    this.pluginValues[collectionId] = answers;
   }
 
   // True when the tab has edits its saved request doesn't (computed, never

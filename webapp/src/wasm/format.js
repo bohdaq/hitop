@@ -6,6 +6,10 @@ let loading = null;
 function api(m) {
   const call = (fn, ...args) => JSON.parse(fn(...args.map((a) => (typeof a === "string" ? a : JSON.stringify(a)))));
   return {
+    // Plugins (spec 5c, hitop-core's grammar): a `${...}`'s inner text → {plugin, args: [{variable} | {text}]} or null.
+    pluginCall: (inner) => JSON.parse(m.pluginCall(String(inner))),
+    // A plugin file's manifest as JSON text {name, version, hooks, description?}; throws why it isn't valid.
+    pluginManifest: (source) => m.pluginManifest(String(source)),
     // { "hitop.yaml": text, "requests/a.yaml": text, ... } → { collection, environments }
     readFiles: (files, name) => call(m.readFiles, files, String(name ?? "")),
     // { collection, environments } → files. Secret values are left out.

@@ -197,3 +197,32 @@ fn a_run_sends_the_answer_and_masks_it_when_it_came_from_a_secret() {
     seen.assert_calls(1);
 }
 
+
+/// Spec 5c: in one request the same call with the same argument values is
+/// made once (a nonce in the URL and a header is one nonce); the next
+/// request makes it again.
+#[test]
+fn the_same_call_in_one_request_is_one_answer() {
+    let server = MockServer::start();
+    let seen = server.mock(|when, then| {
+        when.path("/n");
+        then.status(200).body("ok");
+    });
+    let (home, tmp) = (TempDir::new().unwrap(), TempDir::new().unwrap());
+    install(&home, &plugin(tmp.path(), "nonce", "function value() { return String(Math.random()).slice(2); }"));
+    let api = tmp.path().join("api");
+    fs::create_dir_all(api.join("requests")).unwrap();
+    fs::write(api.join("hitop.yaml"), format!("format: 1\nname: N\nvariables:\n  base: {}\n", server.base_url())).unwrap();
+    let post = "post: |\n    const n = pm.request.url.toString().split('n=')[1];\n    pm.test('one nonce', () => pm.expect(pm.request.headers.get('X-Nonce')).to.eql(n));\n    pm.test('same as before: ' + pm.environment.get('last'), () => pm.expect(n).to.not.eql(pm.environment.get('last')));\n    pm.environment.set('last', n);\n";
+    for name in ["a", "b"] {
+        fs::write(
+            api.join(format!("requests/{name}.yaml")),
+            format!("name: {name}\nmethod: GET\nurl: ${{base}}/n?n=${{plugin.nonce()}}\nheaders:\n- name: X-Nonce\n  value: ${{plugin.nonce()}}\nscripts:\n  {post}"),
+        )
+        .unwrap();
+    }
+    let out = hitop(&home, tmp.path()).args(["run", "./api"]).assert().get_output().clone();
+    let log = format!("{}{}", String::from_utf8_lossy(&out.stdout), String::from_utf8_lossy(&out.stderr));
+    assert!(out.status.success() && log.matches("one nonce").count() == 2, "{log}");
+    seen.assert_calls(2);
+}

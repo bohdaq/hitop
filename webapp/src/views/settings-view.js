@@ -20,6 +20,8 @@ class HitopAppSettings extends LitElement {
     version: { attribute: false },
     app: { attribute: false },
     usage: { state: true },
+    plugins: { state: true },
+    pluginError: { state: true },
   };
 
   createRenderRoot() {
@@ -29,6 +31,77 @@ class HitopAppSettings extends LitElement {
   connectedCallback() {
     super.connectedCallback();
     this.measure();
+  }
+
+  async loadPlugins() {
+    try {
+      this.plugins = await platform().plugins.list();
+    } catch (e) {
+      this.plugins = [];
+      this.pluginError = e.message;
+    }
+  }
+
+  async installPlugin(file) {
+    if (!file) return;
+    this.pluginError = null;
+    const p = platform().plugins;
+    const source = await file.text();
+    try {
+      await p.install(source);
+    } catch (e) {
+      if (!e.installed) {
+        this.pluginError = e.message;
+        return;
+      }
+      const ok = await confirm({
+        headline: `Replace plugin ${e.manifest.name}?`,
+        message: `Installed: version ${e.installed.version} (hooks: ${e.installed.hooks.join(", ")}). This file: version ${e.manifest.version} (hooks: ${e.manifest.hooks.join(", ")}).`,
+        confirmLabel: "Replace",
+      });
+      if (!ok) return;
+      try {
+        await p.install(source, { force: true });
+      } catch (e2) {
+        this.pluginError = e2.message;
+        return;
+      }
+    }
+    this.loadPlugins();
+  }
+
+  async removePlugin(name) {
+    const ok = await confirm({ headline: `Remove plugin ${name}?`, message: "Requests that call it are refused until it is installed again.", confirmLabel: "Remove", destructive: true });
+    if (!ok) return;
+    await platform().plugins.remove(name);
+    this.loadPlugins();
+  }
+
+  // Plugins (docs/PLUGINS_THREAT_MODEL.md): files the person installs in this browser, run sandboxed.
+  renderPlugins() {
+    if (!platform().plugins) return nothing;
+    if (this.plugins === undefined) {
+      this.plugins = null;
+      this.loadPlugins();
+    }
+    const list = this.plugins ?? [];
+    return html`<section aria-label="Plugins" class="settings-section plugins-section">
+      <h2>Plugins</h2>
+      <p class="hint">A plugin adds functions to requests: <code>\${plugin.name(variable, "text")}</code> in a URL, header or body. It runs sandboxed, with only the arguments you pass: no network, storage, page, other requests or secrets, and it is stopped after 5 s. Plugins stay in this browser: they are never part of a collection, an export or sync. Install only files you trust.</p>
+      ${list.length
+        ? html`<ul class="plugin-list">
+            ${list.map(
+              (p) => html`<li class="plugin-row" data-plugin=${p.name}>
+                <span><strong>${p.name}</strong> ${p.version} · hooks: ${p.hooks.join(", ")} · <code title=${p.sha256}>sha256 ${p.sha256.slice(0, 12)}</code>${p.description ? html`<br /><span class="hint">${p.description}</span>` : nothing}</span>
+                <lit-material-button variant="text" aria-label=${`Remove plugin ${p.name}`} @click=${() => this.removePlugin(p.name)}>Remove</lit-material-button>
+              </li>`,
+            )}
+          </ul>`
+        : html`<p class="hint">No plugins installed.</p>`}
+      <input type="file" accept=".js,text/javascript" class="plugin-file" hidden @change=${(e) => (this.installPlugin(e.target.files?.[0]), (e.target.value = ""))} />
+      <lit-material-button variant="outlined" @click=${() => this.querySelector(".plugin-file").click()}>Install a plugin…</lit-material-button>
+      ${this.pluginError ? html`<p class="error-text" role="alert">${this.pluginError}</p>` : nothing}
+    </section>`;
   }
 
   async measure() {
@@ -194,6 +267,7 @@ class HitopAppSettings extends LitElement {
         </section>
     ${this.renderPrivacy()}
     ${this.renderAi()}
+    ${this.renderPlugins()}
     ${this.renderStorage()}
         <section aria-label="Keyboard shortcuts" class="settings-section">
           <h2>Keyboard shortcuts</h2>

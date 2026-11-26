@@ -630,6 +630,8 @@ hitop-code-editor { display: grid; gap: var(--space-50); align-content: start; }
 .settings-facts dt { color: var(--md-sys-color-on-surface-variant); }
 .settings-facts dd { margin: 0; overflow-wrap: anywhere; }
 .settings-notes { margin: 0; padding-left: var(--space-300); color: var(--md-sys-color-on-surface-variant); font-size: var(--text-sm); line-height: var(--leading-sm); }
+.plugin-list { list-style: none; padding: 0; margin: 8px 0; }
+.plugin-row { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 6px 0; border-bottom: 1px solid var(--md-sys-color-outline-variant); overflow-wrap: anywhere; }
 .settings-actions { display: flex; flex-wrap: wrap; gap: var(--space-100); }
 .desktop-settings { display: contents; }
 @media (max-width: 600px) { .settings-facts { grid-template-columns: minmax(0, 1fr); } .settings-facts dd { margin-bottom: var(--space-100); } }
