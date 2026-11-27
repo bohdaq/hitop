@@ -80,6 +80,8 @@ const PROBE = `${manifest('probe')}function value() { return [typeof process, ty
     await p.evaluate(() => document.querySelector('hitop-app').go('settings'));
     await p.waitForSelector('.plugins-section', { timeout: 10000 });
     const installFile = async (name, text) => {
+      await p.evaluate(() => document.querySelector('hitop-app').go('settings'));
+      await p.waitForSelector('.plugins-section', { timeout: 10000 });
       await p.locator('.plugin-file').setInputFiles({ name: `${name}.js`, mimeType: 'text/javascript', buffer: Buffer.from(text) });
       await p.waitForSelector(`.plugin-row[data-plugin="${name}"]`, { timeout: 10000 });
     };
@@ -98,6 +100,15 @@ const PROBE = `${manifest('probe')}function value() { return [typeof process, ty
     check('the plugin answer is sent', a?.sig === SECRET_B64 && b?.sig === SECRET_B64, JSON.stringify(hits));
     check('the same call in one request is one answer', a?.n && a.n === a.nonce && b.n === b.nonce, JSON.stringify([a, b]));
     check('the next request calls it again', a?.n !== b?.n, JSON.stringify([a, b]));
+    // T1: the editor names the plugin a secret is passed to (b64(cred)), not the others.
+    await p.evaluate(() => document.querySelector('hitop-app').showWorkspace());
+    await p.waitForSelector('.plugin-secret-note', { timeout: 10000 });
+    const note = await p.locator('.plugin-secret-note').textContent();
+    check('the editor warns that a secret is passed to a plugin, naming it', /plugin b64/.test(note) && /plugin\.b64\(cred\)/.test(note) && !/nonce/.test(note), note);
+    // T2/T3: the answers that went out are shown with the response, masked where they came from the secret.
+    await p.locator('.sent-plugins summary').click();
+    const shown = await p.locator('.sent-plugins').textContent();
+    check('the response shows the plugin answers that were sent, masked when from a secret', /2 calls/.test(shown) && shown.includes('••••') && !shown.includes(SECRET_B64) && shown.includes(b.n), shown);
     // T11: an answer computed from a secret is masked like one: the response snapshots in History
     // (the server echoed it). History keeps the request as written, with the call.
     await p.evaluate(() => document.querySelector('hitop-app').store.save());

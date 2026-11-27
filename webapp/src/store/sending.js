@@ -172,6 +172,7 @@ export const SendingPart = (Base) =>
       file: this.loadedRequest(tab)?.file,
     };
     this.notSent.delete(tab.id);
+    this.sentPlugins.delete(tab.id);
     this.tabs = tabService.updateTab(this.tabs, index, { ...NO_RESPONSE, loading: true });
     // An event stream (Accept: text/event-stream, web app): its events as they arrive, in memory
     // (store.events by tab id), until it ends or Stop; no time limit.
@@ -219,6 +220,9 @@ export const SendingPart = (Base) =>
       // The body as received, for Raw (memory only: the tab keeps the formatted one).
       if (raw !== undefined) this.rawBodies.set(tab.id, raw);
       else this.rawBodies.delete(tab.id);
+      // The plugin answers that went out (memory only, masked; threat model part 3 decision 1).
+      if (prepared.plugins?.length) this.sentPlugins.set(tab.id, prepared.plugins);
+      else this.sentPlugins.delete(tab.id);
       this.patchTab(tab.id, {
         response: data,
         responseType: type,

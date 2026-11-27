@@ -61,6 +61,8 @@ Releases before 1.2 are listed in ROADMAP.md (section 5) and on the GitHub Relea
 - Plugins in the web app and the browser extensions: Settings → Plugins installs a plugin file into this browser (IndexedDB, never
   localStorage, exports, the library or sync; its SHA-256 is checked before each call). `${plugin.name(args)}` is answered in its own worker
   (boa in WebAssembly, with only the call's arguments), stopped after 5 s; an answer computed from a secret is masked like one.
+- Plugins: the request editor warns when a secret is passed to a plugin (by name or by value), and the response shows each plugin call
+  and the answer that was sent, masked where it came from a secret (this session only, never in history).
 - Plugins in the desktop app: Settings → Plugins installs into the same place as `hitop plugin install` (a plugin installed with either is
   in both), and each call runs in a sandboxed child process of the app, as in the CLI (no environment, 5 s, memory capped on Linux and macOS).
 

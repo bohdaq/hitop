@@ -5,7 +5,7 @@ import { readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { test } from "node:test";
 import { fileURLToPath } from "node:url";
-import { callArguments, fromSecret, pluginCallTexts, withPluginValues } from "../src/plugin-calls.js";
+import { callArguments, fromSecret, pluginCallTexts, secretPluginCalls, withPluginValues } from "../src/plugin-calls.js";
 import { formatFromBytes } from "../src/wasm/format.js";
 import { interpolateVariables } from "../../shared/services/variableInterpolation.js";
 
@@ -43,4 +43,13 @@ test("answers fill calls in, also inside variable values; a variable named like 
 test("an answer computed from a secret is a secret (T11)", () => {
   assert.equal(fromSecret(["Bearer s3cr3t"], ["s3cr3t"]), true);
   assert.equal(fromSecret(["hi"], ["s3cr3t", ""]), false);
+});
+
+test("the editor names calls passed a secret by name or by value (T1)", () => {
+  const calls = ["plugin.b64(cred)", 'plugin.b64("s3cr3t")', "plugin.b64(user)", "plugin.nonce()", "plugin.b64(token)"].map((text) => ({ text, call: format.pluginCall(text) }));
+  const variables = { cred: "", user: "bob", token: "Bearer s3cr3t" };
+  assert.deepEqual(
+    secretPluginCalls(calls, variables, ["cred"], ["s3cr3t"]).map((c) => c.text),
+    ["plugin.b64(cred)", 'plugin.b64("s3cr3t")', "plugin.b64(token)"],
+  );
 });

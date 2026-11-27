@@ -592,6 +592,8 @@ jobs:
           # desktop/scripts/check-store-binary.sh, which release-msstore.yml runs on the exe in the MSIX.
           cargo build --locked
           ../scripts/check-store-binary.sh store target/debug/hitop-desktop "store configuration"
+          # The app as its own plugin child (--hitop-plugin-run), before Tauri starts.
+          ../scripts/plugin-child-check.sh target/debug/hitop-desktop
           # Control: the GitHub Release configuration (tauri.github.conf.json, --features
           # telemetry,updater,github) has the ping, the updater plugin, its endpoint and public key, and the
           # GitHub channel (store mode off).
@@ -651,6 +653,13 @@ jobs:
         run: |
           cargo check --locked
           cargo clippy --locked -- -D warnings
+      - name: The app as its own plugin child (--hitop-plugin-run; the child's memory cap is RLIMIT_DATA here)
+        working-directory: desktop/src-tauri
+        env:
+          CARGO_PROFILE_DEV_DEBUG: "0"
+        run: |
+          cargo build --locked
+          ../scripts/plugin-child-check.sh target/debug/hitop-desktop
       - name: clippy with the GitHub Release features (usage ping, self-update)
         working-directory: desktop/src-tauri
         run: cargo clippy --locked --features telemetry,updater,github -- -D warnings

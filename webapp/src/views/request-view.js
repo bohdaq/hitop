@@ -811,6 +811,7 @@ export class HitopRequest extends LitElement {
         </lit-material-tabs>
         ${bodyParts?.tools ?? nothing}
         </div>
+        ${this.sentPluginsNote()}
         ${!live && /text\/event-stream/i.test(t.responseHeaders?.["content-type"] ?? "") && platform().stream
           ? html`<p class="hint sse-hint">An event stream: add the header <code>Accept: text/event-stream</code> to see its events as they arrive.
               <lit-material-button variant="text" @click=${() => this.set({ headers: [...(t.headers || []).filter((h) => h.name || h.value), { name: "Accept", value: "text/event-stream" }] })}>Add it</lit-material-button></p>`
@@ -1166,6 +1167,29 @@ export class HitopRequest extends LitElement {
     </p>`;
   }
 
+  // Threat T1 (docs/PLUGINS_THREAT_MODEL.md): a plugin call passed a secret, named before Send.
+  pluginSecretNote() {
+    const calls = this.store.pluginSecretCalls(this.tab);
+    if (!calls.length) return nothing;
+    const plugins = [...new Set(calls.map((c) => c.plugin))];
+    return html`<p class="plugin-secret-note" role="status">
+      ${icon("warning-circle")}
+      <span>This request passes a secret to ${plugins.length === 1 ? "plugin" : "plugins"} <span class="mono">${plugins.join(", ")}</span> (<span class="mono">${calls.map((c) => `\${${c.text}}`).join(", ")}</span>). A plugin can put what it gets into its answer, which is sent; pass it a secret only if you trust it.</span>
+    </p>`;
+  }
+
+  // The plugin answers the last send used (part 3 decision 1): masked, this session only.
+  sentPluginsNote() {
+    const sent = this.store.sentPlugins.get(this.tab.id);
+    if (!sent?.length) return nothing;
+    return html`<details class="sent-plugins">
+      <summary>Plugins answered ${sent.length === 1 ? "1 call" : `${sent.length} calls`} in this request</summary>
+      <dl>
+        ${sent.map((p) => html`<dt class="mono">\${${p.call}}</dt><dd class="mono">${p.answer.length > 400 ? `${p.answer.slice(0, 400)}…` : p.answer}</dd>`)}
+      </dl>
+    </details>`;
+  }
+
   // Keeps the URL mirror on the input's box and scroll position.
   syncUrlMirror() {
     const field = this.querySelector(".url-field");
@@ -1301,6 +1325,7 @@ export class HitopRequest extends LitElement {
         </span>
       </form>
       ${this.secretNote()}
+      ${this.pluginSecretNote()}
       ${this.lineMenu()}
       ${this.varPeek()}
       ${this.panes(this.renderEditor(), () => this.renderResponse(), "Response")}`;

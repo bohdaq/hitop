@@ -87,6 +87,8 @@ export class Store extends Parts {
     this.urlErrors = new Map();
     // Response bodies as received, by tab id, where the tab shows them formatted (JSON).
     this.rawBodies = new Map();
+    // Per tab: the plugin calls its last send answered, as [{call, answer}] (masked; memory only).
+    this.sentPlugins = new Map();
     // U19: tab id → { text, missing } for a send stopped by a secret with no value here (memory only).
     this.notSent = new Map();
     // What the main area shows: the request tabs, all collections, one
@@ -242,6 +244,7 @@ export class Store extends Parts {
     }
     this.keptBodies.clear();
     this.rawBodies.clear();
+    this.sentPlugins.clear();
     this.tabs = this.tabs.map((t) => (t.loading ? t : { ...t, ...NO_RESPONSE }));
     this.emit();
     this.notify("Cleared the responses kept for your tabs");

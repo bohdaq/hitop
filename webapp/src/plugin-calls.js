@@ -46,3 +46,19 @@ export function withPluginValues(variables, answers) {
   }
   return out;
 }
+
+/**
+ * The calls that pass a plugin a secret (threat T1: the editor warns before sending), by the same tests
+ * as masking: an argument that is a secret variable by name, or whose value holds a secret value (T11).
+ * `calls` = [{text, call}] (call parsed by hitop-wasm pluginCall); answers [{text, plugin}].
+ */
+export function secretPluginCalls(calls, variables, secretNames, secretValues) {
+  const names = new Set(secretNames);
+  return calls
+    .filter(({ call }) => {
+      if (call.args.some((a) => "variable" in a && names.has(a.variable))) return true;
+      const values = call.args.map((a) => ("text" in a ? a.text : variables[a.variable])).filter((v) => typeof v === "string");
+      return fromSecret(values, secretValues);
+    })
+    .map(({ text, call }) => ({ text, plugin: call.plugin }));
+}

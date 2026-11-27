@@ -5,7 +5,7 @@ import { exampleResponse, snapshotResponse } from "../diff.js";
 import { isEmptyMyRequests, isPristineSample } from "../new-request.js";
 import { loadFormat } from "../wasm/format.js";
 import { platform } from "../platform/index.js";
-import { callArguments, fromSecret, pluginCallTexts } from "../plugin-calls.js";
+import { callArguments, fromSecret, pluginCallTexts, secretPluginCalls } from "../plugin-calls.js";
 import { pluginUnavailable } from "../../../shared/services/variableInterpolation.js";
 
 export const ComparePart = (Base) =>
@@ -77,6 +77,18 @@ export const ComparePart = (Base) =>
   // returned for this request's own variables (plugin-calls.js withPluginValues), never kept on the
   // store, so nothing else sees them. An answer computed from a secret is masked like one (threat
   // T11). A call nothing answered is refused by the interpolators.
+  // Threat T1: the plugin calls in a tab's request that are passed a secret, for the editor's note
+  // ([{text, plugin}]); empty until hitop-wasm is loaded (the note comes with the next render).
+  pluginSecretCalls(tab) {
+    if (!this.format) return [];
+    const source = { url: tab.url, headers: tab.headers, body: tab.requestBody, auth: tab.auth, formFields: tab.formFields, graphql: tab.graphql, grpcMessage: tab.grpcMessage, subprotocols: tab.subprotocols };
+    const variables = this.variables(tab.loadedCollectionId);
+    const texts = [...pluginCallTexts(source)].filter((t) => !(t in variables));
+    if (!texts.length) return [];
+    const calls = texts.map((text) => ({ text, call: this.format.pluginCall(text) })).filter((c) => c.call);
+    return secretPluginCalls(calls, variables, this.secretNamesFor(tab.loadedCollectionId), this.secretValuesFor(tab.loadedCollectionId));
+  }
+
   async resolvePlugins(source, collectionId) {
     const variables = this.variables(collectionId);
     const texts = [...pluginCallTexts(source), ...pluginCallTexts(Object.values(variables))].filter((t) => !(t in variables));

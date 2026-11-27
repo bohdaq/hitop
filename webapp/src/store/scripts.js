@@ -1,6 +1,6 @@
 // The store's scripts (a part of Store, src/store.js).
 import contextService from "../../../shared/services/contextService.js";
-import { applyAuth, oauthAuthorizeUrl, oauthCodeRequest, oauthParseToken, oauthTokenRequest, pkcePair } from "../features.js";
+import { applyAuth, maskSecrets, oauthAuthorizeUrl, oauthCodeRequest, oauthParseToken, oauthTokenRequest, pkcePair } from "../features.js";
 import { applyPathVariables, inheritDefaults } from "../defaults.js";
 import { fillVariables, usesPostmanApi } from "../pm.js";
 import { interpolateVariables } from "../../../shared/services/variableInterpolation.js";
@@ -106,12 +106,15 @@ export const ScriptsPart = (Base) =>
     const auth = source.auth?.type === "oauth2" ? await this.oauthBearer(source.auth, interpolate, signal) : source.auth;
     const authed = applyAuth(auth, { url, headers, body }, interpolate);
     const out = await this.runPreScript(source.preRequestScript, collectionId, source.method, authed.url, authed.headers, authed.body);
-    if (!postman) return out;
+    // The plugin answers this request used (threat model, part 3 decision 1): shown with the response,
+    // masked where computed from a secret; never sent anywhere but in the request itself.
+    const plugins = Object.entries(answers).map(([call, answer]) => ({ call, answer: maskSecrets(answer, this.secretValuesFor(collectionId)) }));
+    if (!postman) return { ...out, plugins };
     const after = withPluginValues(this.variables(collectionId), answers);
     this.checkSecrets(source, collectionId, after);
     const strict = (text) => (text ? interpolateVariables(text, after) : text);
     const sentBody = gql && out.body === authed.body ? graphqlBody(strict) : strict(out.body);
-    return { url: strict(out.url), headers: out.headers.map((h) => ({ ...h, name: strict(h.name), value: strict(h.value) })), body: sentBody, logs: out.logs };
+    return { url: strict(out.url), headers: out.headers.map((h) => ({ ...h, name: strict(h.name), value: strict(h.value) })), body: sentBody, logs: out.logs, plugins };
   }
 
   checkSecrets(source, collectionId, variables) {

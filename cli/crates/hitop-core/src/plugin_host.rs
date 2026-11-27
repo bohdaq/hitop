@@ -23,6 +23,11 @@ use serde_json::{json, Value};
 use crate::plugins::{self, Manifest, MAX_BYTES, TIME_LIMIT_MS};
 use crate::storage;
 
+/// The most a call's input (`{source, hook, args}` as JSON) may be: the plugin
+/// (up to 1 MB) and its arguments, with room for JSON escaping. The parent
+/// refuses a larger call; the child reads no more.
+pub const INPUT_MAX: usize = 8 * 1024 * 1024;
+
 /// One installed plugin, as `plugins.json` keeps it.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct Installed {
@@ -185,8 +190,11 @@ fn run_child(child: &Child, source: &str, hook: &str, args: Vec<Value>) -> Resul
         const CREATE_NO_WINDOW: u32 = 0x0800_0000;
         command.creation_flags(CREATE_NO_WINDOW);
     }
-    let mut process = command.spawn().map_err(|e| format!("can't start: {e}"))?;
     let input = serde_json::to_vec(&json!({"source": source, "hook": hook, "args": args})).map_err(|e| e.to_string())?;
+    if input.len() > INPUT_MAX {
+        return Err(format!("wasn't called: its input would be more than {} MB", INPUT_MAX / (1024 * 1024)));
+    }
+    let mut process = command.spawn().map_err(|e| format!("can't start: {e}"))?;
     let mut stdin = process.stdin.take().expect("piped");
     let writer = std::thread::spawn(move || {
         let _ = stdin.write_all(&input);
@@ -231,7 +239,7 @@ pub fn child_main() -> i32 {
     limit_memory();
     crate::scripting::set_limits(10_000_000, 400);
     let mut input = vec![];
-    if std::io::stdin().take((MAX_BYTES * 3) as u64).read_to_end(&mut input).is_err() {
+    if std::io::stdin().take(INPUT_MAX as u64).read_to_end(&mut input).is_err() {
         return 2;
     }
     let out = match serde_json::from_slice::<Value>(&input) {
