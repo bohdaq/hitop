@@ -54,7 +54,7 @@ Each call gets a fresh engine with only the call's input, a loop limit, a call-d
 | # | Threat | Answer |
 |---|---|---|
 | T1 | A malicious plugin reads secrets or keys | It never gets them: no host functions; the engine has only the call's input. `value` gets the arguments as written, after variables are filled in, so a secret reaches a plugin only where the person passes it to one (shown as a warning in the editor). |
-| T2 | It sends data out | No network or file APIs in the engine. Its answer is the only output: a `value` answer goes into the request the person sends, and the answers that were sent are shown with the response (part 3 decision 1). Viewer answers are shown as text (escaped, never HTML); importer answers are a collection the person reviews before it's added. |
+| T2 | It sends data out | No network or file APIs in the engine. Its answer is the only output: a `value` answer goes into the request the person sends, and the answers that were sent are shown with the response (part 3 decision 1). Viewer answers are shown as text (escaped, never HTML; the CLI shows control characters as U+FFFD); importer answers are collections added the way an imported file is, with the same report (the CLI adds them as it adds a file, without a review step). |
 | T3 | It hides data in its answer (a request that leaks a secret) | Only via T1's case (the person passed the secret to it), which the editor warns about before sending. Every answer that went out is shown with the response, masked when it came from a secret. |
 | T4 | It runs forever or uses all memory | Time limit enforced from outside: the worker or the child process is ended. Memory: the child's cap; in the browser the worker's own heap (a tab can still grow until the 5 s limit). |
 | T5 | It escapes the engine (a boa bug) | Web and extensions: an escape from boa into the worker's JavaScript would reach what a same-origin worker has (`fetch`, IndexedDB, the app's origin), but not the page's localStorage, DOM or memory; the worker is ended after 5 s or a trap. Desktop and CLI: a child process with only stdin and stdout, no secrets in its environment (the environment is cleared), memory capped; it still runs as the person, so a full escape there could reach their files (residual risk). |
@@ -91,15 +91,17 @@ Each call gets a fresh engine with only the call's input, a loop limit, a call-d
 8. **Viewers get text only, masked.** A body that isn't UTF-8 text isn't offered to a viewer in this version: masking can't apply to
    raw bytes, and base64 of them would carry a secret past the masker. Headers and body are masked by the masker the send used
    (secret values and answers computed from them, T11). The CLI prints a viewer's answer through that masker too, since stdout can
-   end up in a CI log.
+   end up in a CI log, with control characters other than newline and tab shown as U+FFFD. Header names are lowercase and sorted.
 9. **Table shape.** `columns`: 1 to 100 entries; `rows`: at most 10 000, each an array of at most as many cells as there are
    columns (a shorter row is filled with empty cells, a longer one is refused and named). A cell or column title becomes text: a
    string as it is, `null` as empty, a number or `true`/`false` as written in JSON, an object or array as compact JSON. Any other
    answer shape is refused.
 10. **Importers make collections only.** The answer is the HITOP JSON model (one collection or an array of them), read by the same
-    code as a HITOP JSON file and written the same way (request `file` paths are checked as for any collection folder, so nothing
-    lands outside it). It can't add environments, globals or secret values, and its `workspace` (the keychain namespace) is dropped,
-    so imported requests never read another collection's keychain entries.
+    code as a HITOP JSON file and written the same way (request `file` paths and `folders` entries are checked as for any collection
+    folder, so nothing lands outside it). It can't add environments, globals or secret values. Its `workspace` (the keychain
+    namespace) and `org` are dropped: where a collection is kept, and which keychain entries it uses, is decided by hitop as for any
+    import (a new folder gets a new namespace; global storage has one namespace, shared by every collection in it; in global storage a
+    clashing id is replaced and a clashing name gets " (Imported)", so nothing is overwritten).
 11. **`value` arguments stay text.** The `call` command refuses a `value` call whose arguments aren't all text (no silent
     conversion); `viewer`, `importer` and `snippet` get their one structured input.
 
@@ -126,6 +128,8 @@ Each call gets a fresh engine with only the call's input, a loop limit, a call-d
 - Windows: the child has no memory cap yet (a Job object); the 5 s limit still ends it, and the engine's loop and depth limits apply.
 - macOS: the cap is `RLIMIT_DATA`, which macOS enforces loosely; the 5 s limit is the stop that always holds.
 - A person can still pass a secret to a `value` plugin; hitop warns but doesn't stop it.
+- An imported collection is untrusted like any imported file: a request in it that uses a secret variable (in global storage, a global
+  environment's) sends that value where the request's URL points when the person sends it.
 - A plugin answer is seen only after it was sent (part 3 decision 1); the T1 warning is what stands before the send.
 - Web app: a plugin call in a WebSocket message sent from the log (not the connect URL or headers) is refused.
 

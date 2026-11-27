@@ -292,3 +292,19 @@ fn limit_memory() {
 /// still ends the child (docs/PLUGINS_THREAT_MODEL.md, residual risks).
 #[cfg(not(unix))]
 fn limit_memory() {}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// Decision 11: a value call's arguments are text; others are refused
+    /// before any plugin is looked up or a child started.
+    #[test]
+    fn a_value_call_with_arguments_that_arent_text_is_refused() {
+        let child = Child { program: PathBuf::from("/nonexistent/hitop"), args: vec![] };
+        for args in [json!([1]), json!(["a", null]), json!([{"k": "v"}])] {
+            let e = command(&child, "hint", "call", &json!({"name": "p", "hook": "value", "args": args})).unwrap_err();
+            assert!(e.contains("a value call's arguments are text"), "{args}: {e}");
+        }
+    }
+}

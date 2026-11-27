@@ -345,6 +345,9 @@ pub const VIEWER_BODY: usize = 1024 * 1024;
 /// The caller masks `headers` and `body` first (decision 8); a body over
 /// [`VIEWER_BODY`] is cut, and `truncated` says so.
 pub fn viewer_input(status: u16, headers: &[(String, String)], body: &str) -> serde_json::Value {
+    // Names lowercase and sorted, so a viewer sees the same shape everywhere.
+    let mut headers: Vec<(String, &String)> = headers.iter().map(|(k, v)| (k.to_ascii_lowercase(), v)).collect();
+    headers.sort();
     let mut cut = body.len().min(VIEWER_BODY);
     while !body.is_char_boundary(cut) {
         cut -= 1;
@@ -369,7 +372,8 @@ fn cell_text(v: &serde_json::Value) -> String {
 /// Checks the answer of plugin `name`'s `hook` (decision 6) and returns it as
 /// every surface uses it: text for `value` and `snippet`; text or
 /// `{columns, rows}` of text for `viewer`; for `importer`, the HITOP JSON
-/// model (an array of collections) without `workspace` (decision 10).
+/// model (an array of collections) without `workspace` or `org` (decision 10):
+/// where a collection is kept is the person's choice.
 pub fn check_answer(name: &str, hook: &str, answer: &serde_json::Value) -> Result<serde_json::Value, String> {
     use serde_json::Value;
     let text = |a: &Value| match a {
@@ -418,6 +422,7 @@ pub fn check_answer(name: &str, hook: &str, answer: &serde_json::Value) -> Resul
                     return Err(format!("plugin '{name}' answered something other than a collection"));
                 };
                 obj.remove("workspace");
+                obj.remove("org");
                 out.push(c);
             }
             Ok(Value::Array(out))
@@ -434,6 +439,11 @@ pub fn imported_collections(name: &str, answer: &serde_json::Value) -> Result<Ve
     for c in &collections {
         if c.name.trim().is_empty() {
             return Err(format!("plugin '{name}' answered a collection without a name"));
+        }
+        let folders = c.extra.get("folders").and_then(|f| f.as_array()).cloned().unwrap_or_default();
+        for f in &folders {
+            let path = f.as_str().ok_or_else(|| format!("plugin '{name}' answered a folder that isn't text"))?;
+            crate::format::names::check_rel_path(path).map_err(|e| format!("plugin '{name}': folder: {e}"))?;
         }
         for r in &c.requests {
             if let Some(f) = &r.file {
@@ -576,7 +586,7 @@ mod tests {
             assert!(e.contains(says), "{answer}: {e}");
         }
         // Importers: collections only, without a keychain namespace.
-        let c = json!({"id": 1, "name": "C", "workspace": "other", "requests": []});
+        let c = json!({"id": 1, "name": "C", "workspace": "other", "org": "o", "requests": []});
         assert_eq!(check_answer("p", "importer", &c).unwrap(), json!([{"id": 1, "name": "C", "requests": []}]));
         let read = imported_collections("p", &json!([c])).unwrap();
         assert_eq!((read.len(), read[0].workspace.clone()), (1, None));
@@ -586,6 +596,8 @@ mod tests {
             (json!([1]), "other than a collection"),
             (json!({"name": "C"}), "can't read"),
             (json!({"id": 1, "name": " ", "requests": []}), "without a name"),
+            (json!({"id": 1, "name": "C", "requests": [], "folders": ["a", "../../x"]}), "invalid path"),
+            (json!({"id": 1, "name": "C", "requests": [], "folders": [1]}), "isn't text"),
             (json!({"id": 1, "name": "C", "requests": [{"id": 1, "name": "r", "url": "", "method": "GET", "headers": [], "body": "", "file": "../x"}]}), "invalid path"),
         ] {
             let e = imported_collections("p", &answer).unwrap_err();
@@ -597,9 +609,9 @@ mod tests {
     #[test]
     fn a_viewer_gets_at_most_a_megabyte_cut_on_a_character() {
         let body = format!("{}é", "a".repeat(VIEWER_BODY - 1));
-        let v = viewer_input(200, &[("x".into(), "1".into())], &body);
+        let v = viewer_input(200, &[("X-B".into(), "1".into()), ("a".into(), "2".into())], &body);
         assert_eq!((v["body"].as_str().unwrap().len(), v["truncated"].as_bool()), (VIEWER_BODY - 1, Some(true)));
-        assert_eq!(v["headers"], serde_json::json!([{"name": "x", "value": "1"}]));
+        assert_eq!(v["headers"], serde_json::json!([{"name": "a", "value": "2"}, {"name": "x-b", "value": "1"}]));
         assert_eq!(viewer_input(204, &[], "ok")["truncated"], serde_json::json!(false));
     }
 }

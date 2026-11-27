@@ -292,6 +292,23 @@ fn a_viewer_gets_a_masked_text_response_and_its_table_is_text() {
     let text = String::from_utf8_lossy(&out.stdout).to_string();
     assert!(!text.contains(SECRET) && text.contains("ann"), "{text}");
 
+    // The answer is masked too: a viewer that puts the secret together from
+    // pieces (each too short to be masked going in) prints ••••. Nor does
+    // its text drive the terminal.
+    server.mock(|when, then| {
+        when.path("/pieces");
+        then.status(200).body(format!("{}\n{}\n", &SECRET[..9], &SECRET[9..]));
+    });
+    install(&home, &hooked(tmp.path(), "join", "viewer", "function viewer(r) { return 'got ' + r.body.split('\\n').join('') + ' \\u001b[31mred'; }"));
+    let out = hitop(&home, tmp.path())
+        .args(["send", &format!("{}/pieces", server.base_url()), "--secret", &format!("cred={SECRET}"), "-H", "X-C: ${cred}", "--view", "join"])
+        .assert()
+        .success()
+        .get_output()
+        .clone();
+    let text = String::from_utf8_lossy(&out.stdout).to_string();
+    assert!(text.contains("got ••••") && !text.contains(SECRET) && !text.contains('\u{1b}') && text.contains("\u{fffd}[31mred"), "{text}");
+
     // Too many columns, a row too long, an answer that isn't text or a table.
     for (name, body, says) in [
         ("wide", "function viewer() { return {columns: Array.from({length: 101}, (_, i) => 'c' + i), rows: []}; }", "101 columns"),
@@ -333,6 +350,16 @@ fn an_importer_makes_collections_like_a_hitop_file() {
     let out = hitop(&home, tmp.path()).args(["import", "--plugin", "lines", "bad.txt", "--to", "bad"]).assert().failure().get_output().clone();
     assert!(String::from_utf8_lossy(&out.stderr).contains("invalid path"), "{}", String::from_utf8_lossy(&out.stderr));
     assert!(!tmp.path().join("escape.yaml").exists() && !tmp.path().join("bad/escape.yaml").exists());
+
+    // Into global storage: a clashing id and name never replace a collection.
+    hitop(&home, tmp.path()).args(["import", "--plugin", "lines", "urls.txt"]).assert().success();
+    hitop(&home, tmp.path()).args(["import", "--plugin", "lines", "urls.txt"]).assert().success().stdout(contains("Imported 'urls.txt (Imported)'"));
+    let stored = fs::read_to_string(home.path().join("config/hitop/collections.json")).unwrap();
+    let stored: serde_json::Value = serde_json::from_str(&stored).unwrap();
+    let list = stored.as_array().unwrap();
+    assert_eq!(list.len(), 2, "{stored}");
+    assert_ne!(list[0]["id"], list[1]["id"]);
+    assert!(!stored.to_string().contains("someone-else"));
 
     // A value plugin isn't an importer.
     install(&home, &plugin(tmp.path(), "v", "function value() { return 'x'; }"));

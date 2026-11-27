@@ -112,28 +112,31 @@ pub fn host_value(name: &str, hook: &str, args: Vec<serde_json::Value>) -> Resul
 /// `--view <plugin>` on `send` and `requests send`: the response (already
 /// masked) through the plugin's viewer hook, printed through the masker
 /// again (docs/PLUGINS_THREAT_MODEL.md, decisions 3, 8 and 9). A table is
-/// aligned columns, or tab-separated with `raw`.
+/// aligned columns, or tab-separated with `raw`; control characters are
+/// never printed as they are.
 pub fn print_view(name: &str, masker: &hitop_core::secrets::Masker, result: &hitop_core::model::RequestResult, raw: bool) -> Result<()> {
     if result.body.contains('\u{fffd}') {
         bail!("the response isn't text, so it isn't given to plugin '{name}' (viewers get text responses only)");
     }
-    let mut headers: Vec<(String, String)> = result.headers.iter().map(|(k, v)| (k.clone(), masker.mask(v))).collect();
-    headers.sort();
+    let headers: Vec<(String, String)> = result.headers.iter().map(|(k, v)| (k.clone(), masker.mask(v))).collect();
     let input = plugins::viewer_input(result.status, &headers, &masker.mask(&result.body));
     let truncated = input["truncated"].as_bool().unwrap_or(false);
     let answer = host_value(name, "viewer", vec![input])?;
     if truncated {
         eprintln!("note: plugin '{name}' got the first {} MB of the body", plugins::VIEWER_BODY / (1024 * 1024));
     }
+    // A plugin's text never drives the terminal: control characters other
+    // than newline and tab are shown as U+FFFD.
+    let printable = |s: &str| -> String { s.chars().map(|c| if c.is_control() && c != '\n' && c != '\t' { '\u{fffd}' } else { c }).collect() };
     if let Some(text) = answer.as_str() {
-        println!("{}", masker.mask(text));
+        println!("{}", printable(&masker.mask(text)));
         return Ok(());
     }
     let cells = |v: &serde_json::Value| -> Vec<String> { v.as_array().map(|a| a.iter().map(|c| masker.mask(c.as_str().unwrap_or_default())).collect()).unwrap_or_default() };
     let columns = cells(&answer["columns"]);
     let rows: Vec<Vec<String>> = answer["rows"].as_array().map(|r| r.iter().map(cells).collect()).unwrap_or_default();
     if raw {
-        let clean = |s: &String| s.replace(['\t', '\n', '\r'], " ");
+        let clean = |s: &String| printable(&s.replace(['\t', '\n', '\r'], " "));
         println!("{}", columns.iter().map(clean).collect::<Vec<_>>().join("\t"));
         for r in &rows {
             println!("{}", r.iter().map(clean).collect::<Vec<_>>().join("\t"));
