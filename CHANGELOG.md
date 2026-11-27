@@ -12,6 +12,12 @@ Releases before 1.2 are listed in ROADMAP.md (section 5) and on the GitHub Relea
   masked like the secret. docs/PLUGINS_THREAT_MODEL.md.
 - Plugins: in one request, the same call with the same argument values is made once (a nonce in the URL and a header is one nonce;
   spec section 5c).
+- Plugins: the `viewer`, `importer` and `snippet` hooks. `hitop send|requests send --view <plugin>` shows a text response through a
+  viewer (text, or a table printed as columns; tab-separated with `--raw`); it gets headers and body with secrets masked, and a body that
+  isn't text isn't given to it. `hitop import --plugin <name> <files>` reads files with an importer: its answer is read like a HITOP JSON
+  file (collections only; its keychain `workspace` is dropped; request files outside the folder are refused). `hitop snippet --plugin
+  <name>` writes code with a snippet hook, which gets the request with secrets as `{{NAME}}` (`--show-secrets` is refused with it).
+  Answers are checked by one validator in hitop-core (also in hitop-wasm): text up to 1 MB; tables of at most 100 columns and 10 000 rows.
 - A request that calls a plugin a client can't run (the iOS and Android apps for now, MCP and monitors without one installed)
   is refused with the plugin's name, never sent with the call as text; also when a variable's value holds the call. Before, the web app's
   Postman-script mode sent it as text.

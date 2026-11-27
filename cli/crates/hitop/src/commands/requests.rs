@@ -77,6 +77,9 @@ pub enum RequestsCmd {
         /// Disable syntax highlighting
         #[arg(long)]
         raw: bool,
+        /// Show the response through an installed plugin's viewer hook (text or a table) instead of the body
+        #[arg(long, value_name = "PLUGIN")]
+        view: Option<String>,
         /// Environment to use instead of the active one
         #[arg(short = 'e', long = "env")]
         env: Option<String>,
@@ -248,7 +251,7 @@ pub fn run(cmd: RequestsCmd) -> Result<()> {
             println!("{} Renamed '{}' → '{}'", "✓".green(), request.bold(), new_name.bold());
         }
 
-        RequestsCmd::Send { collection, request, show_headers, raw, env, secrets, cookies, network } => {
+        RequestsCmd::Send { collection, request, show_headers, raw, view, env, secrets, cookies, network } => {
             network.apply()?;
             use hitop_core::{http, prepare::{prepare_in, variables, Draft, Scopes}, scripting::{run_post_request_script_with, PostRequestCtx}};
             use crate::output;
@@ -355,7 +358,9 @@ pub fn run(cmd: RequestsCmd) -> Result<()> {
                 output::print_headers(&result.headers);
             }
             output::print_separator();
-            if raw {
+            if let Some(name) = &view {
+                super::plugin::print_view(name, &masker, &result, raw)?;
+            } else if raw {
                 println!("{}", result.body);
             } else {
                 output::print_body(&result.body);

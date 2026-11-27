@@ -139,6 +139,38 @@ pub fn generate(lang: Lang, request: &Request, collection_auth: Option<&Auth>, v
     Ok(Snippet { code, placeholders })
 }
 
+/// What a `snippet` plugin is called with (docs/PLUGINS_THREAT_MODEL.md,
+/// decision 4): the request the built-in languages write, as JSON, with
+/// secrets and variables without a value as `{{NAME}}` (listed in
+/// `placeholders`). `body.mode` is `none`, `raw`, `urlencoded` (already
+/// encoded) or `multipart` (`parts`: `{name, value}` or `{name, file}`).
+pub fn plugin_input(request: &Request, collection_auth: Option<&Auth>, variables: &HashMap<String, String>, secrets: &[String]) -> anyhow::Result<serde_json::Value> {
+    use serde_json::json;
+    if request.is_websocket() || request.is_grpc() {
+        anyhow::bail!("'{}' isn't an HTTP request: there is no snippet for it", request.name);
+    }
+    let mut placeholders = Vec::new();
+    let spec = build(request, collection_auth, variables, secrets, &mut placeholders)?;
+    let body = match &spec.body {
+        Body::None => json!({"mode": "none"}),
+        Body::Raw(text) => json!({"mode": "raw", "text": text}),
+        Body::UrlEncoded(text) => json!({"mode": "urlencoded", "text": text}),
+        Body::Multipart(parts) => json!({"mode": "multipart", "parts": parts.iter().map(|p| match p {
+            Part::Text(name, value) => json!({"name": name, "value": value}),
+            Part::File(name, file) => json!({"name": name, "file": file}),
+        }).collect::<Vec<_>>()}),
+    };
+    Ok(json!({
+        "name": request.name,
+        "method": spec.method,
+        "url": spec.url,
+        "headers": spec.headers.iter().map(|(name, value)| json!({"name": name, "value": value})).collect::<Vec<_>>(),
+        "basicAuth": spec.basic.as_ref().map(|(username, password)| json!({"username": username, "password": password})),
+        "body": body,
+        "placeholders": placeholders,
+    }))
+}
+
 fn build(request: &Request, collection_auth: Option<&Auth>, variables: &HashMap<String, String>, secrets: &[String], placeholders: &mut Vec<String>) -> anyhow::Result<Spec> {
     let re = Regex::new(r"\$\{([^}]+)\}").unwrap();
     let cell = std::cell::RefCell::new(std::mem::take(placeholders));

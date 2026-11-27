@@ -4,7 +4,9 @@ Status: written before any code (owner's rule: plugins get a written threat mode
 the refusals in every interpolator, and the CLI (`hitop plugin`, the `hitop plugin-run` child, the `value` hook). Part 2a is built: the
 web app and both extensions (`platform/wasm-plugins.js`, `plugins-worker.js`, Settings → Plugins). Part 2b is built: the desktop
 (hitop-core `plugin_host`, shared with the CLI: the store in `<config>/hitop/plugins/` and the child, which in the desktop is the app's own
-executable started with `--hitop-plugin-run`).
+executable started with `--hitop-plugin-run`). Part 3a is built: the T1 warning before a send and the answers shown after it. Part 3b is
+built: the `viewer`, `importer` and `snippet` hooks in hitop-core (`plugins::check_answer`, also in hitop-wasm) and the CLI (`--view`,
+`import --plugin`, `snippet --plugin`). Their web app and desktop screens are part 3c (not built yet).
 
 ## What a plugin is
 
@@ -14,7 +16,7 @@ pure functions, called with data and answering data:
 | Hook | Called with | Answers | Used for |
 |---|---|---|---|
 | `value` | its arguments (text) | text | `${plugin.name(args)}` in a URL, header or body: signatures, random data, encodings |
-| `viewer` | a response (status, headers, body up to 1 MB) | text or a table | showing a response another way (protobuf as text, CSV as a table) |
+| `viewer` | a text response (status, headers, body up to 1 MB), secrets masked | text or a table | showing a response another way (CSV as a table, XML as an outline) |
 | `importer` | a file's text | a collection (the JSON model) | formats hitop doesn't read |
 | `snippet` | a request as sent (secrets as `{{NAME}}`) | text | code in another language |
 
@@ -86,6 +88,21 @@ Each call gets a fresh engine with only the call's input, a loop limit, a call-d
 7. **Desktop child, tested.** CI runs the built desktop binary as its own plugin child (`desktop/scripts/plugin-child-check.sh`) on
    Linux and macOS: one answer, and a plugin that grows without end is stopped by the child's own limits.
 
+8. **Viewers get text only, masked.** A body that isn't UTF-8 text isn't offered to a viewer in this version: masking can't apply to
+   raw bytes, and base64 of them would carry a secret past the masker. Headers and body are masked by the masker the send used
+   (secret values and answers computed from them, T11). The CLI prints a viewer's answer through that masker too, since stdout can
+   end up in a CI log.
+9. **Table shape.** `columns`: 1 to 100 entries; `rows`: at most 10 000, each an array of at most as many cells as there are
+   columns (a shorter row is filled with empty cells, a longer one is refused and named). A cell or column title becomes text: a
+   string as it is, `null` as empty, a number or `true`/`false` as written in JSON, an object or array as compact JSON. Any other
+   answer shape is refused.
+10. **Importers make collections only.** The answer is the HITOP JSON model (one collection or an array of them), read by the same
+    code as a HITOP JSON file and written the same way (request `file` paths are checked as for any collection folder, so nothing
+    lands outside it). It can't add environments, globals or secret values, and its `workspace` (the keychain namespace) is dropped,
+    so imported requests never read another collection's keychain entries.
+11. **`value` arguments stay text.** The `call` command refuses a `value` call whose arguments aren't all text (no silent
+    conversion); `viewer`, `importer` and `snippet` get their one structured input.
+
 ## Left out on purpose
 
 - No network, file or secret access, ever, in this design; a plugin that needs them is a different feature
@@ -118,7 +135,9 @@ Each call gets a fresh engine with only the call's input, a loop limit, a call-d
 - Endless loop, deep recursion, a huge answer: stopped with a message, the app stays usable.
 - A collection using a plugin that isn't installed: not sent, the message names it; plugins never in exports, sync or the library.
 - A changed plugin file (hash) is refused until installed again.
-- A viewer answer with `<script>` shows as text.
+- A viewer answer with `<script>` shows as text; a table with too many columns or a row too long is refused.
+- An importer answer with a request `file` of `../x` is refused; one with a `workspace` loses it.
+- A snippet plugin gets `{{NAME}}` for a secret, and `--show-secrets` with a plugin is refused.
 - Desktop and CLI: `"a".repeat(1e9)` and a catastrophic regex are stopped at the time limit; the child sees no environment variables.
 - A value computed from a secret (base64 of it) is masked in history, reports and MCP output.
 - Every interpolator refuses a request with a plugin it can't run, and names it.

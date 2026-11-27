@@ -127,7 +127,8 @@ pub fn remove(name: &str) -> Result<bool> {
 /// The desktop's plugin commands, by name, with their JSON arguments: `list`;
 /// `install {source, force}` → `{installed}`, or `{exists, manifest}` when a
 /// plugin of that name is installed and `force` is false; `remove {name}` →
-/// true when one was removed; `call {name, hook, args}` → the answer.
+/// true when one was removed; `call {name, hook, args}` → the answer, checked
+/// by [`plugins::check_answer`].
 pub fn command(child: &Child, install_hint: &str, cmd: &str, args: &Value) -> Result<Value, String> {
     let text = |k: &str| args[k].as_str().unwrap_or_default().to_string();
     let fail = |e: anyhow::Error| format!("{e:#}");
@@ -145,8 +146,14 @@ pub fn command(child: &Child, install_hint: &str, cmd: &str, args: &Value) -> Re
         }
         "remove" => Ok(json!(remove(&text("name")).map_err(fail)?)),
         "call" => {
-            let call_args: Vec<String> = args["args"].as_array().map(|a| a.iter().map(|v| v.as_str().unwrap_or_default().to_string()).collect()).unwrap_or_default();
-            Ok(json!(call(child, install_hint, &text("name"), &text("hook"), &call_args)?))
+            let name = text("name");
+            let hook = text("hook");
+            let call_args = args["args"].as_array().cloned().unwrap_or_default();
+            // Decision 11: a value call's arguments are text, never converted.
+            if hook == "value" && call_args.iter().any(|a| !a.is_string()) {
+                return Err(format!("plugin '{name}': a value call's arguments are text"));
+            }
+            call_value(child, install_hint, &name, &hook, call_args)
         }
         _ => Err(format!("unknown plugin command '{cmd}'")),
     }
@@ -157,6 +164,15 @@ pub fn command(child: &Child, install_hint: &str, cmd: &str, args: &Value) -> Re
 /// the message tells a person to install it (the CLI's command, the
 /// desktop's Settings page).
 pub fn call(child: &Child, install_hint: &str, name: &str, hook: &str, args: &[String]) -> Result<String, String> {
+    match call_value(child, install_hint, name, hook, args.iter().map(|a| Value::from(a.as_str())).collect())? {
+        Value::String(s) => Ok(s),
+        _ => Err(format!("plugin '{name}' answered something other than text")),
+    }
+}
+
+/// [`call`] with any JSON arguments (a viewer's response, an importer's file,
+/// a snippet's request); the answer is checked by [`plugins::check_answer`].
+pub fn call_value(child: &Child, install_hint: &str, name: &str, hook: &str, args: Vec<Value>) -> Result<Value, String> {
     let fail = |e: anyhow::Error| format!("plugin '{name}': {e:#}");
     let d = dir().map_err(fail)?;
     let list = list_in(&d).map_err(fail)?;
@@ -171,12 +187,8 @@ pub fn call(child: &Child, install_hint: &str, name: &str, hook: &str, args: &[S
         return Err(format!("plugin '{name}' changed since it was installed; check it and install it again ({install_hint})"));
     }
     let source = String::from_utf8(source).map_err(|_| format!("plugin '{name}' isn't UTF-8 text"))?;
-    let answer = run_child(child, &source, hook, args.iter().map(|a| Value::from(a.as_str())).collect()).map_err(|e| format!("plugin '{name}' {e}"))?;
-    match answer {
-        Value::String(s) if s.len() > MAX_BYTES => Err(format!("plugin '{name}' answered more than {MAX_BYTES} bytes")),
-        Value::String(s) => Ok(s),
-        _ => Err(format!("plugin '{name}' answered something other than text")),
-    }
+    let answer = run_child(child, &source, hook, args).map_err(|e| format!("plugin '{name}' {e}"))?;
+    plugins::check_answer(name, hook, &answer)
 }
 
 /// Runs one hook in the child: no environment, input on stdin, ended after

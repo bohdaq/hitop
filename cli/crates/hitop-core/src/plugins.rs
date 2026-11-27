@@ -334,6 +334,116 @@ fn remember(args: Vec<String>, answer: &str) {
     d.push_back((args, answer.to_string()));
 }
 
+/// The most columns a viewer's table may have (decision 9).
+pub const TABLE_COLUMNS: usize = 100;
+/// The most rows a viewer's table may have (decision 9).
+pub const TABLE_ROWS: usize = 10_000;
+/// The most body a viewer is given (decision 5).
+pub const VIEWER_BODY: usize = 1024 * 1024;
+
+/// What a `viewer` is called with: a text response as the person sees it.
+/// The caller masks `headers` and `body` first (decision 8); a body over
+/// [`VIEWER_BODY`] is cut, and `truncated` says so.
+pub fn viewer_input(status: u16, headers: &[(String, String)], body: &str) -> serde_json::Value {
+    let mut cut = body.len().min(VIEWER_BODY);
+    while !body.is_char_boundary(cut) {
+        cut -= 1;
+    }
+    serde_json::json!({
+        "status": status,
+        "headers": headers.iter().map(|(name, value)| serde_json::json!({"name": name, "value": value})).collect::<Vec<_>>(),
+        "body": &body[..cut],
+        "truncated": cut < body.len(),
+    })
+}
+
+/// A table cell or column title as text (decision 9).
+fn cell_text(v: &serde_json::Value) -> String {
+    match v {
+        serde_json::Value::String(s) => s.clone(),
+        serde_json::Value::Null => String::new(),
+        other => other.to_string(),
+    }
+}
+
+/// Checks the answer of plugin `name`'s `hook` (decision 6) and returns it as
+/// every surface uses it: text for `value` and `snippet`; text or
+/// `{columns, rows}` of text for `viewer`; for `importer`, the HITOP JSON
+/// model (an array of collections) without `workspace` (decision 10).
+pub fn check_answer(name: &str, hook: &str, answer: &serde_json::Value) -> Result<serde_json::Value, String> {
+    use serde_json::Value;
+    let text = |a: &Value| match a {
+        Value::String(s) if s.len() > MAX_BYTES => Err(format!("plugin '{name}' answered more than {MAX_BYTES} bytes")),
+        Value::String(s) => Ok(Value::String(s.clone())),
+        _ => Err(format!("plugin '{name}' answered something other than text")),
+    };
+    match hook {
+        "value" | "snippet" => text(answer),
+        "viewer" if answer.is_string() => text(answer),
+        "viewer" => {
+            let wrong = || format!("plugin '{name}' answered something other than text or a table ({{columns, rows}})");
+            let obj = answer.as_object().ok_or_else(wrong)?;
+            let columns = obj.get("columns").and_then(Value::as_array).ok_or_else(wrong)?;
+            let rows = obj.get("rows").and_then(Value::as_array).ok_or_else(wrong)?;
+            if columns.is_empty() || columns.len() > TABLE_COLUMNS {
+                return Err(format!("plugin '{name}' answered a table with {} columns (1 to {TABLE_COLUMNS})", columns.len()));
+            }
+            if rows.len() > TABLE_ROWS {
+                return Err(format!("plugin '{name}' answered a table with {} rows (at most {TABLE_ROWS})", rows.len()));
+            }
+            let mut out = Vec::with_capacity(rows.len());
+            for (i, row) in rows.iter().enumerate() {
+                let cells = row.as_array().ok_or_else(|| format!("plugin '{name}' answered a table whose row {} isn't a list", i + 1))?;
+                if cells.len() > columns.len() {
+                    return Err(format!("plugin '{name}' answered a table whose row {} has {} cells for {} columns", i + 1, cells.len(), columns.len()));
+                }
+                let mut r: Vec<String> = cells.iter().map(cell_text).collect();
+                r.resize(columns.len(), String::new());
+                out.push(r);
+            }
+            Ok(serde_json::json!({"columns": columns.iter().map(cell_text).collect::<Vec<_>>(), "rows": out}))
+        }
+        "importer" => {
+            let list = match answer {
+                Value::Array(a) => a.clone(),
+                Value::Object(_) => vec![answer.clone()],
+                _ => return Err(format!("plugin '{name}' answered something other than a collection")),
+            };
+            if list.is_empty() {
+                return Err(format!("plugin '{name}' answered no collection"));
+            }
+            let mut out = Vec::with_capacity(list.len());
+            for mut c in list {
+                let Some(obj) = c.as_object_mut() else {
+                    return Err(format!("plugin '{name}' answered something other than a collection"));
+                };
+                obj.remove("workspace");
+                out.push(c);
+            }
+            Ok(Value::Array(out))
+        }
+        _ => Err(format!("unknown hook '{hook}'")),
+    }
+}
+
+/// An `importer`'s collections: [`check_answer`], then the same reader as a
+/// HITOP JSON file; request files are checked as in a collection folder.
+pub fn imported_collections(name: &str, answer: &serde_json::Value) -> Result<Vec<Collection>, String> {
+    let checked = check_answer(name, "importer", answer)?;
+    let collections = crate::export::from_hitop(&checked.to_string()).map_err(|e| format!("plugin '{name}' answered a collection hitop can't read: {e}"))?;
+    for c in &collections {
+        if c.name.trim().is_empty() {
+            return Err(format!("plugin '{name}' answered a collection without a name"));
+        }
+        for r in &c.requests {
+            if let Some(f) = &r.file {
+                crate::format::names::check_rel_path(f).map_err(|e| format!("plugin '{name}': request '{}': {e}", r.name))?;
+            }
+        }
+    }
+    Ok(collections)
+}
+
 /// For tests elsewhere in the crate: as if a plugin had answered.
 #[cfg(test)]
 pub(crate) fn tests_remember(args: Vec<String>, answer: &str) {
@@ -442,5 +552,54 @@ mod tests {
         assert_eq!(derived_from(&["s3cr3t-derived".into()]), ["czNjcjN0"]);
         assert!(derived_from(&["nothing-like-it".into()]).is_empty());
         assert!(derived_from(&[]).is_empty());
+    }
+
+    #[test]
+    fn answers_are_checked_by_hook() {
+        use serde_json::json;
+        assert_eq!(check_answer("p", "value", &json!("x")).unwrap(), json!("x"));
+        assert!(check_answer("p", "value", &json!(1)).unwrap_err().contains("other than text"));
+        assert!(check_answer("p", "snippet", &json!("a".repeat(MAX_BYTES + 1))).unwrap_err().contains("more than"));
+        // A table's cells become text; a short row is filled.
+        let t = check_answer("p", "viewer", &json!({"columns": ["a", 2, null], "rows": [[1, true, {"k": [1]}], ["<b>"]]})).unwrap();
+        assert_eq!(t, json!({"columns": ["a", "2", ""], "rows": [["1", "true", "{\"k\":[1]}"], ["<b>", "", ""]]}));
+        assert_eq!(check_answer("p", "viewer", &json!("text")).unwrap(), json!("text"));
+        for (answer, says) in [
+            (json!({"columns": [], "rows": []}), "0 columns"),
+            (json!({"columns": ["a"], "rows": [["1", "2"]]}), "row 1 has 2 cells"),
+            (json!({"columns": ["a"], "rows": ["x"]}), "row 1 isn't a list"),
+            (json!({"columns": ["a"], "rows": vec![json!([]); TABLE_ROWS + 1]}), "10001 rows"),
+            (json!({"rows": []}), "text or a table"),
+            (json!([1]), "text or a table"),
+        ] {
+            let e = check_answer("p", "viewer", &answer).unwrap_err();
+            assert!(e.contains(says), "{answer}: {e}");
+        }
+        // Importers: collections only, without a keychain namespace.
+        let c = json!({"id": 1, "name": "C", "workspace": "other", "requests": []});
+        assert_eq!(check_answer("p", "importer", &c).unwrap(), json!([{"id": 1, "name": "C", "requests": []}]));
+        let read = imported_collections("p", &json!([c])).unwrap();
+        assert_eq!((read.len(), read[0].workspace.clone()), (1, None));
+        for (answer, says) in [
+            (json!("x"), "other than a collection"),
+            (json!([]), "no collection"),
+            (json!([1]), "other than a collection"),
+            (json!({"name": "C"}), "can't read"),
+            (json!({"id": 1, "name": " ", "requests": []}), "without a name"),
+            (json!({"id": 1, "name": "C", "requests": [{"id": 1, "name": "r", "url": "", "method": "GET", "headers": [], "body": "", "file": "../x"}]}), "invalid path"),
+        ] {
+            let e = imported_collections("p", &answer).unwrap_err();
+            assert!(e.contains(says), "{answer}: {e}");
+        }
+        assert!(check_answer("p", "fetch", &json!("x")).unwrap_err().contains("unknown hook"));
+    }
+
+    #[test]
+    fn a_viewer_gets_at_most_a_megabyte_cut_on_a_character() {
+        let body = format!("{}é", "a".repeat(VIEWER_BODY - 1));
+        let v = viewer_input(200, &[("x".into(), "1".into())], &body);
+        assert_eq!((v["body"].as_str().unwrap().len(), v["truncated"].as_bool()), (VIEWER_BODY - 1, Some(true)));
+        assert_eq!(v["headers"], serde_json::json!([{"name": "x", "value": "1"}]));
+        assert_eq!(viewer_input(204, &[], "ok")["truncated"], serde_json::json!(false));
     }
 }

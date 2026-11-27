@@ -103,6 +103,10 @@ pub struct SendArgs {
     /// Disable syntax highlighting
     #[arg(long)]
     raw: bool,
+
+    /// Show the response through an installed plugin's viewer hook (text or a table) instead of the body
+    #[arg(long, value_name = "PLUGIN")]
+    view: Option<String>,
 }
 
 pub fn run(args: SendArgs) -> Result<()> {
@@ -265,7 +269,9 @@ pub fn run(args: SendArgs) -> Result<()> {
 
     output::print_separator();
 
-    if args.raw {
+    if let Some(name) = &args.view {
+        super::plugin::print_view(name, &masker, &result, args.raw)?;
+    } else if args.raw {
         println!("{}", result.body);
     } else {
         output::print_body(&result.body);

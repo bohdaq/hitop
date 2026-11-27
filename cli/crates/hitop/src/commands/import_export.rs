@@ -33,6 +33,10 @@ pub struct ImportArgs {
     #[arg(long)]
     format: Option<Format>,
 
+    /// Read the files with an installed plugin's importer hook (each file's text in, collections out)
+    #[arg(long, value_name = "NAME", conflicts_with = "format")]
+    plugin: Option<String>,
+
     /// Write a collection folder here (hitop.yaml, requests/, environments/)
     /// instead of global storage. Without a collection in the files, adds
     /// the environments to the folder already there.
@@ -70,7 +74,7 @@ pub fn run_import(args: ImportArgs) -> Result<()> {
         return super::openapi::run_import(a);
     }
     // An OpenAPI spec given like any other file.
-    if args.format.is_none() {
+    if args.format.is_none() && args.plugin.is_none() {
         for file in args.files.iter().filter(|f| !f.is_dir()) {
             let raw = std::fs::read_to_string(file).with_context(|| format!("reading {}", file.display()))?;
             if hitop_core::openapi::detect(&raw) {
@@ -85,6 +89,16 @@ pub fn run_import(args: ImportArgs) -> Result<()> {
     let mut environments: Vec<ImportedEnvironment> = vec![];
     let mut globals: Vec<ImportedEnvironment> = vec![];
     for file in &args.files {
+        if let Some(name) = &args.plugin {
+            // docs/PLUGINS_THREAT_MODEL.md, decision 10: collections only,
+            // read like a HITOP JSON file.
+            let raw = std::fs::read_to_string(file).with_context(|| format!("reading {} (a plugin reads text files)", file.display()))?;
+            let file_name = file.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default();
+            let answer = super::plugin::host_value(name, "importer", vec![Value::from(raw), Value::from(file_name)])?;
+            let read = hitop_core::plugins::imported_collections(name, &answer).map_err(anyhow::Error::msg)?;
+            collections.extend(read.into_iter().map(|c| (c, ImportReport::default())));
+            continue;
+        }
         if file.is_dir() {
             let converted = convert::convert_files(&bru_files(file)?).with_context(|| file.display().to_string())?;
             let Some(c) = converted else { bail!("{} is a folder without a bruno.json: only Bruno collections import from a folder", file.display()) };

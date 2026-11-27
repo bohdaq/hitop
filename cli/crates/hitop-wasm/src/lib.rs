@@ -369,3 +369,36 @@ pub fn plugin_manifest(source: &str) -> Result<String, JsError> {
     let m = hitop_core::plugins::manifest(source).map_err(|e| JsError::new(&e))?;
     serde_json::to_string(&m).map_err(|e| JsError::new(&e.to_string()))
 }
+
+/// A plugin hook's answer checked as every surface checks it
+/// (docs/PLUGINS_THREAT_MODEL.md, decisions 6, 9 and 10): text, a table of
+/// text `{columns, rows}`, or an importer's collections (`workspace` dropped).
+#[wasm_bindgen(js_name = pluginAnswer)]
+pub fn plugin_answer(name: &str, hook: &str, answer_json: &str) -> Result<String, JsError> {
+    let answer: serde_json::Value = serde_json::from_str(answer_json).map_err(|e| JsError::new(&e.to_string()))?;
+    let checked = if hook == "importer" {
+        let collections = hitop_core::plugins::imported_collections(name, &answer).map_err(|e| JsError::new(&e))?;
+        serde_json::to_value(collections).map_err(|e| JsError::new(&e.to_string()))?
+    } else {
+        hitop_core::plugins::check_answer(name, hook, &answer).map_err(|e| JsError::new(&e))?
+    };
+    Ok(checked.to_string())
+}
+
+/// A viewer's input from a response the caller has masked:
+/// `{status, headers: [{name, value}], body, truncated}` (body cut at 1 MB).
+#[wasm_bindgen(js_name = pluginViewerInput)]
+pub fn plugin_viewer_input(status: u16, headers_json: &str, body: &str) -> Result<String, JsError> {
+    let headers: Vec<(String, String)> = serde_json::from_str(headers_json).map_err(|e| JsError::new(&e.to_string()))?;
+    Ok(hitop_core::plugins::viewer_input(status, &headers, body).to_string())
+}
+
+/// A snippet plugin's input (the same `{request, collectionAuth, variables,
+/// secrets}` as [`snippet`]): the request as the built-in languages write it,
+/// secrets as `{{NAME}}`.
+#[wasm_bindgen(js_name = snippetPluginInput)]
+pub fn snippet_plugin_input(input_json: &str) -> Result<String, JsError> {
+    let input: SnippetInput = serde_json::from_str(input_json).map_err(|e| JsError::new(&e.to_string()))?;
+    let v = hitop_core::snippet::plugin_input(&input.request, input.collection_auth.as_ref(), &input.variables, &input.secrets).map_err(chain)?;
+    Ok(v.to_string())
+}

@@ -226,3 +226,135 @@ fn the_same_call_in_one_request_is_one_answer() {
     assert!(out.status.success() && log.matches("one nonce").count() == 2, "{log}");
     seen.assert_calls(2);
 }
+
+fn hooked(dir: &Path, name: &str, hook: &str, body: &str) -> PathBuf {
+    let p = dir.join(format!("{name}.js"));
+    fs::write(&p, format!("/* hitop-plugin {{\"name\": \"{name}\", \"version\": \"1\", \"hooks\": [\"{hook}\"]}} */\n{body}\n")).unwrap();
+    p
+}
+
+/// A folder collection with one request that sends the secret `cred`.
+fn secret_api(tmp: &Path, base: &str) -> PathBuf {
+    let api = tmp.join("api");
+    fs::create_dir_all(api.join("requests")).unwrap();
+    fs::create_dir_all(api.join("environments")).unwrap();
+    fs::write(api.join("hitop.yaml"), "format: 1\nname: P\n").unwrap();
+    fs::write(api.join("environments/ci.yaml"), format!("variables:\n  base: {base}\n  cred:\n    secret: true\n")).unwrap();
+    fs::write(api.join("requests/p.yaml"), "name: P\nmethod: POST\nurl: ${base}/p\nheaders:\n- name: Authorization\n  value: Bearer ${cred}\nbody:\n  type: text\n  content: hello\n").unwrap();
+    api
+}
+
+/// Decisions 3, 8 and 9: a viewer gets the response with secrets masked
+/// (headers too), its table is printed as text, and a wrong table, or a body
+/// that isn't text, is refused.
+#[test]
+fn a_viewer_gets_a_masked_text_response_and_its_table_is_text() {
+    let server = MockServer::start();
+    server.mock(|when, then| {
+        when.path("/p");
+        then.status(200).header("x-token", SECRET).body(format!("id,who\n1,{SECRET}\n2,ann\n"));
+    });
+    server.mock(|when, then| {
+        when.path("/bin");
+        then.status(200).body(vec![0xffu8, 0xfe, 0x00, 0x81]);
+    });
+    let (home, tmp) = (TempDir::new().unwrap(), TempDir::new().unwrap());
+    install(
+        &home,
+        &hooked(
+            tmp.path(),
+            "csv",
+            "viewer",
+            "function viewer(r) { const l = r.body.trim().split('\\n'); return {columns: l[0].split(','), rows: l.slice(1).map(x => x.split(',')).concat([['<script>x</script>', null], [r.headers.find(h => h.name === 'x-token').value, r.status]])}; }",
+        ),
+    );
+    secret_api(tmp.path(), &server.base_url());
+    let send = |extra: &[&str]| {
+        let mut c = hitop(&home, tmp.path());
+        c.args(["requests", "send", "./api", "P", "--env", "ci", "--view", "csv"]).args(extra).env("HITOP_SECRET_CI_CRED", SECRET);
+        c.assert().get_output().clone()
+    };
+    let out = send(&[]);
+    let text = String::from_utf8_lossy(&out.stdout).to_string();
+    assert!(out.status.success(), "{text}{}", String::from_utf8_lossy(&out.stderr));
+    assert!(!text.contains(SECRET), "the viewer got or printed the secret:\n{text}");
+    assert!(text.contains("<script>x</script>") && text.contains("ann") && text.matches("••••").count() == 2 && text.contains("200"), "{text}");
+    let raw = String::from_utf8_lossy(&send(&["--raw"]).stdout).to_string();
+    assert!(raw.contains("id\twho\n1\t••••\n2\tann\n"), "{raw}");
+
+    // The same request through `hitop send` (the secret given with --secret).
+    let out = hitop(&home, tmp.path())
+        .args(["send", &format!("{}/p", server.base_url()), "-H", "Authorization: Bearer ${cred}", "--secret", &format!("cred={SECRET}"), "--view", "csv"])
+        .assert()
+        .success()
+        .get_output()
+        .clone();
+    let text = String::from_utf8_lossy(&out.stdout).to_string();
+    assert!(!text.contains(SECRET) && text.contains("ann"), "{text}");
+
+    // Too many columns, a row too long, an answer that isn't text or a table.
+    for (name, body, says) in [
+        ("wide", "function viewer() { return {columns: Array.from({length: 101}, (_, i) => 'c' + i), rows: []}; }", "101 columns"),
+        ("long", "function viewer() { return {columns: ['a'], rows: [['1', '2']]}; }", "row 1 has 2 cells for 1 columns"),
+        ("num", "function viewer() { return 7; }", "other than text or a table"),
+    ] {
+        install(&home, &hooked(tmp.path(), name, "viewer", body));
+        let out = hitop(&home, tmp.path()).args(["requests", "send", "./api", "P", "--env", "ci", "--view", name]).env("HITOP_SECRET_CI_CRED", SECRET).assert().failure().get_output().clone();
+        let err = String::from_utf8_lossy(&out.stderr);
+        assert!(err.contains(says), "{name}: {err}");
+    }
+    // A body that isn't text isn't given to a viewer.
+    let out = hitop(&home, tmp.path()).args(["send", &format!("{}/bin", server.base_url()), "--view", "csv"]).assert().failure().get_output().clone();
+    assert!(String::from_utf8_lossy(&out.stderr).contains("isn't text"), "{}", String::from_utf8_lossy(&out.stderr));
+}
+
+/// Decision 10: an importer's answer is read like a HITOP JSON file, its
+/// `workspace` is dropped, and a request file outside the folder is refused.
+#[test]
+fn an_importer_makes_collections_like_a_hitop_file() {
+    let (home, tmp) = (TempDir::new().unwrap(), TempDir::new().unwrap());
+    install(
+        &home,
+        &hooked(
+            tmp.path(),
+            "lines",
+            "importer",
+            "function importer(text, file) { return {id: 1, name: file, workspace: 'someone-else', requests: text.trim().split('\\n').map((u, i) => ({id: i + 1, name: 'r' + i, method: 'GET', url: u, headers: [], body: '', file: u.startsWith('..') ? u : undefined}))}; }",
+        ),
+    );
+    fs::write(tmp.path().join("urls.txt"), "https://a.example/x\nhttps://b.example/y\n").unwrap();
+    hitop(&home, tmp.path()).args(["import", "--plugin", "lines", "urls.txt", "--to", "out"]).assert().success();
+    let yaml = fs::read_to_string(tmp.path().join("out/hitop.yaml")).unwrap();
+    assert!(yaml.contains("name: urls.txt") && !yaml.contains("someone-else"), "{yaml}");
+    let r = fs::read_to_string(tmp.path().join("out/requests/r1.yaml")).unwrap();
+    assert!(r.contains("https://b.example/y"), "{r}");
+
+    fs::write(tmp.path().join("bad.txt"), "../escape\n").unwrap();
+    let out = hitop(&home, tmp.path()).args(["import", "--plugin", "lines", "bad.txt", "--to", "bad"]).assert().failure().get_output().clone();
+    assert!(String::from_utf8_lossy(&out.stderr).contains("invalid path"), "{}", String::from_utf8_lossy(&out.stderr));
+    assert!(!tmp.path().join("escape.yaml").exists() && !tmp.path().join("bad/escape.yaml").exists());
+
+    // A value plugin isn't an importer.
+    install(&home, &plugin(tmp.path(), "v", "function value() { return 'x'; }"));
+    let out = hitop(&home, tmp.path()).args(["import", "--plugin", "v", "urls.txt"]).assert().failure().get_output().clone();
+    assert!(String::from_utf8_lossy(&out.stderr).contains("plugin 'v' has no importer hook"), "{}", String::from_utf8_lossy(&out.stderr));
+}
+
+/// Decision 4: a snippet plugin gets the request with secrets as {{NAME}};
+/// --show-secrets is refused with a plugin.
+#[test]
+fn a_snippet_plugin_gets_placeholders_never_secrets() {
+    let (home, tmp) = (TempDir::new().unwrap(), TempDir::new().unwrap());
+    install(
+        &home,
+        &hooked(tmp.path(), "httpie", "snippet", "function snippet(r) { return ['http', r.method, r.url].concat(r.headers.map(h => h.name + ':' + JSON.stringify(h.value))).join(' ') + ' <<< ' + JSON.stringify(r.body.text) + ' # ' + r.placeholders.join(','); }"),
+    );
+    secret_api(tmp.path(), "https://api.example");
+    let out = hitop(&home, tmp.path()).args(["snippet", "./api", "P", "--env", "ci", "--plugin", "httpie"]).env("HITOP_SECRET_CI_CRED", SECRET).assert().success().get_output().clone();
+    let code = String::from_utf8_lossy(&out.stdout);
+    assert_eq!(code, "http POST https://api.example/p Authorization:\"Bearer {{cred}}\" Content-Type:\"text/plain\" <<< \"hello\" # cred");
+    assert!(String::from_utf8_lossy(&out.stderr).contains("secrets written as placeholders: {{cred}}"));
+    let out = hitop(&home, tmp.path()).args(["snippet", "./api", "P", "--env", "ci", "--plugin", "httpie", "--show-secrets"]).env("HITOP_SECRET_CI_CRED", SECRET).assert().failure().get_output().clone();
+    let err = String::from_utf8_lossy(&out.stderr);
+    assert!(err.contains("--show-secrets can't be used with --plugin") && !err.contains(SECRET), "{err}");
+}

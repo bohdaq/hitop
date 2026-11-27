@@ -20,6 +20,9 @@ pub struct SnippetArgs {
     /// Environment to fill variables from instead of the active one
     #[arg(short = 'e', long = "env")]
     pub env: Option<String>,
+    /// Write the code with an installed plugin's snippet hook instead of --lang (it gets the request with secrets as {{NAME}})
+    #[arg(long, value_name = "NAME", conflicts_with = "lang")]
+    pub plugin: Option<String>,
     /// Write secret values into the code (env var, --secret, keychain, prompt) instead of {{NAME}} placeholders
     #[arg(long)]
     pub show_secrets: bool,
@@ -32,6 +35,10 @@ fn parse_lang(s: &str) -> Result<Lang, String> {
 }
 
 pub fn run(args: SnippetArgs) -> Result<()> {
+    if args.plugin.is_some() && args.show_secrets {
+        // docs/PLUGINS_THREAT_MODEL.md, decision 4.
+        anyhow::bail!("--show-secrets can't be used with --plugin: a snippet plugin never gets secret values (they stay {{{{NAME}}}})");
+    }
     let source = Source::open(&args.collection)?;
     let col = &source.collection;
     let req = col
@@ -79,7 +86,15 @@ pub fn run(args: SnippetArgs) -> Result<()> {
         }
         secret_names.extend(refs);
     }
-    let snippet = generate(args.lang, req, col.auth.as_ref(), &vars, &secret_names)?;
+    let snippet = match &args.plugin {
+        Some(name) => {
+            let input = hitop_core::snippet::plugin_input(req, col.auth.as_ref(), &vars, &secret_names)?;
+            let placeholders = input["placeholders"].as_array().map(|a| a.iter().filter_map(|v| v.as_str().map(String::from)).collect()).unwrap_or_default();
+            let code = super::plugin::host_value(name, "snippet", vec![input])?;
+            hitop_core::snippet::Snippet { code: code.as_str().unwrap_or_default().to_string(), placeholders }
+        }
+        None => generate(args.lang, req, col.auth.as_ref(), &vars, &secret_names)?,
+    };
     print!("{}", snippet.code);
     let (secret, missing): (Vec<&String>, Vec<&String>) = snippet.placeholders.iter().partition(|p| secret_names.contains(p));
     if !secret.is_empty() {
