@@ -18,6 +18,23 @@ extension XCTestCase {
         XCTAssertTrue(e.waitForExistence(timeout: timeout), "missing \(e)", file: file, line: line)
     }
 
+    /// Taps `e` once it can be tapped, then waits for `target`. A tap that lands while the screen
+    /// is still settling (right after an accessibility audit) can be dropped: tapped again then,
+    /// at most three times, each after `e` is hittable again.
+    @MainActor
+    func tap(_ e: XCUIElement, until target: XCUIElement, file: StaticString = #filePath, line: UInt = #line) {
+        let hittable = NSPredicate(format: "exists == true AND hittable == true")
+        for _ in 1...3 {
+            // A slow first tap may have worked after all: never tap past the target.
+            if target.exists { return }
+            _ = XCTWaiter().wait(for: [XCTNSPredicateExpectation(predicate: hittable, object: e)], timeout: 10)
+            if target.exists { return }
+            e.tap()
+            if target.waitForExistence(timeout: 5) { return }
+        }
+        XCTFail("tapping \(e) never showed \(target)", file: file, line: line)
+    }
+
     @MainActor
     func shot(_ app: XCUIApplication, _ name: String) {
         let a = XCTAttachment(screenshot: app.screenshot())

@@ -40,6 +40,7 @@ Releases before 1.2 are listed in ROADMAP.md (section 5) and on the GitHub Relea
 
 ### iOS
 
+- Fixed: items shared to HITOP within the same millisecond could be taken in the wrong order (their names sorted by a random part).
 - OAuth 2.0 (client credentials, password, authorization code with PKCE and refresh), AWS Signature and Digest. Before, a request with one of
   these was sent without it; a preset the app doesn't know now stops the request and says so.
 - Shared collections: comments on requests, changing a member's role, deleting one for everyone (it stays on this device only), and secret

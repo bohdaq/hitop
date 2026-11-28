@@ -125,8 +125,9 @@ final class BackgroundTests: XCTestCase {
         XCTAssertEqual(SharedInbox.safe("a/b\\c:d"), "a-b-c-d")
         for i in 0..<SharedInbox.maxItems { try inbox.add(text: "\(i)") }
         XCTAssertThrowsError(try inbox.add(text: "one more"))
-        // Half written: not an item.
-        XCTAssertEqual(inbox.take(), .text("0"))
+        // Taken in the order shared, also when several came in one millisecond.
+        for i in 0..<SharedInbox.maxItems { XCTAssertEqual(inbox.take(), .text("\(i)")) }
+        XCTAssertNil(inbox.take())
     }
 
     func testSharedTextBecomesWhatItIs() {

@@ -40,7 +40,11 @@ struct SharedInbox: Sendable {
         let fm = FileManager.default
         guard entries().count < Self.maxItems else { throw Failure(message: "HITOP has \(Self.maxItems) shared items waiting. Open it first.") }
         try fm.createDirectory(at: folder, withIntermediateDirectories: true)
-        let id = String(format: "%015.0f", Date().timeIntervalSince1970 * 1000) + "-" + UUID().uuidString
+        // Names sort oldest first: a millisecond, never the same as or before the newest waiting one
+        // (two shares in one millisecond were ordered by their random part).
+        let now = (Date().timeIntervalSince1970 * 1000).rounded(.down)
+        let newest = entries().last.flatMap { Double($0.lastPathComponent.prefix(15)) } ?? 0
+        let id = String(format: "%015.0f", max(now, newest + 1)) + "-" + UUID().uuidString
         let part = folder.appendingPathComponent(".\(id)", isDirectory: true)
         let content = part.appendingPathComponent(kind, isDirectory: true)
         do {

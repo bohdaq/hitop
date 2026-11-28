@@ -102,8 +102,7 @@ final class AccessibilityTests: XCTestCase {
         wait(create)
         audit(app, "collections")
 
-        create.tap()
-        wait(app.el("body-preview"))
+        tap(create, until: app.el("body-preview"))
         audit(app, "request body")
         for tab in ["Params", "Headers", "Auth", "Tests"] {
             app.el("tab-\(tab)").tap()
