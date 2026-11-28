@@ -16,7 +16,9 @@ base64 = "0.22"
 serde = { workspace = true }
 serde_json = { workspace = true }
 reqwest = { workspace = true, optional = true }
-boa_engine = { workspace = true, optional = true }
+# jsvalue-enum: boa's default NaN-boxed JsValue needs heap pointers in 48 bits; Android on arm64 tags
+# the top byte of heap pointers (Scudo), and every script panicked there (CHANGELOG, Android).
+boa_engine = { workspace = true, optional = true, features = ["jsvalue-enum"] }
 dirs = { workspace = true, optional = true }
 thiserror = { workspace = true }
 anyhow = { workspace = true }

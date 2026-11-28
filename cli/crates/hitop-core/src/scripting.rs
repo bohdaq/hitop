@@ -489,6 +489,17 @@ const assert = {{
 mod tests {
     use super::*;
 
+    /// Android on arm64 tags the top byte of heap pointers, which boa's NaN-boxed `JsValue` (8 bytes)
+    /// can't hold: every script panicked there. The `jsvalue-enum` layout is wider; this fails if the
+    /// feature is dropped from Cargo.toml.
+    #[test]
+    fn js_values_are_not_nan_boxed() {
+        assert!(
+            std::mem::size_of::<boa_engine::JsValue>() > 8,
+            "boa_engine needs feature jsvalue-enum (tagged heap pointers on Android arm64)"
+        );
+    }
+
     fn empty_pre_ctx(url: &str) -> PreRequestCtx {
         PreRequestCtx {
             url: url.to_string(),

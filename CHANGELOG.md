@@ -57,6 +57,9 @@ Releases before 1.2 are listed in ROADMAP.md (section 5) and on the GitHub Relea
 
 ### Android
 
+- Fixed: on arm64 phones every request with a script and every collection run failed with "send: internal error". Android tags the
+  top byte of heap pointers there, and the script engine's compact value layout (boa's NaN boxing) panicked on them; hitop-core now
+  builds boa with `jsvalue-enum`. CI's emulators are x86_64, where pointers carry no tag; found on arm64 emulators on a Mac.
 - Stop, sending on a WebSocket and cancelling a run no longer wait for the moment the app is listening for events, and streams,
   sockets and runs open at the same time no longer wait for each other.
 - **Security:** when the list of shared collections on the phone can't be read, nothing is synced, and a shared collection deleted for everyone
