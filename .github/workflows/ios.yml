@@ -22,6 +22,12 @@ on:
       # RunsTests reads the spec's run report.
       - "spec/compat/v1/run-report/**"
   workflow_dispatch:
+    inputs:
+      runner:
+        description: "github = GitHub's macos-26; macbook = the owner's self-hosted Mac (label hitop-mac: newer Xcode, no sudo; its job-started hook accepts only manual ios.yml runs started by the owner)"
+        type: choice
+        options: [github, macbook]
+        default: github
 
 permissions:
   contents: read
@@ -37,7 +43,7 @@ env:
 jobs:
   app:
     name: HITOP app (build, unit + UI tests, screenshots)
-    runs-on: macos-26
+    runs-on: ${{ inputs.runner == 'macbook' && fromJSON('["self-hosted", "macOS", "hitop-mac"]') || 'macos-26' }}
     timeout-minutes: 75
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -47,7 +53,8 @@ jobs:
           ls -d /Applications/Xcode*.app
           xcode=$(ls -d /Applications/Xcode_26*.app 2>/dev/null | sort -V | tail -1)
           if [ -z "$xcode" ]; then xcode=/Applications/Xcode.app; fi
-          sudo xcode-select -s "$xcode"
+          # Self-hosted: no sudo; the Mac's selected Xcode is used.
+          [ "$RUNNER_ENVIRONMENT" = self-hosted ] || sudo xcode-select -s "$xcode"
           xcodebuild -version
           xcrun simctl list runtimes
 
@@ -207,14 +214,14 @@ jobs:
   # iphone/NN-….png and ipad/NN-….png in upload order, flattened (no alpha), sizes checked against App Store Connect's.
   store-screenshots:
     name: App Store screenshots (iPhone 6.9", iPad 13")
-    runs-on: macos-26
+    runs-on: ${{ inputs.runner == 'macbook' && fromJSON('["self-hosted", "macOS", "hitop-mac"]') || 'macos-26' }}
     timeout-minutes: 60
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - name: Xcode 26 + XcodeGen
         run: |
           xcode=$(ls -d /Applications/Xcode_26*.app 2>/dev/null | sort -V | tail -1)
-          if [ -n "$xcode" ]; then sudo xcode-select -s "$xcode"; fi
+          if [ -n "$xcode" ] && [ "$RUNNER_ENVIRONMENT" != self-hosted ]; then sudo xcode-select -s "$xcode"; fi
           xcodebuild -version
           curl -sSfL -o "$RUNNER_TEMP/xcodegen.zip" "https://github.com/yonaskolb/XcodeGen/releases/download/$XCODEGEN_VERSION/xcodegen.zip"
           echo "$XCODEGEN_SHA256  $RUNNER_TEMP/xcodegen.zip" | shasum -a 256 -c -
@@ -300,14 +307,14 @@ jobs:
   # Signing, export and upload run only on the owner's Mac.
   archive:
     name: App Store archive (Release, generic iOS, unsigned)
-    runs-on: macos-26
+    runs-on: ${{ inputs.runner == 'macbook' && fromJSON('["self-hosted", "macOS", "hitop-mac"]') || 'macos-26' }}
     timeout-minutes: 45
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - name: Xcode 26 + XcodeGen
         run: |
           xcode=$(ls -d /Applications/Xcode_26*.app 2>/dev/null | sort -V | tail -1)
-          if [ -n "$xcode" ]; then sudo xcode-select -s "$xcode"; fi
+          if [ -n "$xcode" ] && [ "$RUNNER_ENVIRONMENT" != self-hosted ]; then sudo xcode-select -s "$xcode"; fi
           curl -sSfL -o "$RUNNER_TEMP/xcodegen.zip" "https://github.com/yonaskolb/XcodeGen/releases/download/$XCODEGEN_VERSION/xcodegen.zip"
           echo "$XCODEGEN_SHA256  $RUNNER_TEMP/xcodegen.zip" | shasum -a 256 -c -
           unzip -q "$RUNNER_TEMP/xcodegen.zip" -d "$RUNNER_TEMP"
@@ -327,14 +334,14 @@ jobs:
 
   core:
     name: App/Core swift test + end-to-end against a real sync server
-    runs-on: macos-26
+    runs-on: ${{ inputs.runner == 'macbook' && fromJSON('["self-hosted", "macOS", "hitop-mac"]') || 'macos-26' }}
     timeout-minutes: 60
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - name: Xcode 26
         run: |
           xcode=$(ls -d /Applications/Xcode_26*.app 2>/dev/null | sort -V | tail -1)
-          if [ -n "$xcode" ]; then sudo xcode-select -s "$xcode"; fi
+          if [ -n "$xcode" ] && [ "$RUNNER_ENVIRONMENT" != self-hosted ]; then sudo xcode-select -s "$xcode"; fi
           swift --version
       - name: Build hitop-sync-server
         working-directory: sync-server
@@ -368,14 +375,14 @@ jobs:
   size:
     name: App size with and without gRPC (Release, device)
     if: github.event_name == 'workflow_dispatch'
-    runs-on: macos-26
+    runs-on: ${{ inputs.runner == 'macbook' && fromJSON('["self-hosted", "macOS", "hitop-mac"]') || 'macos-26' }}
     timeout-minutes: 60
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - name: Xcode 26 + XcodeGen
         run: |
           xcode=$(ls -d /Applications/Xcode_26*.app 2>/dev/null | sort -V | tail -1)
-          if [ -n "$xcode" ]; then sudo xcode-select -s "$xcode"; fi
+          if [ -n "$xcode" ] && [ "$RUNNER_ENVIRONMENT" != self-hosted ]; then sudo xcode-select -s "$xcode"; fi
           curl -sSfL -o "$RUNNER_TEMP/xcodegen.zip" "https://github.com/yonaskolb/XcodeGen/releases/download/$XCODEGEN_VERSION/xcodegen.zip"
           echo "$XCODEGEN_SHA256  $RUNNER_TEMP/xcodegen.zip" | shasum -a 256 -c -
           unzip -q "$RUNNER_TEMP/xcodegen.zip" -d "$RUNNER_TEMP"
@@ -401,14 +408,14 @@ jobs:
 
   hitopkit:
     name: HitopKit swift test (macOS, JavaScriptCore)
-    runs-on: macos-26
+    runs-on: ${{ inputs.runner == 'macbook' && fromJSON('["self-hosted", "macOS", "hitop-mac"]') || 'macos-26' }}
     timeout-minutes: 30
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - name: Xcode 26
         run: |
           xcode=$(ls -d /Applications/Xcode_26*.app 2>/dev/null | sort -V | tail -1)
-          if [ -n "$xcode" ]; then sudo xcode-select -s "$xcode"; fi
+          if [ -n "$xcode" ] && [ "$RUNNER_ENVIRONMENT" != self-hosted ]; then sudo xcode-select -s "$xcode"; fi
           swift --version
       - name: swift test
         working-directory: ios/HitopKit

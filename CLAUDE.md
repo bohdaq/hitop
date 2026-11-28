@@ -527,7 +527,7 @@ hitop/
   Application Support/hitop-library = one file per collection, `LegacyImport` reads the old app's Application Support/hitop once, `Sender` = HitopKit
   `Runner` on URLSession + metrics, Keychain secrets `ios/<env>/<name>`); its unit tests also build on Linux (a scratch SwiftPM package pointing at
   App/Core + UnitTests). Launch argument `-UITestSeed` = the shop-api sample + `StubURLProtocol` (no network). CI `.github/workflows/ios.yml`
-  (macos-26, newest Xcode 26, XcodeGen pinned by sha256): build, unit + UI tests on an iPhone 17 Pro simulator, iPad screenshots, artifact `screenshots`
+  (macos-26, newest Xcode 26, XcodeGen pinned by sha256): build, unit + UI tests on an iPhone 17 Pro simulator, iPad screenshots, artifact `screenshots`; manual runs can pick `runner: macbook` = the owner's MacBook as self-hosted runner `macbook-hitopci` (label `hitop-mac`, standard user `hitopci`, Xcode 27, no sudo: the `xcode-select` steps skip on `RUNNER_ENVIRONMENT=self-hosted`); its job-started hook `~/actions-runner/guard.sh` (on the Mac, not in git) refuses everything but a manual ios.yml run of bohdaq/hitop by bohdaq, and fork PR runs need approval for every outside contributor (repo setting)
 - HITOP iOS I2 (HITOP Cloud, ios/HITOP_IOS.md "I2"): Core `Cloud.swift` `HitopCloud` (sync.js SyncClient: `/v1/auth/methods`, `<kind>/start` with
   `returnTo: hitop://sign-in` → ASWebAuthenticationSession → `?sso=` code → finish, paste fallback when a server refuses it; device X25519 key = CryptoKit raw
   bytes base64url; `X-Hitop-Device` always; 402 devices → `DeviceLimit`; sign-out keeps the key; `StoreText.withoutPlanLink`, never `upgradeUrl`), `LibrarySync.swift`
