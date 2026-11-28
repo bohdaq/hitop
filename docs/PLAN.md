@@ -52,8 +52,9 @@ Status is kept in the table at the end; choices made on the way go under "Decisi
 | C5 | core, CLI, web, desktop and Android on main 17ab888 (PR 33); iOS in C6 |
 | C6 | on main dd7ff78 (PR 39, every check green on that commit; the run on main then failed one flaky Android UI test, see Open problems): import and export (PR 34), OAuth/SigV4/Digest (PR 35) on main; uploads, data files, compare/undo (PR 36) on main; settings and TLS (PR 37), share extension, background sync and schedules (PR 38), roles, comments, team environments, SSO built |
 | Security | Web scripts isolated from the page (PR 43), the guide's script names everywhere and the Chrome extension's scripts in the worker (PR 44): on main fbb2ffc, web app deployed 2026-11-26 00:51 UTC; the extensions need the owner's release |
-| C7 | OpenAPI lint and editor on main ee2ec6d (PR 42, every check green). Plugins, part 1 (spec 5c, core grammar and refusals in core, web and HitopKit, CLI `hitop plugin` with the sandboxed child, `value` hook): main 9cfc71f (PR 45). Part 2a, web app and extensions (plugins worker, Settings → Plugins, IndexedDB, one answer per call per request in core and web): main 791f33c (PR 46). Part 2b, desktop (hitop-core `plugin_host` shared with the CLI, the app re-executes itself as the child; MAS/MSIX untested here, owner checklist): main 653006d (PR 47). Part 3a, safety of the `value` hook (T1 warning in the editor, answers shown with the response, 8 MB input limit, the desktop binary tested as its own child in CI on Linux and macOS): main a854f63 (PR 48). Part 3b, the `viewer`, `importer` and `snippet` hooks in hitop-core (one validator, also in hitop-wasm) and the CLI (`--view`, `import --plugin`, `snippet --plugin`): main 9afa610 (PR 49). Part 3c, their web app and desktop screens (View with plugin, the Import dialog's "Read it with", plugin languages in the Code dialog; threat model decision 12): branch hitop-c7-plugins-3c |
-| C8–C9 | not started |
+| C7 | OpenAPI lint and editor on main ee2ec6d (PR 42, every check green). Plugins, part 1 (spec 5c, core grammar and refusals in core, web and HitopKit, CLI `hitop plugin` with the sandboxed child, `value` hook): main 9cfc71f (PR 45). Part 2a, web app and extensions (plugins worker, Settings → Plugins, IndexedDB, one answer per call per request in core and web): main 791f33c (PR 46). Part 2b, desktop (hitop-core `plugin_host` shared with the CLI, the app re-executes itself as the child; MAS/MSIX untested here, owner checklist): main 653006d (PR 47). Part 3a, safety of the `value` hook (T1 warning in the editor, answers shown with the response, 8 MB input limit, the desktop binary tested as its own child in CI on Linux and macOS): main a854f63 (PR 48). Part 3b, the `viewer`, `importer` and `snippet` hooks in hitop-core (one validator, also in hitop-wasm) and the CLI (`--view`, `import --plugin`, `snippet --plugin`): main 9afa610 (PR 49). Part 3c, their web app and desktop screens (View with plugin, the Import dialog's "Read it with", plugin languages in the Code dialog; threat model decision 12): main a9cd3a5 (PR 53). Done. Also from C7's testing: Android arm64 scripts fixed (boa `jsvalue-enum`, main 405895c, PR 51); iOS share order and audit-test wait (main 943ef98, PR 52); iOS CI can run on the owner's MacBook (main 1c47969, PR 50) |
+| C8 | Started 2026-11-28. Hosted runs: threat model only (`docs/HOSTED_RUNS_THREAT_MODEL.md`), for the owner to read; nothing that gives the server a workspace key is built before the owner answers it. Published docs pages: next |
+| C9 | not started |
 
 ## Decisions
 
@@ -76,6 +77,9 @@ Status is kept in the table at the end; choices made on the way go under "Decisi
   or without secrets the Keychain can't show.
 - iOS share extension only puts the item in the app group (an extension can't open its app); the app shows it before anything is added.
 - A damaged list of shared collections is set aside only after every collection the library doesn't hold is marked "this device only".
+| 2026-11-28 | The owner's MacBook is a build machine: standard user `hitopci` over a reverse SSH tunnel the owner opens, and the self-hosted runner `macbook-hitopci` for manual `ios.yml` runs (`runner: macbook`), whose job-started hook on the Mac accepts only manual ios.yml runs of bohdaq/hitop by bohdaq. | GitHub's macos-26 queue held a run for 17 h; the Mac also has arm64 Android emulators, which CI lacks. |
+| 2026-11-28 | Repository setting: workflow runs from fork pull requests need approval for every outside contributor (was first-time contributors). | A self-hosted runner on a public repository; defence in depth with the runner's hook. |
+| 2026-11-28 | A plugin importer's collections get new ids and lose `sharedIn`, `org` and `workspace` in the web app; only the HITOP branch of the file reader is applied. | Where a collection is kept is the app's choice (plugins decision 10, 12). |
 
 ## Open problems
 
@@ -87,3 +91,10 @@ Status is kept in the table at the end; choices made on the way go under "Decisi
 - Leaked copies of shared collections (web app before PR 40): checked on production 2026-11-25 with the owner's OK: `request_history` and
   `library_items` are empty, so nothing was deleted. Dumps taken before that may hold copies; they expire after 35 days. No notice to users
   (owner, 2026-11-25).
+- Portal e2e (CI job "Site and web app (checks and portal)"): axe once reported color contrast on the SCIM settings page's submit button
+  (PR 53, 2026-11-28); passed on a re-run and on main before and after. Likely measured mid-transition. To fix by waiting for the button's
+  final state before the audit, not by retrying.
+- CI has no arm64 Android emulator (its emulators are x86_64), which is how the boa NaN-boxing panic (PR 51) got past it. Find a runner that
+  can run one (GitHub's arm64 Linux runners and KVM; or the owner's Mac on demand).
+- The API 37.0 aosp_atd arm64 emulator doesn't finish booting on the owner's Mac (its threads hang); API 31 works there.
+
