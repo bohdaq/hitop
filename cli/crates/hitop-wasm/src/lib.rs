@@ -393,6 +393,17 @@ pub fn plugin_viewer_input(status: u16, headers_json: &str, body: &str) -> Resul
     Ok(hitop_core::plugins::viewer_input(status, &headers, body).to_string())
 }
 
+/// A checked viewer answer (from [`plugin_answer`]) as shown: every text
+/// masked with `secrets_json` (the values to hide) and without control
+/// characters other than newline and tab (hitop-core `plugins::viewer_shown`).
+#[wasm_bindgen(js_name = pluginViewerShown)]
+pub fn plugin_viewer_shown(answer_json: &str, secrets_json: &str) -> Result<String, JsError> {
+    let answer: serde_json::Value = serde_json::from_str(answer_json).map_err(|e| JsError::new(&e.to_string()))?;
+    let secrets: Vec<String> = serde_json::from_str(secrets_json).map_err(|e| JsError::new(&e.to_string()))?;
+    let masker = hitop_core::secrets::Masker::new(secrets.iter().map(String::as_str));
+    Ok(hitop_core::plugins::viewer_shown(&answer, &masker).to_string())
+}
+
 /// A snippet plugin's input (the same `{request, collectionAuth, variables,
 /// secrets}` as [`snippet`]): the request as the built-in languages write it,
 /// secrets as `{{NAME}}`.

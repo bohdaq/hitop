@@ -795,6 +795,9 @@ export class HitopRequest extends LitElement {
               ? html`<lit-material-icon-button aria-label="Save as example" title="Save as example" @click=${() => this.app.openDialog("save-example", { name: `${t.statusCode} response`, request: this.store.loadedRequest(t).name })}>${icon("bookmark-simple")}</lit-material-icon-button>`
               : nothing}
             <lit-material-icon-button aria-label="Compare" title="Compare responses" @click=${() => this.app.openDialog("compare")}>${icon("git-diff")}</lit-material-icon-button>
+            ${platform().plugins && t.responseType !== "binary" && !live
+              ? html`<lit-material-icon-button aria-label="View with plugin" title="View with plugin" @click=${() => this.app.openDialog("plugin-view", { tabId: t.id })}>${icon("puzzle-piece")}</lit-material-icon-button>`
+              : nothing}
           </span>
         </div>
         <div class="response-tabbar">

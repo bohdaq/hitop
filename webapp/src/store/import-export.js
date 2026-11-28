@@ -8,6 +8,7 @@ import { generateUniqueId } from "../../../shared/services/idGenerator.js";
 import { loadFormat } from "../wasm/format.js";
 import { markImported } from "../getting-started.js";
 import { platform } from "../platform/index.js";
+import { callHook } from "../plugin-hooks.js";
 
 export const ImportExportPart = (Base) =>
   class extends Base {
@@ -37,6 +38,17 @@ export const ImportExportPart = (Base) =>
       imported = collectionService.importCollections(json);
     }
     return this.addImported(imported, report, replace);
+  }
+
+  // An importer plugin's collections (decision 10), read as a HITOP JSON file and always added
+  // (never Replace). hitop-core checked them and dropped `workspace` and `org`; where a collection is
+  // kept is decided here as for any import: new ids, no `sharedIn`, the current organization.
+  async importWithPlugin(name, text, fileName = "") {
+    const collections = await callHook(name, "importer", [String(text ?? ""), String(fileName ?? "")]);
+    // hitop-core read them as HITOP JSON already: only that branch of importCollections (its format
+    // guessing by keys like `info` or `items` would let an answer pick another reader).
+    const own = collections.map(({ id: _id, sharedIn: _shared, org: _org, workspace: _ws, ...c }) => ({ ...c, id: generateUniqueId(), requests: c.requests || [], variables: c.variables || {} }));
+    return this.addImported(own, null, false);
   }
 
   // Insomnia, Bruno and HAR (hitop-core convert.rs): Postman's shapes, through the same importer.

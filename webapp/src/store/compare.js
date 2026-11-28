@@ -7,6 +7,7 @@ import { loadFormat } from "../wasm/format.js";
 import { platform } from "../platform/index.js";
 import { callArguments, fromSecret, pluginCallTexts, secretPluginCalls } from "../plugin-calls.js";
 import { pluginUnavailable } from "../../../shared/services/variableInterpolation.js";
+import { callHook } from "../plugin-hooks.js";
 
 export const ComparePart = (Base) =>
   class extends Base {
@@ -96,15 +97,14 @@ export const ComparePart = (Base) =>
     const format = await loadFormat();
     const calls = [...new Set(texts)].map((text) => ({ text, call: format.pluginCall(text) })).filter((c) => c.call);
     if (!calls.length) return {};
-    const plugins = platform().plugins;
-    if (!plugins) throw new Error(pluginUnavailable(calls[0].call.plugin));
+    if (!platform().plugins) throw new Error(pluginUnavailable(calls[0].call.plugin));
     const secrets = this.secretValuesFor(collectionId);
     const answers = {};
     const once = new Map();
     for (const { text, call } of calls) {
       const args = callArguments(call, variables);
       const key = JSON.stringify([call.plugin, args]);
-      if (!once.has(key)) once.set(key, await plugins.call(call.plugin, "value", args));
+      if (!once.has(key)) once.set(key, await callHook(call.plugin, "value", args));
       const answer = once.get(key);
       if (answer && fromSecret(args, secrets)) this.refSeen.add(answer);
       answers[text] = answer;
@@ -228,6 +228,33 @@ export const ComparePart = (Base) =>
   // { code, placeholders } from hitop-core's generator.
   async snippet(lang, showSecrets = false, tab = this.tab) {
     return (await loadFormat()).snippet(this.snippetInput(showSecrets, tab), lang);
+  }
+
+  /** A snippet plugin's code for the tab's request (decision 4): secrets always stay {{NAME}}. */
+  async snippetWithPlugin(name, tab = this.tab) {
+    const input = (await loadFormat()).snippetPluginInput(this.snippetInput(false, tab));
+    return { code: await callHook(name, "snippet", [input]), placeholders: input.placeholders ?? [] };
+  }
+
+  // A viewer plugin's answer for the tab's response (decision 8): a text response only, its headers
+  // and body masked before the plugin gets them, the answer masked again and shown without control
+  // characters. { shown: text | {columns, rows}, truncated }. Never kept: the dialog holds it.
+  async viewWithPlugin(name, tab = this.tab) {
+    if (tab?.statusCode == null || tab.responseType === "error" || tab.responseType === "cancelled") throw new Error("There is no response to view");
+    if (this.events?.get(tab.id)) throw new Error("A live response can't be given to a viewer: wait until it ends");
+    const notText = `The response isn't text, so it isn't given to plugin '${name}' (viewers get text responses only)`;
+    if (tab.responseType === "binary") throw new Error(notText);
+    // After a reload only the start of a large body may be here: never a viewer's whole picture.
+    if (tab.responseCut) throw new Error(`Only the start of this response is kept here: send the request again to view it with plugin '${name}'`);
+    const raw = this.rawBodies.get(tab.id);
+    const body = typeof raw === "string" ? raw : typeof tab.response === "string" ? tab.response : JSON.stringify(tab.response ?? "");
+    if (body.includes("\uFFFD")) throw new Error(notText);
+    const secrets = this.secretValuesFor(tab.loadedCollectionId);
+    const headers = Object.entries(tab.responseHeaders || {}).map(([k, v]) => [k, maskSecrets(Array.isArray(v) ? v.join(", ") : String(v ?? ""), secrets)]);
+    const format = await loadFormat();
+    const input = format.pluginViewerInput(tab.statusCode, headers, maskSecrets(body, secrets));
+    const answer = await callHook(name, "viewer", [input]);
+    return { shown: format.pluginViewerShown(answer, secrets), truncated: Boolean(input.truncated) };
   }
 
   /** A saved request as code without opening it (UX2: the sidebar menu's Copy as cURL). */

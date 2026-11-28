@@ -10,6 +10,14 @@ const { results, check } = checker();
 const SECRET = 'user:s3cr3t-Plugin';
 const SECRET_B64 = 'dXNlcjpzM2NyM3QtUGx1Z2lu';
 const manifest = (name, desc = '') => `/* hitop-plugin {"name": "${name}", "version": "1.0.0", "hooks": ["value"]${desc}} */\n`;
+const hooked = (name, hook, body) => `/* hitop-plugin {"name": "${name}", "version": "1.0.0", "hooks": ["${hook}"]} */\n${body}`;
+// Part 3c: a viewer that shows what it got (and a secret it puts together itself), a table viewer,
+// one with too many columns, an importer and a snippet writer.
+const VIEW = hooked('view', 'viewer', 'function viewer(r) { return "got " + r.status + " " + r.body + " | " + r.headers.map((h) => h.name).join(",") + " | " + "user:s3cr3t-" + "Plugin" + " \\u001b[2J"; }');
+const TABLE = hooked('grid', 'viewer', 'function viewer(r) { return { columns: ["k", "v"], rows: [["<script>window.__xss = 1</script>", 1], [null, true]] }; }');
+const WIDE = hooked('wide', 'viewer', 'function viewer() { var c = []; for (var i = 0; i < 101; i++) c.push("c" + i); return { columns: c, rows: [] }; }');
+const IMPORT = hooked('lines', 'importer', 'function importer(text, name) { if (text.indexOf("escape") >= 0) return [{ id: 7, name: "Bad", requests: [{ id: 1, name: "x", method: "GET", url: "/x", headers: [], body: "", file: "../x" }] }]; return [{ id: 7, name: "From " + name, workspace: "w-evil", org: "o-evil", sharedIn: "s-evil", requests: text.trim().split("\\n").map((u, i) => ({ id: i + 1, name: "r" + i, method: "GET", url: u, headers: [], body: "" })) }]; }');
+const SNIP = hooked('httpie', 'snippet', 'function snippet(r) { return "http " + r.method + " " + r.url + " " + r.headers.map((h) => h.name + ":" + h.value).join(" "); }');
 const B64 = `${manifest('b64', ', "description": "base64"')}function value(text) {
   const t = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/"; let o = "", i = 0;
   for (; i + 2 < text.length; i += 3) { const n = (text.charCodeAt(i) << 16) | (text.charCodeAt(i + 1) << 8) | text.charCodeAt(i + 2); o += t[n >> 18 & 63] + t[n >> 12 & 63] + t[n >> 6 & 63] + t[n & 63]; }
@@ -201,6 +209,77 @@ const PROBE = `${manifest('probe')}function value() { return [typeof process, ty
     await p.waitForFunction(() => !document.querySelector('.plugin-row[data-plugin="b64"]'), null, { timeout: 10000 });
     refused = await sendRefused(signed);
     check('a request calling a plugin that is not installed is not sent, and names it', refused.sent === 0 && /plugin 'b64', which isn't installed/.test(refused.said), JSON.stringify(refused));
+    // Part 3c: View with plugin. The viewer gets the response masked (the server echoed the secret) and
+    // its answer is shown masked again (a secret it put together itself) and without control characters.
+    await installFile('view', VIEW);
+    await installFile('grid', TABLE);
+    await installFile('wide', WIDE);
+    await p.evaluate(() => document.querySelector('hitop-app').showWorkspace());
+    await send({ url: '${base}/v?sig=${cred}' });
+    check('the server echoed the secret (so masking is what keeps it out)', hits.at(-1) && new URL(hits.at(-1).url, base).searchParams.get('sig') === SECRET, JSON.stringify(hits.at(-1)));
+    await p.locator('lit-material-icon-button[aria-label="View with plugin"]').click();
+    await p.waitForSelector('#plugin-viewer', { timeout: 10000 });
+    // The first viewer in the list (by name) runs at once; pick each one through the dialog's select.
+    const viewWith = async (name) => {
+      await p.evaluate((name) => {
+        const sel = document.querySelector('#plugin-viewer');
+        sel.value = name;
+        sel.dispatchEvent(new Event('change', { bubbles: true }));
+      }, name);
+      await p.waitForFunction((name) => {
+        const d = document.querySelector('hitop-app').dialog;
+        return d?.plugin === name && !d.running && (d.view || d.error);
+      }, name, { timeout: 20000 });
+      return p.evaluate(() => {
+        const d = document.querySelector('hitop-app').dialog;
+        return { error: d.error, text: document.querySelector('[data-testid="plugin-view-text"]')?.textContent ?? null, table: document.querySelector('[data-testid="plugin-view-table"]')?.textContent ?? null, scripts: document.querySelectorAll('#dialog script').length };
+      });
+    };
+    let v = await viewWith('view');
+    check('a viewer gets the response with the secret masked, and its answer is shown masked', v.text && /got 200 echo ••••/.test(v.text) && !v.text.includes(SECRET) && /content-type/.test(v.text), JSON.stringify(v));
+    check('a viewer answer shows control characters as U+FFFD', v.text?.includes('\uFFFD[2J') && !v.text.includes('\u001b'), JSON.stringify(v.text));
+    v = await viewWith('grid');
+    check('a viewer table is shown as text (a <script> cell runs nothing)', v.table?.includes('<script>window.__xss = 1</script>') && v.scripts === 0 && !(await p.evaluate(() => window.__xss)) && /true/.test(v.table), JSON.stringify(v));
+    v = await viewWith('wide');
+    check('a table with too many columns is refused with the reason', /plugin 'wide' answered a table with 101 columns/.test(v.error ?? ''), JSON.stringify(v));
+    const kept = await p.evaluate(() => JSON.stringify(localStorage) + JSON.stringify(document.querySelector('hitop-app').store.tab));
+    check('a viewer answer is kept nowhere (tab, storage)', !kept.includes('got 200') && !kept.includes('window.__xss'), '');
+    await p.evaluate(() => document.querySelector('hitop-app').closeDialog());
+
+    // Importer: added like a HITOP file; its workspace, org and sharedIn are dropped, ids are new;
+    // a request file outside the folder is refused.
+    await installFile('lines', IMPORT);
+    await p.evaluate(() => document.querySelector('hitop-app').openDialog('import'));
+    await p.waitForSelector('#import-reader', { timeout: 10000 });
+    await p.evaluate(() => {
+      const app = document.querySelector('hitop-app');
+      app.dialog = { ...app.dialog, reader: 'lines', file: 'urls.txt' };
+    });
+    await p.waitForFunction(() => !document.querySelector('.import-mode'), null, { timeout: 5000 });
+    check('with an importer plugin there is no Replace', await p.evaluate(() => !document.querySelector('input[name="import-mode"]')), '');
+    await p.locator('#dialog #json textarea').fill(`${base}/a\n${base}/b`);
+    await p.locator('#dialog').getByRole('button', { name: 'Import', exact: true }).click();
+    await p.waitForFunction(() => document.querySelector('hitop-app').store.collections.some((c) => c.name === 'From urls.txt') || document.querySelector('hitop-app').dialog?.error, null, { timeout: 20000 });
+    const importError = await p.evaluate(() => document.querySelector('hitop-app').dialog?.error ?? null);
+    check('the importer plugin read the file', !importError, String(importError));
+    const imported = await p.evaluate(() => JSON.parse(JSON.stringify(document.querySelector('hitop-app').store.collections.find((c) => c.name === 'From urls.txt'))));
+    check('an importer adds a collection with its requests', imported.requests.length === 2 && imported.requests[1].url.endsWith('/b'), JSON.stringify(imported).slice(0, 300));
+    check("an imported collection loses the plugin's workspace, org and sharedIn", !/w-evil|o-evil|s-evil/.test(JSON.stringify(imported)), JSON.stringify(imported).slice(0, 300));
+    const refusedImport = await p.evaluate(() => document.querySelector('hitop-app').store.importWithPlugin('lines', 'escape', 'x.txt').then(() => 'imported', (e) => e.message));
+    check('an importer answer with a file outside the folder is refused', /\.\.|outside|folder/.test(refusedImport) && refusedImport !== 'imported', refusedImport);
+
+    // Snippet: the plugin gets {{cred}}, never the value; no "Include secret values" for it.
+    await installFile('httpie', SNIP);
+    await p.evaluate(() => document.querySelector('hitop-app').showWorkspace());
+    await p.evaluate(([base]) => Object.assign(document.querySelector('hitop-app').store.tab, { method: 'GET', url: `${base}/s`, headers: [{ name: 'Authorization', value: 'Bearer ${cred}', enabled: true }] }), [base]);
+    await p.evaluate(() => document.querySelector('hitop-app').openDialog('code', { lang: 'plugin:httpie', showSecrets: true }));
+    await p.waitForFunction(() => document.querySelector('hitop-app').dialog?.result || document.querySelector('hitop-app').dialog?.error, null, { timeout: 20000 });
+    const code = await p.evaluate(() => ({ d: document.querySelector('hitop-app').dialog, box: document.querySelector('#snippet-secrets')?.disabled }));
+    check('a snippet plugin writes the code with secrets as placeholders', code.d.result?.code?.includes('Authorization:Bearer {{cred}}') && !JSON.stringify(code.d).includes(SECRET), JSON.stringify(code.d.result ?? code.d.error));
+    check('a snippet plugin never offers secret values', code.box === true && /--plugin httpie/.test(await p.locator('#dialog').textContent()), String(code.box));
+    check('plugin languages are listed in the Code dialog', code.d.languages.some((l) => l.id === 'plugin:httpie') && code.d.languages.some((l) => l.id === 'curl'), JSON.stringify(code.d.languages?.map((l) => l.id)));
+    await p.evaluate(() => document.querySelector('hitop-app').closeDialog());
+
     // Scripts still run in their own worker after all this.
     const again = await p.evaluate(() => document.querySelector('hitop-app').store.runPostScriptFull("pm.test('t', () => {})", null, '', {}, 200, 1, {}).then((r) => r.tests.length));
     check('scripts still run', again === 1, String(again));

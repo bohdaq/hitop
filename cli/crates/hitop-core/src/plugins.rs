@@ -360,6 +360,29 @@ pub fn viewer_input(status: u16, headers: &[(String, String)], body: &str) -> se
     })
 }
 
+/// Text from a plugin as a person sees it: control characters other than
+/// newline and tab become U+FFFD, so an answer can't drive a terminal or hide
+/// text (decision 8).
+pub fn printable(text: &str) -> String {
+    text.chars().map(|c| if c.is_control() && c != '\n' && c != '\t' { '\u{fffd}' } else { c }).collect()
+}
+
+/// A checked `viewer` answer as every surface shows it: each text (the
+/// answer, the column titles, the cells) masked, then [`printable`]. The
+/// input was masked already; this also catches a secret a plugin assembled
+/// from pieces it was given elsewhere.
+pub fn viewer_shown(answer: &serde_json::Value, masker: &crate::secrets::Masker) -> serde_json::Value {
+    let shown = |v: &serde_json::Value| serde_json::Value::String(printable(&masker.mask(v.as_str().unwrap_or_default())));
+    let all = |v: &serde_json::Value| serde_json::Value::Array(v.as_array().map(|a| a.iter().map(shown).collect()).unwrap_or_default());
+    match answer {
+        serde_json::Value::String(_) => shown(answer),
+        _ => serde_json::json!({
+            "columns": all(&answer["columns"]),
+            "rows": answer["rows"].as_array().map(|r| r.iter().map(all).collect::<Vec<_>>()).unwrap_or_default(),
+        }),
+    }
+}
+
 /// A table cell or column title as text (decision 9).
 fn cell_text(v: &serde_json::Value) -> String {
     match v {
@@ -604,6 +627,14 @@ mod tests {
             assert!(e.contains(says), "{answer}: {e}");
         }
         assert!(check_answer("p", "fetch", &json!("x")).unwrap_err().contains("unknown hook"));
+    }
+
+    #[test]
+    fn a_viewer_answer_is_shown_masked_and_printable() {
+        let m = crate::secrets::Masker::new(["s3cret"]);
+        assert_eq!(viewer_shown(&serde_json::json!("a\u{1b}[2Js3cret\nb\tc"), &m), serde_json::json!("a\u{fffd}[2J••••\nb\tc"));
+        let table = check_answer("p", "viewer", &serde_json::json!({"columns": ["k", 1], "rows": [["x\u{7}", "s3cret"], [null]]})).unwrap();
+        assert_eq!(viewer_shown(&table, &m), serde_json::json!({"columns": ["k", "1"], "rows": [["x\u{fffd}", "••••"], ["", ""]]}));
     }
 
     #[test]

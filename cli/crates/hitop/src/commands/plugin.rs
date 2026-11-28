@@ -125,18 +125,17 @@ pub fn print_view(name: &str, masker: &hitop_core::secrets::Masker, result: &hit
     if truncated {
         eprintln!("note: plugin '{name}' got the first {} MB of the body", plugins::VIEWER_BODY / (1024 * 1024));
     }
-    // A plugin's text never drives the terminal: control characters other
-    // than newline and tab are shown as U+FFFD.
-    let printable = |s: &str| -> String { s.chars().map(|c| if c.is_control() && c != '\n' && c != '\t' { '\u{fffd}' } else { c }).collect() };
+    // Masked and without control characters (core `viewer_shown`, as the web app shows it).
+    let answer = plugins::viewer_shown(&answer, masker);
     if let Some(text) = answer.as_str() {
-        println!("{}", printable(&masker.mask(text)));
+        println!("{text}");
         return Ok(());
     }
-    let cells = |v: &serde_json::Value| -> Vec<String> { v.as_array().map(|a| a.iter().map(|c| masker.mask(c.as_str().unwrap_or_default())).collect()).unwrap_or_default() };
+    let cells = |v: &serde_json::Value| -> Vec<String> { v.as_array().map(|a| a.iter().map(|c| c.as_str().unwrap_or_default().to_string()).collect()).unwrap_or_default() };
     let columns = cells(&answer["columns"]);
     let rows: Vec<Vec<String>> = answer["rows"].as_array().map(|r| r.iter().map(cells).collect()).unwrap_or_default();
     if raw {
-        let clean = |s: &String| printable(&s.replace(['\t', '\n', '\r'], " "));
+        let clean = |s: &String| s.replace(['\t', '\n', '\r'], " ");
         println!("{}", columns.iter().map(clean).collect::<Vec<_>>().join("\t"));
         for r in &rows {
             println!("{}", r.iter().map(clean).collect::<Vec<_>>().join("\t"));

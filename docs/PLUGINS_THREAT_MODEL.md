@@ -6,7 +6,8 @@ web app and both extensions (`platform/wasm-plugins.js`, `plugins-worker.js`, Se
 (hitop-core `plugin_host`, shared with the CLI: the store in `<config>/hitop/plugins/` and the child, which in the desktop is the app's own
 executable started with `--hitop-plugin-run`). Part 3a is built: the T1 warning before a send and the answers shown after it. Part 3b is
 built: the `viewer`, `importer` and `snippet` hooks in hitop-core (`plugins::check_answer`, also in hitop-wasm) and the CLI (`--view`,
-`import --plugin`, `snippet --plugin`). Their web app and desktop screens are part 3c (not built yet).
+`import --plugin`, `snippet --plugin`). Part 3c is built: their web app and desktop screens (View with plugin, the Import dialog's
+"Read it with", plugin languages in the Code dialog), decision 12.
 
 ## What a plugin is
 
@@ -105,6 +106,24 @@ Each call gets a fresh engine with only the call's input, a loop limit, a call-d
 11. **`value` arguments stay text.** The `call` command refuses a `value` call whose arguments aren't all text (no silent
     conversion); `viewer`, `importer` and `snippet` get their one structured input.
 
+12. **The web app and desktop screens (part 3c).** Every hook goes through one call (`plugin-hooks.js` `callHook`): the platform
+    runs it (the browser's plugins worker, or the desktop's child), then hitop-core's validator checks the answer through hitop-wasm
+    (`pluginAnswer`), whatever the platform checked already; `value` calls take text arguments only there too. The browser's worker
+    answer is at most 16 MB of JSON before it is parsed (a 10 000-row table fits).
+    - *View with plugin* (response actions): a text response only. Not offered for a binary response or a live stream; refused for
+      an error, a body with U+FFFD (not text) and a body of which only the start is kept after a reload (`responseCut`). The body is
+      the one as received (`rawBodies`, else the response), headers and body masked with the request's secret values (environment,
+      globals, shared values, `${secret:...}` values and answers computed from secrets) before `pluginViewerInput`; the answer is
+      masked again and control characters become U+FFFD (core `viewer_shown`, which the CLI's `--view` uses too). It is drawn with
+      text bindings only (a `<script>` cell is text), at most 500 rows at once, kept in the dialog only (never on the tab, in history,
+      storage or the library), and dropped when the response changed while the plugin ran.
+    - *Import* ("Read it with" a plugin): the file's text and name go to the importer; its collections (core already dropped
+      `workspace` and `org`) are added, never Replace. The app drops `id` (each gets a new one), `sharedIn` and `org` again, applies
+      only the HITOP branch of the file reader (its format guessing by keys such as `info` or `items` could otherwise pick another
+      reader) and adds them like any import: a name in use gets " (2)", the current organization, nothing replaced.
+    - *Code dialog*: snippet plugins are languages (`plugin:<name>`, never a built-in id); the input is always built without
+      secret values, and "Include secret values" is off and disabled for them.
+
 ## Left out on purpose
 
 - No network, file or secret access, ever, in this design; a plugin that needs them is a different feature
@@ -142,6 +161,9 @@ Each call gets a fresh engine with only the call's input, a loop limit, a call-d
 - A viewer answer with `<script>` shows as text; a table with too many columns or a row too long is refused.
 - An importer answer with a request `file` of `../x` is refused; one with a `workspace` loses it.
 - A snippet plugin gets `{{NAME}}` for a secret, and `--show-secrets` with a plugin is refused.
+- Web app and desktop (part 3c): a viewer gets the response masked and its answer is shown masked, with control characters as
+  U+FFFD, and kept nowhere; an importer's collection loses `workspace`, `org` and `sharedIn` and Replace isn't offered; a snippet
+  plugin gets `{{NAME}}` and "Include secret values" is disabled for it (tests/plugins.cjs, web and Tauri modes; unit-plugins.mjs).
 - Desktop and CLI: `"a".repeat(1e9)` and a catastrophic regex are stopped at the time limit; the child sees no environment variables.
 - A value computed from a secret (base64 of it) is masked in history, reports and MCP output.
 - Every interpolator refuses a request with a plugin it can't run, and names it.

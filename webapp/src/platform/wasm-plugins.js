@@ -9,6 +9,8 @@ import { loadFormat } from "../wasm/format.js";
 
 export const LIMIT_MS = 5_000;
 export const MAX_BYTES = 1024 * 1024;
+// A whole answer as the worker sends it (JSON): a 10 000-row table fits, a runaway one doesn't.
+export const MAX_ANSWER_CHARS = 16 * 1024 * 1024;
 // Loading the wasm isn't the plugin's time.
 const START_MS = 60_000;
 const DB = "hitop-plugins";
@@ -138,20 +140,20 @@ export const wasmPlugins = {
     await tx("readwrite", (s) => s.delete(name));
   },
 
-  /** The answer (text) of hook `hook` of plugin `name`, called with text arguments. */
+  /** The answer of hook `hook` of plugin `name` as JSON; plugin-hooks.js `callHook` checks it. */
   async call(name, hook, args) {
     const p = await tx("readonly", (s) => s.get(name));
     if (!p) throw new Error(`This request uses plugin '${name}', which isn't installed in this browser (Settings → Plugins)`);
     if (!p.manifest.hooks.includes(hook)) throw new Error(`plugin '${name}' has no ${hook} hook`);
     if ((await sha256(p.source)) !== p.sha256) throw new Error(`plugin '${name}' changed since it was installed; check it and install it again`);
-    let answer;
+    let text;
     try {
-      answer = JSON.parse(await runHook(p.source, hook, args, name));
+      text = await runHook(p.source, hook, args, name);
     } catch (e) {
       throw new Error(/^plugin '/.test(e.message) || /^Stopped/.test(e.message) ? e.message : `plugin '${name}' failed: ${e.message}`, { cause: e });
     }
-    if (typeof answer !== "string") throw new Error(`plugin '${name}' answered something other than text`);
-    if (new TextEncoder().encode(answer).length > MAX_BYTES) throw new Error(`plugin '${name}' answered more than ${MAX_BYTES} bytes`);
-    return answer;
+    // Before parsing: a table may be larger than a text answer (MAX_BYTES, checked by hitop-core).
+    if (text.length > MAX_ANSWER_CHARS) throw new Error(`plugin '${name}' answered more than ${MAX_ANSWER_CHARS / (1024 * 1024)} MB`);
+    return JSON.parse(text);
   },
 };

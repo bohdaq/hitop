@@ -1,5 +1,5 @@
 // A part of the app shell (HitopApp, ../hitop-app.js).
-import { FIT_DIALOGS, WIDE_DIALOGS, codeDialog, compareDialog, refreshCode } from "../tools-dialogs.js";
+import { FIT_DIALOGS, WIDE_DIALOGS, codeDialog, compareDialog, pluginViewDialog, refreshCode, refreshPluginView } from "../tools-dialogs.js";
 import { IS_TAURI, platform } from "../../platform/index.js";
 import { NEW_COLLECTION, inviteEmails, readableError } from "./shared.js";
 import { OPENAPI_DIALOGS, openapiDialog, submitOpenapi } from "../openapi-dialogs.js";
@@ -12,6 +12,7 @@ import { icon } from "../../icons.js";
 import { isCurl, parseCurl } from "../../curl.js";
 import { issueText } from "../../pm.js";
 import { loadFormat } from "../../wasm/format.js";
+import { pluginsWith } from "../../plugin-hooks.js";
 import { planLabel, storeBuild } from "../../store-mode.js";
 import { shortcutList } from "../shortcut-list.js";
 import { signInDialog } from "../sign-in-dialog.js";
@@ -31,6 +32,13 @@ export const DialogsPart = (Base) =>
     }
     this.dialog = { kind, ...data, opened: (this.dialogsOpened = (this.dialogsOpened ?? 0) + 1) };
     if (kind === "code") refreshCode(this);
+    if (kind === "plugin-view") refreshPluginView(this);
+    if (kind === "import") {
+      const d = this.dialog;
+      pluginsWith("importer").then((importers) => {
+        if (this.dialog?.opened === d.opened) this.dialog = { ...this.dialog, importers };
+      });
+    }
     await this.updateComplete;
     const dlg = this.querySelector("#dialog");
     dlg?.show();
@@ -179,6 +187,14 @@ export const DialogsPart = (Base) =>
       // A Postman import may come back with things to check: show them. An
       // OpenAPI spec is added as a new collection, with its report.
       const text = this.field("json");
+      // An importer plugin reads the file instead (decision 10): always added, never Replace.
+      if (d.reader) {
+        s.importWithPlugin(d.reader, text, d.file ?? "").then(
+          () => this.stillOpen(d) && this.closeDialog(),
+          (err) => (this.stillOpen(d) ? (this.dialog = { ...d, submitted: false, error: err?.message ?? String(err) }) : this.toast(err?.message ?? String(err))),
+        );
+        return;
+      }
       // UX2 (2): a curl command is one new request in the collection on screen.
       if (isCurl(text)) {
         let parsed;
@@ -496,20 +512,28 @@ export const DialogsPart = (Base) =>
         break;
       case "import": {
         headline = "Import collections";
-        const replace = d.mode === "replace";
+        const replace = d.mode === "replace" && !d.reader;
         const mode = (value, label, help) => html`<label class="import-mode-option">
           <input type="radio" name="import-mode" value=${value} .checked=${(d.mode ?? "add") === value} @change=${() => (this.dialog = { ...this.dialog, mode: value })} />
           <span><strong>${label}</strong><span class="hint">${help}</span></span>
         </label>`;
         body = html`
           <p class="dialog-note">Choose a file, drop one here or paste a HITOP, Postman v2.1, Insomnia, Bruno or HAR file, an OpenAPI 3 spec (YAML or JSON, always added as a new collection) or a curl command (one new request).</p>
-          <fieldset class="import-mode">
-            <legend>Imported collections</legend>
-            ${mode("add", "Add to my collections", "A name you already have gets (2) added.")}
-            ${mode("replace", "Replace all my collections", "Deletes the ones you have now (you're asked first).")}
-          </fieldset>
+          ${d.importers?.length
+            ? html`<lit-material-select id="import-reader" variant="outlined" label="Read it with" .value=${d.reader ?? ""} @change=${(e) => (this.dialog = { ...this.dialog, reader: e.target.value || null, error: null })}>
+                <lit-material-select-option value="">HITOP (finds the format)</lit-material-select-option>
+                ${d.importers.map((p) => html`<lit-material-select-option value=${p.name}>Plugin ${p.name}</lit-material-select-option>`)}
+              </lit-material-select>`
+            : nothing}
+          ${d.reader
+            ? html`<p class="dialog-note">Plugin ${d.reader} reads the file. What it makes is added to your collections (a name you already have gets (2) added); it can't add environments or secret values.</p>`
+            : html`<fieldset class="import-mode">
+                <legend>Imported collections</legend>
+                ${mode("add", "Add to my collections", "A name you already have gets (2) added.")}
+                ${mode("replace", "Replace all my collections", "Deletes the ones you have now (you're asked first).")}
+              </fieldset>`}
           <label class="file-pick">
-            <input type="file" class="visually-hidden" accept=".json,.yaml,.yml,.har,application/json,application/yaml,text/yaml"
+            <input type="file" class="visually-hidden" accept=${d.reader ? "" : ".json,.yaml,.yml,.har,application/json,application/yaml,text/yaml"}
               @change=${(e) => this.importFile(e.target.files?.[0])} />
             <span class="file-button">${icon("file-arrow-up")} Choose a file</span>
             <span class="file-name">${d.file ?? "No file chosen"}</span>
@@ -580,6 +604,9 @@ export const DialogsPart = (Base) =>
       case "code":
       case "compare":
         ({ headline, body, footer } = (d.kind === "code" ? codeDialog : compareDialog)(this, d));
+        break;
+      case "plugin-view":
+        ({ headline, body, footer } = pluginViewDialog(this, d));
         break;
       case "request-history":
         ({ headline, body, footer } = historyDialog(this, d));

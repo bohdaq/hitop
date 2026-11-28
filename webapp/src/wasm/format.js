@@ -10,6 +10,15 @@ function api(m) {
     pluginCall: (inner) => JSON.parse(m.pluginCall(String(inner))),
     // A plugin file's manifest as JSON text {name, version, hooks, description?}; throws why it isn't valid.
     pluginManifest: (source) => m.pluginManifest(String(source)),
+    // A hook's answer checked by hitop-core (one validator, decision 6): text, a viewer's
+    // {columns, rows} of text, or an importer's collections (HITOP JSON model). Throws why it's refused.
+    pluginAnswer: (name, hook, answer) => JSON.parse(m.pluginAnswer(String(name), String(hook), JSON.stringify(answer ?? null))),
+    // A viewer's input from a masked response: {status, headers: [{name, value}], body, truncated}.
+    pluginViewerInput: (status, headers, body) => JSON.parse(m.pluginViewerInput(Number(status) || 0, JSON.stringify(headers), String(body ?? ""))),
+    // A checked viewer answer as shown: masked with `secrets`, control characters (not newline, tab) as U+FFFD.
+    pluginViewerShown: (answer, secrets) => JSON.parse(m.pluginViewerShown(JSON.stringify(answer), JSON.stringify(secrets ?? []))),
+    // A snippet plugin's request from the Code dialog's input ({request, variables, secrets}): secrets as {{NAME}}.
+    snippetPluginInput: (input) => JSON.parse(m.snippetPluginInput(JSON.stringify(input))),
     // { "hitop.yaml": text, "requests/a.yaml": text, ... } → { collection, environments }
     readFiles: (files, name) => call(m.readFiles, files, String(name ?? "")),
     // { collection, environments } → files. Secret values are left out.

@@ -44,8 +44,11 @@ pub fn plugin_remove(name: String) -> Result<Value, String> {
     command("remove", json!({ "name": name }))
 }
 
-/// One hook of an installed plugin in the child (5 s, no environment) → its text.
+/// One hook of an installed plugin in the child (5 s, no environment) → its
+/// checked answer: text, or a viewer's table, or an importer's collections.
+/// `value` takes text arguments only (hitop-core refuses others); the other
+/// hooks get one structured input.
 #[tauri::command(async)]
-pub fn plugin_call(name: String, hook: String, args: Vec<String>) -> Result<Value, String> {
+pub fn plugin_call(name: String, hook: String, args: Vec<Value>) -> Result<Value, String> {
     command("call", json!({ "name": name, "hook": hook, "args": args }))
 }

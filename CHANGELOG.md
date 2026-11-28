@@ -6,6 +6,8 @@ Releases before 1.2 are listed in ROADMAP.md (section 5) and on the GitHub Relea
 
 ### CLI
 
+- `send --view` and `requests send --view` use hitop-core's `plugins::viewer_shown` (masking and control characters), the same code the
+  web app shows a viewer's answer with; output unchanged.
 - Plugins (`value` hook): `hitop plugin install <file> [--force]`, `ls [--json]`, `rm`, `call`. A request calls one as
   `${plugin.name(variable, "text")}` (spec section 5c). Each call runs in a child process with no environment, network, files or secrets,
   ended after 5 s, its memory capped on Linux and macOS; a plugin file changed after install is refused. An answer computed from a secret is
@@ -68,6 +70,10 @@ Releases before 1.2 are listed in ROADMAP.md (section 5) and on the GitHub Relea
 
 ### Web and desktop
 
+- Plugins, part 3c: **View with plugin** (response actions) shows an installed `viewer` plugin's text or table for a text response,
+  masked before the plugin gets it and again when shown, kept nowhere; the Import dialog can **read a file with an `importer` plugin**
+  (always added, never Replace; the plugin can't choose where a collection is kept); the **Code dialog** lists `snippet` plugins as
+  languages (secrets stay `{{NAME}}`, "Include secret values" is off for them). docs/PLUGINS_THREAT_MODEL.md decision 12.
 - Plugins in the web app and the browser extensions: Settings → Plugins installs a plugin file into this browser (IndexedDB, never
   localStorage, exports, the library or sync; its SHA-256 is checked before each call). `${plugin.name(args)}` is answered in its own worker
   (boa in WebAssembly, with only the call's arguments), stopped after 5 s; an answer computed from a secret is masked like one.
